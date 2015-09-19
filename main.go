@@ -36,7 +36,8 @@ Options:
 `
 )
 
-type ResponseContent struct {
+type PageInfo struct {
+	Title   string `json:"title"`
 	Version struct {
 		Number int64 `json:"number"`
 	} `json:"version"`
@@ -110,12 +111,12 @@ func main() {
 		log.Fatal("URL should contains 'pageId' parameter")
 	}
 
-	version, err := getPageVersion(api, pageID)
+	pageInfo, err := getPageInfo(api, pageID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = updatePage(api, pageID, version, htmlData)
+	err = updatePage(api, pageID, pageInfo, htmlData)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -125,13 +126,14 @@ func main() {
 
 func updatePage(
 	api *gopencils.Resource, pageID string,
-	currentPageVersion int64, newContent []byte,
+	pageInfo PageInfo, newContent []byte,
 ) error {
-	nextPageVersion := currentPageVersion + 1
+	nextPageVersion := pageInfo.Version.Number + 1
 
 	payload := map[string]interface{}{
-		"id":   pageID,
-		"type": "page",
+		"id":    pageID,
+		"type":  "page",
+		"title": pageInfo.Title,
 		"version": map[string]interface{}{
 			"number":    nextPageVersion,
 			"minorEdit": false,
@@ -161,33 +163,35 @@ func updatePage(
 	return nil
 }
 
-func getPageVersion(api *gopencils.Resource, pageID string) (int64, error) {
-	request, err := api.Res("content/"+pageID, &ResponseContent{}).Get()
+func getPageInfo(
+	api *gopencils.Resource, pageID string,
+) (PageInfo, error) {
+	request, err := api.Res("content/"+pageID, &PageInfo{}).Get()
 	if err != nil {
-		return 0, err
+		return PageInfo{}, err
 	}
 
 	if request.Raw.StatusCode == 401 {
-		return 0, fmt.Errorf("authentification failed")
+		return PageInfo{}, fmt.Errorf("authentification failed")
 	}
 
 	if request.Raw.StatusCode == 404 {
-		return 0, fmt.Errorf(
+		return PageInfo{}, fmt.Errorf(
 			"page with id '%s' not found, Confluence REST API returns 404",
 			pageID,
 		)
 	}
 
 	if request.Raw.StatusCode != 200 {
-		return 0, fmt.Errorf(
+		return PageInfo{}, fmt.Errorf(
 			"Confluence REST API returns unexpected HTTP status: %s",
 			request.Raw.Status,
 		)
 	}
 
-	response := request.Response.(*ResponseContent)
+	response := request.Response.(*PageInfo)
 
-	return response.Version.Number, nil
+	return *response, nil
 }
 
 func getConfig(path string) (zhash.Hash, error) {
