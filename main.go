@@ -35,11 +35,9 @@ Usage:
 	mark [-u <user>] [-p <pass>] -c <file>
 
 Options:
-	-u <user>   Use specified username for updating Confluence page, this
-					option can be specified using configuration file.
-	-p <pass>   Use specified password for updagin Confluence page, this
-					option can be specified using configuration file.
-	-l <url>   Edit specified Confluence page.
+	-u <user>   Use specified username for updating Confluence page.
+	-p <pass>   Use specified password for updating Confluence page.
+	-l <url>    Edit specified Confluence page.
 	-f <file>   Use specified markdown file for converting to html.
 	-c <file>   Specify configuration file which should be used for reading
 					Confluence page URL and markdown file path.
