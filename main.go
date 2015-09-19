@@ -37,8 +37,8 @@ usable for git hooks. That file should have following format:
     file = "docs/README.md"
 
 Usage:
-    mark [-u <username>] [-p <password>] -l <url> -f <file>
-    mark [-u <username>] [-p <password>] -c <file>
+    mark [--dry-run] [-u <username>] [-p <password>] -l <url> -f <file>
+    mark [--dry-run] [-u <username>] [-p <password>] -c <file>
     mark -v | --version
 	mark -h | --help
 
@@ -49,6 +49,7 @@ Options:
     -f <file>      Use specified markdown file for converting to html.
     -c <file>      Specify configuration file which should be used for reading
                    Confluence page URL and markdown file path.
+	--dry-run      Show resulting HTML and don't update Confluence page content.
     -h --help      Show this screen and call 911.
     -v --version   Show version.
 `
@@ -72,9 +73,22 @@ func main() {
 		password, _   = args["-p"].(string)
 		targetURL, _  = args["-l"].(string)
 		targetFile, _ = args["-f"].(string)
+		dryRun        = args["--dry-run"].(bool)
 
 		optionsFile, shouldReadOptions = args["-c"].(string)
 	)
+
+	markdownData, err := ioutil.ReadFile(targetFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	htmlData := blackfriday.MarkdownCommon(markdownData)
+
+	if dryRun {
+		fmt.Println(string(htmlData))
+		os.Exit(0)
+	}
 
 	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil && !os.IsNotExist(err) {
@@ -131,13 +145,6 @@ func main() {
 			)
 		}
 	}
-
-	markdownData, err := ioutil.ReadFile(targetFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	htmlData := blackfriday.MarkdownCommon(markdownData)
 
 	url, err := url.Parse(targetURL)
 	if err != nil {
@@ -197,9 +204,13 @@ func updatePage(
 	}
 
 	if request.Raw.StatusCode != 200 {
+		output, _ := ioutil.ReadAll(request.Raw.Body)
+		defer request.Raw.Body.Close()
+
 		return fmt.Errorf(
-			"Confluence REST API returns unexpected HTTP status: %s",
-			request.Raw.Status,
+			"Confluence REST API returns unexpected HTTP status: %s, "+
+				"output: %s",
+			request.Raw.Status, output,
 		)
 	}
 
