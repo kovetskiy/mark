@@ -18,21 +18,31 @@ import (
 const (
 	usage = `Mark
 
-You can store user credentials in configuration file, which should be located
-in ~/.config/mark with following format:
+You can store a user credentials in the configuration file, which should be
+located in ~/.config/mark with following format:
 	user = "smith"
 	password = "matrixishere"
+where 'smith' it's your username, and 'matrixishere' it's your password.
+
+Mark can read Confluence page URL and markdown file path from another specified
+configuration file, which you can specify using -c <file> flag. It is very
+usable for git hooks. That file should have following format:
+	url = "http://confluence.local/pages/viewpage.action?pageId=123456"
+	file = "docs/README.md"
 
 Usage:
-	mark [-u <user>] [-p <pass>] -l <link> -f <file>
+	mark [-u <user>] [-p <pass>] -l <url> -f <file>
+	mark [-u <user>] [-p <pass>] -c <file>
 
 Options:
 	-u <user>   Use specified username for updating Confluence page, this
 					option can be specified using configuration file.
 	-p <pass>   Use specified password for updagin Confluence page, this
 					option can be specified using configuration file.
-	-l <link>   Edit specified Confluence page.
+	-l <url>   Edit specified Confluence page.
 	-f <file>   Use specified markdown file for converting to html.
+	-c <file>   Specify configuration file which should be used for reading
+					Confluence page URL and markdown file path.
 `
 )
 
@@ -50,14 +60,16 @@ func main() {
 	}
 
 	var (
-		username, _ = args["-u"].(string)
-		password, _ = args["-p"].(string)
-		targetLink  = args["-l"].(string)
-		targetFile  = args["-f"].(string)
+		username, _   = args["-u"].(string)
+		password, _   = args["-p"].(string)
+		targetURL, _  = args["-l"].(string)
+		targetFile, _ = args["-f"].(string)
+
+		optionsFile, shouldReadOptions = args["-c"].(string)
 	)
 
 	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
 
@@ -71,7 +83,7 @@ func main() {
 				)
 			}
 
-			log.Fatal("can't read username configuration variable: %s", err)
+			log.Fatalf("can't read username configuration variable: %s", err)
 		}
 	}
 
@@ -85,7 +97,30 @@ func main() {
 				)
 			}
 
-			log.Fatal("can't read password configuration variable: %s", err)
+			log.Fatalf("can't read password configuration variable: %s", err)
+		}
+	}
+
+	if shouldReadOptions {
+		optionsConfig, err := getConfig(optionsFile)
+		if err != nil {
+			log.Fatalf("can't read options config '%s': %s", optionsFile, err)
+		}
+
+		targetURL, err = optionsConfig.GetString("url")
+		if err != nil {
+			log.Fatal(
+				"can't read `url` value from options file (%s): %s",
+				optionsFile, err,
+			)
+		}
+
+		targetFile, err = optionsConfig.GetString("file")
+		if err != nil {
+			log.Fatal(
+				"can't read `file` value from options file (%s): %s",
+				optionsFile, err,
+			)
 		}
 	}
 
@@ -96,7 +131,7 @@ func main() {
 
 	htmlData := blackfriday.MarkdownCommon(markdownData)
 
-	url, err := url.Parse(targetLink)
+	url, err := url.Parse(targetURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,7 +143,7 @@ func main() {
 
 	pageID := url.Query().Get("pageId")
 	if pageID == "" {
-		log.Fatal("URL should contains 'pageId' parameter")
+		log.Fatalf("URL should contains 'pageId' parameter")
 	}
 
 	pageInfo, err := getPageInfo(api, pageID)
@@ -121,7 +156,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("page %s successfully updated\n", targetLink)
+	fmt.Printf("page %s successfully updated\n", targetURL)
 }
 
 func updatePage(
@@ -197,7 +232,11 @@ func getPageInfo(
 func getConfig(path string) (zhash.Hash, error) {
 	configData := map[string]interface{}{}
 	_, err := toml.DecodeFile(path, &configData)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
+		if os.IsNotExist(err) {
+			return zhash.NewHash(), err
+		}
+
 		return zhash.NewHash(), fmt.Errorf("can't decode toml file: %s", err)
 	}
 
