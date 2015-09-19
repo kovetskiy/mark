@@ -1,6 +1,6 @@
 # Mark
 
-Mark it's tool for syncing your markdown documentation with Atlassian
+Mark it's the tool for syncing your markdown documentation with Atlassian
 Confluence pages.
 
 This is very usable if you store documentation to your orthodox software in git

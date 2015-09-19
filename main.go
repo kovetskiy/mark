@@ -78,6 +78,34 @@ func main() {
 		optionsFile, shouldReadOptions = args["-c"].(string)
 	)
 
+	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal(err)
+	}
+
+	if shouldReadOptions {
+		optionsConfig, err := getConfig(optionsFile)
+		if err != nil {
+			log.Fatalf("can't read options config '%s': %s", optionsFile, err)
+		}
+
+		targetURL, err = optionsConfig.GetString("url")
+		if err != nil {
+			log.Fatal(
+				"can't read `url` value from options file (%s): %s",
+				optionsFile, err,
+			)
+		}
+
+		targetFile, err = optionsConfig.GetString("file")
+		if err != nil {
+			log.Fatal(
+				"can't read `file` value from options file (%s): %s",
+				optionsFile, err,
+			)
+		}
+	}
+
 	markdownData, err := ioutil.ReadFile(targetFile)
 	if err != nil {
 		log.Fatal(err)
@@ -88,11 +116,6 @@ func main() {
 	if dryRun {
 		fmt.Println(string(htmlData))
 		os.Exit(0)
-	}
-
-	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
-	if err != nil && !os.IsNotExist(err) {
-		log.Fatal(err)
 	}
 
 	if username == "" {
@@ -120,29 +143,6 @@ func main() {
 			}
 
 			log.Fatalf("can't read password configuration variable: %s", err)
-		}
-	}
-
-	if shouldReadOptions {
-		optionsConfig, err := getConfig(optionsFile)
-		if err != nil {
-			log.Fatalf("can't read options config '%s': %s", optionsFile, err)
-		}
-
-		targetURL, err = optionsConfig.GetString("url")
-		if err != nil {
-			log.Fatal(
-				"can't read `url` value from options file (%s): %s",
-				optionsFile, err,
-			)
-		}
-
-		targetFile, err = optionsConfig.GetString("file")
-		if err != nil {
-			log.Fatal(
-				"can't read `file` value from options file (%s): %s",
-				optionsFile, err,
-			)
 		}
 	}
 
