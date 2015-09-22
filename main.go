@@ -185,6 +185,18 @@ func updatePage(
 ) error {
 	nextPageVersion := pageInfo.Version.Number + 1
 
+	if len(pageInfo.Ancestors) == 0 {
+		return fmt.Errorf(
+			"Page '%s' info does not contain any information about parents",
+			pageID,
+		)
+	}
+
+	// picking only the last one, which is required by confluence
+	oldAncestors := []map[string]interface{}{
+		{"id": pageInfo.Ancestors[len(pageInfo.Ancestors)-1].Id},
+	}
+
 	payload := map[string]interface{}{
 		"id":    pageID,
 		"type":  "page",
@@ -193,9 +205,7 @@ func updatePage(
 			"number":    nextPageVersion,
 			"minorEdit": false,
 		},
-		"ancestors": []map[string]interface{}{
-			{"id": pageInfo.Ancestors[len(pageInfo.Ancestors)-1].Id},
-		},
+		"ancestors": oldAncestors,
 		"body": map[string]interface{}{
 			"storage": map[string]interface{}{
 				"value":          string(newContent),
