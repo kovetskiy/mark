@@ -56,10 +56,15 @@ Options:
 )
 
 type PageInfo struct {
-	Title   string `json:"title"`
+	Title string `json:"title"`
+
 	Version struct {
 		Number int64 `json:"number"`
 	} `json:"version"`
+
+	Ancestors []struct {
+		Id string `json:"id"`
+	} `json:"ancestors"`
 }
 
 func main() {
@@ -188,6 +193,9 @@ func updatePage(
 			"number":    nextPageVersion,
 			"minorEdit": false,
 		},
+		"ancestors": []map[string]interface{}{
+			{"id": pageInfo.Ancestors[len(pageInfo.Ancestors)-1].Id},
+		},
 		"body": map[string]interface{}{
 			"storage": map[string]interface{}{
 				"value":          string(newContent),
@@ -220,7 +228,10 @@ func updatePage(
 func getPageInfo(
 	api *gopencils.Resource, pageID string,
 ) (PageInfo, error) {
-	request, err := api.Res("content/"+pageID, &PageInfo{}).Get()
+	request, err := api.Res(
+		"content/"+pageID, &PageInfo{},
+	).Get(map[string]string{"expand": "ancestors,version"})
+
 	if err != nil {
 		return PageInfo{}, err
 	}
