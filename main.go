@@ -1,24 +1,27 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/bndr/gopencils"
-	"github.com/docopt/docopt-go"
+	"github.com/kovetskiy/godocs"
+	"github.com/kovetskiy/lorg"
+	"github.com/reconquest/colorgful"
+	"github.com/reconquest/ser-go"
 	"github.com/russross/blackfriday"
 	"github.com/zazab/zhash"
 )
 
 const (
-	usage = `Mark
-
-Mark it's tool for syncing your markdown files with Atlassian Confluence pages.
+	usage = `mark - tool for updating Atlassian Confluence pages from markdown.
 
 This is very usable if you store documentation to your orthodox software in git
 repository and don't want to do a handjob with updating Confluence page using
@@ -26,36 +29,68 @@ fucking tinymce wysiwyg enterprise core editor.
 
 You can store a user credentials in the configuration file, which should be
 located in ~/.config/mark with following format:
-    username = "smith"
-    password = "matrixishere"
-where 'smith' it's your username, and 'matrixishere' it's your password.
+  username = "smith"
+  password = "matrixishere"
+  base_url = "http://confluence.local"
+where 'smith' it's your username, 'matrixishere' it's your password and
+'http://confluence.local' is base URL for your Confluence instance.
 
 Mark can read Confluence page URL and markdown file path from another specified
 configuration file, which you can specify using -c <file> flag. It is very
 usable for git hooks. That file should have following format:
-    url = "http://confluence.local/pages/viewpage.action?pageId=123456"
-    file = "docs/README.md"
+  url = "http://confluence.local/pages/viewpage.action?pageId=123456"
+  file = "docs/README.md"
+
+Mark understands extended file format, which, still being valid markdown,
+contains several metadata headers, which can be used to locate page inside
+Confluence instance and update it accordingly.
+
+File in extended format should follow specification:
+
+  []:# (Space: <space key>)
+  []:# (Parent: <parent 1>)
+  []:# (Parent: <parent 2>)
+  []:# (Title: <title>)
+
+  <page contents>
+
+There can be any number of 'Parent' headers, if mark can't find specified
+parent by title, it will be created.
+
+Also, optional following headers are supported:
+
+  * []:# (Layout: <article|plain>)
+
+    - (default) article: content will be put in narrow column for ease of
+      reading;
+    - plain: content will fill all page;
 
 Usage:
-    mark [--dry-run] [-u <username>] [-p <password>] -l <url> -f <file>
-    mark [--dry-run] [-u <username>] [-p <password>] -c <file>
-    mark -v | --version
-	mark -h | --help
+  mark [options] [-u <username>] [-p <password>] [-k] [-l <url>] -f <file>
+  mark [options] [-u <username>] [-p <password>] [-k] [-n] -c <file>
+  mark -v | --version
+  mark -h | --help
 
 Options:
-    -u <username>  Use specified username for updating Confluence page.
-    -p <password>  Use specified password for updating Confluence page.
-    -l <url>       Edit specified Confluence page.
-    -f <file>      Use specified markdown file for converting to html.
-    -c <file>      Specify configuration file which should be used for reading
-                   Confluence page URL and markdown file path.
-	--dry-run      Show resulting HTML and don't update Confluence page content.
-    -h --help      Show this screen and call 911.
-    -v --version   Show version.
+  -u <username>  Use specified username for updating Confluence page.
+  -p <password>  Use specified password for updating Confluence page.
+  -l <url>       Edit specified Confluence page.
+                  If -l is not specified, file should contain metadata (see
+                  above).
+  -f <file>      Use specified markdown file for converting to html.
+  -c <file>      Specify configuration file which should be used for reading
+                  Confluence page URL and markdown file path.
+  -k             Lock page editing to current user only to prevent accidental
+                  manual edits over Confluence Web UI.
+  --dry-run      Show resulting HTML and don't update Confluence page content.
+  --trace        Enable trace logs.
+  -h --help      Show this screen and call 911.
+  -v --version   Show version.
 `
 )
 
 type PageInfo struct {
+	ID    string `json:"id"`
 	Title string `json:"title"`
 
 	Version struct {
@@ -63,12 +98,35 @@ type PageInfo struct {
 	} `json:"version"`
 
 	Ancestors []struct {
-		Id string `json:"id"`
+		Id    string `json:"id"`
+		Title string `json:"title"`
 	} `json:"ancestors"`
+
+	Links struct {
+		Full string `json:"webui"`
+	} `json:"_links"`
 }
 
+const (
+	HeaderParent string = `Parent`
+	HeaderSpace         = `Space`
+	HeaderTitle         = `Title`
+	HeaderLayout        = `Layout`
+)
+
+type Meta struct {
+	Parents []string
+	Space   string
+	Title   string
+	Layout  string
+}
+
+var (
+	logger = lorg.NewLog()
+)
+
 func main() {
-	args, err := docopt.Parse(usage, nil, true, "mark 1.0", false, true)
+	args, err := godocs.Parse(usage, "mark 1.0", godocs.UsePager)
 	if err != nil {
 		panic(err)
 	}
@@ -79,24 +137,43 @@ func main() {
 		targetURL, _  = args["-l"].(string)
 		targetFile, _ = args["-f"].(string)
 		dryRun        = args["--dry-run"].(bool)
+		editLock      = args["-k"].(bool)
+		trace         = args["--trace"].(bool)
 
 		optionsFile, shouldReadOptions = args["-c"].(string)
 	)
 
+	if trace {
+		logger.SetLevel(lorg.LevelTrace)
+	}
+
+	logFormat := `${time} ${level:[%s]:right:true} %s`
+
+	if format := os.Getenv("LOG_FORMAT"); format != "" {
+		logFormat = format
+	}
+
+	logger.SetFormat(colorgful.MustApplyDefaultTheme(
+		logFormat,
+		colorgful.Default,
+	))
+
 	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil && !os.IsNotExist(err) {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	if shouldReadOptions {
 		optionsConfig, err := getConfig(optionsFile)
 		if err != nil {
-			log.Fatalf("can't read options config '%s': %s", optionsFile, err)
+			logger.Fatalf(
+				"can't read options config '%s': %s", optionsFile, err,
+			)
 		}
 
 		targetURL, err = optionsConfig.GetString("url")
 		if err != nil {
-			log.Fatal(
+			logger.Fatal(
 				"can't read `url` value from options file (%s): %s",
 				optionsFile, err,
 			)
@@ -104,7 +181,7 @@ func main() {
 
 		targetFile, err = optionsConfig.GetString("file")
 		if err != nil {
-			log.Fatal(
+			logger.Fatal(
 				"can't read `file` value from options file (%s): %s",
 				optionsFile, err,
 			)
@@ -113,10 +190,15 @@ func main() {
 
 	markdownData, err := ioutil.ReadFile(targetFile)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	htmlData := blackfriday.MarkdownCommon(markdownData)
+	meta, err := extractMeta(markdownData)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	htmlData := compileMarkdown(markdownData)
 
 	if dryRun {
 		fmt.Println(string(htmlData))
@@ -127,13 +209,15 @@ func main() {
 		username, err = config.GetString("username")
 		if err != nil {
 			if zhash.IsNotFound(err) {
-				log.Fatal(
+				logger.Fatal(
 					"Confluence username should be specified using -u " +
 						"flag or be stored in configuration file",
 				)
 			}
 
-			log.Fatalf("can't read username configuration variable: %s", err)
+			logger.Fatalf(
+				"can't read username configuration variable: %s", err,
+			)
 		}
 	}
 
@@ -141,132 +225,353 @@ func main() {
 		password, err = config.GetString("password")
 		if err != nil {
 			if zhash.IsNotFound(err) {
-				log.Fatal(
+				logger.Fatal(
 					"Confluence password should be specified using -p " +
 						"flag or be stored in configuration file",
 				)
 			}
 
-			log.Fatalf("can't read password configuration variable: %s", err)
+			logger.Fatalf(
+				"can't read password configuration variable: %s", err,
+			)
 		}
 	}
 
 	url, err := url.Parse(targetURL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	api := gopencils.Api(
-		"http://"+url.Host+"/rest/api",
-		&gopencils.BasicAuth{username, password},
-	)
+	baseURL := url.Scheme + "://" + url.Host
+
+	if url.Host == "" {
+		baseURL, err = config.GetString("base_url")
+		if err != nil {
+			if zhash.IsNotFound(err) {
+				logger.Fatal(
+					"Confluence base URL should be specified using -l " +
+						"flag or be stored in configuration file",
+				)
+			}
+
+			logger.Fatalf(
+				"can't read base_url configuration variable: %s", err,
+			)
+		}
+	}
+
+	baseURL = strings.TrimRight(baseURL, `/`)
+
+	api := NewAPI(baseURL, username, password)
 
 	pageID := url.Query().Get("pageId")
-	if pageID == "" {
-		log.Fatalf("URL should contains 'pageId' parameter")
+
+	if pageID != "" && meta != nil {
+		logger.Warningf(
+			`specified file contains metadata, ` +
+				`but it will be ignore due specified command line URL`,
+		)
+
+		meta = nil
 	}
 
-	pageInfo, err := getPageInfo(api, pageID)
+	if pageID == "" && meta == nil {
+		logger.Fatalf(
+			`specified file doesn't contain metadata ` +
+				`and URL is not specified via command line ` +
+				`or doesn't contain pageId GET-parameter`,
+		)
+	}
+
+	var target *PageInfo
+
+	if meta != nil {
+		page, err := resolvePage(api, meta)
+		if err != nil {
+			logger.Fatal(err)
+		}
+
+		target = page
+	} else {
+		if pageID == "" {
+			logger.Fatalf("URL should provide 'pageId' GET-parameter")
+		}
+
+		page, err := api.getPageByID(pageID)
+		if err != nil {
+			logger.Fatal(err)
+		}
+
+		target = page
+	}
+
+	err = api.updatePage(
+		target,
+		MacroLayout{meta.Layout, [][]byte{htmlData}}.Render(),
+	)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	err = updatePage(api, pageID, pageInfo, htmlData)
-	if err != nil {
-		log.Fatal(err)
+	if editLock {
+		logger.Infof(
+			`edit locked on page '%s' by user '%s' to prevent manual edits`,
+			target.Title,
+			username,
+		)
+
+		err := api.setPagePermissions(target, RestrictionEdit, []Restriction{
+			{User: username},
+		})
+		if err != nil {
+			logger.Fatal(err)
+		}
 	}
 
-	fmt.Printf("page %s successfully updated\n", targetURL)
+	fmt.Printf(
+		"page successfully updated: %s\n",
+		baseURL+target.Links.Full,
+	)
+
 }
 
-func updatePage(
-	api *gopencils.Resource, pageID string,
-	pageInfo PageInfo, newContent []byte,
-) error {
-	nextPageVersion := pageInfo.Version.Number + 1
+// compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
+// equivalent, because blackfriday markdown parser replaces that tags with
+// <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
+func compileMarkdown(markdown []byte) []byte {
+	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
 
-	if len(pageInfo.Ancestors) == 0 {
-		return fmt.Errorf(
-			"Page '%s' info does not contain any information about parents",
-			pageID,
-		)
+	tags := regexp.MustCompile(`<(/?\S+):(\S+)>`)
+
+	markdown = tags.ReplaceAll(
+		markdown,
+		[]byte(`<$1`+colon.String()+`$2>`),
+	)
+
+	renderer := ConfluenceRenderer{
+		blackfriday.HtmlRenderer(
+			blackfriday.HTML_USE_XHTML|
+				blackfriday.HTML_USE_SMARTYPANTS|
+				blackfriday.HTML_SMARTYPANTS_FRACTIONS|
+				blackfriday.HTML_SMARTYPANTS_DASHES|
+				blackfriday.HTML_SMARTYPANTS_LATEX_DASHES,
+			"", "",
+		),
 	}
 
-	// picking only the last one, which is required by confluence
-	oldAncestors := []map[string]interface{}{
-		{"id": pageInfo.Ancestors[len(pageInfo.Ancestors)-1].Id},
-	}
-
-	payload := map[string]interface{}{
-		"id":    pageID,
-		"type":  "page",
-		"title": pageInfo.Title,
-		"version": map[string]interface{}{
-			"number":    nextPageVersion,
-			"minorEdit": false,
+	html := blackfriday.MarkdownOptions(
+		markdown,
+		renderer,
+		blackfriday.Options{
+			Extensions: blackfriday.EXTENSION_NO_INTRA_EMPHASIS |
+				blackfriday.EXTENSION_TABLES |
+				blackfriday.EXTENSION_FENCED_CODE |
+				blackfriday.EXTENSION_AUTOLINK |
+				blackfriday.EXTENSION_STRIKETHROUGH |
+				blackfriday.EXTENSION_SPACE_HEADERS |
+				blackfriday.EXTENSION_HEADER_IDS |
+				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
+				blackfriday.EXTENSION_DEFINITION_LISTS,
 		},
-		"ancestors": oldAncestors,
-		"body": map[string]interface{}{
-			"storage": map[string]interface{}{
-				"value":          string(newContent),
-				"representation": "storage",
-			},
-		},
-	}
+	)
 
-	request, err := api.Res(
-		"content/"+pageID, &map[string]interface{}{},
-	).Put(payload)
-	if err != nil {
-		return err
-	}
+	html = colon.ReplaceAll(html, []byte(`:`))
 
-	if request.Raw.StatusCode != 200 {
-		output, _ := ioutil.ReadAll(request.Raw.Body)
-		defer request.Raw.Body.Close()
-
-		return fmt.Errorf(
-			"Confluence REST API returns unexpected HTTP status: %s, "+
-				"output: %s",
-			request.Raw.Status, output,
-		)
-	}
-
-	return nil
+	return html
 }
 
-func getPageInfo(
-	api *gopencils.Resource, pageID string,
-) (PageInfo, error) {
-	request, err := api.Res(
-		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
-
+func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
+	page, err := api.findPage(meta.Space, meta.Title)
 	if err != nil {
-		return PageInfo{}, err
-	}
-
-	if request.Raw.StatusCode == 401 {
-		return PageInfo{}, fmt.Errorf("authentification failed")
-	}
-
-	if request.Raw.StatusCode == 404 {
-		return PageInfo{}, fmt.Errorf(
-			"page with id '%s' not found, Confluence REST API returns 404",
-			pageID,
+		return nil, ser.Errorf(
+			err,
+			"error during finding page '%s': %s",
+			meta.Title,
 		)
 	}
 
-	if request.Raw.StatusCode != 200 {
-		return PageInfo{}, fmt.Errorf(
-			"Confluence REST API returns unexpected HTTP status: %s",
-			request.Raw.Status,
+	ancestry := meta.Parents
+	if page != nil {
+		ancestry = append(ancestry, page.Title)
+	}
+
+	if len(ancestry) > 0 {
+		page, err := validateAncestry(
+			api,
+			meta.Space,
+			ancestry,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if page == nil {
+			logger.Warningf(
+				"page '%s' is not found ",
+				meta.Parents[len(ancestry)-1],
+			)
+		}
+
+		path := meta.Parents
+		path = append(path, meta.Title)
+
+		logger.Debugf(
+			"resolving page path: ??? > %s",
+			strings.Join(path, ` > `),
 		)
 	}
 
-	response := request.Response.(*PageInfo)
+	parent, err := ensureAncestry(
+		api,
+		meta.Space,
+		meta.Parents,
+	)
+	if err != nil {
+		return nil, ser.Errorf(
+			err,
+			"can't create ancestry tree: %s; error: %s",
+			strings.Join(meta.Parents, ` > `),
+		)
+	}
 
-	return *response, nil
+	titles := []string{}
+	for _, page := range parent.Ancestors {
+		titles = append(titles, page.Title)
+	}
+
+	titles = append(titles, parent.Title)
+
+	logger.Infof(
+		"page will be stored under path: %s > %s",
+		strings.Join(titles, ` > `),
+		meta.Title,
+	)
+
+	if page == nil {
+		page, err := api.createPage(meta.Space, parent, meta.Title, ``)
+		if err != nil {
+			return nil, ser.Errorf(
+				err,
+				"can't create page '%s': %s",
+				meta.Title,
+			)
+		}
+
+		return page, nil
+	}
+
+	return page, nil
+}
+
+func ensureAncestry(
+	api *API,
+	space string,
+	ancestry []string,
+) (*PageInfo, error) {
+	var parent *PageInfo
+
+	rest := ancestry
+
+	for i, title := range ancestry {
+		page, err := api.findPage(space, title)
+		if err != nil {
+			return nil, ser.Errorf(
+				err,
+				`error during finding parent page with title '%s': %s`,
+				title,
+			)
+		}
+
+		if page == nil {
+			break
+		}
+
+		logger.Tracef("parent page '%s' exists: %s", title, page.Links.Full)
+
+		rest = ancestry[i:]
+		parent = page
+	}
+
+	if parent != nil {
+		rest = rest[1:]
+	} else {
+		page, err := api.findRootPage(space)
+		if err != nil {
+			return nil, ser.Errorf(
+				err,
+				"can't find root page for space '%s': %s", space,
+			)
+		}
+
+		parent = page
+	}
+
+	if len(rest) == 0 {
+		return parent, nil
+	}
+
+	logger.Debugf(
+		"empty pages under '%s' to be created: %s",
+		parent.Title,
+		strings.Join(rest, ` > `),
+	)
+
+	for _, title := range rest {
+		page, err := api.createPage(space, parent, title, ``)
+		if err != nil {
+			return nil, ser.Errorf(
+				err,
+				`error during creating parent page with title '%s': %s`,
+				title,
+			)
+		}
+
+		parent = page
+	}
+
+	return parent, nil
+}
+
+func validateAncestry(
+	api *API,
+	space string,
+	ancestry []string,
+) (*PageInfo, error) {
+	page, err := api.findPage(space, ancestry[len(ancestry)-1])
+	if err != nil {
+		return nil, err
+	}
+
+	if page == nil {
+		return nil, nil
+	}
+
+	if len(page.Ancestors) < 1 {
+		return nil, fmt.Errorf(`page '%s' has no parents`, page.Title)
+	}
+
+	if len(page.Ancestors) < len(ancestry) {
+		return nil, fmt.Errorf(
+			"page '%s' has fewer parents than specified: %s",
+			page.Title,
+			strings.Join(ancestry, ` > `),
+		)
+	}
+
+	// skipping root article title
+	for i, ancestor := range page.Ancestors[1:len(ancestry)] {
+		if ancestor.Title != ancestry[i] {
+			return nil, fmt.Errorf(
+				"broken ancestry tree; expected tree: %s; "+
+					"encountered '%s' at position of '%s'",
+				strings.Join(ancestry, ` > `),
+				ancestor.Title,
+				ancestry[i],
+			)
+		}
+	}
+
+	return page, nil
 }
 
 func getConfig(path string) (zhash.Hash, error) {
@@ -277,8 +582,80 @@ func getConfig(path string) (zhash.Hash, error) {
 			return zhash.NewHash(), err
 		}
 
-		return zhash.NewHash(), fmt.Errorf("can't decode toml file: %s", err)
+		return zhash.NewHash(), ser.Errorf(
+			err,
+			"can't decode toml file: %s",
+		)
 	}
 
 	return zhash.HashFromMap(configData), nil
+}
+
+func extractMeta(data []byte) (*Meta, error) {
+	headerPattern := regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
+
+	var meta *Meta
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(data))
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if err := scanner.Err(); err != nil {
+			return nil, err
+		}
+
+		matches := headerPattern.FindStringSubmatch(line)
+		if matches == nil {
+			break
+		}
+
+		if meta == nil {
+			meta = &Meta{}
+		}
+
+		header := strings.Title(matches[1])
+
+		switch header {
+		case HeaderParent:
+			meta.Parents = append(meta.Parents, matches[2])
+
+		case HeaderSpace:
+			meta.Space = strings.ToUpper(matches[2])
+
+		case HeaderTitle:
+			meta.Title = strings.TrimSpace(matches[2])
+
+		case HeaderLayout:
+			meta.Layout = strings.TrimSpace(matches[2])
+
+		default:
+			logger.Errorf(
+				`encountered unknown header '%s' line: %#v`,
+				header,
+				line,
+			)
+
+			continue
+		}
+	}
+
+	if meta == nil {
+		return nil, nil
+	}
+
+	if meta.Space == "" {
+		return nil, fmt.Errorf(
+			"space key is not set (%s header is not set)",
+			HeaderSpace,
+		)
+	}
+
+	if meta.Title == "" {
+		return nil, fmt.Errorf(
+			"page title is not set (%s header is not set)",
+			HeaderTitle,
+		)
+	}
+
+	return meta, nil
 }
