@@ -49,16 +49,16 @@ mark -v | --version
 mark -h | --help
 ```
 
-- `-u <username>` - Use specified username for updating Confluence page.
-- `-p <password>` - Use specified password for updating Confluence page.
-- `-l <url>` - Edit specified Confluence page.
-  If -l is not specified, file should contain metadata (see above).
-- `-f <file>` - Use specified markdown file for converting to html.
-- `-c <file>` - Specify configuration file which should be used for reading
-  Confluence page URL and markdown file path.
-- `-k` - Lock page editing to current user only to prevent accidental
-   manual edits over Confluence Web UI.
-- `--dry-run` - Show resulting HTML and don't update Confluence page content.
-- `--trace` - Enable trace logs.
-- `-v | --version`  - Show version.
-- `-h | --help` - Show help screen and call 911.
+- `-u <username>` — Use specified username for updating Confluence page.
+- `-p <password>` — Use specified password for updating Confluence page.
+- `-l <url>` — Edit specified Confluence page.
+    If -l is not specified, file should contain metadata (see above).
+- `-f <file>` — Use specified markdown file for converting to html.
+- `-c <file>` — Specify configuration file which should be used for reading
+    Confluence page URL and markdown file path.
+- `-k` — Lock page editing to current user only to prevent accidental
+    manual edits over Confluence Web UI.
+- `--dry-run` — Show resulting HTML and don't update Confluence page content.
+- `--trace` — Enable trace logs.
+- `-v | --version`  — Show version.
+- `-h | --help` — Show help screen and call 911.
