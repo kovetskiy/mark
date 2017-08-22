@@ -198,8 +198,10 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	htmlData := compileMarkdown(markdownData)
+	images := []string {}
+	htmlData := compileMarkdown(markdownData, &images)
 
+	
 	if dryRun {
 		fmt.Println(string(htmlData))
 		os.Exit(0)
@@ -313,6 +315,14 @@ func main() {
 		logger.Fatal(err)
 	}
 
+
+	// Uplodad images
+	for _, image := range images {
+		imagepath := filepath.Join(filepath.Dir(targetFile), image)
+		api.addAttachment(target.ID, imagepath)
+    }
+
+
 	if editLock {
 		logger.Infof(
 			`edit locked on page '%s' by user '%s' to prevent manual edits`,
@@ -334,11 +344,11 @@ func main() {
 	)
 
 }
-
+ 
 // compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
 // equivalent, because blackfriday markdown parser replaces that tags with
 // <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
-func compileMarkdown(markdown []byte) []byte {
+func compileMarkdown(markdown []byte, images *[]string) []byte {
 	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
 
 	tags := regexp.MustCompile(`<(/?\S+):(\S+)>`)
@@ -348,6 +358,7 @@ func compileMarkdown(markdown []byte) []byte {
 		[]byte(`<$1`+colon.String()+`$2>`),
 	)
 
+	
 	renderer := ConfluenceRenderer{
 		blackfriday.HtmlRenderer(
 			blackfriday.HTML_USE_XHTML|
@@ -356,7 +367,8 @@ func compileMarkdown(markdown []byte) []byte {
 				blackfriday.HTML_SMARTYPANTS_DASHES|
 				blackfriday.HTML_SMARTYPANTS_LATEX_DASHES,
 			"", "",
-		),
+		), 
+		images, 
 	}
 
 	html := blackfriday.MarkdownOptions(
@@ -373,7 +385,7 @@ func compileMarkdown(markdown []byte) []byte {
 				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
 				blackfriday.EXTENSION_DEFINITION_LISTS,
 		},
-	)
+	) 
 
 	html = colon.ReplaceAll(html, []byte(`:`))
 

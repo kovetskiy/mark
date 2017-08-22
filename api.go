@@ -2,8 +2,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"io"
+	"bytes"
 	"io/ioutil"
-
+	"path/filepath"
+	"mime/multipart"
+	"net/textproto"
 	"github.com/bndr/gopencils"
 )
 
@@ -274,5 +279,79 @@ func (api *API) setPagePermissions(
 		)
 	}
 
+	return nil
+}
+
+func (api *API) addAttachment(
+	pageId string,
+	path string,
+) error {
+
+	
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Stat()
+	if err != nil {
+		return err
+	}
+
+ 	filename := filepath.Base(path)
+	extension := filepath.Ext(path)
+	// name := path[0:len(filename)-len(extension)]
+ 
+	res :=  api.rest.Res( "content/"+pageId+"/child/attachment", nil)
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename ))
+
+	if extension == ".png" {
+		h.Set("Content-Type", "image/png")
+	} else  if extension == ".jpg" || extension == ".jepg" {
+		h.Set("Content-Type", "image/jepg")
+	} else  {
+		h.Set("Content-Type", "image/*")
+	}
+	part, err :=  writer.CreatePart(h)
+
+	if err != nil {
+		return err
+	}
+	io.Copy(part, file)
+	writer.WriteField("comment", "imported from " + path)
+	writer.WriteField("minorEdit","true");
+	err = writer.Close()
+	if err != nil {
+		return  err
+	}
+
+	res.Payload =  body;
+	res.Headers.Add("Content-Type", writer.FormDataContentType())
+	res.Headers.Add("X-Atlassian-Token","no-check");
+	request, err := res.Post()
+
+	logger.Warningf("Add attachment: \n%#v \n%#v (%#v)",res, request.Raw, err)
+
+	if err != nil {
+		return err
+	}
+
+	if request.Raw.StatusCode == 401 {
+		return fmt.Errorf("authentification failed")
+	}
+
+	if request.Raw.StatusCode != 200 {
+		return fmt.Errorf(
+			"Confluence REST API returns unexpected non-200 HTTP status: %s",
+			request.Raw.Status,
+		)
+	}
+	
 	return nil
 }
