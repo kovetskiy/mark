@@ -3,13 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"fmt"
-	"io/ioutil"
-	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
+	"fmt"
+	"os"
+	"path/filepath"
+	"encoding/xml"
+	"io"
+	"io/ioutil"
+	"net/url"
 
 	"github.com/BurntSushi/toml"
 	"github.com/kovetskiy/godocs"
@@ -52,7 +54,7 @@ File in extended format should follow specification:
   []:# (Parent: <parent 2>)
   []:# (Title: <title>)
 
-  <page contents>
+  <page s>
 
 There can be any number of 'Parent' headers, if mark can't find specified
 parent by title, it will be created.
@@ -61,9 +63,9 @@ Also, optional following headers are supported:
 
   * []:# (Layout: <article|plain>)
 
-    - (default) article: content will be put in narrow column for ease of
+    - (default) article:  will be put in narrow column for ease of
       reading;
-    - plain: content will fill all page;
+    - plain:  will fill all page;
 
 Usage:
   mark [options] [-u <username>] [-p <password>] [-k] [-l <url>] -f <file>
@@ -82,16 +84,26 @@ Options:
                   Confluence page URL and markdown file path.
   -k             Lock page editing to current user only to prevent accidental
                   manual edits over Confluence Web UI.
-  --dry-run      Show resulting HTML and don't update Confluence page content.
+  --dry-run      Show resulting HTML and don't update Confluence page .
   --trace        Enable trace logs.
   -h --help      Show this screen and call 911.
   -v --version   Show version.
 `
 )
 
+type StorageInfo struct {
+	Value string `json:"value"`
+	Representation string `json:"representation"`
+}
+
 type PageInfo struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	
+	Body struct {
+		Storage StorageInfo `json:"storage",omitempty`
+		View StorageInfo `json:"view",omitempty`
+	} `json:"body"`
 
 	Version struct {
 		Number int64 `json:"number"`
@@ -104,6 +116,18 @@ type PageInfo struct {
 
 	Links struct {
 		Full string `json:"webui"`
+	} `json:"_links"`
+}
+type AttachmentInfo struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	
+	Data  []byte `json:"__data"`
+
+	Status string `json:"status"`
+	Links struct {
+		Full string `json:"webui"`
+		Download string `json:"download"`
 	} `json:"_links"`
 }
 
@@ -124,6 +148,58 @@ type Meta struct {
 var (
 	logger = lorg.NewLog()
 )
+
+
+func formatXML(data []byte) ([]byte, error) {
+    b := &bytes.Buffer{}
+    decoder := xml.NewDecoder(bytes.NewReader(data))
+    encoder := xml.NewEncoder(b)
+    encoder.Indent("", "  ")
+    for {
+		token, err := decoder.Token()
+		
+		
+		startElement, ok := token.(xml.StartElement)
+		if ok &&  startElement.Name.Space== "ac" && strings.HasPrefix(startElement.Name.Local , "layout") {
+			continue
+		}
+
+		if ok &&  startElement.Name.Space== "ac" &&  startElement.Name.Local == "structured-macro" {
+			// remove macro-id
+			a := startElement.Attr;
+			for i := 0; i < len(a); i ++ {
+				attribute := a[i]
+				if attribute.Name.Space == "ac" && attribute.Name.Local == "macro-id" {
+					a[i] = a[len(a)-1]
+					a = a[:len(a)-1]
+					startElement.Attr = a
+					token = startElement
+					break;
+				}
+			}
+		}
+
+		endElement, ok := token.(xml.EndElement)
+		if ok &&  endElement.Name.Space== "ac" && strings.HasPrefix(endElement.Name.Local , "layout") {
+			continue
+		}
+
+
+
+	 
+        if err == io.EOF {
+            encoder.Flush()
+            return b.Bytes(), nil
+        }
+        if err != nil {
+            return nil, err
+        }
+        err = encoder.EncodeToken(token)
+        if err != nil {
+            return nil, err
+        }
+    }
+}
 
 func main() {
 	args, err := godocs.Parse(usage, "mark 1.0", godocs.UsePager)
@@ -198,8 +274,10 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	htmlData := compileMarkdown(markdownData)
+	images := map[string]MacroImage {}
+	htmlData := compileMarkdown(markdownData, filepath.Dir(targetFile), &images)
 
+	
 	if dryRun {
 		fmt.Println(string(htmlData))
 		os.Exit(0)
@@ -305,13 +383,30 @@ func main() {
 		target = page
 	}
 
-	err = api.updatePage(
-		target,
-		MacroLayout{meta.Layout, [][]byte{htmlData}}.Render(),
-	)
-	if err != nil {
-		logger.Fatal(err)
-	}
+	 //  any changes?
+	fromattedExisting, err := formatXML([]byte(target.Body.Storage.Value))
+	fromattedNew, err := formatXML(htmlData)
+	if string(fromattedExisting) != string(fromattedNew) {
+		logger.Debug("Updating page")
+		err = api.updatePage(
+			target,
+			MacroLayout{meta.Layout, [][]byte{htmlData}}.Render(),
+		)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	}  
+
+	// Uplodad images
+	for _, imageMacro := range images {
+		
+		existingAttachment, _ := api.getAttachment(target.ID, imageMacro.Path)
+		if existingAttachment == nil  {
+			api.ensureAttachment(target.ID, imageMacro.Path, imageMacro.Title, imageMacro.Data, nil)
+		} else {
+			api.ensureAttachment(target.ID, imageMacro.Path, imageMacro.Title, imageMacro.Data, existingAttachment)
+		}
+    }
 
 	if editLock {
 		logger.Infof(
@@ -334,11 +429,11 @@ func main() {
 	)
 
 }
-
+ 
 // compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
 // equivalent, because blackfriday markdown parser replaces that tags with
 // <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
-func compileMarkdown(markdown []byte) []byte {
+func compileMarkdown(markdown []byte, basePath string,  images *map[string]MacroImage) []byte {
 	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
 
 	tags := regexp.MustCompile(`<(/?\S+):(\S+)>`)
@@ -348,6 +443,7 @@ func compileMarkdown(markdown []byte) []byte {
 		[]byte(`<$1`+colon.String()+`$2>`),
 	)
 
+	
 	renderer := ConfluenceRenderer{
 		blackfriday.HtmlRenderer(
 			blackfriday.HTML_USE_XHTML|
@@ -356,7 +452,9 @@ func compileMarkdown(markdown []byte) []byte {
 				blackfriday.HTML_SMARTYPANTS_DASHES|
 				blackfriday.HTML_SMARTYPANTS_LATEX_DASHES,
 			"", "",
-		),
+		), 
+		basePath,
+		images, 
 	}
 
 	html := blackfriday.MarkdownOptions(
@@ -373,7 +471,7 @@ func compileMarkdown(markdown []byte) []byte {
 				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
 				blackfriday.EXTENSION_DEFINITION_LISTS,
 		},
-	)
+	) 
 
 	html = colon.ReplaceAll(html, []byte(`:`))
 
