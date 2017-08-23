@@ -62,3 +62,7 @@ mark -h | --help
 - `--trace` — Enable trace logs.
 - `-v | --version`  — Show version.
 - `-h | --help` — Show help screen and call 911.
+
+# changes by autonubil
+- only updated changed pages
+- upload local images as attachments

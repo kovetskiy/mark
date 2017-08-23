@@ -2,24 +2,14 @@ package main
 
 import (
 	"bytes"
+	"path/filepath"
 	"github.com/russross/blackfriday"
 )
  
-
-func appendIfMissing(slicePtr *[]string, data string) {
-	slice := *slicePtr
-    for _, ele := range slice {
-        if ele == data {
-            return
-        }
-    }
-    *slicePtr = append(slice, data)
-}
-
-
 type ConfluenceRenderer struct {
 	blackfriday.Renderer
-	images * []string
+	basePath string
+	Images * map[string]MacroImage
 }
 
 func (renderer ConfluenceRenderer) BlockCode(
@@ -77,32 +67,42 @@ func attrEscape(out *bytes.Buffer, src []byte) {
 }
 
 
-func (renderer ConfluenceRenderer) Image(
+
+
+func (renderer ConfluenceRenderer) Image (
 	out *bytes.Buffer, 
 	link []byte, 
 	title []byte, 
 	alt []byte,
 ) {
-	
-
 	if (!bytes.Contains(link, []byte(`/`)) ) {
-		logger.Tracef("Local Image: %s (%s) -> %s\n", title, alt, link)
-		appendIfMissing(renderer.images, string(link))
-		out.WriteString(MacroImage{link, title, alt, 250 }.Render())
-	} else {
-		out.WriteString("<img src=\"")
-		// options.maybeWriteAbsolutePrefix(out, link)
-		attrEscape(out, link)
-		out.WriteString("\" alt=\"")
-		if len(alt) > 0 {
-			attrEscape(out, alt)
+	 	existing_macro, ok := (*renderer.Images)[string(link)]
+		if ok {
+			existing_macro.Render()
+			return
 		}
-		if len(title) > 0 {
-			out.WriteString("\" title=\"")
-			attrEscape(out, title)
+		logger.Tracef("Local Image: %s (%s) -> %s\n", string(title), string(alt), string(link))
+		macro, err := newMacroImage(filepath.Join(renderer.basePath,  string(link)), string(title), string(alt) )
+		if (err == nil) {
+			(*renderer.Images)[string(link)] = *macro
+			out.WriteString(macro.Render())
+			return;
 		}
-
-		out.WriteString("\" />")
-	}
+	} 
 	
+	out.WriteString("<img alt=\"")
+	if len(alt) > 0 {
+		attrEscape(out, alt)
+	}
+	out.WriteString("\"")
+	if len(title) > 0 {
+		out.WriteString(" title=\"")
+		attrEscape(out, title)
+		out.WriteString("\"")
+	}
+	out.WriteString(" src=\"")
+	// options.maybeWriteAbsolutePrefix(out, link)
+	attrEscape(out, link)
+
+	out.WriteString("\" />")
 }
