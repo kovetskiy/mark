@@ -35,6 +35,7 @@ push:
 	@echo :: pushing image $(TAG)
 	@docker tag $(NAME):$(VERSION) $(TAG)
 	@docker push $(TAG)
+	@docker tag $(NAME):$(VERSION) $(REMOTE)/$(NAME):latest
 	@docker push $(REMOTE)/$(NAME):latest
 
 clean:
