@@ -67,25 +67,28 @@ Also, optional following headers are supported:
 
 Usage:
   mark [options] [-u <username>] [-p <password>] [-k] [-l <url>] -f <file>
+  mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] -f <file>
   mark [options] [-u <username>] [-p <password>] [-k] [-n] -c <file>
   mark -v | --version
   mark -h | --help
 
 Options:
-  -u <username>  Use specified username for updating Confluence page.
-  -p <password>  Use specified password for updating Confluence page.
-  -l <url>       Edit specified Confluence page.
-                  If -l is not specified, file should contain metadata (see
-                  above).
-  -f <file>      Use specified markdown file for converting to html.
-  -c <file>      Specify configuration file which should be used for reading
-                  Confluence page URL and markdown file path.
-  -k             Lock page editing to current user only to prevent accidental
-                  manual edits over Confluence Web UI.
-  --dry-run      Show resulting HTML and don't update Confluence page content.
-  --trace        Enable trace logs.
-  -h --help      Show this screen and call 911.
-  -v --version   Show version.
+  -u <username>        Use specified username for updating Confluence page.
+  -p <password>        Use specified password for updating Confluence page.
+  -l <url>             Edit specified Confluence page.
+                        If -l is not specified, file should contain metadata (see
+                        above).
+  -b --base-url <url>  Base URL for Confluence.
+                        Alternative option for base_url config field.
+  -f <file>            Use specified markdown file for converting to html.
+  -c <file>            Specify configuration file which should be used for reading
+                        Confluence page URL and markdown file path.
+  -k                   Lock page editing to current user only to prevent accidental
+                        manual edits over Confluence Web UI.
+  --dry-run            Show resulting HTML and don't update Confluence page content.
+  --trace              Enable trace logs.
+  -h --help            Show this screen and call 911.
+  -v --version         Show version.
 `
 )
 
@@ -245,18 +248,22 @@ func main() {
 	baseURL := url.Scheme + "://" + url.Host
 
 	if url.Host == "" {
-		baseURL, err = config.GetString("base_url")
-		if err != nil {
-			if zhash.IsNotFound(err) {
-				logger.Fatal(
-					"Confluence base URL should be specified using -l " +
-						"flag or be stored in configuration file",
+		var ok bool
+		baseURL, ok = args["--base-url"].(string)
+		if !ok {
+			baseURL, err = config.GetString("base_url")
+			if err != nil {
+				if zhash.IsNotFound(err) {
+					logger.Fatal(
+						"Confluence base URL should be specified using -l " +
+							"flag or be stored in configuration file",
+					)
+				}
+
+				logger.Fatalf(
+					"can't read base_url configuration variable: %s", err,
 				)
 			}
-
-			logger.Fatalf(
-				"can't read base_url configuration variable: %s", err,
-			)
 		}
 	}
 
