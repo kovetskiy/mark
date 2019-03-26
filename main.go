@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"net/url"
+	netURL "net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -117,7 +117,7 @@ const (
 type Meta struct {
 	Parents []string
 	Space   string
-	Title   string
+	Title   []string
 	Layout  string
 }
 
@@ -237,7 +237,7 @@ func main() {
 		}
 	}
 
-	url, err := url.Parse(targetURL)
+	url, err := netURL.Parse(targetURL)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -283,9 +283,43 @@ func main() {
 		)
 	}
 
-	var target *PageInfo
+	var (
+		target *PageInfo
+		rename *PageInfo
+	)
 
-	if meta != nil {
+	if len(meta.Title) > 1 {
+		page, _ := api.findPage(meta.Space, meta.Title[0])
+		if page == nil {
+			for i := len(meta.Title) - 1; i >= 0; i-- {
+				page, _ := api.findPage(meta.Space, meta.Title[i])
+				if page != nil {
+					rename = page
+					break
+				}
+			}
+		}
+	}
+
+	if rename != nil && meta.Title[0] != "" {
+		logger.Tracef(
+			"renaming page '%s' to '%s'", rename.Title,
+			meta.Title[0],
+		)
+
+		page, err := api.getPageByID(rename.ID)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		page.Links.Full = strings.Replace(
+			page.Links.Full,
+			netURL.QueryEscape(page.Title),
+			netURL.QueryEscape(meta.Title[0]), 1,
+		)
+		page.Title = meta.Title[0]
+
+		target = page
+	} else if meta != nil {
 		page, err := resolvePage(api, meta)
 		if err != nil {
 			logger.Fatal(err)
@@ -381,12 +415,12 @@ func compileMarkdown(markdown []byte) []byte {
 }
 
 func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
-	page, err := api.findPage(meta.Space, meta.Title)
+	page, err := api.findPage(meta.Space, meta.Title[0])
 	if err != nil {
 		return nil, ser.Errorf(
 			err,
 			"error during finding page '%s': %s",
-			meta.Title,
+			meta.Title[0],
 		)
 	}
 
@@ -413,7 +447,7 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 		}
 
 		path := meta.Parents
-		path = append(path, meta.Title)
+		path = append(path, meta.Title[0])
 
 		logger.Debugf(
 			"resolving page path: ??? > %s",
@@ -444,16 +478,16 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 	logger.Infof(
 		"page will be stored under path: %s > %s",
 		strings.Join(titles, ` > `),
-		meta.Title,
+		meta.Title[0],
 	)
 
 	if page == nil {
-		page, err := api.createPage(meta.Space, parent, meta.Title, ``)
+		page, err := api.createPage(meta.Space, parent, meta.Title[0], ``)
 		if err != nil {
 			return nil, ser.Errorf(
 				err,
 				"can't create page '%s': %s",
-				meta.Title,
+				meta.Title[0],
 			)
 		}
 
@@ -623,7 +657,7 @@ func extractMeta(data []byte) (*Meta, error) {
 			meta.Space = strings.ToUpper(matches[2])
 
 		case HeaderTitle:
-			meta.Title = strings.TrimSpace(matches[2])
+			meta.Title = append(meta.Title, matches[2])
 
 		case HeaderLayout:
 			meta.Layout = strings.TrimSpace(matches[2])
@@ -650,7 +684,7 @@ func extractMeta(data []byte) (*Meta, error) {
 		)
 	}
 
-	if meta.Title == "" {
+	if meta.Title[0] == "" {
 		return nil, fmt.Errorf(
 			"page title is not set (%s header is not set)",
 			HeaderTitle,
