@@ -11,8 +11,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/kovetskiy/godocs"
 	"github.com/kovetskiy/lorg"
+	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/kovetskiy/mark/pkg/mark"
 	"github.com/reconquest/colorgful"
-	"github.com/reconquest/ser-go"
+	"github.com/reconquest/karma-go"
 	"github.com/russross/blackfriday"
 	"github.com/zazab/zhash"
 )
@@ -87,24 +89,6 @@ Options:
 `
 )
 
-type PageInfo struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-
-	Version struct {
-		Number int64 `json:"number"`
-	} `json:"version"`
-
-	Ancestors []struct {
-		Id    string `json:"id"`
-		Title string `json:"title"`
-	} `json:"ancestors"`
-
-	Links struct {
-		Full string `json:"webui"`
-	} `json:"_links"`
-}
-
 var (
 	logger = lorg.NewLog()
 )
@@ -151,7 +135,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	meta, err := extractMeta(markdownData)
+	meta, err := mark.ExtractMeta(markdownData)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -168,7 +152,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	api := NewAPI(creds.BaseURL, creds.Username, creds.Password)
+	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
 	if creds.PageID != "" && meta != nil {
 		logger.Warningf(
@@ -187,7 +171,7 @@ func main() {
 		)
 	}
 
-	var target *PageInfo
+	var target *confluence.PageInfo
 
 	if meta != nil {
 		page, err := resolvePage(api, meta)
@@ -201,7 +185,7 @@ func main() {
 			logger.Fatalf("URL should provide 'pageId' GET-parameter")
 		}
 
-		page, err := api.getPageByID(creds.PageID)
+		page, err := api.GetPageByID(creds.PageID)
 		if err != nil {
 			logger.Fatal(err)
 		}
@@ -209,7 +193,7 @@ func main() {
 		target = page
 	}
 
-	err = api.updatePage(
+	err = api.UpdatePage(
 		target,
 		MacroLayout{meta.Layout, [][]byte{htmlData}}.Render(),
 	)
@@ -224,9 +208,13 @@ func main() {
 			creds.Username,
 		)
 
-		err := api.setPagePermissions(target, RestrictionEdit, []Restriction{
-			{User: creds.Username},
-		})
+		err := api.SetPagePermissions(
+			target,
+			confluence.RestrictionEdit,
+			[]confluence.Restriction{
+				{User: creds.Username},
+			},
+		)
 		if err != nil {
 			logger.Fatal(err)
 		}
@@ -284,10 +272,13 @@ func compileMarkdown(markdown []byte) []byte {
 	return html
 }
 
-func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
-	page, err := api.findPage(meta.Space, meta.Title)
+func resolvePage(
+	api *confluence.API,
+	meta *mark.Meta,
+) (*confluence.PageInfo, error) {
+	page, err := api.FindPage(meta.Space, meta.Title)
 	if err != nil {
-		return nil, ser.Errorf(
+		return nil, karma.Format(
 			err,
 			"error during finding page '%s': %s",
 			meta.Title,
@@ -300,7 +291,7 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 	}
 
 	if len(ancestry) > 0 {
-		page, err := validateAncestry(
+		page, err := mark.ValidateAncestry(
 			api,
 			meta.Space,
 			ancestry,
@@ -325,13 +316,13 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 		)
 	}
 
-	parent, err := ensureAncestry(
+	parent, err := mark.EnsureAncestry(
 		api,
 		meta.Space,
 		meta.Parents,
 	)
 	if err != nil {
-		return nil, ser.Errorf(
+		return nil, karma.Format(
 			err,
 			"can't create ancestry tree: %s; error: %s",
 			strings.Join(meta.Parents, ` > `),
@@ -352,9 +343,9 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 	)
 
 	if page == nil {
-		page, err := api.createPage(meta.Space, parent, meta.Title, ``)
+		page, err := api.CreatePage(meta.Space, parent, meta.Title, ``)
 		if err != nil {
-			return nil, ser.Errorf(
+			return nil, karma.Format(
 				err,
 				"can't create page '%s': %s",
 				meta.Title,
@@ -362,117 +353,6 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 		}
 
 		return page, nil
-	}
-
-	return page, nil
-}
-
-func ensureAncestry(
-	api *API,
-	space string,
-	ancestry []string,
-) (*PageInfo, error) {
-	var parent *PageInfo
-
-	rest := ancestry
-
-	for i, title := range ancestry {
-		page, err := api.findPage(space, title)
-		if err != nil {
-			return nil, ser.Errorf(
-				err,
-				`error during finding parent page with title '%s': %s`,
-				title,
-			)
-		}
-
-		if page == nil {
-			break
-		}
-
-		logger.Tracef("parent page '%s' exists: %s", title, page.Links.Full)
-
-		rest = ancestry[i:]
-		parent = page
-	}
-
-	if parent != nil {
-		rest = rest[1:]
-	} else {
-		page, err := api.findRootPage(space)
-		if err != nil {
-			return nil, ser.Errorf(
-				err,
-				"can't find root page for space '%s': %s", space,
-			)
-		}
-
-		parent = page
-	}
-
-	if len(rest) == 0 {
-		return parent, nil
-	}
-
-	logger.Debugf(
-		"empty pages under '%s' to be created: %s",
-		parent.Title,
-		strings.Join(rest, ` > `),
-	)
-
-	for _, title := range rest {
-		page, err := api.createPage(space, parent, title, ``)
-		if err != nil {
-			return nil, ser.Errorf(
-				err,
-				`error during creating parent page with title '%s': %s`,
-				title,
-			)
-		}
-
-		parent = page
-	}
-
-	return parent, nil
-}
-
-func validateAncestry(
-	api *API,
-	space string,
-	ancestry []string,
-) (*PageInfo, error) {
-	page, err := api.findPage(space, ancestry[len(ancestry)-1])
-	if err != nil {
-		return nil, err
-	}
-
-	if page == nil {
-		return nil, nil
-	}
-
-	if len(page.Ancestors) < 1 {
-		return nil, fmt.Errorf(`page '%s' has no parents`, page.Title)
-	}
-
-	if len(page.Ancestors) < len(ancestry) {
-		return nil, fmt.Errorf(
-			"page '%s' has fewer parents than specified: %s",
-			page.Title,
-			strings.Join(ancestry, ` > `),
-		)
-	}
-
-	// skipping root article title
-	for i, ancestor := range page.Ancestors[1:len(ancestry)] {
-		if ancestor.Title != ancestry[i] {
-			return nil, fmt.Errorf(
-				"broken ancestry tree; expected tree: %s; "+
-					"encountered '%s' at position of '%s'",
-				strings.Join(ancestry, ` > `),
-				ancestor.Title,
-				ancestry[i],
-			)
-		}
 	}
 
 	return page, nil
@@ -486,7 +366,7 @@ func getConfig(path string) (zhash.Hash, error) {
 			return zhash.NewHash(), err
 		}
 
-		return zhash.NewHash(), ser.Errorf(
+		return zhash.NewHash(), karma.Format(
 			err,
 			"can't decode toml file: %s",
 		)

@@ -1,4 +1,4 @@
-package main
+package mark
 
 import (
 	"bufio"
@@ -22,7 +22,7 @@ type Meta struct {
 	Layout  string
 }
 
-func extractMeta(data []byte) (*Meta, error) {
+func ExtractMeta(data []byte) (*Meta, error) {
 	headerPattern := regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
 
 	var meta *Meta

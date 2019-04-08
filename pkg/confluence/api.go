@@ -1,4 +1,4 @@
-package main
+package confluence
 
 import (
 	"fmt"
@@ -27,6 +27,24 @@ type API struct {
 	json *gopencils.Resource
 }
 
+type PageInfo struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+
+	Version struct {
+		Number int64 `json:"number"`
+	} `json:"version"`
+
+	Ancestors []struct {
+		Id    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"ancestors"`
+
+	Links struct {
+		Full string `json:"webui"`
+	} `json:"_links"`
+}
+
 func NewAPI(baseURL string, username string, password string) *API {
 	auth := &gopencils.BasicAuth{username, password}
 
@@ -40,8 +58,8 @@ func NewAPI(baseURL string, username string, password string) *API {
 	}
 }
 
-func (api *API) findRootPage(space string) (*PageInfo, error) {
-	page, err := api.findPage(space, ``)
+func (api *API) FindRootPage(space string) (*PageInfo, error) {
+	page, err := api.FindPage(space, ``)
 	if err != nil {
 		return nil, fmt.Errorf(
 			`can't obtain first page from space '%s': %s`,
@@ -64,8 +82,7 @@ func (api *API) findRootPage(space string) (*PageInfo, error) {
 	}, nil
 }
 
-func (api *API) findPage(space string, title string) (*PageInfo, error) {
-
+func (api *API) FindPage(space string, title string) (*PageInfo, error) {
 	result := struct {
 		Results []PageInfo `json:"results"`
 	}{}
@@ -105,8 +122,7 @@ func (api *API) findPage(space string, title string) (*PageInfo, error) {
 	return &result.Results[0], nil
 }
 
-func (api *API) getPageByID(pageID string) (*PageInfo, error) {
-
+func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
 	).Get(map[string]string{"expand": "ancestors,version"})
@@ -136,7 +152,7 @@ func (api *API) getPageByID(pageID string) (*PageInfo, error) {
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) createPage(
+func (api *API) CreatePage(
 	space string,
 	parent *PageInfo,
 	title string,
@@ -183,7 +199,7 @@ func (api *API) createPage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) updatePage(
+func (api *API) UpdatePage(
 	page *PageInfo, newContent string,
 ) error {
 	nextPageVersion := page.Version.Number + 1
@@ -238,7 +254,7 @@ func (api *API) updatePage(
 	return nil
 }
 
-func (api *API) setPagePermissions(
+func (api *API) SetPagePermissions(
 	page *PageInfo,
 	operation RestrictionOperation,
 	restrictions []Restriction,
