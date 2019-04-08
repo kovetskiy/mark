@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -134,9 +133,6 @@ func main() {
 	}
 
 	var (
-		username, _   = args["-u"].(string)
-		password, _   = args["-p"].(string)
-		targetURL, _  = args["-l"].(string)
 		targetFile, _ = args["-f"].(string)
 		dryRun        = args["--dry-run"].(bool)
 		editLock      = args["-k"].(bool)
@@ -167,81 +163,23 @@ func main() {
 		os.Exit(0)
 	}
 
-	if username == "" {
-		username, err = config.GetString("username")
-		if err != nil {
-			if zhash.IsNotFound(err) {
-				logger.Fatal(
-					"Confluence username should be specified using -u " +
-						"flag or be stored in configuration file",
-				)
-			}
-
-			logger.Fatalf(
-				"can't read username configuration variable: %s", err,
-			)
-		}
-	}
-
-	if password == "" {
-		password, err = config.GetString("password")
-		if err != nil {
-			if zhash.IsNotFound(err) {
-				logger.Fatal(
-					"Confluence password should be specified using -p " +
-						"flag or be stored in configuration file",
-				)
-			}
-
-			logger.Fatalf(
-				"can't read password configuration variable: %s", err,
-			)
-		}
-	}
-
-	url, err := url.Parse(targetURL)
+	creds, err := GetCredentials(args, config)
 	if err != nil {
 		logger.Fatal(err)
 	}
 
-	baseURL := url.Scheme + "://" + url.Host
+	api := NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	if url.Host == "" {
-		var ok bool
-		baseURL, ok = args["--base-url"].(string)
-		if !ok {
-			baseURL, err = config.GetString("base_url")
-			if err != nil {
-				if zhash.IsNotFound(err) {
-					logger.Fatal(
-						"Confluence base URL should be specified using -l " +
-							"flag or be stored in configuration file",
-					)
-				}
-
-				logger.Fatalf(
-					"can't read base_url configuration variable: %s", err,
-				)
-			}
-		}
-	}
-
-	baseURL = strings.TrimRight(baseURL, `/`)
-
-	api := NewAPI(baseURL, username, password)
-
-	pageID := url.Query().Get("pageId")
-
-	if pageID != "" && meta != nil {
+	if creds.PageID != "" && meta != nil {
 		logger.Warningf(
 			`specified file contains metadata, ` +
-				`but it will be ignore due specified command line URL`,
+				`but it will be ignored due specified command line URL`,
 		)
 
 		meta = nil
 	}
 
-	if pageID == "" && meta == nil {
+	if creds.PageID == "" && meta == nil {
 		logger.Fatalf(
 			`specified file doesn't contain metadata ` +
 				`and URL is not specified via command line ` +
@@ -259,11 +197,11 @@ func main() {
 
 		target = page
 	} else {
-		if pageID == "" {
+		if creds.PageID == "" {
 			logger.Fatalf("URL should provide 'pageId' GET-parameter")
 		}
 
-		page, err := api.getPageByID(pageID)
+		page, err := api.getPageByID(creds.PageID)
 		if err != nil {
 			logger.Fatal(err)
 		}
@@ -283,11 +221,11 @@ func main() {
 		logger.Infof(
 			`edit locked on page '%s' by user '%s' to prevent manual edits`,
 			target.Title,
-			username,
+			creds.Username,
 		)
 
 		err := api.setPagePermissions(target, RestrictionEdit, []Restriction{
-			{User: username},
+			{User: creds.Username},
 		})
 		if err != nil {
 			logger.Fatal(err)
@@ -296,7 +234,7 @@ func main() {
 
 	fmt.Printf(
 		"page successfully updated: %s\n",
-		baseURL+target.Links.Full,
+		creds.BaseURL+target.Links.Full,
 	)
 
 }
