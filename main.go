@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -81,8 +79,6 @@ Options:
   -b --base-url <url>  Base URL for Confluence.
                         Alternative option for base_url config field.
   -f <file>            Use specified markdown file for converting to html.
-  -c <file>            Specify configuration file which should be used for reading
-                        Confluence page URL and markdown file path.
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
   --dry-run            Show resulting HTML and don't update Confluence page content.
@@ -110,23 +106,26 @@ type PageInfo struct {
 	} `json:"_links"`
 }
 
-const (
-	HeaderParent string = `Parent`
-	HeaderSpace         = `Space`
-	HeaderTitle         = `Title`
-	HeaderLayout        = `Layout`
-)
-
-type Meta struct {
-	Parents []string
-	Space   string
-	Title   string
-	Layout  string
-}
-
 var (
 	logger = lorg.NewLog()
 )
+
+func initLogger(trace bool) {
+	if trace {
+		logger.SetLevel(lorg.LevelTrace)
+	}
+
+	logFormat := `${time} ${level:[%s]:right:true} %s`
+
+	if format := os.Getenv("LOG_FORMAT"); format != "" {
+		logFormat = format
+	}
+
+	logger.SetFormat(colorgful.MustApplyDefaultTheme(
+		logFormat,
+		colorgful.Default,
+	))
+}
 
 func main() {
 	args, err := godocs.Parse(usage, "mark 1.0", godocs.UsePager)
@@ -142,53 +141,13 @@ func main() {
 		dryRun        = args["--dry-run"].(bool)
 		editLock      = args["-k"].(bool)
 		trace         = args["--trace"].(bool)
-
-		optionsFile, shouldReadOptions = args["-c"].(string)
 	)
 
-	if trace {
-		logger.SetLevel(lorg.LevelTrace)
-	}
-
-	logFormat := `${time} ${level:[%s]:right:true} %s`
-
-	if format := os.Getenv("LOG_FORMAT"); format != "" {
-		logFormat = format
-	}
-
-	logger.SetFormat(colorgful.MustApplyDefaultTheme(
-		logFormat,
-		colorgful.Default,
-	))
+	initLogger(trace)
 
 	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil && !os.IsNotExist(err) {
 		logger.Fatal(err)
-	}
-
-	if shouldReadOptions {
-		optionsConfig, err := getConfig(optionsFile)
-		if err != nil {
-			logger.Fatalf(
-				"can't read options config '%s': %s", optionsFile, err,
-			)
-		}
-
-		targetURL, err = optionsConfig.GetString("url")
-		if err != nil {
-			logger.Fatal(
-				"can't read `url` value from options file (%s): %s",
-				optionsFile, err,
-			)
-		}
-
-		targetFile, err = optionsConfig.GetString("file")
-		if err != nil {
-			logger.Fatal(
-				"can't read `file` value from options file (%s): %s",
-				optionsFile, err,
-			)
-		}
 	}
 
 	markdownData, err := ioutil.ReadFile(targetFile)
@@ -596,73 +555,4 @@ func getConfig(path string) (zhash.Hash, error) {
 	}
 
 	return zhash.HashFromMap(configData), nil
-}
-
-func extractMeta(data []byte) (*Meta, error) {
-	headerPattern := regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
-
-	var meta *Meta
-
-	scanner := bufio.NewScanner(bytes.NewBuffer(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if err := scanner.Err(); err != nil {
-			return nil, err
-		}
-
-		matches := headerPattern.FindStringSubmatch(line)
-		if matches == nil {
-			break
-		}
-
-		if meta == nil {
-			meta = &Meta{}
-		}
-
-		header := strings.Title(matches[1])
-
-		switch header {
-		case HeaderParent:
-			meta.Parents = append(meta.Parents, matches[2])
-
-		case HeaderSpace:
-			meta.Space = strings.ToUpper(matches[2])
-
-		case HeaderTitle:
-			meta.Title = strings.TrimSpace(matches[2])
-
-		case HeaderLayout:
-			meta.Layout = strings.TrimSpace(matches[2])
-
-		default:
-			logger.Errorf(
-				`encountered unknown header '%s' line: %#v`,
-				header,
-				line,
-			)
-
-			continue
-		}
-	}
-
-	if meta == nil {
-		return nil, nil
-	}
-
-	if meta.Space == "" {
-		return nil, fmt.Errorf(
-			"space key is not set (%s header is not set)",
-			HeaderSpace,
-		)
-	}
-
-	if meta.Title == "" {
-		return nil, fmt.Errorf(
-			"page title is not set (%s header is not set)",
-			HeaderTitle,
-		)
-	}
-
-	return meta, nil
 }

@@ -16,14 +16,6 @@ password = "matrixishere"
 base_url = "http://confluence.local"
 ```
 
-Mark can read Confluence page URL and markdown file path from another specified
-configuration file, which you can specify using -c <file> flag. It is very
-usable for git hooks. That file should have following format:
-```toml
-url = "http://confluence.local/pages/viewpage.action?pageId=123456"
-file = "docs/README.md"
-```
-
 Mark understands extended file format, which, still being valid markdown,
 contains several metadata headers, which can be used to locate page inside
 Confluence instance and update it accordingly.
