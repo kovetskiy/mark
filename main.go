@@ -12,7 +12,7 @@ import (
 	"github.com/kovetskiy/godocs"
 	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/colorgful"
-	"github.com/reconquest/ser-go"
+	"github.com/reconquest/karma-go"
 	"github.com/russross/blackfriday"
 	"github.com/zazab/zhash"
 )
@@ -107,6 +107,7 @@ type PageInfo struct {
 
 var (
 	logger = lorg.NewLog()
+	exit   = os.Exit
 )
 
 func initLogger(trace bool) {
@@ -287,9 +288,9 @@ func compileMarkdown(markdown []byte) []byte {
 func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 	page, err := api.findPage(meta.Space, meta.Title)
 	if err != nil {
-		return nil, ser.Errorf(
+		return nil, karma.Format(
 			err,
-			"error during finding page '%s': %s",
+			"error during finding page '%s'",
 			meta.Title,
 		)
 	}
@@ -331,9 +332,9 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 		meta.Parents,
 	)
 	if err != nil {
-		return nil, ser.Errorf(
+		return nil, karma.Format(
 			err,
-			"can't create ancestry tree: %s; error: %s",
+			"can't create ancestry tree: %s",
 			strings.Join(meta.Parents, ` > `),
 		)
 	}
@@ -354,9 +355,9 @@ func resolvePage(api *API, meta *Meta) (*PageInfo, error) {
 	if page == nil {
 		page, err := api.createPage(meta.Space, parent, meta.Title, ``)
 		if err != nil {
-			return nil, ser.Errorf(
+			return nil, karma.Format(
 				err,
-				"can't create page '%s': %s",
+				"can't create page '%s'",
 				meta.Title,
 			)
 		}
@@ -379,9 +380,9 @@ func ensureAncestry(
 	for i, title := range ancestry {
 		page, err := api.findPage(space, title)
 		if err != nil {
-			return nil, ser.Errorf(
+			return nil, karma.Format(
 				err,
-				`error during finding parent page with title '%s': %s`,
+				"error during finding parent page with title '%s'",
 				title,
 			)
 		}
@@ -401,9 +402,10 @@ func ensureAncestry(
 	} else {
 		page, err := api.findRootPage(space)
 		if err != nil {
-			return nil, ser.Errorf(
+			return nil, karma.Format(
 				err,
-				"can't find root page for space '%s': %s", space,
+				"can't find root page for space '%s'",
+				space,
 			)
 		}
 
@@ -423,9 +425,9 @@ func ensureAncestry(
 	for _, title := range rest {
 		page, err := api.createPage(space, parent, title, ``)
 		if err != nil {
-			return nil, ser.Errorf(
+			return nil, karma.Format(
 				err,
-				`error during creating parent page with title '%s': %s`,
+				"error during creating parent page with title '%s'",
 				title,
 			)
 		}
@@ -486,9 +488,10 @@ func getConfig(path string) (zhash.Hash, error) {
 			return zhash.NewHash(), err
 		}
 
-		return zhash.NewHash(), ser.Errorf(
+		return zhash.NewHash(), karma.Format(
 			err,
 			"can't decode toml file: %s",
+			path,
 		)
 	}
 

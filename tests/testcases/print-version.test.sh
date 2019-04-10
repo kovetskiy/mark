@@ -1,0 +1,1 @@
+tests:ensure :run -v

@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 
 	"github.com/bndr/gopencils"
+	"github.com/reconquest/karma-go"
 )
 
 type RestrictionOperation string
@@ -16,7 +17,7 @@ const (
 
 type Restriction struct {
 	User  string `json:"userName"`
-	Group string `json:"groupName",omitempty`
+	Group string `json:"groupName,omitempty"`
 }
 
 type API struct {
@@ -28,7 +29,10 @@ type API struct {
 }
 
 func NewAPI(baseURL string, username string, password string) *API {
-	auth := &gopencils.BasicAuth{username, password}
+	auth := &gopencils.BasicAuth{
+		Username: username,
+		Password: password,
+	}
 
 	return &API{
 		rest: gopencils.Api(baseURL+"/rest/api", auth),
@@ -43,10 +47,9 @@ func NewAPI(baseURL string, username string, password string) *API {
 func (api *API) findRootPage(space string) (*PageInfo, error) {
 	page, err := api.findPage(space, ``)
 	if err != nil {
-		return nil, fmt.Errorf(
-			`can't obtain first page from space '%s': %s`,
+		return nil, karma.Format(err,
+			`can't obtain first page from space '%s'`,
 			space,
-			err,
 		)
 	}
 
