@@ -9,12 +9,16 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/kovetskiy/godocs"
+	"github.com/docopt/docopt-go"
 	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/colorgful"
 	"github.com/reconquest/karma-go"
 	"github.com/russross/blackfriday"
 	"github.com/zazab/zhash"
+)
+
+var (
+	version = "[standalone build]"
 )
 
 const (
@@ -128,7 +132,7 @@ func initLogger(trace bool) {
 }
 
 func main() {
-	args, err := godocs.Parse(usage, "mark 1.0", godocs.UsePager)
+	args, err := docopt.Parse(usage, nil, true, version, false)
 	if err != nil {
 		panic(err)
 	}
