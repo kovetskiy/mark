@@ -7,6 +7,8 @@ source ../vendor/github.com/reconquest/import.bash/import.bash
 
 import:use "github.com/reconquest/test-runner.bash"
 import:use "github.com/reconquest/go-test.bash"
+import:use "github.com/reconquest/blank.bash"
+import:use "github.com/reconquest/coproc.bash"
 
 :cleanup() {
     :
