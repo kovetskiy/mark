@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -15,7 +14,6 @@ import (
 	"github.com/kovetskiy/mark/pkg/mark"
 	"github.com/reconquest/colorgful"
 	"github.com/reconquest/karma-go"
-	"github.com/russross/blackfriday"
 	"github.com/zazab/zhash"
 )
 
@@ -140,7 +138,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	htmlData := compileMarkdown(markdownData)
+	htmlData := mark.CompileMarkdown(markdownData)
 
 	if dryRun {
 		fmt.Println(string(htmlData))
@@ -225,51 +223,6 @@ func main() {
 		creds.BaseURL+target.Links.Full,
 	)
 
-}
-
-// compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
-// equivalent, because blackfriday markdown parser replaces that tags with
-// <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
-func compileMarkdown(markdown []byte) []byte {
-	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
-
-	tags := regexp.MustCompile(`<(/?\S+):(\S+)>`)
-
-	markdown = tags.ReplaceAll(
-		markdown,
-		[]byte(`<$1`+colon.String()+`$2>`),
-	)
-
-	renderer := ConfluenceRenderer{
-		blackfriday.HtmlRenderer(
-			blackfriday.HTML_USE_XHTML|
-				blackfriday.HTML_USE_SMARTYPANTS|
-				blackfriday.HTML_SMARTYPANTS_FRACTIONS|
-				blackfriday.HTML_SMARTYPANTS_DASHES|
-				blackfriday.HTML_SMARTYPANTS_LATEX_DASHES,
-			"", "",
-		),
-	}
-
-	html := blackfriday.MarkdownOptions(
-		markdown,
-		renderer,
-		blackfriday.Options{
-			Extensions: blackfriday.EXTENSION_NO_INTRA_EMPHASIS |
-				blackfriday.EXTENSION_TABLES |
-				blackfriday.EXTENSION_FENCED_CODE |
-				blackfriday.EXTENSION_AUTOLINK |
-				blackfriday.EXTENSION_STRIKETHROUGH |
-				blackfriday.EXTENSION_SPACE_HEADERS |
-				blackfriday.EXTENSION_HEADER_IDS |
-				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
-				blackfriday.EXTENSION_DEFINITION_LISTS,
-		},
-	)
-
-	html = colon.ReplaceAll(html, []byte(`:`))
-
-	return html
 }
 
 func resolvePage(
