@@ -3,18 +3,10 @@ package mark
 import (
 	"strings"
 
-	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/reconquest/faces/logger"
 	"github.com/reconquest/karma-go"
 )
-
-var (
-	logger lorg.Logger = lorg.NewDiscarder()
-)
-
-func SetLogger(log lorg.Logger) {
-	logger = log
-}
 
 func ResolvePage(
 	api *confluence.API,
@@ -24,7 +16,7 @@ func ResolvePage(
 	if err != nil {
 		return nil, karma.Format(
 			err,
-			"error during finding page '%s': %s",
+			"error while finding page %q",
 			meta.Title,
 		)
 	}
@@ -45,8 +37,9 @@ func ResolvePage(
 		}
 
 		if page == nil {
-			logger.Warningf(
-				"page '%s' is not found ",
+			log.Warningf(
+				nil,
+				"page %q is not found ",
 				meta.Parents[len(ancestry)-1],
 			)
 		}
@@ -68,7 +61,7 @@ func ResolvePage(
 	if err != nil {
 		return nil, karma.Format(
 			err,
-			"can't create ancestry tree: %s; error: %s",
+			"can't create ancestry tree: %s",
 			strings.Join(meta.Parents, ` > `),
 		)
 	}
@@ -80,7 +73,8 @@ func ResolvePage(
 
 	titles = append(titles, parent.Title)
 
-	logger.Infof(
+	log.Infof(
+		nil, 
 		"page will be stored under path: %s > %s",
 		strings.Join(titles, ` > `),
 		meta.Title,

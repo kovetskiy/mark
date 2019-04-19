@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/reconquest/faces/logger"
 	"github.com/reconquest/karma-go"
 )
 
@@ -22,7 +23,7 @@ func EnsureAncestry(
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				`error during finding parent page with title '%s': %s`,
+				`error during finding parent page with title %q`,
 				title,
 			)
 		}
@@ -31,7 +32,7 @@ func EnsureAncestry(
 			break
 		}
 
-		logger.Tracef("parent page '%s' exists: %s", title, page.Links.Full)
+		log.Tracef(nil, "parent page %q exists: %s", title, page.Links.Full)
 
 		rest = ancestry[i:]
 		parent = page
@@ -44,19 +45,19 @@ func EnsureAncestry(
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				"can't find root page for space '%s': %s", space,
+				"can't find root page for space %q",
+				space,
 			)
 		}
 
 		parent = page
 	}
-
 	if len(rest) == 0 {
 		return parent, nil
 	}
 
 	logger.Debugf(
-		"empty pages under '%s' to be created: %s",
+		"empty pages under %q to be created: %s",
 		parent.Title,
 		strings.Join(rest, ` > `),
 	)
@@ -66,7 +67,7 @@ func EnsureAncestry(
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				`error during creating parent page with title '%s': %s`,
+				`error during creating parent page with title %q`,
 				title,
 			)
 		}
@@ -92,12 +93,12 @@ func ValidateAncestry(
 	}
 
 	if len(page.Ancestors) < 1 {
-		return nil, fmt.Errorf(`page '%s' has no parents`, page.Title)
+		return nil, fmt.Errorf(`page %q has no parents`, page.Title)
 	}
 
 	if len(page.Ancestors) < len(ancestry) {
 		return nil, fmt.Errorf(
-			"page '%s' has fewer parents than specified: %s",
+			"page %q has fewer parents than specified: %s",
 			page.Title,
 			strings.Join(ancestry, ` > `),
 		)
@@ -108,7 +109,7 @@ func ValidateAncestry(
 		if ancestor.Title != ancestry[i] {
 			return nil, fmt.Errorf(
 				"broken ancestry tree; expected tree: %s; "+
-					"encountered '%s' at position of '%s'",
+					"encountered %q at position of %q",
 				strings.Join(ancestry, ` > `),
 				ancestor.Title,
 				ancestry[i],

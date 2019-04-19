@@ -4,22 +4,42 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"regexp"
 	"strings"
+
+	"github.com/kovetskiy/lorg"
+	"github.com/reconquest/cog"
 )
 
+func discarder() *lorg.Log {
+	stderr := lorg.NewLog()
+	stderr.SetOutput(ioutil.Discard)
+	return stderr
+}
+
+var (
+	log = cog.NewLogger(discarder())
+)
+
+func SetLogger(logger *cog.Logger) {
+	log = logger
+}
+
 const (
-	HeaderParent string = `Parent`
-	HeaderSpace         = `Space`
-	HeaderTitle         = `Title`
-	HeaderLayout        = `Layout`
+	HeaderParent     = `Parent`
+	HeaderSpace      = `Space`
+	HeaderTitle      = `Title`
+	HeaderLayout     = `Layout`
+	HeaderAttachment = `Attachment`
 )
 
 type Meta struct {
-	Parents []string
-	Space   string
-	Title   string
-	Layout  string
+	Parents     []string
+	Space       string
+	Title       string
+	Layout      string
+	Attachments []string
 }
 
 func ExtractMeta(data []byte) (*Meta, error) {
@@ -46,22 +66,31 @@ func ExtractMeta(data []byte) (*Meta, error) {
 
 		header := strings.Title(matches[1])
 
+		var value string
+		if len(matches) > 1 {
+			value = strings.TrimSpace(matches[2])
+		}
+
 		switch header {
 		case HeaderParent:
-			meta.Parents = append(meta.Parents, matches[2])
+			meta.Parents = append(meta.Parents, value)
 
 		case HeaderSpace:
-			meta.Space = strings.ToUpper(matches[2])
+			meta.Space = strings.ToUpper(value)
 
 		case HeaderTitle:
-			meta.Title = strings.TrimSpace(matches[2])
+			meta.Title = strings.TrimSpace(value)
 
 		case HeaderLayout:
-			meta.Layout = strings.TrimSpace(matches[2])
+			meta.Layout = strings.TrimSpace(value)
+
+		case HeaderAttachment:
+			meta.Attachments = append(meta.Attachments, value)
 
 		default:
-			logger.Errorf(
-				`encountered unknown header '%s' line: %#v`,
+			log.Errorf(
+				nil,
+				`encountered unknown header %q line: %#v`,
 				header,
 				line,
 			)

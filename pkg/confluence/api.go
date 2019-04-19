@@ -1,11 +1,30 @@
 package confluence
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 
 	"github.com/bndr/gopencils"
+	"github.com/kovetskiy/lorg"
+	"github.com/reconquest/cog"
+	"github.com/reconquest/karma-go"
 )
+
+func discarder() *lorg.Log {
+	stderr := lorg.NewLog()
+	stderr.SetOutput(ioutil.Discard)
+	return stderr
+}
+
+var (
+	log = cog.NewLogger(discarder())
+)
+
+func SetLogger(logger *cog.Logger) {
+	log = logger
+}
 
 type RestrictionOperation string
 
@@ -61,16 +80,20 @@ func NewAPI(baseURL string, username string, password string) *API {
 func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	page, err := api.FindPage(space, ``)
 	if err != nil {
-		return nil, fmt.Errorf(
-			`can't obtain first page from space '%s': %s`,
-			space,
+		return nil, karma.Format(
 			err,
+			"can't obtain first page from space %q",
+			space,
 		)
+	}
+
+	if page == nil {
+		return nil, errors.New("no such space")
 	}
 
 	if len(page.Ancestors) == 0 {
 		return nil, fmt.Errorf(
-			"page '%s' from space '%s' has no parents",
+			"page %q from space %q has no parents",
 			page.Title,
 			space,
 		)
@@ -99,20 +122,14 @@ func (api *API) FindPage(space string, title string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/", &result,
 	).Get(payload)
-
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == 401 {
-		return nil, fmt.Errorf("authentification failed")
-	}
-
-	if request.Raw.StatusCode != 200 {
-		return nil, fmt.Errorf(
-			"Confluence REST API returns unexpected non-200 HTTP status: %s",
-			request.Raw.Status,
-		)
+	// allow 404 because it's fine if page is not found,
+	// the function will return nil, nil
+	if request.Raw.StatusCode != 404 && request.Raw.StatusCode != 200 {
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	if len(result.Results) == 0 {
@@ -122,31 +139,42 @@ func (api *API) FindPage(space string, title string) (*PageInfo, error) {
 	return &result.Results[0], nil
 }
 
+func (api *API) GetAttachments(pageID string) error {
+	result := map[string]interface{}{}
+
+	payload := map[string]string{
+		"expand": "version,container",
+	}
+
+	request, err := api.rest.Res(
+		"content/"+pageID+"/child/attachment", &result,
+	).Get(payload)
+	if err != nil {
+		return err
+	}
+
+	if request.Raw.StatusCode != 200 {
+		return newErrorStatusNotOK(request)
+	}
+
+	{
+		marshaledXXX, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Printf("result: %s\n", string(marshaledXXX))
+	}
+
+	return nil
+}
+
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
 	).Get(map[string]string{"expand": "ancestors,version"})
-
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == 401 {
-		return nil, fmt.Errorf("authentification failed")
-	}
-
-	if request.Raw.StatusCode == 404 {
-		return nil, fmt.Errorf(
-			"page with id '%s' not found, Confluence REST API returns 404",
-			pageID,
-		)
-	}
-
 	if request.Raw.StatusCode != 200 {
-		return nil, fmt.Errorf(
-			"Confluence REST API returns unexpected HTTP status: %s",
-			request.Raw.Status,
-		)
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	return request.Response.(*PageInfo), nil
@@ -186,14 +214,7 @@ func (api *API) CreatePage(
 	}
 
 	if request.Raw.StatusCode != 200 {
-		output, _ := ioutil.ReadAll(request.Raw.Body)
-		defer request.Raw.Body.Close()
-
-		return nil, fmt.Errorf(
-			"Confluence REST API returns unexpected non-200 HTTP status: %s, "+
-				"output: %s",
-			request.Raw.Status, output,
-		)
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	return request.Response.(*PageInfo), nil
@@ -206,7 +227,7 @@ func (api *API) UpdatePage(
 
 	if len(page.Ancestors) == 0 {
 		return fmt.Errorf(
-			"page '%s' info does not contain any information about parents",
+			"page %q info does not contain any information about parents",
 			page.ID,
 		)
 	}
@@ -241,14 +262,7 @@ func (api *API) UpdatePage(
 	}
 
 	if request.Raw.StatusCode != 200 {
-		output, _ := ioutil.ReadAll(request.Raw.Body)
-		defer request.Raw.Body.Close()
-
-		return fmt.Errorf(
-			"Confluence REST API returns unexpected non-200 HTTP status: %s, "+
-				"output: %s",
-			request.Raw.Status, output,
-		)
+		return newErrorStatusNotOK(request)
 	}
 
 	return nil
@@ -273,14 +287,7 @@ func (api *API) SetPagePermissions(
 	}
 
 	if request.Raw.StatusCode != 200 {
-		output, _ := ioutil.ReadAll(request.Raw.Body)
-		defer request.Raw.Body.Close()
-
-		return fmt.Errorf(
-			"Confluence JSON RPC returns unexpected non-200 HTTP status: %s, "+
-				"output: %s",
-			request.Raw.Status, output,
-		)
+		return newErrorStatusNotOK(request)
 	}
 
 	if success, ok := result.(bool); !ok || !success {
@@ -291,4 +298,27 @@ func (api *API) SetPagePermissions(
 	}
 
 	return nil
+}
+
+func newErrorStatusNotOK(request *gopencils.Resource) error {
+	if request.Raw.StatusCode == 401 {
+		return errors.New(
+			"Confluence API returned unexpected status: 401 (Unauthorized)",
+		)
+	}
+
+	if request.Raw.StatusCode == 404 {
+		return errors.New(
+			"Confluence API returned unexpected status: 404 (Not Found)",
+		)
+	}
+
+	output, _ := ioutil.ReadAll(request.Raw.Body)
+	defer request.Raw.Body.Close()
+
+	return fmt.Errorf(
+		"Confluence API returned unexpected status: %v, "+
+			"output: %s",
+		request.Raw.Status, output,
+	)
 }

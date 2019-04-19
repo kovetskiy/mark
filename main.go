@@ -12,7 +12,7 @@ import (
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/mark"
-	"github.com/reconquest/colorgful"
+	"github.com/reconquest/cog"
 	"github.com/reconquest/karma-go"
 	"github.com/zazab/zhash"
 )
@@ -31,12 +31,6 @@ located in ~/.config/mark with following format:
   base_url = "http://confluence.local"
 where 'smith' it's your username, 'matrixishere' it's your password and
 'http://confluence.local' is base URL for your Confluence instance.
-
-Mark can read Confluence page URL and markdown file path from another specified
-configuration file, which you can specify using -c <file> flag. It is very
-usable for git hooks. That file should have following format:
-  url = "http://confluence.local/pages/viewpage.action?pageId=123456"
-  file = "docs/README.md"
 
 Mark understands extended file format, which, still being valid markdown,
 contains several metadata headers, which can be used to locate page inside
@@ -88,24 +82,21 @@ Options:
 )
 
 var (
-	logger = lorg.NewLog()
+	log *cog.Logger
 )
 
-func initLogger(trace bool) {
+func initlog(trace bool) {
+	stderr := lorg.NewLog()
+	stderr.SetIndentLines(true)
+	stderr.SetFormat(
+		lorg.NewFormat("${time} ${level:[%s]:right:short} ${prefix}%s"),
+	)
+
+	log = cog.NewLogger(stderr)
+
 	if trace {
-		logger.SetLevel(lorg.LevelTrace)
+		log.SetLevel(lorg.LevelTrace)
 	}
-
-	logFormat := `${time} ${level:[%s]:right:true} %s`
-
-	if format := os.Getenv("LOG_FORMAT"); format != "" {
-		logFormat = format
-	}
-
-	logger.SetFormat(colorgful.MustApplyDefaultTheme(
-		logFormat,
-		colorgful.Default,
-	))
 }
 
 func main() {
@@ -121,21 +112,21 @@ func main() {
 		trace         = args["--trace"].(bool)
 	)
 
-	initLogger(trace)
+	initlog(trace)
 
 	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil && !os.IsNotExist(err) {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 
 	markdownData, err := ioutil.ReadFile(targetFile)
 	if err != nil {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 
 	meta, err := mark.ExtractMeta(markdownData)
 	if err != nil {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 
 	htmlData := mark.CompileMarkdown(markdownData)
@@ -147,14 +138,15 @@ func main() {
 
 	creds, err := GetCredentials(args, config)
 	if err != nil {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
 	if creds.PageID != "" && meta != nil {
-		logger.Warningf(
-			`specified file contains metadata, ` +
+		log.Warningf(
+			nil,
+			`specified file contains metadata, `+
 				`but it will be ignored due specified command line URL`,
 		)
 
@@ -162,9 +154,10 @@ func main() {
 	}
 
 	if creds.PageID == "" && meta == nil {
-		logger.Fatalf(
-			`specified file doesn't contain metadata ` +
-				`and URL is not specified via command line ` +
+		log.Fatalf(
+			nil,
+			`specified file doesn't contain metadata `+
+				`and URL is not specified via command line `+
 				`or doesn't contain pageId GET-parameter`,
 		)
 	}
@@ -174,34 +167,40 @@ func main() {
 	if meta != nil {
 		page, err := resolvePage(api, meta)
 		if err != nil {
-			logger.Fatal(err)
+			log.Fatalf(
+				karma.Describe("title", meta.Title).Reason(err),
+				"unable to resolve page",
+			)
 		}
 
 		target = page
 	} else {
 		if creds.PageID == "" {
-			logger.Fatalf("URL should provide 'pageId' GET-parameter")
+			log.Fatalf(nil, "URL should provide 'pageId' GET-parameter")
 		}
 
 		page, err := api.GetPageByID(creds.PageID)
 		if err != nil {
-			logger.Fatal(err)
+			log.Fatalf(err, "unable to retrieve page by id")
 		}
 
 		target = page
 	}
+
+	mark.ResolveAttachments(api, target, ".", meta.Attachments)
 
 	err = api.UpdatePage(
 		target,
 		MacroLayout{meta.Layout, [][]byte{htmlData}}.Render(),
 	)
 	if err != nil {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 
 	if editLock {
-		logger.Infof(
-			`edit locked on page '%s' by user '%s' to prevent manual edits`,
+		log.Infof(
+			nil,
+			`edit locked on page %q by user %q to prevent manual edits`,
 			target.Title,
 			creds.Username,
 		)
@@ -214,7 +213,7 @@ func main() {
 			},
 		)
 		if err != nil {
-			logger.Fatal(err)
+			log.Fatal(err)
 		}
 	}
 
@@ -233,7 +232,7 @@ func resolvePage(
 	if err != nil {
 		return nil, karma.Format(
 			err,
-			"error during finding page '%s': %s",
+			"error during finding page %q",
 			meta.Title,
 		)
 	}
@@ -254,8 +253,9 @@ func resolvePage(
 		}
 
 		if page == nil {
-			logger.Warningf(
-				"page '%s' is not found ",
+			log.Warningf(
+				nil,
+				"page %q is not found ",
 				meta.Parents[len(ancestry)-1],
 			)
 		}
@@ -263,7 +263,8 @@ func resolvePage(
 		path := meta.Parents
 		path = append(path, meta.Title)
 
-		logger.Debugf(
+		log.Debugf(
+			nil,
 			"resolving page path: ??? > %s",
 			strings.Join(path, ` > `),
 		)
@@ -277,7 +278,7 @@ func resolvePage(
 	if err != nil {
 		return nil, karma.Format(
 			err,
-			"can't create ancestry tree: %s; error: %s",
+			"can't create ancestry tree: %s",
 			strings.Join(meta.Parents, ` > `),
 		)
 	}
@@ -289,7 +290,8 @@ func resolvePage(
 
 	titles = append(titles, parent.Title)
 
-	logger.Infof(
+	log.Infof(
+		nil,
 		"page will be stored under path: %s > %s",
 		strings.Join(titles, ` > `),
 		meta.Title,
@@ -300,7 +302,7 @@ func resolvePage(
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				"can't create page '%s': %s",
+				"can't create page %q",
 				meta.Title,
 			)
 		}
@@ -322,6 +324,7 @@ func getConfig(path string) (zhash.Hash, error) {
 		return zhash.NewHash(), karma.Format(
 			err,
 			"can't decode toml file: %s",
+			path,
 		)
 	}
 
