@@ -1,30 +1,20 @@
 package confluence
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"mime/multipart"
+	"net/http"
+	"os"
 
 	"github.com/bndr/gopencils"
 	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/cog"
 	"github.com/reconquest/karma-go"
 )
-
-func discarder() *lorg.Log {
-	stderr := lorg.NewLog()
-	stderr.SetOutput(ioutil.Discard)
-	return stderr
-}
-
-var (
-	log = cog.NewLogger(discarder())
-)
-
-func SetLogger(logger *cog.Logger) {
-	log = logger
-}
 
 type RestrictionOperation string
 
@@ -64,6 +54,36 @@ type PageInfo struct {
 	} `json:"_links"`
 }
 
+type AttachmentInfo struct {
+	Filename string `json:"title"`
+	ID       string `json:"id"`
+	Metadata struct {
+		Comment string `json:"comment"`
+	} `json:"metadata"`
+	Links struct {
+		Download string `json:"download"`
+	} `json:"_links"`
+}
+
+func discarder() *lorg.Log {
+	stderr := lorg.NewLog()
+	stderr.SetOutput(ioutil.Discard)
+	return stderr
+}
+
+var (
+	log = cog.NewLogger(discarder())
+)
+
+func SetLogger(logger *cog.Logger) {
+	log = logger
+}
+
+type form struct {
+	buffer io.Reader
+	writer *multipart.Writer
+}
+
 func NewAPI(baseURL string, username string, password string) *API {
 	auth := &gopencils.BasicAuth{username, password}
 
@@ -92,11 +112,10 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	}
 
 	if len(page.Ancestors) == 0 {
-		return nil, fmt.Errorf(
-			"page %q from space %q has no parents",
-			page.Title,
-			space,
-		)
+		return &PageInfo{
+			ID:    page.ID,
+			Title: page.Title,
+		}, nil
 	}
 
 	return &PageInfo{
@@ -139,8 +158,170 @@ func (api *API) FindPage(space string, title string) (*PageInfo, error) {
 	return &result.Results[0], nil
 }
 
-func (api *API) GetAttachments(pageID string) error {
-	result := map[string]interface{}{}
+func (api *API) CreateAttachment(
+	pageID string,
+	name string,
+	comment string,
+	path string,
+) (AttachmentInfo, error) {
+	var info AttachmentInfo
+
+	form, err := getAttachmentPayload(name, comment, path)
+	if err != nil {
+		return AttachmentInfo{}, err
+	}
+
+	var result struct {
+		Results []AttachmentInfo `json:"results"`
+	}
+
+	resource := api.rest.Res(
+		"content/"+pageID+"/child/attachment", &result,
+	)
+
+	resource.Payload = form.buffer
+	resource.Headers = http.Header{}
+
+	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
+	resource.SetHeader("X-Atlassian-Token", "no-check")
+
+	request, err := resource.Post()
+	if err != nil {
+		return info, err
+	}
+
+	if request.Raw.StatusCode != 200 {
+		return info, newErrorStatusNotOK(request)
+	}
+
+	if len(result.Results) == 0 {
+		return info, errors.New(
+			"Confluence REST API for creating attachments returned " +
+				"0 json objects, expected at least 1",
+		)
+	}
+
+	info = result.Results[0]
+
+	return info, nil
+}
+
+func (api *API) UpdateAttachment(
+	pageID string,
+	attachID string,
+	name string,
+	comment string,
+	path string,
+) (AttachmentInfo, error) {
+	var info AttachmentInfo
+
+	form, err := getAttachmentPayload(name, comment, path)
+	if err != nil {
+		return AttachmentInfo{}, err
+	}
+
+	var result struct {
+		Results []AttachmentInfo `json:"results"`
+	}
+
+	resource := api.rest.Res(
+		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
+	)
+
+	resource.Payload = form.buffer
+	resource.Headers = http.Header{}
+
+	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
+	resource.SetHeader("X-Atlassian-Token", "no-check")
+
+	request, err := resource.Post()
+	if err != nil {
+		return info, err
+	}
+
+	//if request.Raw.StatusCode != 200 {
+	return info, newErrorStatusNotOK(request)
+	//}
+
+	if len(result.Results) == 0 {
+		return info, errors.New(
+			"Confluence REST API for creating attachments returned " +
+				"0 json objects, expected at least 1",
+		)
+	}
+
+	info = result.Results[0]
+
+	return info, nil
+}
+
+func getAttachmentPayload(name, comment, path string) (*form, error) {
+	var (
+		payload = bytes.NewBuffer(nil)
+		writer  = multipart.NewWriter(payload)
+	)
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"unable to open file: %q",
+			path,
+		)
+	}
+
+	defer file.Close()
+
+	content, err := writer.CreateFormFile("file", name)
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"unable to create form file",
+		)
+	}
+
+	_, err = io.Copy(content, file)
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"unable to copy i/o between form-file and file",
+		)
+	}
+
+	commentWriter, err := writer.CreateFormField("comment")
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"unable to create form field for comment",
+		)
+	}
+
+	_, err = commentWriter.Write([]byte(comment))
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"unable to write comment in form-field",
+		)
+	}
+
+	err = writer.Close()
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"unable to close form-writer",
+		)
+	}
+
+	return &form{
+		buffer: payload,
+		writer: writer,
+	}, nil
+}
+
+func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
+	result := struct {
+		Results []AttachmentInfo `json:"results"`
+	}{}
 
 	payload := map[string]string{
 		"expand": "version,container",
@@ -150,19 +331,14 @@ func (api *API) GetAttachments(pageID string) error {
 		"content/"+pageID+"/child/attachment", &result,
 	).Get(payload)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if request.Raw.StatusCode != 200 {
-		return newErrorStatusNotOK(request)
+		return nil, newErrorStatusNotOK(request)
 	}
 
-	{
-		marshaledXXX, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Printf("result: %s\n", string(marshaledXXX))
-	}
-
-	return nil
+	return result.Results, nil
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {

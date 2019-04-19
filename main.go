@@ -187,7 +187,10 @@ func main() {
 		target = page
 	}
 
-	mark.ResolveAttachments(api, target, ".", meta.Attachments)
+	err = mark.ResolveAttachments(api, target, ".", meta.Attachments)
+	if err != nil {
+		log.Fatalf(err, "unable to create/update attachments")
+	}
 
 	err = api.UpdatePage(
 		target,
