@@ -32,7 +32,7 @@ func EnsureAncestry(
 			break
 		}
 
-		log.Tracef(nil, "parent page %q exists: %s", title, page.Links.Full)
+		log.Debugf(nil, "parent page %q exists: %s", title, page.Links.Full)
 
 		rest = ancestry[i:]
 		parent = page

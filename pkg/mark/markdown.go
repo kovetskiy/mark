@@ -39,7 +39,11 @@ func (code MacroCode) Render() string {
 // compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
 // equivalent, because blackfriday markdown parser replaces that tags with
 // <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
-func CompileMarkdown(markdown []byte) []byte {
+func CompileMarkdown(
+	markdown []byte,
+) []byte {
+	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
+
 	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
 
 	tags := regexp.MustCompile(`<(/?\S+):(\S+)>`)
@@ -68,15 +72,21 @@ func CompileMarkdown(markdown []byte) []byte {
 				blackfriday.EXTENSION_TABLES |
 				blackfriday.EXTENSION_FENCED_CODE |
 				blackfriday.EXTENSION_AUTOLINK |
+				blackfriday.EXTENSION_LAX_HTML_BLOCKS |
 				blackfriday.EXTENSION_STRIKETHROUGH |
 				blackfriday.EXTENSION_SPACE_HEADERS |
 				blackfriday.EXTENSION_HEADER_IDS |
+				blackfriday.EXTENSION_AUTO_HEADER_IDS |
+				blackfriday.EXTENSION_TITLEBLOCK |
 				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
-				blackfriday.EXTENSION_DEFINITION_LISTS,
+				blackfriday.EXTENSION_DEFINITION_LISTS |
+				blackfriday.EXTENSION_NO_EMPTY_LINE_BEFORE_BLOCK,
 		},
 	)
 
 	html = colon.ReplaceAll(html, []byte(`:`))
+
+	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
 	return html
 }

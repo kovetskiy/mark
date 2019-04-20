@@ -1,13 +1,14 @@
 package mark
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
@@ -32,8 +33,8 @@ func ResolveAttachments(
 	page *confluence.PageInfo,
 	base string,
 	names []string,
-) error {
-	attachs := []Attachment{}
+) ([]Attachment, error) {
+	attaches := []Attachment{}
 	for _, name := range names {
 		attach := Attachment{
 			Name:     name,
@@ -43,7 +44,7 @@ func ResolveAttachments(
 
 		checksum, err := getChecksum(attach.Path)
 		if err != nil {
-			return karma.Format(
+			return nil, karma.Format(
 				err,
 				"unable to get checksum for attachment: %q", attach.Name,
 			)
@@ -51,7 +52,7 @@ func ResolveAttachments(
 
 		attach.Checksum = checksum
 
-		attachs = append(attachs, attach)
+		attaches = append(attaches, attach)
 	}
 
 	remotes, err := api.GetAttachments(page.ID)
@@ -62,7 +63,7 @@ func ResolveAttachments(
 	existing := []Attachment{}
 	creating := []Attachment{}
 	updating := []Attachment{}
-	for _, attach := range attachs {
+	for _, attach := range attaches {
 		var found bool
 		var same bool
 		for _, remote := range remotes {
@@ -92,21 +93,6 @@ func ResolveAttachments(
 		}
 	}
 
-	{
-		marshaledXXX, _ := json.MarshalIndent(existing, "", "  ")
-		fmt.Printf("existing: %s\n", string(marshaledXXX))
-	}
-
-	{
-		marshaledXXX, _ := json.MarshalIndent(creating, "", "  ")
-		fmt.Printf("creating: %s\n", string(marshaledXXX))
-	}
-
-	{
-		marshaledXXX, _ := json.MarshalIndent(updating, "", "  ")
-		fmt.Printf("updating: %s\n", string(marshaledXXX))
-	}
-
 	for i, attach := range creating {
 		log.Infof(nil, "creating attachment: %q", attach.Name)
 
@@ -117,7 +103,7 @@ func ResolveAttachments(
 			attach.Path,
 		)
 		if err != nil {
-			return karma.Format(
+			return nil, karma.Format(
 				err,
 				"unable to create attachment %q",
 				attach.Name,
@@ -141,7 +127,7 @@ func ResolveAttachments(
 			attach.Path,
 		)
 		if err != nil {
-			return karma.Format(
+			return nil, karma.Format(
 				err,
 				"unable to update attachment %q",
 				attach.Name,
@@ -153,7 +139,53 @@ func ResolveAttachments(
 		updating[i] = attach
 	}
 
-	return nil
+	attaches = []Attachment{}
+	attaches = append(attaches, existing...)
+	attaches = append(attaches, creating...)
+	attaches = append(attaches, updating...)
+
+	return attaches, nil
+}
+
+func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
+	links := map[string]string{}
+	names := []string{}
+
+	for _, attach := range attaches {
+		uri, err := url.ParseRequestURI(attach.Link)
+		if err != nil {
+			links[attach.Name] = strings.ReplaceAll("&", "&amp;", attach.Link)
+		} else {
+			links[attach.Name] = uri.Path +
+				"?" + url.QueryEscape(uri.Query().Encode())
+		}
+
+		names = append(names, attach.Name)
+	}
+
+	// sort by length so first items will have bigger length
+	// it's helpful for replacing in case of following names
+	// attachments/a.jpg
+	// attachments/a.jpg.jpg
+	// so we replace longer and then shorter
+	sort.SliceStable(names, func(i, j int) bool {
+		return len(names[i]) > len(names[j])
+	})
+
+	for _, name := range names {
+		from := `attachment://` + name
+		to := links[name]
+
+		log.Debugf(nil, "replacing: %q -> %q", from, to)
+
+		markdown = bytes.ReplaceAll(
+			markdown,
+			[]byte(from),
+			[]byte(to),
+		)
+	}
+
+	return markdown
 }
 
 func getChecksum(filename string) (string, error) {

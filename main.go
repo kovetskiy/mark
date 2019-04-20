@@ -75,6 +75,7 @@ Options:
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
   --dry-run            Show resulting HTML and don't update Confluence page content.
+  --debug              Enable debug logs.
   --trace              Enable trace logs.
   -h --help            Show this screen and call 911.
   -v --version         Show version.
@@ -85,7 +86,7 @@ var (
 	log *cog.Logger
 )
 
-func initlog(trace bool) {
+func initlog(debug, trace bool) {
 	stderr := lorg.NewLog()
 	stderr.SetIndentLines(true)
 	stderr.SetFormat(
@@ -94,9 +95,16 @@ func initlog(trace bool) {
 
 	log = cog.NewLogger(stderr)
 
+	if debug {
+		log.SetLevel(lorg.LevelDebug)
+	}
+
 	if trace {
 		log.SetLevel(lorg.LevelTrace)
 	}
+
+	mark.SetLogger(log)
+	confluence.SetLogger(log)
 }
 
 func main() {
@@ -109,10 +117,9 @@ func main() {
 		targetFile, _ = args["-f"].(string)
 		dryRun        = args["--dry-run"].(bool)
 		editLock      = args["-k"].(bool)
-		trace         = args["--trace"].(bool)
 	)
 
-	initlog(trace)
+	initlog(args["--debug"].(bool), args["--trace"].(bool))
 
 	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil && !os.IsNotExist(err) {
@@ -129,10 +136,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	htmlData := mark.CompileMarkdown(markdownData)
-
 	if dryRun {
-		fmt.Println(string(htmlData))
+		fmt.Println(string(mark.CompileMarkdown(markdownData)))
 		os.Exit(0)
 	}
 
@@ -187,10 +192,14 @@ func main() {
 		target = page
 	}
 
-	err = mark.ResolveAttachments(api, target, ".", meta.Attachments)
+	attaches, err := mark.ResolveAttachments(api, target, ".", meta.Attachments)
 	if err != nil {
 		log.Fatalf(err, "unable to create/update attachments")
 	}
+
+	markdownData = mark.CompileAttachmentLinks(markdownData, attaches)
+
+	htmlData := mark.CompileMarkdown(markdownData)
 
 	err = api.UpdatePage(
 		target,

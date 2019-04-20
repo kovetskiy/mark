@@ -239,9 +239,9 @@ func (api *API) UpdateAttachment(
 		return info, err
 	}
 
-	//if request.Raw.StatusCode != 200 {
-	return info, newErrorStatusNotOK(request)
-	//}
+	if request.Raw.StatusCode != 200 {
+		return info, newErrorStatusNotOK(request)
+	}
 
 	if len(result.Results) == 0 {
 		return info, errors.New(
