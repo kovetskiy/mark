@@ -173,6 +173,9 @@ func (api *API) CreateAttachment(
 	}
 
 	var result struct {
+		Links struct {
+			Context string `json:"context"`
+		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
 	}
 
@@ -202,6 +205,14 @@ func (api *API) CreateAttachment(
 		)
 	}
 
+	for i, info := range result.Results {
+		if info.Links.Context == "" {
+			info.Links.Context = result.Links.Context
+		}
+
+		result.Results[i] = info
+	}
+
 	info = result.Results[0]
 
 	return info, nil
@@ -222,6 +233,9 @@ func (api *API) UpdateAttachment(
 	}
 
 	var result struct {
+		Links struct {
+			Context string `json:"context"`
+		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
 	}
 
@@ -249,6 +263,14 @@ func (api *API) UpdateAttachment(
 			"Confluence REST API for creating attachments returned " +
 				"0 json objects, expected at least 1",
 		)
+	}
+
+	for i, info := range result.Results {
+		if info.Links.Context == "" {
+			info.Links.Context = result.Links.Context
+		}
+
+		result.Results[i] = info
 	}
 
 	info = result.Results[0]
