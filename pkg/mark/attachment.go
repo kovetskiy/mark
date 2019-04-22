@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -74,7 +75,10 @@ func ResolveAttachments(
 				)
 
 				attach.ID = remote.ID
-				attach.Link = remote.Links.Download
+				attach.Link = path.Join(
+					remote.Links.Context,
+					remote.Links.Download,
+				)
 
 				found = true
 
@@ -111,7 +115,10 @@ func ResolveAttachments(
 		}
 
 		attach.ID = info.ID
-		attach.Link = info.Links.Download
+		attach.Link = path.Join(
+			info.Links.Context,
+			info.Links.Download,
+		)
 
 		creating[i] = attach
 	}
@@ -134,7 +141,10 @@ func ResolveAttachments(
 			)
 		}
 
-		attach.Link = info.Links.Download
+		attach.Link = path.Join(
+			info.Links.Context,
+			info.Links.Download,
+		)
 
 		updating[i] = attach
 	}

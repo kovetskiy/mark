@@ -61,6 +61,7 @@ type AttachmentInfo struct {
 		Comment string `json:"comment"`
 	} `json:"metadata"`
 	Links struct {
+		Context  string `json:"context"`
 		Download string `json:"download"`
 	} `json:"_links"`
 }
@@ -320,6 +321,9 @@ func getAttachmentPayload(name, comment, path string) (*form, error) {
 
 func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 	result := struct {
+		Links struct {
+			Context string `json:"context"`
+		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
 	}{}
 
@@ -336,6 +340,14 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 
 	if request.Raw.StatusCode != 200 {
 		return nil, newErrorStatusNotOK(request)
+	}
+
+	for i, info := range result.Results {
+		if info.Links.Context == "" {
+			info.Links.Context = result.Links.Context
+		}
+
+		result.Results[i] = info
 	}
 
 	return result.Results, nil
