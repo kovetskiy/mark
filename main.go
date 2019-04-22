@@ -57,7 +57,7 @@ Also, optional following headers are supported:
     - plain: content will fill all page;
 
 Usage:
-  mark [options] [-u <username>] [-p <password>] [-k] [-l <url>] -f <file>
+  mark [options] [-u <username>] [-p <token>] [-k] [-l <url>] -f <file>
   mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] -f <file>
   mark [options] [-u <username>] [-p <password>] [-k] [-n] -c <file>
   mark -v | --version
@@ -65,7 +65,7 @@ Usage:
 
 Options:
   -u <username>        Use specified username for updating Confluence page.
-  -p <password>        Use specified password for updating Confluence page.
+  -p <token>           Use specified token for updating Confluence page.
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
                         above).
