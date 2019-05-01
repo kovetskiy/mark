@@ -25,7 +25,7 @@ const (
 
 type Restriction struct {
 	User  string `json:"userName"`
-	Group string `json:"groupName",omitempty`
+	Group string `json:"groupName,omitempty"`
 }
 
 type API struct {
