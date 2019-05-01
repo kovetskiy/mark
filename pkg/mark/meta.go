@@ -43,7 +43,10 @@ type Meta struct {
 }
 
 func ExtractMeta(data []byte) (*Meta, error) {
-	headerPattern := regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
+	var (
+		headerPatternV1 = regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
+		headerPatternV2 = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
+	)
 
 	var meta *Meta
 
@@ -55,9 +58,19 @@ func ExtractMeta(data []byte) (*Meta, error) {
 			return nil, err
 		}
 
-		matches := headerPattern.FindStringSubmatch(line)
+		matches := headerPatternV2.FindStringSubmatch(line)
 		if matches == nil {
-			break
+			matches = headerPatternV1.FindStringSubmatch(line)
+			if matches == nil {
+				break
+			}
+
+			log.Warningf(
+				fmt.Errorf(`legacy header usage found: %s`, line),
+				"please use new header format: <!-- %s: %s -->",
+				matches[1],
+				matches[2],
+			)
 		}
 
 		if meta == nil {
