@@ -22,10 +22,10 @@ Confluence instance and update it accordingly.
 
 File in extended format should follow specification
 ```markdown
-[]:# (X-Space: <space key>)
-[]:# (X-Parent: <parent 1>)
-[]:# (X-Parent: <parent 2>)
-[]:# (X-Title: <title>)
+<!-- Space: <space key> -->
+<!-- Parent: <parent 1> -->
+<!-- Parent: <parent 2> -->
+<!-- Title: <title> -->
 
 <page contents>
 ```
