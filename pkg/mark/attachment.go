@@ -6,13 +6,12 @@ import (
 	"encoding/hex"
 	"io"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/kovetskiy/mark/pkg/fs"
 	"github.com/reconquest/karma-go"
 )
 
@@ -23,7 +22,6 @@ const (
 type Attachment struct {
 	ID       string
 	Name     string
-	Filename string
 	Path     string
 	Checksum string
 	Link     string
@@ -32,18 +30,17 @@ type Attachment struct {
 func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
-	base string,
+	fs fs.FileSystem,
 	names []string,
 ) ([]Attachment, error) {
 	attaches := []Attachment{}
 	for _, name := range names {
 		attach := Attachment{
-			Name:     name,
-			Filename: strings.ReplaceAll(name, "/", "_"),
-			Path:     filepath.Join(base, name),
+			Path: name,
+			Name: strings.ReplaceAll(name, "/", "_"),
 		}
 
-		checksum, err := getChecksum(attach.Path)
+		checksum, err := getChecksum(fs, attach.Name)
 		if err != nil {
 			return nil, karma.Format(
 				err,
@@ -68,7 +65,7 @@ func ResolveAttachments(
 		var found bool
 		var same bool
 		for _, remote := range remotes {
-			if remote.Filename == attach.Filename {
+			if remote.Filename == attach.Name {
 				same = attach.Checksum == strings.TrimPrefix(
 					remote.Metadata.Comment,
 					AttachmentChecksumPrefix,
@@ -102,8 +99,9 @@ func ResolveAttachments(
 
 		info, err := api.CreateAttachment(
 			page.ID,
-			attach.Filename,
+			attach.Name,
 			AttachmentChecksumPrefix+attach.Checksum,
+			fs,
 			attach.Path,
 		)
 		if err != nil {
@@ -131,7 +129,8 @@ func ResolveAttachments(
 			attach.ID,
 			attach.Name,
 			AttachmentChecksumPrefix+attach.Checksum,
-			attach.Path,
+			fs,
+			attach.Name,
 		)
 		if err != nil {
 			return nil, karma.Format(
@@ -198,8 +197,8 @@ func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
 	return markdown
 }
 
-func getChecksum(filename string) (string, error) {
-	file, err := os.Open(filename)
+func getChecksum(fs FileSystem, filename string) (string, error) {
+	file, err := fs.Open(filename)
 	if err != nil {
 		return "", karma.Format(
 			err,

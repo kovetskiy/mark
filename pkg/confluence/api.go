@@ -8,10 +8,10 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"os"
 
 	"github.com/bndr/gopencils"
 	"github.com/kovetskiy/lorg"
+	"github.com/kovetskiy/mark/pkg/fs"
 	"github.com/reconquest/cog"
 	"github.com/reconquest/karma-go"
 )
@@ -161,13 +161,14 @@ func (api *API) FindPage(space string, title string) (*PageInfo, error) {
 
 func (api *API) CreateAttachment(
 	pageID string,
-	name string,
+	slug string,
 	comment string,
+	fs fs.FileSystem,
 	path string,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(slug, comment, fs, path)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -223,11 +224,12 @@ func (api *API) UpdateAttachment(
 	attachID string,
 	name string,
 	comment string,
+	fs fs.FileSystem,
 	path string,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, fs, path)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -278,13 +280,18 @@ func (api *API) UpdateAttachment(
 	return info, nil
 }
 
-func getAttachmentPayload(name, comment, path string) (*form, error) {
+func getAttachmentPayload(
+	slug string,
+	comment string,
+	fs fs.FileSystem,
+	path string,
+) (*form, error) {
 	var (
 		payload = bytes.NewBuffer(nil)
 		writer  = multipart.NewWriter(payload)
 	)
 
-	file, err := os.Open(path)
+	file, err := fs.Open(path)
 	if err != nil {
 		return nil, karma.Format(
 			err,
@@ -295,7 +302,7 @@ func getAttachmentPayload(name, comment, path string) (*form, error) {
 
 	defer file.Close()
 
-	content, err := writer.CreateFormFile("file", name)
+	content, err := writer.CreateFormFile("file", slug)
 	if err != nil {
 		return nil, karma.Format(
 			err,
