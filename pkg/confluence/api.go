@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/bndr/gopencils"
 	"github.com/kovetskiy/lorg"
@@ -16,16 +17,8 @@ import (
 	"github.com/reconquest/karma-go"
 )
 
-type RestrictionOperation string
-
-const (
-	RestrictionEdit RestrictionOperation = `Edit`
-	RestrictionView                      = `View`
-)
-
-type Restriction struct {
-	User  string `json:"userName"`
-	Group string `json:"groupName,omitempty"`
+type User struct {
+	AccountID string `json:"accountId"`
 }
 
 type API struct {
@@ -478,19 +471,76 @@ func (api *API) UpdatePage(
 	return nil
 }
 
-func (api *API) SetPagePermissions(
+func (api *API) GetCurrentUser() (*User, error) {
+	var user User
+
+	_, err := api.rest.
+		Res("user").
+		Res("current", &user).
+		Get()
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (api *API) RestrictPageUpdatesCloud(
 	page *PageInfo,
-	operation RestrictionOperation,
-	restrictions []Restriction,
+	allowedUser string,
 ) error {
+	user, err := api.GetCurrentUser()
+	if err != nil {
+		return err
+	}
+
 	var result interface{}
+
+	request, err := api.rest.
+		Res("content").
+		Id(page.ID).
+		Res("restriction", &result).
+		Post([]map[string]interface{}{
+			{
+				"operation": "update",
+				"restrictions": map[string]interface{}{
+					"user": []map[string]interface{}{
+						{
+							"type":      "known",
+							"accountId": user.AccountID,
+						},
+					},
+				},
+			},
+		})
+	if err != nil {
+		return err
+	}
+
+	if request.Raw.StatusCode != 200 {
+		return newErrorStatusNotOK(request)
+	}
+
+	return nil
+}
+
+func (api *API) RestrictPageUpdatesServer(
+	page *PageInfo,
+	allowedUser string,
+) error {
+	var (
+		err    error
+		result interface{}
+	)
 
 	request, err := api.json.Res(
 		"setContentPermissions", &result,
 	).Post([]interface{}{
 		page.ID,
-		operation,
-		restrictions,
+		"Edit",
+		map[string]interface{}{
+			"userName": allowedUser,
+		},
 	})
 	if err != nil {
 		return err
@@ -508,6 +558,21 @@ func (api *API) SetPagePermissions(
 	}
 
 	return nil
+}
+
+func (api *API) RestrictPageUpdates(
+	page *PageInfo,
+	allowedUser string,
+) error {
+	var err error
+
+	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
+		err = api.RestrictPageUpdatesCloud(page, allowedUser)
+	} else {
+		err = api.RestrictPageUpdatesServer(page, allowedUser)
+	}
+
+	return err
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {

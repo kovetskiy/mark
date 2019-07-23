@@ -217,12 +217,9 @@ func main() {
 			creds.Username,
 		)
 
-		err := api.SetPagePermissions(
+		err := api.RestrictPageUpdates(
 			target,
-			confluence.RestrictionEdit,
-			[]confluence.Restriction{
-				{User: creds.Username},
-			},
+			creds.Username,
 		)
 		if err != nil {
 			log.Fatal(err)
