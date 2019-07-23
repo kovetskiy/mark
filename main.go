@@ -38,10 +38,10 @@ Confluence instance and update it accordingly.
 
 File in extended format should follow specification:
 
-  []:# (Space: <space key>)
-  []:# (Parent: <parent 1>)
-  []:# (Parent: <parent 2>)
-  []:# (Title: <title>)
+  <!-- Space: <space key> -->
+  <!-- Parent: <parent 1> -->
+  <!-- Parent: <parent 2> -->
+  <!-- Title: <title> -->
 
   <page contents>
 
@@ -50,7 +50,7 @@ parent by title, it will be created.
 
 Also, optional following headers are supported:
 
-  * []:# (Layout: <article|plain>)
+  * <!-- Layout: <article|plain> -->
 
     - (default) article: content will be put in narrow column for ease of
       reading;
