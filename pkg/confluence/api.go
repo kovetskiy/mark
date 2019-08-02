@@ -12,8 +12,6 @@ import (
 	"strings"
 
 	"github.com/bndr/gopencils"
-	"github.com/kovetskiy/lorg"
-	"github.com/reconquest/cog"
 	"github.com/reconquest/karma-go"
 )
 
@@ -57,20 +55,6 @@ type AttachmentInfo struct {
 		Context  string `json:"context"`
 		Download string `json:"download"`
 	} `json:"_links"`
-}
-
-func discarder() *lorg.Log {
-	stderr := lorg.NewLog()
-	stderr.SetOutput(ioutil.Discard)
-	return stderr
-}
-
-var (
-	log = cog.NewLogger(discarder())
-)
-
-func SetLogger(logger *cog.Logger) {
-	log = logger
 }
 
 type form struct {
@@ -469,6 +453,35 @@ func (api *API) UpdatePage(
 	}
 
 	return nil
+}
+
+func (api *API) GetUserByName(name string) (*User, error) {
+	var response struct {
+		Results []struct {
+			User User
+		}
+	}
+
+	_, err := api.rest.
+		Res("search").
+		Res("user", &response).
+		Get(map[string]string{
+			"cql": fmt.Sprintf("user.fullname~%q", name),
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response.Results) == 0 {
+		return nil, karma.
+			Describe("name", name).
+			Reason(
+				"user with given name is not found",
+			)
+	}
+
+	return &response.Results[0].User, nil
+
 }
 
 func (api *API) GetCurrentUser() (*User, error) {

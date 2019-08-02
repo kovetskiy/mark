@@ -4,27 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"regexp"
 	"strings"
 
-	"github.com/kovetskiy/lorg"
-	"github.com/reconquest/cog"
+	"github.com/kovetskiy/mark/pkg/log"
 )
-
-func discarder() *lorg.Log {
-	stderr := lorg.NewLog()
-	stderr.SetOutput(ioutil.Discard)
-	return stderr
-}
-
-var (
-	log = cog.NewLogger(discarder())
-)
-
-func SetLogger(logger *cog.Logger) {
-	log = logger
-}
 
 const (
 	HeaderParent     = `Parent`

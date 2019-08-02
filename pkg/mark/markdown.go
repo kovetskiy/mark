@@ -2,14 +2,17 @@ package mark
 
 import (
 	"bytes"
-	"fmt"
 	"regexp"
 
+	"github.com/kovetskiy/mark/pkg/log"
+	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/russross/blackfriday"
 )
 
 type ConfluenceRenderer struct {
 	blackfriday.Renderer
+
+	Stdlib *stdlib.Lib
 }
 
 func (renderer ConfluenceRenderer) BlockCode(
@@ -17,22 +20,16 @@ func (renderer ConfluenceRenderer) BlockCode(
 	text []byte,
 	lang string,
 ) {
-	out.WriteString(MacroCode{lang, text}.Render())
-}
-
-type MacroCode struct {
-	lang string
-	code []byte
-}
-
-func (code MacroCode) Render() string {
-	return fmt.Sprintf(
-		`<ac:structured-macro ac:name="code">`+
-			`<ac:parameter ac:name="language">%s</ac:parameter>`+
-			`<ac:parameter ac:name="collapse">false</ac:parameter>`+
-			`<ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body>`+
-			`</ac:structured-macro>`,
-		code.lang, code.code,
+	renderer.Stdlib.Templates.ExecuteTemplate(
+		out,
+		"ac:code",
+		struct {
+			Language string
+			Text     string
+		}{
+			lang,
+			string(text),
+		},
 	)
 }
 
@@ -41,12 +38,13 @@ func (code MacroCode) Render() string {
 // <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
 func CompileMarkdown(
 	markdown []byte,
-) []byte {
+	stdlib *stdlib.Lib,
+) string {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
 	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
 
-	tags := regexp.MustCompile(`<(/?\S+):(\S+)>`)
+	tags := regexp.MustCompile(`<(/?\S+?):(\S+?)>`)
 
 	markdown = tags.ReplaceAll(
 		markdown,
@@ -54,7 +52,7 @@ func CompileMarkdown(
 	)
 
 	renderer := ConfluenceRenderer{
-		blackfriday.HtmlRenderer(
+		Renderer: blackfriday.HtmlRenderer(
 			blackfriday.HTML_USE_XHTML|
 				blackfriday.HTML_USE_SMARTYPANTS|
 				blackfriday.HTML_SMARTYPANTS_FRACTIONS|
@@ -62,6 +60,8 @@ func CompileMarkdown(
 				blackfriday.HTML_SMARTYPANTS_LATEX_DASHES,
 			"", "",
 		),
+
+		Stdlib: stdlib,
 	}
 
 	html := blackfriday.MarkdownOptions(
@@ -88,5 +88,5 @@ func CompileMarkdown(
 
 	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
-	return html
+	return string(html)
 }
