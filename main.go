@@ -7,14 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	"github.com/kovetskiy/godocs"
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/mark"
 	"github.com/reconquest/cog"
 	"github.com/reconquest/karma-go"
-	"github.com/zazab/zhash"
 )
 
 const (
@@ -121,8 +119,8 @@ func main() {
 
 	initlog(args["--debug"].(bool), args["--trace"].(bool))
 
-	config, err := getConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
-	if err != nil && !os.IsNotExist(err) {
+	config, err := LoadConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -320,22 +318,4 @@ func resolvePage(
 	}
 
 	return page, nil
-}
-
-func getConfig(path string) (zhash.Hash, error) {
-	configData := map[string]interface{}{}
-	_, err := toml.DecodeFile(path, &configData)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return zhash.NewHash(), err
-		}
-
-		return zhash.NewHash(), karma.Format(
-			err,
-			"can't decode toml file: %s",
-			path,
-		)
-	}
-
-	return zhash.HashFromMap(configData), nil
 }

@@ -2,12 +2,10 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
 	"strings"
 
 	"github.com/reconquest/karma-go"
-	"github.com/zazab/zhash"
 )
 
 type Credentials struct {
@@ -19,7 +17,7 @@ type Credentials struct {
 
 func GetCredentials(
 	args map[string]interface{},
-	config zhash.Hash,
+	config *Config,
 ) (*Credentials, error) {
 	var (
 		username, _  = args["-u"].(string)
@@ -30,33 +28,21 @@ func GetCredentials(
 	var err error
 
 	if username == "" {
-		username, err = config.GetString("username")
-		if err != nil {
-			if zhash.IsNotFound(err) {
-				return nil, errors.New(
-					"Confluence username should be specified using -u " +
-						"flag or be stored in configuration file",
-				)
-			}
-
-			return nil, fmt.Errorf(
-				"can't read username configuration variable: %s", err,
+		username = config.Username
+		if username == "" {
+			return nil, errors.New(
+				"Confluence username should be specified using -u " +
+					"flag or be stored in configuration file",
 			)
 		}
 	}
 
 	if password == "" {
-		password, err = config.GetString("password")
-		if err != nil {
-			if zhash.IsNotFound(err) {
-				return nil, errors.New(
-					"Confluence password should be specified using -p " +
-						"flag or be stored in configuration file",
-				)
-			}
-
-			return nil, fmt.Errorf(
-				"can't read password configuration variable: %s", err,
+		password = config.Password
+		if password == "" {
+			return nil, errors.New(
+				"Confluence password should be specified using -p " +
+					"flag or be stored in configuration file",
 			)
 		}
 	}
@@ -75,17 +61,11 @@ func GetCredentials(
 		var ok bool
 		baseURL, ok = args["--base-url"].(string)
 		if !ok {
-			baseURL, err = config.GetString("base_url")
-			if err != nil {
-				if zhash.IsNotFound(err) {
-					return nil, errors.New(
-						"Confluence base URL should be specified using -l " +
-							"flag or be stored in configuration file",
-					)
-				}
-
-				return nil, fmt.Errorf(
-					"can't read base_url configuration variable: %s", err,
+			baseURL = config.BaseURL
+			if baseURL == "" {
+				return nil, errors.New(
+					"Confluence base URL should be specified using -l " +
+						"flag or be stored in configuration file",
 				)
 			}
 		}
