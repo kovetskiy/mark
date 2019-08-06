@@ -94,6 +94,9 @@ By default, mark provides several built-in templates and macros:
 
   See: https://confluence.atlassian.com/conf59/status-macro-792499207.html
 
+* template 'ac:jira:ticket' to include JIRA ticket link. Parameters:
+  - Ticket: Jira ticket number like BUGS-123.
+
 * macro '@{...}' to mention user by name specified in the braces.
 
 Usage:

@@ -130,6 +130,12 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ end }}`,
 		),
 
+		`ac:jira:ticket`: text(
+			`<ac:structured-macro ac:name="jira">`,
+			`<ac:parameter ac:name="key">{{ .Ticket }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)

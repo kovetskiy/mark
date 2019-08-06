@@ -85,6 +85,9 @@ By default, mark provides several built-in templates and macros:
     - true
     - false
 
+* template `ac:jira:ticket` to include JIRA ticket link. Parameters:
+  - Ticket: Jira ticket number like BUGS-123.
+
   See: https://confluence.atlassian.com/conf59/status-macro-792499207.html
 
 * macro `@{...}` to mention user by name specified in the braces.
@@ -133,12 +136,6 @@ This is my article.
 
 ## Insert Jira Ticket
 
-**ticket.md**
-
-```markdown
-[{{ .Ticket }}](http://myjira.atlassian.net/browse/{{ .Ticket }})
-```
-
 **article.md**
 
 ```markdown
@@ -146,7 +143,7 @@ This is my article.
 <!-- Title: TODO List -->
 
 <!-- Macro: MYJIRA-\d+
-     Template: ticket.md
+     Template: ac:jira:ticket
      Ticket: ${0} -->
 
 See task MYJIRA-123.
