@@ -26,25 +26,30 @@ type Meta struct {
 	Attachments []string
 }
 
-func ExtractMeta(data []byte) (*Meta, error) {
-	var (
-		headerPatternV1 = regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
-		headerPatternV2 = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
-	)
+var (
+	reHeaderPatternV1 = regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
+	reHeaderPatternV2 = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
+)
 
-	var meta *Meta
+func ExtractMeta(data []byte) (*Meta, []byte, error) {
+	var (
+		meta   *Meta
+		offset int
+	)
 
 	scanner := bufio.NewScanner(bytes.NewBuffer(data))
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		if err := scanner.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		matches := headerPatternV2.FindStringSubmatch(line)
+		offset += len(line)
+
+		matches := reHeaderPatternV2.FindStringSubmatch(line)
 		if matches == nil {
-			matches = headerPatternV1.FindStringSubmatch(line)
+			matches = reHeaderPatternV1.FindStringSubmatch(line)
 			if matches == nil {
 				break
 			}
@@ -97,22 +102,22 @@ func ExtractMeta(data []byte) (*Meta, error) {
 	}
 
 	if meta == nil {
-		return nil, nil
+		return nil, data, nil
 	}
 
 	if meta.Space == "" {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"space key is not set (%s header is not set)",
 			HeaderSpace,
 		)
 	}
 
 	if meta.Title == "" {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"page title is not set (%s header is not set)",
 			HeaderTitle,
 		)
 	}
 
-	return meta, nil
+	return nil, data[offset+1:], nil
 }

@@ -10,11 +10,19 @@ import (
 	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/kovetskiy/mark/pkg/mark/includes"
 	"github.com/reconquest/karma-go"
+	"github.com/reconquest/regexputil-go"
 	"gopkg.in/yaml.v2"
 )
 
 var reMacroDirective = regexp.MustCompile(
-	`(?s)<!--\s*Macro:\s*([^\n]+)\n\s*Template:\s*(\S+)(.*?)-->`,
+	// <!-- Macro: <regexp>
+	//      Template: <template path>
+	//      <optional yaml data> -->
+
+	`(?s)` + // dot capture newlines
+		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
+		/*    */ `\s*Template:\s*(?P<template>\S+)\s*` +
+		/*   */ `(\n(?P<config>.*?))?-->`,
 )
 
 type Macro struct {
@@ -88,7 +96,7 @@ func (macro *Macro) configure(node interface{}, groups [][]byte) interface{} {
 	return node
 }
 
-func LoadMacros(
+func ExtractMacros(
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
@@ -103,15 +111,17 @@ func LoadMacros(
 				return spec
 			}
 
-			groups := reMacroDirective.FindSubmatch(spec)
+			groups := reMacroDirective.FindStringSubmatch(string(spec))
 
 			var (
-				expr, path, config = groups[1], string(groups[2]), groups[3]
+				expr     = regexputil.Subexp(reMacroDirective, groups, "expr")
+				template = regexputil.Subexp(reMacroDirective, groups, "template")
+				config   = regexputil.Subexp(reMacroDirective, groups, "config")
 
 				macro Macro
 			)
 
-			macro.Template, err = includes.LoadTemplate(path, templates)
+			macro.Template, err = includes.LoadTemplate(template, templates)
 
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
@@ -120,10 +130,10 @@ func LoadMacros(
 			}
 
 			facts := karma.
-				Describe("template", path).
-				Describe("expr", string(expr))
+				Describe("template", template).
+				Describe("expr", expr)
 
-			macro.Regexp, err = regexp.Compile(string(expr))
+			macro.Regexp, err = regexp.Compile(expr)
 			if err != nil {
 				err = facts.
 					Format(
@@ -134,7 +144,7 @@ func LoadMacros(
 				return nil
 			}
 
-			err = yaml.Unmarshal(config, &macro.Config)
+			err = yaml.Unmarshal([]byte(config), &macro.Config)
 			if err != nil {
 				err = facts.
 					Describe("config", string(config)).

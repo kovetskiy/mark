@@ -162,7 +162,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	meta, err := mark.ExtractMeta(markdown)
+	meta, markdown, err := mark.ExtractMeta(markdown)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func main() {
 		}
 	}
 
-	macros, markdown, err := macro.LoadMacros(markdown, templates)
+	macros, markdown, err := macro.ExtractMacros(markdown, templates)
 	if err != nil {
 		log.Fatal(err)
 	}

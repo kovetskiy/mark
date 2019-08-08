@@ -40,7 +40,7 @@ func macros(templates *template.Template) ([]macro.Macro, error) {
 		return []byte(strings.Join(line, "\n"))
 	}
 
-	macros, _, err := macro.LoadMacros(
+	macros, _, err := macro.ExtractMacros(
 		[]byte(text(
 			`<!-- Macro: @\{([^}]+)\}`,
 			`     Template: ac:link:user`,

@@ -17,7 +17,12 @@ import (
 
 var (
 	reIncludeDirective = regexp.MustCompile(
-		`(?s)<!--\s*Include:\s*(\S+)(.*?)-->`,
+		// <!-- Include: <template path>
+		//      <optional yaml data> -->
+
+		`(?s)` + // dot capture newlines
+			/**/ `<!--\s*Include:\s*(?P<template>\S+)\s*` +
+			/*   */ `(\n(?P<config>.*?))?-->`,
 	)
 )
 
