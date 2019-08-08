@@ -24,14 +24,14 @@ var (
 func LoadTemplate(
 	path string,
 	templates *template.Template,
-) (string, *template.Template, error) {
+) (*template.Template, error) {
 	var (
 		name  = strings.TrimSuffix(path, filepath.Ext(path))
 		facts = karma.Describe("name", name)
 	)
 
 	if template := templates.Lookup(name); template != nil {
-		return name, template, nil
+		return template, nil
 	}
 
 	var body []byte
@@ -43,7 +43,7 @@ func LoadTemplate(
 			"unable to read template file",
 		)
 
-		return name, nil, err
+		return nil, err
 	}
 
 	templates, err = templates.New(name).Parse(string(body))
@@ -53,10 +53,10 @@ func LoadTemplate(
 			"unable to parse template",
 		)
 
-		return name, nil, err
+		return nil, err
 	}
 
-	return name, templates, nil
+	return templates, nil
 }
 
 func ProcessIncludes(
@@ -117,27 +117,16 @@ func ProcessIncludes(
 
 			log.Tracef(vardump(facts, data), "including template %q", path)
 
-			var name string
-
-			name, templates, err = LoadTemplate(path, templates)
+			templates, err = LoadTemplate(path, templates)
 			if err != nil {
 				err = facts.Format(err, "unable to load template")
 
 				return nil
 			}
 
-			facts = facts.Describe("name", name)
-
-			template := templates.Lookup(string(name))
-			if template == nil {
-				err = facts.Reason("template not found")
-
-				return nil
-			}
-
 			var buffer bytes.Buffer
 
-			err = template.Execute(&buffer, data)
+			err = templates.Execute(&buffer, data)
 			if err != nil {
 				err = vardump(facts, data).Format(
 					err,

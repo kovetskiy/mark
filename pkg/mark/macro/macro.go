@@ -14,7 +14,7 @@ import (
 )
 
 var reMacroDirective = regexp.MustCompile(
-	`(?s)<!--\s*Macro:\s*([^\n]+)\n\s*Template:\s*(\S+)\n(.*?)-->`,
+	`(?s)<!--\s*Macro:\s*([^\n]+)\n\s*Template:\s*(\S+)(.*?)-->`,
 )
 
 type Macro struct {
@@ -111,7 +111,7 @@ func LoadMacros(
 				macro Macro
 			)
 
-			_, macro.Template, err = includes.LoadTemplate(path, templates)
+			macro.Template, err = includes.LoadTemplate(path, templates)
 
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
