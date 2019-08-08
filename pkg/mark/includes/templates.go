@@ -16,7 +16,9 @@ import (
 )
 
 var (
-	reIncludeDirective = regexp.MustCompile(`(?s)<!-- Include: (\S+)(.*?)-->`)
+	reIncludeDirective = regexp.MustCompile(
+		`(?s)<!--\s*Include:\s*(\S+)(.*?)-->`,
+	)
 )
 
 func LoadTemplate(

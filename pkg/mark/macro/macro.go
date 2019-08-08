@@ -14,7 +14,7 @@ import (
 )
 
 var reMacroDirective = regexp.MustCompile(
-	`(?s)<!-- Macro: ([^\n]+)\n\s*Template: (\S+)\n(.*?)-->`,
+	`(?s)<!--\s*Macro:\s*([^\n]+)\n\s*Template:\s*(\S+)\n(.*?)-->`,
 )
 
 type Macro struct {
