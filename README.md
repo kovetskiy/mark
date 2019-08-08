@@ -43,7 +43,7 @@ Also, optional following headers are supported:
   reading;
 * plain: content will fill all page;
 
-Mark supports Go templates, which can be includes into article by using path
+Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
 
 ```markdown
@@ -67,8 +67,16 @@ be replaced with specified template:
      <yaml-data> -->
 ```
 
-Capture groups can be defined in the macro's `<regexp>` which can be later
-referenced in the `<yaml-data>` using `${<number>}` syntax.
+Capture groups can be defined in the macro's <regexp> which can be later
+referenced in the `<yaml-data>` using `${<number>}` syntax, where `<number>` is
+number of a capture group in regexp (`${0}` is used for entire regexp match),
+for example:
+
+```markdown
+  <!-- Macro: MYJIRA-\d+
+       Template: ac:jira:ticket
+       Ticket: ${0} -->
+```
 
 By default, mark provides several built-in templates and macros:
 
