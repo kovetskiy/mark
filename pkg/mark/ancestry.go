@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/reconquest/faces/logger"
+	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/reconquest/karma-go"
 )
 
@@ -56,7 +56,7 @@ func EnsureAncestry(
 		return parent, nil
 	}
 
-	logger.Debugf(
+	log.Debugf(
 		"empty pages under %q to be created: %s",
 		parent.Title,
 		strings.Join(rest, ` > `),

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/reconquest/faces/logger"
+	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/reconquest/karma-go"
 )
 
@@ -47,7 +47,7 @@ func ResolvePage(
 		path := meta.Parents
 		path = append(path, meta.Title)
 
-		logger.Debugf(
+		log.Debugf(
 			"resolving page path: ??? > %s",
 			strings.Join(path, ` > `),
 		)
@@ -74,7 +74,7 @@ func ResolvePage(
 	titles = append(titles, parent.Title)
 
 	log.Infof(
-		nil, 
+		nil,
 		"page will be stored under path: %s > %s",
 		strings.Join(titles, ` > `),
 		meta.Title,

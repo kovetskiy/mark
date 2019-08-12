@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -8,10 +9,12 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/godocs"
-	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/kovetskiy/mark/pkg/mark"
-	"github.com/reconquest/cog"
+	"github.com/kovetskiy/mark/pkg/mark/includes"
+	"github.com/kovetskiy/mark/pkg/mark/macro"
+	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/karma-go"
 )
 
@@ -48,11 +51,59 @@ parent by title, it will be created.
 
 Also, optional following headers are supported:
 
-  * <!-- Layout: <article|plain> -->
+  * <!-- Layout: (article|plain) -->
 
     - (default) article: content will be put in narrow column for ease of
       reading;
     - plain: content will fill all page;
+
+Mark supports Go templates, which can be included into article by using path
+to the template relative to current working dir, e.g.:
+
+  <!-- Include: <path> -->
+
+Templates may accept configuration data in YAML format which immediately
+follows include tag:
+
+  <!-- Include: <path>
+       <yaml-data> -->
+
+Mark also supports macro definitions, which are defined as regexps which will
+be replaced with specified template:
+
+  <!-- Macro: <regexp>
+       Template: <path>
+       <yaml-data> -->
+
+Capture groups can be defined in the macro's <regexp> which can be later
+referenced in the <yaml-data> using ${<number>} syntax, where <number> is
+number of a capture group in regexp (${0} is used for entire regexp match), for
+example:
+
+  <!-- Macro: MYJIRA-\d+
+       Template: ac:jira:ticket
+       Ticket: ${0} -->
+
+By default, mark provides several built-in templates and macros:
+
+* template 'ac:status' to include badge-like text, which accepts following
+  parameters:
+  - Title: text to display in the badge
+  - Color: color to use as background/border for badge
+    - Grey
+    - Yellow
+    - Red
+    - Blue
+  - Subtle: specify to fill badge with background or not
+    - true
+    - false
+
+  See: https://confluence.atlassian.com/conf59/status-macro-792499207.html
+
+* template 'ac:jira:ticket' to include JIRA ticket link. Parameters:
+  - Ticket: Jira ticket number like BUGS-123.
+
+* macro '@{...}' to mention user by name specified in the braces.
 
 Usage:
   mark [options] [-u <username>] [-p <token>] [-k] [-l <url>] -f <file>
@@ -80,31 +131,6 @@ Options:
 `
 )
 
-var (
-	log *cog.Logger
-)
-
-func initlog(debug, trace bool) {
-	stderr := lorg.NewLog()
-	stderr.SetIndentLines(true)
-	stderr.SetFormat(
-		lorg.NewFormat("${time} ${level:[%s]:right:short} ${prefix}%s"),
-	)
-
-	log = cog.NewLogger(stderr)
-
-	if debug {
-		log.SetLevel(lorg.LevelDebug)
-	}
-
-	if trace {
-		log.SetLevel(lorg.LevelTrace)
-	}
-
-	mark.SetLogger(log)
-	confluence.SetLogger(log)
-}
-
 func main() {
 	args, err := godocs.Parse(usage, "mark 1.0", godocs.UsePager)
 	if err != nil {
@@ -117,26 +143,11 @@ func main() {
 		editLock      = args["-k"].(bool)
 	)
 
-	initlog(args["--debug"].(bool), args["--trace"].(bool))
+	log.Init(args["--debug"].(bool), args["--trace"].(bool))
 
 	config, err := LoadConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	markdownData, err := ioutil.ReadFile(targetFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	meta, err := mark.ExtractMeta(markdownData)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if dryRun {
-		fmt.Println(string(mark.CompileMarkdown(markdownData)))
-		os.Exit(0)
 	}
 
 	creds, err := GetCredentials(args, config)
@@ -146,10 +157,61 @@ func main() {
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
+	markdown, err := ioutil.ReadFile(targetFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	meta, markdown, err := mark.ExtractMeta(markdown)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stdlib, err := stdlib.New(api)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	templates := stdlib.Templates
+
+	var recurse bool
+
+	for {
+		templates, markdown, recurse, err = includes.ProcessIncludes(
+			markdown,
+			templates,
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if !recurse {
+			break
+		}
+	}
+
+	macros, markdown, err := macro.ExtractMacros(markdown, templates)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	macros = append(macros, stdlib.Macros...)
+
+	for _, macro := range macros {
+		markdown, err = macro.Apply(markdown)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	if dryRun {
+		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+		os.Exit(0)
+	}
+
 	if creds.PageID != "" && meta != nil {
-		log.Warningf(
-			nil,
-			`specified file contains metadata, `+
+		log.Warning(
+			`specified file contains metadata, ` +
 				`but it will be ignored due specified command line URL`,
 		)
 
@@ -157,10 +219,9 @@ func main() {
 	}
 
 	if creds.PageID == "" && meta == nil {
-		log.Fatalf(
-			nil,
-			`specified file doesn't contain metadata `+
-				`and URL is not specified via command line `+
+		log.Fatal(
+			`specified file doesn't contain metadata ` +
+				`and URL is not specified via command line ` +
 				`or doesn't contain pageId GET-parameter`,
 		)
 	}
@@ -195,14 +256,32 @@ func main() {
 		log.Fatalf(err, "unable to create/update attachments")
 	}
 
-	markdownData = mark.CompileAttachmentLinks(markdownData, attaches)
+	markdown = mark.CompileAttachmentLinks(markdown, attaches)
 
-	htmlData := mark.CompileMarkdown(markdownData)
+	html := mark.CompileMarkdown(markdown, stdlib)
 
-	err = api.UpdatePage(
-		target,
-		MacroLayout{meta.Layout, [][]byte{htmlData}}.Render(),
-	)
+	{
+		var buffer bytes.Buffer
+
+		err := stdlib.Templates.ExecuteTemplate(
+			&buffer,
+			"ac:layout",
+			struct {
+				Layout string
+				Body   string
+			}{
+				Layout: meta.Layout,
+				Body:   html,
+			},
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		html = buffer.String()
+	}
+
+	err = api.UpdatePage(target, html)
 	if err != nil {
 		log.Fatal(err)
 	}
