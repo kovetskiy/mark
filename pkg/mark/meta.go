@@ -119,5 +119,5 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 		)
 	}
 
-	return nil, data[offset+1:], nil
+	return meta, data[offset+1:], nil
 }
