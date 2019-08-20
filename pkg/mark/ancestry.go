@@ -57,6 +57,7 @@ func EnsureAncestry(
 	}
 
 	log.Debugf(
+		nil, 
 		"empty pages under %q to be created: %s",
 		parent.Title,
 		strings.Join(rest, ` > `),

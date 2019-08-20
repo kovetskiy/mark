@@ -48,6 +48,7 @@ func ResolvePage(
 		path = append(path, meta.Title)
 
 		log.Debugf(
+			nil,
 			"resolving page path: ??? > %s",
 			strings.Join(path, ` > `),
 		)

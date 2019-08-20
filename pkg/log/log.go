@@ -3,6 +3,7 @@ package log
 import (
 	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/cog"
+	"github.com/reconquest/karma-go"
 )
 
 var (
@@ -28,7 +29,7 @@ func Init(debug, trace bool) {
 }
 
 func Fatalf(
-	reason interface{},
+	reason error,
 	message string,
 	args ...interface{},
 ) {
@@ -36,7 +37,7 @@ func Fatalf(
 }
 
 func Errorf(
-	reason interface{},
+	reason error,
 	message string,
 	args ...interface{},
 ) {
@@ -44,7 +45,7 @@ func Errorf(
 }
 
 func Warningf(
-	reason interface{},
+	reason error,
 	message string,
 	args ...interface{},
 ) {
@@ -52,7 +53,7 @@ func Warningf(
 }
 
 func Infof(
-	context interface{},
+	context *karma.Context,
 	message string,
 	args ...interface{},
 ) {
@@ -60,7 +61,7 @@ func Infof(
 }
 
 func Debugf(
-	context interface{},
+	context *karma.Context,
 	message string,
 	args ...interface{},
 ) {
@@ -68,7 +69,7 @@ func Debugf(
 }
 
 func Tracef(
-	context interface{},
+	context *karma.Context,
 	message string,
 	args ...interface{},
 ) {
