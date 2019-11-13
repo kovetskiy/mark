@@ -19,7 +19,7 @@ get:
 
 build:
 	@echo :: building go binary $(VERSION)
-	CGO_ENABLED=0 GOOS=linux go build \
+	CGO_ENABLED=0 go build \
 		-ldflags "-X main.version=$(VERSION)" \
 		-gcflags "-trimpath $(GOPATH)/src"
 
