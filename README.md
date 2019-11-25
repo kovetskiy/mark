@@ -16,6 +16,9 @@ password = "matrixishere"
 base_url = "http://confluence.local"
 ```
 
+*NOTE: Cloud Confluence also need to specify /wiki path to the base_url
+parameter.*
+
 Mark understands extended file format, which, still being valid markdown,
 contains several metadata headers, which can be used to locate page inside
 Confluence instance and update it accordingly.
@@ -179,3 +182,44 @@ mark -h | --help
 - `--trace` — Enable trace logs.
 - `-v | --version`  — Show version.
 - `-h | --help` — Show help screen and call 911.
+
+# Tricks
+
+## Confluence & Gitlab integration
+
+Mark was created with CI in mind so you can easily integrate mark into your
+pipeline, put the following code to your .gitlab-ci.yml in repository with your
+markdown docs:
+
+```yaml
+stages:
+  - apply
+
+Apply:
+  stage: apply
+  script:
+      - files=($(
+            git diff
+                $CI_COMMIT_BEFORE_SHA..$CI_COMMIT_SHA
+                --name-only
+                --diff-filter=ACMRT
+            | grep '.md$'
+        ));
+        if [[ "${#files[@]}" == "0" ]]; then exit 0; fi;
+        set -e;
+        for file in ${files[@]}; do
+          echo;
+          echo "> Uploading ${file}";
+          docker run --rm -i -v=$(pwd):/docs
+              kovetskiy/mark:latest
+                  -u $DOCS_WIKI_USERNAME
+                  -p $DOCS_WIKI_PASSWORD
+                  -b $DOCS_WIKI_BASE_URL
+                  -f ${file};
+        done
+```
+
+ and declare the following environment variables (secrets)
+* `DOCS_WIKI_USERNAME` — Username for access to Confluence
+* `DOCS_WIKI_PASSWORD` — Password for access to Confluence 
+* `DOCS_WIKI_BASE_URL` — Base URL of Confluence (cloud users should add /wiki at the end)
