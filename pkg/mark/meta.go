@@ -78,7 +78,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 			meta.Parents = append(meta.Parents, value)
 
 		case HeaderSpace:
-			meta.Space = strings.ToUpper(value)
+			meta.Space = strings.TrimSpace(value)
 
 		case HeaderTitle:
 			meta.Title = strings.TrimSpace(value)
