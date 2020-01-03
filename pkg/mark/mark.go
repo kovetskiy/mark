@@ -9,12 +9,13 @@ import (
 )
 
 func ResolvePage(
+	dryRun bool,
 	api *confluence.API,
 	meta *Meta,
-) (*confluence.PageInfo, error) {
+) (*confluence.PageInfo, *confluence.PageInfo, error) {
 	page, err := api.FindPage(meta.Space, meta.Title)
 	if err != nil {
-		return nil, karma.Format(
+		return nil, nil, karma.Format(
 			err,
 			"error while finding page %q",
 			meta.Title,
@@ -33,7 +34,7 @@ func ResolvePage(
 			ancestry,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if page == nil {
@@ -55,12 +56,13 @@ func ResolvePage(
 	}
 
 	parent, err := EnsureAncestry(
+		dryRun,
 		api,
 		meta.Space,
 		meta.Parents,
 	)
 	if err != nil {
-		return nil, karma.Format(
+		return nil, nil, karma.Format(
 			err,
 			"can't create ancestry tree: %s",
 			strings.Join(meta.Parents, ` > `),
@@ -81,5 +83,5 @@ func ResolvePage(
 		meta.Title,
 	)
 
-	return page, nil
+	return parent, page, nil
 }

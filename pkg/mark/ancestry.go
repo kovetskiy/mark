@@ -10,6 +10,7 @@ import (
 )
 
 func EnsureAncestry(
+	dryRun bool,
 	api *confluence.API,
 	space string,
 	ancestry []string,
@@ -57,23 +58,33 @@ func EnsureAncestry(
 	}
 
 	log.Debugf(
-		nil, 
+		nil,
 		"empty pages under %q to be created: %s",
 		parent.Title,
 		strings.Join(rest, ` > `),
 	)
 
-	for _, title := range rest {
-		page, err := api.CreatePage(space, parent, title, ``)
-		if err != nil {
-			return nil, karma.Format(
-				err,
-				`error during creating parent page with title %q`,
-				title,
-			)
-		}
+	if !dryRun {
+		for _, title := range rest {
+			page, err := api.CreatePage(space, parent, title, ``)
+			if err != nil {
+				return nil, karma.Format(
+					err,
+					`error during creating parent page with title %q`,
+					title,
+				)
+			}
 
-		parent = page
+			parent = page
+		}
+	} else {
+		log.Infof(
+			nil,
+			"skipping page creation due to enabled dry-run mode, "+
+				"need to create %d pages: %v",
+			len(rest),
+			rest,
+		)
 	}
 
 	return parent, nil
@@ -105,16 +116,30 @@ func ValidateAncestry(
 		)
 	}
 
-	// skipping root article title
-	for i, ancestor := range page.Ancestors[1:len(ancestry)] {
-		if ancestor.Title != ancestry[i] {
-			return nil, fmt.Errorf(
-				"broken ancestry tree; expected tree: %s; "+
-					"encountered %q at position of %q",
-				strings.Join(ancestry, ` > `),
-				ancestor.Title,
-				ancestry[i],
-			)
+	for _, parent := range ancestry[:len(ancestry)-1] {
+		found := false
+
+		// skipping root article title
+		for _, ancestor := range page.Ancestors[1:] {
+			if ancestor.Title == parent {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			list := []string{}
+
+			for _, ancestor := range page.Ancestors[1:] {
+				list = append(list, ancestor.Title)
+			}
+
+			return nil, karma.Describe("expected parent", parent).
+				Describe("list", strings.Join(list, "; ")).
+				Format(
+					nil,
+					"unexpected ancestry tree, did not find expected parent page in the tree",
+				)
 		}
 	}
 

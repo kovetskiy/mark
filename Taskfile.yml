@@ -1,0 +1,14 @@
+version: '2'
+
+vars:
+  pwd:
+    sh: pwd
+
+tasks:
+  confluence:
+    cmds:
+      - docker run -v {{ .pwd }}/docker:/var/atlassian/application-data/confluence
+          --name="confluence"
+          -p 8090:8090
+          -p 8091:8091
+          atlassian/confluence-server
