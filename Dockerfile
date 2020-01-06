@@ -1,6 +1,6 @@
 FROM golang:latest
-ENV GOPATH="/go/"
-WORKDIR /go/src/mark
+ENV GOPATH="/go"
+WORKDIR /go/src/github.com/kovetskiy/mark
 COPY / .
 RUN make get
 RUN make build
