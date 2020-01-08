@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/kovetskiy/godocs"
 	"github.com/kovetskiy/mark/pkg/confluence"
@@ -123,7 +122,8 @@ Options:
   -f <file>            Use specified markdown file for converting to html.
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
-  --dry-run            Show resulting HTML and don't update Confluence page content.
+  --dry-run            Resolve page and ancestry, show resulting HTML and exit.
+  --compile-only       Show resulting HTML and don't update Confluence page content.
   --debug              Enable debug logs.
   --trace              Enable trace logs.
   -h --help            Show this screen and call 911.
@@ -139,6 +139,7 @@ func main() {
 
 	var (
 		targetFile, _ = args["-f"].(string)
+		compileOnly   = args["--compile-only"].(bool)
 		dryRun        = args["--dry-run"].(bool)
 		editLock      = args["-k"].(bool)
 	)
@@ -205,6 +206,15 @@ func main() {
 	}
 
 	if dryRun {
+		compileOnly = true
+
+		_, _, err := mark.ResolvePage(dryRun, api, meta)
+		if err != nil {
+			log.Fatalf(err, "unable to resolve page location")
+		}
+	}
+
+	if compileOnly {
 		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
 	}
@@ -229,12 +239,23 @@ func main() {
 	var target *confluence.PageInfo
 
 	if meta != nil {
-		page, err := resolvePage(api, meta)
+		parent, page, err := mark.ResolvePage(dryRun, api, meta)
 		if err != nil {
 			log.Fatalf(
 				karma.Describe("title", meta.Title).Reason(err),
 				"unable to resolve page",
 			)
+		}
+
+		if page == nil {
+			page, err = api.CreatePage(meta.Space, parent, meta.Title, ``)
+			if err != nil {
+				log.Fatalf(
+					err,
+					"can't create page %q",
+					meta.Title,
+				)
+			}
 		}
 
 		target = page
@@ -307,94 +328,4 @@ func main() {
 		"page successfully updated: %s\n",
 		creds.BaseURL+target.Links.Full,
 	)
-
-}
-
-func resolvePage(
-	api *confluence.API,
-	meta *mark.Meta,
-) (*confluence.PageInfo, error) {
-	page, err := api.FindPage(meta.Space, meta.Title)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"error during finding page %q",
-			meta.Title,
-		)
-	}
-
-	ancestry := meta.Parents
-	if page != nil {
-		ancestry = append(ancestry, page.Title)
-	}
-
-	if len(ancestry) > 0 {
-		page, err := mark.ValidateAncestry(
-			api,
-			meta.Space,
-			ancestry,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if page == nil {
-			log.Warningf(
-				nil,
-				"page %q is not found ",
-				meta.Parents[len(ancestry)-1],
-			)
-		}
-
-		path := meta.Parents
-		path = append(path, meta.Title)
-
-		log.Debugf(
-			nil,
-			"resolving page path: ??? > %s",
-			strings.Join(path, ` > `),
-		)
-	}
-
-	parent, err := mark.EnsureAncestry(
-		api,
-		meta.Space,
-		meta.Parents,
-	)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"can't create ancestry tree: %s",
-			strings.Join(meta.Parents, ` > `),
-		)
-	}
-
-	titles := []string{}
-	for _, page := range parent.Ancestors {
-		titles = append(titles, page.Title)
-	}
-
-	titles = append(titles, parent.Title)
-
-	log.Infof(
-		nil,
-		"page will be stored under path: %s > %s",
-		strings.Join(titles, ` > `),
-		meta.Title,
-	)
-
-	if page == nil {
-		page, err := api.CreatePage(meta.Space, parent, meta.Title, ``)
-		if err != nil {
-			return nil, karma.Format(
-				err,
-				"can't create page %q",
-				meta.Title,
-			)
-		}
-
-		return page, nil
-	}
-
-	return page, nil
 }
