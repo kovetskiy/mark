@@ -5,7 +5,7 @@ VERSION = $(shell printf "%s.%s" \
 	$$(git rev-parse --short HEAD) \
 )
 
-GO111MODULE = off
+GO111MODULE = on
 
 BRANCH = $(shell git rev-parse --abbrev-ref HEAD)
 
