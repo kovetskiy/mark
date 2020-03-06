@@ -3,6 +3,7 @@ module github.com/kovetskiy/mark
 go 1.14
 
 require (
+	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/bndr/gopencils v0.0.0-20161113114152-22e283ad7611
 	github.com/go-yaml/yaml v2.1.0+incompatible // indirect
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334 // indirect
@@ -14,6 +15,7 @@ require (
 	github.com/reconquest/karma-go v0.0.0-20190930125156-7b5c19ad6eab
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/russross/blackfriday v1.5.2
+	github.com/stretchr/testify v1.5.1 // indirect
 	github.com/zazab/zhash v0.0.0-20170403032415-ad45b89afe7a // indirect
 	gopkg.in/yaml.v2 v2.2.8
 )
