@@ -22,13 +22,13 @@ var reMacroDirective = regexp.MustCompile(
 	`(?s)` + // dot capture newlines
 		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
 		/*    */ `\s*Template:\s*(?P<template>\S+)\s*` +
-		/*   */ `(\n(?P<config>.*?))?-->`,
+		/*   */ `(?P<config>\n.*?)?-->`,
 )
 
 type Macro struct {
 	Regexp   *regexp.Regexp
 	Template *template.Template
-	Config   map[string]interface{}
+	Config   string
 }
 
 func (macro *Macro) Apply(
@@ -39,14 +39,22 @@ func (macro *Macro) Apply(
 	content = macro.Regexp.ReplaceAllFunc(
 		content,
 		func(match []byte) []byte {
-			config := macro.configure(
-				macro.Config,
-				macro.Regexp.FindSubmatch(match),
-			)
+			config := map[string]interface{}{}
+
+			err = yaml.Unmarshal([]byte(macro.Config), &config)
+			if err != nil {
+				err = karma.Format(
+					err,
+					"unable to unmarshal macros config template",
+				)
+			}
 
 			var buffer bytes.Buffer
 
-			err = macro.Template.Execute(&buffer, config)
+			err = macro.Template.Execute(&buffer, macro.configure(
+				config,
+				macro.Regexp.FindSubmatch(match),
+			))
 			if err != nil {
 				err = karma.Format(
 					err,
@@ -144,17 +152,7 @@ func ExtractMacros(
 				return nil
 			}
 
-			err = yaml.Unmarshal([]byte(config), &macro.Config)
-			if err != nil {
-				err = facts.
-					Describe("config", string(config)).
-					Format(
-						err,
-						"unable to unmarshal template data config",
-					)
-
-				return nil
-			}
+			macro.Config = config
 
 			log.Tracef(
 				facts.Describe("config", macro.Config),
