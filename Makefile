@@ -38,5 +38,9 @@ push:
 	@docker tag $(NAME):$(VERSION) $(REMOTE)/$(NAME):latest
 	@docker push $(REMOTE)/$(NAME):latest
 
+release: image push
+	git tag -f $(VERSION)
+	git push --tags
+
 clean:
 	rm -rf $(NAME)
