@@ -87,7 +87,7 @@ Confluence), so `ExactAttachment` has been introduced:
 An attached link is [here](<path>)
 ```
 
-*NOTE* Be careful with `ExactAttachment`! If your path string is a subset of
+**NOTE**: Be careful with `ExactAttachment`! If your path string is a subset of
 another longer string or referenced in text, you may get undesired behavior.
 
 Mark also supports macro definitions, which are defined as regexps which will
