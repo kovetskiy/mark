@@ -28,20 +28,22 @@ type Attachment struct {
 	Path     string
 	Checksum string
 	Link     string
+	Replace  string
 }
 
 func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
 	base string,
-	names []string,
+	replacements map[string]string,
 ) ([]Attachment, error) {
 	attaches := []Attachment{}
-	for _, name := range names {
+	for replace, name := range replacements {
 		attach := Attachment{
 			Name:     name,
 			Filename: strings.ReplaceAll(name, "/", "_"),
 			Path:     filepath.Join(base, name),
+			Replace:  replace,
 		}
 
 		checksum, err := getChecksum(attach.Path)
@@ -160,18 +162,18 @@ func ResolveAttachments(
 
 func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
 	links := map[string]string{}
-	names := []string{}
+	replaces := []string{}
 
 	for _, attach := range attaches {
 		uri, err := url.ParseRequestURI(attach.Link)
 		if err != nil {
-			links[attach.Name] = strings.ReplaceAll("&", "&amp;", attach.Link)
+			links[attach.Replace] = strings.ReplaceAll("&", "&amp;", attach.Link)
 		} else {
-			links[attach.Name] = uri.Path +
+			links[attach.Replace] = uri.Path +
 				"?" + url.QueryEscape(uri.Query().Encode())
 		}
 
-		names = append(names, attach.Name)
+		replaces = append(replaces, attach.Replace)
 	}
 
 	// sort by length so first items will have bigger length
@@ -179,13 +181,13 @@ func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
 	// attachments/a.jpg
 	// attachments/a.jpg.jpg
 	// so we replace longer and then shorter
-	sort.SliceStable(names, func(i, j int) bool {
-		return len(names[i]) > len(names[j])
+	sort.SliceStable(replaces, func(i, j int) bool {
+		return len(replaces[i]) > len(replaces[j])
 	})
 
-	for _, name := range names {
-		from := `attachment://` + name
-		to := links[name]
+	for _, replace := range replaces {
+		from := replace
+		to := links[replace]
 
 		log.Debugf(nil, "replacing: %q -> %q", from, to)
 
