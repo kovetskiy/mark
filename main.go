@@ -132,7 +132,7 @@ Options:
 )
 
 func main() {
-	args, err := godocs.Parse(usage, "mark 1.0", godocs.UsePager)
+	args, err := godocs.Parse(usage, "mark 2.0", godocs.UsePager)
 	if err != nil {
 		panic(err)
 	}
