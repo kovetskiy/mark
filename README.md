@@ -29,6 +29,8 @@ File in extended format should follow specification
 <!-- Parent: <parent 1> -->
 <!-- Parent: <parent 2> -->
 <!-- Title: <title> -->
+<!-- ExactAttachment: <local path> -->
+<!-- Attachment: <local path> -->
 
 <page contents>
 ```
@@ -60,6 +62,33 @@ follows include tag:
 <!-- Include: <path>
      <yaml-data> -->
 ```
+
+Mark also supports attachments. The standard way involves declaring an
+`Attachment` along with the other items in the header, then have any links
+start with an `attachment://` pseudo-URL:
+
+```markdown
+<!-- Attachment: <path> -->
+
+<beginning of page content>
+
+An attached link is [here](attachment://<path>)
+```
+
+The standard attachment mechanism may not work in some circumstances (e.g.
+keeping content as close to identical as possible between GitHub and
+Confluence), so `ExactAttachment` has been introduced:
+
+```markdown
+<!-- ExactAttachment: <path> -->
+
+<beginning of page content>
+
+An attached link is [here](<path>)
+```
+
+**NOTE**: Be careful with `ExactAttachment`! If your path string is a subset of
+another longer string or referenced in text, you may get undesired behavior.
 
 Mark also supports macro definitions, which are defined as regexps which will
 be replaced with specified template:
