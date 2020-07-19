@@ -23,4 +23,5 @@ jobs:
         version: latest
         args: release --rm-dist
       env:
+        GOPATH: /home/runner/work/
         GITHUB_TOKEN: ${{ secrets.TOKEN }}
