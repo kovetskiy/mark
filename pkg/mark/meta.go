@@ -23,7 +23,7 @@ type Meta struct {
 	Space       string
 	Title       string
 	Layout      string
-	Attachments []string
+	Attachments map[string]string
 }
 
 var (
@@ -64,6 +64,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		if meta == nil {
 			meta = &Meta{}
+			meta.Attachments = make(map[string]string)
 		}
 
 		header := strings.Title(matches[1])
@@ -87,7 +88,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 			meta.Layout = strings.TrimSpace(value)
 
 		case HeaderAttachment:
-			meta.Attachments = append(meta.Attachments, value)
+			meta.Attachments[value] = value
 
 		default:
 			log.Errorf(
