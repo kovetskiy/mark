@@ -169,6 +169,24 @@ This is my article.
 See task MYJIRA-123.
 ```
 
+## Installation
+
+### Go Get
+
+```bash
+go get -v github.com/kovetskiy/mark
+```
+
+### Releases
+
+[Download a release from the Releases page](https://github.com/kovetskiy/mark/releases)
+
+### Docker
+
+```bash
+$ docker run --rm -i kovetskiy/mark:latest <params>
+```
+
 ## Usage
 
 ```
