@@ -251,6 +251,7 @@ Apply:
           echo "> Uploading ${file}";
           docker run --rm -i -v=$(pwd):/docs
               kovetskiy/mark:latest
+                  mark
                   -u $DOCS_WIKI_USERNAME
                   -p $DOCS_WIKI_PASSWORD
                   -b $DOCS_WIKI_BASE_URL
