@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/bndr/gopencils v0.0.0-20161113114152-22e283ad7611
+	github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815
 	github.com/go-yaml/yaml v2.1.0+incompatible // indirect
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334 // indirect
 	github.com/kovetskiy/godocs v0.0.0-20160817104724-2d9428f80f34

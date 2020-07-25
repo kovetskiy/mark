@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kovetskiy/godocs"
+	"github.com/docopt/docopt-go"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/kovetskiy/mark/pkg/mark"
@@ -132,7 +132,7 @@ Options:
 )
 
 func main() {
-	args, err := godocs.Parse(usage, "mark 2.0", godocs.UsePager)
+	args, err := docopt.Parse(usage, nil, true, "3.0", false)
 	if err != nil {
 		panic(err)
 	}

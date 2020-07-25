@@ -1,9 +1,6 @@
 NAME = $(notdir $(PWD))
 
-VERSION = $(shell printf "%s.%s" \
-	$$(git rev-list --count HEAD) \
-	$$(git rev-parse --short HEAD) \
-)
+VERSION = $(shell git describe --tags --abbrev=0)
 
 GO111MODULE = on
 
