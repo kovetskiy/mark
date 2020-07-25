@@ -3,40 +3,32 @@
 Mark — tool for syncing your markdown documentation with Atlassian Confluence
 pages.
 
-This is very usable if you store documentation to your orthodox software in git
-repository and don't want to do a handjob with updating Confluence page using
-fucking tinymce wysiwyg enterprise core editor.
+This is very useful if you store documentation to your software in a Git
+repository and don't want to do an extra job of updating Confluence page using
+a tinymce wysiwyg enterprise core editor which always breaks everything.
 
-You can store a user credentials in the configuration file, which should be
-located in ~/.config/mark with following format:
+Mark does the same but in a different way. Mark reads your markdown file, creates a Confluence page
+if it's not found by its name, uploads attachments, translates Markdown into HTML and updates the
+contents of the page via REST API. It's like you don't even need to create sections/pages in your
+Confluence anymore, just use them in your Markdown documentation.
 
-```toml
-username = "smith"
-password = "matrixishere"
-base_url = "http://confluence.local"
-```
-
-*NOTE: Cloud Confluence also need to specify /wiki path to the base_url
-parameter.*
-
-Mark understands extended file format, which, still being valid markdown,
-contains several metadata headers, which can be used to locate page inside
+Mark uses an extended file format, which, still being valid markdown,
+contains several HTML-ish metadata headers, which can be used to locate page inside
 Confluence instance and update it accordingly.
 
-File in extended format should follow specification
+File in the extended format should follow the specification:
 ```markdown
 <!-- Space: <space key> -->
 <!-- Parent: <parent 1> -->
 <!-- Parent: <parent 2> -->
 <!-- Title: <title> -->
-<!-- ExactAttachment: <local path> -->
 <!-- Attachment: <local path> -->
 
 <page contents>
 ```
 
-There can be any number of 'Parent' headers, if mark can't find specified
-parent by title, it will be created.
+There can be any number of `Parent` headers, if Mark can't find specified
+parent by title, Mark creates it.
 
 Also, optional following headers are supported:
 
@@ -55,8 +47,8 @@ to the template relative to current working dir, e.g.:
 <!-- Include: <path> -->
 ```
 
-Templates may accept configuration data in YAML format which immediately
-follows include tag:
+Templates can accept configuration data in YAML format which immediately
+follows the `Include` tag:
 
 ```markdown
 <!-- Include: <path>
@@ -65,29 +57,17 @@ follows include tag:
 
 Mark also supports attachments. The standard way involves declaring an
 `Attachment` along with the other items in the header, then have any links
-start with an `attachment://` pseudo-URL:
+with the same path:
 
 ```markdown
-<!-- Attachment: <path> -->
+<!-- Attachment: <path-to-image> -->
 
 <beginning of page content>
 
-An attached link is [here](attachment://<path>)
+An attached link is [here](<path-to-image>)
 ```
 
-The standard attachment mechanism may not work in some circumstances (e.g.
-keeping content as close to identical as possible between GitHub and
-Confluence), so `ExactAttachment` has been introduced:
-
-```markdown
-<!-- ExactAttachment: <path> -->
-
-<beginning of page content>
-
-An attached link is [here](<path>)
-```
-
-**NOTE**: Be careful with `ExactAttachment`! If your path string is a subset of
+**NOTE**: Be careful with `Attachment`! If your path string is a subset of
 another longer string or referenced in text, you may get undesired behavior.
 
 Mark also supports macro definitions, which are defined as regexps which will
@@ -212,6 +192,16 @@ mark -h | --help
 - `-v | --version`  — Show version.
 - `-h | --help` — Show help screen and call 911.
 
+You can store user credentials in the configuration file, which should be
+located in ~/.config/mark with the following format (TOML):
+
+```toml
+username = "smith"
+password = "matrixishere"
+# If you are using Confluence Cloud add the /wiki suffix to base_url
+base_url = "http://confluence.local"
+```
+
 # Tricks
 
 ## Confluence & Gitlab integration
@@ -250,5 +240,5 @@ Apply:
 
  and declare the following environment variables (secrets)
 * `DOCS_WIKI_USERNAME` — Username for access to Confluence
-* `DOCS_WIKI_PASSWORD` — Password for access to Confluence 
+* `DOCS_WIKI_PASSWORD` — Password for access to Confluence
 * `DOCS_WIKI_BASE_URL` — Base URL of Confluence (cloud users should add /wiki at the end)

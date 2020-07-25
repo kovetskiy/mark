@@ -11,12 +11,11 @@ import (
 )
 
 const (
-	HeaderParent          = `Parent`
-	HeaderSpace           = `Space`
-	HeaderTitle           = `Title`
-	HeaderLayout          = `Layout`
-	HeaderAttachment      = `Attachment`
-	HeaderExactAttachment = `ExactAttachment`
+	HeaderParent     = `Parent`
+	HeaderSpace      = `Space`
+	HeaderTitle      = `Title`
+	HeaderLayout     = `Layout`
+	HeaderAttachment = `Attachment`
 )
 
 type Meta struct {
@@ -89,9 +88,6 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 			meta.Layout = strings.TrimSpace(value)
 
 		case HeaderAttachment:
-			meta.Attachments["attachment://"+value] = value
-
-		case HeaderExactAttachment:
 			meta.Attachments[value] = value
 
 		default:

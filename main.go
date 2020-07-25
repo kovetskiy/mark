@@ -324,8 +324,13 @@ func main() {
 		}
 	}
 
-	fmt.Printf(
-		"page successfully updated: %s\n",
+	log.Infof(
+		nil,
+		"page successfully updated: %s",
 		creds.BaseURL+target.Links.Full,
+	)
+
+	fmt.Println(
+		creds.BaseURL + target.Links.Full,
 	)
 }
