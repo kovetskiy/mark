@@ -224,42 +224,47 @@ base_url = "http://confluence.local"
 
 # Tricks
 
-## Confluence & Gitlab integration
+## Continuous Integration
 
-Mark was created with CI in mind so you can easily integrate mark into your
-pipeline, put the following code to your .gitlab-ci.yml in repository with your
-markdown docs:
+It's quite trivial to integrate Mark into a CI/CD system, here is an example with [Snake CI](https://snake-ci.com/)
+in case of self-hosted Bitbucket Server / Data Center.
 
 ```yaml
 stages:
-  - apply
+  - sync
 
-Apply:
-  stage: apply
-  script:
-      - files=($(
-            git diff
-                $CI_COMMIT_BEFORE_SHA..$CI_COMMIT_SHA
-                --name-only
-                --diff-filter=ACMRT
-            | grep '.md$'
-        ));
-        if [[ "${#files[@]}" == "0" ]]; then exit 0; fi;
-        set -e;
-        for file in ${files[@]}; do
-          echo;
-          echo "> Uploading ${file}";
-          docker run --rm -i -v=$(pwd):/docs
-              kovetskiy/mark:latest
-                  mark
-                  -u $DOCS_WIKI_USERNAME
-                  -p $DOCS_WIKI_PASSWORD
-                  -b $DOCS_WIKI_BASE_URL
-                  -f ${file};
-        done
+Sync documentation:
+  stage: sync
+  only:
+    branches:
+      - main
+  image: kovetskiy/mark
+  commands:
+    - for file in $(find -type f -name '*.md'); do
+        echo "> Sync $file";
+        mark -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
+        echo;
+      done
 ```
 
- and declare the following environment variables (secrets)
-* `DOCS_WIKI_USERNAME` — Username for access to Confluence
-* `DOCS_WIKI_PASSWORD` — Password for access to Confluence
-* `DOCS_WIKI_BASE_URL` — Base URL of Confluence (cloud users should add /wiki at the end)
+In this example, I'm using the `kovetskiy/mark` image for creating a job container where the
+repository with documentation will be cloned to. The following command finds all `*.md` files and runs mark against them one by one:
+
+```bash
+for file in $(find -type f -name '*.md'); do
+    echo "> Sync $file";
+    mark -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
+    echo;
+done
+```
+
+The following directive tells the CI to run this particular job only if the changes are pushed into the
+`main` branch. It means you can safely push your changes into feature branches without being afraid
+that they automatically shown in Confluence, then go through the reviewal process and automatically
+deploy them when PR got merged.
+
+```yaml
+only:
+  branches:
+    - main
+```
