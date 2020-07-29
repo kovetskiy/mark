@@ -186,7 +186,7 @@ go get -v github.com/kovetskiy/mark
 ### Docker
 
 ```bash
-$ docker run --rm -i kovetskiy/mark:latest <params>
+$ docker run --rm -i kovetskiy/mark:latest mark <params>
 ```
 
 ## Usage
