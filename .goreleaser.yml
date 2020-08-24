@@ -9,6 +9,10 @@ builds:
   - CGO_ENABLED=0
   gcflags:
     - all=-trimpath={{.Env.GOPATH}}
+  goos:
+  - darwin
+  - linux
+  - windows
 archives:
 - replacements:
     darwin: Darwin
