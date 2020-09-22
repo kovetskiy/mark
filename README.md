@@ -116,9 +116,9 @@ By default, mark provides several built-in templates and macros:
 
 ## Template & Macros Usecases
 
-### Insert Disclamer
+### Insert Disclaimer
 
-**disclamer.md**
+**disclaimer.md**
 
 ```markdown
 **NOTE**: this document is generated, do not edit manually.
@@ -129,7 +129,7 @@ By default, mark provides several built-in templates and macros:
 <!-- Space: TEST -->
 <!-- Title: My Article -->
 
-<!-- Include: disclamer.md -->
+<!-- Include: disclaimer.md -->
 
 This is my article.
 ```
