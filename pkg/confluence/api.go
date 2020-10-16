@@ -385,6 +385,13 @@ func (api *API) CreatePage(
 				"value":          body,
 			},
 		},
+		"metadata": map[string]interface{}{
+		  "properties": map[string]interface{}{
+		    "editor": map[string]interface{}{
+		       "value": "v2",
+		    },
+		  },
+		},
 	}
 
 	if parent != nil {
