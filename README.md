@@ -156,7 +156,13 @@ This is my article.
 * :todo: Publish Article
 ```
 
-## Insert Jira Ticket
+### Insert Table of Contents
+
+```markdown
+<!-- Include: ac:toc -->
+```
+
+### Insert Jira Ticket
 
 **article.md**
 

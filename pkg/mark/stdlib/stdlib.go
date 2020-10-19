@@ -136,6 +136,19 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html */
+
+		`ac:toc`: text(
+			`<ac:structured-macro ac:name="toc">`,
+			`<ac:parameter ac:name="printable">true</ac:parameter>`,
+			`<ac:parameter ac:name="style">disc</ac:parameter>`,
+			`<ac:parameter ac:name="maxLevel">7</ac:parameter>`,
+			`<ac:parameter ac:name="minLevel">1</ac:parameter>`,
+			`<ac:parameter ac:name="exclude">{{ .Exclude }}</ac:parameter>`,
+			`<ac:parameter ac:name="outline">false</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
