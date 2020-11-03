@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"regexp"
 
-	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/reconquest/pkg/log"
 	"github.com/russross/blackfriday"
 )
 

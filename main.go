@@ -8,13 +8,14 @@ import (
 	"path/filepath"
 
 	"github.com/docopt/docopt-go"
+	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/kovetskiy/mark/pkg/mark"
 	"github.com/kovetskiy/mark/pkg/mark/includes"
 	"github.com/kovetskiy/mark/pkg/mark/macro"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/karma-go"
+	"github.com/reconquest/pkg/log"
 )
 
 const (
@@ -132,7 +133,7 @@ Options:
 )
 
 func main() {
-	args, err := docopt.Parse(usage, nil, true, "3.2", false)
+	args, err := docopt.Parse(usage, nil, true, "3.3", false)
 	if err != nil {
 		panic(err)
 	}
@@ -144,7 +145,13 @@ func main() {
 		editLock      = args["-k"].(bool)
 	)
 
-	log.Init(args["--debug"].(bool), args["--trace"].(bool))
+	if args["--debug"].(bool) {
+		log.SetLevel(lorg.LevelDebug)
+	}
+
+	if args["--trace"].(bool) {
+		log.SetLevel(lorg.LevelTrace)
+	}
 
 	config, err := LoadConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 	if err != nil {

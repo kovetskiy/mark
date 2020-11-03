@@ -11,8 +11,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bndr/gopencils"
+	"github.com/kovetskiy/gopencils"
+	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/karma-go"
+	"github.com/reconquest/pkg/log"
 )
 
 type User struct {
@@ -62,16 +64,31 @@ type form struct {
 	writer *multipart.Writer
 }
 
+type tracer struct {
+	prefix string
+}
+
+func (tracer *tracer) Printf(format string, args ...interface{}) {
+	log.Tracef(nil, tracer.prefix+" "+format, args...)
+}
+
 func NewAPI(baseURL string, username string, password string) *API {
 	auth := &gopencils.BasicAuth{username, password}
 
-	return &API{
-		rest: gopencils.Api(baseURL+"/rest/api", auth),
+	rest := gopencils.Api(baseURL+"/rest/api", auth)
+	json := gopencils.Api(
+		baseURL+"/rpc/json-rpc/confluenceservice-v2",
+		auth,
+	)
 
-		json: gopencils.Api(
-			baseURL+"/rpc/json-rpc/confluenceservice-v2",
-			auth,
-		),
+	if log.GetLevel() == lorg.LevelTrace {
+		rest.Logger = &tracer{"rest:"}
+		json.Logger = &tracer{"json-rpc:"}
+	}
+
+	return &API{
+		rest: rest,
+		json: json,
 	}
 }
 
@@ -386,11 +403,11 @@ func (api *API) CreatePage(
 			},
 		},
 		"metadata": map[string]interface{}{
-		  "properties": map[string]interface{}{
-		    "editor": map[string]interface{}{
-		       "value": "v2",
-		    },
-		  },
+			"properties": map[string]interface{}{
+				"editor": map[string]interface{}{
+					"value": "v2",
+				},
+			},
 		},
 	}
 
@@ -488,7 +505,6 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	}
 
 	return &response.Results[0].User, nil
-
 }
 
 func (api *API) GetCurrentUser() (*User, error) {

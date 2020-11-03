@@ -11,20 +11,14 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/kovetskiy/mark/pkg/log"
 	"github.com/reconquest/karma-go"
+	"github.com/reconquest/pkg/log"
 )
 
-var (
-	reIncludeDirective = regexp.MustCompile(
-		// <!-- Include: <template path>
-		//      <optional yaml data> -->
-
-		`(?s)` + // dot capture newlines
-			/**/ `<!--\s*Include:\s*(?P<template>\S+)\s*` +
-			/*   */ `(\n(?P<config>.*?))?-->`,
-	)
-)
+// <!-- Include: <template path>
+//      <optional yaml data> -->
+var reIncludeDirective = regexp.MustCompile(
+	`(?s)<!--\s*Include:\s*(?P<template>\S+)\s*(\n(?P<config>.*?))?-->`)
 
 func LoadTemplate(
 	path string,

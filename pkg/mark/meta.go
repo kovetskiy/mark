@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kovetskiy/mark/pkg/log"
+	"github.com/reconquest/pkg/log"
 )
 
 const (
