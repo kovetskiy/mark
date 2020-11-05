@@ -133,7 +133,7 @@ Options:
 )
 
 func main() {
-	args, err := docopt.Parse(usage, nil, true, "3.3", false)
+	args, err := docopt.Parse(usage, nil, true, "3.3.1", false)
 	if err != nil {
 		panic(err)
 	}
