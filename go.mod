@@ -7,7 +7,7 @@ require (
 	github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815
 	github.com/go-yaml/yaml v2.1.0+incompatible // indirect
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334 // indirect
-	github.com/kovetskiy/gopencils v0.0.0-20201103141120-610929377f9b
+	github.com/kovetskiy/gopencils v0.0.0-20201105104258-2a0bfdd710fb
 	github.com/kovetskiy/ko v0.0.0-20190324102900-26b8dd0988bf
 	github.com/kovetskiy/lorg v0.0.0-20200107130803-9a7136a95634
 	github.com/kovetskiy/toml v0.2.0 // indirect
