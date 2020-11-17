@@ -108,7 +108,6 @@ By default, mark provides several built-in templates and macros:
 Usage:
   mark [options] [-u <username>] [-p <token>] [-k] [-l <url>] -f <file>
   mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] -f <file>
-  mark [options] [-u <username>] [-p <password>] [-k] [-n] -c <file>
   mark -v | --version
   mark -h | --help
 
