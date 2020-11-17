@@ -10,7 +10,6 @@ import (
 	"regexp"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/reconquest/pkg/log"
 )
 
 type Link struct {
@@ -25,8 +24,7 @@ func ResolveRelativeLinks(
 	api *confluence.API,
 	markdown []byte,
 	base string,
-) ([]Link, error) {
-	links := []Link{}
+) (links []Link, collectedErrors error) {
 	re := regexp.MustCompile("\\[.*?\\]\\((.*?)\\)")
 	submatchall := re.FindAllStringSubmatch(string(markdown), -1)
 	for _, element := range submatchall {
@@ -35,17 +33,19 @@ func ResolveRelativeLinks(
 		if _, err := os.Stat(filepath); err == nil {
 			linkMarkdown, err := ioutil.ReadFile(filepath)
 			if err != nil {
-				log.Errorf(err, "unable to read markdown file %s", filepath)
+				collectedErrors = fmt.Errorf("%w\n unable to read markdown file "+filepath, collectedErrors)
 				continue
 			}
 			meta, _, err := ExtractMeta(linkMarkdown)
 			if err != nil {
-				log.Errorf(err, "unable to get metadata from markdown file %s", filepath)
+				collectedErrors = fmt.Errorf("%w\n unable to get metadata from markdown file "+filepath, collectedErrors)
 				continue
 			}
 			link := fmt.Sprintf("%s/display/%s/%s", api.BaseURL, meta.Space, url.QueryEscape(meta.Title))
 			confluencePage, err := api.FindPage(meta.Space, meta.Title)
-			if err == nil && confluencePage != nil {
+			if err != nil {
+				collectedErrors = fmt.Errorf("%w\n "+err.Error(), collectedErrors)
+			} else if confluencePage != nil {
 				// Needs baseURL, as REST api response URL doesn't contain subpath ir confluence is server from that
 				link = api.BaseURL + confluencePage.Links.Full
 			}
@@ -56,7 +56,7 @@ func ResolveRelativeLinks(
 			})
 		}
 	}
-	return links, nil
+	return links, collectedErrors
 }
 
 // ReplaceRelativeLinks replaces relative links between md files (in same
