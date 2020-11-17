@@ -123,6 +123,7 @@ Options:
   -f <file>            Use specified markdown file for converting to html.
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
+  --drop-h1            Don't include H1 headings in Confluence output.
   --dry-run            Resolve page and ancestry, show resulting HTML and exit.
   --compile-only       Show resulting HTML and don't update Confluence page content.
   --debug              Enable debug logs.
@@ -143,6 +144,7 @@ func main() {
 		compileOnly   = args["--compile-only"].(bool)
 		dryRun        = args["--dry-run"].(bool)
 		editLock      = args["-k"].(bool)
+		dropH1        = args["--drop-h1"].(bool)
 	)
 
 	if args["--debug"].(bool) {
@@ -285,6 +287,11 @@ func main() {
 	}
 
 	markdown = mark.CompileAttachmentLinks(markdown, attaches)
+
+	if dropH1 {
+		log.Info("Leading H1 heading will be excluded from the Confluence output")
+		markdown = mark.DropH1Markdown(markdown)
+	}
 
 	html := mark.CompileMarkdown(markdown, stdlib)
 
