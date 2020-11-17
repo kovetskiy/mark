@@ -91,9 +91,11 @@ func CompileMarkdown(
 	return string(html)
 }
 
-// dropH1Markdown will drop leading H1 headings to prevent
-// duplication of or conflict with page titles.
-func DropH1Markdown(
+// DropDocumentLeadingH1 will drop leading H1 headings to prevent
+// duplication of or visual conflict with page titles.
+// NOTE: This is intended only to operate on the whole markdown document.
+// Operating on individual lines will clear them if the begin with `#`.
+func DropDocumentLeadingH1(
 	markdown []byte,
 ) []byte {
 	h1 := regexp.MustCompile(`^#[^#].*\n`)

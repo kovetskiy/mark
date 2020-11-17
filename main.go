@@ -290,7 +290,7 @@ func main() {
 
 	if dropH1 {
 		log.Info("Leading H1 heading will be excluded from the Confluence output")
-		markdown = mark.DropH1Markdown(markdown)
+		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
 	html := mark.CompileMarkdown(markdown, stdlib)
