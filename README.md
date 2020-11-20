@@ -199,7 +199,8 @@ $ docker run --rm -i kovetskiy/mark:latest mark <params>
 
 ```
 mark [options] [-u <username>] [-p <password>] [-k] [-l <url>] -f <file>
-mark [options] [-u <username>] [-p <password>] [-k] [-n] -c <file>
+mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] -f <file>
+mark [options] [-u <username>] [-p <password>] [--drop-h1] -f <file>
 mark -v | --version
 mark -h | --help
 ```
@@ -208,14 +209,17 @@ mark -h | --help
 - `-p <password>` — Use specified password for updating Confluence page.
 - `-l <url>` — Edit specified Confluence page.
     If -l is not specified, file should contain metadata (see above).
+- `-b <url>` or `--base-url <url>` – Base URL for Confluence.
+    Alternative option for base_url config field.
 - `-f <file>` — Use specified markdown file for converting to html.
 - `-c <file>` — Specify configuration file which should be used for reading
     Confluence page URL and markdown file path.
 - `-k` — Lock page editing to current user only to prevent accidental
     manual edits over Confluence Web UI.
+- `--drop-h1` – Don't include H1 headings in Confluence output.
 - `--dry-run` — Show resulting HTML and don't update Confluence page content.
 - `--trace` — Enable trace logs.
-- `-v | --version`  — Show version.
+- `-v | --version` — Show version.
 - `-h | --help` — Show help screen and call 911.
 
 You can store user credentials in the configuration file, which should be
