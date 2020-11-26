@@ -4,8 +4,6 @@ VERSION = $(shell git describe --tags --abbrev=0)
 
 GO111MODULE = on
 
-BRANCH = $(shell git rev-parse --abbrev-ref HEAD)
-
 REMOTE = kovetskiy
 
 version:
