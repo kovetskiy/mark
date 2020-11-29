@@ -115,7 +115,7 @@ must stay in the front _if it is given_:
 
     [<language>] ["collapse"] ["title" <your title>]
 
-[code block macro]: https://confluence.atlassian.com/doc/code-block-macro-139390.html
+[Code Block Macro]: https://confluence.atlassian.com/doc/code-block-macro-139390.html
 
 ## Template & Macros
 
