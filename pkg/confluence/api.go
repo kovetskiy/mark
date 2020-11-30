@@ -26,7 +26,8 @@ type API struct {
 
 	// it's deprecated accordingly to Atlassian documentation,
 	// but it's only way to set permissions
-	json *gopencils.Resource
+	json    *gopencils.Resource
+	BaseURL string
 }
 
 type PageInfo struct {
@@ -87,8 +88,9 @@ func NewAPI(baseURL string, username string, password string) *API {
 	}
 
 	return &API{
-		rest: rest,
-		json: json,
+		rest:    rest,
+		json:    json,
+		BaseURL: strings.TrimSuffix(baseURL, "/"),
 	}
 }
 

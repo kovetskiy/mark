@@ -15,6 +15,6 @@ require (
 	github.com/reconquest/pkg v0.0.0-20201028091908-8e9a5e0226ef
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/russross/blackfriday v1.5.2
-	github.com/stretchr/testify v1.5.1 // indirect
+	github.com/stretchr/testify v1.5.1
 	gopkg.in/yaml.v2 v2.2.8
 )
