@@ -3,6 +3,8 @@ package mark
 import (
 	"bytes"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
@@ -15,6 +17,37 @@ type ConfluenceRenderer struct {
 	Stdlib *stdlib.Lib
 }
 
+func ParseLanguage(lang string) string {
+	// lang takes the following form: language? "collapse"? ("title"? <any string>*)?
+	// let's split it by spaces
+	paramlist := strings.Fields(lang)
+
+	// get the word in question, aka the first one
+	first := lang
+	if len(paramlist) > 0 {
+		first = paramlist[0]
+	}
+
+	if first == "collapse" || first == "title" {
+		// collapsing or including a title without a language
+		return ""
+	}
+	// the default case with language being the first one
+	return first
+}
+
+func ParseTitle(lang string) string {
+	index := strings.Index(lang, "title")
+	if index >= 0 {
+		// it's found, check if title is given and return it
+		start := index + 6
+		if len(lang) > start {
+			return lang[start:]
+		}
+	}
+	return ""
+}
+
 func (renderer ConfluenceRenderer) BlockCode(
 	out *bytes.Buffer,
 	text []byte,
@@ -25,9 +58,13 @@ func (renderer ConfluenceRenderer) BlockCode(
 		"ac:code",
 		struct {
 			Language string
+			Collapse string
+			Title    string
 			Text     string
 		}{
-			lang,
+			ParseLanguage(lang),
+			strconv.FormatBool(strings.Contains(lang, "collapse")),
+			ParseTitle(lang),
 			string(text),
 		},
 	)

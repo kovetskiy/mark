@@ -92,6 +92,33 @@ for example:
        Ticket: ${0} -->
 ```
 
+### Code Blocks
+
+If you have long code blocks, you can make them collapsible with the [Code Block Macro]:
+
+    ```bash collapse
+    ...
+    some long bash code block
+    ...
+    ```
+
+And you can also add a title:
+
+    ```bash collapse title Some long long bash function
+    ...
+    some long bash code block
+    ...
+    ```
+
+You can collapse or have a title without language or any mix, but the language
+must stay in the front _if it is given_:
+
+    [<language>] ["collapse"] ["title" <your title>]
+
+[Code Block Macro]: https://confluence.atlassian.com/doc/code-block-macro-139390.html
+
+## Template & Macros
+
 By default, mark provides several built-in templates and macros:
 
 * template `ac:status` to include badge-like text, which accepts following
