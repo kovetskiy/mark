@@ -162,6 +162,29 @@ This is my article.
 <!-- Include: ac:toc -->
 ```
 
+If default TOC looks don't find a way to your heart, try [parametrizing it][Confluence TOC Macro], for example:
+
+```markdown
+<!-- Macro: :toc:
+     Template: ac:toc
+     Printable: 'false'
+     MinLevel: 2 -->
+
+# This is my nice title
+
+:toc:
+```
+
+You can call the `Macro` as you like but the `Template` field must have the `ac:toc` value.
+Also, note the single quotes around `'false'`.
+
+See [Confluence TOC Macro] for the list of parameters - keep in mind that here
+they start with capital letters. Every skipped field will have the default
+value, so feel free to include only the ones that you require.
+
+
+[Confluence TOC Macro]:https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html
+
 ### Insert Jira Ticket
 
 **article.md**

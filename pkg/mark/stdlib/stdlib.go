@@ -139,14 +139,17 @@ func templates(api *confluence.API) (*template.Template, error) {
 		/* https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html */
 
 		`ac:toc`: text(
-			`<ac:structured-macro ac:name="toc">`,
-			`<ac:parameter ac:name="printable">true</ac:parameter>`,
-			`<ac:parameter ac:name="style">disc</ac:parameter>`,
-			`<ac:parameter ac:name="maxLevel">7</ac:parameter>`,
-			`<ac:parameter ac:name="minLevel">1</ac:parameter>`,
-			`<ac:parameter ac:name="exclude">{{ .Exclude }}</ac:parameter>`,
-			`<ac:parameter ac:name="outline">false</ac:parameter>`,
-			`</ac:structured-macro>`,
+			`<ac:structured-macro ac:name="toc">{{printf "\n"}}`,
+			`<ac:parameter ac:name="printable">{{ or .Printable "true" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="style">{{ or .Style "disc" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="maxLevel">{{ or .MaxLevel "7" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="indent">{{ or .Indent "" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="minLevel">{{ or .MinLevel "1" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="exclude">{{ or .Exclude "" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="type">{{ or .Type "list" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="outline">{{ or .Outline "clear" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="include">{{ or .Include "" }}</ac:parameter>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
 		// TODO(seletskiy): more templates here
