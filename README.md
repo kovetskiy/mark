@@ -1,6 +1,6 @@
 # Mark
 
-Mark — tool for syncing your markdown documentation with Atlassian Confluence
+Mark — a tool for syncing your markdown documentation with Atlassian Confluence
 pages.
 
 Read the blog post discussing the tool — https://samizdat.dev/use-markdown-for-confluence/
