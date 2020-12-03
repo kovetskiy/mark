@@ -10,96 +10,169 @@ import (
 	"regexp"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/reconquest/karma-go"
+	"github.com/reconquest/pkg/log"
 )
 
-type Link struct {
-	MDLink string
-	Link   string
+type LinkSubstitution struct {
+	From string
+	To   string
 }
 
-// ResolveRelativeLinks finds links in the markdown, and replaces one pointing
-// to other Markdowns either by own link (if not created to Confluence yet) or
-// witn actual Confluence link
+type markdownLink struct {
+	full     string
+	filename string
+	hash     string
+}
+
 func ResolveRelativeLinks(
 	api *confluence.API,
+	meta *Meta,
 	markdown []byte,
 	base string,
-) (links []Link, collectedErrors error) {
-	currentMarkdownMetadata, onlyMarkdown, err := ExtractMeta(markdown)
-	if err != nil {
-		return links, fmt.Errorf("unable to get metadata from handled markdown file. Error %w", err)
+) ([]LinkSubstitution, error) {
+	matches := parseLinks(string(markdown))
+
+	links := []LinkSubstitution{}
+	for _, match := range matches {
+		log.Tracef(
+			nil,
+			"found a relative link: full=%s filename=%s hash=%s",
+			match.full,
+			match.filename,
+			match.hash,
+		)
+
+		resolved, err := resolveLink(api, base, match)
+		if err != nil {
+			return nil, karma.Format(err, "resolve link: %q", match.full)
+		}
+
+		if resolved == "" {
+			continue
+		}
+
+		links = append(links, LinkSubstitution{
+			From: match.full,
+			To:   resolved,
+		})
 	}
 
-	currentPageLinkString, collectedErrors := getConfluenceLink(api, currentMarkdownMetadata.Space, currentMarkdownMetadata.Title, collectedErrors)
-
-	submatchall := collectLinksFromMarkdown(string(onlyMarkdown))
-
-	for _, element := range submatchall {
-		link := Link{
-			MDLink: element[1],
-			Link:   currentPageLinkString,
-		}
-		// If link points to markdown like target, we build link for that in Confluence
-		if len(element[2]) > 0 {
-			possibleMDFile := element[2]
-			filepath := filepath.Join(base, possibleMDFile)
-			if _, err := os.Stat(filepath); err == nil {
-				linkMarkdown, err := ioutil.ReadFile(filepath)
-				if err != nil {
-					collectedErrors = fmt.Errorf("%w\n unable to read markdown file "+filepath, collectedErrors)
-					continue
-				}
-				// This helps to determine if found link points to file that's not markdown
-				// or have mark required metadata
-				meta, _, err := ExtractMeta(linkMarkdown)
-				if err != nil {
-					collectedErrors = fmt.Errorf("%w\n unable to get metadata from markdown file "+filepath, collectedErrors)
-					continue
-				}
-
-				link.Link, collectedErrors = getConfluenceLink(api, meta.Space, meta.Title, collectedErrors)
-			}
-		}
-
-		if len(element[3]) > 0 {
-			link.Link = currentPageLinkString + "#" + element[2]
-		}
-
-		links = append(links, link)
-	}
-	return links, collectedErrors
+	return links, nil
 }
 
-// ReplaceRelativeLinks replaces relative links between md files (in same
-// directory structure) with links working in Confluence
-func ReplaceRelativeLinks(markdown []byte, links []Link) []byte {
+func resolveLink(
+	api *confluence.API,
+	base string,
+	link markdownLink,
+) (string, error) {
+	var result string
+
+	if len(link.filename) > 0 {
+		filepath := filepath.Join(base, link.filename)
+		if _, err := os.Stat(filepath); err != nil {
+			return "", nil
+		}
+
+		linkContents, err := ioutil.ReadFile(filepath)
+		if err != nil {
+			return "", karma.Format(err, "read file: %s", filepath)
+		}
+
+		// This helps to determine if found link points to file that's
+		// not markdown or have mark required metadata
+		linkMeta, _, err := ExtractMeta(linkContents)
+		if err != nil {
+			log.Errorf(
+				err,
+				"unable to extract metadata from %q; ignoring the relative link",
+				filepath,
+			)
+
+			return "", nil
+		}
+
+		if linkMeta == nil {
+			return "", nil
+		}
+
+		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
+		if err != nil {
+			return "", karma.Format(
+				err,
+				"find confluence page: %s / %s / %s",
+				filepath,
+				linkMeta.Space,
+				linkMeta.Title,
+			)
+		}
+
+		if result == "" {
+			return "", nil
+		}
+	}
+
+	if len(link.hash) > 0 {
+		result = result + "#" + link.hash
+	}
+
+	return result, nil
+}
+
+func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 	for _, link := range links {
+		if link.From == link.To {
+			continue
+		}
+
+		log.Tracef(nil, "substitute link: %q -> %q", link.From, link.To)
+
 		markdown = bytes.ReplaceAll(
 			markdown,
-			[]byte(fmt.Sprintf("](%s)", link.MDLink)),
-			[]byte(fmt.Sprintf("](%s)", link.Link)),
+			[]byte(fmt.Sprintf("](%s)", link.From)),
+			[]byte(fmt.Sprintf("](%s)", link.To)),
 		)
 	}
+
 	return markdown
 }
 
-// collectLinksFromMarkdown collects all links from given markdown file
-// (including images and external links)
-func collectLinksFromMarkdown(markdown string) [][]string {
+func parseLinks(markdown string) []markdownLink {
 	re := regexp.MustCompile("\\[[^\\]]+\\]\\((([^\\)#]+)?#?([^\\)]+)?)\\)")
-	return re.FindAllStringSubmatch(markdown, -1)
-}
+	matches := re.FindAllStringSubmatch(markdown, -1)
 
-// getConfluenceLink build (to be) link for Conflunce, and tries to verify from API if there's real link available
-func getConfluenceLink(api *confluence.API, space, title string, collectedErrors error) (string, error) {
-	link := fmt.Sprintf("%s/display/%s/%s", api.BaseURL, space, url.QueryEscape(title))
-	confluencePage, err := api.FindPage(space, title)
-	if err != nil {
-		collectedErrors = fmt.Errorf("%w\n "+err.Error(), collectedErrors)
-	} else if confluencePage != nil {
-		// Needs baseURL, as REST api response URL doesn't contain subpath ir confluence is server from that
-		link = api.BaseURL + confluencePage.Links.Full
+	links := make([]markdownLink, len(matches))
+	for i, match := range matches {
+		links[i] = markdownLink{
+			full:     match[1],
+			filename: match[2],
+			hash:     match[3],
+		}
 	}
 
-	return link, collectedErrors
+	return links
+}
+
+// getConfluenceLink build (to be) link for Conflunce, and tries to verify from
+// API if there's real link available
+func getConfluenceLink(api *confluence.API, space, title string) (string, error) {
+	link := fmt.Sprintf(
+		"%s/display/%s/%s",
+		api.BaseURL,
+		space,
+		url.QueryEscape(title),
+	)
+
+	page, err := api.FindPage(space, title)
+	if err != nil {
+		return "", karma.Format(err, "api: find page")
+	}
+
+	if page != nil {
+		// Needs baseURL, as REST api response URL doesn't contain subpath ir
+		// confluence is server from that
+		link = api.BaseURL + page.Links.Full
+	}
+
+	return link, nil
 }

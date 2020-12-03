@@ -213,11 +213,12 @@ func main() {
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, markdown, ".")
+	links, err := mark.ResolveRelativeLinks(api, meta, markdown, ".")
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}
-	markdown = mark.ReplaceRelativeLinks(markdown, links)
+
+	markdown = mark.SubstituteLinks(markdown, links)
 
 	if dryRun {
 		compileOnly = true
