@@ -576,8 +576,10 @@ func (api *API) RestrictPageUpdatesServer(
 	).Post([]interface{}{
 		page.ID,
 		"Edit",
-		map[string]interface{}{
-			"userName": allowedUser,
+		[]map[string]interface{}{
+			{
+				"userName": allowedUser,
+			},
 		},
 	})
 	if err != nil {
