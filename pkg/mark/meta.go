@@ -16,6 +16,7 @@ const (
 	HeaderTitle      = `Title`
 	HeaderLayout     = `Layout`
 	HeaderAttachment = `Attachment`
+	HeaderLabel      = `Label`
 )
 
 type Meta struct {
@@ -24,6 +25,7 @@ type Meta struct {
 	Title       string
 	Layout      string
 	Attachments map[string]string
+	Labels      []string
 }
 
 var (
@@ -89,6 +91,9 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		case HeaderAttachment:
 			meta.Attachments[value] = value
+
+		case HeaderLabel:
+			meta.Labels = append(meta.Labels, value)
 
 		default:
 			log.Errorf(

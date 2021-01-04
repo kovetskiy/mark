@@ -434,7 +434,7 @@ func (api *API) CreatePage(
 }
 
 func (api *API) UpdatePage(
-	page *PageInfo, newContent string,
+	page *PageInfo, newContent string, newLabels []string,
 ) error {
 	nextPageVersion := page.Version.Number + 1
 
@@ -448,6 +448,17 @@ func (api *API) UpdatePage(
 	// picking only the last one, which is required by confluence
 	oldAncestors := []map[string]interface{}{
 		{"id": page.Ancestors[len(page.Ancestors)-1].Id},
+	}
+
+	labels := []map[string]interface{}{}
+	for _, label := range newLabels {
+		if label != "" {
+			item := map[string]interface{}{
+				"prexix": "global",
+				"name":   label,
+			}
+			labels = append(labels, item)
+		}
 	}
 
 	payload := map[string]interface{}{
@@ -464,6 +475,9 @@ func (api *API) UpdatePage(
 				"value":          string(newContent),
 				"representation": "storage",
 			},
+		},
+		"metadata": map[string]interface{}{
+			"labels": labels,
 		},
 	}
 

@@ -25,6 +25,8 @@ File in the extended format should follow the specification:
 <!-- Parent: <parent 2> -->
 <!-- Title: <title> -->
 <!-- Attachment: <local path> -->
+<!-- Label: <label 1> -->
+<!-- Label: <label 2> -->
 
 <page contents>
 ```

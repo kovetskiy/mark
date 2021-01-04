@@ -240,7 +240,7 @@ func main() {
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html)
+	err = api.UpdatePage(target, html, meta.Labels)
 	if err != nil {
 		log.Fatal(err)
 	}
