@@ -434,7 +434,7 @@ func (api *API) CreatePage(
 }
 
 func (api *API) UpdatePage(
-	page *PageInfo, newContent string, newLabels []string,
+	page *PageInfo, newContent string, minorEdit bool, newLabels []string,
 ) error {
 	nextPageVersion := page.Version.Number + 1
 
@@ -467,7 +467,7 @@ func (api *API) UpdatePage(
 		"title": page.Title,
 		"version": map[string]interface{}{
 			"number":    nextPageVersion,
-			"minorEdit": false,
+			"minorEdit": minorEdit,
 		},
 		"ancestors": oldAncestors,
 		"body": map[string]interface{}{

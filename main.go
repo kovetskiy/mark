@@ -43,6 +43,7 @@ Options:
   --drop-h1            Don't include H1 headings in Confluence output.
   --dry-run            Resolve page and ancestry, show resulting HTML and exit.
   --compile-only       Show resulting HTML and don't update Confluence page content.
+  --minor-edit         Don't send notifications while updating Confluence page.
   --debug              Enable debug logs.
   --trace              Enable trace logs.
   -h --help            Show this screen and call 911.
@@ -62,6 +63,7 @@ func main() {
 		dryRun        = args["--dry-run"].(bool)
 		editLock      = args["-k"].(bool)
 		dropH1        = args["--drop-h1"].(bool)
+		minorEdit     = args["--minor-edit"].(bool)
 	)
 
 	if args["--debug"].(bool) {
@@ -240,7 +242,7 @@ func main() {
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html, meta.Labels)
+	err = api.UpdatePage(target, html, minorEdit, meta.Labels)
 	if err != nil {
 		log.Fatal(err)
 	}
