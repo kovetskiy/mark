@@ -25,6 +25,8 @@ File in the extended format should follow the specification:
 <!-- Parent: <parent 2> -->
 <!-- Title: <title> -->
 <!-- Attachment: <local path> -->
+<!-- Label: <label 1> -->
+<!-- Label: <label 2> -->
 
 <page contents>
 ```
@@ -268,6 +270,7 @@ mark -h | --help
     manual edits over Confluence Web UI.
 - `--drop-h1` – Don't include H1 headings in Confluence output.
 - `--dry-run` — Show resulting HTML and don't update Confluence page content.
+- `--minor-edit` — Don't send notifications while updating Confluence page.
 - `--trace` — Enable trace logs.
 - `-v | --version` — Show version.
 - `-h | --help` — Show help screen and call 911.
@@ -281,6 +284,8 @@ password = "matrixishere"
 # If you are using Confluence Cloud add the /wiki suffix to base_url
 base_url = "http://confluence.local"
 ```
+
+**NOTE**: Labels aren't supported when using `minor-edit`!
 
 # Tricks
 
