@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"io/ioutil"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/reconquest/karma-go"
@@ -45,6 +47,17 @@ func GetCredentials(
 					"flag or be stored in configuration file",
 			)
 		}
+	}
+
+	if password == "-" {
+		b, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, karma.Format(
+				err,
+				"unable to read password from stdin",
+			)
+		}
+		password = string(b)
 	}
 
 	url, err := url.Parse(targetURL)
