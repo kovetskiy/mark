@@ -1,18 +1,18 @@
 package mark
 
 import (
-	"bytes"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
-	"github.com/russross/blackfriday"
+	bf "github.com/russross/blackfriday/v2"
 )
 
 type ConfluenceRenderer struct {
-	blackfriday.Renderer
+	bf.Renderer
 
 	Stdlib *stdlib.Lib
 }
@@ -48,30 +48,36 @@ func ParseTitle(lang string) string {
 	return ""
 }
 
-func (renderer ConfluenceRenderer) BlockCode(
-	out *bytes.Buffer,
-	text []byte,
-	lang string,
-) {
-	renderer.Stdlib.Templates.ExecuteTemplate(
-		out,
-		"ac:code",
-		struct {
-			Language string
-			Collapse string
-			Title    string
-			Text     string
-		}{
-			ParseLanguage(lang),
-			strconv.FormatBool(strings.Contains(lang, "collapse")),
-			ParseTitle(lang),
-			string(text),
-		},
-	)
+func (renderer ConfluenceRenderer) RenderNode(
+	writer io.Writer,
+	node *bf.Node,
+	entering bool,
+) bf.WalkStatus {
+	if node.Type == bf.CodeBlock {
+		lang := string(node.Info)
+		renderer.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:code",
+			struct {
+				Language string
+				Collapse string
+				Title    string
+				Text     string
+			}{
+				ParseLanguage(lang),
+				strconv.FormatBool(strings.Contains(lang, "collapse")),
+				ParseTitle(lang),
+				string(node.Literal),
+			},
+		)
+
+		return bf.GoToNext
+	}
+	return renderer.Renderer.RenderNode(writer, node, entering)
 }
 
 // compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
-// equivalent, because blackfriday markdown parser replaces that tags with
+// equivalent, because bf markdown parser replaces that tags with
 // <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
 func CompileMarkdown(
 	markdown []byte,
@@ -79,7 +85,7 @@ func CompileMarkdown(
 ) string {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	colon := regexp.MustCompile(`---BLACKFRIDAY-COLON---`)
+	colon := regexp.MustCompile(`---bf-COLON---`)
 
 	tags := regexp.MustCompile(`<(/?\S+?):(\S+?)>`)
 
@@ -89,37 +95,37 @@ func CompileMarkdown(
 	)
 
 	renderer := ConfluenceRenderer{
-		Renderer: blackfriday.HtmlRenderer(
-			blackfriday.HTML_USE_XHTML|
-				blackfriday.HTML_USE_SMARTYPANTS|
-				blackfriday.HTML_SMARTYPANTS_FRACTIONS|
-				blackfriday.HTML_SMARTYPANTS_DASHES|
-				blackfriday.HTML_SMARTYPANTS_LATEX_DASHES,
-			"", "",
+		Renderer: bf.NewHTMLRenderer(
+			bf.HTMLRendererParameters{
+				Flags: bf.UseXHTML |
+					bf.Smartypants |
+					bf.SmartypantsFractions |
+					bf.SmartypantsDashes |
+					bf.SmartypantsLatexDashes,
+			},
 		),
 
 		Stdlib: stdlib,
 	}
 
-	html := blackfriday.MarkdownOptions(
+	html := bf.Run(
 		markdown,
-		renderer,
-		blackfriday.Options{
-			Extensions: blackfriday.EXTENSION_NO_INTRA_EMPHASIS |
-				blackfriday.EXTENSION_TABLES |
-				blackfriday.EXTENSION_FENCED_CODE |
-				blackfriday.EXTENSION_AUTOLINK |
-				blackfriday.EXTENSION_LAX_HTML_BLOCKS |
-				blackfriday.EXTENSION_STRIKETHROUGH |
-				blackfriday.EXTENSION_SPACE_HEADERS |
-				blackfriday.EXTENSION_HEADER_IDS |
-				blackfriday.EXTENSION_AUTO_HEADER_IDS |
-				blackfriday.EXTENSION_TITLEBLOCK |
-				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
-				blackfriday.EXTENSION_DEFINITION_LISTS |
-				blackfriday.EXTENSION_HARD_LINE_BREAK |
-				blackfriday.EXTENSION_NO_EMPTY_LINE_BEFORE_BLOCK,
-		},
+		bf.WithRenderer(renderer),
+		bf.WithExtensions(
+			bf.NoIntraEmphasis|
+				bf.Tables|
+				bf.FencedCode|
+				bf.Autolink|
+				bf.LaxHTMLBlocks|
+				bf.Strikethrough|
+				bf.SpaceHeadings|
+				bf.HeadingIDs|
+				bf.AutoHeadingIDs|
+				bf.Titleblock|
+				bf.BackslashLineBreak|
+				bf.DefinitionLists|
+				bf.NoEmptyLineBeforeBlock,
+		),
 	)
 
 	html = colon.ReplaceAll(html, []byte(`:`))
