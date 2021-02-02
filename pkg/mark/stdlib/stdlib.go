@@ -105,11 +105,16 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		// This template is used for rendering code in ```
 		`ac:code`: text(
-			`<ac:structured-macro ac:name="code">{{printf "\n"}}`,
-			`<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>{{printf "\n"}}`,
-			`<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:structured-macro ac:name="expand">{{printf "\n"}}`,
 			`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{printf "\n"}}`,
-			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>{{printf "\n"}}`,
+			`<ac:rich-text-body>{{printf "\n"}}`,
+				`<ac:structured-macro ac:name="code">{{printf "\n"}}`,
+				`<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>{{printf "\n"}}`,
+				`<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>{{printf "\n"}}`,
+				`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{printf "\n"}}`,
+				`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>{{printf "\n"}}`,
+				`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:rich-text-body>{{printf "\n"}}`,
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
