@@ -117,7 +117,7 @@ func CompileMarkdown(
 				blackfriday.EXTENSION_TITLEBLOCK |
 				blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
 				blackfriday.EXTENSION_DEFINITION_LISTS |
-				blackfriday.EXTENSION_JOIN_LINES |
+				blackfriday.EXTENSION_HARD_LINE_BREAK |
 				blackfriday.EXTENSION_NO_EMPTY_LINE_BEFORE_BLOCK,
 		},
 	)
