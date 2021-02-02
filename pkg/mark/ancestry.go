@@ -109,11 +109,15 @@ func ValidateAncestry(
 	}
 
 	if len(page.Ancestors) < len(ancestry) {
-		return nil, fmt.Errorf(
-			"page %q has fewer parents than specified: %s",
-			page.Title,
-			strings.Join(ancestry, ` > `),
-		)
+		actual := []string{}
+		for _, ancestor := range page.Ancestors {
+			actual = append(actual, ancestor.Title)
+		}
+
+		return nil, karma.Describe("title", page.Title).
+			Describe("actual", strings.Join(actual, " > ")).
+			Describe("expected", strings.Join(ancestry, ">")).
+			Format(nil, "the page has fewer parents than expected")
 	}
 
 	for _, parent := range ancestry[:len(ancestry)-1] {
