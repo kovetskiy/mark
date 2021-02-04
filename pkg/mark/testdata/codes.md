@@ -7,6 +7,11 @@ some code
 code bash
 ```
 
+```bash
+with a newline
+
+```
+
 ```unknown
 unknown code
 ```

@@ -647,7 +647,7 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 
 	return fmt.Errorf(
 		"Confluence API returned unexpected status: %v, "+
-			"output: %s",
+			"output: %q",
 		request.Raw.Status, output,
 	)
 }

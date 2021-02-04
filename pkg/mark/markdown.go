@@ -3,7 +3,6 @@ package mark
 import (
 	"io"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
@@ -55,19 +54,20 @@ func (renderer ConfluenceRenderer) RenderNode(
 ) bf.WalkStatus {
 	if node.Type == bf.CodeBlock {
 		lang := string(node.Info)
+
 		renderer.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:code",
 			struct {
 				Language string
-				Collapse string
+				Collapse bool
 				Title    string
 				Text     string
 			}{
 				ParseLanguage(lang),
-				strconv.FormatBool(strings.Contains(lang, "collapse")),
+				strings.Contains(lang, "collapse"),
 				ParseTitle(lang),
-				string(node.Literal),
+				strings.TrimSuffix(string(node.Literal), "\n"),
 			},
 		)
 
