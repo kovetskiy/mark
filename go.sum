@@ -13,6 +13,8 @@ github.com/go-yaml/yaml v2.1.0+incompatible h1:RYi2hDdss1u4YE7GwixGzWwVo47T8UQwn
 github.com/go-yaml/yaml v2.1.0+incompatible/go.mod h1:w2MrLa16VYP0jy6N7M5kHaCkaLENm+P+Tv+MfurjSw0=
 github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334 h1:VHgatEHNcBFEB7inlalqfNqw65aNkM1lGX2yt3NmbS8=
 github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334/go.mod h1:SK73tn/9oHe+/Y0h39VT4UCxmurVJkR5NA7kMEAOgSE=
+github.com/kovetskiy/blackfriday/v2 v2.2.0 h1:8TFLFQZPhKDqz8NnPpXPWUNBCX6dXapC/KC9BsPjiYY=
+github.com/kovetskiy/blackfriday/v2 v2.2.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/kovetskiy/gopencils v0.0.0-20201105104258-2a0bfdd710fb h1:e8UwTXL3Nauw5T847OMHZRhAfQy4ntgQ7PUwgZ2ct4w=
 github.com/kovetskiy/gopencils v0.0.0-20201105104258-2a0bfdd710fb/go.mod h1:rn9YsgK4kxBDPZn+hOwSmg6MdtWfF2ejC3tvgDjWyBM=
 github.com/kovetskiy/ko v0.0.0-20190324102900-26b8dd0988bf h1:4QsqgCcPoqDB91dcp4GffoV6TjwfVURaWpjKWFi0ae0=
@@ -40,8 +42,6 @@ github.com/reconquest/pkg v0.0.0-20201028091908-8e9a5e0226ef h1:7Vr6ItE8C41xDgTN
 github.com/reconquest/pkg v0.0.0-20201028091908-8e9a5e0226ef/go.mod h1:T3ej/s+DtNaxXSOhM8rZX9bTlhnfHeETwQpK5PAPvwo=
 github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4 h1:bcDXaTFC09IIg13Z8gfQHk4gSu001ET7ssW/wKRvPzg=
 github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4/go.mod h1:OI1di2iiFSwX3D70iZjzdmCPPfssjOl+HX40tI3VaXA=
-github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
-github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.5.1 h1:nOGnQDM7FYENwehXlg/kFVnos3rEvtKTjRvOWSzb6H4=
