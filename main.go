@@ -32,6 +32,7 @@ Usage:
 Options:
   -u <username>        Use specified username for updating Confluence page.
   -p <token>           Use specified token for updating Confluence page.
+                        Specify - as password to read password from stdin.
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
                         above).
@@ -52,7 +53,7 @@ Options:
 )
 
 func main() {
-	args, err := docopt.Parse(usage, nil, true, "5.1", false)
+	args, err := docopt.Parse(usage, nil, true, "5.2", false)
 	if err != nil {
 		panic(err)
 	}

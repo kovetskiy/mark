@@ -259,6 +259,7 @@ mark -h | --help
 
 - `-u <username>` — Use specified username for updating Confluence page.
 - `-p <password>` — Use specified password for updating Confluence page.
+    Specify `-` as password to read password from stdin.
 - `-l <url>` — Edit specified Confluence page.
     If -l is not specified, file should contain metadata (see above).
 - `-b <url>` or `--base-url <url>` – Base URL for Confluence.
