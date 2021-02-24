@@ -116,7 +116,7 @@ func ValidateAncestry(
 
 		return nil, karma.Describe("title", page.Title).
 			Describe("actual", strings.Join(actual, " > ")).
-			Describe("expected", strings.Join(ancestry, ">")).
+			Describe("expected", strings.Join(ancestry, " > ")).
 			Format(nil, "the page has fewer parents than expected")
 	}
 
