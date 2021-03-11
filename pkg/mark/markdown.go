@@ -7,7 +7,7 @@ import (
 
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
-	bf "github.com/russross/blackfriday/v2"
+	bf "github.com/kovetskiy/blackfriday/v2"
 )
 
 type ConfluenceRenderer struct {
