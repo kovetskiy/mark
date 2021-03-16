@@ -17,6 +17,7 @@ const (
 	HeaderLayout     = `Layout`
 	HeaderAttachment = `Attachment`
 	HeaderLabel      = `Label`
+	HeaderInclude    = `Include`
 )
 
 type Meta struct {
@@ -94,6 +95,10 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		case HeaderLabel:
 			meta.Labels = append(meta.Labels, value)
+
+		case HeaderInclude:
+			// Includes are parsed by a different func
+			continue
 
 		default:
 			log.Errorf(
