@@ -47,6 +47,8 @@ Options:
   --minor-edit         Don't send notifications while updating Confluence page.
   --debug              Enable debug logs.
   --trace              Enable trace logs.
+  --color <when>       Display logs in color. Possible values: auto, never.
+                        [default: auto]
   -h --help            Show this screen and call 911.
   -v --version         Show version.
 `
@@ -65,6 +67,7 @@ func main() {
 		editLock      = args["-k"].(bool)
 		dropH1        = args["--drop-h1"].(bool)
 		minorEdit     = args["--minor-edit"].(bool)
+		color         = args["--color"].(string)
 	)
 
 	if args["--debug"].(bool) {
@@ -73,6 +76,15 @@ func main() {
 
 	if args["--trace"].(bool) {
 		log.SetLevel(lorg.LevelTrace)
+	}
+
+	if color == "never" {
+		log.GetLogger().SetFormat(
+			lorg.NewFormat(
+				`${time:2006-01-02 15:04:05.000} ${level:%s:left:true} ${prefix}%s`,
+			),
+		)
+		log.GetLogger().SetOutput(os.Stderr)
 	}
 
 	config, err := LoadConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
@@ -216,7 +228,9 @@ func main() {
 	markdown = mark.CompileAttachmentLinks(markdown, attaches)
 
 	if dropH1 {
-		log.Info("Leading H1 heading will be excluded from the Confluence output")
+		log.Info(
+			"Leading H1 heading will be excluded from the Confluence output",
+		)
 		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
