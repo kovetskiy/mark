@@ -55,7 +55,7 @@ Options:
 )
 
 func main() {
-	args, err := docopt.Parse(usage, nil, true, "5.4", false)
+	args, err := docopt.Parse(usage, nil, true, "5.5", false)
 	if err != nil {
 		panic(err)
 	}
