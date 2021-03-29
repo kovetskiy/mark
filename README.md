@@ -136,6 +136,20 @@ By default, mark provides several built-in templates and macros:
     - true
     - false
 
+* template `ac:box`to include info, tip, note, and warning text boxes. Parameters:
+  - Name: select box style
+    - info
+    - tip
+    - note
+    - warning
+  - Icon: show information/tip/exclamation mark/warning icon
+    - true
+    - false
+  - Title: title text of the box
+  - Body: text to display in the box
+
+  See: https://confluence.atlassian.com/conf59/info-tip-note-and-warning-macros-792499127.html
+
 * template `ac:jira:ticket` to include JIRA ticket link. Parameters:
   - Ticket: Jira ticket number like BUGS-123.
 
@@ -183,6 +197,27 @@ This is my article.
 
 * :done: Write Article
 * :todo: Publish Article
+```
+
+### Insert Colored Text Box
+
+**article.md**
+
+```markdown
+<!-- Space: TEST -->
+<!-- Title: Announcement -->
+
+<!-- Macro: :box:(.+):(.*):(.+):
+     Template: ac:box
+     Icon: true
+     Name: ${1}
+     Title: ${2}
+     Body: ${3} -->
+
+:box:info::Foobar:
+:box:tip:Tip of day:Foobar:
+:box:note::Foobar:
+:box:warning:Alert!:Foobar:
 ```
 
 ### Insert Table of Contents

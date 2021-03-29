@@ -144,6 +144,18 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/info-tip-note-and-warning-macros-792499127.html */
+
+		`ac:box`: text(
+			`<ac:structured-macro ac:name="{{ .Name }}">{{printf "\n"}}`,
+			`<ac:parameter ac:name="icon">{{ or .Icon "false" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="title">{{ or .Title "" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:rich-text-body>{{printf "\n"}}`,
+			`{{ .Body }}{{printf "\n"}}`,
+			`</ac:rich-text-body>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
 		/* https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html */
 
 		`ac:toc`: text(
