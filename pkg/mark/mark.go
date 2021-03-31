@@ -13,13 +13,23 @@ func ResolvePage(
 	api *confluence.API,
 	meta *Meta,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
-	page, err := api.FindPage(meta.Space, meta.Title)
+	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {
 		return nil, nil, karma.Format(
 			err,
 			"error while finding page %q",
 			meta.Title,
 		)
+	}
+
+	if meta.Type == "blogpost" {
+		log.Infof(
+			nil,
+			"Blog post will be stored as: %s",
+			meta.Title,
+		)
+
+		return nil, page, nil
 	}
 
 	ancestry := meta.Parents

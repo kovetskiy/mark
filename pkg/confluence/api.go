@@ -33,6 +33,7 @@ type API struct {
 type PageInfo struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	Type  string `json:"type"`
 
 	Version struct {
 		Number int64 `json:"number"`
@@ -95,7 +96,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 }
 
 func (api *API) FindRootPage(space string) (*PageInfo, error) {
-	page, err := api.FindPage(space, ``)
+	page, err := api.FindPage(space, ``, "page")
 	if err != nil {
 		return nil, karma.Format(
 			err,
@@ -121,7 +122,7 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	}, nil
 }
 
-func (api *API) FindPage(space string, title string) (*PageInfo, error) {
+func (api *API) FindPage(space string, title string, pageType string) (*PageInfo, error) {
 	result := struct {
 		Results []PageInfo `json:"results"`
 	}{}
@@ -129,6 +130,7 @@ func (api *API) FindPage(space string, title string) (*PageInfo, error) {
 	payload := map[string]string{
 		"spaceKey": space,
 		"expand":   "ancestors,version",
+		"type":     pageType,
 	}
 
 	if title != "" {
@@ -388,12 +390,13 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 
 func (api *API) CreatePage(
 	space string,
+	pageType string,
 	parent *PageInfo,
 	title string,
 	body string,
 ) (*PageInfo, error) {
 	payload := map[string]interface{}{
-		"type":  "page",
+		"type":  pageType,
 		"title": title,
 		"space": map[string]interface{}{
 			"key": space,
@@ -437,17 +440,20 @@ func (api *API) UpdatePage(
 	page *PageInfo, newContent string, minorEdit bool, newLabels []string,
 ) error {
 	nextPageVersion := page.Version.Number + 1
+	oldAncestors := []map[string]interface{}{}
 
-	if len(page.Ancestors) == 0 {
-		return fmt.Errorf(
-			"page %q info does not contain any information about parents",
-			page.ID,
-		)
-	}
+	if page.Type != "blogpost" {
+		if len(page.Ancestors) == 0 {
+			return fmt.Errorf(
+				"page %q info does not contain any information about parents",
+				page.ID,
+			)
+		}
 
-	// picking only the last one, which is required by confluence
-	oldAncestors := []map[string]interface{}{
-		{"id": page.Ancestors[len(page.Ancestors)-1].Id},
+		// picking only the last one, which is required by confluence
+		oldAncestors = []map[string]interface{}{
+			{"id": page.Ancestors[len(page.Ancestors)-1].Id},
+		}
 	}
 
 	labels := []map[string]interface{}{}
@@ -463,7 +469,7 @@ func (api *API) UpdatePage(
 
 	payload := map[string]interface{}{
 		"id":    page.ID,
-		"type":  "page",
+		"type":  page.Type,
 		"title": page.Title,
 		"version": map[string]interface{}{
 			"number":    nextPageVersion,

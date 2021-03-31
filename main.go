@@ -191,16 +191,18 @@ func main() {
 		if err != nil {
 			log.Fatalf(
 				karma.Describe("title", meta.Title).Reason(err),
-				"unable to resolve page",
+				"unable to resolve %s",
+				meta.Type,
 			)
 		}
 
 		if page == nil {
-			page, err = api.CreatePage(meta.Space, parent, meta.Title, ``)
+			page, err = api.CreatePage(meta.Space, meta.Type, parent, meta.Title, ``)
 			if err != nil {
 				log.Fatalf(
 					err,
-					"can't create page %q",
+					"can't create %s %q",
+					meta.Type,
 					meta.Title,
 				)
 			}
