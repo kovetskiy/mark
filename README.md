@@ -299,7 +299,7 @@ mark -h | --help
     If -l is not specified, file should contain metadata (see above).
 - `-b <url>` or `--base-url <url>` – Base URL for Confluence.
     Alternative option for base_url config field.
-- `-f <file>` — Use specified markdown file for converting to html.
+- `-f <file>` — Use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).
 - `-c <file>` — Specify configuration file which should be used for reading
     Confluence page URL and markdown file path.
 - `-k` — Lock page editing to current user only to prevent accidental
@@ -368,4 +368,11 @@ deploy them when PR got merged.
 only:
   branches:
     - main
+```
+
+## File Globbing
+
+Rather than running `mark` multiple times, or looping through a list of files from `find`, you can use file globbing (i.e. wildcard patterns) to match files in subdirectories. For example:
+```bash
+mark -f "helpful_cmds/*.md"
 ```
