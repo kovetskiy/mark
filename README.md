@@ -44,6 +44,13 @@ Also, optional following headers are supported:
   reading;
 * plain: content will fill all page;
 
+```markdown
+<!-- Type: (page|blogpost) -->
+```
+
+* (default) page: normal Confluence page - defaults to this if omitted
+* blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s) 
+
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
 

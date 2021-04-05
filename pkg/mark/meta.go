@@ -13,6 +13,7 @@ import (
 const (
 	HeaderParent     = `Parent`
 	HeaderSpace      = `Space`
+	HeaderType       = `Type`
 	HeaderTitle      = `Title`
 	HeaderLayout     = `Layout`
 	HeaderAttachment = `Attachment`
@@ -23,6 +24,7 @@ const (
 type Meta struct {
 	Parents     []string
 	Space       string
+	Type        string
 	Title       string
 	Layout      string
 	Attachments map[string]string
@@ -67,6 +69,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		if meta == nil {
 			meta = &Meta{}
+			meta.Type = "page" //Default if not specified
 			meta.Attachments = make(map[string]string)
 		}
 
@@ -83,6 +86,9 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		case HeaderSpace:
 			meta.Space = strings.TrimSpace(value)
+
+		case HeaderType:
+			meta.Type = strings.TrimSpace(value)
 
 		case HeaderTitle:
 			meta.Title = strings.TrimSpace(value)
