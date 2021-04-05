@@ -18,16 +18,16 @@ type Credentials struct {
 }
 
 func GetCredentials(
-	args map[string]interface{},
+	flags Flags,
 	config *Config,
 ) (*Credentials, error) {
-	var (
-		username, _  = args["-u"].(string)
-		password, _  = args["-p"].(string)
-		targetURL, _ = args["-l"].(string)
-	)
-
 	var err error
+
+	var (
+		username  = flags.Username
+		password  = flags.Password
+		targetURL = flags.TargetURL
+	)
 
 	if username == "" {
 		username = config.Username
@@ -50,14 +50,15 @@ func GetCredentials(
 	}
 
 	if password == "-" {
-		b, err := ioutil.ReadAll(os.Stdin)
+		stdin, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
 			return nil, karma.Format(
 				err,
 				"unable to read password from stdin",
 			)
 		}
-		password = string(b)
+
+		password = string(stdin)
 	}
 
 	url, err := url.Parse(targetURL)
@@ -71,16 +72,16 @@ func GetCredentials(
 	baseURL := url.Scheme + "://" + url.Host
 
 	if url.Host == "" {
-		var ok bool
-		baseURL, ok = args["--base-url"].(string)
-		if !ok {
+		baseURL = flags.BaseURL
+		if baseURL == "" {
 			baseURL = config.BaseURL
-			if baseURL == "" {
-				return nil, errors.New(
-					"Confluence base URL should be specified using -l " +
-						"flag or be stored in configuration file",
-				)
-			}
+		}
+
+		if baseURL == "" {
+			return nil, errors.New(
+				"Confluence base URL should be specified using -l " +
+					"flag or be stored in configuration file",
+			)
 		}
 	}
 

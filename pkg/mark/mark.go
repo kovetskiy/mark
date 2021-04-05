@@ -25,7 +25,7 @@ func ResolvePage(
 	if meta.Type == "blogpost" {
 		log.Infof(
 			nil,
-			"Blog post will be stored as: %s",
+			"blog post will be stored as: %s",
 			meta.Title,
 		)
 

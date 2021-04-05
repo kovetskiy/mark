@@ -123,14 +123,17 @@ func ExtractMacros(
 
 			var (
 				expr     = regexputil.Subexp(reMacroDirective, groups, "expr")
-				template = regexputil.Subexp(reMacroDirective, groups, "template")
-				config   = regexputil.Subexp(reMacroDirective, groups, "config")
+				template = regexputil.Subexp(
+					reMacroDirective,
+					groups,
+					"template",
+				)
+				config = regexputil.Subexp(reMacroDirective, groups, "config")
 
 				macro Macro
 			)
 
 			macro.Template, err = includes.LoadTemplate(template, templates)
-
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
 
