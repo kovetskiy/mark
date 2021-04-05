@@ -18,6 +18,16 @@ import (
 	"github.com/reconquest/pkg/log"
 )
 
+type markFlags struct {
+	fileGlobPatten string
+	compileOnly    bool
+	dryRun         bool
+	editLock       bool
+	dropH1         bool
+	minorEdit      bool
+	color          string
+}
+
 const (
 	usage = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
@@ -38,7 +48,7 @@ Options:
                         above).
   -b --base-url <url>  Base URL for Confluence.
                         Alternative option for base_url config field.
-  -f <file>            Use specified markdown file for converting to html.
+  -f <file>            Use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
   --drop-h1            Don't include H1 headings in Confluence output.
@@ -55,20 +65,20 @@ Options:
 )
 
 func main() {
-	args, err := docopt.Parse(usage, nil, true, "5.5", false)
+	args, err := docopt.ParseArgs(usage, nil, "5.6")
 	if err != nil {
 		panic(err)
 	}
 
-	var (
-		targetFile, _ = args["-f"].(string)
-		compileOnly   = args["--compile-only"].(bool)
-		dryRun        = args["--dry-run"].(bool)
-		editLock      = args["-k"].(bool)
-		dropH1        = args["--drop-h1"].(bool)
-		minorEdit     = args["--minor-edit"].(bool)
-		color         = args["--color"].(string)
-	)
+	flags := &markFlags{
+		fileGlobPatten: args["-f"].(string),
+		compileOnly:    args["--compile-only"].(bool),
+		dryRun:         args["--dry-run"].(bool),
+		editLock:       args["-k"].(bool),
+		dropH1:         args["--drop-h1"].(bool),
+		minorEdit:      args["--minor-edit"].(bool),
+		color:          args["--color"].(string),
+	}
 
 	if args["--debug"].(bool) {
 		log.SetLevel(lorg.LevelDebug)
@@ -78,7 +88,7 @@ func main() {
 		log.SetLevel(lorg.LevelTrace)
 	}
 
-	if color == "never" {
+	if flags.color == "never" {
 		log.GetLogger().SetFormat(
 			lorg.NewFormat(
 				`${time:2006-01-02 15:04:05.000} ${level:%s:left:true} ${prefix}%s`,
@@ -99,7 +109,38 @@ func main() {
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	markdown, err := ioutil.ReadFile(targetFile)
+	files, err := filepath.Glob(flags.fileGlobPatten)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(files) == 0 {
+		log.Fatal("No files matched.")
+	}
+
+	// Loop through files matched by glob pattern
+	for _, file := range files {
+		log.Infof(
+			nil,
+			"Processing %s...",
+			file,
+		)
+
+		target := processFile(file, api, flags, creds.PageID, creds.Username)
+
+		log.Infof(
+			nil,
+			"page successfully updated: %s",
+			creds.BaseURL+target.Links.Full,
+		)
+
+		fmt.Println(
+			"Page available at:", creds.BaseURL+target.Links.Full,
+		)
+	}
+}
+
+func processFile(file string, api *confluence.API, flags *markFlags, pageID string, username string) *confluence.PageInfo {
+	markdown, err := ioutil.ReadFile(file)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -153,21 +194,21 @@ func main() {
 
 	markdown = mark.SubstituteLinks(markdown, links)
 
-	if dryRun {
-		compileOnly = true
+	if flags.dryRun {
+		flags.compileOnly = true
 
-		_, _, err := mark.ResolvePage(dryRun, api, meta)
+		_, _, err := mark.ResolvePage(flags.dryRun, api, meta)
 		if err != nil {
 			log.Fatalf(err, "unable to resolve page location")
 		}
 	}
 
-	if compileOnly {
+	if flags.compileOnly {
 		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
 	}
 
-	if creds.PageID != "" && meta != nil {
+	if pageID != "" && meta != nil {
 		log.Warning(
 			`specified file contains metadata, ` +
 				`but it will be ignored due specified command line URL`,
@@ -176,7 +217,7 @@ func main() {
 		meta = nil
 	}
 
-	if creds.PageID == "" && meta == nil {
+	if pageID == "" && meta == nil {
 		log.Fatal(
 			`specified file doesn't contain metadata ` +
 				`and URL is not specified via command line ` +
@@ -187,7 +228,7 @@ func main() {
 	var target *confluence.PageInfo
 
 	if meta != nil {
-		parent, page, err := mark.ResolvePage(dryRun, api, meta)
+		parent, page, err := mark.ResolvePage(flags.dryRun, api, meta)
 		if err != nil {
 			log.Fatalf(
 				karma.Describe("title", meta.Title).Reason(err),
@@ -210,11 +251,11 @@ func main() {
 
 		target = page
 	} else {
-		if creds.PageID == "" {
+		if pageID == "" {
 			log.Fatalf(nil, "URL should provide 'pageId' GET-parameter")
 		}
 
-		page, err := api.GetPageByID(creds.PageID)
+		page, err := api.GetPageByID(pageID)
 		if err != nil {
 			log.Fatalf(err, "unable to retrieve page by id")
 		}
@@ -229,7 +270,7 @@ func main() {
 
 	markdown = mark.CompileAttachmentLinks(markdown, attaches)
 
-	if dropH1 {
+	if flags.dropH1 {
 		log.Info(
 			"Leading H1 heading will be excluded from the Confluence output",
 		)
@@ -259,35 +300,27 @@ func main() {
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html, minorEdit, meta.Labels)
+	err = api.UpdatePage(target, html, flags.minorEdit, meta.Labels)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if editLock {
+	if flags.editLock {
 		log.Infof(
 			nil,
 			`edit locked on page %q by user %q to prevent manual edits`,
 			target.Title,
-			creds.Username,
+			username,
 		)
 
 		err := api.RestrictPageUpdates(
 			target,
-			creds.Username,
+			username,
 		)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	log.Infof(
-		nil,
-		"page successfully updated: %s",
-		creds.BaseURL+target.Links.Full,
-	)
-
-	fmt.Println(
-		creds.BaseURL + target.Links.Full,
-	)
+	return target
 }
