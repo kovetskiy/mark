@@ -189,6 +189,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "carnei-ro",
+      "name": "Leandro Carneiro",
+      "avatar_url": "https://avatars.githubusercontent.com/u/42899277?v=4",
+      "profile": "https://github.com/carnei-ro",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7
