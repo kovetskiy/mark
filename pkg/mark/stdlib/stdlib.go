@@ -172,6 +172,12 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html */
+
+		`ac:emoticon`: text(
+			`<ac:emoticon ac:name="{{ .Name }}"/>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)

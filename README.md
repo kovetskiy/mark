@@ -165,6 +165,31 @@ By default, mark provides several built-in templates and macros:
 
   See: https://confluence.atlassian.com/conf59/status-macro-792499207.html
 
+* template: `ac:emoticon` to include emoticons. Parameters:
+  - Name: select emoticon
+    - smile
+    - sad
+    - cheeky
+    - laugh
+    - wink
+    - thumbs-up
+    - thumbs-down
+    - information
+    - tick
+    - cross
+    - warning
+    - plus
+    - minus
+    - question
+    - light-on
+    - light-off
+    - yellow-star
+    - red-star
+    - green-star
+    - blue-star
+
+  See: https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
