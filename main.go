@@ -299,11 +299,13 @@ func processFile(
 			&buffer,
 			"ac:layout",
 			struct {
-				Layout string
-				Body   string
+				Layout  string
+				Sidebar string
+				Body    string
 			}{
-				Layout: meta.Layout,
-				Body:   html,
+				Layout:  meta.Layout,
+				Sidebar: meta.Sidebar,
+				Body:    html,
 			},
 		)
 		if err != nil {

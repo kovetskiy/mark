@@ -95,7 +95,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			/**/ `<ac:layout>`,
 			/**/ `<ac:layout-section ac:type="two_right_sidebar">`,
 			/**/ `<ac:layout-cell>{{ .Body }}</ac:layout-cell>`,
-			/**/ `<ac:layout-cell></ac:layout-cell>`,
+			/**/ `<ac:layout-cell>{{ .Sidebar }}</ac:layout-cell>`,
 			/**/ `</ac:layout-section>`,
 			/**/ `</ac:layout>`,
 			`{{ else }}`,
