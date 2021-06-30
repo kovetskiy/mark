@@ -54,6 +54,12 @@ Also, optional following headers are supported:
 * (default) page: normal Confluence page - defaults to this if omitted
 * blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s) 
 
+```markdown
+<!-- Sidebar: <h2>Test</h2> -->
+```
+
+Setting the sidebar creates a column on the right side.  You're able to add any valid HTML content. Adding this property sets the layout to `article`.
+
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
 

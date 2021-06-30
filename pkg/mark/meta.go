@@ -19,6 +19,7 @@ const (
 	HeaderAttachment = `Attachment`
 	HeaderLabel      = `Label`
 	HeaderInclude    = `Include`
+	HeaderSidebar    = `Sidebar`
 )
 
 type Meta struct {
@@ -27,6 +28,7 @@ type Meta struct {
 	Type        string
 	Title       string
 	Layout      string
+	Sidebar     string
 	Attachments map[string]string
 	Labels      []string
 }
@@ -95,6 +97,10 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		case HeaderLayout:
 			meta.Layout = strings.TrimSpace(value)
+
+		case HeaderSidebar:
+			meta.Layout = "article"
+			meta.Sidebar = strings.TrimSpace(value)
 
 		case HeaderAttachment:
 			meta.Attachments[value] = value
