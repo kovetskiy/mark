@@ -52,7 +52,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 			return nil, nil, err
 		}
 
-		offset += len(line) + 1
+		offset += len(line) + 2
 
 		matches := reHeaderPatternV2.FindStringSubmatch(line)
 		if matches == nil {
