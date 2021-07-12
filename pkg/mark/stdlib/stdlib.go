@@ -149,10 +149,8 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:box`: text(
 			`<ac:structured-macro ac:name="{{ .Name }}">{{printf "\n"}}`,
 			`<ac:parameter ac:name="icon">{{ or .Icon "false" }}</ac:parameter>{{printf "\n"}}`,
-			`<ac:parameter ac:name="title">{{ or .Title "" }}</ac:parameter>{{printf "\n"}}`,
-			`<ac:rich-text-body>{{printf "\n"}}`,
-			`{{ .Body }}{{printf "\n"}}`,
-			`</ac:rich-text-body>{{printf "\n"}}`,
+			`{{ if .Title }}<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{printf "\n"}}{{ end }}`,
+			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>{{printf "\n"}}`,
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
