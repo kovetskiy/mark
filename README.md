@@ -1,4 +1,5 @@
 # Mark
+
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-23-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
@@ -339,7 +340,7 @@ mark -h | --help
 - `-l <url>` — Edit specified Confluence page.
     If -l is not specified, file should contain metadata (see above).
 - `-b <url>` or `--base-url <url>` – Base URL for Confluence.
-    Alternative option for base_url config field.
+    Alternative option for `base_url` config field.
 - `-f <file>` — Use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).
 - `-c <file>` — Specify configuration file which should be used for reading
     Confluence page URL and markdown file path.
@@ -417,6 +418,22 @@ Rather than running `mark` multiple times, or looping through a list of files fr
 ```bash
 mark -f "helpful_cmds/*.md"
 ```
+
+## Issues, Bugs & Contributions
+
+I've started the project to solve my own problem and open sourced the solution so anyone who has a problem like me can solve it too.
+I have no profits/sponsors from this projects which means I don't really prioritize working on this project in my free time.
+I still check the issues and do code reviews for Pull Requests which means if you encounter a bug in
+the program, you should not expect me to fix it as soon as possible, but I'll be very glad to
+merge your own contributions into the project and release the new version.
+
+I try to label all new issues so it's easy to find a bug or a feature request to fix/implement, if
+you are willing to help with the project, you can use the following labels to find issues, just make
+sure to reply in the issue to let everyone know you took the issue:
+
+- [label:feature-request](https://github.com/kovetskiy/mark/issues?q=is%3Aissue+is%3Aopen+label%3Afeature-request)
+- [label:bug](https://github.com/kovetskiy/mark/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
+
 ## Contributors ✨
 
 Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
