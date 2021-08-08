@@ -30,6 +30,18 @@ type API struct {
 	BaseURL string
 }
 
+type SpaceInfo struct {
+	ID   int    `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
+
+	Homepage PageInfo `json:"homepage"`
+
+	Links struct {
+		Full string `json:"webui"`
+	} `json:"_links"`
+}
+
 type PageInfo struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -120,6 +132,26 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 		ID:    page.Ancestors[0].Id,
 		Title: page.Ancestors[0].Title,
 	}, nil
+}
+
+func (api *API) FindHomePage(space string) (*PageInfo, error) {
+	payload := map[string]string{
+		"expand": "homepage",
+	}
+
+	request, err := api.rest.Res(
+		"space/"+space, &SpaceInfo{},
+	).Get(payload)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode == 404 || request.Raw.StatusCode != 200 {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return &request.Response.(*SpaceInfo).Homepage, nil
 }
 
 func (api *API) FindPage(space string, title string, pageType string) (*PageInfo, error) {
@@ -444,15 +476,16 @@ func (api *API) UpdatePage(
 
 	if page.Type != "blogpost" {
 		if len(page.Ancestors) == 0 {
-			return fmt.Errorf(
-				"page %q info does not contain any information about parents",
-				page.ID,
-			)
-		}
-
-		// picking only the last one, which is required by confluence
-		oldAncestors = []map[string]interface{}{
-			{"id": page.Ancestors[len(page.Ancestors)-1].Id},
+			oldAncestors = nil
+			//return fmt.Errorf(
+			//	"page %q info does not contain any information about parents",
+			//	page.ID,
+			//)
+		} else {
+			// picking only the last one, which is required by confluence
+			oldAncestors = []map[string]interface{}{
+				{"id": page.Ancestors[len(page.Ancestors)-1].Id},
+			}
 		}
 	}
 

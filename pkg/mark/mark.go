@@ -32,8 +32,25 @@ func ResolvePage(
 		return nil, page, nil
 	}
 
+	// check to see if home page is in Parents
+	homepage, err := api.FindHomePage(meta.Space)
+	if err != nil {
+		return nil, nil, karma.Format(
+			err,
+			"can't obtain home page from space %q",
+			meta.Space,
+		)
+	}
+
+	skip_home_ancestry := false
+	if len(meta.Parents) > 0 {
+		if homepage.Title == meta.Parents[0] {
+			skip_home_ancestry = true
+		}
+	}
+
 	ancestry := meta.Parents
-	if page != nil {
+	if page != nil && skip_home_ancestry == false {
 		ancestry = append(ancestry, page.Title)
 	}
 
