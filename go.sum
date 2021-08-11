@@ -16,6 +16,8 @@ github.com/kovetskiy/blackfriday/v2 v2.3.0 h1:KKABLPopQ2+DWKtM/ifx0RijGz09mNlCuE
 github.com/kovetskiy/blackfriday/v2 v2.3.0/go.mod h1:ES7tjNJdnHp1h8dib5cmoa//rgvQeYrtzGzGM/Kozk4=
 github.com/kovetskiy/gopencils v0.0.0-20201105104258-2a0bfdd710fb h1:e8UwTXL3Nauw5T847OMHZRhAfQy4ntgQ7PUwgZ2ct4w=
 github.com/kovetskiy/gopencils v0.0.0-20201105104258-2a0bfdd710fb/go.mod h1:rn9YsgK4kxBDPZn+hOwSmg6MdtWfF2ejC3tvgDjWyBM=
+github.com/kovetskiy/gopencils v0.0.0-20210811071033-d690b7a013fb h1:Pg8RP2ww0N4kwwep8PTULXEHyFHIrOVQjxdfcjGWCtE=
+github.com/kovetskiy/gopencils v0.0.0-20210811071033-d690b7a013fb/go.mod h1:rn9YsgK4kxBDPZn+hOwSmg6MdtWfF2ejC3tvgDjWyBM=
 github.com/kovetskiy/ko v0.0.0-20190324102900-26b8dd0988bf h1:4QsqgCcPoqDB91dcp4GffoV6TjwfVURaWpjKWFi0ae0=
 github.com/kovetskiy/ko v0.0.0-20190324102900-26b8dd0988bf/go.mod h1:5RTDadc76NCMKavfnEcGrGVdoQ02h8dLHBUEN4h3xsM=
 github.com/kovetskiy/lorg v0.0.0-20200107130803-9a7136a95634 h1:szpgh20EtHoQhJ38jrp7S2nlrhf56GSwa4de0hMfc2U=
