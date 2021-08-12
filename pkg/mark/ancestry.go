@@ -104,7 +104,7 @@ func ValidateAncestry(
 		return nil, nil
 	}
 
-	is_homepage := false
+	isHomepage := false
 	if len(page.Ancestors) < 1 {
 		homepage, err := api.FindHomePage(space)
 		if err != nil {
@@ -117,13 +117,13 @@ func ValidateAncestry(
 
 		if page.ID == homepage.ID {
 			log.Debugf(nil, "page is homepage for space %q", space)
-			is_homepage = true
+			isHomepage = true
 		} else {
 			return nil, fmt.Errorf(`page %q has no parents`, page.Title)
 		}
 	}
 
-	if len(page.Ancestors) < len(ancestry) && is_homepage != true {
+	if len(page.Ancestors) < len(ancestry) && isHomepage != true {
 		actual := []string{}
 		for _, ancestor := range page.Ancestors {
 			actual = append(actual, ancestor.Title)
