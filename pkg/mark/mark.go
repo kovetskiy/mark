@@ -42,15 +42,15 @@ func ResolvePage(
 		)
 	}
 
-	skip_home_ancestry := false
+	skipHomeAncestry := false
 	if len(meta.Parents) > 0 {
 		if homepage.Title == meta.Parents[0] {
-			skip_home_ancestry = true
+			skipHomeAncestry = true
 		}
 	}
 
 	ancestry := meta.Parents
-	if page != nil && skip_home_ancestry == false {
+	if page != nil && skipHomeAncestry == false {
 		ancestry = append(ancestry, page.Title)
 	}
 

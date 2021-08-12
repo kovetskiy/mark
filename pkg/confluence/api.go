@@ -474,18 +474,10 @@ func (api *API) UpdatePage(
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
-	if page.Type != "blogpost" {
-		if len(page.Ancestors) == 0 {
-			oldAncestors = nil
-			//return fmt.Errorf(
-			//	"page %q info does not contain any information about parents",
-			//	page.ID,
-			//)
-		} else {
-			// picking only the last one, which is required by confluence
-			oldAncestors = []map[string]interface{}{
-				{"id": page.Ancestors[len(page.Ancestors)-1].Id},
-			}
+	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
+		// picking only the last one, which is required by confluence
+		oldAncestors = []map[string]interface{}{
+			{"id": page.Ancestors[len(page.Ancestors)-1].Id},
 		}
 	}
 
