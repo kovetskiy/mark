@@ -104,11 +104,26 @@ func ValidateAncestry(
 		return nil, nil
 	}
 
+	isHomepage := false
 	if len(page.Ancestors) < 1 {
-		return nil, fmt.Errorf(`page %q has no parents`, page.Title)
+		homepage, err := api.FindHomePage(space)
+		if err != nil {
+			return nil, karma.Format(
+				err,
+				"can't obtain home page from space %q",
+				space,
+			)
+		}
+
+		if page.ID == homepage.ID {
+			log.Debugf(nil, "page is homepage for space %q", space)
+			isHomepage = true
+		} else {
+			return nil, fmt.Errorf(`page %q has no parents`, page.Title)
+		}
 	}
 
-	if len(page.Ancestors) < len(ancestry) {
+	if !isHomepage && len(page.Ancestors) < len(ancestry) {
 		actual := []string{}
 		for _, ancestor := range page.Ancestors {
 			actual = append(actual, ancestor.Title)
