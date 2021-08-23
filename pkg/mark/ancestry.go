@@ -123,7 +123,7 @@ func ValidateAncestry(
 		}
 	}
 
-	if len(page.Ancestors) < len(ancestry) && isHomepage != true {
+	if !isHomepage && len(page.Ancestors) < len(ancestry) {
 		actual := []string{}
 		for _, ancestor := range page.Ancestors {
 			actual = append(actual, ancestor.Title)
