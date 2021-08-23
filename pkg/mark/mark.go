@@ -50,7 +50,7 @@ func ResolvePage(
 	}
 
 	ancestry := meta.Parents
-	if page != nil && skipHomeAncestry == false {
+	if page != nil && !skipHomeAncestry {
 		ancestry = append(ancestry, page.Title)
 	}
 
