@@ -342,8 +342,7 @@ mark -h | --help
 - `-b <url>` or `--base-url <url>` – Base URL for Confluence.
     Alternative option for `base_url` config field.
 - `-f <file>` — Use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).
-- `-c <file>` — Specify configuration file which should be used for reading
-    Confluence page URL and markdown file path.
+- `-c <path>` or `--config <path>` — Specify a path to the configuration file.
 - `-k` — Lock page editing to current user only to prevent accidental
     manual edits over Confluence Web UI.
 - `--drop-h1` – Don't include H1 headings in Confluence output.
@@ -354,11 +353,11 @@ mark -h | --help
 - `-h | --help` — Show help screen and call 911.
 
 You can store user credentials in the configuration file, which should be
-located in ~/.config/mark with the following format (TOML):
+located in ~/.config/mark (or specified via `-c --config <path>`) with the following format (TOML):
 
 ```toml
-username = "smith"
-password = "matrixishere"
+username = "your-email"
+password = "password-or-api-key-for-confluence-cloud"
 # If you are using Confluence Cloud add the /wiki suffix to base_url
 base_url = "http://confluence.local"
 ```

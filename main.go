@@ -32,6 +32,7 @@ type Flags struct {
 	Password       string `docopt:"-p"`
 	TargetURL      string `docopt:"-l"`
 	BaseURL        string `docopt:"--base-url"`
+	Config         string `docopt:"--config"`
 }
 
 const (
@@ -55,7 +56,8 @@ Options:
                         above).
   -b --base-url <url>  Base URL for Confluence.
                         Alternative option for base_url config field.
-  -f <file>            Use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).
+  -f <file>            Use specified markdown file(s) for converting to html.
+                        Supports file globbing patterns (needs to be quoted).
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
   --drop-h1            Don't include H1 headings in Confluence output.
@@ -66,13 +68,15 @@ Options:
   --trace              Enable trace logs.
   --color <when>       Display logs in color. Possible values: auto, never.
                         [default: auto]
-  -h --help            Show this screen and call 911.
+  -c --config <path>   Use the specified configuration file.
+                        [default: $HOME/.config/mark]
+  -h --help            Show this message.
   -v --version         Show version.
 `
 )
 
 func main() {
-	cmd, err := docopt.ParseArgs(usage, nil, version)
+	cmd, err := docopt.ParseArgs(os.ExpandEnv(usage), nil, version)
 	if err != nil {
 		panic(err)
 	}
@@ -100,7 +104,7 @@ func main() {
 		log.GetLogger().SetOutput(os.Stderr)
 	}
 
-	config, err := LoadConfig(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+	config, err := LoadConfig(flags.Config)
 	if err != nil {
 		log.Fatal(err)
 	}
