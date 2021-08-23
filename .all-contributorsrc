@@ -216,6 +216,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "eitchugo",
+      "name": "Hugo Cisneiros",
+      "avatar_url": "https://avatars.githubusercontent.com/u/349457?v=4",
+      "profile": "http://www.devin.com.br/",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7
