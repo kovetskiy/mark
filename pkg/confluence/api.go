@@ -262,12 +262,7 @@ func (api *API) UpdateAttachment(
 		return AttachmentInfo{}, err
 	}
 
-	var result struct {
-		Links struct {
-			Context string `json:"context"`
-		} `json:"_links"`
-		Results []AttachmentInfo `json:"results"`
-	}
+	var result AttachmentInfo
 
 	resource := api.rest.Res(
 		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
@@ -288,22 +283,7 @@ func (api *API) UpdateAttachment(
 		return info, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
-		return info, errors.New(
-			"Confluence REST API for creating attachments returned " +
-				"0 json objects, expected at least 1",
-		)
-	}
-
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
-		}
-
-		result.Results[i] = info
-	}
-
-	info = result.Results[0]
+	info = result
 
 	return info, nil
 }
