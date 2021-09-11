@@ -70,7 +70,13 @@ func resolveLink(
 
 	if len(link.filename) > 0 {
 		filepath := filepath.Join(base, link.filename)
-		if _, err := os.Stat(filepath); err != nil {
+
+		stat, err := os.Stat(filepath)
+		if err != nil {
+			return "", nil
+		}
+
+		if stat.IsDir() {
 			return "", nil
 		}
 
@@ -155,7 +161,10 @@ func parseLinks(markdown string) []markdownLink {
 
 // getConfluenceLink build (to be) link for Conflunce, and tries to verify from
 // API if there's real link available
-func getConfluenceLink(api *confluence.API, space, title string) (string, error) {
+func getConfluenceLink(
+	api *confluence.API,
+	space, title string,
+) (string, error) {
 	link := fmt.Sprintf(
 		"%s/display/%s/%s",
 		api.BaseURL,
