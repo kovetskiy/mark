@@ -156,9 +156,22 @@ func processFile(
 		log.Fatal(err)
 	}
 
-	meta, markdown, err := mark.ExtractMeta(markdown)
+	meta, markdown, err := mark.FrontMatter(markdown)
 	if err != nil {
-		log.Fatal(err)
+		log.Info("Could not get front matter")
+		log.Debug(err)
+	}
+
+	fmt.Println("----")
+	fmt.Println(meta)
+	fmt.Println("----")
+	fmt.Println(markdown)
+
+	if meta == nil {
+		meta, markdown, err = mark.ExtractMeta(markdown)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	stdlib, err := stdlib.New(api)
