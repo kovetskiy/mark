@@ -12,9 +12,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/gopencils"
-	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
 )
 
 type User struct {
@@ -22,11 +20,7 @@ type User struct {
 }
 
 type API struct {
-	rest *gopencils.Resource
-
-	// it's deprecated accordingly to Atlassian documentation,
-	// but it's only way to set permissions
-	json    *gopencils.Resource
+	rest    *gopencils.Resource
 	BaseURL string
 }
 
@@ -78,31 +72,14 @@ type form struct {
 	writer *multipart.Writer
 }
 
-type tracer struct {
-	prefix string
-}
-
-func (tracer *tracer) Printf(format string, args ...interface{}) {
-	log.Tracef(nil, tracer.prefix+" "+format, args...)
-}
-
-func NewAPI(baseURL string, username string, password string) *API {
-	auth := &gopencils.BasicAuth{username, password}
-
-	rest := gopencils.Api(baseURL+"/rest/api", auth)
-	json := gopencils.Api(
-		baseURL+"/rpc/json-rpc/confluenceservice-v2",
-		auth,
-	)
-
-	if log.GetLevel() == lorg.LevelTrace {
-		rest.Logger = &tracer{"rest:"}
-		json.Logger = &tracer{"json-rpc:"}
-	}
+func NewAPI(baseURL string, token string) *API {
+	fmt.Println("TTT", token)
+	rest := gopencils.Api(baseURL + "/rest/api")
+	rest.Headers = http.Header{}
+	rest.SetHeader("Authorization", "Bearer "+token)
 
 	return &API{
 		rest:    rest,
-		json:    json,
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
 	}
 }
@@ -230,7 +207,7 @@ func (api *API) CreateAttachment(
 
 	if len(result.Results) == 0 {
 		return info, errors.New(
-			"Confluence REST API for creating attachments returned " +
+			"confluence REST API for creating attachments returned " +
 				"0 json objects, expected at least 1",
 		)
 	}
@@ -290,7 +267,7 @@ func (api *API) UpdateAttachment(
 
 	if len(result.Results) == 0 {
 		return info, errors.New(
-			"Confluence REST API for creating attachments returned " +
+			"confluence REST API for creating attachments returned " +
 				"0 json objects, expected at least 1",
 		)
 	}
@@ -607,69 +584,16 @@ func (api *API) RestrictPageUpdatesCloud(
 	return nil
 }
 
-func (api *API) RestrictPageUpdatesServer(
-	page *PageInfo,
-	allowedUser string,
-) error {
-	var (
-		err    error
-		result interface{}
-	)
-
-	request, err := api.json.Res(
-		"setContentPermissions", &result,
-	).Post([]interface{}{
-		page.ID,
-		"Edit",
-		[]map[string]interface{}{
-			{
-				"userName": allowedUser,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	if request.Raw.StatusCode != 200 {
-		return newErrorStatusNotOK(request)
-	}
-
-	if success, ok := result.(bool); !ok || !success {
-		return fmt.Errorf(
-			"'true' response expected, but '%v' encountered",
-			result,
-		)
-	}
-
-	return nil
-}
-
-func (api *API) RestrictPageUpdates(
-	page *PageInfo,
-	allowedUser string,
-) error {
-	var err error
-
-	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
-		err = api.RestrictPageUpdatesCloud(page, allowedUser)
-	} else {
-		err = api.RestrictPageUpdatesServer(page, allowedUser)
-	}
-
-	return err
-}
-
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	if request.Raw.StatusCode == 401 {
 		return errors.New(
-			"Confluence API returned unexpected status: 401 (Unauthorized)",
+			"confluence API returned unexpected status: 401 (Unauthorized)",
 		)
 	}
 
 	if request.Raw.StatusCode == 404 {
 		return errors.New(
-			"Confluence API returned unexpected status: 404 (Not Found)",
+			"confluence API returned unexpected status: 404 (Not Found)",
 		)
 	}
 
@@ -677,7 +601,7 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	defer request.Raw.Body.Close()
 
 	return fmt.Errorf(
-		"Confluence API returned unexpected status: %v, "+
+		"confluence API returned unexpected status: %v, "+
 			"output: %q",
 		request.Raw.Status, output,
 	)

@@ -7,9 +7,8 @@ import (
 )
 
 type Config struct {
-	Username string `env:"MARK_USERNAME" toml:"username"`
-	Password string `env:"MARK_PASSWORD" toml:"password"`
-	BaseURL  string `env:"MARK_BASE_URL" toml:"base_url"`
+	Token   string `env:"MARK_USERNAME" toml:"token"`
+	BaseURL string `env:"MARK_BASE_URL" toml:"base_url"`
 }
 
 func LoadConfig(path string) (*Config, error) {

@@ -1,0 +1,4 @@
+Removed the -k flag
+Removed the json-rpc api usage.
+Removed username and password
+Added support for confluence personal access tokens

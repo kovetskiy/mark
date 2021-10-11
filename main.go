@@ -22,14 +22,12 @@ type Flags struct {
 	FileGlobPatten string `docopt:"-f"`
 	CompileOnly    bool   `docopt:"--compile-only"`
 	DryRun         bool   `docopt:"--dry-run"`
-	EditLock       bool   `docopt:"-k"`
 	DropH1         bool   `docopt:"--drop-h1"`
 	MinorEdit      bool   `docopt:"--minor-edit"`
 	Color          string `docopt:"--color"`
 	Debug          bool   `docopt:"--debug"`
 	Trace          bool   `docopt:"--trace"`
-	Username       string `docopt:"-u"`
-	Password       string `docopt:"-p"`
+	Token          string `docopt:"-t"`
 	TargetURL      string `docopt:"-l"`
 	BaseURL        string `docopt:"--base-url"`
 	Config         string `docopt:"--config"`
@@ -48,9 +46,6 @@ Usage:
   mark -h | --help
 
 Options:
-  -u <username>        Use specified username for updating Confluence page.
-  -p <token>           Use specified token for updating Confluence page.
-                        Specify - as password to read password from stdin.
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
                         above).
@@ -58,8 +53,6 @@ Options:
                         Alternative option for base_url config field.
   -f <file>            Use specified markdown file(s) for converting to html.
                         Supports file globbing patterns (needs to be quoted).
-  -k                   Lock page editing to current user only to prevent accidental
-                        manual edits over Confluence Web UI.
   --drop-h1            Don't include H1 headings in Confluence output.
   --dry-run            Resolve page and ancestry, show resulting HTML and exit.
   --compile-only       Show resulting HTML and don't update Confluence page content.
@@ -114,7 +107,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
+	api := confluence.NewAPI(creds.BaseURL, creds.Token)
 
 	files, err := filepath.Glob(flags.FileGlobPatten)
 	if err != nil {
@@ -322,20 +315,6 @@ func processFile(
 	err = api.UpdatePage(target, html, flags.MinorEdit, meta.Labels)
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	if flags.EditLock {
-		log.Infof(
-			nil,
-			`edit locked on page %q by user %q to prevent manual edits`,
-			target.Title,
-			username,
-		)
-
-		err := api.RestrictPageUpdates(target, username)
-		if err != nil {
-			log.Fatal(err)
-		}
 	}
 
 	return target

@@ -2,15 +2,14 @@ package main
 
 import (
 	"errors"
-	"io/ioutil"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/reconquest/karma-go"
 )
 
 type Credentials struct {
+	Token    string
 	Username string
 	Password string
 	BaseURL  string
@@ -24,41 +23,18 @@ func GetCredentials(
 	var err error
 
 	var (
-		username  = flags.Username
-		password  = flags.Password
+		token     = flags.Token
 		targetURL = flags.TargetURL
 	)
 
-	if username == "" {
-		username = config.Username
-		if username == "" {
+	if token == "" {
+		token = config.Token
+		if token == "" {
 			return nil, errors.New(
-				"Confluence username should be specified using -u " +
+				"the Confluence token should be specified using -t " +
 					"flag or be stored in configuration file",
 			)
 		}
-	}
-
-	if password == "" {
-		password = config.Password
-		if password == "" {
-			return nil, errors.New(
-				"Confluence password should be specified using -p " +
-					"flag or be stored in configuration file",
-			)
-		}
-	}
-
-	if password == "-" {
-		stdin, err := ioutil.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to read password from stdin",
-			)
-		}
-
-		password = string(stdin)
 	}
 
 	url, err := url.Parse(targetURL)
@@ -79,7 +55,7 @@ func GetCredentials(
 
 		if baseURL == "" {
 			return nil, errors.New(
-				"Confluence base URL should be specified using -l " +
+				"the Confluence base URL should be specified using -l " +
 					"flag or be stored in configuration file",
 			)
 		}
@@ -90,10 +66,9 @@ func GetCredentials(
 	pageID := url.Query().Get("pageId")
 
 	creds := &Credentials{
-		Username: username,
-		Password: password,
-		BaseURL:  baseURL,
-		PageID:   pageID,
+		Token:   token,
+		BaseURL: baseURL,
+		PageID:  pageID,
 	}
 
 	return creds, nil
