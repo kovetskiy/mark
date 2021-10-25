@@ -32,3 +32,27 @@ collapse-and-title
 ```c collapse
 collapse-no-title
 ```
+
+```mermaid
+graph TD;
+    A-->B;
+    A-->C;
+    B-->D;
+    C-->D;
+```
+
+```mermaid collapse title my mermaid graph
+graph TD;
+    A-->B;
+    A-->C;
+    B-->D;
+    C-->D;
+```
+
+```mermaid title my mermaid graph
+graph TD;
+    A-->B;
+    A-->C;
+    B-->D;
+    C-->D;
+```
