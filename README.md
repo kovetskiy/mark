@@ -197,6 +197,13 @@ By default, mark provides several built-in templates and macros:
 
   See: https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html
 
+* template: `ac:youtube` to include YouTube Widget. Parameters:
+  - URL: YouTube video endpoint
+  - Width: Width in px. Defualts to "640px"
+  - Height: Height in px. Defualts to "360px"
+
+  See: https://confluence.atlassian.com/doc/widget-connector-macro-171180449.html#WidgetConnectorMacro-YouTube
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
