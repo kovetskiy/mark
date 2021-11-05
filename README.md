@@ -318,6 +318,16 @@ If default TOC looks don't find a way to your heart, try [parametrizing it][Conf
 
 :toc:
 ```
+
+You can call the `Macro` as you like but the `Template` field must have the `ac:toc` value.
+Also, note the single quotes around `'false'`.
+
+See [Confluence TOC Macro] for the list of parameters - keep in mind that here
+they start with capital letters. Every skipped field will have the default
+value, so feel free to include only the ones that you require.
+
+
+[Confluence TOC Macro]:https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html
 ### Insert Children Display
 
 To include Children Display (TOC displaying children pages) use following macro:
@@ -350,17 +360,6 @@ You can use various [parameters](https://confluence.atlassian.com/conf59/childre
 
 :children:
 ```
-
-You can call the `Macro` as you like but the `Template` field must have the `ac:toc` value.
-Also, note the single quotes around `'false'`.
-
-See [Confluence TOC Macro] for the list of parameters - keep in mind that here
-they start with capital letters. Every skipped field will have the default
-value, so feel free to include only the ones that you require.
-
-
-[Confluence TOC Macro]:https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html
-
 ### Insert Jira Ticket
 
 **article.md**
