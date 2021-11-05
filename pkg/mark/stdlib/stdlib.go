@@ -171,6 +171,27 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://confluence.atlassian.com/doc/children-display-macro-139501.html */
+
+		`ac:children`: text(
+			`<ac:structured-macro ac:name="children">{{printf "\n"}}`,
+			`{{ if .Reverse}}<ac:parameter ac:name="reverse">{{ or .Reverse }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Sort}}<ac:parameter ac:name="sort">{{ .Sort }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Style}}<ac:parameter ac:name="style">{{ .Style }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Page}}`,
+			/**/ `<ac:parameter ac:name="page">`,
+			/**/ `<ac:link>`,
+			/**/ `<ri:page ri:content-title="{{ .Page}}"/>`,
+			/**/ `</ac:link>`,
+			/**/ `</ac:parameter>`,
+			`{{printf "\n"}}{{end}}`,
+			`{{ if .Excerpt}}<ac:parameter ac:name="excerptType">{{ .Excerpt }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .First}}<ac:parameter ac:name="first">{{ .First }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Depth}}<ac:parameter ac:name="depth">{{ .Depth }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .All}}<ac:parameter ac:name="all">{{ .All }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
 		/* https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html */
 
 		`ac:emoticon`: text(
