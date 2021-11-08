@@ -156,6 +156,8 @@ func processFile(
 		log.Fatal(err)
 	}
 
+	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
+
 	meta, markdown, err := mark.ExtractMeta(markdown)
 	if err != nil {
 		log.Fatal(err)

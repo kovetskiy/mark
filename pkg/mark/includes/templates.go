@@ -45,6 +45,12 @@ func LoadTemplate(
 		return nil, err
 	}
 
+	body = bytes.ReplaceAll(
+		body,
+		[]byte("\r\n"),
+		[]byte("\n"),
+	)
+
 	templates, err = templates.New(name).Parse(string(body))
 	if err != nil {
 		err = facts.Format(

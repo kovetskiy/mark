@@ -85,6 +85,12 @@ func resolveLink(
 			return "", karma.Format(err, "read file: %s", filepath)
 		}
 
+		linkContents = bytes.ReplaceAll(
+			linkContents,
+			[]byte("\r\n"),
+			[]byte("\n"),
+		)
+
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
 		linkMeta, _, err := ExtractMeta(linkContents)
