@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strings"
 
+	bf "github.com/kovetskiy/blackfriday/v2"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
-	bf "github.com/kovetskiy/blackfriday/v2"
 )
 
 type ConfluenceRenderer struct {
@@ -78,7 +78,8 @@ func (renderer ConfluenceRenderer) RenderNode(
 
 // compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
 // equivalent, because bf markdown parser replaces that tags with
-// <a href="ac:rich-text-body">ac:rich-text-body</a> for whatever reason.
+// <a href="ac:rich-text-body">ac:rich-text-body</a> because of the autolink
+// rule.
 func CompileMarkdown(
 	markdown []byte,
 	stdlib *stdlib.Lib,
@@ -87,7 +88,7 @@ func CompileMarkdown(
 
 	colon := regexp.MustCompile(`---bf-COLON---`)
 
-	tags := regexp.MustCompile(`<(/?\S+?):(\S+?)>`)
+	tags := regexp.MustCompile(`<(/?ac):(\S+?)>`)
 
 	markdown = tags.ReplaceAll(
 		markdown,
