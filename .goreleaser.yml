@@ -50,7 +50,7 @@ brews:
 
     homepage: "https://github.com/kovetskiy/mark"
     description: "Sync your markdown files with Confluence pages."
-    license: "Apache 2,0"
+    license: "Apache 2.0"
 
     test: |
       system "#{bin}/program", "version"
