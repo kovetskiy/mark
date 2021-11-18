@@ -121,7 +121,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if len(files) == 0 {
-		log.Fatal("No files matched")
+		log.Warning("No files matched")
 	}
 
 	// Loop through files matched by glob pattern
