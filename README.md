@@ -53,7 +53,7 @@ Also, optional following headers are supported:
 ```
 
 * (default) page: normal Confluence page - defaults to this if omitted
-* blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s) 
+* blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s)
 
 ```markdown
 <!-- Sidebar: <h2>Test</h2> -->
@@ -376,6 +376,13 @@ See task MYJIRA-123.
 ```
 
 ## Installation
+
+### Homebrew
+
+```bash
+brew tap kovetskiy/mark
+brew install mark
+```
 
 ### Go Get
 

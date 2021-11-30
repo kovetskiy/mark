@@ -30,3 +30,27 @@ changelog:
     exclude:
     - '^docs:'
     - '^test:'
+
+# Publish on Homebrew Tap
+brews:
+  -
+    name: mark
+    tap:
+      owner: kovetskiy
+      name: homebrew-mark
+      branch: master
+
+    commit_author:
+      name: Egor Kovetskiy
+      email: e.kovetskiy@gmail.com
+
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+
+    folder: Formula
+
+    homepage: "https://github.com/kovetskiy/mark"
+    description: "Sync your markdown files with Confluence pages."
+    license: "Apache 2.0"
+
+    test: |
+      system "#{bin}/program", "version"
