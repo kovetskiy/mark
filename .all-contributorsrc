@@ -225,6 +225,24 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "jevfok",
+      "name": "jevfok",
+      "avatar_url": "https://avatars.githubusercontent.com/u/54530686?v=4",
+      "profile": "https://github.com/jevfok",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "mmiranda",
+      "name": "Mateus Miranda",
+      "avatar_url": "https://avatars.githubusercontent.com/u/16670310?v=4",
+      "profile": "https://dev.to/mmiranda",
+      "contributions": [
+        "maintenance"
+      ]
     }
   ],
   "contributorsPerLine": 7
