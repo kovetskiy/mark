@@ -217,7 +217,6 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="src"><ri:url ri:value="{{ .URL }}" /></ac:parameter>{{printf "\n"}}`,
 			`{{ if .Frameborder}}<ac:parameter ac:name="frameborder">{{ .Frameborder }}</ac:parameter>{{printf "\n"}}{{end}}`,
 			`{{ if .Scrolling}}<ac:parameter ac:name="id">{{ .Scrolling }}</ac:parameter>{{printf "\n"}}{{end}}`,
-			`{{ if .ID}}<ac:parameter ac:name="id">{{ .ID }}</ac:parameter>{{printf "\n"}}{{end}}`,
 			`{{ if .Align}}<ac:parameter ac:name="align">{{ .Align }}</ac:parameter>{{printf "\n"}}{{end}}`,
 			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>{{printf "\n"}}`,
 			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>{{printf "\n"}}`,

@@ -53,7 +53,7 @@ Also, optional following headers are supported:
 ```
 
 * (default) page: normal Confluence page - defaults to this if omitted
-* blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s) 
+* blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s)
 
 ```markdown
 <!-- Sidebar: <h2>Test</h2> -->
@@ -234,6 +234,23 @@ By default, mark provides several built-in templates and macros:
       - `false` (Default)
 
   See: https://confluence.atlassian.com/doc/children-display-macro-139501.html
+
+* template: `ac:iframe` to include iframe macro (cloud only)
+  - URL: URL to the iframe.
+  - Frameborder: Choose whether to draw a border around content in the iframe.
+      - `show` (Default)
+      - `hide`
+  - Width: Width in px. Defualts to "640px"
+  - Height: Height in px. Defualts to "360px"
+  - Scrolling: Allow or prevent scrolling in the iframe to see additional content.
+      - `yes`
+      - `no`
+      - `auto` (Default)
+  - Align: Align the iframe to the left or right of the page.
+      - `left` (Default)
+      - `right`
+
+  See: https://support.atlassian.com/confluence-cloud/docs/insert-the-iframe-macro
 
 * macro `@{...}` to mention user by name specified in the braces.
 
