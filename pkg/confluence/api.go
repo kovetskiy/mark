@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -142,7 +143,6 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"space/"+space, &SpaceInfo{},
 	).Get(payload)
-
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,11 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 	return &request.Response.(*SpaceInfo).Homepage, nil
 }
 
-func (api *API) FindPage(space string, title string, pageType string) (*PageInfo, error) {
+func (api *API) FindPage(
+	space string,
+	title string,
+	pageType string,
+) (*PageInfo, error) {
 	result := struct {
 		Results []PageInfo `json:"results"`
 	}{}
@@ -248,6 +252,10 @@ func (api *API) CreateAttachment(
 	return info, nil
 }
 
+// UpdateAttachment uploads a new version of the same attachment if the
+// checksums differs from the previous one.
+// It also handles a case where Confluence returns sort of "short" variant of
+// the response instead of an extended one.
 func (api *API) UpdateAttachment(
 	pageID string,
 	attachID string,
@@ -262,12 +270,14 @@ func (api *API) UpdateAttachment(
 		return AttachmentInfo{}, err
 	}
 
-	var result struct {
+	var extendedResponse struct {
 		Links struct {
 			Context string `json:"context"`
 		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
 	}
+
+	var result json.RawMessage
 
 	resource := api.rest.Res(
 		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
@@ -288,24 +298,40 @@ func (api *API) UpdateAttachment(
 		return info, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
-		return info, errors.New(
-			"Confluence REST API for creating attachments returned " +
-				"0 json objects, expected at least 1",
+	err = json.Unmarshal(result, &extendedResponse)
+	if err != nil {
+		return info, karma.Format(
+			err,
+			"unable to unmarshal JSON response as full response format: %s",
+			string(result),
 		)
 	}
 
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
+	if len(extendedResponse.Results) > 0 {
+		for i, info := range extendedResponse.Results {
+			if info.Links.Context == "" {
+				info.Links.Context = extendedResponse.Links.Context
+			}
+
+			extendedResponse.Results[i] = info
 		}
 
-		result.Results[i] = info
+		info = extendedResponse.Results[0]
+
+		return info, nil
 	}
 
-	info = result.Results[0]
+	var shortResponse AttachmentInfo
+	err = json.Unmarshal(result, &shortResponse)
+	if err != nil {
+		return info, karma.Format(
+			err,
+			"unable to unmarshal JSON response as short response format: %s",
+			string(result),
+		)
+	}
 
-	return info, nil
+	return shortResponse, nil
 }
 
 func getAttachmentPayload(name, comment, path string) (*form, error) {

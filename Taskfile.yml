@@ -1,14 +1,40 @@
-version: '2'
+version: '3'
 
 vars:
+  version: 7.13.0
   pwd:
     sh: pwd
 
 tasks:
-  confluence:
+  volume:
     cmds:
-      - docker run -v {{ .pwd }}/docker:/var/atlassian/application-data/confluence
+      - mkdir -p docker/{{.version}}
+
+  network:
+    desc: create docker network
+    cmds:
+      - docker network create confluence || true
+
+  postgres:
+    desc: start postgres for confluence
+    deps: [network, volume]
+    cmds:
+      - docker run -it -p 5432:5432
+          --name confluence-postgres
+          --network confluence
+          -v {{.pwd}}/docker/{{.version}}/postgres:/var/lib/postgresql/data
+          -e POSTGRES_PASSWORD=confluence
+          -e POSTGRES_DB=confluence
+          -e POSTGRES_USER=confluence
+          postgres
+
+  confluence:
+    desc: start confluence server
+    deps: [network, volume]
+    cmds:
+      - docker run -v {{ .pwd }}/docker/{{.version}}/confluence:/var/atlassian/application-data/confluence
           --name="confluence"
+          --network confluence
           -p 8090:8090
           -p 8091:8091
-          atlassian/confluence-server
+          atlassian/confluence-server:{{.version}}
