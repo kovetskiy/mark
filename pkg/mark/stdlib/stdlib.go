@@ -210,6 +210,19 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://support.atlassian.com/confluence-cloud/docs/insert-the-iframe-macro/ */
+
+		`ac:iframe`: text(
+			`<ac:structured-macro ac:name="iframe">{{printf "\n"}}`,
+			`<ac:parameter ac:name="src"><ri:url ri:value="{{ .URL }}" /></ac:parameter>{{printf "\n"}}`,
+			`{{ if .Frameborder}}<ac:parameter ac:name="frameborder">{{ .Frameborder }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Scrolling}}<ac:parameter ac:name="id">{{ .Scrolling }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Align}}<ac:parameter ac:name="align">{{ .Align }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
