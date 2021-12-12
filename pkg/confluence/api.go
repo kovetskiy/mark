@@ -61,6 +61,18 @@ type PageInfo struct {
 	} `json:"_links"`
 }
 
+type InlineComments struct {
+	Results []struct {
+		Extensions struct {
+			Location         string `json:"location"`
+			InlineProperties struct {
+				OriginalSelection string `json:"originalSelection"`
+				MarkerRef         string `json:"markerRef"`
+			} `json:"inlineProperties"`
+		} `json:"extensions"`
+	} `json:"results"`
+}
+
 type AttachmentInfo struct {
 	Filename string `json:"title"`
 	ID       string `json:"id"`
@@ -418,6 +430,21 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	}
 
 	return request.Response.(*PageInfo), nil
+}
+
+func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
+	request, err := api.rest.Res(
+		"content/"+pageID+"/child/comment", &InlineComments{},
+	).Get(map[string]string{"expand": "extensions.inlineProperties", "location": "inline"})
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != 200 {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*InlineComments), nil
 }
 
 func (api *API) CreatePage(

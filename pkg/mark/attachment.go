@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -158,6 +159,16 @@ func ResolveAttachments(
 	attaches = append(attaches, updating...)
 
 	return attaches, nil
+}
+
+func MergeComments(html string, comments *confluence.InlineComments) (string, error) {
+	for _, comment := range comments.Results {
+		selection := comment.Extensions.InlineProperties.OriginalSelection
+		withComment := fmt.Sprintf(`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
+			comment.Extensions.InlineProperties.MarkerRef, comment.Extensions.InlineProperties.OriginalSelection)
+		html = strings.Replace(html, selection, withComment, 1)
+	}
+	return html, nil
 }
 
 func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
