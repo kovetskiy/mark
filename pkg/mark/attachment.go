@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"html"
 	"io"
 	"net/url"
 	"os"
@@ -158,6 +160,22 @@ func ResolveAttachments(
 	attaches = append(attaches, updating...)
 
 	return attaches, nil
+}
+
+// The logic of merging comment is the following. Since each comment comes with
+// its original selection text, we just search for that and put back the marker.
+// Note that this only finds the first instance, so if you put a comment on a
+// very common word, like "this", this comment won't be merged correctly.
+func MergeComments(body string, comments *confluence.InlineComments) (string, error) {
+	for _, comment := range comments.Results {
+		// TODO: this doesn't handle ' well, as it becomes &lsquo;
+		selection := html.EscapeString(comment.Extensions.InlineProperties.OriginalSelection)
+		withComment := fmt.Sprintf(`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
+			comment.Extensions.InlineProperties.MarkerRef, selection)
+		body = strings.Replace(body, selection, withComment, 1)
+	}
+
+	return body, nil
 }
 
 func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
