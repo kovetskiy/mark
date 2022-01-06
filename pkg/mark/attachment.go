@@ -35,17 +35,14 @@ func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
 	base string,
-	replacements map[string]string,
+	replacements []string,
 ) ([]Attachment, error) {
-	attaches := []Attachment{}
-	for replace, name := range replacements {
-		attach := Attachment{
-			Name:     name,
-			Filename: strings.ReplaceAll(name, "/", "_"),
-			Path:     filepath.Join(base, name),
-			Replace:  replace,
-		}
+	attaches, err := prepareAttachments(base, replacements)
+	if err != nil {
+		return nil, err
+	}
 
+	for _, attach := range attaches {
 		checksum, err := getChecksum(attach.Path)
 		if err != nil {
 			return nil, karma.Format(
@@ -55,8 +52,6 @@ func ResolveAttachments(
 		}
 
 		attach.Checksum = checksum
-
-		attaches = append(attaches, attach)
 	}
 
 	remotes, err := api.GetAttachments(page.ID)
@@ -156,6 +151,22 @@ func ResolveAttachments(
 	attaches = append(attaches, existing...)
 	attaches = append(attaches, creating...)
 	attaches = append(attaches, updating...)
+
+	return attaches, nil
+}
+
+func prepareAttachments(base string, replacements []string) ([]Attachment, error) {
+	attaches := []Attachment{}
+	for _, name := range replacements {
+		attach := Attachment{
+			Name:     name,
+			Filename: strings.ReplaceAll(name, "/", "_"),
+			Path:     filepath.Join(base, name),
+			Replace:  name,
+		}
+
+		attaches = append(attaches, attach)
+	}
 
 	return attaches, nil
 }
