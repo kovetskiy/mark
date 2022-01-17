@@ -24,6 +24,7 @@ type Flags struct {
 	DryRun         bool   `docopt:"--dry-run"`
 	EditLock       bool   `docopt:"-k"`
 	DropH1         bool   `docopt:"--drop-h1"`
+	TitleFromH1    bool   `docopt:"--title-from-h1"`
 	MinorEdit      bool   `docopt:"--minor-edit"`
 	Color          string `docopt:"--color"`
 	Debug          bool   `docopt:"--debug"`
@@ -34,6 +35,7 @@ type Flags struct {
 	BaseURL        string `docopt:"--base-url"`
 	Config         string `docopt:"--config"`
 	Ci             bool   `docopt:"--ci"`
+	Space          string `docopt:"--space"`
 }
 
 const (
@@ -61,7 +63,11 @@ Options:
                         Supports file globbing patterns (needs to be quoted).
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
+  --space <space>      Use specified space key. If not specified space ley must
+                        be set in a page metadata.
   --drop-h1            Don't include H1 headings in Confluence output.
+  --title-from-h1      Extract page title from a leading H1 heading. If no H1 heading
+                        on a page then title must be set in a page metadata.
   --dry-run            Resolve page and ancestry, show resulting HTML and exit.
   --compile-only       Show resulting HTML and don't update Confluence page content.
   --minor-edit         Don't send notifications while updating Confluence page.
@@ -168,6 +174,24 @@ func processFile(
 	meta, markdown, err := mark.ExtractMeta(markdown)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	switch {
+	case meta.Space == "" && flags.Space == "":
+		log.Fatal("space is not set ('Space' header is not set and '--space' option is not set)")
+	case meta.Space == "" && flags.Space != "":
+		meta.Space = flags.Space
+	}
+
+	if meta.Title == "" && flags.TitleFromH1 {
+		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
+	}
+
+	if meta.Title == "" {
+		log.Fatal(
+			`page title is not set ('Title' header is not set ` +
+				`and '--title-from-h1' option is not set or there is no H1 in the file)`,
+		)
 	}
 
 	stdlib, err := stdlib.New(api)
