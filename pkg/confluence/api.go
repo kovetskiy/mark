@@ -88,9 +88,18 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 }
 
 func NewAPI(baseURL string, username string, password string) *API {
-	auth := &gopencils.BasicAuth{username, password}
-
+	var auth *gopencils.BasicAuth
+	if username != "" {
+		auth = &gopencils.BasicAuth{username, password}
+	}
 	rest := gopencils.Api(baseURL+"/rest/api", auth)
+	if username == "" {
+		if rest.Headers == nil {
+			rest.Headers = http.Header{}
+		}
+		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
+	}
+
 	json := gopencils.Api(
 		baseURL+"/rpc/json-rpc/confluenceservice-v2",
 		auth,
@@ -218,7 +227,11 @@ func (api *API) CreateAttachment(
 	)
 
 	resource.Payload = form.buffer
+	oldHeaders := resource.Headers.Clone()
 	resource.Headers = http.Header{}
+	if resource.Api.BasicAuth == nil {
+		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
+	}
 
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
@@ -284,7 +297,11 @@ func (api *API) UpdateAttachment(
 	)
 
 	resource.Payload = form.buffer
+	oldHeaders := resource.Headers.Clone()
 	resource.Headers = http.Header{}
+	if resource.Api.BasicAuth == nil {
+		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
+	}
 
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")

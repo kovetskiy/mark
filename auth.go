@@ -31,12 +31,6 @@ func GetCredentials(
 
 	if username == "" {
 		username = config.Username
-		if username == "" {
-			return nil, errors.New(
-				"Confluence username should be specified using -u " +
-					"flag or be stored in configuration file",
-			)
-		}
 	}
 
 	if password == "" {
