@@ -313,7 +313,7 @@ func processFile(
 		target = page
 	}
 
-	attaches, err := mark.ResolveAttachments(api, target, ".", meta.Attachments)
+	attaches, err := mark.ResolveAttachments(api, target, filepath.Dir(file), meta.Attachments)
 	if err != nil {
 		log.Fatalf(err, "unable to create/update attachments")
 	}
