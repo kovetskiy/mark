@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/kovetskiy/mark/pkg/mark/utils"
 	"io"
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -35,14 +35,25 @@ func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
 	base string,
+	relativePath string,
 	replacements map[string]string,
 ) ([]Attachment, error) {
 	attaches := []Attachment{}
+	var (
+		spath string
+		err   error
+	)
 	for replace, name := range replacements {
+		if spath, err = utils.PathFinder(base, relativePath, name); err != nil {
+			return nil, karma.Format(
+				err,
+				"unable access attachment: %q", name,
+			)
+		}
 		attach := Attachment{
 			Name:     name,
 			Filename: strings.ReplaceAll(name, "/", "_"),
-			Path:     filepath.Join(base, name),
+			Path:     spath,
 			Replace:  replace,
 		}
 

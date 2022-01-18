@@ -3,8 +3,8 @@ package includes
 import (
 	"bytes"
 	"fmt"
+	"github.com/kovetskiy/mark/pkg/mark/utils"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -40,23 +40,15 @@ func LoadTemplate(
 		body []byte
 		err  error
 	)
-	for {
-		spath := filepath.Join(cwd, relativePath, path)
-		if body, err = ioutil.ReadFile(spath); err == nil {
-			break
-		}
-		if !strings.Contains(relativePath, "/") {
-			err = os.ErrNotExist
-			break
-		}
-		relativePath = relativePath[:strings.LastIndexAny(relativePath, "/")]
+	spath, err := utils.PathFinder(cwd, relativePath, path)
+	if err == nil {
+		body, err = ioutil.ReadFile(spath)
 	}
 	if err != nil {
 		err = facts.Format(
 			err,
 			"unable to read template file",
 		)
-
 		return nil, err
 	}
 
