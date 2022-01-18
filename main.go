@@ -39,7 +39,7 @@ type Flags struct {
 }
 
 const (
-	version = "6.7"
+	version = "7.0"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
@@ -178,7 +178,9 @@ func processFile(
 
 	switch {
 	case meta.Space == "" && flags.Space == "":
-		log.Fatal("space is not set ('Space' header is not set and '--space' option is not set)")
+		log.Fatal(
+			"space is not set ('Space' header is not set and '--space' option is not set)",
+		)
 	case meta.Space == "" && flags.Space != "":
 		meta.Space = flags.Space
 	}
@@ -313,7 +315,12 @@ func processFile(
 		target = page
 	}
 
-	attaches, err := mark.ResolveAttachments(api, target, filepath.Dir(file), meta.Attachments)
+	attaches, err := mark.ResolveAttachments(
+		api,
+		target,
+		filepath.Dir(file),
+		meta.Attachments,
+	)
 	if err != nil {
 		log.Fatalf(err, "unable to create/update attachments")
 	}
