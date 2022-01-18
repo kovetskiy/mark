@@ -133,7 +133,7 @@ func ExtractMacros(
 				macro Macro
 			)
 
-			macro.Template, err = includes.LoadTemplate(template, templates)
+			macro.Template, err = includes.LoadTemplate("", "", template, templates)
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
 

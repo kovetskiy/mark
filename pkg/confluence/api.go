@@ -29,6 +29,7 @@ type API struct {
 	// but it's only way to set permissions
 	json    *gopencils.Resource
 	BaseURL string
+	CWD     string
 }
 
 type SpaceInfo struct {
@@ -87,7 +88,7 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 	log.Tracef(nil, tracer.prefix+" "+format, args...)
 }
 
-func NewAPI(baseURL string, username string, password string) *API {
+func NewAPI(baseURL string, username string, password string, cwd string) *API {
 	auth := &gopencils.BasicAuth{username, password}
 
 	rest := gopencils.Api(baseURL+"/rest/api", auth)
@@ -105,6 +106,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 		rest:    rest,
 		json:    json,
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
+		CWD:     cwd,
 	}
 }
 

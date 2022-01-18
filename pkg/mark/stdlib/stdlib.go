@@ -14,6 +14,7 @@ import (
 type Lib struct {
 	Macros    []macro.Macro
 	Templates *template.Template
+	CWD       string
 }
 
 func New(api *confluence.API) (*Lib, error) {
@@ -30,6 +31,10 @@ func New(api *confluence.API) (*Lib, error) {
 	lib.Macros, err = macros(lib.Templates)
 	if err != nil {
 		return nil, err
+	}
+
+	if api != nil {
+		lib.CWD = api.CWD
 	}
 
 	return &lib, nil
