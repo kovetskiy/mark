@@ -128,19 +128,5 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 		return nil, data, nil
 	}
 
-	if meta.Space == "" {
-		return nil, nil, fmt.Errorf(
-			"space key is not set (%s header is not set)",
-			HeaderSpace,
-		)
-	}
-
-	if meta.Title == "" {
-		return nil, nil, fmt.Errorf(
-			"page title is not set (%s header is not set)",
-			HeaderTitle,
-		)
-	}
-
 	return meta, data[offset:], nil
 }
