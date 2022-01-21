@@ -21,6 +21,7 @@ var reIncludeDirective = regexp.MustCompile(
 	`(?s)<!--\s*Include:\s*(?P<template>\S+)\s*(\n(?P<config>.*?))?-->`)
 
 func LoadTemplate(
+	base string,
 	path string,
 	templates *template.Template,
 ) (*template.Template, error) {
@@ -35,7 +36,7 @@ func LoadTemplate(
 
 	var body []byte
 
-	body, err := ioutil.ReadFile(path)
+	body, err := ioutil.ReadFile(filepath.Join(base, path))
 	if err != nil {
 		err = facts.Format(
 			err,
@@ -65,6 +66,7 @@ func LoadTemplate(
 }
 
 func ProcessIncludes(
+	base string,
 	contents []byte,
 	templates *template.Template,
 ) (*template.Template, []byte, bool, error) {
@@ -122,7 +124,7 @@ func ProcessIncludes(
 
 			log.Tracef(vardump(facts, data), "including template %q", path)
 
-			templates, err = LoadTemplate(path, templates)
+			templates, err = LoadTemplate(base, path, templates)
 			if err != nil {
 				err = facts.Format(err, "unable to load template")
 
