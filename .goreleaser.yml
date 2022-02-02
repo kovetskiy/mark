@@ -12,7 +12,8 @@ builds:
   goos:
   - darwin
   - linux
-  - windows
+  # windows fails with an error https://github.com/kovetskiy/mark/runs/5034726426?check_suite_focus=true
+  # - windows
 archives:
 - replacements:
     darwin: Darwin
