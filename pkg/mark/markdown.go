@@ -125,7 +125,8 @@ func CompileMarkdown(
 				bf.Titleblock|
 				bf.BackslashLineBreak|
 				bf.DefinitionLists|
-				bf.NoEmptyLineBeforeBlock,
+				bf.NoEmptyLineBeforeBlock|
+				bf.Footnotes,
 		),
 	)
 
