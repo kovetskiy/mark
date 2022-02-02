@@ -209,6 +209,7 @@ func processFile(
 
 	for {
 		templates, markdown, recurse, err = includes.ProcessIncludes(
+			filepath.Dir(file),
 			markdown,
 			templates,
 		)
@@ -221,7 +222,7 @@ func processFile(
 		}
 	}
 
-	macros, markdown, err := macro.ExtractMacros(markdown, templates)
+	macros, markdown, err := macro.ExtractMacros(filepath.Dir(file), markdown, templates)
 	if err != nil {
 		log.Fatal(err)
 	}

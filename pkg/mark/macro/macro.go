@@ -105,6 +105,7 @@ func (macro *Macro) configure(node interface{}, groups [][]byte) interface{} {
 }
 
 func ExtractMacros(
+	base string,
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
@@ -133,7 +134,7 @@ func ExtractMacros(
 				macro Macro
 			)
 
-			macro.Template, err = includes.LoadTemplate(template, templates)
+			macro.Template, err = includes.LoadTemplate(base, template, templates)
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
 
