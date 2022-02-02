@@ -39,7 +39,7 @@ type Flags struct {
 }
 
 const (
-	version = "7.0"
+	version = "7.1"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
@@ -53,7 +53,9 @@ Usage:
 Options:
   -u <username>        Use specified username for updating Confluence page.
   -p <token>           Use specified token for updating Confluence page.
-                        Specify - as password to read password from stdin.
+                        Specify - as password to read password from stdin, or your Personal access token.
+                        Username is not mandatory if personal access token is provided.
+                        For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
                         above).
