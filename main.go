@@ -39,7 +39,7 @@ type Flags struct {
 }
 
 const (
-	version = "7.1"
+	version = "8.0"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
@@ -222,7 +222,11 @@ func processFile(
 		}
 	}
 
-	macros, markdown, err := macro.ExtractMacros(filepath.Dir(file), markdown, templates)
+	macros, markdown, err := macro.ExtractMacros(
+		filepath.Dir(file),
+		markdown,
+		templates,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
