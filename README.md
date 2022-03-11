@@ -582,6 +582,17 @@ Rather than running `mark` multiple times, or looping through a list of files fr
 mark -f "helpful_cmds/*.md"
 ```
 
+## Mermaid Diagrams Integration
+
+Confluence doesn't provide [mermiad.js]() support natively. Mark provides a convenient way to enable the feature like [Github does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
+As long as you have a code block and are marked as "mermaid", the mark will automatically render it as a PNG image and insert into before the code block.
+
+    ```mermaid title diagrams_example
+    graph TD;
+    A-->B;
+    ```
+
+
 ## Issues, Bugs & Contributions
 
 I've started the project to solve my own problem and open sourced the solution so anyone who has a problem like me can solve it too.

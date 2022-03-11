@@ -5,8 +5,11 @@ COPY / .
 RUN make get
 RUN make build
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates bash git
+FROM chromedp/headless-shell:latest
+RUN apt-get update -y \
+    && apt-get install -y ca-certificates bash git dumb-init \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 COPY --from=0 /go/src/github.com/kovetskiy/mark/mark /bin/
-RUN mkdir -p /docs
+ENTRYPOINT ["dumb-init", "--"]
+RUN mkdir /docs
 WORKDIR /docs

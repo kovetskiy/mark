@@ -12,7 +12,8 @@ import (
 )
 
 type Lib struct {
-	Macros    []macro.Macro
+	Macros []macro.Macro
+
 	Templates *template.Template
 }
 
@@ -215,6 +216,10 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>{{printf "\n"}}`,
 			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>{{printf "\n"}}`,
 			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
+		`html:img`: text(
+			`<img src="{{ .URL }}"{{ if .Title }} alt="{{ .Title }}"{{end}}{{ if .Width }} width="{{ .Width }}"{{end}}{{ if .Height }} height="{{ .Height }}"{{end}} />`,
 		),
 
 		// TODO(seletskiy): more templates here

@@ -1,19 +1,22 @@
 package mark
 
 import (
-	"io"
-	"regexp"
-	"strings"
-
+	"bytes"
+	"crypto/sha1"
+	"encoding/base64"
 	bf "github.com/kovetskiy/blackfriday/v2"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
+	"io"
+	"regexp"
+	"strings"
 )
 
 type ConfluenceRenderer struct {
 	bf.Renderer
 
-	Stdlib *stdlib.Lib
+	Stdlib   *stdlib.Lib
+	Attaches []Attachment
 }
 
 func ParseLanguage(lang string) string {
@@ -50,12 +53,45 @@ func ParseTitle(lang string) string {
 func (renderer ConfluenceRenderer) RenderNode(
 	writer io.Writer,
 	node *bf.Node,
-	entering bool,
-) bf.WalkStatus {
+	entering bool) bf.WalkStatus {
 	if node.Type == bf.CodeBlock {
 		lang := string(node.Info)
+		language := ParseLanguage(lang)
+		embedded := false
 
-		renderer.Stdlib.Templates.ExecuteTemplate(
+		if language == MERMAID_LANG {
+			checkSum := codeChecksum(node.Literal)
+			if renderer.Attaches != nil {
+				for _, attach := range renderer.Attaches {
+					if attach.Checksum == checkSum {
+						title := ""
+						if !strings.HasPrefix(attach.Filename, attach.Checksum) {
+							title = attach.Filename
+						}
+						_ = renderer.Stdlib.Templates.ExecuteTemplate(
+							writer,
+							"html:img",
+							struct {
+								Title  string
+								URL    string
+								Width  string
+								Height string
+							}{
+								title,
+								parseAttachmentLink(attach.Link),
+								attach.Width,
+								attach.Height,
+							},
+						)
+						embedded = true
+						language = "plaintext"
+						break
+					}
+				}
+			}
+		}
+
+		_ = renderer.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:code",
 			struct {
@@ -64,8 +100,8 @@ func (renderer ConfluenceRenderer) RenderNode(
 				Title    string
 				Text     string
 			}{
-				ParseLanguage(lang),
-				strings.Contains(lang, "collapse"),
+				language,
+				embedded || strings.Contains(lang, "collapse"),
 				ParseTitle(lang),
 				strings.TrimSuffix(string(node.Literal), "\n"),
 			},
@@ -83,6 +119,7 @@ func (renderer ConfluenceRenderer) RenderNode(
 func CompileMarkdown(
 	markdown []byte,
 	stdlib *stdlib.Lib,
+	attaches []Attachment,
 ) string {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
@@ -106,7 +143,8 @@ func CompileMarkdown(
 			},
 		),
 
-		Stdlib: stdlib,
+		Stdlib:   stdlib,
+		Attaches: attaches,
 	}
 
 	html := bf.Run(
@@ -158,4 +196,10 @@ func ExtractDocumentLeadingH1(markdown []byte) string {
 	} else {
 		return string(groups[1])
 	}
+}
+
+func codeChecksum(code []byte) string {
+	codeBytes := bytes.TrimSuffix(code, []byte("\n"))
+	checkSumBytes := sha1.Sum(codeBytes)
+	return base64.URLEncoding.EncodeToString(checkSumBytes[:])
 }

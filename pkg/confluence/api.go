@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/kovetskiy/gopencils"
@@ -206,11 +205,11 @@ func (api *API) CreateAttachment(
 	pageID string,
 	name string,
 	comment string,
-	path string,
+	reader io.Reader,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -274,11 +273,11 @@ func (api *API) UpdateAttachment(
 	attachID string,
 	name string,
 	comment string,
-	path string,
+	reader io.Reader,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -351,22 +350,11 @@ func (api *API) UpdateAttachment(
 	return shortResponse, nil
 }
 
-func getAttachmentPayload(name, comment, path string) (*form, error) {
+func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error) {
 	var (
 		payload = bytes.NewBuffer(nil)
 		writer  = multipart.NewWriter(payload)
 	)
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to open file: %q",
-			path,
-		)
-	}
-
-	defer file.Close()
 
 	content, err := writer.CreateFormFile("file", name)
 	if err != nil {
@@ -376,7 +364,7 @@ func getAttachmentPayload(name, comment, path string) (*form, error) {
 		)
 	}
 
-	_, err = io.Copy(content, file)
+	_, err = io.Copy(content, reader)
 	if err != nil {
 		return nil, karma.Format(
 			err,
