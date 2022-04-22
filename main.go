@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/docopt/docopt-go"
 	"github.com/kovetskiy/lorg"
@@ -306,6 +307,10 @@ func processFile(
 					meta.Title,
 				)
 			}
+			// (issues/139): A delay between the create and update call
+			// helps mitigate a 409 conflict that can occur when attempting
+			// to update a page just after it was created.
+			time.Sleep(1 * time.Second)
 		}
 
 		target = page
