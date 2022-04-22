@@ -40,7 +40,7 @@ type Flags struct {
 }
 
 const (
-	version = "8.0"
+	version = "8.1"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
@@ -178,7 +178,7 @@ func processFile(
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	if pageID != "" && meta != nil {
 		log.Warning(
 			`specified file contains metadata, ` +
