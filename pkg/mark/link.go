@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"errors"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/reconquest/karma-go"
@@ -34,6 +34,7 @@ func ResolveRelativeLinks(
 	matches := parseLinks(string(markdown))
 
 	links := []LinkSubstitution{}
+	var partial_fail error = nil
 	for _, match := range matches {
 		log.Tracef(
 			nil,
@@ -49,6 +50,7 @@ func ResolveRelativeLinks(
 		}
 
 		if resolved == "" {
+			partial_fail = errors.New("resolved relative link partial fails")
 			continue
 		}
 
@@ -58,7 +60,7 @@ func ResolveRelativeLinks(
 		})
 	}
 
-	return links, nil
+	return links, partial_fail 
 }
 
 func resolveLink(
@@ -171,12 +173,13 @@ func getConfluenceLink(
 	api *confluence.API,
 	space, title string,
 ) (string, error) {
-	link := fmt.Sprintf(
-		"%s/display/%s/%s",
-		api.BaseURL,
-		space,
-		url.QueryEscape(title),
-	)
+	// link := fmt.Sprintf(
+	// 	"%s/display/%s/%s",
+	// 	api.BaseURL,
+	// 	space,
+	// 	url.QueryEscape(title),
+	// )
+	var link string
 
 	page, err := api.FindPage(space, title, "page")
 	if err != nil {
@@ -187,6 +190,8 @@ func getConfluenceLink(
 		// Needs baseURL, as REST api response URL doesn't contain subpath ir
 		// confluence is server from that
 		link = api.BaseURL + page.Links.Full
+	} else {
+		link = ""
 	}
 
 	return link, nil
