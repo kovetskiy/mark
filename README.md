@@ -304,7 +304,7 @@ This is my article.
 <!-- Space: TEST -->
 <!-- Title: Announcement -->
 
-<!-- Macro: :box:(.+):(.*):(.+):
+<!-- Macro: :box:([^:]+):([^:]*):(.+):
      Template: ac:box
      Icon: true
      Name: ${1}
