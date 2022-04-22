@@ -178,6 +178,23 @@ func processFile(
 	if err != nil {
 		log.Fatal(err)
 	}
+	
+	if pageID != "" && meta != nil {
+		log.Warning(
+			`specified file contains metadata, ` +
+				`but it will be ignored due specified command line URL`,
+		)
+
+		meta = nil
+	}
+
+	if pageID == "" && meta == nil {
+		log.Fatal(
+			`specified file doesn't contain metadata ` +
+				`and URL is not specified via command line ` +
+				`or doesn't contain pageId GET-parameter`,
+		)
+	}
 
 	switch {
 	case meta.Space == "" && flags.Space == "":
@@ -260,23 +277,6 @@ func processFile(
 	if flags.CompileOnly {
 		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
-	}
-
-	if pageID != "" && meta != nil {
-		log.Warning(
-			`specified file contains metadata, ` +
-				`but it will be ignored due specified command line URL`,
-		)
-
-		meta = nil
-	}
-
-	if pageID == "" && meta == nil {
-		log.Fatal(
-			`specified file doesn't contain metadata ` +
-				`and URL is not specified via command line ` +
-				`or doesn't contain pageId GET-parameter`,
-		)
 	}
 
 	var target *confluence.PageInfo
