@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/docopt/docopt-go"
 	"github.com/kovetskiy/lorg"
@@ -40,7 +41,7 @@ type Flags struct {
 }
 
 const (
-	version = "8.0"
+	version = "8.1"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
@@ -218,6 +219,23 @@ func processFile(
 		log.Fatal(err)
 	}
 
+	if pageID != "" && meta != nil {
+		log.Warning(
+			`specified file contains metadata, ` +
+				`but it will be ignored due specified command line URL`,
+		)
+
+		meta = nil
+	}
+
+	if pageID == "" && meta == nil {
+		log.Fatal(
+			`specified file doesn't contain metadata ` +
+				`and URL is not specified via command line ` +
+				`or doesn't contain pageId GET-parameter`,
+		)
+	}
+
 	switch {
 	case meta.Space == "" && flags.Space == "":
 		log.Fatal(
@@ -303,23 +321,6 @@ func processFile(
 		os.Exit(0)
 	}
 
-	if pageID != "" && meta != nil {
-		log.Warning(
-			`specified file contains metadata, ` +
-				`but it will be ignored due specified command line URL`,
-		)
-
-		meta = nil
-	}
-
-	if pageID == "" && meta == nil {
-		log.Fatal(
-			`specified file doesn't contain metadata ` +
-				`and URL is not specified via command line ` +
-				`or doesn't contain pageId GET-parameter`,
-		)
-	}
-
 	var target *confluence.PageInfo
 
 	if meta != nil {
@@ -348,6 +349,10 @@ func processFile(
 					meta.Title,
 				)
 			}
+			// (issues/139): A delay between the create and update call
+			// helps mitigate a 409 conflict that can occur when attempting
+			// to update a page just after it was created.
+			time.Sleep(1 * time.Second)
 		}
 
 		target = page
