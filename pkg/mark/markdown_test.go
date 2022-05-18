@@ -61,3 +61,18 @@ func TestExtractDocumentLeadingH1(t *testing.T) {
 
 	assert.Equal(t, "a", actual)
 }
+
+func TestRemoveNewlinesWithinParagraphTags(t *testing.T) {
+	html := `<p>This newline
+	should be ignored</p>
+	<span>And this one
+	shouldn't</span>`
+
+	expected := `<p>This newline should be ignored</p>
+	<span>And this one
+	shouldn't</span>`
+
+	actual := RemoveNewlinesWithinParagraphTags(html)
+
+	assert.Equal(t, expected, actual)
+}

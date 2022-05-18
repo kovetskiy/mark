@@ -159,3 +159,16 @@ func ExtractDocumentLeadingH1(markdown []byte) string {
 		return string(groups[1])
 	}
 }
+
+// RemoveNewlinesWithinParagraphTags will remove any newline within <p> tags to force Confluence
+// to break lines only for double line breaks in Markdown
+func RemoveNewlinesWithinParagraphTags(
+	html string,
+) string {
+	paragraphRegex := regexp.MustCompile(`<p>[\s\S]*?</p>`)
+	newlineRegex := regexp.MustCompile(`\s+`)
+
+	return paragraphRegex.ReplaceAllStringFunc(html, func(text string) string {
+		return newlineRegex.ReplaceAllLiteralString(text, " ")
+	})
+}
