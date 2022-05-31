@@ -36,10 +36,13 @@ func GetCredentials(
 	if password == "" {
 		password = config.Password
 		if password == "" {
-			return nil, errors.New(
-				"Confluence password should be specified using -p " +
-					"flag or be stored in configuration file",
-			)
+			if ! flags.CompileOnly {
+				return nil, errors.New(
+					"Confluence password should be specified using -p " +
+						"flag or be stored in configuration file",
+				)
+			}
+			password = "none"
 		}
 	}
 
@@ -53,6 +56,10 @@ func GetCredentials(
 		}
 
 		password = string(stdin)
+	}
+
+	if flags.CompileOnly && targetURL == "" {
+		targetURL = "http://localhost"
 	}
 
 	url, err := url.Parse(targetURL)
