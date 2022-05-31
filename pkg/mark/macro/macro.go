@@ -21,7 +21,7 @@ var reMacroDirective = regexp.MustCompile(
 
 	`(?s)` + // dot capture newlines
 		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
-		/*    */ `\s*Template:\s*(?P<template>\S+)\s*` +
+		/*    */ `\s*Template:\s*(?P<template>.+?)\s*` +
 		/*   */ `(?P<config>\n.*?)?-->`,
 )
 
