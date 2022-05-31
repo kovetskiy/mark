@@ -1,0 +1,13 @@
+version: "3.5"
+services:
+
+  markbuilder:
+    build:
+      context: .
+      dockerfile: Builderfile
+    image: markbuilder:latest
+    volumes:
+    - type: bind
+      source: ./binary
+      target: /binary
+    command: [ cp, /go/src/github.com/kovetskiy/mark/mark, /binary/ ]
