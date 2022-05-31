@@ -422,8 +422,10 @@ $ docker run --rm -i kovetskiy/mark:latest mark <params>
 Mostly useful when you intend to enhance `mark`.
 
 ```bash
+# Create the binary
 $ docker-compose run markbuilder
-$ cp binary/mark /usr/local/bin
+# "install" the binary
+$ cp mark /usr/local/bin
 ```
 
 ## Usage
