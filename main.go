@@ -209,7 +209,7 @@ func processFile(
 		meta.Space = flags.Space
 	}
 
-	if meta.Title == "" && ( flags.TitleFromH1 || config.H1Title ) {
+	if meta.Title == "" && flags.TitleFromH1 {
 		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
 	}
 
