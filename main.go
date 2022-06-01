@@ -124,6 +124,10 @@ func main() {
 		flags.TitleFromH1 = true
 	}
 
+	if ! flags.DropH1 && config.H1Drop {
+		flags.DropH1 = true
+	}
+
 	creds, err := GetCredentials(flags, config)
 	if err != nil {
 		log.Fatal(err)
