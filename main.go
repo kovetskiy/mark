@@ -283,7 +283,14 @@ func processFile(
 	}
 
 	if flags.CompileOnly {
-		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+		if flags.DropH1 {
+			log.Info(
+				"the leading H1 heading will be excluded from the Confluence output",
+			)
+			markdown = mark.DropDocumentLeadingH1(markdown)
+		}
+	
+			fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
 	}
 
