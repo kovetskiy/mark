@@ -471,7 +471,9 @@ mark -h | --help
     manual edits over Confluence Web UI.
 - `--space <space>` - Use specified space key. If not specified space ley must be set in a page metadata.
 - `--drop-h1` – Don't include H1 headings in Confluence output.
+  This option corresponds to the `h1_drop` setting in the configuration file.
 - `--title-from-h1` - Extract page title from a leading H1 heading. If no H1 heading on a page then title must be set in a page metadata.
+  This option corresponds to the `h1_title` setting in the configuration file.
 - `--dry-run` — Show resulting HTML and don't update Confluence page content.
 - `--minor-edit` — Don't send notifications while updating Confluence page.
 - `--trace` — Enable trace logs.
@@ -486,6 +488,8 @@ username = "your-email"
 password = "password-or-api-key-for-confluence-cloud"
 # If you are using Confluence Cloud add the /wiki suffix to base_url
 base_url = "http://confluence.local"
+h1_title = true
+h1_drop = true
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
