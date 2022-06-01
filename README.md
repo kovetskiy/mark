@@ -68,6 +68,26 @@ to the template relative to current working dir, e.g.:
 <!-- Include: <path> -->
 ```
 
+Optionally the delimiters can be defined:
+
+```markdown
+<!-- Include: <path>
+     Delims: "<<", ">>"
+     -->
+```
+
+Or they can be switched off to disable processing:
+
+```markdown
+<!-- Include: <path>
+     Delims: none
+     -->
+```
+
+**Note:** Switching delimiters off really simply changes
+them to ASCII characters "\x00" and "\x01" which, usually
+should not occure in a template.
+
 Templates can accept configuration data in YAML format which immediately
 follows the `Include` tag:
 
