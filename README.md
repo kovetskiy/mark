@@ -111,6 +111,34 @@ for example:
        Ticket: ${0} -->
 ```
 
+Macros can also use inline templates.
+Inline templates are templates where the template content
+is described in the `<yaml-data>`.
+The `Template` value starts with a `#`, followed by the key
+used in the `<yaml-data>`.
+The key's value must be a string which defines the template's content.
+
+```markdown
+  <!-- Macro: <tblbox\s+(.*?)\s*>
+       Template: #inline
+       title: ${1}
+       inline: |
+           <table>
+           <thead><tr><th>{{ .title }}</th></tr></thead>
+           <tbody><tr><td>
+        -->
+  <!-- Macro: </tblbox>
+       Template: #also_inline
+       also_inline: |
+           </td></tr></tbody></table>
+        -->
+  <tblbox with a title>
+  and some
+  content
+  </tblbox>
+```
+
+
 ### Code Blocks
 
 If you have long code blocks, you can make them collapsible with the [Code Block Macro]:
@@ -569,6 +597,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="http://www.devin.com.br/"><img src="https://avatars.githubusercontent.com/u/349457?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Hugo Cisneiros</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=eitchugo" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/jevfok"><img src="https://avatars.githubusercontent.com/u/54530686?v=4?s=100" width="100px;" alt=""/><br /><sub><b>jevfok</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=jevfok" title="Code">💻</a></td>
     <td align="center"><a href="https://dev.to/mmiranda"><img src="https://avatars.githubusercontent.com/u/16670310?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Mateus Miranda</b></sub></a><br /><a href="#maintenance-mmiranda" title="Maintenance">🚧</a></td>
+    <td align="center"><a href="https://github.com/Skeeve"><img src="https://avatars.githubusercontent.com/u/725404?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Skeeve</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=Skeeve" title="Code">💻</a></td>
   </tr>
 </table>
 
