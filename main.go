@@ -120,6 +120,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if ! flags.TitleFromH1 && config.H1Title {
+		flags.TitleFromH1 = true
+	}
+
 	creds, err := GetCredentials(flags, config)
 	if err != nil {
 		log.Fatal(err)
@@ -205,7 +209,7 @@ func processFile(
 		meta.Space = flags.Space
 	}
 
-	if meta.Title == "" && ( flags.TitleFromH1 || config.H1Title ) {
+	if meta.Title == "" && flags.TitleFromH1 {
 		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
 	}
 
