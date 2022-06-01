@@ -68,6 +68,26 @@ to the template relative to current working dir, e.g.:
 <!-- Include: <path> -->
 ```
 
+Optionally the delimiters can be defined:
+
+```markdown
+<!-- Include: <path>
+     Delims: "<<", ">>"
+     -->
+```
+
+Or they can be switched off to disable processing:
+
+```markdown
+<!-- Include: <path>
+     Delims: none
+     -->
+```
+
+**Note:** Switching delimiters off really simply changes
+them to ASCII characters "\x00" and "\x01" which, usually
+should not occure in a template.
+
 Templates can accept configuration data in YAML format which immediately
 follows the `Include` tag:
 
@@ -569,6 +589,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="http://www.devin.com.br/"><img src="https://avatars.githubusercontent.com/u/349457?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Hugo Cisneiros</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=eitchugo" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/jevfok"><img src="https://avatars.githubusercontent.com/u/54530686?v=4?s=100" width="100px;" alt=""/><br /><sub><b>jevfok</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=jevfok" title="Code">💻</a></td>
     <td align="center"><a href="https://dev.to/mmiranda"><img src="https://avatars.githubusercontent.com/u/16670310?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Mateus Miranda</b></sub></a><br /><a href="#maintenance-mmiranda" title="Maintenance">🚧</a></td>
+    <td align="center"><a href="https://github.com/Skeeve"><img src="https://avatars.githubusercontent.com/u/725404?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Skeeve</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=Skeeve" title="Code">💻</a></td>
   </tr>
 </table>
 

@@ -21,7 +21,7 @@ var reMacroDirective = regexp.MustCompile(
 
 	`(?s)` + // dot capture newlines
 		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
-		/*    */ `\s*Template:\s*(?P<template>\S+)\s*` +
+		/*    */ `\s*Template:\s*(?P<template>.+?)\s*` +
 		/*   */ `(?P<config>\n.*?)?-->`,
 )
 
@@ -134,7 +134,7 @@ func ExtractMacros(
 				macro Macro
 			)
 
-			macro.Template, err = includes.LoadTemplate(base, template, templates)
+			macro.Template, err = includes.LoadTemplate(base, template, "{{", "}}", templates)
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
 
