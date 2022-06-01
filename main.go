@@ -205,14 +205,14 @@ func processFile(
 		meta.Space = flags.Space
 	}
 
-	if meta.Title == "" && flags.TitleFromH1 {
+	if meta.Title == "" && ( flags.TitleFromH1 || config.H1Title ) {
 		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
 	}
 
 	if meta.Title == "" {
 		log.Fatal(
 			`page title is not set ('Title' header is not set ` +
-				`and '--title-from-h1' option is not set or there is no H1 in the file)`,
+				`and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)`,
 		)
 	}
 
