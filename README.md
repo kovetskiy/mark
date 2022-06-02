@@ -131,6 +131,34 @@ for example:
        Ticket: ${0} -->
 ```
 
+Macros can also use inline templates.
+Inline templates are templates where the template content
+is described in the `<yaml-data>`.
+The `Template` value starts with a `#`, followed by the key
+used in the `<yaml-data>`.
+The key's value must be a string which defines the template's content.
+
+```markdown
+  <!-- Macro: <tblbox\s+(.*?)\s*>
+       Template: #inline
+       title: ${1}
+       inline: |
+           <table>
+           <thead><tr><th>{{ .title }}</th></tr></thead>
+           <tbody><tr><td>
+        -->
+  <!-- Macro: </tblbox>
+       Template: #also_inline
+       also_inline: |
+           </td></tr></tbody></table>
+        -->
+  <tblbox with a title>
+  and some
+  content
+  </tblbox>
+```
+
+
 ### Code Blocks
 
 If you have long code blocks, you can make them collapsible with the [Code Block Macro]:
