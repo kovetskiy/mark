@@ -120,6 +120,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if ! flags.TitleFromH1 && config.H1Title {
+		flags.TitleFromH1 = true
+	}
+
+	if ! flags.DropH1 && config.H1Drop {
+		flags.DropH1 = true
+	}
+
 	creds, err := GetCredentials(flags, config)
 	if err != nil {
 		log.Fatal(err)
@@ -212,7 +220,7 @@ func processFile(
 	if meta.Title == "" {
 		log.Fatal(
 			`page title is not set ('Title' header is not set ` +
-				`and '--title-from-h1' option is not set or there is no H1 in the file)`,
+				`and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)`,
 		)
 	}
 
@@ -275,7 +283,14 @@ func processFile(
 	}
 
 	if flags.CompileOnly {
-		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+		if flags.DropH1 {
+			log.Info(
+				"the leading H1 heading will be excluded from the Confluence output",
+			)
+			markdown = mark.DropDocumentLeadingH1(markdown)
+		}
+	
+			fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
 	}
 
