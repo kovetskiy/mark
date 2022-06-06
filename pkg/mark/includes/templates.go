@@ -18,7 +18,7 @@ import (
 // <!-- Include: <template path>
 //      <optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
-	`(?s)<!--\s*Include:\s*(?P<template>\S+)\s*(\n(?P<config>.*?))?-->`)
+	`(?s)<!--\s*Include:\s*(?P<template>.+?)\s*(\n(?P<config>.*?))?-->`)
 
 func LoadTemplate(
 	base string,
