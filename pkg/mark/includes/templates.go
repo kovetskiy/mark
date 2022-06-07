@@ -20,9 +20,9 @@ import (
 //      <optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
 	`(?s)` +
-	`<!--\s*Include:\s*(?P<template>.+?)\s*` +
-	`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
-	`(?:\n(?P<config>.*?))?-->`,
+		`<!--\s*Include:\s*(?P<template>.+?)\s*` +
+		`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
+		`(?:\n(?P<config>.*?))?-->`,
 )
 
 func LoadTemplate(
@@ -111,15 +111,21 @@ func ProcessIncludes(
 			groups := reIncludeDirective.FindSubmatch(spec)
 
 			var (
-				path, none, left, right, config = string(groups[1]), string(groups[2]), string(groups[3]), string(groups[4]), groups[5]
-				data = map[string]interface{}{}
+				path       = string(groups[1])
+				delimsNone = string(groups[2])
+				left       = string(groups[3])
+				right      = string(groups[4])
+				config     = groups[5]
+				data       = map[string]interface{}{}
 
 				facts = karma.Describe("path", path)
 			)
-			if none == "none" {
+
+			if delimsNone == "none" {
 				left = "\x00"
 				right = "\x01"
 			}
+
 			err = yaml.Unmarshal(config, &data)
 			if err != nil {
 				err = facts.
