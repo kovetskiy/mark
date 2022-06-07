@@ -42,16 +42,16 @@ func ResolveAttachments(
 		return nil, err
 	}
 
-	for _, attach := range attaches {
-		checksum, err := getChecksum(attach.Path)
+	for i, _ := range attaches {
+		checksum, err := getChecksum(attaches[i].Path)
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				"unable to get checksum for attachment: %q", attach.Name,
+				"unable to get checksum for attachment: %q", attaches[i].Name,
 			)
 		}
 
-		attach.Checksum = checksum
+		attaches[i].Checksum = checksum
 	}
 
 	remotes, err := api.GetAttachments(page.ID)
@@ -145,6 +145,10 @@ func ResolveAttachments(
 		)
 
 		updating[i] = attach
+	}
+
+	for i, _ := range existing {
+		log.Infof(nil, "keeping unmodified attachment: %q", attaches[i].Name)
 	}
 
 	attaches = []Attachment{}
