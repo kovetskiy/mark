@@ -1,0 +1,41 @@
+version: "3.5"
+services:
+
+  markbuilder:
+    image: golang:latest
+    environment:
+      # Set them in your environment or .env
+      - GOOS=${GOOS?Missing GOOS.}
+      - GOARCH=${GOARCH?Missing GOARCH.}
+      # Example Values
+      # MacOS 64-bit
+      # - GOOS=darwin
+      # - GOARCH=amd64
+
+      # MacOS 32-bit
+      # - GOOS=darwin
+      # - GOARCH=386
+
+      # Linux 64-bit
+      # - GOOS=linux
+      # - GOARCH=amd64
+
+      # Linux 32-bit
+      # - GOOS=linux
+      # - GOARCH=386
+      
+      # Windows 64-bit
+      # - GOOS=windows
+      # - GOARCH=amd64
+
+      # Windows 32-bit
+      # - GOOS=windows
+      # - GOARCH=386
+
+    volumes:
+    - type: bind
+      source: ./
+      target: /go/src/github.com/kovetskiy/mark
+
+    working_dir: /go/src/github.com/kovetskiy/mark/
+    command: make build

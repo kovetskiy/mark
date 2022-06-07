@@ -445,6 +445,17 @@ go get -v github.com/kovetskiy/mark
 $ docker run --rm -i kovetskiy/mark:latest mark <params>
 ```
 
+### Compile and install using docker-compose
+
+Mostly useful when you intend to enhance `mark`.
+
+```bash
+# Create the binary
+$ docker-compose run markbuilder
+# "install" the binary
+$ cp mark /usr/local/bin
+```
+
 ## Usage
 
 ```
