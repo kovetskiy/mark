@@ -401,7 +401,13 @@ brew tap kovetskiy/mark
 brew install mark
 ```
 
-### Go Get
+### Go Install / Go Get
+
+```bash
+go install github.com/kovetskiy/mark@latest
+```
+
+For older versions
 
 ```bash
 go get -v github.com/kovetskiy/mark
