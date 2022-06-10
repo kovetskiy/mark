@@ -89,7 +89,7 @@ them to ASCII characters "\x00" and "\x01" which, usually
 should not occure in a template.
 
 Templates can accept configuration data in YAML format which immediately
-follows the `Include` tag:
+follows the `Include` and `Delims` tag, if present:
 
 ```markdown
 <!-- Include: <path>
@@ -449,7 +449,13 @@ brew tap kovetskiy/mark
 brew install mark
 ```
 
-### Go Get
+### Go Install / Go Get
+
+```bash
+go install github.com/kovetskiy/mark@latest
+```
+
+For older versions
 
 ```bash
 go get -v github.com/kovetskiy/mark

@@ -21,7 +21,7 @@ import (
 var reIncludeDirective = regexp.MustCompile(
 	`(?s)` +
 	`<!--\s*Include:\s*(?P<template>.+?)\s*` +
-	`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*`+
+	`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
 	`(?:\n(?P<config>.*?))?-->`,
 )
 
