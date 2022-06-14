@@ -14,7 +14,7 @@ import (
 var reBlockDetails = regexp.MustCompile(
 	// (<Lang>|-) (collapse|<theme>|\d)* (title <title>)?
 
-	`^(?:(\w*)|-)\s*\b(\S.*?\S?)?\s*(?:\btitle\s+(\S.*\S?))?$`,
+	`^(?:(\w*)|-)\s*\b(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
 )
 
 type ConfluenceRenderer struct {
@@ -39,6 +39,7 @@ func (renderer ConfluenceRenderer) RenderNode(
 		var options []string
 		title := ""
 		if len(groups) > 0 {
+			fmt.Printf(">>> %q\n", groups)
 			lang, options, title = groups[1], strings.Fields(groups[2]), groups[3]
 			for _, option := range options {
 				if option == "collapse" {
