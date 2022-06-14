@@ -8,6 +8,13 @@ import (
 	bf "github.com/kovetskiy/blackfriday/v2"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
+	"fmt"
+)
+
+var reBlockDetails = regexp.MustCompile(
+	// (<Lang>|-) (collapse|<theme>|\d)* (title <title>)?
+
+	`^(?:(\w*)|-)\s*\b(\S.*?\S?)?\s*(?:\btitle\s+(\S.*\S?))?$`,
 )
 
 type ConfluenceRenderer struct {
@@ -16,57 +23,59 @@ type ConfluenceRenderer struct {
 	Stdlib *stdlib.Lib
 }
 
-func ParseLanguage(lang string) string {
-	// lang takes the following form: language? "collapse"? ("title"? <any string>*)?
-	// let's split it by spaces
-	paramlist := strings.Fields(lang)
-
-	// get the word in question, aka the first one
-	first := lang
-	if len(paramlist) > 0 {
-		first = paramlist[0]
-	}
-
-	if first == "collapse" || first == "title" {
-		// collapsing or including a title without a language
-		return ""
-	}
-	// the default case with language being the first one
-	return first
-}
-
-func ParseTitle(lang string) string {
-	index := strings.Index(lang, "title")
-	if index >= 0 {
-		// it's found, check if title is given and return it
-		start := index + 6
-		if len(lang) > start {
-			return lang[start:]
-		}
-	}
-	return ""
-}
-
 func (renderer ConfluenceRenderer) RenderNode(
 	writer io.Writer,
 	node *bf.Node,
 	entering bool,
 ) bf.WalkStatus {
 	if node.Type == bf.CodeBlock {
-		lang := string(node.Info)
 
+		groups:= reBlockDetails.FindStringSubmatch(string(node.Info))
+		linenumbers := false
+		firstline := 0
+		theme := ""
+		collapse := false
+		lang := ""
+		var options []string
+		title := ""
+		if len(groups) > 0 {
+			lang, options, title = groups[1], strings.Fields(groups[2]), groups[3]
+			for _, option := range options {
+				if option == "collapse" {
+					collapse = true
+					continue
+				}
+				if option == "nocollapse" {
+					collapse = false
+					continue
+				}
+				var i int
+				if _, err := fmt.Sscanf(option, "%d", &i); err == nil {
+					linenumbers = i > 0
+					firstline = i
+					continue
+				}
+				theme = option
+			}
+		}
 		renderer.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:code",
 			struct {
-				Language string
-				Collapse bool
-				Title    string
-				Text     string
+				Language    string
+				Collapse    bool
+				Title       string
+				Theme       string
+				Linenumbers bool
+				Firstline   int
+				Text        string
 			}{
-				ParseLanguage(lang),
-				strings.Contains(lang, "collapse"),
-				ParseTitle(lang),
+				lang,
+				collapse,
+				title,
+				theme,
+				linenumbers,
+				firstline,
 				strings.TrimSuffix(string(node.Literal), "\n"),
 			},
 		)
