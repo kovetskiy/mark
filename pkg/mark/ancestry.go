@@ -129,17 +129,37 @@ func ValidateAncestry(
 			actual = append(actual, ancestor.Title)
 		}
 
-		return nil, karma.Describe("title", page.Title).
-			Describe("actual", strings.Join(actual, " > ")).
-			Describe("expected", strings.Join(ancestry, " > ")).
-			Format(nil, "the page has fewer parents than expected")
+		valid := false
+
+		if len(actual) == len(ancestry)-1 {
+			broken := false
+			for i := 0; i < len(actual); i++ {
+				if actual[i] != ancestry[i] {
+					broken = true
+					break
+				}
+			}
+
+			if !broken {
+				if ancestry[len(ancestry)-1] == page.Title {
+					valid = true
+				}
+			}
+		}
+
+		if !valid {
+			return nil, karma.Describe("title", page.Title).
+				Describe("actual", strings.Join(actual, " > ")).
+				Describe("expected", strings.Join(ancestry, " > ")).
+				Format(nil, "the page has fewer parents than expected")
+		}
 	}
 
 	for _, parent := range ancestry[:len(ancestry)-1] {
 		found := false
 
 		// skipping root article title
-		for _, ancestor := range page.Ancestors[1:] {
+		for _, ancestor := range page.Ancestors {
 			if ancestor.Title == parent {
 				found = true
 				break
@@ -149,7 +169,7 @@ func ValidateAncestry(
 		if !found {
 			list := []string{}
 
-			for _, ancestor := range page.Ancestors[1:] {
+			for _, ancestor := range page.Ancestors {
 				list = append(list, ancestor.Title)
 			}
 
