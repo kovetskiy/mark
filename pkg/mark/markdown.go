@@ -73,6 +73,21 @@ func (renderer ConfluenceRenderer) RenderNode(
 
 		return bf.GoToNext
 	}
+	if node.Type == bf.Link && string(node.Destination[0:3]) == "ac:" {
+		if entering {
+			writer.Write([]byte("<ac:link><ri:page ri:content-title=\""))
+			if len(node.Destination) < 4 {
+				writer.Write(node.FirstChild.Literal)
+			} else {
+				writer.Write(node.Destination[3:])
+			}
+			writer.Write([]byte("\"/><ac:plain-text-link-body><![CDATA["))
+			writer.Write(node.FirstChild.Literal)
+			writer.Write([]byte("]]></ac:plain-text-link-body></ac:link>"))
+			return bf.SkipChildren
+		}
+		return bf.GoToNext
+	}
 	return renderer.Renderer.RenderNode(writer, node, entering)
 }
 

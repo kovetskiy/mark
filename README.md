@@ -440,6 +440,14 @@ You can use various [parameters](https://confluence.atlassian.com/conf59/childre
 See task MYJIRA-123.
 ```
 
+### Insert link to existing confluence page by title
+
+```markdown
+This is a [link to an existing confluence page](ac:Pagetitle)
+
+And this is how to link when the linktext is the same as the [Pagetitle](ac:)
+```
+
 ## Installation
 
 ### Homebrew
