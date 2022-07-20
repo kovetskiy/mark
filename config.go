@@ -11,6 +11,8 @@ type Config struct {
 	Password string `env:"MARK_PASSWORD" toml:"password"`
 	BaseURL  string `env:"MARK_BASE_URL" toml:"base_url"`
 	CWD      string `env:"MARK_CWD" toml:"cwd"`
+	H1Title  bool   `env:"MARK_H1_TITLE" toml:"h1_title"`
+	H1Drop   bool   `env:"MARK_H1_DROP"  toml:"h1_drop"`
 }
 
 func LoadConfig(path string) (*Config, error) {

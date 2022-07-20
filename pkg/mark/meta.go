@@ -29,7 +29,7 @@ type Meta struct {
 	Title       string
 	Layout      string
 	Sidebar     string
-	Attachments map[string]string
+	Attachments []string
 	Labels      []string
 }
 
@@ -72,7 +72,6 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 		if meta == nil {
 			meta = &Meta{}
 			meta.Type = "page" //Default if not specified
-			meta.Attachments = make(map[string]string)
 		}
 
 		header := strings.Title(matches[1])
@@ -103,7 +102,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 			meta.Sidebar = strings.TrimSpace(value)
 
 		case HeaderAttachment:
-			meta.Attachments[value] = value
+			meta.Attachments = append(meta.Attachments, value)
 
 		case HeaderLabel:
 			meta.Labels = append(meta.Labels, value)
@@ -126,20 +125,6 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 	if meta == nil {
 		return nil, data, nil
-	}
-
-	if meta.Space == "" {
-		return nil, nil, fmt.Errorf(
-			"space key is not set (%s header is not set)",
-			HeaderSpace,
-		)
-	}
-
-	if meta.Title == "" {
-		return nil, nil, fmt.Errorf(
-			"page title is not set (%s header is not set)",
-			HeaderTitle,
-		)
 	}
 
 	return meta, data[offset:], nil

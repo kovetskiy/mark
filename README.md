@@ -68,8 +68,28 @@ to the template relative to current working dir, e.g.:
 <!-- Include: <path> -->
 ```
 
+Optionally the delimiters can be defined:
+
+```markdown
+<!-- Include: <path>
+     Delims: "<<", ">>"
+     -->
+```
+
+Or they can be switched off to disable processing:
+
+```markdown
+<!-- Include: <path>
+     Delims: none
+     -->
+```
+
+**Note:** Switching delimiters off really simply changes
+them to ASCII characters "\x00" and "\x01" which, usually
+should not occure in a template.
+
 Templates can accept configuration data in YAML format which immediately
-follows the `Include` tag:
+follows the `Include` and `Delims` tag, if present:
 
 ```markdown
 <!-- Include: <path>
@@ -110,6 +130,34 @@ for example:
        Template: ac:jira:ticket
        Ticket: ${0} -->
 ```
+
+Macros can also use inline templates.
+Inline templates are templates where the template content
+is described in the `<yaml-data>`.
+The `Template` value starts with a `#`, followed by the key
+used in the `<yaml-data>`.
+The key's value must be a string which defines the template's content.
+
+```markdown
+  <!-- Macro: <tblbox\s+(.*?)\s*>
+       Template: #inline
+       title: ${1}
+       inline: |
+           <table>
+           <thead><tr><th>{{ .title }}</th></tr></thead>
+           <tbody><tr><td>
+        -->
+  <!-- Macro: </tblbox>
+       Template: #also_inline
+       also_inline: |
+           </td></tr></tbody></table>
+        -->
+  <tblbox with a title>
+  and some
+  content
+  </tblbox>
+```
+
 
 ### Code Blocks
 
@@ -304,7 +352,7 @@ This is my article.
 <!-- Space: TEST -->
 <!-- Title: Announcement -->
 
-<!-- Macro: :box:(.+):(.*):(.+):
+<!-- Macro: :box:([^:]+):([^:]*):(.+):
      Template: ac:box
      Icon: true
      Name: ${1}
@@ -401,7 +449,13 @@ brew tap kovetskiy/mark
 brew install mark
 ```
 
-### Go Get
+### Go Install / Go Get
+
+```bash
+go install github.com/kovetskiy/mark@latest
+```
+
+For older versions
 
 ```bash
 go get -v github.com/kovetskiy/mark
@@ -415,6 +469,17 @@ go get -v github.com/kovetskiy/mark
 
 ```bash
 $ docker run --rm -i kovetskiy/mark:latest mark <params>
+```
+
+### Compile and install using docker-compose
+
+Mostly useful when you intend to enhance `mark`.
+
+```bash
+# Create the binary
+$ docker-compose run markbuilder
+# "install" the binary
+$ cp mark /usr/local/bin
 ```
 
 ## Usage
@@ -438,7 +503,11 @@ mark -h | --help
 - `-c <path>` or `--config <path>` — Specify a path to the configuration file.
 - `-k` — Lock page editing to current user only to prevent accidental
     manual edits over Confluence Web UI.
+- `--space <space>` - Use specified space key. If not specified space ley must be set in a page metadata.
 - `--drop-h1` – Don't include H1 headings in Confluence output.
+  This option corresponds to the `h1_drop` setting in the configuration file.
+- `--title-from-h1` - Extract page title from a leading H1 heading. If no H1 heading on a page then title must be set in a page metadata.
+  This option corresponds to the `h1_title` setting in the configuration file.
 - `--dry-run` — Show resulting HTML and don't update Confluence page content.
 - `--minor-edit` — Don't send notifications while updating Confluence page.
 - `--trace` — Enable trace logs.
@@ -453,6 +522,8 @@ username = "your-email"
 password = "password-or-api-key-for-confluence-cloud"
 # If you are using Confluence Cloud add the /wiki suffix to base_url
 base_url = "http://confluence.local"
+h1_title = true
+h1_drop = true
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
@@ -511,6 +582,17 @@ Rather than running `mark` multiple times, or looping through a list of files fr
 mark -f "helpful_cmds/*.md"
 ```
 
+## Mermaid Diagrams Integration
+
+Confluence doesn't provide [mermiad.js]() support natively. Mark provides a convenient way to enable the feature like [Github does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
+As long as you have a code block and are marked as "mermaid", the mark will automatically render it as a PNG image and insert into before the code block.
+
+    ```mermaid title diagrams_example
+    graph TD;
+    A-->B;
+    ```
+
+
 ## Issues, Bugs & Contributions
 
 I've started the project to solve my own problem and open sourced the solution so anyone who has a problem like me can solve it too.
@@ -567,6 +649,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="http://www.devin.com.br/"><img src="https://avatars.githubusercontent.com/u/349457?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Hugo Cisneiros</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=eitchugo" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/jevfok"><img src="https://avatars.githubusercontent.com/u/54530686?v=4?s=100" width="100px;" alt=""/><br /><sub><b>jevfok</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=jevfok" title="Code">💻</a></td>
     <td align="center"><a href="https://dev.to/mmiranda"><img src="https://avatars.githubusercontent.com/u/16670310?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Mateus Miranda</b></sub></a><br /><a href="#maintenance-mmiranda" title="Maintenance">🚧</a></td>
+    <td align="center"><a href="https://github.com/Skeeve"><img src="https://avatars.githubusercontent.com/u/725404?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Skeeve</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=Skeeve" title="Code">💻</a></td>
   </tr>
 </table>
 

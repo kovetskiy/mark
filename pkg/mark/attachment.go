@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/kovetskiy/mark/pkg/mark/utils"
+	"github.com/kovetskiy/mark/pkg/mark/vfs"
 	"io"
 	"net/url"
-	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -22,52 +22,32 @@ const (
 )
 
 type Attachment struct {
-	ID       string
-	Name     string
-	Filename string
-	Path     string
-	Checksum string
-	Link     string
-	Replace  string
+	ID        string
+	Name      string
+	Filename  string
+	FileBytes []byte
+	Checksum  string
+	Link      string
+	Width     string
+	Height    string
+	Replace   string
 }
 
 func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
-	base string,
-	relativePath string,
-	replacements map[string]string,
+	attaches []Attachment,
 ) ([]Attachment, error) {
-	attaches := []Attachment{}
-	var (
-		spath string
-		err   error
-	)
-	for replace, name := range replacements {
-		if spath, err = utils.PathFinder(base, relativePath, name); err != nil {
-			return nil, karma.Format(
-				err,
-				"unable access attachment: %q", name,
-			)
-		}
-		attach := Attachment{
-			Name:     name,
-			Filename: strings.ReplaceAll(name, "/", "_"),
-			Path:     spath,
-			Replace:  replace,
-		}
-
-		checksum, err := getChecksum(attach.Path)
+	for i, _ := range attaches {
+		checksum, err := getChecksum(bytes.NewReader(attaches[i].FileBytes))
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				"unable to get checksum for attachment: %q", attach.Name,
+				"unable to get checksum for attachment: %q", attaches[i].Name,
 			)
 		}
 
-		attach.Checksum = checksum
-
-		attaches = append(attaches, attach)
+		attaches[i].Checksum = checksum
 	}
 
 	remotes, err := api.GetAttachments(page.ID)
@@ -118,7 +98,7 @@ func ResolveAttachments(
 			page.ID,
 			attach.Filename,
 			AttachmentChecksumPrefix+attach.Checksum,
-			attach.Path,
+			bytes.NewReader(attach.FileBytes),
 		)
 		if err != nil {
 			return nil, karma.Format(
@@ -145,7 +125,7 @@ func ResolveAttachments(
 			attach.ID,
 			attach.Name,
 			AttachmentChecksumPrefix+attach.Checksum,
-			attach.Path,
+			bytes.NewReader(attach.FileBytes),
 		)
 		if err != nil {
 			return nil, karma.Format(
@@ -163,10 +143,68 @@ func ResolveAttachments(
 		updating[i] = attach
 	}
 
+	for i, _ := range existing {
+		log.Infof(nil, "keeping unmodified attachment: %q", attaches[i].Name)
+	}
+
 	attaches = []Attachment{}
 	attaches = append(attaches, existing...)
 	attaches = append(attaches, creating...)
 	attaches = append(attaches, updating...)
+
+	return attaches, nil
+}
+
+func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
+	attaches, err := prepareAttachments(opener, base, replacements)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, attach := range attaches {
+		checksum, err := getChecksum(bytes.NewReader(attach.FileBytes))
+		if err != nil {
+			return nil, karma.Format(
+				err,
+				"unable to get checksum for attachment: %q", attach.Name,
+			)
+		}
+
+		attach.Checksum = checksum
+	}
+	return attaches, err
+}
+
+func prepareAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
+	attaches := []Attachment{}
+	for _, name := range replacements {
+		attachmentPath := filepath.Join(base, name)
+		var (
+			file      io.ReadWriteCloser
+			fileBytes []byte
+			err       error
+		)
+		if file, err = opener.Open(attachmentPath); err == nil {
+			fileBytes, err = io.ReadAll(file)
+			_ = file.Close()
+		}
+		if err != nil {
+			return nil, karma.Format(
+				err,
+				"unable to open file: %q",
+				attachmentPath,
+			)
+		}
+
+		attach := Attachment{
+			Name:      name,
+			Filename:  strings.ReplaceAll(name, "/", "_"),
+			FileBytes: fileBytes,
+			Replace:   name,
+		}
+
+		attaches = append(attaches, attach)
+	}
 
 	return attaches, nil
 }
@@ -176,14 +214,7 @@ func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
 	replaces := []string{}
 
 	for _, attach := range attaches {
-		uri, err := url.ParseRequestURI(attach.Link)
-		if err != nil {
-			links[attach.Replace] = strings.ReplaceAll("&", "&amp;", attach.Link)
-		} else {
-			links[attach.Replace] = uri.Path +
-				"?" + url.QueryEscape(uri.Query().Encode())
-		}
-
+		links[attach.Replace] = parseAttachmentLink(attach.Link)
 		replaces = append(replaces, attach.Replace)
 	}
 
@@ -236,20 +267,21 @@ func CompileAttachmentLinks(markdown []byte, attaches []Attachment) []byte {
 	return markdown
 }
 
-func getChecksum(filename string) (string, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return "", karma.Format(
-			err,
-			"unable to open file",
-		)
-	}
-	defer file.Close()
-
+func getChecksum(reader io.Reader) (string, error) {
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(hash, reader); err != nil {
 		return "", err
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func parseAttachmentLink(attachLink string) string {
+	uri, err := url.ParseRequestURI(attachLink)
+	if err != nil {
+		return strings.ReplaceAll("&", "&amp;", attachLink)
+	} else {
+		return uri.Path +
+			"?" + url.QueryEscape(uri.Query().Encode())
+	}
 }

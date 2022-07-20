@@ -44,7 +44,20 @@ func TestCompileMarkdown(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		actual := CompileMarkdown(markdown, lib)
+		actual := CompileMarkdown(markdown, lib, nil)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
+}
+
+func TestExtractDocumentLeadingH1(t *testing.T) {
+	filename := "testdata/header.md"
+
+	markdown, err := ioutil.ReadFile(filename)
+	if err != nil {
+		panic(err)
+	}
+
+	actual := ExtractDocumentLeadingH1(markdown)
+
+	assert.Equal(t, "a", actual)
 }

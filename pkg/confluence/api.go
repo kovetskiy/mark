@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/kovetskiy/gopencils"
@@ -89,9 +88,18 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 }
 
 func NewAPI(baseURL string, username string, password string, cwd string) *API {
-	auth := &gopencils.BasicAuth{username, password}
-
+	var auth *gopencils.BasicAuth
+	if username != "" {
+		auth = &gopencils.BasicAuth{username, password}
+	}
 	rest := gopencils.Api(baseURL+"/rest/api", auth)
+	if username == "" {
+		if rest.Headers == nil {
+			rest.Headers = http.Header{}
+		}
+		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
+	}
+
 	json := gopencils.Api(
 		baseURL+"/rpc/json-rpc/confluenceservice-v2",
 		auth,
@@ -199,11 +207,11 @@ func (api *API) CreateAttachment(
 	pageID string,
 	name string,
 	comment string,
-	path string,
+	reader io.Reader,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -220,7 +228,11 @@ func (api *API) CreateAttachment(
 	)
 
 	resource.Payload = form.buffer
+	oldHeaders := resource.Headers.Clone()
 	resource.Headers = http.Header{}
+	if resource.Api.BasicAuth == nil {
+		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
+	}
 
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
@@ -263,11 +275,11 @@ func (api *API) UpdateAttachment(
 	attachID string,
 	name string,
 	comment string,
-	path string,
+	reader io.Reader,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -286,7 +298,11 @@ func (api *API) UpdateAttachment(
 	)
 
 	resource.Payload = form.buffer
+	oldHeaders := resource.Headers.Clone()
 	resource.Headers = http.Header{}
+	if resource.Api.BasicAuth == nil {
+		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
+	}
 
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
@@ -336,22 +352,11 @@ func (api *API) UpdateAttachment(
 	return shortResponse, nil
 }
 
-func getAttachmentPayload(name, comment, path string) (*form, error) {
+func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error) {
 	var (
 		payload = bytes.NewBuffer(nil)
 		writer  = multipart.NewWriter(payload)
 	)
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to open file: %q",
-			path,
-		)
-	}
-
-	defer file.Close()
 
 	content, err := writer.CreateFormFile("file", name)
 	if err != nil {
@@ -361,7 +366,7 @@ func getAttachmentPayload(name, comment, path string) (*form, error) {
 		)
 	}
 
-	_, err = io.Copy(content, file)
+	_, err = io.Copy(content, reader)
 	if err != nil {
 		return nil, karma.Format(
 			err,
@@ -537,6 +542,16 @@ func (api *API) UpdatePage(
 		},
 		"metadata": map[string]interface{}{
 			"labels": labels,
+			// The Confluence API randomly sets page width for some reason:
+			// https://community.developer.atlassian.com/t/confluence-rest-api-create-content-at-random-width/57001
+
+			// This is a workaround to compensate for that bug. It forces the page to be created
+			// with the default appearance, which is "fixed" (not full-width).
+			"properties": map[string]interface{}{
+				"content-appearance-published": map[string]interface{}{
+					"value": "default",
+				},
+			},
 		},
 	}
 

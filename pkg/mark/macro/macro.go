@@ -21,7 +21,7 @@ var reMacroDirective = regexp.MustCompile(
 
 	`(?s)` + // dot capture newlines
 		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
-		/*    */ `\s*Template:\s*(?P<template>\S+)\s*` +
+		/*    */ `\s*Template:\s*(?P<template>.+?)\s*` +
 		/*   */ `(?P<config>\n.*?)?-->`,
 )
 
@@ -105,6 +105,7 @@ func (macro *Macro) configure(node interface{}, groups [][]byte) interface{} {
 }
 
 func ExtractMacros(
+	base string,
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
@@ -133,11 +134,39 @@ func ExtractMacros(
 				macro Macro
 			)
 
-			macro.Template, err = includes.LoadTemplate("", "", template, templates)
+			macro.Template, err = includes.LoadTemplate("", "", template, "{{", "}}", templates)
 			if err != nil {
 				err = karma.Format(err, "unable to load template")
-
 				return nil
+			}
+
+			if strings.HasPrefix(template, "#") {
+				cfg := map[string]interface{}{}
+
+				err = yaml.Unmarshal([]byte(config), &cfg)
+				if err != nil {
+					err = karma.Format(
+						err,
+						"unable to unmarshal macros config template",
+					)
+					return nil
+				}
+				body, _ := cfg[template[1:]].(string)
+				macro.Template, err = templates.New(template).Parse(body)
+				if err != nil {
+					err = karma.Format(
+						err,
+						"unable to parse template",
+					)
+					return nil
+				}
+			} else {
+				macro.Template, err = includes.LoadTemplate(base, "", template, "{{", "}}", templates)
+				if err != nil {
+					err = karma.Format(err, "unable to load template")
+
+					return nil
+				}
 			}
 
 			facts := karma.

@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/kovetskiy/mark/pkg/mark/vfs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/docopt/docopt-go"
 	"github.com/kovetskiy/lorg"
@@ -24,6 +26,7 @@ type Flags struct {
 	DryRun         bool   `docopt:"--dry-run"`
 	EditLock       bool   `docopt:"-k"`
 	DropH1         bool   `docopt:"--drop-h1"`
+	TitleFromH1    bool   `docopt:"--title-from-h1"`
 	MinorEdit      bool   `docopt:"--minor-edit"`
 	Color          string `docopt:"--color"`
 	Debug          bool   `docopt:"--debug"`
@@ -35,10 +38,11 @@ type Flags struct {
 	BaseURL        string `docopt:"--base-url"`
 	Config         string `docopt:"--config"`
 	Ci             bool   `docopt:"--ci"`
+	Space          string `docopt:"--space"`
 }
 
 const (
-	version = "6.7"
+	version = "8.1"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
@@ -52,7 +56,9 @@ Usage:
 Options:
   -u <username>        Use specified username for updating Confluence page.
   -p <token>           Use specified token for updating Confluence page.
-                        Specify - as password to read password from stdin.
+                        Specify - as password to read password from stdin, or your Personal access token.
+                        Username is not mandatory if personal access token is provided.
+                        For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.
   -w <workspace>       Use specified workspace path as the root of a relative path.
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
@@ -63,7 +69,11 @@ Options:
                         Supports file globbing patterns (needs to be quoted).
   -k                   Lock page editing to current user only to prevent accidental
                         manual edits over Confluence Web UI.
+  --space <space>      Use specified space key. If not specified space ley must
+                        be set in a page metadata.
   --drop-h1            Don't include H1 headings in Confluence output.
+  --title-from-h1      Extract page title from a leading H1 heading. If no H1 heading
+                        on a page then title must be set in a page metadata.
   --dry-run            Resolve page and ancestry, show resulting HTML and exit.
   --compile-only       Show resulting HTML and don't update Confluence page content.
   --minor-edit         Don't send notifications while updating Confluence page.
@@ -120,6 +130,14 @@ func main() {
 		config.CWD, _ = os.Getwd()
 	} else {
 		config.CWD, _ = filepath.Abs(config.CWD)
+	}
+
+	if !flags.TitleFromH1 && config.H1Title {
+		flags.TitleFromH1 = true
+	}
+
+	if !flags.DropH1 && config.H1Drop {
+		flags.DropH1 = true
 	}
 
 	creds, err := GetCredentials(flags, config)
@@ -181,6 +199,43 @@ func processFile(
 		log.Fatal(err)
 	}
 
+	if pageID != "" && meta != nil {
+		log.Warning(
+			`specified file contains metadata, ` +
+				`but it will be ignored due specified command line URL`,
+		)
+
+		meta = nil
+	}
+
+	if pageID == "" && meta == nil {
+		log.Fatal(
+			`specified file doesn't contain metadata ` +
+				`and URL is not specified via command line ` +
+				`or doesn't contain pageId GET-parameter`,
+		)
+	}
+
+	switch {
+	case meta.Space == "" && flags.Space == "":
+		log.Fatal(
+			"space is not set ('Space' header is not set and '--space' option is not set)",
+		)
+	case meta.Space == "" && flags.Space != "":
+		meta.Space = flags.Space
+	}
+
+	if meta.Title == "" && flags.TitleFromH1 {
+		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
+	}
+
+	if meta.Title == "" {
+		log.Fatal(
+			`page title is not set ('Title' header is not set ` +
+				`and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)`,
+		)
+	}
+
 	stdlib, err := stdlib.New(api)
 	if err != nil {
 		log.Fatal(err)
@@ -210,7 +265,11 @@ func processFile(
 		}
 	}
 
-	macros, markdown, err := macro.ExtractMacros(markdown, templates)
+	macros, markdown, err := macro.ExtractMacros(
+		filepath.Dir(file),
+		markdown,
+		templates,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -241,25 +300,15 @@ func processFile(
 	}
 
 	if flags.CompileOnly {
-		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+		if flags.DropH1 {
+			log.Info(
+				"the leading H1 heading will be excluded from the Confluence output",
+			)
+			markdown = mark.DropDocumentLeadingH1(markdown)
+		}
+
+		fmt.Println(mark.CompileMarkdown(markdown, stdlib, nil))
 		os.Exit(0)
-	}
-
-	if pageID != "" && meta != nil {
-		log.Warning(
-			`specified file contains metadata, ` +
-				`but it will be ignored due specified command line URL`,
-		)
-
-		meta = nil
-	}
-
-	if pageID == "" && meta == nil {
-		log.Fatal(
-			`specified file doesn't contain metadata ` +
-				`and URL is not specified via command line ` +
-				`or doesn't contain pageId GET-parameter`,
-		)
 	}
 
 	var target *confluence.PageInfo
@@ -290,6 +339,10 @@ func processFile(
 					meta.Title,
 				)
 			}
+			// (issues/139): A delay between the create and update call
+			// helps mitigate a 409 conflict that can occur when attempting
+			// to update a page just after it was created.
+			time.Sleep(1 * time.Second)
 		}
 
 		target = page
@@ -306,7 +359,21 @@ func processFile(
 		target = page
 	}
 
-	attaches, err := mark.ResolveAttachments(api, target, api.CWD, relativePath, meta.Attachments)
+	//attaches, err := mark.ResolveAttachments(api, target, api.CWD, relativePath, meta.Attachments)
+	mermaidImages, err := mark.ExtractMermaidImage(markdown)
+	if err != nil {
+		log.Fatal(err, "unable to render mermiad")
+	}
+	mermaidAttaches := mark.ConvertToAttachments(mermaidImages)
+	localAttaches, err := mark.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+	if err != nil {
+		log.Fatalf(err, "unable to locate attachments")
+	}
+	attaches, err := mark.ResolveAttachments(
+		api,
+		target,
+		append(mermaidAttaches, localAttaches...),
+	)
 	if err != nil {
 		log.Fatalf(err, "unable to create/update attachments")
 	}
@@ -320,7 +387,7 @@ func processFile(
 		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
-	html := mark.CompileMarkdown(markdown, stdlib)
+	html := mark.CompileMarkdown(markdown, stdlib, attaches)
 
 	{
 		var buffer bytes.Buffer
