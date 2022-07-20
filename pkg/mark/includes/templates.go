@@ -3,6 +3,7 @@ package includes
 import (
 	"bytes"
 	"fmt"
+	"github.com/kovetskiy/mark/pkg/mark/utils"
 	"io/ioutil"
 	"path/filepath"
 	"regexp"
@@ -20,13 +21,14 @@ import (
 //      <optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
 	`(?s)` +
-	`<!--\s*Include:\s*(?P<template>.+?)\s*` +
-	`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
-	`(?:\n(?P<config>.*?))?-->`,
+		`<!--\s*Include:\s*(?P<template>.+?)\s*` +
+		`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
+		`(?:\n(?P<config>.*?))?-->`,
 )
 
 func LoadTemplate(
-	base string,
+	cwd string,
+	relativePath string,
 	path string,
 	left string,
 	right string,
@@ -41,15 +43,19 @@ func LoadTemplate(
 		return template, nil
 	}
 
-	var body []byte
-
-	body, err := ioutil.ReadFile(filepath.Join(base, path))
+	var (
+		body []byte
+		err  error
+	)
+	spath, err := utils.PathFinder(cwd, relativePath, path)
+	if err == nil {
+		body, err = ioutil.ReadFile(spath)
+	}
 	if err != nil {
 		err = facts.Format(
 			err,
 			"unable to read template file",
 		)
-
 		return nil, err
 	}
 
@@ -73,7 +79,8 @@ func LoadTemplate(
 }
 
 func ProcessIncludes(
-	base string,
+	cwd string,
+	relativePath string,
 	contents []byte,
 	templates *template.Template,
 ) (*template.Template, []byte, bool, error) {
@@ -112,7 +119,7 @@ func ProcessIncludes(
 
 			var (
 				path, none, left, right, config = string(groups[1]), string(groups[2]), string(groups[3]), string(groups[4]), groups[5]
-				data = map[string]interface{}{}
+				data                            = map[string]interface{}{}
 
 				facts = karma.Describe("path", path)
 			)
@@ -134,7 +141,7 @@ func ProcessIncludes(
 
 			log.Tracef(vardump(facts, data), "including template %q", path)
 
-			templates, err = LoadTemplate(base, path, left, right, templates)
+			templates, err = LoadTemplate(cwd, relativePath, path, left, right, templates)
 			if err != nil {
 				err = facts.Format(err, "unable to load template")
 

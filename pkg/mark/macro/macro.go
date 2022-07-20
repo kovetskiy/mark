@@ -134,6 +134,12 @@ func ExtractMacros(
 				macro Macro
 			)
 
+			macro.Template, err = includes.LoadTemplate("", "", template, "{{", "}}", templates)
+			if err != nil {
+				err = karma.Format(err, "unable to load template")
+				return nil
+			}
+
 			if strings.HasPrefix(template, "#") {
 				cfg := map[string]interface{}{}
 
@@ -155,14 +161,13 @@ func ExtractMacros(
 					return nil
 				}
 			} else {
-				macro.Template, err = includes.LoadTemplate(base, template, "{{", "}}", templates)
+				macro.Template, err = includes.LoadTemplate(base, "", template, "{{", "}}", templates)
 				if err != nil {
 					err = karma.Format(err, "unable to load template")
-	
+
 					return nil
 				}
 			}
-
 
 			facts := karma.
 				Describe("template", template).

@@ -33,6 +33,7 @@ type Flags struct {
 	Trace          bool   `docopt:"--trace"`
 	Username       string `docopt:"-u"`
 	Password       string `docopt:"-p"`
+	CWD            string `docopt:"-w"`
 	TargetURL      string `docopt:"-l"`
 	BaseURL        string `docopt:"--base-url"`
 	Config         string `docopt:"--config"`
@@ -58,6 +59,7 @@ Options:
                         Specify - as password to read password from stdin, or your Personal access token.
                         Username is not mandatory if personal access token is provided.
                         For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.
+  -w <workspace>       Use specified workspace path as the root of a relative path.
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
                         above).
@@ -121,6 +123,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if flags.CWD != "" {
+		config.CWD = flags.CWD
+	}
+	if config.CWD == "" {
+		config.CWD, _ = os.Getwd()
+	} else {
+		config.CWD, _ = filepath.Abs(config.CWD)
+	}
+
 	if !flags.TitleFromH1 && config.H1Title {
 		flags.TitleFromH1 = true
 	}
@@ -134,7 +145,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
+	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, config.CWD)
 
 	files, err := filepath.Glob(flags.FileGlobPatten)
 	if err != nil {
@@ -231,12 +242,17 @@ func processFile(
 	}
 
 	templates := stdlib.Templates
+	relativePath, _ := filepath.Split(file)
+	if relativePath != "" {
+		relativePath = filepath.Clean(relativePath)
+	}
 
 	var recurse bool
 
 	for {
 		templates, markdown, recurse, err = includes.ProcessIncludes(
-			filepath.Dir(file),
+			api.CWD,
+			relativePath,
 			markdown,
 			templates,
 		)
@@ -343,6 +359,7 @@ func processFile(
 		target = page
 	}
 
+	//attaches, err := mark.ResolveAttachments(api, target, api.CWD, relativePath, meta.Attachments)
 	mermaidImages, err := mark.ExtractMermaidImage(markdown)
 	if err != nil {
 		log.Fatal(err, "unable to render mermiad")
