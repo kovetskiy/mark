@@ -362,7 +362,7 @@ func processFile(
 	//attaches, err := mark.ResolveAttachments(api, target, api.CWD, relativePath, meta.Attachments)
 	mermaidImages, err := mark.ExtractMermaidImage(markdown)
 	if err != nil {
-		log.Fatal(err, "unable to render mermiad")
+		log.Fatal(err, "unable to render mermaid image")
 	}
 	mermaidAttaches := mark.ConvertToAttachments(mermaidImages)
 	localAttaches, err := mark.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
