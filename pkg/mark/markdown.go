@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
+	"fmt"
 	bf "github.com/kovetskiy/blackfriday/v2"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
@@ -63,7 +64,7 @@ func (renderer ConfluenceRenderer) RenderNode(
 			checkSum := codeChecksum(node.Literal)
 			if renderer.Attaches != nil {
 				for _, attach := range renderer.Attaches {
-					if attach.Checksum == checkSum {
+					if attach.Filename == fmt.Sprintf("%s.png", checkSum) {
 						title := ""
 						if !strings.HasPrefix(attach.Filename, attach.Checksum) {
 							title = attach.Filename
