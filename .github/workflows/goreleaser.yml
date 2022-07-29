@@ -24,4 +24,4 @@ jobs:
         args: release --rm-dist
       env:
         GOPATH: /home/runner/work/
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
