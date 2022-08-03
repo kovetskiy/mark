@@ -158,13 +158,15 @@ func main() {
 
 		target := processFile(file, api, flags, creds.PageID, creds.Username)
 
-		log.Infof(
-			nil,
-			"page successfully updated: %s",
-			creds.BaseURL+target.Links.Full,
-		)
+		if target != nil {
+			log.Infof(
+				nil,
+				"page successfully updated: %s",
+				creds.BaseURL+target.Links.Full,
+			)
 
-		fmt.Println(creds.BaseURL + target.Links.Full)
+			fmt.Println(creds.BaseURL + target.Links.Full)
+		}
 	}
 }
 
@@ -289,9 +291,9 @@ func processFile(
 			)
 			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
-	
-			fmt.Println(mark.CompileMarkdown(markdown, stdlib))
-		os.Exit(0)
+
+		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+		return nil
 	}
 
 	var target *confluence.PageInfo
