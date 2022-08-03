@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"

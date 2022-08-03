@@ -11,7 +11,7 @@ import (
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 	"github.com/reconquest/regexputil-go"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 var reMacroDirective = regexp.MustCompile(
