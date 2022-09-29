@@ -16,13 +16,20 @@ import (
 )
 
 // <!-- Include: <template path>
+//      (Delims: (none | "<left>","<right>"))?
 //      <optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
-	`(?s)<!--\s*Include:\s*(?P<template>\S+)\s*(\n(?P<config>.*?))?-->`)
+	`(?s)` +
+	`<!--\s*Include:\s*(?P<template>.+?)\s*` +
+	`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
+	`(?:\n(?P<config>.*?))?-->`,
+)
 
 func LoadTemplate(
 	base string,
 	path string,
+	left string,
+	right string,
 	templates *template.Template,
 ) (*template.Template, error) {
 	var (
@@ -52,7 +59,7 @@ func LoadTemplate(
 		[]byte("\n"),
 	)
 
-	templates, err = templates.New(name).Parse(string(body))
+	templates, err = templates.New(name).Delims(left, right).Parse(string(body))
 	if err != nil {
 		err = facts.Format(
 			err,
@@ -104,12 +111,15 @@ func ProcessIncludes(
 			groups := reIncludeDirective.FindSubmatch(spec)
 
 			var (
-				path, config = string(groups[1]), groups[2]
-				data         = map[string]interface{}{}
+				path, none, left, right, config = string(groups[1]), string(groups[2]), string(groups[3]), string(groups[4]), groups[5]
+				data = map[string]interface{}{}
 
 				facts = karma.Describe("path", path)
 			)
-
+			if none == "none" {
+				left = "\x00"
+				right = "\x01"
+			}
 			err = yaml.Unmarshal(config, &data)
 			if err != nil {
 				err = facts.
@@ -124,7 +134,7 @@ func ProcessIncludes(
 
 			log.Tracef(vardump(facts, data), "including template %q", path)
 
-			templates, err = LoadTemplate(base, path, templates)
+			templates, err = LoadTemplate(base, path, left, right, templates)
 			if err != nil {
 				err = facts.Format(err, "unable to load template")
 
