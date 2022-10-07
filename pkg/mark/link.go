@@ -118,6 +118,7 @@ func resolveLink(
 				linkMeta.Title,
 			)
 		}
+		fmt.Print(result)
 
 		if result == "" {
 			return "", nil
@@ -171,12 +172,14 @@ func getConfluenceLink(
 	api *confluence.API,
 	space, title string,
 ) (string, error) {
+	fmt.Print("\nflagGGGGGGG\n")
 	link := fmt.Sprintf(
 		"%s/display/%s/%s",
 		api.BaseURL,
 		space,
 		url.QueryEscape(title),
 	)
+	fmt.Print(link)
 
 	page, err := api.FindPage(space, title, "page")
 	if err != nil {
@@ -186,7 +189,7 @@ func getConfluenceLink(
 	if page != nil {
 		// Needs baseURL, as REST api response URL doesn't contain subpath ir
 		// confluence is server from that
-		link = api.BaseURL + page.Links.Full
+		link = api.BaseURL + "/wiki" + page.Links.Full
 	}
 
 	return link, nil

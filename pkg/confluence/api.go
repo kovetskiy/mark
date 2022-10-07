@@ -92,7 +92,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 	if username != "" {
 		auth = &gopencils.BasicAuth{username, password}
 	}
-	rest := gopencils.Api(baseURL+"/rest/api", auth)
+	rest := gopencils.Api(baseURL+"/wiki/rest/api", auth)
 	if username == "" {
 		if rest.Headers == nil {
 			rest.Headers = http.Header{}
