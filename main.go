@@ -17,6 +17,7 @@ import (
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
+	"github.com/sn0walk3r/markheaders"
 )
 
 type Flags struct {
@@ -87,6 +88,7 @@ Options:
 )
 
 func main() {
+	markheaders.Entrypoint()
 	cmd, err := docopt.ParseArgs(os.ExpandEnv(usage), nil, version)
 	if err != nil {
 		panic(err)
@@ -120,11 +122,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if ! flags.TitleFromH1 && config.H1Title {
+	if !flags.TitleFromH1 && config.H1Title {
 		flags.TitleFromH1 = true
 	}
 
-	if ! flags.DropH1 && config.H1Drop {
+	if !flags.DropH1 && config.H1Drop {
 		flags.DropH1 = true
 	}
 
@@ -289,8 +291,8 @@ func processFile(
 			)
 			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
-	
-			fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+
+		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
 	}
 
