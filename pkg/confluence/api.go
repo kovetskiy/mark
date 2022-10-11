@@ -424,6 +424,7 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 
 	payload := map[string]string{
 		"expand": "version,container",
+		"limit":  "1000",
 	}
 
 	request, err := api.rest.Res(
