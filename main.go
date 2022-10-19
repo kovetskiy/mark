@@ -20,23 +20,24 @@ import (
 )
 
 type Flags struct {
-	FileGlobPatten string `docopt:"-f"`
-	CompileOnly    bool   `docopt:"--compile-only"`
-	DryRun         bool   `docopt:"--dry-run"`
-	EditLock       bool   `docopt:"-k"`
-	DropH1         bool   `docopt:"--drop-h1"`
-	TitleFromH1    bool   `docopt:"--title-from-h1"`
-	MinorEdit      bool   `docopt:"--minor-edit"`
-	Color          string `docopt:"--color"`
-	Debug          bool   `docopt:"--debug"`
-	Trace          bool   `docopt:"--trace"`
-	Username       string `docopt:"-u"`
-	Password       string `docopt:"-p"`
-	TargetURL      string `docopt:"-l"`
-	BaseURL        string `docopt:"--base-url"`
-	Config         string `docopt:"--config"`
-	Ci             bool   `docopt:"--ci"`
-	Space          string `docopt:"--space"`
+	FileGlobPatten     string `docopt:"-f"`
+	CompileOnly        bool   `docopt:"--compile-only"`
+	DryRun             bool   `docopt:"--dry-run"`
+	EditLock           bool   `docopt:"-k"`
+	DropH1             bool   `docopt:"--drop-h1"`
+	TitleFromH1        bool   `docopt:"--title-from-h1"`
+	MinorEdit          bool   `docopt:"--minor-edit"`
+	Color              string `docopt:"--color"`
+	Debug              bool   `docopt:"--debug"`
+	Trace              bool   `docopt:"--trace"`
+	Username           string `docopt:"-u"`
+	Password           string `docopt:"-p"`
+	TargetURL          string `docopt:"-l"`
+	BaseURL            string `docopt:"--base-url"`
+	Config             string `docopt:"--config"`
+	Ci                 bool   `docopt:"--ci"`
+	Space          	   string `docopt:"--space"`
+	AttachmentBasename bool   `docopt:"--attachment-basename"`
 }
 
 const (
@@ -52,37 +53,38 @@ Usage:
   mark -h | --help
 
 Options:
-  -u <username>        Use specified username for updating Confluence page.
-  -p <token>           Use specified token for updating Confluence page.
-                        Specify - as password to read password from stdin, or your Personal access token.
-                        Username is not mandatory if personal access token is provided.
-                        For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.
-  -l <url>             Edit specified Confluence page.
-                        If -l is not specified, file should contain metadata (see
-                        above).
-  -b --base-url <url>  Base URL for Confluence.
-                        Alternative option for base_url config field.
-  -f <file>            Use specified markdown file(s) for converting to html.
-                        Supports file globbing patterns (needs to be quoted).
-  -k                   Lock page editing to current user only to prevent accidental
-                        manual edits over Confluence Web UI.
-  --space <space>      Use specified space key. If not specified space ley must
-                        be set in a page metadata.
-  --drop-h1            Don't include H1 headings in Confluence output.
-  --title-from-h1      Extract page title from a leading H1 heading. If no H1 heading
-                        on a page then title must be set in a page metadata.
-  --dry-run            Resolve page and ancestry, show resulting HTML and exit.
-  --compile-only       Show resulting HTML and don't update Confluence page content.
-  --minor-edit         Don't send notifications while updating Confluence page.
-  --debug              Enable debug logs.
-  --trace              Enable trace logs.
-  --color <when>       Display logs in color. Possible values: auto, never.
-                        [default: auto]
-  -c --config <path>   Use the specified configuration file.
-                        [default: $HOME/.config/mark]
-  --ci                 Runs on CI mode. It won't fail if files are not found.
-  -h --help            Show this message.
-  -v --version         Show version.
+  -u <username>          Use specified username for updating Confluence page.
+  -p <token>             Use specified token for updating Confluence page.
+                          Specify - as password to read password from stdin, or your Personal access token.
+                          Username is not mandatory if personal access token is provided.
+                          For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.
+  -l <url>               Edit specified Confluence page.
+                          If -l is not specified, file should contain metadata (see
+                          above).
+  -b --base-url <url>    Base URL for Confluence.
+                          Alternative option for base_url config field.
+  -f <file>              Use specified markdown file(s) for converting to html.
+                          Supports file globbing patterns (needs to be quoted).
+  -k                     Lock page editing to current user only to prevent accidental
+                          manual edits over Confluence Web UI.
+  --space <space>        Use specified space key. If not specified space ley must
+                          be set in a page metadata.
+  --drop-h1              Don't include H1 headings in Confluence output.
+  --title-from-h1        Extract page title from a leading H1 heading. If no H1 heading
+                          on a page then title must be set in a page metadata.
+  --dry-run              Resolve page and ancestry, show resulting HTML and exit.
+  --compile-only         Show resulting HTML and don't update Confluence page content.
+  --minor-edit           Don't send notifications while updating Confluence page.
+  --debug                Enable debug logs.
+  --trace                Enable trace logs.
+  --color <when>         Display logs in color. Possible values: auto, never.
+                          [default: auto]
+  -c --config <path>     Use the specified configuration file.
+                          [default: $HOME/.config/mark]
+  --ci                   Runs on CI mode. It won't fail if files are not found.
+  --attachment-basename  Don't include attachment paths in attachment names.
+  -h --help              Show this message.
+  -v --version           Show version.
 `
 )
 
@@ -344,6 +346,7 @@ func processFile(
 
 	attaches, err := mark.ResolveAttachments(
 		api,
+		flags.AttachmentBasename,
 		target,
 		filepath.Dir(file),
 		meta.Attachments,

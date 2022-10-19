@@ -511,6 +511,7 @@ mark -h | --help
 - `--dry-run` — Show resulting HTML and don't update Confluence page content.
 - `--minor-edit` — Don't send notifications while updating Confluence page.
 - `--trace` — Enable trace logs.
+- `--attachment-basename` — Don't include attachment paths in attachment names.
 - `-v | --version` — Show version.
 - `-h | --help` — Show help screen and call 911.
 

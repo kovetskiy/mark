@@ -33,11 +33,12 @@ type Attachment struct {
 
 func ResolveAttachments(
 	api *confluence.API,
+	attachmentBasename bool,
 	page *confluence.PageInfo,
 	base string,
 	replacements []string,
 ) ([]Attachment, error) {
-	attaches, err := prepareAttachments(base, replacements)
+	attaches, err := prepareAttachments(base, replacements, attachmentBasename)
 	if err != nil {
 		return nil, err
 	}
@@ -159,12 +160,18 @@ func ResolveAttachments(
 	return attaches, nil
 }
 
-func prepareAttachments(base string, replacements []string) ([]Attachment, error) {
+func prepareAttachments(base string, replacements []string, attachmentBasename bool) ([]Attachment, error) {
 	attaches := []Attachment{}
 	for _, name := range replacements {
+		var filename string
+		if attachmentBasename {
+			filename = filepath.Base(name)
+		} else {
+			filename = strings.ReplaceAll(name, "/", "_")
+		}
 		attach := Attachment{
 			Name:     name,
-			Filename: strings.ReplaceAll(name, "/", "_"),
+			Filename: filename,
 			Path:     filepath.Join(base, name),
 			Replace:  name,
 		}
