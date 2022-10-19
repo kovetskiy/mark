@@ -127,7 +127,7 @@ func ResolveAttachments(
 		info, err := api.UpdateAttachment(
 			page.ID,
 			attach.ID,
-			attach.Name,
+			attach.Filename,
 			AttachmentChecksumPrefix+attach.Checksum,
 			attach.Path,
 		)
