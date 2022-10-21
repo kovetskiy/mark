@@ -33,6 +33,7 @@ type Flags struct {
 	Username       string `docopt:"-u"`
 	Password       string `docopt:"-p"`
 	TargetURL      string `docopt:"-l"`
+	FilesList 	   []string `docopt:"-L"`
 	BaseURL        string `docopt:"--base-url"`
 	Config         string `docopt:"--config"`
 	Ci             bool   `docopt:"--ci"`
@@ -48,6 +49,7 @@ Docs: https://github.com/kovetskiy/mark
 Usage:
   mark [options] [-u <username>] [-p <token>] [-k] [-l <url>] -f <file>
   mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] -f <file>
+  mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] [-L <file>...]
   mark -v | --version
   mark -h | --help
 
@@ -60,6 +62,7 @@ Options:
   -l <url>             Edit specified Confluence page.
                         If -l is not specified, file should contain metadata (see
                         above).
+  -L <fileslist>       List of files. Use this option multiple times to pass files to Confluence.
   -b --base-url <url>  Base URL for Confluence.
                         Alternative option for base_url config field.
   -f <file>            Use specified markdown file(s) for converting to html.
@@ -87,6 +90,12 @@ Options:
 )
 
 func main() {
+	// args := []string{"-u","", 
+	// "-p", "", 
+	// "-k",
+	// "-b", "",
+	// "-L", "/home/xxxxx/file",
+	// "-L", "/home/xxxxx/file"}
 	cmd, err := docopt.ParseArgs(os.ExpandEnv(usage), nil, version)
 	if err != nil {
 		panic(err)
@@ -135,7 +144,14 @@ func main() {
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	files, err := filepath.Glob(flags.FileGlobPatten)
+	var files []string
+	if len(flags.FilesList) != 0 {
+		files = flags.FilesList
+		err = nil
+	} else {
+		files, err = filepath.Glob(flags.FileGlobPatten)
+	}
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -149,6 +165,7 @@ func main() {
 	}
 
 	// Loop through files matched by glob pattern
+	var fails []string
 	for _, file := range files {
 		log.Infof(
 			nil,
@@ -156,7 +173,8 @@ func main() {
 			file,
 		)
 
-		target := processFile(file, api, flags, creds.PageID, creds.Username)
+		target, relative_falis := processFile(file, api, flags, creds.PageID, creds.Username)
+		fails = append(fails, relative_falis...)
 
 		log.Infof(
 			nil,
@@ -166,6 +184,27 @@ func main() {
 
 		fmt.Println(creds.BaseURL + target.Links.Full)
 	}
+
+	// Try again with relative resolved fails
+	if len(fails) > 0 {
+		for _, file := range fails {
+			log.Infof(
+				nil,
+				"try again to resolve relative links of %s",
+				file,
+			)
+			target, _ := processFile(file, api, flags, creds.PageID, creds.Username)
+
+			log.Infof(
+				nil,
+				"done retry relative resolve for: %s",
+				creds.BaseURL+target.Links.Full,
+			)
+
+			fmt.Println(creds.BaseURL + target.Links.Full)
+
+		}
+	}
 }
 
 func processFile(
@@ -174,7 +213,8 @@ func processFile(
 	flags Flags,
 	pageID string,
 	username string,
-) *confluence.PageInfo {
+) (*confluence.PageInfo, []string) {
+	var rfails []string
 	markdown, err := ioutil.ReadFile(file)
 	if err != nil {
 		log.Fatal(err)
@@ -266,9 +306,11 @@ func processFile(
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, meta, markdown, ".")
+	base, _ := filepath.Split(file)
+	links, err := mark.ResolveRelativeLinks(api, meta, markdown, base)
 	if err != nil {
-		log.Fatalf(err, "unable to resolve relative links")
+		log.Warningf(err, "unable to resolve relative links in %s", file)
+		rfails = append(rfails, file)
 	}
 
 	markdown = mark.SubstituteLinks(markdown, links)
@@ -405,5 +447,5 @@ func processFile(
 		}
 	}
 
-	return target
+	return target, rfails
 }
