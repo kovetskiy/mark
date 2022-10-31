@@ -35,7 +35,7 @@ services:
     volumes:
     - type: bind
       source: ./
-      target: /go/src/github.com/kovetskiy/mark
+      target: /go/src/github.com/dualinventive/mark
 
-    working_dir: /go/src/github.com/kovetskiy/mark/
+    working_dir: /go/src/github.com/dualinventive/mark/
     command: make build

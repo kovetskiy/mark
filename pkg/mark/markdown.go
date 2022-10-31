@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dualinventive/mark/pkg/mark/stdlib"
 	bf "github.com/kovetskiy/blackfriday/v2"
-	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
 )
 

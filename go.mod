@@ -1,4 +1,4 @@
-module github.com/kovetskiy/mark
+module github.com/dualinventive/mark
 
 go 1.17
 

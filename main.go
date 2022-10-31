@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/docopt/docopt-go"
+	"github.com/dualinventive/mark/pkg/confluence"
+	"github.com/dualinventive/mark/pkg/mark"
+	"github.com/dualinventive/mark/pkg/mark/includes"
+	"github.com/dualinventive/mark/pkg/mark/macro"
+	"github.com/dualinventive/mark/pkg/mark/stdlib"
 	"github.com/kovetskiy/lorg"
-	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/kovetskiy/mark/pkg/mark"
-	"github.com/kovetskiy/mark/pkg/mark/includes"
-	"github.com/kovetskiy/mark/pkg/mark/macro"
-	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )
@@ -43,7 +43,7 @@ const (
 	version = "8.1"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
-Docs: https://github.com/kovetskiy/mark
+Docs: https://github.com/dualinventive/mark
 
 Usage:
   mark [options] [-u <username>] [-p <token>] [-k] [-l <url>] -f <file>
@@ -120,11 +120,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if ! flags.TitleFromH1 && config.H1Title {
+	if !flags.TitleFromH1 && config.H1Title {
 		flags.TitleFromH1 = true
 	}
 
-	if ! flags.DropH1 && config.H1Drop {
+	if !flags.DropH1 && config.H1Drop {
 		flags.DropH1 = true
 	}
 
@@ -289,8 +289,8 @@ func processFile(
 			)
 			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
-	
-			fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+
+		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
 		os.Exit(0)
 	}
 

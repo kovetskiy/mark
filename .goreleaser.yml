@@ -12,7 +12,7 @@ builds:
   goos:
   - darwin
   - linux
-  # windows fails with an error https://github.com/kovetskiy/mark/runs/5034726426?check_suite_focus=true
+  # windows fails with an error https://github.com/dualinventive/mark/runs/5034726426?check_suite_focus=true
   # - windows
 archives:
 - replacements:
@@ -49,7 +49,7 @@ brews:
 
     folder: Formula
 
-    homepage: "https://github.com/kovetskiy/mark"
+    homepage: "https://github.com/dualinventive/mark"
     description: "Sync your markdown files with Confluence pages."
     license: "Apache 2.0"
 
