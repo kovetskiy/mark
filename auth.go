@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -36,7 +36,7 @@ func GetCredentials(
 	if password == "" {
 		password = config.Password
 		if password == "" {
-			if ! flags.CompileOnly {
+			if !flags.CompileOnly {
 				return nil, errors.New(
 					"Confluence password should be specified using -p " +
 						"flag or be stored in configuration file",
@@ -47,7 +47,7 @@ func GetCredentials(
 	}
 
 	if password == "-" {
-		stdin, err := ioutil.ReadAll(os.Stdin)
+		stdin, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return nil, karma.Format(
 				err,

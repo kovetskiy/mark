@@ -3,7 +3,7 @@ package includes
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -16,8 +16,9 @@ import (
 )
 
 // <!-- Include: <template path>
-//      (Delims: (none | "<left>","<right>"))?
-//      <optional yaml data> -->
+//
+//	(Delims: (none | "<left>","<right>"))?
+//	<optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
 	`(?s)` +
 		`<!--\s*Include:\s*(?P<template>.+?)\s*` +
@@ -43,7 +44,7 @@ func LoadTemplate(
 
 	var body []byte
 
-	body, err := ioutil.ReadFile(filepath.Join(base, path))
+	body, err := os.ReadFile(filepath.Join(base, path))
 	if err != nil {
 		err = facts.Format(
 			err,

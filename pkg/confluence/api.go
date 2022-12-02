@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -727,7 +726,7 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		)
 	}
 
-	output, _ := ioutil.ReadAll(request.Raw.Body)
+	output, _ := io.ReadAll(request.Raw.Body)
 	defer request.Raw.Body.Close()
 
 	return fmt.Errorf(

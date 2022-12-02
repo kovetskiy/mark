@@ -3,7 +3,6 @@ package mark
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -80,7 +79,7 @@ func resolveLink(
 			return "", nil
 		}
 
-		linkContents, err := ioutil.ReadFile(filepath)
+		linkContents, err := os.ReadFile(filepath)
 		if err != nil {
 			return "", karma.Format(err, "read file: %s", filepath)
 		}

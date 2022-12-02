@@ -1,7 +1,7 @@
 package mark
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,11 +31,11 @@ func TestCompileMarkdown(t *testing.T) {
 		testname := strings.TrimSuffix(basename, ".md")
 		htmlname := filepath.Join(filepath.Dir(filename), testname+".html")
 
-		markdown, err := ioutil.ReadFile(filename)
+		markdown, err := os.ReadFile(filename)
 		if err != nil {
 			panic(err)
 		}
-		html, err := ioutil.ReadFile(htmlname)
+		html, err := os.ReadFile(htmlname)
 		if err != nil {
 			panic(err)
 		}
@@ -52,7 +52,7 @@ func TestCompileMarkdown(t *testing.T) {
 func TestExtractDocumentLeadingH1(t *testing.T) {
 	filename := "testdata/header.md"
 
-	markdown, err := ioutil.ReadFile(filename)
+	markdown, err := os.ReadFile(filename)
 	if err != nil {
 		panic(err)
 	}
