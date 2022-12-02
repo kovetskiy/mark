@@ -503,10 +503,10 @@ mark -h | --help
 - `-c <path>` or `--config <path>` — Specify a path to the configuration file.
 - `-k` — Lock page editing to current user only to prevent accidental
     manual edits over Confluence Web UI.
-- `--space <space>` - Use specified space key. If not specified space ley must be set in a page metadata.
+- `--space <space>` - Use specified space key. If the space key is not specified, it must be set in the page metadata.
 - `--drop-h1` – Don't include H1 headings in Confluence output.
   This option corresponds to the `h1_drop` setting in the configuration file.
-- `--title-from-h1` - Extract page title from a leading H1 heading. If no H1 heading on a page then title must be set in a page metadata.
+- `--title-from-h1` - Extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata.
   This option corresponds to the `h1_title` setting in the configuration file.
 - `--dry-run` — Show resulting HTML and don't update Confluence page content.
 - `--minor-edit` — Don't send notifications while updating Confluence page.
