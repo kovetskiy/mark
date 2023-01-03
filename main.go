@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -175,7 +174,7 @@ func processFile(
 	pageID string,
 	username string,
 ) *confluence.PageInfo {
-	markdown, err := ioutil.ReadFile(file)
+	markdown, err := os.ReadFile(file)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -42,7 +42,7 @@ func ResolveAttachments(
 		return nil, err
 	}
 
-	for i, _ := range attaches {
+	for i := range attaches {
 		checksum, err := getChecksum(attaches[i].Path)
 		if err != nil {
 			return nil, karma.Format(
@@ -147,7 +147,7 @@ func ResolveAttachments(
 		updating[i] = attach
 	}
 
-	for i, _ := range existing {
+	for i := range existing {
 		log.Infof(nil, "keeping unmodified attachment: %q", attaches[i].Name)
 	}
 
