@@ -98,8 +98,6 @@ func ParseBlockQuoteType(node *bf.Node) BlockQuoteType {
 
 	countParagraphs := 0
 	node.Walk(func(node *bf.Node, entering bool) bf.WalkStatus {
-		a := node
-		print(fmt.Sprintf("%s(p: %p, l: %d, e: %t)", a.Type.String(), a, a.Level, entering))
 
 		if node.Type == bf.Paragraph && entering {
 			countParagraphs += 1
@@ -147,8 +145,6 @@ func (renderer ConfluenceRenderer) RenderNode(
 	if renderer.LevelMap == nil {
 		renderer.LevelMap = GenerateBlockQuoteLevel(node)
 	}
-	// a := node
-	// print(fmt.Sprintf("%s(p: %p, l: %d, e: %t)", a.Type.String(), a, a.Level, entering))
 
 	if node.Type == bf.CodeBlock {
 
