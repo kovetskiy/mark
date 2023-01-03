@@ -177,10 +177,30 @@ And you can also add a title:
     ...
     ```
 
-You can collapse or have a title without language or any mix, but the language
-must stay in the front _if it is given_:
+Or linenumbers, by giving the first number
 
-    [<language>] ["collapse"] ["title" <your title>]
+    ```bash 1 collapse title Some long long bash function
+    ...
+    some long bash code block
+    ...
+    ```
+
+And even themes
+
+    ```bash 1 collapse midnight title Some long long bash function
+    ...
+    some long bash code block
+    ...
+    ```
+
+Please note that, if you want to have a code block without a language
+use `-` as the first character, if you want to have the other goodies
+
+    ``` - 1 collapse midnight title Some long long code
+    ...
+    some long code block
+    ...
+    ```
 
 [Code Block Macro]: https://confluence.atlassian.com/doc/code-block-macro-139390.html
 
