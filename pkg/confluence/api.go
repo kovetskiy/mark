@@ -704,7 +704,7 @@ func (api *API) RestrictPageUpdates(
 ) error {
 	var err error
 
-	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
+	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "jira.com") || strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
 		err = api.RestrictPageUpdatesCloud(page, allowedUser)
 	} else {
 		err = api.RestrictPageUpdatesServer(page, allowedUser)
