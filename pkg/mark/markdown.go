@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -8,7 +9,6 @@ import (
 	bf "github.com/kovetskiy/blackfriday/v2"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
-	"fmt"
 )
 
 var reBlockDetails = regexp.MustCompile(
@@ -17,10 +17,123 @@ var reBlockDetails = regexp.MustCompile(
 	`^(?:(\w*)|-)\s*\b(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
 )
 
+type BlockQuoteLevelMap map[*bf.Node]int
+
+func (m BlockQuoteLevelMap) Level(node *bf.Node) int {
+	return m[node]
+}
+
 type ConfluenceRenderer struct {
 	bf.Renderer
 
 	Stdlib *stdlib.Lib
+
+	LevelMap BlockQuoteLevelMap
+}
+
+func ParseLanguage(lang string) string {
+	// lang takes the following form: language? "collapse"? ("title"? <any string>*)?
+	// let's split it by spaces
+	paramlist := strings.Fields(lang)
+
+	// get the word in question, aka the first one
+	first := lang
+	if len(paramlist) > 0 {
+		first = paramlist[0]
+	}
+
+	if first == "collapse" || first == "title" {
+		// collapsing or including a title without a language
+		return ""
+	}
+	// the default case with language being the first one
+	return first
+}
+
+func ParseTitle(lang string) string {
+	index := strings.Index(lang, "title")
+	if index >= 0 {
+		// it's found, check if title is given and return it
+		start := index + 6
+		if len(lang) > start {
+			return lang[start:]
+		}
+	}
+	return ""
+}
+
+// Define BlockQuoteType enum
+type BlockQuoteType int
+
+const (
+	Info BlockQuoteType = iota
+	Note
+	Warn
+	None
+)
+
+func (t BlockQuoteType) String() string {
+	return []string{"info", "note", "warn", "none"}[t]
+}
+
+func ClasifyingBlockQuote(literal string) BlockQuoteType {
+	infoPattern := regexp.MustCompile(`info|Info|INFO`)
+	notePattern := regexp.MustCompile(`note|Note|NOTE`)
+	warnPattern := regexp.MustCompile(`warn|Warn|WARN`)
+
+	var t BlockQuoteType = None
+	switch {
+	case infoPattern.MatchString(literal):
+		t = Info
+	case notePattern.MatchString(literal):
+		t = Note
+	case warnPattern.MatchString(literal):
+		t = Warn
+	}
+	return t
+}
+
+func ParseBlockQuoteType(node *bf.Node) BlockQuoteType {
+	var t BlockQuoteType = None
+
+	countParagraphs := 0
+	node.Walk(func(node *bf.Node, entering bool) bf.WalkStatus {
+
+		if node.Type == bf.Paragraph && entering {
+			countParagraphs += 1
+		}
+		// Type of block quote should be defined on the first blockquote line
+		if node.Type == bf.Text && countParagraphs < 2 {
+			t = ClasifyingBlockQuote(string(node.Literal))
+		} else if countParagraphs > 1 {
+			return bf.Terminate
+		}
+		return bf.GoToNext
+	})
+	return t
+}
+
+func GenerateBlockQuoteLevel(someNode *bf.Node) BlockQuoteLevelMap {
+
+	// We define state variable that track BlockQuote level while we walk the tree
+	blockQuoteLevel := 0
+	blockQuoteLevelMap := make(map[*bf.Node]int)
+
+	rootNode := someNode
+	for rootNode.Parent != nil {
+		rootNode = rootNode.Parent
+	}
+	rootNode.Walk(func(node *bf.Node, entering bool) bf.WalkStatus {
+		if node.Type == bf.BlockQuote && entering {
+			blockQuoteLevelMap[node] = blockQuoteLevel
+			blockQuoteLevel += 1
+		}
+		if node.Type == bf.BlockQuote && !entering {
+			blockQuoteLevel -= 1
+		}
+		return bf.GoToNext
+	})
+	return blockQuoteLevelMap
 }
 
 func (renderer ConfluenceRenderer) RenderNode(
@@ -28,9 +141,14 @@ func (renderer ConfluenceRenderer) RenderNode(
 	node *bf.Node,
 	entering bool,
 ) bf.WalkStatus {
+	// Initialize BlockQuote level map
+	if renderer.LevelMap == nil {
+		renderer.LevelMap = GenerateBlockQuoteLevel(node)
+	}
+
 	if node.Type == bf.CodeBlock {
 
-		groups:= reBlockDetails.FindStringSubmatch(string(node.Info))
+		groups := reBlockDetails.FindStringSubmatch(string(node.Info))
 		linenumbers := false
 		firstline := 0
 		theme := ""
@@ -97,6 +215,32 @@ func (renderer ConfluenceRenderer) RenderNode(
 		}
 		return bf.GoToNext
 	}
+	if node.Type == bf.BlockQuote {
+		quoteType := ParseBlockQuoteType(node)
+		quoteLevel := renderer.LevelMap.Level(node)
+
+		re := regexp.MustCompile(`[\n\t]`)
+
+		if quoteLevel == 0 && entering {
+			if _, err := writer.Write([]byte(re.ReplaceAllString(fmt.Sprintf(`
+			<ac:structured-macro ac:name="%s">
+			<ac:parameter ac:name="icon">true</ac:parameter>
+			<ac:rich-text-body>
+			`, quoteType), ""))); err != nil {
+				panic(err)
+			}
+			return bf.GoToNext
+		}
+		if quoteLevel == 0 && !entering {
+			if _, err := writer.Write([]byte(re.ReplaceAllString(`
+			</ac:rich-text-body>
+			</ac:structured-macro>
+			`, ""))); err != nil {
+				panic(err)
+			}
+			return bf.GoToNext
+		}
+	}
 	return renderer.Renderer.RenderNode(writer, node, entering)
 }
 
@@ -129,8 +273,8 @@ func CompileMarkdown(
 					bf.SmartypantsLatexDashes,
 			},
 		),
-
-		Stdlib: stdlib,
+		Stdlib:   stdlib,
+		LevelMap: nil,
 	}
 
 	html := bf.Run(
