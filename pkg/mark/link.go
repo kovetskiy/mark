@@ -149,7 +149,7 @@ func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 }
 
 func parseLinks(markdown string) []markdownLink {
-	re := regexp.MustCompile("\\[[^\\]]+\\]\\((([^\\)#]+)?#?([^\\)]+)?)\\)")
+	re := regexp.MustCompile(`\[[^\]]+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
 	matches := re.FindAllStringSubmatch(markdown, -1)
 
 	links := make([]markdownLink, len(matches))

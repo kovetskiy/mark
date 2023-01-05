@@ -89,7 +89,10 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 func NewAPI(baseURL string, username string, password string) *API {
 	var auth *gopencils.BasicAuth
 	if username != "" {
-		auth = &gopencils.BasicAuth{username, password}
+		auth = &gopencils.BasicAuth{
+			Username: username,
+			Password: password,
+		}
 	}
 	rest := gopencils.Api(baseURL+"/rest/api", auth)
 	if username == "" {
