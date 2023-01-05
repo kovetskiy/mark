@@ -18,6 +18,9 @@ build:
 		-ldflags "-X main.version=$(VERSION)" \
 		-gcflags "-trimpath $(GOPATH)/src"
 
+test:
+	go test -race -coverprofile=profile.cov ./...
+
 image:
 	@echo :: building image $(NAME):$(VERSION)
 	@docker build -t $(NAME):$(VERSION) -f Dockerfile .
