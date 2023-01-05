@@ -14,10 +14,6 @@ const (
 	NL = "\n"
 )
 
-func text(lines ...string) string {
-	return strings.Join(lines, "\n")
-}
-
 func TestCompileMarkdown(t *testing.T) {
 	test := assert.New(t)
 

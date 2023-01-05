@@ -176,7 +176,7 @@ func (renderer ConfluenceRenderer) RenderNode(
 				theme = option
 			}
 		}
-		renderer.Stdlib.Templates.ExecuteTemplate(
+		err := renderer.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:code",
 			struct {
@@ -197,20 +197,46 @@ func (renderer ConfluenceRenderer) RenderNode(
 				strings.TrimSuffix(string(node.Literal), "\n"),
 			},
 		)
+		if err != nil {
+			panic(err)
+		}
 
 		return bf.GoToNext
 	}
 	if node.Type == bf.Link && string(node.Destination[0:3]) == "ac:" {
 		if entering {
-			writer.Write([]byte("<ac:link><ri:page ri:content-title=\""))
-			if len(node.Destination) < 4 {
-				writer.Write(node.FirstChild.Literal)
-			} else {
-				writer.Write(node.Destination[3:])
+			_, err := writer.Write([]byte("<ac:link><ri:page ri:content-title=\""))
+			if err != nil {
+				panic(err)
 			}
-			writer.Write([]byte("\"/><ac:plain-text-link-body><![CDATA["))
-			writer.Write(node.FirstChild.Literal)
-			writer.Write([]byte("]]></ac:plain-text-link-body></ac:link>"))
+
+			if len(node.Destination) < 4 {
+				_, err := writer.Write(node.FirstChild.Literal)
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				_, err := writer.Write(node.Destination[3:])
+				if err != nil {
+					panic(err)
+				}
+
+			}
+			_, err = writer.Write([]byte("\"/><ac:plain-text-link-body><![CDATA["))
+			if err != nil {
+				panic(err)
+			}
+
+			_, err = writer.Write(node.FirstChild.Literal)
+			if err != nil {
+				panic(err)
+			}
+
+			_, err = writer.Write([]byte("]]></ac:plain-text-link-body></ac:link>"))
+			if err != nil {
+				panic(err)
+			}
+
 			return bf.SkipChildren
 		}
 		return bf.GoToNext
