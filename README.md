@@ -240,6 +240,20 @@ By default, mark provides several built-in templates and macros:
 
   See: https://confluence.atlassian.com/conf59/status-macro-792499207.html
 
+* template `ac:jiraissues` to include a list of JIRA tickets. Parameters:
+  - URL (Required), The URL of the XML view of your selected issues. (link to the filter)
+  - Anonymous (Optional) If this parameter is set to 'true', your JIRA application will return only the issues which allow unrestricted viewing. That is, the issues which are visible to anonymous viewers. If this parameter is omitted or set to 'false', then the results depend on how your administrator has configured the communication between the JIRA application and Confluence. By default, Confluence will show only the issues which the user is authorised to view.
+  - BaseURL  (Optional) If you specify a 'baseurl', then the link in the header, pointing to your JIRA application, will use this base URL instead of the value of the 'url' parameter. This is useful when Confluence connects to JIRA with a different URL from the one used by other users.
+  - Columns  (Optional) A list of JIRA column names, separated by semi-colons (;). You can include many columns recognized by your JIRA application, including custom columns.
+  - Count  (Optional) If this parameter is set to 'true', the issue list will show the number of issues in JIRA. The count will be linked to your JIRA site.
+  - Cache  (Optional) The macro maintains a cache of the issues which result from the JIRA query. If the 'cache' parameter is set to 'off', the relevant part of the cache is cleared each time the macro is reloaded. (The value 'false' also works and has the same effect as 'off'.)
+  - Height  (Optional) The height in pixels of the table displaying the issues.
+  - RenderMode  (Optional) If the value is 'dynamic', the JIRA Issues macro offers an interactive display.
+  - Title  (Optional) You can customise the title text at the top of the issues table with this parameter. For instance, setting the title to 'Bugs-to-fix' will replace the default 'JIRA Issues' text. This can help provide more context to the list of issues displayed.
+  - Width  (Optional) The width of the table displaying the issues. Can be entered as a percentage (%) or in pixels (px).
+
+  See: https://confluence.atlassian.com/doc/jira-issues-macro-139380.html
+
 * template: `ac:emoticon` to include emoticons. Parameters:
   - Name: select emoticon
     - smile

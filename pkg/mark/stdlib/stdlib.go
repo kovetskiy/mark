@@ -142,6 +142,22 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/doc/jira-issues-macro-139380.html */
+		`ac:jiraissues`: text(
+			`<ac:structured-macro ac:name="jiraissues">`,
+			`<ac:parameter ac:name="anonymous">{{ or .Anonymous false }}</ac:parameter>`,
+			`<ac:parameter ac:name="baseurl">{{ or .BaseURL .URL }}</ac:parameter>`,
+			`<ac:parameter ac:name="columns">{{ or .Columns "type;key;summary;assignee;reporter;priority;status;resolution;created;updated;due" }}</ac:parameter>`,
+			`<ac:parameter ac:name="count">{{ or .Count false }}</ac:parameter>`,
+			`<ac:parameter ac:name="cache">{{ or .Cache "on" }}</ac:parameter>`,
+			`<ac:parameter ac:name="height">{{ or .Height 480 }}</ac:parameter>`,
+			`<ac:parameter ac:name="renderMode">{{ or RenderMode "static" }}</ac:parameter>`,
+			`<ac:parameter ac:name="title">{{ or .Title "Jira Issues" }}</ac:parameter>`,
+			`<ac:parameter ac:name="url">{{ .URL }}</ac:parameter>`,
+			`<ac:parameter ac:name="width">{{ or .Width "100%" }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		/* https://confluence.atlassian.com/conf59/info-tip-note-and-warning-macros-792499127.html */
 
 		`ac:box`: text(
