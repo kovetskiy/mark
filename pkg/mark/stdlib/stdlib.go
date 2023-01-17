@@ -151,7 +151,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="count">{{ or .Count false }}</ac:parameter>`,
 			`<ac:parameter ac:name="cache">{{ or .Cache "on" }}</ac:parameter>`,
 			`<ac:parameter ac:name="height">{{ or .Height 480 }}</ac:parameter>`,
-			`<ac:parameter ac:name="renderMode">{{ or RenderMode "static" }}</ac:parameter>`,
+			`<ac:parameter ac:name="renderMode">{{ or .RenderMode "static" }}</ac:parameter>`,
 			`<ac:parameter ac:name="title">{{ or .Title "Jira Issues" }}</ac:parameter>`,
 			`<ac:parameter ac:name="url">{{ .URL }}</ac:parameter>`,
 			`<ac:parameter ac:name="width">{{ or .Width "100%" }}</ac:parameter>`,
