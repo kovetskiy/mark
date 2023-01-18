@@ -74,6 +74,7 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 			meta.Type = "page" //Default if not specified
 		}
 
+		//nolint:staticcheck
 		header := strings.Title(matches[1])
 
 		var value string
