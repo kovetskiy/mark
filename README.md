@@ -120,6 +120,9 @@ be replaced with specified template:
      <yaml-data> -->
 ```
 
+**NOTE**: Make sure to define your macros after your metadata (Title/Space), 
+mark will stop processing metadata if it hits a Macro.
+
 Capture groups can be defined in the macro's <regexp> which can be later
 referenced in the `<yaml-data>` using `${<number>}` syntax, where `<number>` is
 number of a capture group in regexp (`${0}` is used for entire regexp match),
