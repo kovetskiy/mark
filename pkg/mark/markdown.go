@@ -345,7 +345,7 @@ func DropDocumentLeadingH1(
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading
 func ExtractDocumentLeadingH1(markdown []byte) string {
-	h1 := regexp.MustCompile(`^#[^#]\s*(.*)\s*\n`)
+	h1 := regexp.MustCompile(`#[^#]\s*(.*)\s*\n`)
 	groups := h1.FindSubmatch(markdown)
 	if groups == nil {
 		return ""
