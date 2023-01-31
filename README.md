@@ -207,6 +207,15 @@ use `-` as the first character, if you want to have the other goodies
 
 [Code Block Macro]: https://confluence.atlassian.com/doc/code-block-macro-139390.html
 
+### Block Quotes
+
+Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met
+
+1. The BlockQuote is on the root level of the document (not nested)
+1. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note`
+
+In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
+
 ## Template & Macros
 
 By default, mark provides several built-in templates and macros:

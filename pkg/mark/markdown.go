@@ -247,7 +247,7 @@ func (renderer ConfluenceRenderer) RenderNode(
 
 		re := regexp.MustCompile(`[\n\t]`)
 
-		if quoteLevel == 0 && entering {
+		if quoteLevel == 0 && entering && quoteType != None {
 			if _, err := writer.Write([]byte(re.ReplaceAllString(fmt.Sprintf(`
 			<ac:structured-macro ac:name="%s">
 			<ac:parameter ac:name="icon">true</ac:parameter>
@@ -257,7 +257,7 @@ func (renderer ConfluenceRenderer) RenderNode(
 			}
 			return bf.GoToNext
 		}
-		if quoteLevel == 0 && !entering {
+		if quoteLevel == 0 && !entering && quoteType != None {
 			if _, err := writer.Write([]byte(re.ReplaceAllString(`
 			</ac:rich-text-body>
 			</ac:structured-macro>
