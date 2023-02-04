@@ -218,7 +218,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:emoticon ac:name="{{ .Name }}"/>`,
 		),
 		`ac:image`: text(
-			`<ac:image ac:align="center" ac:layout="center"><ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/></ac:image>`,
+			`<ac:image {{ if .Width}}ac:width="{{ .Width }}"{{end}}><ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/></ac:image>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/widget-connector-macro-171180449.html#WidgetConnectorMacro-YouTube */

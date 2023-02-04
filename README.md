@@ -494,6 +494,22 @@ This is a [link to an existing confluence page](ac:Pagetitle)
 And this is how to link when the linktext is the same as the [Pagetitle](ac:)
 ```
 
+### Add width for an image
+
+Use the following macro:
+```markdown
+<!-- Macro: \!\[.*\]\((.+)\)\<\!\-\- (.*) \-\-\>
+     Template: ac:image
+     Attachment: ${1}
+     Width: ${2} -->
+```
+And attach any image with the following
+```markdown
+![Example](../images/example.png)<!-- 300 -->
+```
+The width will be the commented html after the image (in this case 300px).
+
+
 ## Installation
 
 ### Homebrew
