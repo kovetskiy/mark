@@ -555,16 +555,16 @@ func (api *API) UpdatePage(
 		},
 		"metadata": map[string]interface{}{
 			"labels": labels,
-			// The Confluence API randomly sets page width for some reason:
-			// https://community.developer.atlassian.com/t/confluence-rest-api-create-content-at-random-width/57001
-
-			// This is a workaround to compensate for that bug. It forces the page to be created
-			// with the default appearance, which is "fixed" (not full-width).
+			// Fix to set full-width as has changed on Confluence APIs again.
+			// https://jira.atlassian.com/browse/CONFCLOUD-65447
+			// 
 			"properties": map[string]interface{}{
 				"content-appearance-published": map[string]interface{}{
-					"value": "default",
+					"value": "full-width",
 				},
 			},
+			// content-appearance-draft should not be set as this is impacted by
+			// the user editor default configurations - which caused the sporadic published widths.
 		},
 	}
 
