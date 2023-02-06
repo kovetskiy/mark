@@ -334,8 +334,8 @@ By default, mark provides several built-in templates and macros:
   - Frameborder: Choose whether to draw a border around content in the iframe.
       - `show` (Default)
       - `hide`
-  - Width: Width in px. Defualts to "640px"
-  - Height: Height in px. Defualts to "360px"
+  - Width: Width in px. Defaults to "640px"
+  - Height: Height in px. Defaults to "360px"
   - Scrolling: Allow or prevent scrolling in the iframe to see additional content.
       - `yes`
       - `no`
@@ -345,6 +345,24 @@ By default, mark provides several built-in templates and macros:
       - `right`
 
   See: https://support.atlassian.com/confluence-cloud/docs/insert-the-iframe-macro
+
+* template: `ac:blog-posts`to include blog-posts
+  - Content: How much content will be shown
+      - titles (default)
+      - excerpts
+      - entire
+  - Time: Specify how much back in time Confluence should look for blog posts (default: unlimited)
+  - Label: Restrict to blog posts with specific labels
+  - Author: Restrict to blog posts by specific authors
+  - Spaces: Restrict to blog posts in specific spaces
+  - Max: Maximum number of blog posts shown (default: 15)
+  - Sort: Sorting posts by
+      - title
+      - creation (default)
+      - modified
+  - Reverse: Reverses the Sort parameter from oldest to newest (default: false)
+
+  See: https://confluence.atlassian.com/doc/blog-posts-macro-139470.html
 
 * macro `@{...}` to mention user by name specified in the braces.
 
