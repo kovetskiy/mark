@@ -84,6 +84,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 					"]]><![CDATA[]]]]><![CDATA[>",
 				)
 			},
+			"convertAttachment": func(data string) string {
+				return strings.ReplaceAll(
+					data,
+					"/",
+					"_",
+				)
+			},
 		},
 	)
 
@@ -209,6 +216,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:emoticon`: text(
 			`<ac:emoticon ac:name="{{ .Name }}"/>`,
+		),
+		`ac:image`: text(
+			`<ac:image {{ if .Width}}ac:width="{{ .Width }}"{{end}}><ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/></ac:image>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/widget-connector-macro-171180449.html#WidgetConnectorMacro-YouTube */
