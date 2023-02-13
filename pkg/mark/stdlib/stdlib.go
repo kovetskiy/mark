@@ -246,6 +246,21 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://confluence.atlassian.com/doc/blog-posts-macro-139470.html */
+
+		`ac:blog-posts`: text(
+			`<ac:structured-macro ac:name="blog-posts">{{printf "\n"}}`,
+			`{{ if .Content }}<ac:parameter ac:name="content">{{ .Content }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Spaces }}<ac:parameter ac:name="spaces">{{ .Spaces }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Author }}<ac:parameter ac:name="author">{{ .Author }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Time }}<ac:parameter ac:name="time">{{ .Time }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Reverse }}<ac:parameter ac:name="reverse">{{ .Reverse }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Sort }}<ac:parameter ac:name="sort">{{ .Sort }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Max }}<ac:parameter ac:name="max">{{ .Max }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Label }}<ac:parameter ac:name="label">{{ .Label }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
