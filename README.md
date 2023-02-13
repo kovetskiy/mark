@@ -498,14 +498,14 @@ And this is how to link when the linktext is the same as the [Pagetitle](ac:)
 
 Use the following macro:
 ```markdown
-<!-- Macro: \!\[.*\]\((.+)\)\<\!\-\- (.*) \-\-\>
+<!-- Macro: \!\[.*\]\((.+)\)\<\!\-\- width=(.*) \-\-\>
      Template: ac:image
      Attachment: ${1}
      Width: ${2} -->
 ```
 And attach any image with the following
 ```markdown
-![Example](../images/example.png)<!-- 300 -->
+![Example](../images/example.png)<!-- width=300 -->
 ```
 The width will be the commented html after the image (in this case 300px).
 
