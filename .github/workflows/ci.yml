@@ -9,7 +9,7 @@ on:
     - master
 
 env:
-  GO_VERSION: "~1.19.4"
+  GO_VERSION: "~1.19.6"
 
 jobs:
   # Runs Golangci-lint on the source code
@@ -64,3 +64,20 @@ jobs:
     - name: Build mark
       run: |
         make build
+
+  # Build Dockerimage
+  ci-docker-build:
+    name: ci-docker-build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        push: false
+        tags: kovetskiy/mark:latest

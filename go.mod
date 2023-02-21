@@ -6,7 +6,7 @@ require (
 	github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815
 	github.com/kovetskiy/blackfriday/v2 v2.3.0
 	github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69
-	github.com/kovetskiy/ko v1.6.0
+	github.com/kovetskiy/ko v1.6.1
 	github.com/kovetskiy/lorg v1.2.0
 	github.com/reconquest/karma-go v0.0.0-20220904173930-21741aa386a6
 	github.com/reconquest/pkg v1.3.0
