@@ -144,7 +144,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<img src="{{ .Text | MermaidUrl }}"/>`,
 			`{{ printf "\n" }}`,
 			`{{ end }}`,
-			`<ac:structured-macro code">{{printf "\n"}}`,
+			`<ac:structured-macro ac:name="code">{{printf "\n"}}`,
 			/**/ `<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>{{printf "\n"}}`,
 			/**/ `<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>{{printf "\n"}}`,
 			/**/ `{{ if .Theme }}<ac:parameter ac:name="theme">{{ .Theme }}</ac:parameter>{{printf "\n"}}{{ end }}`,
