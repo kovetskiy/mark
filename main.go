@@ -390,7 +390,7 @@ func processFile(
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html, flags.MinorEdit, meta.Labels)
+	err = api.UpdatePage(target, html, flags.MinorEdit, meta.Labels, meta.ContentAppearance)
 	if err != nil {
 		log.Fatal(err)
 	}
