@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815
-	github.com/kovetskiy/blackfriday/v2 v2.3.0
 	github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69
 	github.com/kovetskiy/ko v1.6.1
 	github.com/kovetskiy/lorg v1.2.0
@@ -12,6 +11,7 @@ require (
 	github.com/reconquest/pkg v1.3.0
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/stretchr/testify v1.8.1
+	github.com/yuin/goldmark v1.5.4
 	golang.org/x/tools v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )

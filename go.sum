@@ -8,8 +8,6 @@ github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815 h1:bWDMxwH3px2JBh
 github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815/go.mod h1:WwZ+bS3ebgob9U8Nd0kOddGdZWjyMGR8Wziv+TBNwSE=
 github.com/iancoleman/strcase v0.2.0 h1:05I4QRnGpI0m37iZQRuskXh+w77mr6Z41lwQzuHLwW0=
 github.com/iancoleman/strcase v0.2.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
-github.com/kovetskiy/blackfriday/v2 v2.3.0 h1:KKABLPopQ2+DWKtM/ifx0RijGz09mNlCuEcZy5KvZVA=
-github.com/kovetskiy/blackfriday/v2 v2.3.0/go.mod h1:ES7tjNJdnHp1h8dib5cmoa//rgvQeYrtzGzGM/Kozk4=
 github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69 h1:vn82v0gKhTTm67znr7nxYBNW4mJ8zfY7dywZivUy3tY=
 github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69/go.mod h1:t7LFI5v8Q5+nl9sqId9PS0C9H9F4c5d4XlhkLve1MCM=
 github.com/kovetskiy/ko v1.6.1 h1:EO5v6CrW6x6vzxo7CKbN0r+foIRjz06U6wVSgxUVqMc=
@@ -41,6 +39,8 @@ github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
 github.com/stretchr/testify v1.8.1 h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKsk=
 github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+github.com/yuin/goldmark v1.5.4 h1:2uY/xC0roWy8IBEGLgB1ywIoEJFGmRrX21YQcvGZzjU=
+github.com/yuin/goldmark v1.5.4/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/zazab/zhash v0.0.0-20210630080733-6e809466f8d3 h1:BhVaeQJc3xalHGONn215FylzuxdQBIT3d/aRjDg4nXQ=
 github.com/zazab/zhash v0.0.0-20210630080733-6e809466f8d3/go.mod h1:NtepZ8TEXErPsmQDMUoN72f8aIy4+xNinSJ3f1giess=
 golang.org/x/tools v0.7.0 h1:W4OVu8VVOaIO0yzWMNdepAulS7YfoS3Zabrm8DOXXU4=

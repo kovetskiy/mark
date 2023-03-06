@@ -19,6 +19,11 @@
 > * Warn bullet 1
 > * Warn bullet 2
 
+
+## Third Heading
+> <!-- Info -->
+> Test
+
 ## Simple Blockquote
 
 > This paragraph is a simple blockquote
