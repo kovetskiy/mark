@@ -514,9 +514,7 @@ func (api *API) CreatePage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(
-	page *PageInfo, newContent string, minorEdit bool, newLabels []string,
-) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, newLabels []string, appearance string) error {
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
@@ -560,7 +558,7 @@ func (api *API) UpdatePage(
 			// 
 			"properties": map[string]interface{}{
 				"content-appearance-published": map[string]interface{}{
-					"value": "full-width",
+					"value": appearance,
 				},
 			},
 			// content-appearance-draft should not be set as this is impacted by

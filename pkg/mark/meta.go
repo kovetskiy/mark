@@ -11,27 +11,34 @@ import (
 )
 
 const (
-	HeaderParent     = `Parent`
-	HeaderSpace      = `Space`
-	HeaderType       = `Type`
-	HeaderTitle      = `Title`
-	HeaderLayout     = `Layout`
-	HeaderAttachment = `Attachment`
-	HeaderLabel      = `Label`
-	HeaderInclude    = `Include`
-	HeaderSidebar    = `Sidebar`
+	HeaderParent      = `Parent`
+	HeaderSpace       = `Space`
+	HeaderType        = `Type`
+	HeaderTitle       = `Title`
+	HeaderLayout      = `Layout`
+	HeaderAttachment  = `Attachment`
+	HeaderLabel       = `Label`
+	HeaderInclude     = `Include`
+	HeaderSidebar     = `Sidebar`
+	ContentAppearance = `Content-Appearance`
 )
 
 type Meta struct {
-	Parents     []string
-	Space       string
-	Type        string
-	Title       string
-	Layout      string
-	Sidebar     string
-	Attachments []string
-	Labels      []string
+	Parents           []string
+	Space             string
+	Type              string
+	Title             string
+	Layout            string
+	Sidebar           string
+	Attachments       []string
+	Labels            []string
+	ContentAppearance string
 }
+
+const (
+	FullWidthContentAppearance = "full-width"
+	FixedContentAppearance     = "fixed"
+)
 
 var (
 	reHeaderPatternV1    = regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
@@ -78,7 +85,8 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 
 		if meta == nil {
 			meta = &Meta{}
-			meta.Type = "page" //Default if not specified
+			meta.Type = "page"                                  // Default if not specified
+			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
 		}
 
 		//nolint:staticcheck
@@ -118,6 +126,13 @@ func ExtractMeta(data []byte) (*Meta, []byte, error) {
 		case HeaderInclude:
 			// Includes are parsed by a different func
 			continue
+
+		case ContentAppearance:
+			if strings.TrimSpace(value) == FixedContentAppearance {
+				meta.ContentAppearance = FixedContentAppearance
+			} else {
+				meta.ContentAppearance = FullWidthContentAppearance
+			}
 
 		default:
 			log.Errorf(

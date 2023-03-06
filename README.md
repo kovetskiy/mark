@@ -56,6 +56,13 @@ Also, optional following headers are supported:
 * blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s)
 
 ```markdown
+<!-- Content-Appearance: (full-width|fixed) -->
+```
+
+* (default) full-width: content will fill the full page width
+* fixed: content will be rendered in a fixed narrow view
+
+```markdown
 <!-- Sidebar: <h2>Test</h2> -->
 ```
 
