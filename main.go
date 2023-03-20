@@ -181,7 +181,7 @@ func processFile(
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
 
-	meta, markdown, err := mark.ExtractMeta(markdown)
+	meta, markdown, err := mark.ExtractMeta(markdown, flags.TitleFromH1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func processFile(
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, meta, markdown, ".")
+	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), flags.TitleFromH1)
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}

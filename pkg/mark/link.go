@@ -29,6 +29,7 @@ func ResolveRelativeLinks(
 	meta *Meta,
 	markdown []byte,
 	base string,
+	titleFromH1 bool,
 ) ([]LinkSubstitution, error) {
 	matches := parseLinks(string(markdown))
 
@@ -42,7 +43,7 @@ func ResolveRelativeLinks(
 			match.hash,
 		)
 
-		resolved, err := resolveLink(api, base, match)
+		resolved, err := resolveLink(api, base, match, titleFromH1)
 		if err != nil {
 			return nil, karma.Format(err, "resolve link: %q", match.full)
 		}
@@ -64,12 +65,14 @@ func resolveLink(
 	api *confluence.API,
 	base string,
 	link markdownLink,
+	titleFromH1 bool,
 ) (string, error) {
 	var result string
 
 	if len(link.filename) > 0 {
 		filepath := filepath.Join(base, link.filename)
 
+		log.Tracef(nil, "filepath: %s", filepath)
 		stat, err := os.Stat(filepath)
 		if err != nil {
 			return "", nil
@@ -92,7 +95,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := ExtractMeta(linkContents)
+		linkMeta, _, err := ExtractMeta(linkContents, titleFromH1)
 		if err != nil {
 			log.Errorf(
 				err,
@@ -106,6 +109,13 @@ func resolveLink(
 		if linkMeta == nil {
 			return "", nil
 		}
+
+		log.Tracef(
+			nil,
+			"extracted metadata: space=%s title=%s",
+			linkMeta.Space,
+			linkMeta.Title,
+		)
 
 		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
