@@ -46,7 +46,7 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, titleFromH1 bool) (*Meta, []byte, error) {
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
 		offset int
@@ -146,7 +146,7 @@ func ExtractMeta(data []byte, titleFromH1 bool) (*Meta, []byte, error) {
 		}
 	}
 
-	if titleFromH1 {
+	if titleFromH1 || spaceFromCli != "" {
 		if meta == nil {
 			meta = &Meta{}
 		}
@@ -159,8 +159,11 @@ func ExtractMeta(data []byte, titleFromH1 bool) (*Meta, []byte, error) {
 			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
 		}
 
-		if meta.Title == "" {
+		if titleFromH1 && meta.Title == "" {
 			meta.Title = ExtractDocumentLeadingH1(data)
+		}
+		if spaceFromCli != "" && meta.Space == "" {
+			meta.Space = spaceFromCli
 		}
 	}
 

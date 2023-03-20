@@ -181,7 +181,7 @@ func processFile(
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
 
-	meta, markdown, err := mark.ExtractMeta(markdown, flags.TitleFromH1)
+	meta, markdown, err := mark.ExtractMeta(markdown, flags.Space, flags.TitleFromH1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -204,13 +204,9 @@ func processFile(
 	}
 
 	if meta.Space == "" {
-		if flags.Space == "" {
-			log.Fatal(
-				"space is not set ('Space' header is not set and '--space' option is not set)",
-			)
-		} else {
-			meta.Space = flags.Space
-		}
+		log.Fatal(
+			"space is not set ('Space' header is not set and '--space' option is not set)",
+		)
 	}
 
 	if meta.Title == "" {
@@ -262,7 +258,7 @@ func processFile(
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), flags.TitleFromH1)
+	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), flags.Space, flags.TitleFromH1)
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}
