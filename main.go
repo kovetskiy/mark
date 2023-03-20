@@ -196,29 +196,21 @@ func processFile(
 	}
 
 	if pageID == "" && meta == nil {
-		if flags.TitleFromH1 && flags.Space != "" {
-			meta = &mark.Meta{}
-			meta.Type = "page"
-		} else {
-			log.Fatal(
-				`specified file doesn't contain metadata ` +
-					`and URL is not specified via command line ` +
-					`or doesn't contain pageId GET-parameter`,
-			)
-		}
-	}
-
-	switch {
-	case meta.Space == "" && flags.Space == "":
 		log.Fatal(
-			"space is not set ('Space' header is not set and '--space' option is not set)",
+			`specified file doesn't contain metadata ` +
+				`and URL is not specified via command line ` +
+				`or doesn't contain pageId GET-parameter`,
 		)
-	case meta.Space == "" && flags.Space != "":
-		meta.Space = flags.Space
 	}
 
-	if meta.Title == "" && flags.TitleFromH1 {
-		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
+	if meta.Space == "" {
+		if flags.Space == "" {
+			log.Fatal(
+				"space is not set ('Space' header is not set and '--space' option is not set)",
+			)
+		} else {
+			meta.Space = flags.Space
+		}
 	}
 
 	if meta.Title == "" {
