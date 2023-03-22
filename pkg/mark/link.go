@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/reconquest/karma-go"
@@ -72,10 +73,10 @@ func resolveLink(
 	var result string
 
 	if len(link.filename) > 0 {
-		filepath := filepath.Join(base, link.filename)
+		filePath := filepath.Join(base, link.filename)
 
-		log.Tracef(nil, "filepath: %s", filepath)
-		stat, err := os.Stat(filepath)
+		log.Tracef(nil, "filePath: %s", filePath)
+		stat, err := os.Stat(filePath)
 		if err != nil {
 			return "", nil
 		}
@@ -84,9 +85,9 @@ func resolveLink(
 			return "", nil
 		}
 
-		linkContents, err := os.ReadFile(filepath)
+		linkContents, err := os.ReadFile(filePath)
 		if err != nil {
-			return "", karma.Format(err, "read file: %s", filepath)
+			return "", karma.Format(err, "read file: %s", filePath)
 		}
 
 		linkContents = bytes.ReplaceAll(
@@ -97,12 +98,15 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
+		if !IsMarkdownFile(filepath.Ext(filePath)) {
+			return "", nil
+		}
 		linkMeta, _, err := ExtractMeta(linkContents, spaceFromCli, titleFromH1)
 		if err != nil {
 			log.Errorf(
 				err,
 				"unable to extract metadata from %q; ignoring the relative link",
-				filepath,
+				filePath,
 			)
 
 			return "", nil
@@ -124,7 +128,7 @@ func resolveLink(
 			return "", karma.Format(
 				err,
 				"find confluence page: %s / %s / %s",
-				filepath,
+				filePath,
 				linkMeta.Space,
 				linkMeta.Title,
 			)
@@ -201,4 +205,13 @@ func getConfluenceLink(
 	}
 
 	return link, nil
+}
+
+func IsMarkdownFile(extension string) bool {
+	switch strings.ToLower(extension) {
+	case
+		"md":
+		return true
+	}
+	return false
 }
