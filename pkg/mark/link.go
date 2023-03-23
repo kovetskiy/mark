@@ -11,6 +11,7 @@ import (
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
+	"golang.org/x/tools/godoc/util"
 )
 
 type LinkSubstitution struct {
@@ -43,7 +44,6 @@ func ResolveRelativeLinks(
 			match.filename,
 			match.hash,
 		)
-
 		resolved, err := resolveLink(api, base, match, spaceFromCli, titleFromH1)
 		if err != nil {
 			return nil, karma.Format(err, "resolve link: %q", match.full)
@@ -85,6 +85,11 @@ func resolveLink(
 		}
 
 		linkContents, err := os.ReadFile(filepath)
+
+		if !util.IsText(linkContents) {
+			return "", nil
+		}
+
 		if err != nil {
 			return "", karma.Format(err, "read file: %s", filepath)
 		}
