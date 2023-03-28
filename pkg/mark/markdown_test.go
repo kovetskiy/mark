@@ -10,10 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	NL = "\n"
-)
-
 func TestCompileMarkdown(t *testing.T) {
 	test := assert.New(t)
 
