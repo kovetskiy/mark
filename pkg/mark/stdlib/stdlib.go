@@ -1,6 +1,10 @@
 package stdlib
 
 import (
+	"bytes"
+	"compress/zlib"
+	"encoding/base64"
+	"fmt"
 	"strings"
 	"text/template"
 
@@ -59,6 +63,26 @@ func macros(templates *template.Template) ([]macro.Macro, error) {
 	return macros, nil
 }
 
+func EncodeMermaid(input string) (string, error) {
+	var buffer bytes.Buffer
+	writer, err := zlib.NewWriterLevel(&buffer, 9)
+	if err != nil {
+		return "", karma.Format(err, "fail to create the writer")
+	}
+	_, err = writer.Write([]byte(input))
+	writer.Close()
+	if err != nil {
+		return "", karma.Format(err, "fail to create the payload")
+	}
+	result := base64.URLEncoding.EncodeToString(buffer.Bytes())
+	return result, nil
+}
+
+func MermaidUrl(input string) string {
+	encodedString, _ := EncodeMermaid(input)
+	return fmt.Sprintf("https://kroki.io/mermaid/svg/%s", encodedString)
+}
+
 func templates(api *confluence.API) (*template.Template, error) {
 	text := func(line ...string) string {
 		return strings.Join(line, ``)
@@ -91,6 +115,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 					"_",
 				)
 			},
+			"MermaidUrl": func(code string) string {
+				return MermaidUrl(code)
+			},
 		},
 	)
 
@@ -113,9 +140,12 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		// This template is used for rendering code in ```
 		`ac:code`: text(
-			`<ac:structured-macro ac:name="{{ if eq .Language "mermaid" }}cloudscript-confluence-mermaid{{ else }}code{{ end }}">{{printf "\n"}}`,
-			/**/ `{{ if eq .Language "mermaid" }}<ac:parameter ac:name="showSource">true</ac:parameter>{{printf "\n"}}{{ else }}`,
-			/**/ `<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>{{printf "\n"}}{{ end }}`,
+			`{{ if eq .Language "mermaid" }}`,
+			`<img src="{{ .Text | MermaidUrl }}"/>`,
+			`{{ printf "\n" }}`,
+			`{{ end }}`,
+			`<ac:structured-macro ac:name="code">{{printf "\n"}}`,
+			/**/ `<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>{{printf "\n"}}`,
 			/**/ `<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>{{printf "\n"}}`,
 			/**/ `{{ if .Theme }}<ac:parameter ac:name="theme">{{ .Theme }}</ac:parameter>{{printf "\n"}}{{ end }}`,
 			/**/ `{{ if .Linenumbers }}<ac:parameter ac:name="linenumbers">{{ .Linenumbers }}</ac:parameter>{{printf "\n"}}{{ end }}`,
