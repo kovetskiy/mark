@@ -68,7 +68,7 @@ func (r *ConfluenceRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegister
 	// reg.Register(ast.KindHeading, r.renderNode)
 	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
 	reg.Register(ast.KindCodeBlock, r.renderCodeBlock)
-	reg.Register(ast.KindFencedCodeBlock, r.renderCodeBlock)
+	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
 	// reg.Register(ast.KindHTMLBlock, r.renderNode)
 	// reg.Register(ast.KindList, r.renderNode)
 	// reg.Register(ast.KindListItem, r.renderNode)
@@ -307,9 +307,8 @@ func (r *ConfluenceRenderer) goldmarkRenderLink(w util.BufWriter, source []byte,
 	return ast.WalkContinue, nil
 }
 
-// renderCodeBlock renders a (Fenced)CodeBlock
-func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-
+// renderFencedCodeBlock renders a FencedCodeBlock
+func (r *ConfluenceRenderer) renderFencedCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
@@ -348,6 +347,53 @@ func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byt
 		}
 
 	}
+
+	var lval []byte
+
+	lines := node.Lines().Len()
+	for i := 0; i < lines; i++ {
+		line := node.Lines().At(i)
+		lval = append(lval, line.Value(source)...)
+	}
+	err := r.Stdlib.Templates.ExecuteTemplate(
+		writer,
+		"ac:code",
+		struct {
+			Language    string
+			Collapse    bool
+			Title       string
+			Theme       string
+			Linenumbers bool
+			Firstline   int
+			Text        string
+		}{
+			lang,
+			collapse,
+			title,
+			theme,
+			linenumbers,
+			firstline,
+			strings.TrimSuffix(string(lval), "\n"),
+		},
+	)
+	if err != nil {
+		return ast.WalkStop, err
+	}
+
+	return ast.WalkContinue, nil
+}
+
+// renderCodeBlock renders a CodeBlock
+func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+	linenumbers := false
+	firstline := 0
+	theme := ""
+	collapse := false
+	lang := ""
+	title := ""
 
 	var lval []byte
 
