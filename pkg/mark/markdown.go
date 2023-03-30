@@ -439,12 +439,21 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 
 	colon := regexp.MustCompile(`---bf-COLON---`)
 
-	tags := regexp.MustCompile(`<(/?ac):(\S+?)>`)
+	tagsWithOneKey := regexp.MustCompile(`<(/?ac):(\S+?)>`)
 
-	markdown = tags.ReplaceAll(
+	tagsWithTwoKeys := regexp.MustCompile(`<(ac):(\S+?) (ac):(\S+?)>`)
+
+	markdown = tagsWithOneKey.ReplaceAll(
 		markdown,
 		[]byte(`<$1`+colon.String()+`$2>`),
 	)
+
+	markdown = tagsWithTwoKeys.ReplaceAll(
+		markdown,
+		[]byte(`<$1`+colon.String()+`$2 $3`+colon.String()+`$4>`),
+	)
+
+	log.Tracef(nil, "rendering markdown with replacement:\n%s", string(markdown))
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
