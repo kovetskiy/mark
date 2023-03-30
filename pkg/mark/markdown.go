@@ -441,9 +441,9 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 
 	tags := regexp.MustCompile(`</?ac:[^>]+>`)
 
-	for _, sm := range tags.FindAll(markdown, -1) {
+	for _, match := range tags.FindAll(markdown, -1) {
 		// Replace the colon in all "<ac:*>" tags with the colon bytes to avoid having Goldmark escape the HTML output.
-		markdown = bytes.ReplaceAll(markdown, sm, bytes.ReplaceAll(sm, []byte(":"), colon))
+		markdown = bytes.ReplaceAll(markdown, match, bytes.ReplaceAll(match, []byte(":"), colon))
 	}
 
 	converter := goldmark.New(
