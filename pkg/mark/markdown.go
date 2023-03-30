@@ -437,14 +437,14 @@ func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byt
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	colon := regexp.MustCompile(`---bf-COLON---`)
+	colon := []byte("---bf-COLON---")
 
-	tags := regexp.MustCompile(`<(/?ac):(\S+?)>`)
+	tags := regexp.MustCompile(`</?ac:[^>]+>`)
 
-	markdown = tags.ReplaceAll(
-		markdown,
-		[]byte(`<$1`+colon.String()+`$2>`),
-	)
+	for _, sm := range tags.FindAll(markdown, -1) {
+		// Replace the colon in all "<ac:*>" tags with the colon bytes to avoid having Goldmark escape the HTML output.
+		markdown = bytes.ReplaceAll(markdown, sm, bytes.ReplaceAll(sm, []byte(":"), colon))
+	}
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
@@ -472,7 +472,8 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 		panic(err)
 	}
 
-	html := colon.ReplaceAll(buf.Bytes(), []byte(`:`))
+	// Restore all the colons we previously replaced.
+	html := bytes.ReplaceAll(buf.Bytes(), colon, []byte(":"))
 
 	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
