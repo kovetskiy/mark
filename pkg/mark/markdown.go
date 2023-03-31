@@ -276,9 +276,8 @@ func (r *ConfluenceRenderer) renderLink(writer util.BufWriter, source []byte, no
 			if err != nil {
 				return ast.WalkStop, err
 			}
-
-			return ast.WalkSkipChildren, nil
 		}
+		return ast.WalkSkipChildren, nil
 	}
 	return r.goldmarkRenderLink(writer, source, node, entering)
 }
