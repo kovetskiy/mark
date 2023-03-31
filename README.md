@@ -371,6 +371,10 @@ By default, mark provides several built-in templates and macros:
 
   See: https://confluence.atlassian.com/doc/blog-posts-macro-139470.html
 
+* template: `ac:include` to include a page
+  - Page: the page to be included
+  - Space: the space the page is in (optional, otherwise same space)
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
