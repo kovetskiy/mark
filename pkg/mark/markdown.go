@@ -276,9 +276,8 @@ func (r *ConfluenceRenderer) renderLink(writer util.BufWriter, source []byte, no
 			if err != nil {
 				return ast.WalkStop, err
 			}
-
-			return ast.WalkSkipChildren, nil
 		}
+		return ast.WalkSkipChildren, nil
 	}
 	return r.goldmarkRenderLink(writer, source, node, entering)
 }
@@ -430,21 +429,8 @@ func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byt
 	return ast.WalkContinue, nil
 }
 
-// compileMarkdown will replace tags like <ac:rich-tech-body> with escaped
-// equivalent, because goldmark markdown parser replaces that tags with
-// <a href="ac:rich-text-body">ac:rich-text-body</a> because of the autolink
-// rule.
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
-
-	colon := []byte("---bf-COLON---")
-
-	tags := regexp.MustCompile(`</?ac:[^>]+>`)
-
-	for _, match := range tags.FindAll(markdown, -1) {
-		// Replace the colon in all "<ac:*>" tags with the colon bytes to avoid having Goldmark escape the HTML output.
-		markdown = bytes.ReplaceAll(markdown, match, bytes.ReplaceAll(match, []byte(":"), colon))
-	}
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
@@ -461,6 +447,12 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 			html.WithUnsafe(),
 		))
 
+	converter.Parser().AddOptions(parser.WithInlineParsers(
+		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
+		// the <ac:*/> tags.
+		util.Prioritized(NewACTagParser(), 199),
+	))
+
 	converter.Renderer().AddOptions(renderer.WithNodeRenderers(
 		util.Prioritized(NewConfluenceRenderer(stdlib), 100),
 	))
@@ -472,8 +464,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 		panic(err)
 	}
 
-	// Restore all the colons we previously replaced.
-	html := bytes.ReplaceAll(buf.Bytes(), colon, []byte(":"))
+	html := buf.Bytes()
 
 	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
