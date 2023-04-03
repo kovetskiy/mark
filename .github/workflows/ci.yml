@@ -9,7 +9,7 @@ on:
     - master
 
 env:
-  GO_VERSION: "~1.19.6"
+  GO_VERSION: "~1.20.2"
 
 jobs:
   # Runs Golangci-lint on the source code
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go 1.x
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
         go-version: ${{ env.GO_VERSION }}
       id: go
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go 1.x
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
         go-version: ${{ env.GO_VERSION }}
       id: go
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go 1.x
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
         go-version: ${{ env.GO_VERSION }}
       id: go
@@ -65,7 +65,7 @@ jobs:
       run: |
         make build
 
-  # Build Dockerimage
+  # Build and push Dockerimage
   ci-docker-build:
     name: ci-docker-build
     runs-on: ubuntu-latest
@@ -76,8 +76,25 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
 
-    - name: Build and push
+    - name: Build only (on commits)
       uses: docker/build-push-action@v4
+      if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
       with:
         push: false
         tags: kovetskiy/mark:latest
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      if: ${{ startsWith(github.ref, 'refs/tags/') }}
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+    - name: Build and push (on tag)
+      uses: docker/build-push-action@v4
+      if: ${{ startsWith(github.ref, 'refs/tags/') }}
+      with:
+        push: true
+        tags: |
+           kovetskiy/mark:${{ steps.extract_tag.outputs.tag }}
+           kovetskiy/mark:latest
