@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	cparser "github.com/kovetskiy/mark/pkg/mark/parser"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/pkg/log"
 	"github.com/yuin/goldmark"
@@ -450,7 +451,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 	converter.Parser().AddOptions(parser.WithInlineParsers(
 		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
 		// the <ac:*/> tags.
-		util.Prioritized(NewACTagParser(), 199),
+		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
 	))
 
 	converter.Renderer().AddOptions(renderer.WithNodeRenderers(

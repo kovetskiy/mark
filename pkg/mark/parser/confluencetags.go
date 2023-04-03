@@ -1,4 +1,4 @@
-package mark
+package parser
 
 import (
 	"bytes"
@@ -9,25 +9,25 @@ import (
 	"regexp"
 )
 
-// NewACTagParser returns an inline parser that parses <ac:* /> tags to ensure that Confluence specific tags are parsed
+// NewConfluenceTagParser returns an inline parser that parses <ac:* /> and <ri:* /> tags to ensure that Confluence specific tags are parsed
 // as ast.KindRawHtml so they are not escaped at render time. The parser must be registered with a higher priority
 // than goldmark's linkParser. Otherwise, the linkParser would parse the <ac:* /> tags.
-func NewACTagParser() parser.InlineParser {
-	return &acTagParser{}
+func NewConfluenceTagParser() parser.InlineParser {
+	return &confluenceTagParser{}
 }
 
-var _ parser.InlineParser = (*acTagParser)(nil)
+var _ parser.InlineParser = (*confluenceTagParser)(nil)
 
-// acTagParser is a stripped down version of goldmark's rawHTMLParser.
+// confluenceTagParser is a stripped down version of goldmark's rawHTMLParser.
 // See: https://github.com/yuin/goldmark/blob/master/parser/raw_html.go
-type acTagParser struct {
+type confluenceTagParser struct {
 }
 
-func (s *acTagParser) Trigger() []byte {
+func (s *confluenceTagParser) Trigger() []byte {
 	return []byte{'<'}
 }
 
-func (s *acTagParser) Parse(_ ast.Node, block text.Reader, pc parser.Context) ast.Node {
+func (s *confluenceTagParser) Parse(_ ast.Node, block text.Reader, pc parser.Context) ast.Node {
 	line, _ := block.PeekLine()
 	if len(line) > 1 && util.IsAlphaNumeric(line[1]) {
 		return s.parseMultiLineRegexp(openTagRegexp, block, pc)
@@ -48,15 +48,15 @@ var tagnamePattern = `([A-Za-z][A-Za-z0-9-]*)`
 
 var attributePattern = `(?:[\r\n \t]+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:[\r\n \t]*=[\r\n \t]*(?:[^\"'=<>` + "`" + `\x00-\x20]+|'[^']*'|"[^"]*"))?)`
 
-// Only match <ac:*/> tags
-var openTagRegexp = regexp.MustCompile("^<ac:" + tagnamePattern + attributePattern + `*[ \t]*/?>`)
+// Only match <ac:*/> and <ri:*/> tags
+var openTagRegexp = regexp.MustCompile("^<(ac|ri):" + tagnamePattern + attributePattern + `*[ \t]*/?>`)
 var closeTagRegexp = regexp.MustCompile("^</ac:" + tagnamePattern + `\s*>`)
 
 var openCDATA = []byte("<![CDATA[")
 var closeCDATA = []byte("]]>")
 var closeDecl = []byte(">")
 
-func (s *acTagParser) parseUntil(block text.Reader, closer []byte, _ parser.Context) ast.Node {
+func (s *confluenceTagParser) parseUntil(block text.Reader, closer []byte, _ parser.Context) ast.Node {
 	savedLine, savedSegment := block.Position()
 	node := ast.NewRawHTML()
 	for {
@@ -77,7 +77,7 @@ func (s *acTagParser) parseUntil(block text.Reader, closer []byte, _ parser.Cont
 	return nil
 }
 
-func (s *acTagParser) parseMultiLineRegexp(reg *regexp.Regexp, block text.Reader, _ parser.Context) ast.Node {
+func (s *confluenceTagParser) parseMultiLineRegexp(reg *regexp.Regexp, block text.Reader, _ parser.Context) ast.Node {
 	sline, ssegment := block.Position()
 	if block.Match(reg) {
 		node := ast.NewRawHTML()

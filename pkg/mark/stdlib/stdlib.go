@@ -261,6 +261,39 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/include-page-macro-792499125.html */
+
+		`ac:include`: text(
+			`<ac:structured-macro ac:name="include">{{printf "\n"}}`,
+			`<ac:parameter ac:name="">{{printf "\n"}}`,
+			`<ac:link>{{printf "\n"}}`,
+			`<ri:page ri:content-title="{{ .Page }}" {{if .Space }}ri:space-key="{{ .Space }}"{{end}}/>{{printf "\n"}}`,
+			`</ac:link>{{printf "\n"}}`,
+			`</ac:parameter>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
+		/* https://confluence.atlassian.com/conf59/excerpt-include-macro-792499101.html */
+
+		`ac:excerpt-include`: text(
+			`<ac:macro ac:name="excerpt-include">{{printf "\n"}}`,
+			`<ac:parameter ac:name="nopanel">{{ if .NoPanel }}{{ .NoPanel }}{{ else }}false{{ end }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:default-parameter>{{ .Page }}</ac:default-parameter>{{printf "\n"}}`,
+			`</ac:macro>{{printf "\n"}}`,
+		),
+
+		/* https://confluence.atlassian.com/conf59/excerpt-macro-792499102.html */
+
+		`ac:excerpt`: text(
+			`<ac:structured-macro ac:name="excerpt">{{printf "\n"}}`,
+			`<ac:parameter ac:name="hidden">{{ if .Hidden }}{{ .Hidden }}{{ else }}false{{ end }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:parameter ac:name="atlassian-macro-output-type">{{ if .OutputType }}{{ .OutputType }}{{ else }}BLOCK{{ end }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:rich-text-body>{{printf "\n"}}`,
+			`{{ .Excerpt }}{{printf "\n"}}`,
+			`</ac:rich-text-body>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
