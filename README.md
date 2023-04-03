@@ -384,6 +384,9 @@ By default, mark provides several built-in templates and macros:
   - OutputType: Determines whether the content of the Excerpt macro body is displayed on a new line or inline (optional, options: "BLOCK" or "INLINE", default: BLOCK)
   - Hidden: Hide the excerpt content (optional, default: false)
 
+* template: `ac:anchor` to set an anchor inside a page
+  - Anchor: Text for the anchor
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases

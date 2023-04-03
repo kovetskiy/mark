@@ -294,6 +294,14 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/anchor-macro-792499068.html */
+
+		`ac:anchor`: text(
+			`<ac:structured-macro ac:name="anchor">{{printf "\n"}}`,
+			`<ac:parameter ac:name="">{{ .Anchor }}</ac:parameter>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
