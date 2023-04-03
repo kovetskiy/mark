@@ -39,7 +39,7 @@ type Flags struct {
 }
 
 const (
-	version = "9.0.3"
+	version = "9.1.0"
 	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
 
 Docs: https://github.com/kovetskiy/mark
