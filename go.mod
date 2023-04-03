@@ -10,7 +10,7 @@ require (
 	github.com/reconquest/karma-go v0.0.0-20220904173930-21741aa386a6
 	github.com/reconquest/pkg v1.3.0
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/yuin/goldmark v1.5.4
 	golang.org/x/tools v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
