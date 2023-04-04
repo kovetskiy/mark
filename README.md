@@ -553,6 +553,32 @@ And attach any image with the following
 The width will be the commented html after the image (in this case 300px).
 
 
+### Usage with the mermaid-cloud plugin
+
+> Note: The mermaid-cloud plugin needs to be added to your Confluence instance
+
+This plugin uses attachments to provide and place the graph in your confluence page, so don't forget to add the attachment.
+
+```mardown
+<!-- Attachment: graph.mermaid -->
+<!-- Macro: :mermaid:(.+):(.*):(.*)
+     Template: ac:mermaidcloud
+     Filename: ${1}
+     Revision: ${2}
+     Layout: ${3}
+-->
+
+```
+
+> Note: This is a complete example, but Revision and Layout can be ommited from the Template as they are optional.
+
+And now you only need to add the following to add the mermaid diagram:
+
+```
+:mermaid:graph.mermaid:1:default:
+```
+
+
 ## Installation
 
 ### Homebrew

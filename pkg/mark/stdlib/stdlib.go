@@ -299,6 +299,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:anchor`: text(
 			`<ac:structured-macro ac:name="anchor">{{printf "\n"}}`,
 			`<ac:parameter ac:name="">{{ .Anchor }}</ac:parameter>{{printf "\n"}}`,
+		`</ac:structured-macro>{{printf "\n"}}`,
+		),
+
+		/* https://stratus-addons.atlassian.net/wiki/spaces/MDFC/overview?homepageId=1650262147 */
+
+		`ac:mermaidcloud`: text(
+			`<ac:structured-macro ac:name="mermaid-cloud" ac:schema-version="1" data-layout="{{ if .Layout }}{{ .Layout }}{{ else }}default{{ end }}">{{printf "\n"}}`,
+			`{{ if .Filename }}<ac:parameter ac:name="filename">{{ .Filename }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Revision }}<ac:parameter ac:name="revision">{{ .Revision }}</ac:parameter>{{printf "\n"}}{{end}}`,
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
