@@ -16,6 +16,7 @@ import (
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
+	"github.com/sn0walk3r/markheaders"
 )
 
 type Flags struct {
@@ -86,6 +87,7 @@ Options:
 )
 
 func main() {
+	markheaders.Entrypoint()
 	cmd, err := docopt.ParseArgs(os.ExpandEnv(usage), nil, version)
 	if err != nil {
 		panic(err)
