@@ -17,6 +17,7 @@ build:
 	CGO_ENABLED=0 go build \
 		-ldflags "-X main.version=$(VERSION)" \
 		-gcflags "-trimpath $(GOPATH)/src"
+		-buildvcs=false
 
 test:
 	go test -race -coverprofile=profile.cov ./...
