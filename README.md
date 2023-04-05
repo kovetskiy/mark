@@ -559,7 +559,7 @@ The width will be the commented html after the image (in this case 300px).
 
 This plugin uses attachments to provide and place the graph in your confluence page, so don't forget to add the attachment.
 
-```mardown
+```markdown
 <!-- Attachment: graph.mermaid -->
 <!-- Macro: :mermaid:(.+):(.*):(.*)
      Template: ac:mermaidcloud
