@@ -1,11 +1,15 @@
-FROM golang:1.20.2 as builder
+FROM golang:1.20.3 as builder
 ENV GOPATH="/go"
 WORKDIR /go/src/github.com/kovetskiy/mark
 COPY / .
 RUN make get \
 && make build
 
-FROM alpine:3.17
-RUN apk --no-cache add ca-certificates bash sed git
+FROM chromedp/headless-shell:latest
+RUN apt-get update \
+&& apt-get install --no-install-recommends -qq ca-certificates bash sed git \
+&& apt-get clean \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 COPY --from=builder /go/src/github.com/kovetskiy/mark/mark /bin/
 WORKDIR /docs
