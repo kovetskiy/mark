@@ -48,17 +48,20 @@ func (m BlockQuoteLevelMap) Level(node ast.Node) int {
 // Renderer renders anchor [Node]s.
 type ConfluenceRenderer struct {
 	html.Config
-	Stdlib *stdlib.Lib
-
-	LevelMap BlockQuoteLevelMap
+	Stdlib          *stdlib.Lib
+	MermaidProvider string
+	LevelMap        BlockQuoteLevelMap
+	Attachments     []Attachment
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceRenderer(stdlib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceRenderer(stdlib *stdlib.Lib, mermaidProvider string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceRenderer{
-		Config:   html.NewConfig(),
-		Stdlib:   stdlib,
-		LevelMap: nil,
+		Config:          html.NewConfig(),
+		Stdlib:          stdlib,
+		MermaidProvider: mermaidProvider,
+		LevelMap:        nil,
+		Attachments:     []Attachment{},
 	}
 }
 
@@ -355,29 +358,59 @@ func (r *ConfluenceRenderer) renderFencedCodeBlock(writer util.BufWriter, source
 		line := node.Lines().At(i)
 		lval = append(lval, line.Value(source)...)
 	}
-	err := r.Stdlib.Templates.ExecuteTemplate(
-		writer,
-		"ac:code",
-		struct {
-			Language    string
-			Collapse    bool
-			Title       string
-			Theme       string
-			Linenumbers bool
-			Firstline   int
-			Text        string
-		}{
-			lang,
-			collapse,
-			title,
-			theme,
-			linenumbers,
-			firstline,
-			strings.TrimSuffix(string(lval), "\n"),
-		},
-	)
-	if err != nil {
-		return ast.WalkStop, err
+
+	if lang == "mermaid" && r.MermaidProvider == "mermaid-go" {
+		attachment, err := processMermaidLocally(title, lval)
+		if err != nil {
+			return ast.WalkStop, err
+		}
+		r.Attachments = append(r.Attachments, attachment)
+		err = r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:image",
+			struct {
+				Width      string
+				Height     string
+				Title      string
+				Attachment string
+			}{
+				attachment.Width,
+				attachment.Height,
+				attachment.Name,
+				attachment.Filename,
+			},
+		)
+
+		if err != nil {
+			return ast.WalkStop, err
+		}
+
+	} else {
+		err := r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:code",
+			struct {
+				Language    string
+				Collapse    bool
+				Title       string
+				Theme       string
+				Linenumbers bool
+				Firstline   int
+				Text        string
+			}{
+				lang,
+				collapse,
+				title,
+				theme,
+				linenumbers,
+				firstline,
+				strings.TrimSuffix(string(lval), "\n"),
+			},
+		)
+
+		if err != nil {
+			return ast.WalkStop, err
+		}
 	}
 
 	return ast.WalkContinue, nil
@@ -430,8 +463,10 @@ func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byt
 	return ast.WalkContinue, nil
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, mermaidProvider string) (string, []Attachment) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
+
+	confluenceRenderer := NewConfluenceRenderer(stdlib, mermaidProvider)
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
@@ -455,7 +490,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 	))
 
 	converter.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(NewConfluenceRenderer(stdlib), 100),
+		util.Prioritized(confluenceRenderer, 100),
 	))
 
 	var buf bytes.Buffer
@@ -469,7 +504,8 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib) string {
 
 	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
-	return string(html)
+	return string(html), confluenceRenderer.(*ConfluenceRenderer).Attachments
+
 }
 
 // DropDocumentLeadingH1 will drop leading H1 headings to prevent

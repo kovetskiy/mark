@@ -2,11 +2,12 @@ package parser
 
 import (
 	"bytes"
+	"regexp"
+
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
-	"regexp"
 )
 
 // NewConfluenceTagParser returns an inline parser that parses <ac:* /> and <ri:* /> tags to ensure that Confluence specific tags are parsed

@@ -553,6 +553,21 @@ And attach any image with the following
 The width will be the commented html after the image (in this case 300px).
 
 
+### Render Mermaid Diagram
+
+Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [Github does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
+As long as you have a code block and are marked as "mermaid", the mark will automatically render it as a PNG image and insert into before the code block.
+
+    ```mermaid title diagrams_example
+    graph TD;
+    A-->B;
+    ```
+
+In order to properly render mermaid, you can choose between the following mermaid providers:
+
+* "mermaid-go" via [mermaid.go](https://github.com/dreampuf/mermaid.go)
+* "cloudscript" via [cloudscript-io-mermaid-addon](https://marketplace.atlassian.com/apps/1219878/cloudscript-io-mermaid-addon)
+
 ## Installation
 
 ### Homebrew

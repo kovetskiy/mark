@@ -13,6 +13,7 @@ import (
 	"github.com/kovetskiy/mark/pkg/mark/includes"
 	"github.com/kovetskiy/mark/pkg/mark/macro"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/kovetskiy/mark/pkg/mark/vfs"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 	"github.com/urfave/cli/v2"
@@ -22,8 +23,7 @@ import (
 const (
 	version     = "9.1.4"
 	usage       = "A tool for updating Atlassian Confluence pages from markdown."
-	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
-`
+	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
 
 var flags = []cli.Flag{
@@ -138,6 +138,12 @@ var flags = []cli.Flag{
 		Value:   "",
 		Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
 		EnvVars: []string{"MARK_SPACE"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "mermaid-provider",
+		Value:   "cloudscript",
+		Usage:   "defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go.",
+		EnvVars: []string{"MARK_MERMAID_PROVIDER"},
 	}),
 }
 
@@ -347,7 +353,8 @@ func processFile(
 			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
 
-		fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, cCtx.String("mermaid-provider"))
+		fmt.Println(html)
 		os.Exit(0)
 	}
 
@@ -399,11 +406,16 @@ func processFile(
 		target = page
 	}
 
+	// Resolve attachments created from <!-- Attachment: --> directive
+	localAttachments, err := mark.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+	if err != nil {
+		log.Fatalf(err, "unable to locate attachments")
+	}
+
 	attaches, err := mark.ResolveAttachments(
 		api,
 		target,
-		filepath.Dir(file),
-		meta.Attachments,
+		localAttachments,
 	)
 	if err != nil {
 		log.Fatalf(err, "unable to create/update attachments")
@@ -418,7 +430,17 @@ func processFile(
 		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
-	html := mark.CompileMarkdown(markdown, stdlib)
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, cCtx.String("mermaid-provider"))
+
+	// Resolve attachements detected from markdown
+	_, err = mark.ResolveAttachments(
+		api,
+		target,
+		inlineAttachments,
+	)
+	if err != nil {
+		log.Fatalf(err, "unable to create/update attachments")
+	}
 
 	{
 		var buffer bytes.Buffer

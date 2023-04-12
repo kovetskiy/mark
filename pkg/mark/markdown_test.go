@@ -36,7 +36,7 @@ func TestCompileMarkdown(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		actual := CompileMarkdown(markdown, lib)
+		actual, _ := CompileMarkdown(markdown, lib, "")
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
 }

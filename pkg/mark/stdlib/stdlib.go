@@ -42,13 +42,13 @@ func macros(templates *template.Template) ([]macro.Macro, error) {
 
 	macros, _, err := macro.ExtractMacros(
 		"",
-		[]byte(text(
+		text(
 			`<!-- Macro: @\{([^}]+)\}`,
 			`     Template: ac:link:user`,
 			`     Name: ${1} -->`,
 
 			// TODO(seletskiy): more macros here
-		)),
+		),
 
 		templates,
 	)
@@ -218,7 +218,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:emoticon ac:name="{{ .Name }}"/>`,
 		),
 		`ac:image`: text(
-			`<ac:image {{ if .Width}}ac:width="{{ .Width }}"{{end}}><ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/></ac:image>`,
+			`<ac:image{{ if .Width}} ac:width="{{ .Width }}"{{end}}{{ if .Height }} ac:height="{{ .Height }}"{{end}}{{ if .Title }} ac:title="{{ .Title }}"{{end}}>{{printf "\n"}}`,
+			`<ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/>{{printf "\n"}}`,
+			`</ac:image>{{printf "\n"}}`,
 		),
 
 		/* https://confluence.atlassian.com/doc/widget-connector-macro-171180449.html#WidgetConnectorMacro-YouTube */
