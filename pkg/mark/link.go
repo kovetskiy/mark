@@ -181,7 +181,7 @@ func parseLinks(markdown string) []markdownLink {
 	return links
 }
 
-// getConfluenceLink build (to be) link for Conflunce, and tries to verify from
+// getConfluenceLink build (to be) link for Confluence, and tries to verify from
 // API if there's real link available
 func getConfluenceLink(
 	api *confluence.API,
