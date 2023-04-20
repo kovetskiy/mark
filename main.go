@@ -56,12 +56,14 @@ var flags = []cli.Flag{
 	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "drop-h1",
 		Value:   false,
+		Aliases: []string{"h1_drop"},
 		Usage:   "don't include H1 headings in Confluence output.",
 		EnvVars: []string{"MARK_H1_DROP"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "title-from-h1",
 		Value:   false,
+		Aliases: []string{"h1_title"},
 		Usage:   "extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata.",
 		EnvVars: []string{"MARK_H1_TITLE"},
 	}),
@@ -112,7 +114,7 @@ var flags = []cli.Flag{
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "base-url",
-		Aliases: []string{"b"},
+		Aliases: []string{"b", "base_url"},
 		Value:   "",
 		Usage:   "base URL for Confluence. Alternative option for base_url config field.",
 		EnvVars: []string{"MARK_BASE_URL"},
