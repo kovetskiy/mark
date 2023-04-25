@@ -154,7 +154,11 @@ func main() {
 					filePath := context.String("config")
 					return altsrc.NewTomlSourceFromFile(filePath)
 				} else {
-					// Fall back to default if config is unset
+					// Fall back to default if config is unset and path exists
+					_, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+					if os.IsNotExist(err) {
+						return &altsrc.MapInputSource{}, nil
+					}
 					return altsrc.NewTomlSourceFromFile(filepath.Join(os.Getenv("HOME"), ".config/mark"))
 				}
 			}),
