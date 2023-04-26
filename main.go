@@ -364,7 +364,7 @@ func processFile(
 			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
 
-		html, _ := mark.CompileMarkdown(markdown, stdlib, cCtx.String("mermaid-provider"))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"))
 		fmt.Println(html)
 		os.Exit(0)
 	}
@@ -441,7 +441,7 @@ func processFile(
 		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, cCtx.String("mermaid-provider"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"))
 
 	// Resolve attachements detected from markdown
 	_, err = mark.ResolveAttachments(
