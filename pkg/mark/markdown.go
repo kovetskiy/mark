@@ -3,11 +3,13 @@ package mark
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	cparser "github.com/kovetskiy/mark/pkg/mark/parser"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/kovetskiy/mark/pkg/mark/vfs"
 	"github.com/reconquest/pkg/log"
 	"github.com/yuin/goldmark"
 
@@ -49,16 +51,18 @@ func (m BlockQuoteLevelMap) Level(node ast.Node) int {
 type ConfluenceRenderer struct {
 	html.Config
 	Stdlib          *stdlib.Lib
+	Path            string
 	MermaidProvider string
 	LevelMap        BlockQuoteLevelMap
 	Attachments     []Attachment
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceRenderer(stdlib *stdlib.Lib, mermaidProvider string, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceRenderer(stdlib *stdlib.Lib, path string, mermaidProvider string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceRenderer{
 		Config:          html.NewConfig(),
 		Stdlib:          stdlib,
+		Path:            path,
 		MermaidProvider: mermaidProvider,
 		LevelMap:        nil,
 		Attachments:     []Attachment{},
@@ -84,7 +88,7 @@ func (r *ConfluenceRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegister
 	// reg.Register(ast.KindAutoLink, r.renderNode)
 	// reg.Register(ast.KindCodeSpan, r.renderNode)
 	// reg.Register(ast.KindEmphasis, r.renderNode)
-	// reg.Register(ast.KindImage, r.renderNode)
+	reg.Register(ast.KindImage, r.renderImage)
 	reg.Register(ast.KindLink, r.renderLink)
 	// reg.Register(ast.KindRawHTML, r.renderNode)
 	// reg.Register(ast.KindText, r.renderNode)
@@ -372,11 +376,13 @@ func (r *ConfluenceRenderer) renderFencedCodeBlock(writer util.BufWriter, source
 				Width      string
 				Height     string
 				Title      string
+				Alt        string
 				Attachment string
 			}{
 				attachment.Width,
 				attachment.Height,
 				attachment.Name,
+				"",
 				attachment.Filename,
 			},
 		)
@@ -463,10 +469,72 @@ func (r *ConfluenceRenderer) renderCodeBlock(writer util.BufWriter, source []byt
 	return ast.WalkContinue, nil
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, mermaidProvider string) (string, []Attachment) {
+// renderImage renders an inline image
+func (r *ConfluenceRenderer) renderImage(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+	n := node.(*ast.Image)
+
+	attachments, err := ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{string(n.Destination)})
+
+	// We were unable to resolve it locally, treat as URL
+	if err != nil {
+		err = r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:image",
+			struct {
+				Width      string
+				Height     string
+				Title      string
+				Alt        string
+				Attachment string
+				Url        string
+			}{
+				"",
+				"",
+				string(n.Title),
+				string(nodeToHTMLText(n, source)),
+				"",
+				string(n.Destination),
+			},
+		)
+	} else {
+
+		r.Attachments = append(r.Attachments, attachments[0])
+
+		err = r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:image",
+			struct {
+				Width      string
+				Height     string
+				Title      string
+				Alt        string
+				Attachment string
+				Url        string
+			}{
+				"",
+				"",
+				string(n.Title),
+				string(nodeToHTMLText(n, source)),
+				attachments[0].Filename,
+				"",
+			},
+		)
+	}
+
+	if err != nil {
+		return ast.WalkStop, err
+	}
+
+	return ast.WalkSkipChildren, nil
+}
+
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string) (string, []Attachment) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	confluenceRenderer := NewConfluenceRenderer(stdlib, mermaidProvider)
+	confluenceRenderer := NewConfluenceRenderer(stdlib, path, mermaidProvider)
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
@@ -529,4 +597,19 @@ func ExtractDocumentLeadingH1(markdown []byte) string {
 	} else {
 		return string(groups[1])
 	}
+}
+
+// https://github.com/yuin/goldmark/blob/c446c414ef3a41fb562da0ae5badd18f1502c42f/renderer/html/html.go
+func nodeToHTMLText(n ast.Node, source []byte) []byte {
+	var buf bytes.Buffer
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		if s, ok := c.(*ast.String); ok && s.IsCode() {
+			buf.Write(s.Text(source))
+		} else if !c.HasChildren() {
+			buf.Write(util.EscapeHTML(c.Text(source)))
+		} else {
+			buf.Write(nodeToHTMLText(c, source))
+		}
+	}
+	return buf.Bytes()
 }

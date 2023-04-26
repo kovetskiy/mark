@@ -201,7 +201,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ if .Page}}`,
 			/**/ `<ac:parameter ac:name="page">`,
 			/**/ `<ac:link>`,
-			/**/ `<ri:page ri:content-title="{{ .Page}}"/>`,
+			/**/ `<ri:page ri:content-title="{{ .Page }}"/>`,
 			/**/ `</ac:link>`,
 			/**/ `</ac:parameter>`,
 			`{{printf "\n"}}{{end}}`,
@@ -217,10 +217,16 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:emoticon`: text(
 			`<ac:emoticon ac:name="{{ .Name }}"/>`,
 		),
+
 		`ac:image`: text(
-			`<ac:image{{ if .Width}} ac:width="{{ .Width }}"{{end}}{{ if .Height }} ac:height="{{ .Height }}"{{end}}{{ if .Title }} ac:title="{{ .Title }}"{{end}}>{{printf "\n"}}`,
-			`<ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/>{{printf "\n"}}`,
-			`</ac:image>{{printf "\n"}}`,
+			`<ac:image`,
+			`{{ if .Width }} ac:width="{{ .Width }}"{{end}}`,
+			`{{ if .Height }} ac:height="{{ .Height }}"{{end}}`,
+			`{{ if .Title }} ac:title="{{ .Title }}"{{end}}`,
+			`{{ if .Alt }} ac:alt="{{ .Alt }}"{{end}}>`,
+			`{{ if .Attachment }}<ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/>{{end}}`,
+			`{{ if .Url }}<ri:url ri:value="{{ .Url }}"/>{{end}}`,
+			`</ac:image>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/widget-connector-macro-171180449.html#WidgetConnectorMacro-YouTube */
@@ -240,9 +246,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:iframe`: text(
 			`<ac:structured-macro ac:name="iframe">{{printf "\n"}}`,
 			`<ac:parameter ac:name="src"><ri:url ri:value="{{ .URL }}" /></ac:parameter>{{printf "\n"}}`,
-			`{{ if .Frameborder}}<ac:parameter ac:name="frameborder">{{ .Frameborder }}</ac:parameter>{{printf "\n"}}{{end}}`,
-			`{{ if .Scrolling}}<ac:parameter ac:name="id">{{ .Scrolling }}</ac:parameter>{{printf "\n"}}{{end}}`,
-			`{{ if .Align}}<ac:parameter ac:name="align">{{ .Align }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Frameborder }}<ac:parameter ac:name="frameborder">{{ .Frameborder }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Scrolling }}<ac:parameter ac:name="id">{{ .Scrolling }}</ac:parameter>{{printf "\n"}}{{end}}`,
+			`{{ if .Align }}<ac:parameter ac:name="align">{{ .Align }}</ac:parameter>{{printf "\n"}}{{end}}`,
 			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>{{printf "\n"}}`,
 			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>{{printf "\n"}}`,
 			`</ac:structured-macro>{{printf "\n"}}`,

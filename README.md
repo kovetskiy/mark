@@ -300,8 +300,8 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:youtube` to include YouTube Widget. Parameters:
   - URL: YouTube video endpoint
-  - Width: Width in px. Defualts to "640px"
-  - Height: Height in px. Defualts to "360px"
+  - Width: Width in px. Defaults to "640px"
+  - Height: Height in px. Defaults to "360px"
 
   See: https://confluence.atlassian.com/doc/widget-connector-macro-171180449.html#WidgetConnectorMacro-YouTube
 
@@ -537,6 +537,15 @@ And this is how to link when the linktext is the same as the [Pagetitle](ac:)
 Link to a [page title with space](<ac:With Space>)
 ```
 
+### Upload and included inline images
+
+```markdown
+![Example](../images/examples.png)
+```
+will automatically upload the inlined image as an attachment and inline the image using the `ac:image` template.
+
+If the file is not found, it will inline the image using the `ac:image` template and link to the image.
+
 ### Add width for an image
 
 Use the following macro:
@@ -552,6 +561,7 @@ And attach any image with the following
 ```
 The width will be the commented html after the image (in this case 300px).
 
+Currently this is not compatible with the automated upload of inline images.
 
 ### Render Mermaid Diagram
 
