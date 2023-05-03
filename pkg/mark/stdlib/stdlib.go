@@ -153,6 +153,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* Used for rendering Jira Filters */
+
+		`ac:jira:filter`: text(
+			`<ac:structured-macro ac:name="jira">`,
+			`<ac:parameter ac:name="server">{{ or .Server "System JIRA" }}</ac:parameter>`,
+			`<ac:parameter ac:name="jqlQuery">{{ .JQL }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		/* https://confluence.atlassian.com/doc/jira-issues-macro-139380.html */
 		`ac:jiraissues`: text(
 			`<ac:structured-macro ac:name="jiraissues">`,
