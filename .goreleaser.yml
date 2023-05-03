@@ -14,6 +14,9 @@ builds:
   - linux
   # windows fails with an error https://github.com/kovetskiy/mark/runs/5034726426?check_suite_focus=true
   # - windows
+  goarch:
+  - amd64
+  - arm64
 archives:
 - replacements:
     darwin: Darwin
