@@ -28,11 +28,12 @@ const (
 
 var flags = []cli.Flag{
 	altsrc.NewStringFlag(&cli.StringFlag{
-		Name:    "files",
-		Aliases: []string{"f"},
-		Value:   "",
-		Usage:   "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
-		EnvVars: []string{"MARK_FILES"},
+		Name:      "files",
+		Aliases:   []string{"f"},
+		Value:     "",
+		Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
+		TakesFile: true,
+		EnvVars:   []string{"MARK_FILES"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "compile-only",
@@ -216,6 +217,16 @@ func RunMark(cCtx *cli.Context) error {
 			log.Warning(msg)
 		} else {
 			log.Fatal(msg)
+		}
+	}
+
+	log.Debug("config:")
+	for _, f := range cCtx.Command.Flags {
+		flag := f.Names()
+		if flag[0] == "password" {
+			log.Debugf(nil, "%20s: %v", flag[0], "******")
+		} else {
+			log.Debugf(nil, "%20s: %v", flag[0], cCtx.Value(flag[0]))
 		}
 	}
 
