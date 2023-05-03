@@ -378,12 +378,14 @@ func (r *ConfluenceRenderer) renderFencedCodeBlock(writer util.BufWriter, source
 				Title      string
 				Alt        string
 				Attachment string
+				Url        string
 			}{
 				attachment.Width,
 				attachment.Height,
 				attachment.Name,
 				"",
 				attachment.Filename,
+				"",
 			},
 		)
 
