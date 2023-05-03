@@ -289,6 +289,10 @@ By default, mark provides several built-in templates and macros:
 
   See: https://confluence.atlassian.com/conf59/status-macro-792499207.html
 
+* template `ac:jira:filter` to include JIRA Filters/Searches. Parameters:
+  - JQL: The "JQL" query of the search
+  - Server (Optional): The Jira server to fetch the query from if its not the default of "System Jira"
+
 * template `ac:jiraissues` to include a list of JIRA tickets. Parameters:
   - URL (Required), The URL of the XML view of your selected issues. (link to the filter)
   - Anonymous (Optional) If this parameter is set to 'true', your JIRA application will return only the issues which allow unrestricted viewing. That is, the issues which are visible to anonymous viewers. If this parameter is omitted or set to 'false', then the results depend on how your administrator has configured the communication between the JIRA application and Confluence. By default, Confluence will show only the issues which the user is authorised to view.
