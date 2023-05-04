@@ -168,6 +168,36 @@ The key's value must be a string which defines the template's content.
   </tblbox>
 ```
 
+### Customizing the page layout
+
+If you set the Layout to plain, the page layout can be customized using HTML comments inside the markdown:
+
+```
+<!-- Layout: plain -->
+<!-- ac:layout -->
+
+<!-- ac:layout-section type:three_with_sidebars -->
+<!-- ac:layout-cell -->
+More Content
+<!-- ac:layout-cell end -->
+<!-- ac:layout-cell -->
+More Content
+<!-- ac:layout-cell end -->
+<!-- ac:layout-cell -->
+Even More Content
+<!-- ac:layout-cell end -->
+<!-- ac:layout-section end -->
+
+<!-- ac:layout-section type:single -->
+<!-- ac:layout-cell -->
+Still More Content
+<!-- ac:layout-cell end -->
+<!-- ac:layout-section end -->
+
+<!-- ac:layout end -->
+```
+
+Please be aware that mark does not validate the layout, so it's your responsibility to create a valid layout.
 
 ### Code Blocks
 
