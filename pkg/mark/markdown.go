@@ -77,7 +77,7 @@ func (r *ConfluenceRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegister
 	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
 	reg.Register(ast.KindCodeBlock, r.renderCodeBlock)
 	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
-	// reg.Register(ast.KindHTMLBlock, r.renderNode)
+	reg.Register(ast.KindHTMLBlock, r.renderHTMLBlock)
 	// reg.Register(ast.KindList, r.renderNode)
 	// reg.Register(ast.KindListItem, r.renderNode)
 	// reg.Register(ast.KindParagraph, r.renderNode)
@@ -531,6 +531,82 @@ func (r *ConfluenceRenderer) renderImage(writer util.BufWriter, source []byte, n
 	}
 
 	return ast.WalkSkipChildren, nil
+}
+
+func (r *ConfluenceRenderer) renderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+	}
+
+	n := node.(*ast.HTMLBlock)
+	l := n.Lines().Len()
+	for i := 0; i < l; i++ {
+		line := n.Lines().At(i)
+
+		switch strings.Trim(string(line.Value(source)), "\n") {
+		case "<!-- ac:layout -->":
+			_, _ = w.WriteString("<ac:layout>\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout end -->":
+			_, _ = w.WriteString("</ac:layout>\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section type:single -->":
+			_, _ = w.WriteString("<ac:layout-section type=\"single\">\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section type:two_equal -->":
+			_, _ = w.WriteString("<ac:layout-section type=\"two_equal\">\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section type:two_left_sidebar -->":
+			_, _ = w.WriteString("<ac:layout-section type=\"two_left_sidebar\">\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section type:two_right_sidebar -->":
+			_, _ = w.WriteString("<ac:layout-section type=\"two_right_sidebar\">\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section type:three -->":
+			_, _ = w.WriteString("<ac:layout-section type=\"three\">\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section type:three_with_sidebars -->":
+			_, _ = w.WriteString("<ac:layout-section type=\"three_with_sidebars\">\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-section end -->":
+			_, _ = w.WriteString("</ac:layout-section>\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-cell -->":
+			_, _ = w.WriteString("<ac:layout-cell>\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:layout-cell end -->":
+			_, _ = w.WriteString("</ac:layout-cell>\n")
+			return ast.WalkContinue, nil
+
+		}
+	}
+	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+
+}
+
+func (r *ConfluenceRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	n := node.(*ast.HTMLBlock)
+	if entering {
+		if r.Unsafe {
+			l := n.Lines().Len()
+			for i := 0; i < l; i++ {
+				line := n.Lines().At(i)
+				r.Writer.SecureWrite(w, line.Value(source))
+			}
+		} else {
+			_, _ = w.WriteString("<!-- raw HTML omitted -->\n")
+		}
+	} else {
+		if n.HasClosure() {
+			if r.Unsafe {
+				closure := n.ClosureLine
+				r.Writer.SecureWrite(w, closure.Value(source))
+			} else {
+				_, _ = w.WriteString("<!-- raw HTML omitted -->\n")
+			}
+		}
+	}
+	return ast.WalkContinue, nil
 }
 
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string) (string, []Attachment) {
