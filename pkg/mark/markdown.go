@@ -482,6 +482,9 @@ func (r *ConfluenceRenderer) renderImage(writer util.BufWriter, source []byte, n
 
 	// We were unable to resolve it locally, treat as URL
 	if err != nil {
+		escapedURL := string(n.Destination)
+		escapedURL = strings.ReplaceAll(escapedURL, "&", "&amp;")
+
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
@@ -498,7 +501,7 @@ func (r *ConfluenceRenderer) renderImage(writer util.BufWriter, source []byte, n
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
 				"",
-				string(n.Destination),
+				escapedURL,
 			},
 		)
 	} else {
