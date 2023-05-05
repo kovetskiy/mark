@@ -282,7 +282,7 @@ func GetChecksum(reader io.Reader) (string, error) {
 func parseAttachmentLink(attachLink string) string {
 	uri, err := url.ParseRequestURI(attachLink)
 	if err != nil {
-		return strings.ReplaceAll("&", "&amp;", attachLink)
+		return strings.ReplaceAll(attachLink, "&", "&amp;")
 	} else {
 		return uri.Path +
 			"?" + url.QueryEscape(uri.Query().Encode())
