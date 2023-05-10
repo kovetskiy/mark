@@ -677,7 +677,7 @@ GLOBAL OPTIONS:
    --password value, -p value                    use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --target-url value, -l value                  edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url value, -b value, --base_url value  base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
-   --config value, -c value                      use the specified configuration file. (default: "/Users/ryankitchen/.config/mark") [$MARK_CONFIG]
+   --config value, -c value                      use the specified configuration file. (default: "~/.config/mark") [$MARK_CONFIG]
    --ci                                          run on CI mode. It won't fail if files are not found. (default: false) [$MARK_CI]
    --space value                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
