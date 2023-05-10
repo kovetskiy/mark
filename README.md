@@ -693,8 +693,8 @@ username = "your-email"
 password = "password-or-api-key-for-confluence-cloud"
 # If you are using Confluence Cloud add the /wiki suffix to base_url
 base-url = "http://confluence.local"
-h1-title = true
-h1-drop = true
+h1_title = true
+h1_drop = true
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
