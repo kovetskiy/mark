@@ -53,17 +53,19 @@ type ConfluenceRenderer struct {
 	Stdlib          *stdlib.Lib
 	Path            string
 	MermaidProvider string
+	DropFirstH1     bool
 	LevelMap        BlockQuoteLevelMap
 	Attachments     []Attachment
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceRenderer(stdlib *stdlib.Lib, path string, mermaidProvider string, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceRenderer(stdlib *stdlib.Lib, path string, mermaidProvider string, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceRenderer{
 		Config:          html.NewConfig(),
 		Stdlib:          stdlib,
 		Path:            path,
 		MermaidProvider: mermaidProvider,
+		DropFirstH1:     dropFirstH1,
 		LevelMap:        nil,
 		Attachments:     []Attachment{},
 	}
@@ -73,7 +75,7 @@ func NewConfluenceRenderer(stdlib *stdlib.Lib, path string, mermaidProvider stri
 func (r *ConfluenceRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	// blocks
 	// reg.Register(ast.KindDocument, r.renderNode)
-	// reg.Register(ast.KindHeading, r.renderNode)
+	reg.Register(ast.KindHeading, r.renderHeading)
 	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
 	reg.Register(ast.KindCodeBlock, r.renderCodeBlock)
 	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
@@ -93,6 +95,37 @@ func (r *ConfluenceRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegister
 	// reg.Register(ast.KindRawHTML, r.renderNode)
 	// reg.Register(ast.KindText, r.renderNode)
 	// reg.Register(ast.KindString, r.renderNode)
+}
+
+func (r *ConfluenceRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	n := node.(*ast.Heading)
+
+	// If this is the first h1 heading of the document and we want to drop it, let's not render it at all.
+	if n.Level == 1 && r.DropFirstH1 {
+		if !entering {
+			r.DropFirstH1 = false
+		}
+		return ast.WalkSkipChildren, nil
+	}
+
+	return r.goldmarkRenderHeading(w, source, node, entering)
+}
+
+func (r *ConfluenceRenderer) goldmarkRenderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	n := node.(*ast.Heading)
+	if entering {
+		_, _ = w.WriteString("<h")
+		_ = w.WriteByte("0123456"[n.Level])
+		if n.Attributes() != nil {
+			html.RenderAttributes(w, node, html.HeadingAttributeFilter)
+		}
+		_ = w.WriteByte('>')
+	} else {
+		_, _ = w.WriteString("</h")
+		_ = w.WriteByte("0123456"[n.Level])
+		_, _ = w.WriteString(">\n")
+	}
+	return ast.WalkContinue, nil
 }
 
 func ParseLanguage(lang string) string {
@@ -612,10 +645,10 @@ func (r *ConfluenceRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []
 	return ast.WalkContinue, nil
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string) (string, []Attachment) {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string, dropFirstH1 bool) (string, []Attachment) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	confluenceRenderer := NewConfluenceRenderer(stdlib, path, mermaidProvider)
+	confluenceRenderer := NewConfluenceRenderer(stdlib, path, mermaidProvider, dropFirstH1)
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
@@ -655,18 +688,6 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 
 	return string(html), confluenceRenderer.(*ConfluenceRenderer).Attachments
 
-}
-
-// DropDocumentLeadingH1 will drop leading H1 headings to prevent
-// duplication of or visual conflict with page titles.
-// NOTE: This is intended only to operate on the whole markdown document.
-// Operating on individual lines will clear them if the begin with `#`.
-func DropDocumentLeadingH1(
-	markdown []byte,
-) []byte {
-	h1 := regexp.MustCompile(`^#[^#].*\n`)
-	markdown = h1.ReplaceAll(markdown, []byte(""))
-	return markdown
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading

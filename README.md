@@ -667,7 +667,7 @@ GLOBAL OPTIONS:
    --compile-only                                show resulting HTML and don't update Confluence page content. (default: false) [$MARK_COMPILE_ONLY]
    --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
    --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
-   --drop-h1, --h1_drop                          don't include H1 headings in Confluence output. (default: false) [$MARK_H1_DROP]
+   --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
    --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
    --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
    --color value                                 display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]

@@ -58,7 +58,7 @@ var flags = []cli.Flag{
 		Name:    "drop-h1",
 		Value:   false,
 		Aliases: []string{"h1_drop"},
-		Usage:   "don't include H1 headings in Confluence output.",
+		Usage:   "don't include the first H1 heading in Confluence output.",
 		EnvVars: []string{"MARK_H1_DROP"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
@@ -361,10 +361,9 @@ func processFile(
 			log.Info(
 				"the leading H1 heading will be excluded from the Confluence output",
 			)
-			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
 
-		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
 		fmt.Println(html)
 		os.Exit(0)
 	}
@@ -438,10 +437,9 @@ func processFile(
 		log.Info(
 			"the leading H1 heading will be excluded from the Confluence output",
 		)
-		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
 
 	// Resolve attachements detected from markdown
 	_, err = mark.ResolveAttachments(
