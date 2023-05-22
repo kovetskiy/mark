@@ -417,6 +417,10 @@ By default, mark provides several built-in templates and macros:
 * template: `ac:anchor` to set an anchor inside a page
   - Anchor: Text for the anchor
 
++ template: `ac:expand` to display an expandable/collapsible section of text on your page
+  - Title: Defines the text next to the expand/collapse icon.
+  - Body: The Text that it is expanded to.
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
