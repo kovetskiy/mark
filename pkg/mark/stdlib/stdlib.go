@@ -310,6 +310,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>{{printf "\n"}}`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/expand-macro-792499106.html */
+
+		`ac:expand`: text(
+			`<ac:structured-macro ac:name="expand">{{printf "\n"}}`,
+			`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{printf "\n"}}`,
+			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
