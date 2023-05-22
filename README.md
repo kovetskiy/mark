@@ -172,7 +172,7 @@ The key's value must be a string which defines the template's content.
 
 If you set the Layout to plain, the page layout can be customized using HTML comments inside the markdown:
 
-```
+```markdown
 <!-- Layout: plain -->
 <!-- ac:layout -->
 
@@ -420,6 +420,9 @@ By default, mark provides several built-in templates and macros:
 + template: `ac:expand` to display an expandable/collapsible section of text on your page
   - Title: Defines the text next to the expand/collapse icon.
   - Body: The Text that it is expanded to.
+
+* template: `ac:profile` to display a short summary of a given Confluence user's profile.
+  - Name: The username of the Confluence user whose profile summary you wish to show.
 
 * macro `@{...}` to mention user by name specified in the braces.
 

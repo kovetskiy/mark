@@ -136,7 +136,11 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:link:user`: text(
 			`{{ with .Name | user }}`,
 			/**/ `<ac:link>`,
-			/**/ `<ri:user ri:account-id="{{ .AccountID }}"/>`,
+			/**/ `{{ with .AccountID }}`,
+			/****/ `<ri:user ri:account-id="{{ .AccountID }}" />`,
+			/**/ `{{ else }}`,
+			/****/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
+			/**/ `{{ end }}`,
 			/**/ `</ac:link>`,
 			`{{ else }}`,
 			/**/ `{{ .Name }}`,
@@ -317,6 +321,22 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{printf "\n"}}`,
 			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>{{printf "\n"}}`,
 			`</ac:structured-macro>`,
+		),
+
+		/* https://confluence.atlassian.com/conf59/user-profile-macro-792499223.html */
+
+		`ac:profile`: text(
+			`{{ with .Name | user  }}`,
+			`<ac:structured-macro ac:name="profile">{{printf "\n"}}`,
+			`<ac:parameter ac:name="user">{{printf "\n"}}`,
+			`{{ with .AccountID }}`,
+			/**/ `<ri:user ri:account-id="{{ .AccountID }}" />{{printf "\n"}}`,
+			`{{ else }}`,
+			/**/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
+			`{{ end }}`,
+			`</ac:parameter>{{printf "\n"}}`,
+			`</ac:structured-macro>{{printf "\n"}}`,
+			`{{ end }}`,
 		),
 
 		// TODO(seletskiy): more templates here
