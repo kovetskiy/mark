@@ -18,6 +18,7 @@ import (
 
 type User struct {
 	AccountID string `json:"accountId"`
+	UserKey   string `json:"userKey"`
 }
 
 type API struct {
@@ -575,6 +576,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 		}
 	}
 
+	// Try the new path first
 	_, err := api.rest.
 		Res("search").
 		Res("user", &response).
@@ -585,7 +587,20 @@ func (api *API) GetUserByName(name string) (*User, error) {
 		return nil, err
 	}
 
+	// Try old path
 	if len(response.Results) == 0 {
+		_, err := api.rest.
+			Res("search", &response).
+			Get(map[string]string{
+				"cql": fmt.Sprintf("user.fullname~%q", name),
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(response.Results) == 0 {
+
 		return nil, karma.
 			Describe("name", name).
 			Reason(
