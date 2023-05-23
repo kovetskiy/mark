@@ -122,7 +122,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			/**/ `{{ if .Firstline }}<ac:parameter ac:name="firstline">{{ .Firstline }}</ac:parameter>{{ end }}`,
 			/**/ `{{ if .Title }}<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{ end }}`,
 			/**/ `<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		`ac:status`: text(
@@ -130,7 +130,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="colour">{{ or .Color "Grey" }}</ac:parameter>`,
 			`<ac:parameter ac:name="title">{{ or .Title .Color }}</ac:parameter>`,
 			`<ac:parameter ac:name="subtle">{{ or .Subtle false }}</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		`ac:link:user`: text(
@@ -150,7 +150,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:jira:ticket`: text(
 			`<ac:structured-macro ac:name="jira">`,
 			`<ac:parameter ac:name="key">{{ .Ticket }}</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/jira-issues-macro-139380.html */
@@ -166,7 +166,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="title">{{ or .Title "Jira Issues" }}</ac:parameter>`,
 			`<ac:parameter ac:name="url">{{ .URL }}</ac:parameter>`,
 			`<ac:parameter ac:name="width">{{ or .Width "100%" }}</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/info-tip-note-and-warning-macros-792499127.html */
@@ -176,7 +176,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="icon">{{ or .Icon "false" }}</ac:parameter>`,
 			`{{ if .Title }}<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{ end }}`,
 			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html */
@@ -192,7 +192,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="type">{{ or .Type "list" }}</ac:parameter>`,
 			`<ac:parameter ac:name="outline">{{ or .Outline "clear" }}</ac:parameter>`,
 			`<ac:parameter ac:name="include">{{ or .Include "" }}</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/children-display-macro-139501.html */
@@ -213,7 +213,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ if .First}}<ac:parameter ac:name="first">{{ .First }}</ac:parameter>{{end}}`,
 			`{{ if .Depth}}<ac:parameter ac:name="depth">{{ .Depth }}</ac:parameter>{{end}}`,
 			`{{ if .All}}<ac:parameter ac:name="all">{{ .All }}</ac:parameter>{{end}}`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html */
@@ -242,7 +242,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>`,
 			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>`,
 			`<ac:parameter ac:name="url"><ri:url ri:value="{{ .URL }}" /></ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://support.atlassian.com/confluence-cloud/docs/insert-the-iframe-macro/ */
@@ -255,7 +255,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ if .Align }}<ac:parameter ac:name="align">{{ .Align }}</ac:parameter>{{end}}`,
 			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>`,
 			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/blog-posts-macro-139470.html */
@@ -270,7 +270,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ if .Sort }}<ac:parameter ac:name="sort">{{ .Sort }}</ac:parameter>{{end}}`,
 			`{{ if .Max }}<ac:parameter ac:name="max">{{ .Max }}</ac:parameter>{{end}}`,
 			`{{ if .Label }}<ac:parameter ac:name="label">{{ .Label }}</ac:parameter>{{end}}`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/include-page-macro-792499125.html */
@@ -282,7 +282,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ri:page ri:content-title="{{ .Page }}" {{if .Space }}ri:space-key="{{ .Space }}"{{end}}/>`,
 			`</ac:link>`,
 			`</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/excerpt-include-macro-792499101.html */
@@ -291,7 +291,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:macro ac:name="excerpt-include">`,
 			`<ac:parameter ac:name="nopanel">{{ if .NoPanel }}{{ .NoPanel }}{{ else }}false{{ end }}</ac:parameter>`,
 			`<ac:default-parameter>{{ .Page }}</ac:default-parameter>`,
-			`</ac:macro>{{printf "\n"}}`,
+			`</ac:macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/excerpt-macro-792499102.html */
@@ -303,7 +303,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:rich-text-body>`,
 			`{{ .Excerpt }}`,
 			`</ac:rich-text-body>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/anchor-macro-792499068.html */
@@ -311,7 +311,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:anchor`: text(
 			`<ac:structured-macro ac:name="anchor">`,
 			`<ac:parameter ac:name="">{{ .Anchor }}</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/expand-macro-792499106.html */
@@ -320,7 +320,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="expand">`,
 			`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>`,
 			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/user-profile-macro-792499223.html */
@@ -335,7 +335,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			/**/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
 			`{{ end }}`,
 			`</ac:parameter>`,
-			`</ac:structured-macro>{{printf "\n"}}`,
+			`</ac:structured-macro>`,
 			`{{ end }}`,
 		),
 
