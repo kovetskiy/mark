@@ -664,7 +664,7 @@ USAGE:
    mark [global options] [arguments...]
 
 VERSION:
-   9.4.0
+   9.5.0
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
