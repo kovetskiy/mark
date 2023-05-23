@@ -1,0 +1,23 @@
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - gofmt
+    - errcheck
+    - deadcode
+    - ineffassign
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unused
+    - varcheck
+    - unconvert
+    - unparam
+    - whitespace
+    - wsl
+    - nlreturn
+    - nonamedreturns
+
+issues:
+  exclude:
+    - SA1029 # "should not use built-in type string as key for value; define your own type to avoid collisions"
