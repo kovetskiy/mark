@@ -339,6 +339,14 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ end }}`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/content-by-label-macro-792499087.html */
+
+		`ac:contentbylabel`: text(
+			`<ac:structured-macro ac:name="contentbylabel" ac:schema-version="3">`,
+			`<ac:parameter ac:name="cql">{{ .CQL }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)

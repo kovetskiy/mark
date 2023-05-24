@@ -424,6 +424,9 @@ By default, mark provides several built-in templates and macros:
 * template: `ac:profile` to display a short summary of a given Confluence user's profile.
   - Name: The username of the Confluence user whose profile summary you wish to show.
 
+* template: `ac:contentbylabel` to display a list of pages, blog posts or attachments that have particular labels
+  - CQL: The CQL query to discover the content
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
