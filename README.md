@@ -427,6 +427,11 @@ By default, mark provides several built-in templates and macros:
 * template: `ac:contentbylabel` to display a list of pages, blog posts or attachments that have particular labels
   - CQL: The CQL query to discover the content
 
+* template: `ac:detailssummary` to show summary information from one page on a another page
+  - Headings: Column headings to show
+  - CQL: The CQL query to discover the pages
+  - SortBy: Sort by a specific column heading
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases

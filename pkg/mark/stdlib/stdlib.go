@@ -347,6 +347,16 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/page-properties-report-macro-792499165.html */
+
+		`ac:detailssummary`: text(
+			`<ac:structured-macro ac:name="detailssummary" ac:schema-version="2">`,
+			`<ac:parameter ac:name="headings">{{ .Headings }}</ac:parameter>`,
+			`<ac:parameter ac:name="sortBy">{{ .SortBy }}</ac:parameter>`,
+			`<ac:parameter ac:name="cql">{{ .CQL }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
