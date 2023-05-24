@@ -432,6 +432,9 @@ By default, mark provides several built-in templates and macros:
   - CQL: The CQL query to discover the pages
   - SortBy: Sort by a specific column heading
 
+* template: `ac:details` to create page properties
+  - Body: Must contain a table with two rows, the table headings are used as property key. The table content is the value.
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
