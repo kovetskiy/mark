@@ -17,8 +17,8 @@ import (
 )
 
 type User struct {
-	AccountID string `json:"accountId"`
-	UserKey   string `json:"userKey"`
+	AccountID string `json:"accountId,omitempty"`
+	UserKey   string `json:"userKey,omitempty"`
 }
 
 type API struct {
