@@ -3,16 +3,16 @@ module github.com/kovetskiy/mark
 go 1.19
 
 require (
-	github.com/dreampuf/mermaid.go v0.0.11-0.20230526022300-b9f3c833f943
+	github.com/dreampuf/mermaid.go v0.0.11
 	github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69
 	github.com/kovetskiy/lorg v1.2.0
 	github.com/reconquest/karma-go v1.2.0
 	github.com/reconquest/pkg v1.3.0
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
-	github.com/stretchr/testify v1.8.3
-	github.com/urfave/cli/v2 v2.25.3
+	github.com/stretchr/testify v1.8.4
+	github.com/urfave/cli/v2 v2.25.5
 	github.com/yuin/goldmark v1.5.4
-	golang.org/x/tools v0.9.1
+	golang.org/x/tools v0.9.3
 	gopkg.in/yaml.v3 v3.0.1
 )
 

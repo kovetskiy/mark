@@ -136,7 +136,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:link:user`: text(
 			`{{ with .Name | user }}`,
 			/**/ `<ac:link>`,
-			/**/ `{{ with .AccountID }}`,
+			/**/ `{{ if .AccountID }}`,
 			/****/ `<ri:user ri:account-id="{{ .AccountID }}" />`,
 			/**/ `{{ else }}`,
 			/****/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
@@ -338,7 +338,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ with .Name | user  }}`,
 			`<ac:structured-macro ac:name="profile">`,
 			`<ac:parameter ac:name="user">`,
-			`{{ with .AccountID }}`,
+			`{{ if .AccountID }}`,
 			/**/ `<ri:user ri:account-id="{{ .AccountID }}" />`,
 			`{{ else }}`,
 			/**/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
