@@ -535,17 +535,19 @@ value, so feel free to include only the ones that you require.
 ### Insert PageTree
 
 ```markdown
-# Heading1 
+# My First Heading
 <!-- Include: ac:pagetree -->
 ```
 
 The pagetree macro works almost the same as the TOC above, but the tree behavior
-is different, and desireable for creating placeholders for libraries of docs.
+is more desireable for creating placeholder pages above collectiosn of SOPs.
 
-The default pagetree behavior is to insert a tree rooted  at target page.
+The default pagetree macro behavior is to insert a tree rooted @self.
 
-The following parameters can be used to alter your configured options as
-described in the link below:
+The following parameters can be used to alter your default configuration with
+parameters described more in depth here:[Confluence Pagetree Macro].
+
+Parameters:
 
 * Title (of tree root page)
 * Sort
@@ -565,7 +567,7 @@ E.G.
      ExpandCollapseAll: 'true'
      StartDepth: 2 -->
 
-# This is my nice title
+# My First Heading
 
 :pagetree:
 ```
