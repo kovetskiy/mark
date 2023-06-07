@@ -374,6 +374,24 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/page-tree-macro-792499177.html */
+
+		`ac:tree`: text(
+			`<ac:structured-macro ac:name="pagetree" ac:schema-version="1">`,
+			`<ac:parameter ac:name="root">`,
+			`<ac:link>`,
+			`<ri:page ri:content-title="@self"{{or .Title "" }}/>`,
+			`</ac:link>`,
+			`</ac:parameter>`,
+			`<ac:parameter ac:name="sort">{{ or .Sort "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="excerpt">{{ or .Excerpt "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="reverse">{{ or .Reverse "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="searchBox">{{ or .SearchBox "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="expandCollapseAll">{{ or .ExpandCollapseAll "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="startDepth">{{ or .StartDepth "" }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
