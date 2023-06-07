@@ -530,8 +530,46 @@ See [Confluence TOC Macro] for the list of parameters - keep in mind that here
 they start with capital letters. Every skipped field will have the default
 value, so feel free to include only the ones that you require.
 
-
 [Confluence TOC Macro]:https://confluence.atlassian.com/conf59/table-of-contents-macro-792499210.html
+
+### Insert PageTree
+
+```markdown
+# Heading1 
+<!-- Include: ac:pagetree -->
+```
+
+The pagetree macro works almost the same as the TOC above, but the tree behavior
+is different, and desireable for creating placeholders for libraries of docs.
+
+The default pagetree behavior is to insert a tree rooted  at target page.
+
+The following parameters can be used to alter your configured options as
+described in the link below:
+
+* Title (of tree root page)
+* Sort
+* Excerpt
+* Reverse
+* SearchBox
+* ExpandCollapseAll
+* StartDepth
+
+[Confluence Pagetree Macro]:https://confluence.atlassian.com/conf59/page-tree-macro-792499177.html
+
+E.G.
+```markdown
+<!-- Macro: :pagetree:
+     Template: ac:pagetree
+     Reverse: 'true'
+     ExpandCollapseAll: 'true'
+     StartDepth: 2 -->
+
+# This is my nice title
+
+:pagetree:
+```
+
 ### Insert Children Display
 
 To include Children Display (TOC displaying children pages) use following macro:
