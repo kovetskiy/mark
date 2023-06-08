@@ -376,7 +376,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		/* https://confluence.atlassian.com/conf59/page-tree-macro-792499177.html */
 
-		`ac:tree`: text(
+		`ac:pagetree`: text(
 			`<ac:structured-macro ac:name="pagetree" ac:schema-version="1">`,
 			`<ac:parameter ac:name="root">`,
 			`<ac:link>`,
