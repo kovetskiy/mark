@@ -540,7 +540,7 @@ value, so feel free to include only the ones that you require.
 ```
 
 The pagetree macro works almost the same as the TOC above, but the tree behavior
-is more desireable for creating placeholder pages above collectiosn of SOPs.
+is more desirable for creating placeholder pages above collections of SOPs.
 
 The default pagetree macro behavior is to insert a tree rooted @self.
 
