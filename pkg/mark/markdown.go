@@ -655,7 +655,6 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 			extension.GFM,
 			extension.Footnote,
 			extension.DefinitionList,
-			extension.Typographer,
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
