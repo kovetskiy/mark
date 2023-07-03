@@ -127,7 +127,7 @@ be replaced with specified template:
      <yaml-data> -->
 ```
 
-**NOTE**: Make sure to define your macros after your metadata (Title/Space), 
+**NOTE**: Make sure to define your macros after your metadata (Title/Space),
 mark will stop processing metadata if it hits a Macro.
 
 Capture groups can be defined in the macro's <regexp> which can be later
@@ -626,7 +626,7 @@ This is a [link to an existing confluence page](ac:Pagetitle)
 
 And this is how to link when the linktext is the same as the [Pagetitle](ac:)
 
-Link to a [page title with space](<ac:With Space>)
+Link to a [page title containing spaces](<ac:With Multiple Words>)
 ```
 
 ### Upload and included inline images
