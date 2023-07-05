@@ -392,6 +392,20 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/panel-macro-792499179.html */
+
+		`ac:panel`: text(
+			`<ac:structured-macro ac:name="panel">`,
+			`<ac:parameter ac:name="bgColor">{{ or .BGColor "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="titleBGColor">{{ or .TitleBGColor "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="title">{{ or .Title "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="borderStyle">{{ or .BorderStyle "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="borderColor">{{ or .BorderColor "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="titleColor">{{ or .TitleColor "" }}</ac:parameter>`,
+			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
