@@ -439,6 +439,14 @@ By default, mark provides several built-in templates and macros:
 * template: `ac:details` to create page properties
   - Body: Must contain a table with two rows, the table headings are used as property key. The table content is the value.
 
+* template: `ac:panel` to display a block of text within a customisable panel
+  - Title: Panel title (optional)
+  - Body:  Body text of the panel
+  - BGColor: Background Color
+  - TitleBGColor: Background color of the title bar
+  - TitleColor: Text color of the title
+  - BorderStyle: Style of the panel's border
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
