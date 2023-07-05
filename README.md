@@ -447,6 +447,15 @@ By default, mark provides several built-in templates and macros:
   - TitleColor: Text color of the title
   - BorderStyle: Style of the panel's border
 
+* template `ac:recently-updated` to display a list of most recently changed content
+  - Spaces: List of Spaces to watch (optional, default is current Space)
+  - ShowProfilePic: Show profile picture of editor
+  - Max: Maximum number of changes
+  - Types: Include these content types only (comments, blogposts, pages)
+  - Theme: Apperance of the macro (concise, social, sidebar)
+  - HideHeading: Determines whether the macro hides or displays the text 'Recently Updated' as a title above the list of content
+  - Labels: Filter the results by label. The macro will display only the pages etc which are tagged with the label(s) you specify here.
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
