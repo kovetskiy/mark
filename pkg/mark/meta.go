@@ -46,7 +46,7 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool) (*Meta, []byte, error) {
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []string) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
 		offset int
@@ -169,6 +169,11 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool) (*Meta, []b
 
 	if meta == nil {
 		return nil, data, nil
+	}
+
+	// Prepend parent pages that are defined via the cli flag
+	if len(parents) > 0 && parents[0] != "" {
+		meta.Parents = append(parents, meta.Parents...)
 	}
 
 	return meta, data[offset:], nil
