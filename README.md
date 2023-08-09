@@ -456,6 +456,9 @@ By default, mark provides several built-in templates and macros:
   - HideHeading: Determines whether the macro hides or displays the text 'Recently Updated' as a title above the list of content
   - Labels: Filter the results by label. The macro will display only the pages etc which are tagged with the label(s) you specify here.
 
+* template: `ac:pagetreesearch` to add a search box to your Confluence page.
+  - Root: Name of the root page whose hierarchy of pages will be searched by this macro. If this not specified, the root page is the current page.
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases

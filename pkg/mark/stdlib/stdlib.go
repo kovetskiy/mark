@@ -392,6 +392,14 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* https://confluence.atlassian.com/conf59/page-tree-search-macro-792499178.html */
+
+		`ac:pagetreesearch`: text(
+			`<ac:structured-macro ac:name="pagetreesearch">`,
+			`{{ if .Root }}<ac:parameter ac:name="root">{{ .Root }}</ac:parameter>{{ end }}`,
+			`</ac:structured-macro>`,
+		),
+
 		/* https://confluence.atlassian.com/conf59/panel-macro-792499179.html */
 
 		`ac:panel`: text(
@@ -406,7 +414,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
-		/* */
+		/* https://confluence.atlassian.com/conf59/recently-updated-macro-792499187.html */
 		`ac:recently-updated`: text(
 			`<ac:structured-macro ac:name="recently-updated">`,
 			`{{ if .Spaces }}<ac:parameter ac:name="spaces"><ri:space ri:space-key={{ .Spaces }}/></ac:parameter>{{ end }}`,
