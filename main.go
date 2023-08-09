@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kovetskiy/lorg"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	version     = "9.7.1"
+	version     = "9.8.0"
 	usage       = "A tool for updating Atlassian Confluence pages from markdown."
 	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
@@ -141,6 +142,18 @@ var flags = []cli.Flag{
 		EnvVars: []string{"MARK_SPACE"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "parents",
+		Value:   "",
+		Usage:   "A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be preprended to the ones defined in the document itself.",
+		EnvVars: []string{"MARK_PARENTS"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "parents-delimiter",
+		Value:   "/",
+		Usage:   "The delimiter used for the parents list",
+		EnvVars: []string{"MARK_PARENTS_DELIMITER"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "mermaid-provider",
 		Value:   "cloudscript",
 		Usage:   "defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go.",
@@ -171,9 +184,7 @@ func main() {
 			}),
 		EnableBashCompletion: true,
 		HideHelpCommand:      true,
-		Action: func(cCtx *cli.Context) error {
-			return RunMark(cCtx)
-		},
+		Action:               RunMark,
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -265,7 +276,9 @@ func processFile(
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
 
-	meta, markdown, err := mark.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"))
+	parents := strings.Split(cCtx.String("parents"), cCtx.String("parents-delimiter"))
+
+	meta, markdown, err := mark.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -342,7 +355,7 @@ func processFile(
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"))
+	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}
