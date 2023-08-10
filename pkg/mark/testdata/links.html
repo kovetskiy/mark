@@ -1,15 +1,17 @@
 <p>Use <a href="https://example.com">https://example.com</a></p>
-
 <p>Use <ac:rich-text-body>aaa</ac:rich-text-body></p>
-
-<p>Use footnotes link <sup class="footnote-ref" id="fnref:1"><a href="#fn:1">1</a></sup></p>
-
-<div class="footnotes">
-
+<p>Use <ac:link><ri:page ri:content-title="Page"/><ac:plain-text-link-body><![CDATA[page link]]></ac:plain-text-link-body></ac:link></p>
+<p>Use <ac:link><ri:page ri:content-title="AnotherPage"/><ac:plain-text-link-body><![CDATA[AnotherPage]]></ac:plain-text-link-body></ac:link></p>
+<p>Use <ac:link><ri:page ri:content-title="Another Page"/><ac:plain-text-link-body><![CDATA[Another Page]]></ac:plain-text-link-body></ac:link></p>
+<p>Use <ac:link><ri:page ri:content-title="Page With Space"/><ac:plain-text-link-body><![CDATA[page link with spaces]]></ac:plain-text-link-body></ac:link></p>
+<p><ac:image ac:alt="My Image"><ri:attachment ri:filename="test.png"/></ac:image></p>
+<p><ac:image ac:alt="My External Image"><ri:url ri:value="http://confluence.atlassian.com/images/logo/confluence_48_trans.png?key1=value1&amp;key2=value2"/></ac:image></p>
+<p>Use footnotes link <sup id="fnref:1"><a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a></sup></p>
+<div class="footnotes" role="doc-endnotes">
 <hr />
-
 <ol>
-<li id="fn:1">a footnote link</li>
+<li id="fn:1">
+<p>a footnote link&#160;<a href="#fnref:1" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
 </ol>
-
 </div>

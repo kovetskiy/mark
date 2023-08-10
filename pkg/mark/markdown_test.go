@@ -1,7 +1,7 @@
 package mark
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,14 +9,6 @@ import (
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/stretchr/testify/assert"
 )
-
-const (
-	NL = "\n"
-)
-
-func text(lines ...string) string {
-	return strings.Join(lines, "\n")
-}
 
 func TestCompileMarkdown(t *testing.T) {
 	test := assert.New(t)
@@ -31,11 +23,11 @@ func TestCompileMarkdown(t *testing.T) {
 		testname := strings.TrimSuffix(basename, ".md")
 		htmlname := filepath.Join(filepath.Dir(filename), testname+".html")
 
-		markdown, err := ioutil.ReadFile(filename)
+		markdown, err := os.ReadFile(filename)
 		if err != nil {
 			panic(err)
 		}
-		html, err := ioutil.ReadFile(htmlname)
+		html, err := os.ReadFile(htmlname)
 		if err != nil {
 			panic(err)
 		}
@@ -44,7 +36,7 @@ func TestCompileMarkdown(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		actual := CompileMarkdown(markdown, lib)
+		actual, _ := CompileMarkdown(markdown, lib, filename, "", false)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
 }
@@ -52,7 +44,7 @@ func TestCompileMarkdown(t *testing.T) {
 func TestExtractDocumentLeadingH1(t *testing.T) {
 	filename := "testdata/header.md"
 
-	markdown, err := ioutil.ReadFile(filename)
+	markdown, err := os.ReadFile(filename)
 	if err != nil {
 		panic(err)
 	}
