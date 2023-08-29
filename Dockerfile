@@ -1,12 +1,17 @@
-FROM golang:latest
+FROM golang:1.20.5 as builder
 ENV GOPATH="/go"
 WORKDIR /go/src/github.com/kovetskiy/mark
 COPY / .
-RUN make get
-RUN make build
+RUN make get \
+&& make build
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates bash git
-COPY --from=0 /go/src/github.com/kovetskiy/mark/mark /bin/
-RUN mkdir -p /docs
+FROM chromedp/headless-shell:latest
+RUN apt-get update \
+&& apt-get install --no-install-recommends -qq ca-certificates bash sed git dumb-init \
+&& apt-get clean \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+COPY --from=builder /go/src/github.com/kovetskiy/mark/mark /bin/
 WORKDIR /docs
+
+ENTRYPOINT ["dumb-init", "--"]

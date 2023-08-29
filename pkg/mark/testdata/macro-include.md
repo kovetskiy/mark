@@ -1,0 +1,7 @@
+<foo>bar</foo>
+
+<ac:structured-macro ac:name="info">
+<ac:parameter ac:name="icon">true</ac:parameter>
+<ac:parameter ac:name="title">Attention</ac:parameter>
+<ac:rich-text-body>This is an info!</ac:rich-text-body>
+</ac:structured-macro>

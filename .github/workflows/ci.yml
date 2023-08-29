@@ -1,0 +1,102 @@
+name: continuous-integration
+
+on:
+  push:
+    branches:
+    - master
+    tags:
+    - '*'
+  pull_request:
+    branches:
+    - master
+
+env:
+  GO_VERSION: "~1.20.5"
+
+jobs:
+  # Runs Golangci-lint on the source code
+  ci-go-lint:
+    name: ci-go-lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+      id: go
+
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v3
+
+  # Executes Unit Tests
+  ci-unit-tests:
+    name: ci-unit-tests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+      id: go
+
+    - name: Run unit tests
+      run: |
+        make test
+
+  # Builds mark binary
+  ci-build:
+    name: ci-build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+      id: go
+
+    - name: Build mark
+      run: |
+        make build
+
+  # Build and push Dockerimage
+  ci-docker-build:
+    name: ci-docker-build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build only (on commits)
+      uses: docker/build-push-action@v4
+      if: ${{ github.ref_type != 'tag' }}
+      with:
+        push: false
+        tags: kovetskiy/mark:latest
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      if: ${{ github.ref_type == 'tag' }}
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+    - name: Build and push (on tag)
+      uses: docker/build-push-action@v4
+      if: ${{ github.ref_type == 'tag' }}
+      with:
+        push: true
+        tags: |
+           kovetskiy/mark:${{ github.ref_name }}
+           kovetskiy/mark:latest

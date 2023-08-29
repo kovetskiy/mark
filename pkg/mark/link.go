@@ -3,7 +3,6 @@ package mark
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
+	"golang.org/x/tools/godoc/util"
 )
 
 type LinkSubstitution struct {
@@ -30,6 +30,9 @@ func ResolveRelativeLinks(
 	meta *Meta,
 	markdown []byte,
 	base string,
+	spaceFromCli string,
+	titleFromH1 bool,
+	parents []string,
 ) ([]LinkSubstitution, error) {
 	matches := parseLinks(string(markdown))
 
@@ -42,8 +45,7 @@ func ResolveRelativeLinks(
 			match.filename,
 			match.hash,
 		)
-
-		resolved, err := resolveLink(api, base, match)
+		resolved, err := resolveLink(api, base, match, spaceFromCli, titleFromH1, parents)
 		if err != nil {
 			return nil, karma.Format(err, "resolve link: %q", match.full)
 		}
@@ -65,12 +67,16 @@ func resolveLink(
 	api *confluence.API,
 	base string,
 	link markdownLink,
+	spaceFromCli string,
+	titleFromH1 bool,
+	parents []string,
 ) (string, error) {
 	var result string
 
 	if len(link.filename) > 0 {
 		filepath := filepath.Join(base, link.filename)
 
+		log.Tracef(nil, "filepath: %s", filepath)
 		stat, err := os.Stat(filepath)
 		if err != nil {
 			return "", nil
@@ -80,7 +86,12 @@ func resolveLink(
 			return "", nil
 		}
 
-		linkContents, err := ioutil.ReadFile(filepath)
+		linkContents, err := os.ReadFile(filepath)
+
+		if !util.IsText(linkContents) {
+			return "", nil
+		}
+
 		if err != nil {
 			return "", karma.Format(err, "read file: %s", filepath)
 		}
@@ -93,7 +104,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := ExtractMeta(linkContents)
+		linkMeta, _, err := ExtractMeta(linkContents, spaceFromCli, titleFromH1, parents)
 		if err != nil {
 			log.Errorf(
 				err,
@@ -107,6 +118,13 @@ func resolveLink(
 		if linkMeta == nil {
 			return "", nil
 		}
+
+		log.Tracef(
+			nil,
+			"extracted metadata: space=%s title=%s",
+			linkMeta.Space,
+			linkMeta.Title,
+		)
 
 		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
@@ -150,7 +168,8 @@ func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 }
 
 func parseLinks(markdown string) []markdownLink {
-	re := regexp.MustCompile("\\[[^\\]]+\\]\\((([^\\)#]+)?#?([^\\)]+)?)\\)")
+	// Matches links but not inline images
+	re := regexp.MustCompile(`[^\!]\[[^\]]+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
 	matches := re.FindAllStringSubmatch(markdown, -1)
 
 	links := make([]markdownLink, len(matches))
@@ -165,7 +184,7 @@ func parseLinks(markdown string) []markdownLink {
 	return links
 }
 
-// getConfluenceLink build (to be) link for Conflunce, and tries to verify from
+// getConfluenceLink build (to be) link for Confluence, and tries to verify from
 // API if there's real link available
 func getConfluenceLink(
 	api *confluence.API,

@@ -11,7 +11,7 @@ import (
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 	"github.com/reconquest/regexputil-go"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 var reMacroDirective = regexp.MustCompile(
@@ -130,9 +130,9 @@ func ExtractMacros(
 					"template",
 				)
 				config = regexputil.Subexp(reMacroDirective, groups, "config")
-
-				macro Macro
 			)
+
+			var macro Macro
 
 			if strings.HasPrefix(template, "#") {
 				cfg := map[string]interface{}{}
@@ -143,26 +143,37 @@ func ExtractMacros(
 						err,
 						"unable to unmarshal macros config template",
 					)
+
 					return nil
 				}
-				body, _ := cfg[template[1:]].(string)
+
+				body, ok := cfg[template[1:]].(string)
+				if !ok {
+					err = fmt.Errorf(
+						"the template config doesn't have '%s' field",
+						template[1:],
+					)
+
+					return nil
+				}
+
 				macro.Template, err = templates.New(template).Parse(body)
 				if err != nil {
 					err = karma.Format(
 						err,
 						"unable to parse template",
 					)
+
 					return nil
 				}
 			} else {
 				macro.Template, err = includes.LoadTemplate(base, template, "{{", "}}", templates)
 				if err != nil {
 					err = karma.Format(err, "unable to load template")
-	
+
 					return nil
 				}
 			}
-
 
 			facts := karma.
 				Describe("template", template).

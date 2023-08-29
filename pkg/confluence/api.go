@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/kovetskiy/gopencils"
@@ -19,7 +17,8 @@ import (
 )
 
 type User struct {
-	AccountID string `json:"accountId"`
+	AccountID string `json:"accountId,omitempty"`
+	UserKey   string `json:"userKey,omitempty"`
 }
 
 type API struct {
@@ -53,7 +52,7 @@ type PageInfo struct {
 	} `json:"version"`
 
 	Ancestors []struct {
-		Id    string `json:"id"`
+		ID    string `json:"id"`
 		Title string `json:"title"`
 	} `json:"ancestors"`
 
@@ -90,7 +89,10 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 func NewAPI(baseURL string, username string, password string) *API {
 	var auth *gopencils.BasicAuth
 	if username != "" {
-		auth = &gopencils.BasicAuth{username, password}
+		auth = &gopencils.BasicAuth{
+			Username: username,
+			Password: password,
+		}
 	}
 	rest := gopencils.Api(baseURL+"/rest/api", auth)
 	if username == "" {
@@ -139,7 +141,7 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	}
 
 	return &PageInfo{
-		ID:    page.Ancestors[0].Id,
+		ID:    page.Ancestors[0].ID,
 		Title: page.Ancestors[0].Title,
 	}, nil
 }
@@ -156,7 +158,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == 404 || request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -191,7 +193,7 @@ func (api *API) FindPage(
 
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
-	if request.Raw.StatusCode != 404 && request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusNotFound && request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -206,11 +208,11 @@ func (api *API) CreateAttachment(
 	pageID string,
 	name string,
 	comment string,
-	path string,
+	reader io.Reader,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -241,7 +243,7 @@ func (api *API) CreateAttachment(
 		return info, err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return info, newErrorStatusNotOK(request)
 	}
 
@@ -274,11 +276,11 @@ func (api *API) UpdateAttachment(
 	attachID string,
 	name string,
 	comment string,
-	path string,
+	reader io.Reader,
 ) (AttachmentInfo, error) {
 	var info AttachmentInfo
 
-	form, err := getAttachmentPayload(name, comment, path)
+	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
@@ -311,7 +313,7 @@ func (api *API) UpdateAttachment(
 		return info, err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return info, newErrorStatusNotOK(request)
 	}
 
@@ -351,22 +353,11 @@ func (api *API) UpdateAttachment(
 	return shortResponse, nil
 }
 
-func getAttachmentPayload(name, comment, path string) (*form, error) {
+func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error) {
 	var (
 		payload = bytes.NewBuffer(nil)
 		writer  = multipart.NewWriter(payload)
 	)
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to open file: %q",
-			path,
-		)
-	}
-
-	defer file.Close()
 
 	content, err := writer.CreateFormFile("file", name)
 	if err != nil {
@@ -376,7 +367,7 @@ func getAttachmentPayload(name, comment, path string) (*form, error) {
 		)
 	}
 
-	_, err = io.Copy(content, file)
+	_, err = io.Copy(content, reader)
 	if err != nil {
 		return nil, karma.Format(
 			err,
@@ -424,6 +415,7 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 
 	payload := map[string]string{
 		"expand": "version,container",
+		"limit":  "1000",
 	}
 
 	request, err := api.rest.Res(
@@ -433,7 +425,7 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -456,7 +448,7 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -504,23 +496,21 @@ func (api *API) CreatePage(
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(
-	page *PageInfo, newContent string, minorEdit bool, newLabels []string,
-) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, newLabels []string, appearance string) error {
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
 	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
 		// picking only the last one, which is required by confluence
 		oldAncestors = []map[string]interface{}{
-			{"id": page.Ancestors[len(page.Ancestors)-1].Id},
+			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
 		}
 	}
 
@@ -546,22 +536,22 @@ func (api *API) UpdatePage(
 		"ancestors": oldAncestors,
 		"body": map[string]interface{}{
 			"storage": map[string]interface{}{
-				"value":          string(newContent),
+				"value":          newContent,
 				"representation": "storage",
 			},
 		},
 		"metadata": map[string]interface{}{
 			"labels": labels,
-			// The Confluence API randomly sets page width for some reason:
-			// https://community.developer.atlassian.com/t/confluence-rest-api-create-content-at-random-width/57001
-
-			// This is a workaround to compensate for that bug. It forces the page to be created
-			// with the default appearance, which is "fixed" (not full-width).
+			// Fix to set full-width as has changed on Confluence APIs again.
+			// https://jira.atlassian.com/browse/CONFCLOUD-65447
+			//
 			"properties": map[string]interface{}{
 				"content-appearance-published": map[string]interface{}{
-					"value": "default",
+					"value": appearance,
 				},
 			},
+			// content-appearance-draft should not be set as this is impacted by
+			// the user editor default configurations - which caused the sporadic published widths.
 		},
 	}
 
@@ -572,7 +562,7 @@ func (api *API) UpdatePage(
 		return err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return newErrorStatusNotOK(request)
 	}
 
@@ -586,6 +576,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 		}
 	}
 
+	// Try the new path first
 	_, err := api.rest.
 		Res("search").
 		Res("user", &response).
@@ -596,7 +587,20 @@ func (api *API) GetUserByName(name string) (*User, error) {
 		return nil, err
 	}
 
+	// Try old path
 	if len(response.Results) == 0 {
+		_, err := api.rest.
+			Res("search", &response).
+			Get(map[string]string{
+				"cql": fmt.Sprintf("user.fullname~%q", name),
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(response.Results) == 0 {
+
 		return nil, karma.
 			Describe("name", name).
 			Reason(
@@ -653,7 +657,7 @@ func (api *API) RestrictPageUpdatesCloud(
 		return err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return newErrorStatusNotOK(request)
 	}
 
@@ -684,7 +688,7 @@ func (api *API) RestrictPageUpdatesServer(
 		return err
 	}
 
-	if request.Raw.StatusCode != 200 {
+	if request.Raw.StatusCode != http.StatusOK {
 		return newErrorStatusNotOK(request)
 	}
 
@@ -704,7 +708,7 @@ func (api *API) RestrictPageUpdates(
 ) error {
 	var err error
 
-	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
+	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "jira.com") || strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
 		err = api.RestrictPageUpdatesCloud(page, allowedUser)
 	} else {
 		err = api.RestrictPageUpdatesServer(page, allowedUser)
@@ -714,19 +718,19 @@ func (api *API) RestrictPageUpdates(
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
-	if request.Raw.StatusCode == 401 {
+	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return errors.New(
 			"Confluence API returned unexpected status: 401 (Unauthorized)",
 		)
 	}
 
-	if request.Raw.StatusCode == 404 {
+	if request.Raw.StatusCode == http.StatusNotFound {
 		return errors.New(
 			"Confluence API returned unexpected status: 404 (Not Found)",
 		)
 	}
 
-	output, _ := ioutil.ReadAll(request.Raw.Body)
+	output, _ := io.ReadAll(request.Raw.Body)
 	defer request.Raw.Body.Close()
 
 	return fmt.Errorf(

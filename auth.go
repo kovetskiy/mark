@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -18,36 +18,27 @@ type Credentials struct {
 }
 
 func GetCredentials(
-	flags Flags,
-	config *Config,
+	username string,
+	password string,
+	targetURL string,
+	baseURL string,
+	compileOnly bool,
+
 ) (*Credentials, error) {
 	var err error
 
-	var (
-		username  = flags.Username
-		password  = flags.Password
-		targetURL = flags.TargetURL
-	)
-
-	if username == "" {
-		username = config.Username
-	}
-
 	if password == "" {
-		password = config.Password
-		if password == "" {
-			if ! flags.CompileOnly {
-				return nil, errors.New(
-					"Confluence password should be specified using -p " +
-						"flag or be stored in configuration file",
-				)
-			}
-			password = "none"
+		if !compileOnly {
+			return nil, errors.New(
+				"confluence password should be specified using -p " +
+					"flag or be stored in configuration file",
+			)
 		}
+		password = "none"
 	}
 
 	if password == "-" {
-		stdin, err := ioutil.ReadAll(os.Stdin)
+		stdin, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return nil, karma.Format(
 				err,
@@ -58,7 +49,7 @@ func GetCredentials(
 		password = string(stdin)
 	}
 
-	if flags.CompileOnly && targetURL == "" {
+	if compileOnly && targetURL == "" {
 		targetURL = "http://localhost"
 	}
 
@@ -70,20 +61,15 @@ func GetCredentials(
 		)
 	}
 
-	baseURL := url.Scheme + "://" + url.Host
-
 	if url.Host == "" {
-		baseURL = flags.BaseURL
-		if baseURL == "" {
-			baseURL = config.BaseURL
-		}
-
 		if baseURL == "" {
 			return nil, errors.New(
-				"Confluence base URL should be specified using -l " +
+				"confluence base URL should be specified using -l " +
 					"flag or be stored in configuration file",
 			)
 		}
+	} else {
+		baseURL = url.Scheme + "://" + url.Host
 	}
 
 	baseURL = strings.TrimRight(baseURL, `/`)

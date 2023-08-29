@@ -3,112 +3,206 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/docopt/docopt-go"
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/mark"
 	"github.com/kovetskiy/mark/pkg/mark/includes"
 	"github.com/kovetskiy/mark/pkg/mark/macro"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/kovetskiy/mark/pkg/mark/vfs"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
+	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2/altsrc"
 )
-
-type Flags struct {
-	FileGlobPatten     string `docopt:"-f"`
-	CompileOnly        bool   `docopt:"--compile-only"`
-	DryRun             bool   `docopt:"--dry-run"`
-	EditLock           bool   `docopt:"-k"`
-	DropH1             bool   `docopt:"--drop-h1"`
-	TitleFromH1        bool   `docopt:"--title-from-h1"`
-	MinorEdit          bool   `docopt:"--minor-edit"`
-	Color              string `docopt:"--color"`
-	Debug              bool   `docopt:"--debug"`
-	Trace              bool   `docopt:"--trace"`
-	Username           string `docopt:"-u"`
-	Password           string `docopt:"-p"`
-	TargetURL          string `docopt:"-l"`
-	BaseURL            string `docopt:"--base-url"`
-	Config             string `docopt:"--config"`
-	Ci                 bool   `docopt:"--ci"`
-	Space          	   string `docopt:"--space"`
-	AttachmentBasename bool   `docopt:"--attachment-basename"`
-}
 
 const (
-	version = "8.1"
-	usage   = `mark - a tool for updating Atlassian Confluence pages from markdown.
-
-Docs: https://github.com/kovetskiy/mark
-
-Usage:
-  mark [options] [-u <username>] [-p <token>] [-k] [-l <url>] -f <file>
-  mark [options] [-u <username>] [-p <password>] [-k] [-b <url>] -f <file>
-  mark -v | --version
-  mark -h | --help
-
-Options:
-  -u <username>          Use specified username for updating Confluence page.
-  -p <token>             Use specified token for updating Confluence page.
-                          Specify - as password to read password from stdin, or your Personal access token.
-                          Username is not mandatory if personal access token is provided.
-                          For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.
-  -l <url>               Edit specified Confluence page.
-                          If -l is not specified, file should contain metadata (see
-                          above).
-  -b --base-url <url>    Base URL for Confluence.
-                          Alternative option for base_url config field.
-  -f <file>              Use specified markdown file(s) for converting to html.
-                          Supports file globbing patterns (needs to be quoted).
-  -k                     Lock page editing to current user only to prevent accidental
-                          manual edits over Confluence Web UI.
-  --space <space>        Use specified space key. If not specified space ley must
-                          be set in a page metadata.
-  --drop-h1              Don't include H1 headings in Confluence output.
-  --title-from-h1        Extract page title from a leading H1 heading. If no H1 heading
-                          on a page then title must be set in a page metadata.
-  --dry-run              Resolve page and ancestry, show resulting HTML and exit.
-  --compile-only         Show resulting HTML and don't update Confluence page content.
-  --minor-edit           Don't send notifications while updating Confluence page.
-  --debug                Enable debug logs.
-  --trace                Enable trace logs.
-  --color <when>         Display logs in color. Possible values: auto, never.
-                          [default: auto]
-  -c --config <path>     Use the specified configuration file.
-                          [default: $HOME/.config/mark]
-  --ci                   Runs on CI mode. It won't fail if files are not found.
-  --attachment-basename  Don't include attachment paths in attachment names.
-  -h --help              Show this message.
-  -v --version           Show version.
-`
+	version     = "9.8.0"
+	usage       = "A tool for updating Atlassian Confluence pages from markdown."
+	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
 
+var flags = []cli.Flag{
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:      "files",
+		Aliases:   []string{"f"},
+		Value:     "",
+		Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
+		TakesFile: true,
+		EnvVars:   []string{"MARK_FILES"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "compile-only",
+		Value:   false,
+		Usage:   "show resulting HTML and don't update Confluence page content.",
+		EnvVars: []string{"MARK_COMPILE_ONLY"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "dry-run",
+		Value:   false,
+		Usage:   "resolve page and ancestry, show resulting HTML and exit.",
+		EnvVars: []string{"MARK_DRY_RUN"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "edit-lock",
+		Value:   false,
+		Aliases: []string{"k"},
+		Usage:   "lock page editing to current user only to prevent accidental manual edits over Confluence Web UI.",
+		EnvVars: []string{"MARK_EDIT_LOCK"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "drop-h1",
+		Value:   false,
+		Aliases: []string{"h1_drop"},
+		Usage:   "don't include the first H1 heading in Confluence output.",
+		EnvVars: []string{"MARK_H1_DROP"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "title-from-h1",
+		Value:   false,
+		Aliases: []string{"h1_title"},
+		Usage:   "extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata.",
+		EnvVars: []string{"MARK_H1_TITLE"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "minor-edit",
+		Value:   false,
+		Usage:   "don't send notifications while updating Confluence page.",
+		EnvVars: []string{"MARK_MINOR_EDIT"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "color",
+		Value:   "auto",
+		Usage:   "display logs in color. Possible values: auto, never.",
+		EnvVars: []string{"MARK_COLOR"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "debug",
+		Value:   false,
+		Usage:   "enable debug logs.",
+		EnvVars: []string{"MARK_DEBUG"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "trace",
+		Value:   false,
+		Usage:   "enable trace logs.",
+		EnvVars: []string{"MARK_TRACE"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "username",
+		Aliases: []string{"u"},
+		Value:   "",
+		Usage:   "use specified username for updating Confluence page.",
+		EnvVars: []string{"MARK_USERNAME"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "password",
+		Aliases: []string{"p"},
+		Value:   "",
+		Usage:   "use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.",
+		EnvVars: []string{"MARK_PASSWORD"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "target-url",
+		Aliases: []string{"l"},
+		Value:   "",
+		Usage:   "edit specified Confluence page. If -l is not specified, file should contain metadata (see above).",
+		EnvVars: []string{"MARK_TARGET_URL"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "base-url",
+		Aliases: []string{"b", "base_url"},
+		Value:   "",
+		Usage:   "base URL for Confluence. Alternative option for base_url config field.",
+		EnvVars: []string{"MARK_BASE_URL"},
+	}),
+	&cli.StringFlag{
+		Name:      "config",
+		Aliases:   []string{"c"},
+		Value:     filepath.Join(os.Getenv("HOME"), ".config/mark"),
+		Usage:     "use the specified configuration file.",
+		TakesFile: true,
+		EnvVars:   []string{"MARK_CONFIG"},
+	},
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "ci",
+		Value:   false,
+		Usage:   "run on CI mode. It won't fail if files are not found.",
+		EnvVars: []string{"MARK_CI"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "space",
+		Value:   "",
+		Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
+		EnvVars: []string{"MARK_SPACE"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "parents",
+		Value:   "",
+		Usage:   "A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be preprended to the ones defined in the document itself.",
+		EnvVars: []string{"MARK_PARENTS"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "parents-delimiter",
+		Value:   "/",
+		Usage:   "The delimiter used for the parents list",
+		EnvVars: []string{"MARK_PARENTS_DELIMITER"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "mermaid-provider",
+		Value:   "cloudscript",
+		Usage:   "defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go.",
+		EnvVars: []string{"MARK_MERMAID_PROVIDER"},
+	}),
+}
+
 func main() {
-	cmd, err := docopt.ParseArgs(os.ExpandEnv(usage), nil, version)
-	if err != nil {
-		panic(err)
+	app := &cli.App{
+		Name:        "mark",
+		Usage:       usage,
+		Description: description,
+		Version:     version,
+		Flags:       flags,
+		Before: altsrc.InitInputSourceWithContext(flags,
+			func(context *cli.Context) (altsrc.InputSourceContext, error) {
+				if context.IsSet("config") {
+					filePath := context.String("config")
+					return altsrc.NewTomlSourceFromFile(filePath)
+				} else {
+					// Fall back to default if config is unset and path exists
+					_, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+					if os.IsNotExist(err) {
+						return &altsrc.MapInputSource{}, nil
+					}
+					return altsrc.NewTomlSourceFromFile(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+				}
+			}),
+		EnableBashCompletion: true,
+		HideHelpCommand:      true,
+		Action:               RunMark,
 	}
 
-	var flags Flags
-	err = cmd.Bind(&flags)
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
+}
 
-	if flags.Debug {
+func RunMark(cCtx *cli.Context) error {
+
+	if cCtx.Bool("debug") {
 		log.SetLevel(lorg.LevelDebug)
 	}
 
-	if flags.Trace {
+	if cCtx.Bool("trace") {
 		log.SetLevel(lorg.LevelTrace)
 	}
 
-	if flags.Color == "never" {
+	if cCtx.String("color") == "never" {
 		log.GetLogger().SetFormat(
 			lorg.NewFormat(
 				`${time:2006-01-02 15:04:05.000} ${level:%s:left:true} ${prefix}%s`,
@@ -117,36 +211,33 @@ func main() {
 		log.GetLogger().SetOutput(os.Stderr)
 	}
 
-	config, err := LoadConfig(flags.Config)
+	creds, err := GetCredentials(cCtx.String("username"), cCtx.String("password"), cCtx.String("target-url"), cCtx.String("base-url"), cCtx.Bool("compile-only"))
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	if ! flags.TitleFromH1 && config.H1Title {
-		flags.TitleFromH1 = true
-	}
-
-	if ! flags.DropH1 && config.H1Drop {
-		flags.DropH1 = true
-	}
-
-	creds, err := GetCredentials(flags, config)
-	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	files, err := filepath.Glob(flags.FileGlobPatten)
+	files, err := filepath.Glob(cCtx.String("files"))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if len(files) == 0 {
 		msg := "No files matched"
-		if flags.Ci {
+		if cCtx.Bool("ci") {
 			log.Warning(msg)
 		} else {
 			log.Fatal(msg)
+		}
+	}
+
+	log.Debug("config:")
+	for _, f := range cCtx.Command.Flags {
+		flag := f.Names()
+		if flag[0] == "password" {
+			log.Debugf(nil, "%20s: %v", flag[0], "******")
+		} else {
+			log.Debugf(nil, "%20s: %v", flag[0], cCtx.Value(flag[0]))
 		}
 	}
 
@@ -158,7 +249,7 @@ func main() {
 			file,
 		)
 
-		target := processFile(file, api, flags, creds.PageID, creds.Username)
+		target := processFile(file, api, cCtx, creds.PageID, creds.Username)
 
 		log.Infof(
 			nil,
@@ -168,23 +259,26 @@ func main() {
 
 		fmt.Println(creds.BaseURL + target.Links.Full)
 	}
+	return nil
 }
 
 func processFile(
 	file string,
 	api *confluence.API,
-	flags Flags,
+	cCtx *cli.Context,
 	pageID string,
 	username string,
 ) *confluence.PageInfo {
-	markdown, err := ioutil.ReadFile(file)
+	markdown, err := os.ReadFile(file)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
 
-	meta, markdown, err := mark.ExtractMeta(markdown)
+	parents := strings.Split(cCtx.String("parents"), cCtx.String("parents-delimiter"))
+
+	meta, markdown, err := mark.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -206,17 +300,10 @@ func processFile(
 		)
 	}
 
-	switch {
-	case meta.Space == "" && flags.Space == "":
+	if meta.Space == "" {
 		log.Fatal(
 			"space is not set ('Space' header is not set and '--space' option is not set)",
 		)
-	case meta.Space == "" && flags.Space != "":
-		meta.Space = flags.Space
-	}
-
-	if meta.Title == "" && flags.TitleFromH1 {
-		meta.Title = mark.ExtractDocumentLeadingH1(markdown)
 	}
 
 	if meta.Title == "" {
@@ -268,38 +355,36 @@ func processFile(
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, meta, markdown, ".")
+	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}
 
 	markdown = mark.SubstituteLinks(markdown, links)
 
-	if flags.DryRun {
-		flags.CompileOnly = true
-
-		_, _, err := mark.ResolvePage(flags.DryRun, api, meta)
+	if cCtx.Bool("dry-run") {
+		_, _, err := mark.ResolvePage(cCtx.Bool("dry-run"), api, meta)
 		if err != nil {
 			log.Fatalf(err, "unable to resolve page location")
 		}
 	}
 
-	if flags.CompileOnly {
-		if flags.DropH1 {
+	if cCtx.Bool("compile-only") || cCtx.Bool("dry-run") {
+		if cCtx.Bool("drop-h1") {
 			log.Info(
 				"the leading H1 heading will be excluded from the Confluence output",
 			)
-			markdown = mark.DropDocumentLeadingH1(markdown)
 		}
-	
-			fmt.Println(mark.CompileMarkdown(markdown, stdlib))
+
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
+		fmt.Println(html)
 		os.Exit(0)
 	}
 
 	var target *confluence.PageInfo
 
 	if meta != nil {
-		parent, page, err := mark.ResolvePage(flags.DryRun, api, meta)
+		parent, page, err := mark.ResolvePage(cCtx.Bool("dry-run"), api, meta)
 		if err != nil {
 			log.Fatalf(
 				karma.Describe("title", meta.Title).Reason(err),
@@ -344,12 +429,16 @@ func processFile(
 		target = page
 	}
 
+	// Resolve attachments created from <!-- Attachment: --> directive
+	localAttachments, err := mark.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+	if err != nil {
+		log.Fatalf(err, "unable to locate attachments")
+	}
+
 	attaches, err := mark.ResolveAttachments(
 		api,
-		flags.AttachmentBasename,
 		target,
-		filepath.Dir(file),
-		meta.Attachments,
+		localAttachments,
 	)
 	if err != nil {
 		log.Fatalf(err, "unable to create/update attachments")
@@ -357,14 +446,23 @@ func processFile(
 
 	markdown = mark.CompileAttachmentLinks(markdown, attaches)
 
-	if flags.DropH1 {
+	if cCtx.Bool("drop-h1") {
 		log.Info(
 			"the leading H1 heading will be excluded from the Confluence output",
 		)
-		markdown = mark.DropDocumentLeadingH1(markdown)
 	}
 
-	html := mark.CompileMarkdown(markdown, stdlib)
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
+
+	// Resolve attachements detected from markdown
+	_, err = mark.ResolveAttachments(
+		api,
+		target,
+		inlineAttachments,
+	)
+	if err != nil {
+		log.Fatalf(err, "unable to create/update attachments")
+	}
 
 	{
 		var buffer bytes.Buffer
@@ -389,12 +487,12 @@ func processFile(
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html, flags.MinorEdit, meta.Labels)
+	err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), meta.Labels, meta.ContentAppearance)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if flags.EditLock {
+	if cCtx.Bool("edit-lock") {
 		log.Infof(
 			nil,
 			`edit locked on page %q by user %q to prevent manual edits`,

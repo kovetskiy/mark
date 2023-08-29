@@ -33,6 +33,15 @@ collapse-and-title
 collapse-no-title
 ```
 
+```nested
+code
+``` more code ```
+even more code
+```
+
+    indented code block
+    with multiple lines
+
 ```mermaid
 graph TD;
     A-->B;

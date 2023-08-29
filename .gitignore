@@ -3,3 +3,5 @@
 /testdata
 .idea/
 /mark.test
+/profile.cov
+mark.exe

@@ -3,26 +3,27 @@ package includes
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"text/template"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )
 
 // <!-- Include: <template path>
-//      (Delims: (none | "<left>","<right>"))?
-//      <optional yaml data> -->
+//
+//	(Delims: (none | "<left>","<right>"))?
+//	<optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
 	`(?s)` +
-	`<!--\s*Include:\s*(?P<template>.+?)\s*` +
-	`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
-	`(?:\n(?P<config>.*?))?-->`,
+		`<!--\s*Include:\s*(?P<template>.+?)\s*` +
+		`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
+		`(?:\n(?P<config>.*?))?-->`,
 )
 
 func LoadTemplate(
@@ -43,7 +44,7 @@ func LoadTemplate(
 
 	var body []byte
 
-	body, err := ioutil.ReadFile(filepath.Join(base, path))
+	body, err := os.ReadFile(filepath.Join(base, path))
 	if err != nil {
 		err = facts.Format(
 			err,
@@ -111,15 +112,21 @@ func ProcessIncludes(
 			groups := reIncludeDirective.FindSubmatch(spec)
 
 			var (
-				path, none, left, right, config = string(groups[1]), string(groups[2]), string(groups[3]), string(groups[4]), groups[5]
-				data = map[string]interface{}{}
+				path       = string(groups[1])
+				delimsNone = string(groups[2])
+				left       = string(groups[3])
+				right      = string(groups[4])
+				config     = groups[5]
+				data       = map[string]interface{}{}
 
 				facts = karma.Describe("path", path)
 			)
-			if none == "none" {
+
+			if delimsNone == "none" {
 				left = "\x00"
 				right = "\x01"
 			}
+
 			err = yaml.Unmarshal(config, &data)
 			if err != nil {
 				err = facts.
