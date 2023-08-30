@@ -11,10 +11,11 @@ func TestExtractMermaidImage(t *testing.T) {
 	tests := []struct {
 		name     string
 		markdown []byte
+		scale    float64
 		want     Attachment
 		wantErr  assert.ErrorAssertionFunc
 	}{
-		{"example", []byte("graph TD;\n A-->B;"), Attachment{
+		{"example", []byte("graph TD;\n A-->B;"), 1.0, Attachment{
 			// This is only the PNG Magic Header
 			FileBytes: []byte{0x89, 0x50, 0x4e, 0x47, 0xd, 0xa, 0x1a, 0xa},
 			Filename:  "example.png",
@@ -29,7 +30,7 @@ func TestExtractMermaidImage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := processMermaidLocally(tt.name, tt.markdown)
+			got, err := processMermaidLocally(tt.name, tt.markdown, tt.scale)
 			if !tt.wantErr(t, err, fmt.Sprintf("processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))) {
 				return
 			}

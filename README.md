@@ -765,6 +765,7 @@ GLOBAL OPTIONS:
    --parents value                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be preprended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter value                     The delimiter used for the nested parent (default: "/") [$MARK_PARENTS_DELIMITER]
    --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
+   --mermaid-scale value                         defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --help, -h                                    show help
    --version, -v                                 print the version
 ```
