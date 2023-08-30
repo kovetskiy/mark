@@ -159,6 +159,12 @@ var flags = []cli.Flag{
 		Usage:   "defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go.",
 		EnvVars: []string{"MARK_MERMAID_PROVIDER"},
 	}),
+	altsrc.NewFloat64Flag(&cli.Float64Flag{
+		Name:    "mermaid-scale",
+		Value:   1.0,
+		Usage:   "defines the scaling factor for mermaid renderings.",
+		EnvVars: []string{"MARK_MERMAID_SCALE"},
+	}),
 }
 
 func main() {
@@ -376,7 +382,7 @@ func processFile(
 			)
 		}
 
-		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
 		fmt.Println(html)
 		os.Exit(0)
 	}
@@ -452,7 +458,7 @@ func processFile(
 		)
 	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
 
 	// Resolve attachements detected from markdown
 	_, err = mark.ResolveAttachments(

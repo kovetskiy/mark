@@ -53,18 +53,20 @@ type ConfluenceRenderer struct {
 	Stdlib          *stdlib.Lib
 	Path            string
 	MermaidProvider string
+	MermaidScale    float64
 	DropFirstH1     bool
 	LevelMap        BlockQuoteLevelMap
 	Attachments     []Attachment
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceRenderer(stdlib *stdlib.Lib, path string, mermaidProvider string, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceRenderer(stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceRenderer{
 		Config:          html.NewConfig(),
 		Stdlib:          stdlib,
 		Path:            path,
 		MermaidProvider: mermaidProvider,
+		MermaidScale:    mermaidScale,
 		DropFirstH1:     dropFirstH1,
 		LevelMap:        nil,
 		Attachments:     []Attachment{},
@@ -397,7 +399,7 @@ func (r *ConfluenceRenderer) renderFencedCodeBlock(writer util.BufWriter, source
 	}
 
 	if lang == "mermaid" && r.MermaidProvider == "mermaid-go" {
-		attachment, err := processMermaidLocally(title, lval)
+		attachment, err := processMermaidLocally(title, lval, r.MermaidScale)
 		if err != nil {
 			return ast.WalkStop, err
 		}
@@ -645,10 +647,10 @@ func (r *ConfluenceRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []
 	return ast.WalkContinue, nil
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string, dropFirstH1 bool) (string, []Attachment) {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool) (string, []Attachment) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	confluenceRenderer := NewConfluenceRenderer(stdlib, path, mermaidProvider, dropFirstH1)
+	confluenceRenderer := NewConfluenceRenderer(stdlib, path, mermaidProvider, mermaidScale, dropFirstH1)
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(

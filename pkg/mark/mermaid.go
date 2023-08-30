@@ -11,7 +11,7 @@ import (
 
 var renderTimeout = 60 * time.Second
 
-func processMermaidLocally(title string, mermaidDiagram []byte) (attachement Attachment, err error) {
+func processMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachement Attachment, err error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
 	defer cancel()
 
@@ -21,7 +21,7 @@ func processMermaidLocally(title string, mermaidDiagram []byte) (attachement Att
 		return Attachment{}, err
 	}
 
-	pngBytes, boxModel, err := renderer.RenderAsPng(string(mermaidDiagram))
+	pngBytes, boxModel, err := renderer.RenderAsScaledPng(string(mermaidDiagram), scale)
 	if err != nil {
 		return Attachment{}, err
 	}
