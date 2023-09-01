@@ -11,6 +11,7 @@ import (
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/mark"
+	"github.com/kovetskiy/mark/pkg/mark/attachment"
 	"github.com/kovetskiy/mark/pkg/mark/includes"
 	"github.com/kovetskiy/mark/pkg/mark/macro"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
@@ -436,12 +437,12 @@ func processFile(
 	}
 
 	// Resolve attachments created from <!-- Attachment: --> directive
-	localAttachments, err := mark.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+	localAttachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
 	if err != nil {
 		log.Fatalf(err, "unable to locate attachments")
 	}
 
-	attaches, err := mark.ResolveAttachments(
+	attaches, err := attachment.ResolveAttachments(
 		api,
 		target,
 		localAttachments,
@@ -450,7 +451,7 @@ func processFile(
 		log.Fatalf(err, "unable to create/update attachments")
 	}
 
-	markdown = mark.CompileAttachmentLinks(markdown, attaches)
+	markdown = attachment.CompileAttachmentLinks(markdown, attaches)
 
 	if cCtx.Bool("drop-h1") {
 		log.Info(
@@ -461,7 +462,7 @@ func processFile(
 	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
 
 	// Resolve attachements detected from markdown
-	_, err = mark.ResolveAttachments(
+	_, err = attachment.ResolveAttachments(
 		api,
 		target,
 		inlineAttachments,

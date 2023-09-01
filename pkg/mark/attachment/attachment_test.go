@@ -1,4 +1,4 @@
-package mark
+package attachment
 
 import (
 	"bytes"
