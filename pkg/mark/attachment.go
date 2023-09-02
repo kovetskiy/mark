@@ -237,20 +237,6 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		if bytes.Contains(markdown, []byte("attachment://"+replace)) {
 			from := "attachment://" + replace
 
-			log.Debugf(nil, "replacing legacy link: %q -> %q", from, to)
-
-			markdown = bytes.ReplaceAll(
-				markdown,
-				[]byte(from),
-				[]byte(to),
-			)
-
-			found = true
-		}
-
-		if bytes.Contains(markdown, []byte(replace)) {
-			from := replace
-
 			log.Debugf(nil, "replacing link: %q -> %q", from, to)
 
 			markdown = bytes.ReplaceAll(
