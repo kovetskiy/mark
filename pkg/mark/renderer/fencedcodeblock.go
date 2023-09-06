@@ -8,6 +8,7 @@ import (
 	"github.com/kovetskiy/mark/pkg/mark/attachment"
 	"github.com/kovetskiy/mark/pkg/mark/mermaid"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/reconquest/pkg/log"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -20,7 +21,7 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Stdlib          *stdlib.Lib
 	MermaidProvider string
 	MermaidScale    float64
-	Attachments     []attachment.Attachment
+	Attachments     attachment.Attacher
 }
 
 var reBlockDetails = regexp.MustCompile(
@@ -30,13 +31,13 @@ var reBlockDetails = regexp.MustCompile(
 )
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments *[]attachment.Attachment, mermaidProvider string, mermaidScale float64, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, mermaidProvider string, mermaidScale float64, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:          html.NewConfig(),
 		Stdlib:          stdlib,
 		MermaidProvider: mermaidProvider,
 		MermaidScale:    mermaidScale,
-		Attachments:     *attachments,
+		Attachments:     attachments,
 	}
 }
 
@@ -128,9 +129,10 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	if lang == "mermaid" && r.MermaidProvider == "mermaid-go" {
 		attachment, err := mermaid.ProcessMermaidLocally(title, lval, r.MermaidScale)
 		if err != nil {
+			log.Debugf(nil, "error: %v", err)
 			return ast.WalkStop, err
 		}
-		r.Attachments = append(r.Attachments, attachment)
+		r.Attachments.Attach(attachment)
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",

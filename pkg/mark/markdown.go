@@ -44,16 +44,20 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, mermaidProvider str
 	}
 }
 
+func (c *ConfluenceExtension) Attach(a attachment.Attachment) {
+	c.Attachments = append(c.Attachments, a)
+}
+
 func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(
 		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.StripNewlines), 100),
 		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib, c.Path), 100),
-		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, &c.Attachments, c.MermaidProvider, c.MermaidScale), 100),
+		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MermaidProvider, c.MermaidScale), 100),
 		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib), 100),
 		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.DropFirstH1), 100),
-		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, &c.Attachments, c.Path), 100),
+		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(), 100),
 	))
 

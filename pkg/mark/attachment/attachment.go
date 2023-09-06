@@ -33,6 +33,10 @@ type Attachment struct {
 	Replace   string
 }
 
+type Attacher interface {
+	Attach(Attachment)
+}
+
 func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
