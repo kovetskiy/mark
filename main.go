@@ -64,6 +64,13 @@ var flags = []cli.Flag{
 		EnvVars: []string{"MARK_H1_DROP"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "strip-linebreaks",
+		Value:   false,
+		Aliases: []string{"L"},
+		Usage:   "remove linebreaks inside of tags, to accomodate non-standard Confluence behavior",
+		EnvVars: []string{"MARK_STRIP_LINEBREAK"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "title-from-h1",
 		Value:   false,
 		Aliases: []string{"h1_title"},
@@ -383,7 +390,7 @@ func processFile(
 			)
 		}
 
-		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"), cCtx.Bool("strip-linebreaks"))
 		fmt.Println(html)
 		os.Exit(0)
 	}
@@ -459,7 +466,7 @@ func processFile(
 		)
 	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"), cCtx.Bool("strip-linebreaks"))
 
 	// Resolve attachements detected from markdown
 	_, err = attachment.ResolveAttachments(
