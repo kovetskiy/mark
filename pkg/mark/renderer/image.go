@@ -19,16 +19,16 @@ type ConfluenceImageRenderer struct {
 	html.Config
 	Stdlib      *stdlib.Lib
 	Path        string
-	Attachments []attachment.Attachment
+	Attachments attachment.Attacher
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments *[]attachment.Attachment, path string, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceImageRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
-		Attachments: *attachments,
+		Attachments: attachments,
 	}
 }
 
@@ -72,7 +72,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 		)
 	} else {
 
-		r.Attachments = append(r.Attachments, attachments[0])
+		r.Attachments.Attach(attachments[0])
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
