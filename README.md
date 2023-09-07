@@ -72,7 +72,7 @@ Mark supports Go templates, which can be included into article by using path
 to the template.
 
 - A relative path is relative to the current working directory.
-- An absolute path (staring with `/` is taken as-is.
+- An absolute path (staring with `/`) is taken as-is.
 - A path starting with `~/` starts at the user's home directory.
 - A path starting with a double slash `//` starts at the
   directory `mark.d` in the user's config directory.
