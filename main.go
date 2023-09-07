@@ -125,7 +125,7 @@ var flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:      "config",
 		Aliases:   []string{"c"},
-		Value:     filepath.Join(os.Getenv("HOME"), ".config/mark"),
+		Value:     configFilePath(),
 		Usage:     "use the specified configuration file.",
 		TakesFile: true,
 		EnvVars:   []string{"MARK_CONFIG"},
@@ -182,11 +182,11 @@ func main() {
 					return altsrc.NewTomlSourceFromFile(filePath)
 				} else {
 					// Fall back to default if config is unset and path exists
-					_, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+					_, err := os.Stat(configFilePath())
 					if os.IsNotExist(err) {
 						return &altsrc.MapInputSource{}, nil
 					}
-					return altsrc.NewTomlSourceFromFile(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+					return altsrc.NewTomlSourceFromFile(configFilePath())
 				}
 			}),
 		EnableBashCompletion: true,
@@ -514,4 +514,12 @@ func processFile(
 	}
 
 	return target
+}
+
+func configFilePath() string {
+	fp, err := os.UserConfigDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return filepath.Join(fp, "mark")
 }
