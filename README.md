@@ -69,10 +69,19 @@ Also, optional following headers are supported:
 Setting the sidebar creates a column on the right side.  You're able to add any valid HTML content. Adding this property sets the layout to `article`.
 
 Mark supports Go templates, which can be included into article by using path
-to the template relative to current working dir, e.g.:
+to the template.
+
+- A relative path is relative to the current working directory.
+- An absolute path (staring with `/` is taken as-is.
+- A path starting with `~/` starts at the user's home directory.
+- A path starting with a double slash `//` starts at the
+  directory `mark.d` in the user's config directory.
+
+This way it is possible to have "gloabl includes" located in
+(for Unix systems) `~/.config/mark.d` by using.
 
 ```markdown
-<!-- Include: <path> -->
+<!-- Include: //disclaimer.md -->
 ```
 
 Optionally the delimiters can be defined:

@@ -37,13 +37,40 @@ func LoadTemplate(
 		name  = strings.TrimSuffix(path, filepath.Ext(path))
 		facts = karma.Describe("name", name)
 	)
-
+	fmt.Printf("%+v\n", facts)
 	if template := templates.Lookup(name); template != nil {
 		return template, nil
 	}
 
 	var body []byte
 
+	if path[0] == '/' {
+		if path[1] == '/' {
+			b, err := os.UserConfigDir()
+			if err != nil {
+				err = facts.Format(
+					err,
+					"unable to locate user's config directory",
+				)
+				return nil, err
+			}
+			path = path[1:]
+			base = filepath.Join(b, "mark.d")
+		} else {
+			base = ""
+		}
+	} else if path[0:2] == "~/" {
+		b, err := os.UserHomeDir()
+		if err != nil {
+			err = facts.Format(
+				err,
+				"unable to locate user's home directory",
+			)
+			return nil, err
+		}
+		path = path[1:]
+		base = b
+	}
 	body, err := os.ReadFile(filepath.Join(base, path))
 	if err != nil {
 		err = facts.Format(
