@@ -3,19 +3,26 @@ package renderer
 import (
 	"unicode/utf8"
 
-	//"github.com/kovetskiy/mark/pkg/mark/stdlib"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 )
 
+// ConfluenceTextRenderer slightly alters the default goldmark behavior for
+// inline text block. It allows for soft breaks
+// (c.f. https://spec.commonmark.org/0.30/#softbreak)
+// to be rendered into HTML as either '\n' (the goldmark default)
+// or as ' '.
+// This latter option is useful for Confluence,
+// which inserts <br> tags into uploaded HTML where it sees '\n'.
+// See also https://sembr.org/ for partial motivation.
 type ConfluenceTextRenderer struct {
 	html.Config
 	softBreak rune
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceTextRenderer creates a new instance of the ConfluenceTextRenderer
 func NewConfluenceTextRenderer(stripNL bool, opts ...html.Option) renderer.NodeRenderer {
 	sb := '\n'
 	if stripNL {
@@ -32,6 +39,8 @@ func (r *ConfluenceTextRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 	reg.Register(ast.KindText, r.renderText)
 }
 
+// This is taken from https://github.com/yuin/goldmark/blob/v1.5.6/renderer/html/html.go#L648
+// with the hardcoded '\n' for soft breaks swapped for the configurable r.softBreak
 func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
