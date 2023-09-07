@@ -11,6 +11,7 @@ import (
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/mark"
+	"github.com/kovetskiy/mark/pkg/mark/attachment"
 	"github.com/kovetskiy/mark/pkg/mark/includes"
 	"github.com/kovetskiy/mark/pkg/mark/macro"
 	"github.com/kovetskiy/mark/pkg/mark/stdlib"
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	version     = "9.8.0"
+	version     = "9.9.0"
 	usage       = "A tool for updating Atlassian Confluence pages from markdown."
 	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
@@ -158,6 +159,12 @@ var flags = []cli.Flag{
 		Value:   "cloudscript",
 		Usage:   "defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go.",
 		EnvVars: []string{"MARK_MERMAID_PROVIDER"},
+	}),
+	altsrc.NewFloat64Flag(&cli.Float64Flag{
+		Name:    "mermaid-scale",
+		Value:   1.0,
+		Usage:   "defines the scaling factor for mermaid renderings.",
+		EnvVars: []string{"MARK_MERMAID_SCALE"},
 	}),
 }
 
@@ -376,7 +383,7 @@ func processFile(
 			)
 		}
 
-		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
 		fmt.Println(html)
 		os.Exit(0)
 	}
@@ -430,12 +437,12 @@ func processFile(
 	}
 
 	// Resolve attachments created from <!-- Attachment: --> directive
-	localAttachments, err := mark.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+	localAttachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
 	if err != nil {
 		log.Fatalf(err, "unable to locate attachments")
 	}
 
-	attaches, err := mark.ResolveAttachments(
+	attaches, err := attachment.ResolveAttachments(
 		api,
 		target,
 		localAttachments,
@@ -444,7 +451,7 @@ func processFile(
 		log.Fatalf(err, "unable to create/update attachments")
 	}
 
-	markdown = mark.CompileAttachmentLinks(markdown, attaches)
+	markdown = attachment.CompileAttachmentLinks(markdown, attaches)
 
 	if cCtx.Bool("drop-h1") {
 		log.Info(
@@ -452,10 +459,10 @@ func processFile(
 		)
 	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Bool("drop-h1"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
 
 	// Resolve attachements detected from markdown
-	_, err = mark.ResolveAttachments(
+	_, err = attachment.ResolveAttachments(
 		api,
 		target,
 		inlineAttachments,

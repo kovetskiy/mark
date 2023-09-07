@@ -1,4 +1,4 @@
-package mark
+package mermaid
 
 import (
 	"bytes"
@@ -7,29 +7,30 @@ import (
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
+	"github.com/kovetskiy/mark/pkg/mark/attachment"
 )
 
 var renderTimeout = 60 * time.Second
 
-func processMermaidLocally(title string, mermaidDiagram []byte) (attachement Attachment, err error) {
+func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachement attachment.Attachment, err error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
 	defer cancel()
 
 	renderer, err := mermaid.NewRenderEngine(ctx)
 
 	if err != nil {
-		return Attachment{}, err
+		return attachment.Attachment{}, err
 	}
 
-	pngBytes, boxModel, err := renderer.RenderAsPng(string(mermaidDiagram))
+	pngBytes, boxModel, err := renderer.RenderAsScaledPng(string(mermaidDiagram), scale)
 	if err != nil {
-		return Attachment{}, err
+		return attachment.Attachment{}, err
 	}
 
-	checkSum, err := GetChecksum(bytes.NewReader(mermaidDiagram))
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidDiagram))
 
 	if err != nil {
-		return Attachment{}, err
+		return attachment.Attachment{}, err
 	}
 	if title == "" {
 		title = checkSum
@@ -37,7 +38,7 @@ func processMermaidLocally(title string, mermaidDiagram []byte) (attachement Att
 
 	fileName := title + ".png"
 
-	return Attachment{
+	return attachment.Attachment{
 		ID:        "",
 		Name:      title,
 		Filename:  fileName,

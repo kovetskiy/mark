@@ -47,11 +47,12 @@ func (s *confluenceTagParser) Parse(_ ast.Node, block text.Reader, pc parser.Con
 
 var tagnamePattern = `([A-Za-z][A-Za-z0-9-]*)`
 
+var spaceOrOneNewline = `(?:[ \t]|(?:\r\n|\n){0,1})`
 var attributePattern = `(?:[\r\n \t]+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:[\r\n \t]*=[\r\n \t]*(?:[^\"'=<>` + "`" + `\x00-\x20]+|'[^']*'|"[^"]*"))?)`
 
 // Only match <ac:*/> and <ri:*/> tags
-var openTagRegexp = regexp.MustCompile("^<(ac|ri):" + tagnamePattern + attributePattern + `*[ \t]*/?>`)
-var closeTagRegexp = regexp.MustCompile("^</ac:" + tagnamePattern + `\s*>`)
+var openTagRegexp = regexp.MustCompile("^<(ac|ri):" + tagnamePattern + attributePattern + `*` + spaceOrOneNewline + `*/?>`)
+var closeTagRegexp = regexp.MustCompile("^</ac:" + tagnamePattern + spaceOrOneNewline + `*>`)
 
 var openCDATA = []byte("<![CDATA[")
 var closeCDATA = []byte("]]>")

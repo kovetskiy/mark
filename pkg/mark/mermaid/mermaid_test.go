@@ -1,9 +1,10 @@
-package mark
+package mermaid
 
 import (
 	"fmt"
 	"testing"
 
+	"github.com/kovetskiy/mark/pkg/mark/attachment"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,10 +12,11 @@ func TestExtractMermaidImage(t *testing.T) {
 	tests := []struct {
 		name     string
 		markdown []byte
-		want     Attachment
+		scale    float64
+		want     attachment.Attachment
 		wantErr  assert.ErrorAssertionFunc
 	}{
-		{"example", []byte("graph TD;\n A-->B;"), Attachment{
+		{"example", []byte("graph TD;\n A-->B;"), 1.0, attachment.Attachment{
 			// This is only the PNG Magic Header
 			FileBytes: []byte{0x89, 0x50, 0x4e, 0x47, 0xd, 0xa, 0x1a, 0xa},
 			Filename:  "example.png",
@@ -29,7 +31,7 @@ func TestExtractMermaidImage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := processMermaidLocally(tt.name, tt.markdown)
+			got, err := ProcessMermaidLocally(tt.name, tt.markdown, tt.scale)
 			if !tt.wantErr(t, err, fmt.Sprintf("processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))) {
 				return
 			}
