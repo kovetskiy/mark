@@ -64,6 +64,13 @@ var flags = []cli.Flag{
 		EnvVars: []string{"MARK_H1_DROP"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "strip-linebreaks",
+		Value:   false,
+		Aliases: []string{"L"},
+		Usage:   "remove linebreaks inside of tags, to accomodate non-standard Confluence behavior",
+		EnvVars: []string{"MARK_STRIP_LINEBREAK"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "title-from-h1",
 		Value:   false,
 		Aliases: []string{"h1_title"},
@@ -125,7 +132,7 @@ var flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:      "config",
 		Aliases:   []string{"c"},
-		Value:     filepath.Join(os.Getenv("HOME"), ".config/mark"),
+		Value:     configFilePath(),
 		Usage:     "use the specified configuration file.",
 		TakesFile: true,
 		EnvVars:   []string{"MARK_CONFIG"},
@@ -182,11 +189,11 @@ func main() {
 					return altsrc.NewTomlSourceFromFile(filePath)
 				} else {
 					// Fall back to default if config is unset and path exists
-					_, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+					_, err := os.Stat(configFilePath())
 					if os.IsNotExist(err) {
 						return &altsrc.MapInputSource{}, nil
 					}
-					return altsrc.NewTomlSourceFromFile(filepath.Join(os.Getenv("HOME"), ".config/mark"))
+					return altsrc.NewTomlSourceFromFile(configFilePath())
 				}
 			}),
 		EnableBashCompletion: true,
@@ -383,7 +390,7 @@ func processFile(
 			)
 		}
 
-		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"), cCtx.Bool("strip-linebreaks"))
 		fmt.Println(html)
 		os.Exit(0)
 	}
@@ -459,7 +466,7 @@ func processFile(
 		)
 	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"), cCtx.Bool("strip-linebreaks"))
 
 	// Resolve attachements detected from markdown
 	_, err = attachment.ResolveAttachments(
@@ -514,4 +521,12 @@ func processFile(
 	}
 
 	return target
+}
+
+func configFilePath() string {
+	fp, err := os.UserConfigDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return filepath.Join(fp, "mark")
 }

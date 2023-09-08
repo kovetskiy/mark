@@ -23,7 +23,7 @@ services:
       # Linux 32-bit
       # - GOOS=linux
       # - GOARCH=386
-      
+
       # Windows 64-bit
       # - GOOS=windows
       # - GOARCH=amd64

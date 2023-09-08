@@ -750,6 +750,7 @@ GLOBAL OPTIONS:
    --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
    --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
    --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
+   --strip-linebreak                             remove linebreaks inside of tags, to accomodate Confluence non-standard behavior (default: false)
    --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
    --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
    --color value                                 display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]
@@ -759,7 +760,7 @@ GLOBAL OPTIONS:
    --password value, -p value                    use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --target-url value, -l value                  edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url value, -b value, --base_url value  base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
-   --config value, -c value                      use the specified configuration file. (default: "~/.config/mark") [$MARK_CONFIG]
+   --config value, -c value                      use the specified configuration file. (default: System specific) [$MARK_CONFIG]
    --ci                                          run on CI mode. It won't fail if files are not found. (default: false) [$MARK_CI]
    --space value                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents value                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be preprended to the ones defined in the document itself. [$MARK_PARENTS]
@@ -771,7 +772,7 @@ GLOBAL OPTIONS:
 ```
 
 You can store user credentials in the configuration file, which should be
-located in ~/.config/mark (or specified via `-c --config <path>`) with the following format (TOML):
+located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):
 
 ```toml
 username = "your-email"
@@ -783,6 +784,11 @@ drop-h1 = true
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
+
+**NOTE**: The system specific locations are described in here:
+https://pkg.go.dev/os#UserConfigDir.
+Currently these are:
+On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html if non-empty, else $HOME/.config. On Darwin, it returns $HOME/Library/Application Support. On Windows, it returns %AppData%. On Plan 9, it returns $home/lib.
 
 # Tricks
 

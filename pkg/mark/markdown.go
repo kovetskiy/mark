@@ -26,11 +26,12 @@ type ConfluenceExtension struct {
 	MermaidProvider string
 	MermaidScale    float64
 	DropFirstH1     bool
+	StripNewlines   bool
 	Attachments     []attachment.Attachment
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceExtension(stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool) *ConfluenceExtension {
+func NewConfluenceExtension(stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool, stripNewlines bool) *ConfluenceExtension {
 	return &ConfluenceExtension{
 		Config:          html.NewConfig(),
 		Stdlib:          stdlib,
@@ -38,6 +39,7 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, mermaidProvider str
 		MermaidProvider: mermaidProvider,
 		MermaidScale:    mermaidScale,
 		DropFirstH1:     dropFirstH1,
+		StripNewlines:   stripNewlines,
 		Attachments:     []attachment.Attachment{},
 	}
 }
@@ -45,6 +47,7 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, mermaidProvider str
 func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(
+		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.StripNewlines), 100),
 		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, &c.Attachments, c.MermaidProvider, c.MermaidScale), 100),
@@ -61,10 +64,10 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	))
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool) (string, []attachment.Attachment) {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool, stripNewlines bool) (string, []attachment.Attachment) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	confluenceExtension := NewConfluenceExtension(stdlib, path, mermaidProvider, mermaidScale, dropFirstH1)
+	confluenceExtension := NewConfluenceExtension(stdlib, path, mermaidProvider, mermaidScale, dropFirstH1, stripNewlines)
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
