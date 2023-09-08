@@ -75,6 +75,11 @@ to the template relative to current working dir, e.g.:
 <!-- Include: <path> -->
 ```
 
+If the template cannot be found relative to the current working
+directory, it is searched below `$CONFIG/mark.d`.
+This way it is possible to have global include files which can
+be overwritten by local ones.
+
 Optionally the delimiters can be defined:
 
 ```markdown

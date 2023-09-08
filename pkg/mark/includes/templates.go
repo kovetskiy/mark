@@ -46,12 +46,22 @@ func LoadTemplate(
 
 	body, err := os.ReadFile(filepath.Join(base, path))
 	if err != nil {
-		err = facts.Format(
+		// Couldn't find the template. Remember the issue.
+		firstErr := facts.Format(
 			err,
 			"unable to read template file",
 		)
-
-		return nil, err
+		// Do we have a Config Directory? If not report original issue.
+		libDir, err := os.UserConfigDir()
+		if err != nil {
+			return nil, firstErr
+		}
+		// Can we read the template from the mark.d directory?
+		// If not report original issue.
+		body, err = os.ReadFile(filepath.Join(libDir, "mark.d", path))
+		if err != nil {
+			return nil, firstErr
+		}
 	}
 
 	body = bytes.ReplaceAll(
