@@ -82,6 +82,27 @@ type tracer struct {
 	prefix string
 }
 
+const tableAligner = `<ac:structured-macro ac:name="html">` +
+	`<ac:plain-text-body>` +
+	`<![CDATA[` +
+	`<style>` +
+	`tr[align="right"],` +
+	`td[align="right"] {` +
+	`text-align: right;` +
+	`}` +
+	`tr[align="left"],` +
+	`td[align="left"] {` +
+	`	text-align: left;` +
+	`}` +
+	`tr[align="center"],` +
+	`td[align="center"] {` +
+	`text-align: center;` +
+	`}` +
+	`</style>` +
+	`]]>` +
+	`</ac:plain-text-body>` +
+	`</ac:structured-macro>`
+
 func (tracer *tracer) Printf(format string, args ...interface{}) {
 	log.Tracef(nil, tracer.prefix+" "+format, args...)
 }
@@ -471,7 +492,7 @@ func (api *API) CreatePage(
 		"body": map[string]interface{}{
 			"storage": map[string]interface{}{
 				"representation": "storage",
-				"value":          body,
+				"value":          tableAligner + body,
 			},
 		},
 		"metadata": map[string]interface{}{
@@ -536,7 +557,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ne
 		"ancestors": oldAncestors,
 		"body": map[string]interface{}{
 			"storage": map[string]interface{}{
-				"value":          newContent,
+				"value":          tableAligner + newContent,
 				"representation": "storage",
 			},
 		},
