@@ -75,6 +75,8 @@ to the template relative to current working dir, e.g.:
 <!-- Include: <path> -->
 ```
 
+If the template cannot be found relative to the current directory, a fallback directory can be defined via `--include-path`. This way it is possible to have global include files while local ones will still take precedence.
+
 Optionally the delimiters can be defined:
 
 ```markdown
@@ -767,6 +769,7 @@ GLOBAL OPTIONS:
    --parents-delimiter value                     The delimiter used for the nested parent (default: "/") [$MARK_PARENTS_DELIMITER]
    --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
    --mermaid-scale value                         defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
+   --include-path value                          Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --help, -h                                    show help
    --version, -v                                 print the version
 ```

@@ -173,6 +173,13 @@ var flags = []cli.Flag{
 		Usage:   "defines the scaling factor for mermaid renderings.",
 		EnvVars: []string{"MARK_MERMAID_SCALE"},
 	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:      "include-path",
+		Value:     "",
+		Usage:     "Path for shared includes, used as a fallback if the include doesn't exist in the current directory.",
+		TakesFile: true,
+		EnvVars:   []string{"MARK_INCLUDE_PATH"},
+	}),
 }
 
 func main() {
@@ -339,6 +346,7 @@ func processFile(
 	for {
 		templates, markdown, recurse, err = includes.ProcessIncludes(
 			filepath.Dir(file),
+			cCtx.String("include-path"),
 			markdown,
 			templates,
 		)
@@ -353,6 +361,7 @@ func processFile(
 
 	macros, markdown, err := macro.ExtractMacros(
 		filepath.Dir(file),
+		cCtx.String("include-path"),
 		markdown,
 		templates,
 	)
