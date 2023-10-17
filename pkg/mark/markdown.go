@@ -84,7 +84,6 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 			parser.WithAutoHeadingID(),
 		),
 		goldmark.WithRendererOptions(
-			html.WithXHTML(),
 			html.WithUnsafe(),
 		))
 
