@@ -42,6 +42,7 @@ func macros(templates *template.Template) ([]macro.Macro, error) {
 
 	macros, _, err := macro.ExtractMacros(
 		"",
+		"",
 		text(
 			`<!-- Macro: @\{([^}]+)\}`,
 			`     Template: ac:link:user`,

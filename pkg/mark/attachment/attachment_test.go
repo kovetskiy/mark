@@ -45,7 +45,7 @@ func TestPrepareAttachmentsWithWorkDirBase(t *testing.T) {
 	}
 
 	attaches, err := prepareAttachments(testingOpener, ".", replacements)
-	t.Logf("attatches: %s", err)
+	t.Logf("attaches: %s", err)
 	if err != nil {
 		println(err.Error())
 		t.Fatal(err)
