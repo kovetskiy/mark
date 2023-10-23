@@ -78,6 +78,9 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 			extension.GFM,
 			extension.Footnote,
 			extension.DefinitionList,
+			extension.NewTable(
+				extension.WithTableCellAlignMethod(extension.TableCellAlignStyle),
+			),
 			confluenceExtension,
 		),
 		goldmark.WithParserOptions(
@@ -85,6 +88,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 		),
 		goldmark.WithRendererOptions(
 			html.WithUnsafe(),
+			html.WithXHTML(),
 		))
 
 	var buf bytes.Buffer
