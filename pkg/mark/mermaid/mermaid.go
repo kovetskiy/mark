@@ -11,7 +11,7 @@ import (
 	"github.com/reconquest/pkg/log"
 )
 
-var renderTimeout = 60 * time.Second
+var renderTimeout = 90 * time.Second
 
 func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
