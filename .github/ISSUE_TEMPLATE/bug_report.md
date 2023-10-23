@@ -22,14 +22,16 @@ Steps to reproduce the behavior:
 
 In case this is related to specific markdown, please provide a minimal markdown example here.
 
-** Information (please complete the following information):**
+**Information (please complete the following information)**
+
  - Mark Version (`mark --version`): [e.g. v9.1.4]
- - Mark Parameters: [e.g. --drop-h1 --title-from-h1]
+ - Mark Parameters: [e.g. `--drop-h1 --title-from-h1`]
+ - Confluence Hosting: [e.g. Cloud, Server or Datacenter]
  - Confluence Version: [e.g. v7.13]
  - Environment specific Information: [e.g. running in Github Actions, or on Mac OS X, etc.]
 
-** Logs or other output**
-Please provide logs, other kind of output or observed metrics here.
+**Logs or other output**
+Please provide logs, other kind of output here.
 
 **Additional context**
 Add any other context about the problem here.
