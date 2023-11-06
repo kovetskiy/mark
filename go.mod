@@ -3,7 +3,7 @@ module github.com/kovetskiy/mark
 go 1.19
 
 require (
-	github.com/dreampuf/mermaid.go v0.0.13
+	github.com/dreampuf/mermaid.go v0.0.14
 	github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69
 	github.com/kovetskiy/lorg v1.2.0
 	github.com/reconquest/karma-go v1.2.0
@@ -18,7 +18,7 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.3.2 // indirect
-	github.com/chromedp/cdproto v0.0.0-20231011050154-1d073bb38998 // indirect
+	github.com/chromedp/cdproto v0.0.0-20231025043423-5615e204d422 // indirect
 	github.com/chromedp/chromedp v0.9.3 // indirect
 	github.com/chromedp/sysutil v1.0.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
