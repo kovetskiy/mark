@@ -1,6 +1,8 @@
 module github.com/kovetskiy/mark
 
-go 1.19
+go 1.21
+
+toolchain go1.21.6
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.6.1
@@ -12,7 +14,7 @@ require (
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/stretchr/testify v1.8.4
 	github.com/urfave/cli/v2 v2.27.1
-	github.com/yuin/goldmark v1.5.6
+	github.com/yuin/goldmark v1.6.0
 	golang.org/x/tools v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
 )
