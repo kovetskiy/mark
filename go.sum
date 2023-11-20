@@ -41,8 +41,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/reconquest/cog v0.0.0-20230331074503-900980efda0b h1:bSRchKi3G7DiuT8PDW8bAFfaak8uGKxEzCYN7vvsdqk=
 github.com/reconquest/cog v0.0.0-20230331074503-900980efda0b/go.mod h1:Mex8CRMmLSF0LgX9sl0F/CIXp3t5GgMFM1mzzz5QgZ4=
-github.com/reconquest/karma-go v1.2.0 h1:Z4VMBYWeZPsMWDWUCDvHGL+2M/r759g7UhwKSL2z3i0=
-github.com/reconquest/karma-go v1.2.0/go.mod h1:52XRXXa2ec/VNrlCirwasdJfNmjI1O87q098gmqILh0=
+github.com/reconquest/karma-go v1.3.1 h1:3CUEBIgDtZmlzhwHxb06uhShzniRbQT5GQIBeLLtFGg=
+github.com/reconquest/karma-go v1.3.1/go.mod h1:52XRXXa2ec/VNrlCirwasdJfNmjI1O87q098gmqILh0=
 github.com/reconquest/pkg v1.3.1-0.20230331080542-242a3690a7bc h1:iiaYDdb51TCvbFGoo0bch1PNo0285Wv5vDPvBSBT99g=
 github.com/reconquest/pkg v1.3.1-0.20230331080542-242a3690a7bc/go.mod h1:P4zc2rqU1DvQHhw8JQejUiQWbuh2I7M5n7eyMu7eSeI=
 github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4 h1:bcDXaTFC09IIg13Z8gfQHk4gSu001ET7ssW/wKRvPzg=
