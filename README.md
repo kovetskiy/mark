@@ -765,7 +765,7 @@ GLOBAL OPTIONS:
    --config value, -c value                      use the specified configuration file. (default: System specific) [$MARK_CONFIG]
    --ci                                          run on CI mode. It won't fail if files are not found. (default: false) [$MARK_CI]
    --space value                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
-   --parents value                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be preprended to the ones defined in the document itself. [$MARK_PARENTS]
+   --parents value                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter value                     The delimiter used for the nested parent (default: "/") [$MARK_PARENTS_DELIMITER]
    --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
    --mermaid-scale value                         defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
