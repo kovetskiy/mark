@@ -152,7 +152,7 @@ var flags = []cli.Flag{
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "parents",
 		Value:   "",
-		Usage:   "A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be preprended to the ones defined in the document itself.",
+		Usage:   "A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself.",
 		EnvVars: []string{"MARK_PARENTS"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
