@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/pkg/confluence"
 	"github.com/kovetskiy/mark/pkg/mark"
@@ -239,7 +240,7 @@ func RunMark(cCtx *cli.Context) error {
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	files, err := filepath.Glob(cCtx.String("files"))
+	files, err := doublestar.Glob(os.DirFS("."), cCtx.String("files"))
 	if err != nil {
 		return err
 	}
