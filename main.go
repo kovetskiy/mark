@@ -240,7 +240,7 @@ func RunMark(cCtx *cli.Context) error {
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	files, err := doublestar.Glob(os.DirFS("."), cCtx.String("files"))
+	files, err := doublestar.FilepathGlob(cCtx.String("files"))
 	if err != nil {
 		return err
 	}
