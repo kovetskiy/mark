@@ -3,6 +3,7 @@ module github.com/kovetskiy/mark
 go 1.19
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/dreampuf/mermaid.go v0.0.14
 	github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69
 	github.com/kovetskiy/lorg v1.2.0
