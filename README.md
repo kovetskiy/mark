@@ -741,7 +741,7 @@ USAGE:
    mark [global options] [arguments...]
 
 VERSION:
-   9.10.1
+   9.11.0
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
@@ -846,6 +846,12 @@ Rather than running `mark` multiple times, or looping through a list of files fr
 ```bash
 mark -f "helpful_cmds/*.md"
 ```
+
+You can also use `**` to get all files recursively.
+```bash
+mark -f "**/docs/*.md"
+```
+
 
 ## Issues, Bugs & Contributions
 
