@@ -45,22 +45,22 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			_, _ = w.WriteString("</ac:layout>\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section type:single -->":
-			_, _ = w.WriteString("<ac:layout-section type=\"single\">\n")
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"single\">\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section type:two_equal -->":
-			_, _ = w.WriteString("<ac:layout-section type=\"two_equal\">\n")
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_equal\">\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section type:two_left_sidebar -->":
-			_, _ = w.WriteString("<ac:layout-section type=\"two_left_sidebar\">\n")
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_left_sidebar\">\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section type:two_right_sidebar -->":
-			_, _ = w.WriteString("<ac:layout-section type=\"two_right_sidebar\">\n")
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_right_sidebar\">\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section type:three -->":
-			_, _ = w.WriteString("<ac:layout-section type=\"three\">\n")
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"three\">\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section type:three_with_sidebars -->":
-			_, _ = w.WriteString("<ac:layout-section type=\"three_with_sidebars\">\n")
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"three_with_sidebars\">\n")
 			return ast.WalkContinue, nil
 		case "<!-- ac:layout-section end -->":
 			_, _ = w.WriteString("</ac:layout-section>\n")
