@@ -427,6 +427,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="theme">{{ or .Theme "" }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
+		/* https://confluence.atlassian.com/conf59/column-macro-792499085.html */
+		`ac:column`: text(
+			`<ac:structured-macro ac:name="column">`,
+			`<ac:parameter ac:name="width">{{ or .Width "" }}</ac:parameter>`,
+			`<ac:rich-text-body>{{  or .Body "" }}</ac:rich-text-body>`,
+			`</ac:structured-macro>`,
+		),
 
 		// TODO(seletskiy): more templates here
 	} {
