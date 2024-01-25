@@ -84,9 +84,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 		}
 
 		if meta == nil {
-			meta = &Meta{}
-			meta.Type = "page"                                  // Default if not specified
-			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
+			meta = &Meta{Space: "", Title: "", Type: "page", ContentAppearance: FullWidthContentAppearance}
 		}
 
 		//nolint:staticcheck
@@ -148,7 +146,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 
 	if titleFromH1 || spaceFromCli != "" {
 		if meta == nil {
-			meta = &Meta{}
+			meta = &Meta{Space: "", Title: "", Type: "page", ContentAppearance: FullWidthContentAppearance}
 		}
 
 		if meta.Type == "" {
