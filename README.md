@@ -443,7 +443,7 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:panel` to display a block of text within a customisable panel
   - Title: Panel title (optional)
-  - Body:  Body text of the panel
+  - Body: Body text of the panel
   - BGColor: Background Color
   - TitleBGColor: Background color of the title bar
   - TitleColor: Text color of the title
@@ -460,6 +460,10 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:pagetreesearch` to add a search box to your Confluence page.
   - Root: Name of the root page whose hierarchy of pages will be searched by this macro. If this not specified, the root page is the current page.
+
+* template: `ac:column` To be used with the section macro to define the columns in a page.
+  - Width: Width of the column
+  - Body: The content of the column
 
 * macro `@{...}` to mention user by name specified in the braces.
 
