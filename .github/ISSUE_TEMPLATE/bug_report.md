@@ -7,14 +7,18 @@ assignees: ''
 
 ---
 
-**What happened?**
+## What happened?
+
 A clear and concise description of what the bug is.
 
-**What did you expect to happen?**
+## What did you expect to happen?
+
 A clear and concise description of what you expected to happen.
 
-**How can we reproduce the behavior you experienced?**
+## How can we reproduce the behavior you experienced?
+
 Steps to reproduce the behavior:
+
 1. Step 1
 2. Step 2
 3. Step 3
@@ -22,17 +26,18 @@ Steps to reproduce the behavior:
 
 In case this is related to specific markdown, please provide a minimal markdown example here.
 
-**Information (please complete the following information)**
+## Further Information (please complete the following information)
 
- - Mark Version (`mark --version`): [e.g. v9.1.4]
- - Mark Parameters: [e.g. `--drop-h1 --title-from-h1`]
- - Confluence Hosting: [e.g. Cloud, Server or Datacenter]
- - Confluence Version: [e.g. v7.13]
- - Environment specific Information: [e.g. running in Github Actions, or on Mac OS X, etc.]
+* Mark Version (`mark --version`): [e.g. v9.1.4]
+* Mark Parameters: [e.g. `--drop-h1 --title-from-h1`]
+* Confluence Hosting: [e.g. Cloud, Server or Datacenter]
+* Confluence Version: [e.g. v7.13]
+* Environment specific Information: [e.g. running in Github Actions, or on Mac OS X, etc.]
 
-**Logs or other output**
+## Logs or other output
+
 Please provide logs, other kind of output here.
 
-**Additional context**
-Add any other context about the problem here.
+## Additional context
 
+Add any other context about the problem here.
