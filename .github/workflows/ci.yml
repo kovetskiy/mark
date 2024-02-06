@@ -107,6 +107,7 @@ jobs:
       if: ${{ github.ref_type == 'tag' }}
       with:
         push: true
+        platforms: linux/amd64,linux/arm64
         tags: |
            kovetskiy/mark:${{ github.ref_name }}
            kovetskiy/mark:latest
