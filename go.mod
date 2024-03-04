@@ -12,7 +12,7 @@ require (
 	github.com/reconquest/karma-go v1.4.0
 	github.com/reconquest/pkg v1.3.1-0.20230331080542-242a3690a7bc
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/yuin/goldmark v1.7.0
 	golang.org/x/tools v0.18.0
