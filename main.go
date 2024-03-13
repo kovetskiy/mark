@@ -453,6 +453,14 @@ func processFile(
 		target = page
 	}
 
+	// Iterate over the labels in 'meta' to check if the 'ToBeDeleted' label is present
+	for _, label := range meta.Labels {
+		if label == "ToBeDeleted" {
+			api.DeletePage(target.ID)
+			log.Fatal("Page deleted")
+		}
+	}
+
 	// Resolve attachments created from <!-- Attachment: --> directive
 	localAttachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
 	if err != nil {
