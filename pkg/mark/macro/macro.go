@@ -158,7 +158,7 @@ func ExtractMacros(
 					return nil
 				}
 
-				macro.Template, err = templates.New(template).Parse(body)
+				macro.Template, err = templates.New(template).Delims("{{", "}}").Parse(body)
 				if err != nil {
 					err = karma.Format(
 						err,
