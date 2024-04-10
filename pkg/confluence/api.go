@@ -503,7 +503,7 @@ func (api *API) CreatePage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, newLabels []string, appearance string) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string) error {
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
@@ -532,6 +532,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ne
 		"version": map[string]interface{}{
 			"number":    nextPageVersion,
 			"minorEdit": minorEdit,
+			"message":   versionMessage,
 		},
 		"ancestors": oldAncestors,
 		"body": map[string]interface{}{

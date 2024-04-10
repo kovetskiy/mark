@@ -85,6 +85,12 @@ var flags = []cli.Flag{
 		EnvVars: []string{"MARK_MINOR_EDIT"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "version-message",
+		Value:   "",
+        Usage:   "add a message to the page version, to explain the edit (default: \"\")",
+		EnvVars: []string{"MARK_VERSION_MESSAGE"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "color",
 		Value:   "auto",
 		Usage:   "display logs in color. Possible values: auto, never.",
@@ -511,7 +517,7 @@ func processFile(
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), meta.Labels, meta.ContentAppearance)
+	err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), cCtx.String("version-message"), meta.Labels, meta.ContentAppearance)
 	if err != nil {
 		log.Fatal(err)
 	}
