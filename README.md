@@ -744,11 +744,14 @@ $ cp mark /usr/local/bin
 ## Usage
 
 ```bash
+NAME:
+   mark - A tool for updating Atlassian Confluence pages from markdown.
+
 USAGE:
-   mark [global options] [arguments...]
+   mark [global options] 
 
 VERSION:
-   9.11.1
+   9.12.0
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
@@ -759,9 +762,10 @@ GLOBAL OPTIONS:
    --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
    --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
    --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
-   --strip-linebreak                             remove linebreaks inside of tags, to accomodate Confluence non-standard behavior (default: false)
+   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accomodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAK]
    --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
    --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
+   --version-message value                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --color value                                 display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]
    --debug                                       enable debug logs. (default: false) [$MARK_DEBUG]
    --trace                                       enable trace logs. (default: false) [$MARK_TRACE]
@@ -773,7 +777,7 @@ GLOBAL OPTIONS:
    --ci                                          run on CI mode. It won't fail if files are not found. (default: false) [$MARK_CI]
    --space value                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents value                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
-   --parents-delimiter value                     The delimiter used for the nested parent (default: "/") [$MARK_PARENTS_DELIMITER]
+   --parents-delimiter value                     The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
    --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
    --mermaid-scale value                         defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path value                          Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]

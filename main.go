@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	version     = "9.11.1"
+	version     = "9.12.0"
 	usage       = "A tool for updating Atlassian Confluence pages from markdown."
 	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
@@ -87,7 +87,7 @@ var flags = []cli.Flag{
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "version-message",
 		Value:   "",
-        Usage:   "add a message to the page version, to explain the edit (default: \"\")",
+		Usage:   "add a message to the page version, to explain the edit (default: \"\")",
 		EnvVars: []string{"MARK_VERSION_MESSAGE"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
