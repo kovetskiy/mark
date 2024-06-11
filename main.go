@@ -523,7 +523,7 @@ func processFile(
 		log.Fatal(err)
 	}
 
-	updateLabels(err, api, target, meta)
+	updateLabels(api, target, meta)
 
 	if cCtx.Bool("edit-lock") {
 		log.Infof(
