@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -522,6 +523,8 @@ func processFile(
 		log.Fatal(err)
 	}
 
+	updateLabels(err, api, target, meta)
+
 	if cCtx.Bool("edit-lock") {
 		log.Infof(
 			nil,
@@ -537,6 +540,68 @@ func processFile(
 	}
 
 	return target
+}
+
+func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *mark.Meta) {
+
+	labelInfo, err := api.GetPageLabels(target, "global")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Debug("Page Labels:")
+	log.Debug(labelInfo.Labels)
+
+	log.Debug("Meta Labels:")
+	log.Debug(meta.Labels)
+
+	delLabels := determineLabelsToRemove(labelInfo, meta)
+	log.Debug("Del Labels:")
+	log.Debug(delLabels)
+
+	addLabels := determineLabelsToAdd(meta, labelInfo)
+	log.Debug("Add Labels:")
+	log.Debug(addLabels)
+
+	if len(addLabels) > 0 {
+		_, err = api.AddPageLabels(target, addLabels)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	for _, label := range delLabels {
+		_, err = api.DeletePageLabel(target, label)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+// Page has label but label not in Metadata
+func determineLabelsToRemove(labelInfo *confluence.LabelInfo, meta *mark.Meta) []string {
+	var labels []string
+	for _, label := range labelInfo.Labels {
+		if !slices.ContainsFunc(meta.Labels, func(metaLabel string) bool {
+			return strings.ToLower(metaLabel) == strings.ToLower(label.Name)
+		}) {
+			labels = append(labels, label.Name)
+		}
+	}
+	return labels
+}
+
+// Metadata has label but Page does not have it
+func determineLabelsToAdd(meta *mark.Meta, labelInfo *confluence.LabelInfo) []string {
+	var labels []string
+	for _, metaLabel := range meta.Labels {
+		if !slices.ContainsFunc(labelInfo.Labels, func(label confluence.Label) bool {
+			return strings.ToLower(label.Name) == strings.ToLower(metaLabel)
+		}) {
+			labels = append(labels, metaLabel)
+		}
+	}
+	return labels
 }
 
 func configFilePath() string {
