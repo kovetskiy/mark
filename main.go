@@ -583,7 +583,7 @@ func determineLabelsToRemove(labelInfo *confluence.LabelInfo, meta *mark.Meta) [
 	var labels []string
 	for _, label := range labelInfo.Labels {
 		if !slices.ContainsFunc(meta.Labels, func(metaLabel string) bool {
-			return strings.ToLower(metaLabel) == strings.ToLower(label.Name)
+			return strings.EqualFold(metaLabel, label.Name)
 		}) {
 			labels = append(labels, label.Name)
 		}
@@ -596,7 +596,7 @@ func determineLabelsToAdd(meta *mark.Meta, labelInfo *confluence.LabelInfo) []st
 	var labels []string
 	for _, metaLabel := range meta.Labels {
 		if !slices.ContainsFunc(labelInfo.Labels, func(label confluence.Label) bool {
-			return strings.ToLower(label.Name) == strings.ToLower(metaLabel)
+			return strings.EqualFold(label.Name, metaLabel)
 		}) {
 			labels = append(labels, metaLabel)
 		}
