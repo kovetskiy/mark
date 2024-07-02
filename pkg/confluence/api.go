@@ -73,6 +73,15 @@ type AttachmentInfo struct {
 	} `json:"_links"`
 }
 
+type Label struct {
+	ID     string `json:"id"`
+	Prefix string `json:"prefix"`
+	Name   string `json:"name"`
+}
+type LabelInfo struct {
+	Labels []Label `json:"results"`
+	Size   int     `json:"number"`
+}
 type form struct {
 	buffer io.Reader
 	writer *multipart.Writer
@@ -514,17 +523,6 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		}
 	}
 
-	labels := []map[string]interface{}{}
-	for _, label := range newLabels {
-		if label != "" {
-			item := map[string]interface{}{
-				"prexix": "global",
-				"name":   label,
-			}
-			labels = append(labels, item)
-		}
-	}
-
 	payload := map[string]interface{}{
 		"id":    page.ID,
 		"type":  page.Type,
@@ -542,7 +540,6 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 			},
 		},
 		"metadata": map[string]interface{}{
-			"labels": labels,
 			// Fix to set full-width as has changed on Confluence APIs again.
 			// https://jira.atlassian.com/browse/CONFCLOUD-65447
 			//
@@ -568,6 +565,66 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	return nil
+}
+
+func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, error) {
+
+	labels := []map[string]interface{}{}
+	for _, label := range newLabels {
+		if label != "" {
+			item := map[string]interface{}{
+				"prefix": "global",
+				"name":   label,
+			}
+			labels = append(labels, item)
+		}
+	}
+
+	payload := labels
+
+	request, err := api.rest.Res(
+		"content/"+page.ID+"/label", &LabelInfo{},
+	).Post(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*LabelInfo), nil
+}
+
+func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
+
+	request, err := api.rest.Res(
+		"content/"+page.ID+"/label/"+label, &LabelInfo{},
+	).Delete()
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*LabelInfo), nil
+}
+
+func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
+
+	request, err := api.rest.Res(
+		"content/"+page.ID+"/label", &LabelInfo{},
+	).Get(map[string]string{"prefix": prefix})
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+	return request.Response.(*LabelInfo), nil
 }
 
 func (api *API) GetUserByName(name string) (*User, error) {
