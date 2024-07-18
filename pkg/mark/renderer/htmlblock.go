@@ -71,6 +71,12 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 		case "<!-- ac:layout-cell end -->":
 			_, _ = w.WriteString("</ac:layout-cell>\n")
 			return ast.WalkContinue, nil
+		case "<!-- ac:placeholder -->":
+			_, _ = w.WriteString("<ac:placeholder>\n")
+			return ast.WalkContinue, nil
+		case "<!-- ac:placeholder end -->":
+			_, _ = w.WriteString("</ac:placeholder>\n")
+			return ast.WalkContinue, nil
 
 		}
 	}
