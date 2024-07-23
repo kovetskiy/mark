@@ -370,7 +370,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		/* https://confluence.atlassian.com/conf59/page-properties-macro-792499154.html */
 
 		`ac:details`: text(
-			`<ac:structured-macro ac:name="details" ac:schema-version="1"">`,
+			`<ac:structured-macro ac:name="details" ac:schema-version="1">`,
 			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
 			`</ac:structured-macro>`,
 		),
