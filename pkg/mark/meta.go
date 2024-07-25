@@ -3,7 +3,6 @@ package mark
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -41,7 +40,6 @@ const (
 )
 
 var (
-	reHeaderPatternV1    = regexp.MustCompile(`\[\]:\s*#\s*\(([^:]+):\s*(.*)\)`)
 	reHeaderPatternV2    = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
@@ -64,23 +62,13 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 
 		matches := reHeaderPatternV2.FindStringSubmatch(line)
 		if matches == nil {
-			matches = reHeaderPatternV1.FindStringSubmatch(line)
-			if matches == nil {
-				matches = reHeaderPatternMacro.FindStringSubmatch(line)
-				// If we have a match, then we started reading a macro.
-				// We want to keep it in the document for it to be read by ExtractMacros
-				if matches != nil {
-					offset -= len(line) + 1
-				}
-				break
+			matches = reHeaderPatternMacro.FindStringSubmatch(line)
+			// If we have a match, then we started reading a macro.
+			// We want to keep it in the document for it to be read by ExtractMacros
+			if matches != nil {
+				offset -= len(line) + 1
 			}
-
-			log.Warningf(
-				fmt.Errorf(`legacy header usage found: %s`, line),
-				"please use new header format: <!-- %s: %s -->",
-				matches[1],
-				matches[2],
-			)
+			break
 		}
 
 		if meta == nil {
