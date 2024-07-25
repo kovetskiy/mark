@@ -20,7 +20,7 @@ jobs:
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v5
       with:
-        version: latest
+        version: "~> 2"
         args: release --clean
       env:
         GOPATH: /home/runner/work/
