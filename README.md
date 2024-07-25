@@ -205,7 +205,8 @@ Please be aware that mark does not validate the layout, so it's your responsibil
 ### Placeholders
 
 You can use this to define placeholders:
-```
+
+```markdown
 <!-- ac:placeholder -->
 Placeholder
 <!-- ac:placeholder end -->
