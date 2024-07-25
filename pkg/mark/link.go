@@ -205,7 +205,11 @@ func getConfluenceLink(
 	if page != nil {
 		// Confluence supports relative links to reference other pages:
 		// https://confluence.atlassian.com/doc/links-776656293.html
-		link = page.Links.Full
+		// Without /wiki prefix confluence renders broken links when page already exists.
+		link = fmt.Sprintf(
+			"/wiki%s",
+			page.Links.Full,
+		)
 	}
 
 	return link, nil
