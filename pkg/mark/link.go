@@ -203,9 +203,9 @@ func getConfluenceLink(
 	}
 
 	if page != nil {
-		// Confluence supports relative links to reference other pages:
-		// https://confluence.atlassian.com/doc/links-776656293.html
-		link = page.Links.Full
+		// Needs baseURL, as REST api response URL doesn't contain subpath ir
+		// confluence is server from that
+		link = api.BaseURL + page.Links.Full
 	}
 
 	return link, nil
