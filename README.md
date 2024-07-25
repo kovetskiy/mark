@@ -202,6 +202,15 @@ Still More Content
 
 Please be aware that mark does not validate the layout, so it's your responsibility to create a valid layout.
 
+### Placeholders
+
+You can use this to define placeholders:
+```
+<!-- ac:placeholder -->
+Placeholder
+<!-- ac:placeholder end -->
+```
+
 ### Code Blocks
 
 If you have long code blocks, you can make them collapsible with the [Code Block Macro]:
