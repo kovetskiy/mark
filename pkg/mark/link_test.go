@@ -15,6 +15,7 @@ func TestParseLinks(t *testing.T) {
 	[Image link that should be put as attachment](../path/to/example.png)
 	[relative link without dots](relative-link-without-dots.md)
 	[relative link without dots but with hash](relative-link-without-dots-but-with-hash.md#hash)
+	[example [example]](example.md)
 	`
 
 	links := parseLinks(markdown)
@@ -47,5 +48,6 @@ func TestParseLinks(t *testing.T) {
 	assert.Equal(t, "relative-link-without-dots-but-with-hash.md", links[6].filename)
 	assert.Equal(t, "hash", links[6].hash)
 
-	assert.Equal(t, len(links), 7)
+	assert.Equal(t, "example.md", links[7].full)
+	assert.Equal(t, len(links), 8)
 }

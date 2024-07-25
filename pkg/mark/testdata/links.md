@@ -17,3 +17,4 @@ Use [page link with spaces](<ac:Page With Space>)
 Use footnotes link [^1]  
 [^1]: a footnote link
 
+Use [Link [Text]](foo)
