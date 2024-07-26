@@ -362,6 +362,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:detailssummary`: text(
 			`<ac:structured-macro ac:name="detailssummary" ac:schema-version="2">`,
 			`<ac:parameter ac:name="headings">{{ .Headings }}</ac:parameter>`,
+			`<ac:parameter ac:name="firstcolumn">{{ .FirstColumn }}</ac:parameter>`,
 			`<ac:parameter ac:name="sortBy">{{ .SortBy }}</ac:parameter>`,
 			`<ac:parameter ac:name="cql">{{ .CQL }}</ac:parameter>`,
 			`</ac:structured-macro>`,

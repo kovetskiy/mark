@@ -446,6 +446,7 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:detailssummary` to show summary information from one page on a another page
   * Headings: Column headings to show
+  * FirstColumn: Name of the Title Column
   * CQL: The CQL query to discover the pages
   * SortBy: Sort by a specific column heading
 
