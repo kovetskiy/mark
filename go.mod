@@ -9,7 +9,7 @@ require (
 	github.com/dreampuf/mermaid.go v0.0.17
 	github.com/kovetskiy/gopencils v0.0.0-20230119081704-a73db75b2f69
 	github.com/kovetskiy/lorg v1.2.0
-	github.com/reconquest/karma-go v1.4.0
+	github.com/reconquest/karma-go v1.5.0
 	github.com/reconquest/pkg v1.3.1-0.20230331080542-242a3690a7bc
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/stretchr/testify v1.9.0
