@@ -464,6 +464,23 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	return request.Response.(*PageInfo), nil
 }
 
+func (api *API) DeletePage(pageID string) (*PageInfo, error) {
+
+	request, err := api.rest.Res(
+		"content/"+pageID, &PageInfo{},
+	).Delete()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*PageInfo), nil
+}
+
 func (api *API) CreatePage(
 	space string,
 	pageType string,
