@@ -24,7 +24,20 @@ func (r *ConfluenceParagraphRenderer) RegisterFuncs(reg renderer.NodeRendererFun
 }
 
 func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
-	if !entering {
+	if entering {
+		if n.FirstChild().Kind() != ast.KindRawHTML {
+			if n.Attributes() != nil {
+				_, _ = w.WriteString("<p")
+				html.RenderAttributes(w, n, html.ParagraphAttributeFilter)
+				_ = w.WriteByte('>')
+			} else {
+				_, _ = w.WriteString("<p>")
+			}
+		}
+	} else {
+		if n.FirstChild().Kind() != ast.KindRawHTML {
+			_, _ = w.WriteString("</p>")
+		}
 		_, _ = w.WriteString("\n")
 	}
 	return ast.WalkContinue, nil
