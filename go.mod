@@ -15,7 +15,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.3
 	github.com/yuin/goldmark v1.7.4
-	golang.org/x/tools v0.23.0
+	golang.org/x/tools v0.24.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -37,6 +37,6 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/zazab/zhash v0.0.0-20210630080733-6e809466f8d3 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
