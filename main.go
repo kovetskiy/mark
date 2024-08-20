@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	version     = "10.0.0"
+	version     = "10.0.1"
 	usage       = "A tool for updating Atlassian Confluence pages from markdown."
 	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
@@ -187,6 +187,12 @@ var flags = []cli.Flag{
 		Usage:     "Path for shared includes, used as a fallback if the include doesn't exist in the current directory.",
 		TakesFile: true,
 		EnvVars:   []string{"MARK_INCLUDE_PATH"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:      "update-if-older-than",
+		Value:     "",
+		Usage:     "Update the page only if the last update is older than the specified date.",
+		TakesFile: false,
 	}),
 }
 
@@ -444,6 +450,20 @@ func processFile(
 			// helps mitigate a 409 conflict that can occur when attempting
 			// to update a page just after it was created.
 			time.Sleep(1 * time.Second)
+		} else {
+			updateIfOlderThan := cCtx.String("update-if-older-than")
+			if updateIfOlderThan != "" {
+				checkTime, err := time.Parse(time.RFC3339Nano, updateIfOlderThan)
+				if err != nil {
+					log.Fatalf(err, "unable to parse update-if-older-than date: %s", updateIfOlderThan)
+				}
+				log.Debugf(nil, "Checking if page was updated after %s, page last update is %s", checkTime, page.Version.When)
+				if page.Version.When.After(checkTime) {
+					log.Infof(nil, "Page was updated after %s, skipping update", checkTime)
+					return page
+				}
+			}
+
 		}
 
 		target = page

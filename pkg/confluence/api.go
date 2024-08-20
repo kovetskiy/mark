@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/kovetskiy/gopencils"
 	"github.com/kovetskiy/lorg"
@@ -48,7 +49,8 @@ type PageInfo struct {
 	Type  string `json:"type"`
 
 	Version struct {
-		Number int64 `json:"number"`
+		Number int64     `json:"number"`
+		When   time.Time `json:"when"`
 	} `json:"version"`
 
 	Ancestors []struct {
