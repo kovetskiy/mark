@@ -605,7 +605,7 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
 		return nil, newErrorStatusNotOK(request)
 	}
 
