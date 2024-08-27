@@ -262,7 +262,15 @@ some long code block
 Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met
 
 1. The BlockQuote is on the root level of the document (not nested)
-1. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note`
+1. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note` or [Github MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
+
+| Github Alerts | Confluence |
+|---------------|------------|
+| Tip (green lightbulb)   | Tip (green checkmark in circle) |
+| Note (blue I in circle) | Info (blue I in circle) |
+| Important (purple exclamation mark in speech bubble) | Info (blue I in circle) |
+| Warning (yellow exclamation mark in triangle) | Note (yellow exclamation mark in triangle) |
+| Caution (red exclamation mark in hexagon) | Warning (red exclamation mark in hexagon) |
 
 In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
 

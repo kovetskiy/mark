@@ -35,11 +35,12 @@ const (
 	Info BlockQuoteType = iota
 	Note
 	Warn
+	Tip
 	None
 )
 
 func (t BlockQuoteType) String() string {
-	return []string{"info", "note", "warn", "none"}[t]
+	return []string{"info", "note", "warning", "tip", "none"}[t]
 }
 
 type BlockQuoteLevelMap map[ast.Node]int
@@ -48,20 +49,45 @@ func (m BlockQuoteLevelMap) Level(node ast.Node) int {
 	return m[node]
 }
 
+type BlockQuoteClassifier struct {
+	patternMap map[string]*regexp.Regexp
+}
+
+func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
+	return BlockQuoteClassifier{
+		patternMap: map[string]*regexp.Regexp{
+			"info": regexp.MustCompile(`(?i)info`),
+			"note": regexp.MustCompile(`(?i)note`),
+			"warn": regexp.MustCompile(`(?i)warn`),
+			"tip":  regexp.MustCompile(`(?i)tip`),
+		},
+	}
+}
+
+func GHAlertsBlockQuoteClassifier() BlockQuoteClassifier {
+	return BlockQuoteClassifier{
+		patternMap: map[string]*regexp.Regexp{
+			"info": regexp.MustCompile(`(?i)^\!(note|important)`),
+			"note": regexp.MustCompile(`(?i)^\!warning`),
+			"warn": regexp.MustCompile(`(?i)^\!caution`),
+			"tip":  regexp.MustCompile(`(?i)^\!tip`),
+		},
+	}
+}
+
 // ClassifyingBlockQuote compares a string against a set of patterns and returns a BlockQuoteType
-func ClassifyingBlockQuote(literal string) BlockQuoteType {
-	infoPattern := regexp.MustCompile(`info|Info|INFO`)
-	notePattern := regexp.MustCompile(`note|Note|NOTE`)
-	warnPattern := regexp.MustCompile(`warn|Warn|WARN`)
+func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) BlockQuoteType {
 
 	var t = None
 	switch {
-	case infoPattern.MatchString(literal):
+	case classifier.patternMap["info"].MatchString(literal):
 		t = Info
-	case notePattern.MatchString(literal):
+	case classifier.patternMap["note"].MatchString(literal):
 		t = Note
-	case warnPattern.MatchString(literal):
+	case classifier.patternMap["warn"].MatchString(literal):
 		t = Warn
+	case classifier.patternMap["tip"].MatchString(literal):
+		t = Tip
 	}
 	return t
 }
@@ -69,6 +95,8 @@ func ClassifyingBlockQuote(literal string) BlockQuoteType {
 // ParseBlockQuoteType parses the first line of a blockquote and returns its type
 func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 	var t = None
+	var legacyClassifier = LegacyBlockQuoteClassifier()
+	var ghAlertsClassifier = GHAlertsBlockQuoteClassifier()
 
 	countParagraphs := 0
 	_ = ast.Walk(node, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -80,7 +108,29 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 		if countParagraphs < 2 && entering {
 			if node.Kind() == ast.KindText {
 				n := node.(*ast.Text)
-				t = ClassifyingBlockQuote(string(n.Text(source)))
+				t = legacyClassifier.ClassifyingBlockQuote(string(n.Text(source)))
+				// If the node is a text node but classification returned none do not give up!
+				// Find the next two sibling nodes midNode and rightNode,
+				// 1. If both are also a text node
+				// 2. and the original node (node) text value is '['
+				// 3. and the rightNode text value is ']'
+				// It means with high degree of confidence that the original md doc contains a Github alert type of blockquote
+				// Classifying the next text type node (midNode) will confirm that.
+				if t == None {
+					midNode := node.NextSibling()
+					rightNode := midNode.NextSibling()
+
+					if midNode.Kind() == ast.KindText {
+						midTextNode := midNode.(*ast.Text)
+						if rightNode != nil && rightNode.Kind() == ast.KindText {
+							rightTextNode := rightNode.(*ast.Text)
+
+							if string(n.Text(source)) == "[" && string(rightTextNode.Text(source)) == "]" {
+								t = ghAlertsClassifier.ClassifyingBlockQuote(string(midTextNode.Text(source)))
+							}
+						}
+					}
+				}
 				countParagraphs += 1
 			}
 			if node.Kind() == ast.KindHTMLBlock {
@@ -88,7 +138,7 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 				n := node.(*ast.HTMLBlock)
 				for i := 0; i < n.BaseBlock.Lines().Len(); i++ {
 					line := n.BaseBlock.Lines().At(i)
-					t = ClassifyingBlockQuote(string(line.Value(source)))
+					t = legacyClassifier.ClassifyingBlockQuote(string(line.Value(source)))
 					if t != None {
 						break
 					}
