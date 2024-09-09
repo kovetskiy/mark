@@ -477,6 +477,11 @@ By default, mark provides several built-in templates and macros:
   * Width: Width of the column
   * Body: The content of the column
 
+* template: `ac:multimedia` to embedd an attached video, animation or other multimedia files in a Confluence page
+  * Name: Name of the file
+  * Width: Width of the video (optional)
+  * AutoPlay: Start playing the file on page load (default: false)
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases

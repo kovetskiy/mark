@@ -435,6 +435,16 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:rich-text-body>{{ or .Body "" }}</ac:rich-text-body>`,
 			`</ac:structured-macro>`,
 		),
+		/* https://confluence.atlassian.com/conf59/multimedia-macro-792499140.html */
+		`ac:multimedia`: text(
+			`<ac:structured-macro ac:name="multimedia">`,
+			`<ac:parameter ac:name="width">{{ or .Width 500 }}</ac:parameter>`,
+			`<ac:parameter ac:name="name">`,
+			`<ri:attachment ri:filename="{{ .Name }}/>`,
+			`</ac:parameter>`,
+			`<ac:parameter ac:name="autoplay">{{ .AutoPlay "false"}}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
 
 		// TODO(seletskiy): more templates here
 	} {
