@@ -442,7 +442,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="name">`,
 			`<ri:attachment ri:filename="{{ .Name }}/>`,
 			`</ac:parameter>`,
-			`<ac:parameter ac:name="autoplay">{{ .AutoPlay "false"}}</ac:parameter>`,
+			`<ac:parameter ac:name="autoplay">{{ or .AutoPlay "false"}}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
