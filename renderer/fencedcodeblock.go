@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kovetskiy/mark/pkg/mark/attachment"
-	"github.com/kovetskiy/mark/pkg/mark/mermaid"
-	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/kovetskiy/mark/attachment"
+	"github.com/kovetskiy/mark/mermaid"
+	"github.com/kovetskiy/mark/stdlib"
 	"github.com/reconquest/pkg/log"
 
 	"github.com/yuin/goldmark/ast"

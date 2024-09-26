@@ -1,9 +1,10 @@
-package mark
+package page
 
 import (
 	"strings"
 
-	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/kovetskiy/mark/confluence"
+	"github.com/kovetskiy/mark/metadata"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )
@@ -11,7 +12,7 @@ import (
 func ResolvePage(
 	dryRun bool,
 	api *confluence.API,
-	meta *Meta,
+	meta *metadata.Meta,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
 	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {

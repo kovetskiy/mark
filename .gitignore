@@ -1,6 +1,5 @@
 /mark
 /docker
-/testdata
 .idea/
 /mark.test
 /profile.cov

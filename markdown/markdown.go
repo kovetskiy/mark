@@ -2,12 +2,11 @@ package mark
 
 import (
 	"bytes"
-	"regexp"
 
-	"github.com/kovetskiy/mark/pkg/mark/attachment"
-	cparser "github.com/kovetskiy/mark/pkg/mark/parser"
-	crenderer "github.com/kovetskiy/mark/pkg/mark/renderer"
-	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/kovetskiy/mark/attachment"
+	cparser "github.com/kovetskiy/mark/parser"
+	crenderer "github.com/kovetskiy/mark/renderer"
+	"github.com/kovetskiy/mark/stdlib"
 	"github.com/reconquest/pkg/log"
 	"github.com/yuin/goldmark"
 
@@ -104,16 +103,4 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
 	return string(html), confluenceExtension.Attachments
-
-}
-
-// ExtractDocumentLeadingH1 will extract leading H1 heading
-func ExtractDocumentLeadingH1(markdown []byte) string {
-	h1 := regexp.MustCompile(`#[^#]\s*(.*)\s*\n`)
-	groups := h1.FindSubmatch(markdown)
-	if groups == nil {
-		return ""
-	} else {
-		return string(groups[1])
-	}
 }

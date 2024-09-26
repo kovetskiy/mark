@@ -2,11 +2,13 @@ package mark
 
 import (
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/pkg/mark/stdlib"
+	"github.com/kovetskiy/mark/stdlib"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,6 +31,13 @@ func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
 }
 
 func TestCompileMarkdown(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
 	test := assert.New(t)
 
 	testcases, err := filepath.Glob("testdata/*.md")
@@ -48,6 +57,13 @@ func TestCompileMarkdown(t *testing.T) {
 }
 
 func TestCompileMarkdownDropH1(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
 	test := assert.New(t)
 
 	testcases, err := filepath.Glob("testdata/*.md")
@@ -67,6 +83,13 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 }
 
 func TestCompileMarkdownStripNewlines(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
 	test := assert.New(t)
 
 	testcases, err := filepath.Glob("testdata/*.md")
@@ -83,17 +106,4 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		actual, _ := CompileMarkdown(markdown, lib, filename, "", 1.0, false, true)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
-}
-
-func TestExtractDocumentLeadingH1(t *testing.T) {
-	filename := "testdata/header.md"
-
-	markdown, err := os.ReadFile(filename)
-	if err != nil {
-		panic(err)
-	}
-
-	actual := ExtractDocumentLeadingH1(markdown)
-
-	assert.Equal(t, "a", actual)
 }

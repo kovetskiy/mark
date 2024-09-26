@@ -7,7 +7,7 @@ import (
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
-	"github.com/kovetskiy/mark/pkg/mark/attachment"
+	"github.com/kovetskiy/mark/attachment"
 	"github.com/reconquest/pkg/log"
 )
 

@@ -1,10 +1,10 @@
-package mark
+package page
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/kovetskiy/mark/confluence"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )
