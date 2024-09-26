@@ -7,6 +7,7 @@ RUN make get \
 
 FROM chromedp/headless-shell:latest
 RUN apt-get update \
+&& apt-get upgrade -qq \
 && apt-get install --no-install-recommends -qq ca-certificates bash sed git dumb-init \
 && apt-get clean \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
