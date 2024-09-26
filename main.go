@@ -11,13 +11,15 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/lorg"
-	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/kovetskiy/mark/pkg/mark"
-	"github.com/kovetskiy/mark/pkg/mark/attachment"
-	"github.com/kovetskiy/mark/pkg/mark/includes"
-	"github.com/kovetskiy/mark/pkg/mark/macro"
-	"github.com/kovetskiy/mark/pkg/mark/stdlib"
-	"github.com/kovetskiy/mark/pkg/mark/vfs"
+	"github.com/kovetskiy/mark/attachment"
+	"github.com/kovetskiy/mark/confluence"
+	"github.com/kovetskiy/mark/includes"
+	"github.com/kovetskiy/mark/macro"
+	mark "github.com/kovetskiy/mark/markdown"
+	"github.com/kovetskiy/mark/metadata"
+	"github.com/kovetskiy/mark/page"
+	"github.com/kovetskiy/mark/stdlib"
+	"github.com/kovetskiy/mark/vfs"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 	"github.com/urfave/cli/v2"
@@ -307,7 +309,7 @@ func processFile(
 
 	parents := strings.Split(cCtx.String("parents"), cCtx.String("parents-delimiter"))
 
-	meta, markdown, err := mark.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
+	meta, markdown, err := metadata.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -386,15 +388,15 @@ func processFile(
 		}
 	}
 
-	links, err := mark.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
+	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}
 
-	markdown = mark.SubstituteLinks(markdown, links)
+	markdown = page.SubstituteLinks(markdown, links)
 
 	if cCtx.Bool("dry-run") {
-		_, _, err := mark.ResolvePage(cCtx.Bool("dry-run"), api, meta)
+		_, _, err := page.ResolvePage(cCtx.Bool("dry-run"), api, meta)
 		if err != nil {
 			log.Fatalf(err, "unable to resolve page location")
 		}
@@ -415,7 +417,7 @@ func processFile(
 	var target *confluence.PageInfo
 
 	if meta != nil {
-		parent, page, err := mark.ResolvePage(cCtx.Bool("dry-run"), api, meta)
+		parent, page, err := page.ResolvePage(cCtx.Bool("dry-run"), api, meta)
 		if err != nil {
 			log.Fatalf(
 				karma.Describe("title", meta.Title).Reason(err),
@@ -542,7 +544,7 @@ func processFile(
 	return target
 }
 
-func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *mark.Meta) {
+func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *metadata.Meta) {
 
 	labelInfo, err := api.GetPageLabels(target, "global")
 	if err != nil {
@@ -579,7 +581,7 @@ func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *mark.M
 }
 
 // Page has label but label not in Metadata
-func determineLabelsToRemove(labelInfo *confluence.LabelInfo, meta *mark.Meta) []string {
+func determineLabelsToRemove(labelInfo *confluence.LabelInfo, meta *metadata.Meta) []string {
 	var labels []string
 	for _, label := range labelInfo.Labels {
 		if !slices.ContainsFunc(meta.Labels, func(metaLabel string) bool {
@@ -592,7 +594,7 @@ func determineLabelsToRemove(labelInfo *confluence.LabelInfo, meta *mark.Meta) [
 }
 
 // Metadata has label but Page does not have it
-func determineLabelsToAdd(meta *mark.Meta, labelInfo *confluence.LabelInfo) []string {
+func determineLabelsToAdd(meta *metadata.Meta, labelInfo *confluence.LabelInfo) []string {
 	var labels []string
 	for _, metaLabel := range meta.Labels {
 		if !slices.ContainsFunc(labelInfo.Labels, func(label confluence.Label) bool {

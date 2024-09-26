@@ -4,8 +4,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/kovetskiy/mark/pkg/mark/macro"
+	"github.com/kovetskiy/mark/confluence"
+	"github.com/kovetskiy/mark/macro"
 	"github.com/reconquest/pkg/log"
 
 	"github.com/reconquest/karma-go"

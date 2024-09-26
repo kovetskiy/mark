@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kovetskiy/mark/pkg/confluence"
-	"github.com/kovetskiy/mark/pkg/mark/vfs"
+	"github.com/kovetskiy/mark/confluence"
+	"github.com/kovetskiy/mark/vfs"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )

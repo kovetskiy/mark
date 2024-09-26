@@ -1,4 +1,4 @@
-package mark
+package page
 
 import (
 	"bytes"
@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/kovetskiy/mark/pkg/confluence"
+	"github.com/kovetskiy/mark/confluence"
+	"github.com/kovetskiy/mark/metadata"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 	"golang.org/x/tools/godoc/util"
@@ -27,7 +28,7 @@ type markdownLink struct {
 
 func ResolveRelativeLinks(
 	api *confluence.API,
-	meta *Meta,
+	meta *metadata.Meta,
 	markdown []byte,
 	base string,
 	spaceFromCli string,
@@ -104,7 +105,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := ExtractMeta(linkContents, spaceFromCli, titleFromH1, parents)
+		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceFromCli, titleFromH1, parents)
 		if err != nil {
 			log.Errorf(
 				err,
