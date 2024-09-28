@@ -66,7 +66,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 
 	test := assert.New(t)
 
-	testcases, err := filepath.Glob("testdata/*.md")
+        testcases, err := filepath.Glob("testdata/*.md")
 	if err != nil {
 		panic(err)
 	}
@@ -76,7 +76,14 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		markdown, htmlname, html := loadData(t, filename, "-droph1")
+		var variant string
+		switch filename {
+		case "testdata/quotes.md", "testdata/header.md":
+			variant = "-droph1"
+		default:
+			variant = ""
+		}
+		markdown, htmlname, html := loadData(t, filename, variant)
 		actual, _ := CompileMarkdown(markdown, lib, filename, "", 1.0, true, false)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
@@ -92,7 +99,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 
 	test := assert.New(t)
 
-	testcases, err := filepath.Glob("testdata/*.md")
+        testcases, err := filepath.Glob("testdata/*.md")
 	if err != nil {
 		panic(err)
 	}
@@ -102,7 +109,15 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		markdown, htmlname, html := loadData(t, filename, "-stripnewlines")
+		var variant string
+                switch filename {
+                case "testdata/quotes.md", "testdata/codes.md", "testdata/newlines.md", "testdata/macro-include.md":
+                        variant = "-stripnewlines"
+                default:
+                        variant = ""
+                }
+
+		markdown, htmlname, html := loadData(t, filename, variant)
 		actual, _ := CompileMarkdown(markdown, lib, filename, "", 1.0, false, true)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
