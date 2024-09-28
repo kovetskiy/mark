@@ -849,7 +849,7 @@ Sync documentation:
   commands:
     - for file in $(find -type f -name '*.md'); do
         echo "> Sync $file";
-        mark -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
+        mark publish -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
         echo;
       done
 ```
@@ -860,7 +860,7 @@ repository with documentation will be cloned to. The following command finds all
 ```bash
 for file in $(find -type f -name '*.md'); do
     echo "> Sync $file";
-    mark -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
+    mark publish -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
     echo;
 done
 ```
@@ -881,13 +881,13 @@ only:
 Rather than running `mark` multiple times, or looping through a list of files from `find`, you can use file globbing (i.e. wildcard patterns) to match files in subdirectories. For example:
 
 ```bash
-mark -f "helpful_cmds/*.md"
+mark publish -f "helpful_cmds/*.md"
 ```
 
 You can also use `**` to get all files recursively.
 
 ```bash
-mark -f "**/docs/*.md"
+mark publish -f "**/docs/*.md"
 ```
 
 ### Linting markdown
