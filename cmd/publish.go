@@ -39,6 +39,12 @@ var PublishCmd = &cli.Command{
 			TakesFile: true,
 			EnvVars:   []string{"MARK_FILES"},
 		}),
+		altsrc.NewStringFlag(&cli.StringFlag{
+			Name:    "space",
+			Value:   "",
+			Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
+			EnvVars: []string{"MARK_SPACE"},
+		}),
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:    "edit-lock",
 			Value:   false,
@@ -117,10 +123,10 @@ var PublishCmd = &cli.Command{
 			EnvVars:   []string{"MARK_INCLUDE_PATH"},
 		}),
 	},
-	Action: RunMark,
+	Action: Publish,
 }
 
-func RunMark(cCtx *cli.Context) error {
+func Publish(cCtx *cli.Context) error {
 
 	if cCtx.Bool("debug") {
 		log.SetLevel(lorg.LevelDebug)

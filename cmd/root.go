@@ -93,17 +93,12 @@ func Exec() {
 				Usage:   "run on CI mode. It won't fail if files are not found.",
 				EnvVars: []string{"MARK_CI"},
 			}),
-			altsrc.NewStringFlag(&cli.StringFlag{
-				Name:    "space",
-				Value:   "",
-				Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
-				EnvVars: []string{"MARK_SPACE"},
-			}),
 		},
 		EnableBashCompletion: true,
 		HideHelpCommand:      true,
 		Commands: []*cli.Command{
 			PublishCmd,
+			ListCmd,
 		},
 	}
 
