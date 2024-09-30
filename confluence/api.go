@@ -65,6 +65,10 @@ type PageInfo struct {
 	} `json:"_links"`
 }
 
+type PageInfoList struct {
+	Pages []PageInfo `json:"results"`
+}
+
 type AttachmentInfo struct {
 	Filename string `json:"title"`
 	ID       string `json:"id"`
@@ -183,9 +187,7 @@ func (api *API) FindPage(
 	title string,
 	pageType string,
 ) (*PageInfo, error) {
-	result := struct {
-		Results []PageInfo `json:"results"`
-	}{}
+	var result PageInfoList
 
 	payload := map[string]string{
 		"spaceKey": space,
@@ -210,11 +212,11 @@ func (api *API) FindPage(
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
+	if len(result.Pages) == 0 {
 		return nil, nil
 	}
 
-	return &result.Results[0], nil
+	return &result.Pages[0], nil
 }
 
 func (api *API) CreateAttachment(
@@ -796,6 +798,26 @@ func (api *API) ListSpaces() (*SpaceInfoList, error) {
 	}
 
 	return request.Response.(*SpaceInfoList), nil
+}
+
+func (api *API) ListPages(spaceKey string) (*PageInfoList, error) {
+	payload := map[string]string{
+		"limit":    "1000",
+		"spaceKey": spaceKey,
+	}
+
+	request, err := api.rest.Res(
+		"content", &PageInfoList{},
+	).Get(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*PageInfoList), nil
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
