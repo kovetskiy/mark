@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"text/tabwriter"
 
 	"github.com/kovetskiy/lorg"
@@ -23,21 +25,22 @@ var listFlags = []cli.Flag{
 		EnvVars: []string{"MARK_SPACE"},
 	})}
 
+var pageFlags = []cli.Flag{
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "space",
+		Value:   "",
+		Usage:   "lists all pages in a space.",
+		EnvVars: []string{"MARK_SPACE"},
+	})}
+
 var ListCmd = &cli.Command{
 	Name:  "list",
 	Usage: "lists pages, spaces and labels",
 	Subcommands: []*cli.Command{
 		{
-			Name:  "pages",
-			Usage: "lists pages.",
-			Flags: []cli.Flag{
-				altsrc.NewStringFlag(&cli.StringFlag{
-					Name:    "space",
-					Value:   "",
-					Usage:   "lists all pages in a space.",
-					EnvVars: []string{"MARK_SPACE"},
-				}),
-			},
+			Name:   "pages",
+			Usage:  "lists pages.",
+			Flags:  append(append(flags, listFlags...), pageFlags...),
 			Action: ListPages,
 		},
 		{
@@ -74,6 +77,36 @@ func ListPages(cCtx *cli.Context) error {
 			),
 		)
 		log.GetLogger().SetOutput(os.Stderr)
+	}
+
+	creds, err := auth.GetCredentials(cCtx.String("username"), cCtx.String("password"), "", cCtx.String("base-url"), false)
+	if err != nil {
+		return err
+	}
+
+	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
+
+	pages, err := api.ListPages(cCtx.String("space"))
+
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(0)
+	}
+
+	if cCtx.String("output-format") == "json" {
+		p, _ := json.MarshalIndent(pages.Pages, "", "\t")
+		fmt.Print(string(p))
+	} else {
+		w := tabwriter.NewWriter(os.Stdout, 6, 4, 3, ' ', 0)
+		fmt.Fprintln(w, "Name\tID")
+
+		slices.SortFunc(pages.Pages, func(a, b confluence.PageInfo) int {
+			return cmp.Compare(a.Title, b.Title)
+		})
+		for _, page := range pages.Pages {
+			fmt.Fprintf(w, "%s\t%s\n", page.Title, page.ID)
+		}
+		w.Flush()
 	}
 
 	return nil
@@ -116,8 +149,12 @@ func ListSpaces(cCtx *cli.Context) error {
 		s, _ := json.MarshalIndent(spaces.Spaces, "", "\t")
 		fmt.Print(string(s))
 	} else {
-		w := tabwriter.NewWriter(os.Stdout, 0, 8, 0, '\t', 0)
-		fmt.Fprintln(w, "ID\tKey\tName")
+		w := tabwriter.NewWriter(os.Stdout, 6, 4, 3, ' ', 0)
+		fmt.Fprintln(w, "Key\tName\tID")
+
+		slices.SortFunc(spaces.Spaces, func(a, b confluence.SpaceInfo) int {
+			return cmp.Compare(a.Key, b.Key)
+		})
 		for _, space := range spaces.Spaces {
 			fmt.Fprintf(w, "%s\t%s\t%d\n", space.Key, space.Name, space.ID)
 		}
