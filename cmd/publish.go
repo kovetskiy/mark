@@ -30,7 +30,20 @@ import (
 var PublishCmd = &cli.Command{
 	Name:  "publish",
 	Usage: "renders markdown and publishes content to confluence.",
-	Flags: []cli.Flag{
+	Flags: append(flags, []cli.Flag{
+		altsrc.NewBoolFlag(&cli.BoolFlag{
+			Name:    "compile-only",
+			Value:   false,
+			Usage:   "show resulting HTML and don't update Confluence page content.",
+			EnvVars: []string{"MARK_COMPILE_ONLY"},
+		}),
+		altsrc.NewStringFlag(&cli.StringFlag{
+			Name:    "target-url",
+			Aliases: []string{"l"},
+			Value:   "",
+			Usage:   "edit specified Confluence page. If -l is not specified, file should contain metadata (see above).",
+			EnvVars: []string{"MARK_TARGET_URL"},
+		}),
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:      "files",
 			Aliases:   []string{"f"},
@@ -116,7 +129,13 @@ var PublishCmd = &cli.Command{
 			TakesFile: true,
 			EnvVars:   []string{"MARK_INCLUDE_PATH"},
 		}),
-	},
+		altsrc.NewBoolFlag(&cli.BoolFlag{
+			Name:    "ci",
+			Value:   false,
+			Usage:   "run on CI mode. It won't fail if files are not found.",
+			EnvVars: []string{"MARK_CI"},
+		}),
+	}...),
 	Action: Publish,
 }
 
