@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/auth"
@@ -115,10 +116,12 @@ func ListSpaces(cCtx *cli.Context) error {
 		s, _ := json.MarshalIndent(spaces.Spaces, "", "\t")
 		fmt.Print(string(s))
 	} else {
-		fmt.Printf("ID\t\tKey\t\tName\n")
+		w := tabwriter.NewWriter(os.Stdout, 0, 8, 0, '\t', 0)
+		fmt.Fprintln(w, "ID\tKey\tName")
 		for _, space := range spaces.Spaces {
-			fmt.Printf("%s\t\t%s\t\t%d\n", space.Key, space.Name, space.ID)
+			fmt.Fprintf(w, "%s\t%s\t%d\n", space.Key, space.Name, space.ID)
 		}
+		w.Flush()
 	}
 
 	return nil
