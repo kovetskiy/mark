@@ -34,6 +34,7 @@ func ResolveRelativeLinks(
 	spaceFromCli string,
 	titleFromH1 bool,
 	parents []string,
+	titleAppendGeneratedHash bool,
 ) ([]LinkSubstitution, error) {
 	matches := parseLinks(string(markdown))
 
@@ -46,7 +47,7 @@ func ResolveRelativeLinks(
 			match.filename,
 			match.hash,
 		)
-		resolved, err := resolveLink(api, base, match, spaceFromCli, titleFromH1, parents)
+		resolved, err := resolveLink(api, base, match, spaceFromCli, titleFromH1, parents, titleAppendGeneratedHash)
 		if err != nil {
 			return nil, karma.Format(err, "resolve link: %q", match.full)
 		}
@@ -71,6 +72,7 @@ func resolveLink(
 	spaceFromCli string,
 	titleFromH1 bool,
 	parents []string,
+	titleAppendGeneratedHash bool,
 ) (string, error) {
 	var result string
 
@@ -105,7 +107,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceFromCli, titleFromH1, parents)
+		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceFromCli, titleFromH1, parents, titleAppendGeneratedHash)
 		if err != nil {
 			log.Errorf(
 				err,
