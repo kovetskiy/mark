@@ -82,6 +82,12 @@ var flags = []cli.Flag{
 		EnvVars: []string{"MARK_H1_TITLE"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "title-append-generated-hash",
+		Value:   false,
+		Usage:   "appends a short hash generated from the path of the page (space, parents, and title) to the title",
+		EnvVars: []string{"MARK_TITLE_APPEND_GENERATED_HASH"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "minor-edit",
 		Value:   false,
 		Usage:   "don't send notifications while updating Confluence page.",
@@ -309,7 +315,7 @@ func processFile(
 
 	parents := strings.Split(cCtx.String("parents"), cCtx.String("parents-delimiter"))
 
-	meta, markdown, err := metadata.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
+	meta, markdown, err := metadata.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents, cCtx.Bool("title-append-generated-hash"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -388,7 +394,7 @@ func processFile(
 		}
 	}
 
-	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents)
+	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents, cCtx.Bool("title-append-generated-hash"))
 	if err != nil {
 		log.Fatalf(err, "unable to resolve relative links")
 	}

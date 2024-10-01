@@ -3,6 +3,8 @@ package metadata
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -44,7 +46,7 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []string) (*Meta, []byte, error) {
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
 		offset int
@@ -162,6 +164,19 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 	// Prepend parent pages that are defined via the cli flag
 	if len(parents) > 0 && parents[0] != "" {
 		meta.Parents = append(parents, meta.Parents...)
+	}
+
+	// deterministically generate a hash from the page's parents, space, and title
+	if titleAppendGeneratedHash {
+		path := strings.Join(append(meta.Parents, meta.Space, meta.Title), "/")
+		pathHash := sha256.Sum256([]byte(path))
+		// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
+		meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
+		log.Debugf(
+			nil,
+			"appended hash to page title: %s",
+			meta.Title,
+		)
 	}
 
 	return meta, data[offset:], nil
