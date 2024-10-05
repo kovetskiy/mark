@@ -118,13 +118,12 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 				// Classifying the next text type node (midNode) will confirm that.
 				if t == None {
 					midNode := node.NextSibling()
-					rightNode := midNode.NextSibling()
 
-					if midNode.Kind() == ast.KindText {
+					if midNode != nil && midNode.Kind() == ast.KindText {
+						rightNode := midNode.NextSibling()
 						midTextNode := midNode.(*ast.Text)
 						if rightNode != nil && rightNode.Kind() == ast.KindText {
 							rightTextNode := rightNode.(*ast.Text)
-
 							if string(n.Text(source)) == "[" && string(rightTextNode.Text(source)) == "]" {
 								t = ghAlertsClassifier.ClassifyingBlockQuote(string(midTextNode.Text(source)))
 							}
