@@ -88,3 +88,8 @@
 > [Hey !NOTE]
 
 > [NOTE]
+
+
+
+> **TL;DR:** Thingy!
+> More stuff
