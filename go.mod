@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.6.1
-	github.com/dreampuf/mermaid.go v0.0.18
+	github.com/dreampuf/mermaid.go v0.0.19
 	github.com/kovetskiy/gopencils v0.0.0-20240830111426-6b65e95c9cb0
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
@@ -19,7 +19,7 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.4.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20240810084448-b931b754e476 // indirect
+	github.com/chromedp/cdproto v0.0.0-20241003230502-a4a8f7c660df // indirect
 	github.com/chromedp/chromedp v0.10.0 // indirect
 	github.com/chromedp/sysutil v1.0.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
