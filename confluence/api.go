@@ -42,6 +42,10 @@ type SpaceInfo struct {
 	} `json:"_links"`
 }
 
+type SpaceInfoList struct {
+	Spaces []SpaceInfo `json:"results"`
+}
+
 type PageInfo struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -59,6 +63,10 @@ type PageInfo struct {
 	Links struct {
 		Full string `json:"webui"`
 	} `json:"_links"`
+}
+
+type PageInfoList struct {
+	Pages []PageInfo `json:"results"`
 }
 
 type AttachmentInfo struct {
@@ -179,9 +187,7 @@ func (api *API) FindPage(
 	title string,
 	pageType string,
 ) (*PageInfo, error) {
-	result := struct {
-		Results []PageInfo `json:"results"`
-	}{}
+	var result PageInfoList
 
 	payload := map[string]string{
 		"spaceKey": space,
@@ -206,11 +212,11 @@ func (api *API) FindPage(
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
+	if len(result.Pages) == 0 {
 		return nil, nil
 	}
 
-	return &result.Results[0], nil
+	return &result.Pages[0], nil
 }
 
 func (api *API) CreateAttachment(
@@ -258,7 +264,7 @@ func (api *API) CreateAttachment(
 
 	if len(result.Results) == 0 {
 		return info, errors.New(
-			"Confluence REST API for creating attachments returned " +
+			"the Confluence REST API for creating attachments returned " +
 				"0 json objects, expected at least 1",
 		)
 	}
@@ -775,16 +781,55 @@ func (api *API) RestrictPageUpdates(
 	return err
 }
 
+func (api *API) ListSpaces() (*SpaceInfoList, error) {
+	payload := map[string]string{
+		"limit": "1000",
+	}
+
+	request, err := api.rest.Res(
+		"space", &SpaceInfoList{},
+	).Get(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*SpaceInfoList), nil
+}
+
+func (api *API) ListPages(spaceKey string) (*PageInfoList, error) {
+	payload := map[string]string{
+		"limit":    "1000",
+		"spaceKey": spaceKey,
+	}
+
+	request, err := api.rest.Res(
+		"content", &PageInfoList{},
+	).Get(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*PageInfoList), nil
+}
+
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return errors.New(
-			"Confluence API returned unexpected status: 401 (Unauthorized)",
+			"the Confluence API returned unexpected status: 401 (Unauthorized)",
 		)
 	}
 
 	if request.Raw.StatusCode == http.StatusNotFound {
 		return errors.New(
-			"Confluence API returned unexpected status: 404 (Not Found)",
+			"the Confluence API returned unexpected status: 404 (Not Found)",
 		)
 	}
 
@@ -792,7 +837,7 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	defer request.Raw.Body.Close()
 
 	return fmt.Errorf(
-		"Confluence API returned unexpected status: %v, "+
+		"the Confluence API returned unexpected status: %v, "+
 			"output: %q",
 		request.Raw.Status, output,
 	)
