@@ -12,7 +12,7 @@ require (
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.5
-	github.com/yuin/goldmark v1.7.6
+	github.com/yuin/goldmark v1.7.8
 	golang.org/x/tools v0.26.0
 	gopkg.in/yaml.v3 v3.0.1
 )
