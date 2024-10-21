@@ -63,7 +63,7 @@ func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, nod
 			if r.EastAsianLineBreaks != html.EastAsianLineBreaksNone && len(value) != 0 {
 				sibling := node.NextSibling()
 				if sibling != nil && sibling.Kind() == ast.KindText {
-					if siblingText := sibling.(*ast.Text).Text(source); len(siblingText) != 0 {
+					if siblingText := sibling.(*ast.Text).Value(source); len(siblingText) != 0 {
 						thisLastRune := util.ToRune(value, len(value)-1)
 						siblingFirstRune, _ := utf8.DecodeRune(siblingText)
 						// Inline the softLineBreak function as it's not public

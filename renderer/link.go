@@ -33,7 +33,8 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 				return ast.WalkStop, err
 			}
 
-			if len(n.Destination) < 4 {
+			if len(string(n.Destination)) < 4 {
+				//nolint:staticcheck
 				_, err := writer.Write(node.Text(source))
 				if err != nil {
 					return ast.WalkStop, err
@@ -50,6 +51,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 				return ast.WalkStop, err
 			}
 
+			//nolint:staticcheck
 			_, err = writer.Write(node.Text(source))
 			if err != nil {
 				return ast.WalkStop, err

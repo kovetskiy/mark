@@ -108,7 +108,7 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 		if countParagraphs < 2 && entering {
 			if node.Kind() == ast.KindText {
 				n := node.(*ast.Text)
-				t = legacyClassifier.ClassifyingBlockQuote(string(n.Text(source)))
+				t = legacyClassifier.ClassifyingBlockQuote(string(n.Value(source)))
 				// If the node is a text node but classification returned none do not give up!
 				// Find the next two sibling nodes midNode and rightNode,
 				// 1. If both are also a text node
@@ -124,8 +124,8 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 						midTextNode := midNode.(*ast.Text)
 						if rightNode != nil && rightNode.Kind() == ast.KindText {
 							rightTextNode := rightNode.(*ast.Text)
-							if string(n.Text(source)) == "[" && string(rightTextNode.Text(source)) == "]" {
-								t = ghAlertsClassifier.ClassifyingBlockQuote(string(midTextNode.Text(source)))
+							if string(n.Value(source)) == "[" && string(rightTextNode.Value(source)) == "]" {
+								t = ghAlertsClassifier.ClassifyingBlockQuote(string(midTextNode.Value(source)))
 							}
 						}
 					}
