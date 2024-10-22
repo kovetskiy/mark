@@ -91,8 +91,10 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 			html.WithXHTML(),
 		))
 
+	ctx := parser.NewContext(parser.WithIDs(&cparser.ConfluenceIDs{Values: map[string]bool{}}))
+
 	var buf bytes.Buffer
-	err := converter.Convert(markdown, &buf)
+	err := converter.Convert(markdown, &buf, parser.WithContext(ctx))
 
 	if err != nil {
 		panic(err)
