@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	version     = "11.2.0"
+	version     = "11.3.0"
 	usage       = "A tool for updating Atlassian Confluence pages from markdown."
 	description = `Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark`
 )
