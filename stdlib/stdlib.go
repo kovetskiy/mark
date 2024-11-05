@@ -296,18 +296,22 @@ func templates(api *confluence.API) (*template.Template, error) {
 		),
 
 		/* https://confluence.atlassian.com/conf59/excerpt-include-macro-792499101.html */
+		/* https://support.atlassian.com/confluence-cloud/docs/insert-the-excerpt-include-macro/ */
 
 		`ac:excerpt-include`: text(
 			`<ac:macro ac:name="excerpt-include">`,
+			`{{ if .Name }}<ac:parameter ac:name="name">{{ .Name }}</ac:parameter>{{ end }}`,
 			`<ac:parameter ac:name="nopanel">{{ if .NoPanel }}{{ .NoPanel }}{{ else }}false{{ end }}</ac:parameter>`,
 			`<ac:default-parameter>{{ .Page }}</ac:default-parameter>`,
 			`</ac:macro>`,
 		),
 
 		/* https://confluence.atlassian.com/conf59/excerpt-macro-792499102.html */
+		/* https://support.atlassian.com/confluence-cloud/docs/insert-the-excerpt-macro/ */
 
 		`ac:excerpt`: text(
 			`<ac:structured-macro ac:name="excerpt">`,
+			`{{ if .Name }}<ac:parameter ac:name="name">{{ .Name }}</ac:parameter>{{ end }}`,
 			`<ac:parameter ac:name="hidden">{{ if .Hidden }}{{ .Hidden }}{{ else }}false{{ end }}</ac:parameter>`,
 			`<ac:parameter ac:name="atlassian-macro-output-type">{{ if .OutputType }}{{ .OutputType }}{{ else }}BLOCK{{ end }}</ac:parameter>`,
 			`<ac:rich-text-body>`,
