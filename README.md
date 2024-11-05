@@ -432,10 +432,12 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:excerpt-include` to include the excerpt from another page
   * Page: the page the excerpt should be included from
+  * Name: The specific identifier for the excerpt, allowing multiple Excerpt macros on one page to be referenced individually. If not provided, the first excerpt from the page will be used (optional, cloud only)
   * NoPanel: Determines whether Confluence will display a panel around the excerpted content (optional, default: false)
 
 * template: `ac:excerpt` to create an excerpt and include it in the page
   * Excerpt: The text you want to include
+  * Name: Allows you to identify this macro so that you can add multiple Excerpt macros to one page and use a specific one on another page using the Excerpt Include macro (optional, cloud only)
   * OutputType: Determines whether the content of the Excerpt macro body is displayed on a new line or inline (optional, options: "BLOCK" or "INLINE", default: BLOCK)
   * Hidden: Hide the excerpt content (optional, default: false)
 
