@@ -444,7 +444,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="multimedia">`,
 			`<ac:parameter ac:name="width">{{ or .Width 500 }}</ac:parameter>`,
 			`<ac:parameter ac:name="name">`,
-			`<ri:attachment ri:filename="{{ .Name }}/>`,
+			`<ri:attachment ri:filename="{{ .Name | convertAttachment }}"/>`,
 			`</ac:parameter>`,
 			`<ac:parameter ac:name="autoplay">{{ or .AutoPlay "false"}}</ac:parameter>`,
 			`</ac:structured-macro>`,
