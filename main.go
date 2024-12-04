@@ -72,7 +72,7 @@ var flags = []cli.Flag{
 		Value:   false,
 		Aliases: []string{"L"},
 		Usage:   "remove linebreaks inside of tags, to accomodate non-standard Confluence behavior",
-		EnvVars: []string{"MARK_STRIP_LINEBREAK"},
+		EnvVars: []string{"MARK_STRIP_LINEBREAKS"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "title-from-h1",
