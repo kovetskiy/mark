@@ -13,8 +13,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.5/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46t
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dreampuf/mermaid.go v0.0.20 h1:a0VpnZUoCDco7fRpFF2J+7tx2sYWK5VMV5yuSzsYDgA=
-github.com/dreampuf/mermaid.go v0.0.20/go.mod h1:xT7lC6+LL334PeARmvQ6+2xgRRhVAA78qOm3zC5s2Y8=
+github.com/dreampuf/mermaid.go v0.0.21 h1:6Lqa1XRYOg0ycJAK85QkMA/lPmz31kupK2Gj6a8yXTs=
+github.com/dreampuf/mermaid.go v0.0.21/go.mod h1:xT7lC6+LL334PeARmvQ6+2xgRRhVAA78qOm3zC5s2Y8=
 github.com/gobwas/httphead v0.1.0 h1:exrUm0f4YX0L7EBwZHuCF4GDp8aJfVeBrlLQrs6NqWU=
 github.com/gobwas/httphead v0.1.0/go.mod h1:O/RXo79gxV8G+RqlR/otEwx4Q36zl9rqC5u12GKvMCM=
 github.com/gobwas/pool v0.2.1 h1:xfeeEhW7pwmX8nuLVlqbzVc7udMDrwetjEv+TZIz1og=

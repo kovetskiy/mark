@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.7.1
-	github.com/dreampuf/mermaid.go v0.0.20
+	github.com/dreampuf/mermaid.go v0.0.21
 	github.com/kovetskiy/gopencils v0.0.0-20240830111426-6b65e95c9cb0
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
