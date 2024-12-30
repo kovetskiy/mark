@@ -105,17 +105,11 @@ var flags = []cli.Flag{
 		Usage:   "display logs in color. Possible values: auto, never.",
 		EnvVars: []string{"MARK_COLOR"},
 	}),
-	altsrc.NewBoolFlag(&cli.BoolFlag{
-		Name:    "debug",
-		Value:   false,
-		Usage:   "enable debug logs.",
-		EnvVars: []string{"MARK_DEBUG"},
-	}),
-	altsrc.NewBoolFlag(&cli.BoolFlag{
-		Name:    "trace",
-		Value:   false,
-		Usage:   "enable trace logs.",
-		EnvVars: []string{"MARK_TRACE"},
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    "log-level",
+		Value:   "info",
+		Usage:   "set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL.",
+		EnvVars: []string{"MARK_LOG_LEVEL"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "username",
@@ -230,13 +224,8 @@ func main() {
 }
 
 func RunMark(cCtx *cli.Context) error {
-
-	if cCtx.Bool("debug") {
-		log.SetLevel(lorg.LevelDebug)
-	}
-
-	if cCtx.Bool("trace") {
-		log.SetLevel(lorg.LevelTrace)
+	if err := setLogLevel(cCtx); err != nil {
+		return err
 	}
 
 	if cCtx.String("color") == "never" {
@@ -551,7 +540,6 @@ func processFile(
 }
 
 func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *metadata.Meta) {
-
 	labelInfo, err := api.GetPageLabels(target, "global")
 	if err != nil {
 		log.Fatal(err)
@@ -618,4 +606,27 @@ func configFilePath() string {
 		log.Fatal(err)
 	}
 	return filepath.Join(fp, "mark")
+}
+
+func setLogLevel(cCtx *cli.Context) error {
+	logLevel := cCtx.String("log-level")
+	switch logLevel {
+	case "TRACE":
+		log.SetLevel(lorg.LevelTrace)
+	case "DEBUG":
+		log.SetLevel(lorg.LevelDebug)
+	case "INFO":
+		log.SetLevel(lorg.LevelInfo)
+	case "WARNING":
+		log.SetLevel(lorg.LevelWarning)
+	case "ERROR":
+		log.SetLevel(lorg.LevelError)
+	case "FATAL":
+		log.SetLevel(lorg.LevelFatal)
+	default:
+		return fmt.Errorf("unknown log level: %s", logLevel)
+	}
+	log.GetLevel()
+
+	return nil
 }
