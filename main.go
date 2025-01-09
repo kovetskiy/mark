@@ -610,18 +610,18 @@ func configFilePath() string {
 
 func setLogLevel(cCtx *cli.Context) error {
 	logLevel := cCtx.String("log-level")
-	switch logLevel {
-	case "TRACE":
+	switch strings.ToUpper(logLevel) {
+	case lorg.LevelTrace.String():
 		log.SetLevel(lorg.LevelTrace)
-	case "DEBUG":
+	case lorg.LevelDebug.String():
 		log.SetLevel(lorg.LevelDebug)
-	case "INFO":
+	case lorg.LevelInfo.String():
 		log.SetLevel(lorg.LevelInfo)
-	case "WARNING":
+	case lorg.LevelWarning.String():
 		log.SetLevel(lorg.LevelWarning)
-	case "ERROR":
+	case lorg.LevelError.String():
 		log.SetLevel(lorg.LevelError)
-	case "FATAL":
+	case lorg.LevelFatal.String():
 		log.SetLevel(lorg.LevelFatal)
 	default:
 		return fmt.Errorf("unknown log level: %s", logLevel)
