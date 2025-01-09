@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.7.1
-	github.com/dreampuf/mermaid.go v0.0.21
+	github.com/dreampuf/mermaid.go v0.0.22
 	github.com/kovetskiy/gopencils v0.0.0-20240830111426-6b65e95c9cb0
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
@@ -13,13 +13,13 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.5
 	github.com/yuin/goldmark v1.7.8
-	golang.org/x/tools v0.28.0
+	golang.org/x/tools v0.29.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20241110205750-a72e6703cd9b // indirect
+	github.com/chromedp/cdproto v0.0.0-20250101192427-60a0ca35cb84 // indirect
 	github.com/chromedp/chromedp v0.11.2 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
@@ -35,6 +35,6 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/zazab/zhash v0.0.0-20221031090444-2b0d50417446 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
