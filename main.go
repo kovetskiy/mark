@@ -531,9 +531,9 @@ func processFile(
 		contentHash := getSHA1Hash(html)
 
 		log.Debugf(
-				nil,
-				"content hash: %s",
-				contentHash,
+			nil,
+			"content hash: %s",
+			contentHash,
 		)
 
 		versionPattern := `\[v([a-f0-9]{40})]$`
@@ -543,16 +543,16 @@ func processFile(
 
 		if len(matches) > 1 {
 			log.Debugf(
-					nil,
-					"previous content hash: %s",
-					matches[1],
+				nil,
+				"previous content hash: %s",
+				matches[1],
 			)
 
 			if matches[1] == contentHash {
 				log.Infof(
-						nil,
-						"page %q is already up to date",
-						target.Title,
+					nil,
+					"page %q is already up to date",
+					target.Title,
 				)
 				shouldUpdatePage = false
 			}
