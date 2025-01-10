@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -189,6 +192,12 @@ var flags = []cli.Flag{
 		Usage:     "Path for shared includes, used as a fallback if the include doesn't exist in the current directory.",
 		TakesFile: true,
 		EnvVars:   []string{"MARK_INCLUDE_PATH"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "changes-only",
+		Value:   false,
+		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
+		EnvVars: []string{"CHANGES_ONLY"},
 	}),
 }
 
@@ -515,9 +524,51 @@ func processFile(
 		html = buffer.String()
 	}
 
-	err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), cCtx.String("version-message"), meta.Labels, meta.ContentAppearance)
-	if err != nil {
-		log.Fatal(err)
+	var finalVersionMessage string
+	var shouldUpdatePage bool = true
+
+	if cCtx.Bool("changes-only") {
+		contentHash := getSHA1Hash(html)
+
+		log.Debugf(
+				nil,
+				"content hash: %s",
+				contentHash,
+		)
+
+		versionPattern := `\[v([a-f0-9]{40})]$`
+    re := regexp.MustCompile(versionPattern)
+
+		matches := re.FindStringSubmatch(target.Version.Message)
+
+		if len(matches) > 1 {
+			log.Debugf(
+					nil,
+					"previous content hash: %s",
+					matches[1],
+			)
+
+			if matches[1] == contentHash {
+				log.Infof(
+						nil,
+						"page %q is already up to date",
+						target.Title,
+				)
+				shouldUpdatePage = false
+			}
+		}
+
+		finalVersionMessage = fmt.Sprintf("%s [v%s]", cCtx.String("version-message"), contentHash)
+	} else {
+		finalVersionMessage = cCtx.String("version-message")
+	}
+
+
+	if shouldUpdatePage {
+		err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), finalVersionMessage, meta.Labels, meta.ContentAppearance)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	updateLabels(api, target, meta)
@@ -629,4 +680,10 @@ func setLogLevel(cCtx *cli.Context) error {
 	log.GetLevel()
 
 	return nil
+}
+
+func getSHA1Hash(input string) string {
+	hash := sha1.New()
+	hash.Write([]byte(input))
+	return hex.EncodeToString(hash.Sum(nil))
 }

@@ -49,6 +49,7 @@ type PageInfo struct {
 
 	Version struct {
 		Number int64 `json:"number"`
+		Message string `json:"message"`
 	} `json:"version"`
 
 	Ancestors []struct {
