@@ -774,10 +774,10 @@ NAME:
    mark - A tool for updating Atlassian Confluence pages from markdown.
 
 USAGE:
-   mark [global options] 
+   mark [global options]
 
 VERSION:
-   11.3.1
+   12.0.0
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
@@ -788,7 +788,7 @@ GLOBAL OPTIONS:
    --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
    --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
    --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
-   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accomodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAK]
+   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accomodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
    --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
    --title-append-generated-hash                 appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
@@ -807,6 +807,7 @@ GLOBAL OPTIONS:
    --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
    --mermaid-scale value                         defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path value                          Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
+   --changes-only                                Avoids re-uploading pages that haven't changed since the last run. (default: false) [$MARK_CHANGES_ONLY]
    --help, -h                                    show help
    --version, -v                                 print the version
 ```
