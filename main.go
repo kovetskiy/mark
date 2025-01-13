@@ -197,7 +197,7 @@ var flags = []cli.Flag{
 		Name:    "changes-only",
 		Value:   false,
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
-		EnvVars: []string{"CHANGES_ONLY"},
+		EnvVars: []string{"MARK_CHANGES_ONLY"},
 	}),
 }
 
