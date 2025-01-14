@@ -386,7 +386,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="pagetree" ac:schema-version="1">`,
 			`<ac:parameter ac:name="root">`,
 			`<ac:link>`,
-			`<ri:page ri:content-title="@self"{{ or .Title "" }}/>`,
+			`<ri:page ri:content-title="{{ or .Title "@self" }}"/>`,
 			`</ac:link>`,
 			`</ac:parameter>`,
 			`<ac:parameter ac:name="sort">{{ or .Sort "" }}</ac:parameter>`,
