@@ -362,32 +362,32 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:children` to include Children Display macro
   * Reverse (Reverse Sort): Use with the `Sort Children By` parameter. When set, the sort order changes from ascending to descending.
-  * `true`
-  * `false` (Default)
+    * `true`
+    * `false` (Default)
   * Sort (Sort Children By):
-  * `creation` — to sort by content creation date
-  * `title` — to sort alphabetically on title
-  * `modified` — to sort of last modification date.
-  * If not specified, manual sorting is used if manually ordered, otherwise alphabetical.
+    * `creation` — to sort by content creation date
+    * `title` — to sort alphabetically on title
+    * `modified` — to sort of last modification date.
+    * If not specified, manual sorting is used if manually ordered, otherwise alphabetical.
   * Style (Heading Style): Choose the style used to display descendants.
-  * from `h1` to `h6`
-  * If not specified, default style is applied.
+    * from `h1` to `h6`
+    * If not specified, default style is applied.
   * Page (Parent Page):
-  * `/` — to list the top-level pages of the current space, i.e. those without parents.
-  * `pagename` — to list the children of the specified page.
-  * `spacekey:pagename` — to list the children of the specified page in the specified space.
-  * If not specified, the current page is used.
+    * `/` — to list the top-level pages of the current space, i.e. those without parents.
+    * `pagename` — to list the children of the specified page.
+    * `spacekey:pagename` — to list the children of the specified page in the specified space.
+    * If not specified, the current page is used.
   * Excerpt (Include Excerpts): Allows you to include a short excerpt under each page in the list.
-  * `none` - no excerpt will be displayed. (Default)
-  * `simple` - displays the first line of text contained in an Excerpt macro any of the returned pages. If there is not an Excerpt macro on the page, nothing will be shown.
-  * `rich content` - displays the contents of an Excerpt macro, or if there is not an Excerpt macro on the page, the first part of the page content, including formatted text, images and some macros.
+    * `none` - no excerpt will be displayed. (Default)
+    * `simple` - displays the first line of text contained in an Excerpt macro any of the returned pages. If there is not an Excerpt macro on the page, nothing will be shown.
+    * `rich content` - displays the contents of an Excerpt macro, or if there is not an Excerpt macro on the page, the first part of the page content, including formatted text, images and some macros.
   * First (Number of Children): Restrict the number of child pages that are displayed at the top level.
-  * If not specified, no limit is applied.
+    * If not specified, no limit is applied.
   * Depth (Depth of Descendants): Enter a number to specify the depth of descendants to display. For example, if the value is 2, the macro will display 2 levels of child pages. This setting has no effect if `Show Descendants` is enabled.
-  * If not specified, no limit is applied.
+    * If not specified, no limit is applied.
   * All (Show Descendants): Choose whether to display all the parent page's descendants.
-  * `true`
-  * `false` (Default)
+    * `true`
+    * `false` (Default)
 
   See: <https://confluence.atlassian.com/doc/children-display-macro-139501.html>
 
