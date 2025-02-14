@@ -789,7 +789,7 @@ GLOBAL OPTIONS:
    --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
    --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
    --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
-   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accomodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
+   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accommodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
    --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
    --title-append-generated-hash                 appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
@@ -829,7 +829,7 @@ drop-h1 = true
 
 **NOTE**: The system specific locations are described in here:
 <https://pkg.go.dev/os#UserConfigDir>.
-Currently these are:
+Currently, these are:
 On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html if non-empty, else $HOME/.config. On Darwin, it returns $HOME/Library/Application Support. On Windows, it returns %AppData%. On Plan 9, it returns $home/lib.
 
 ## Tricks
@@ -870,7 +870,7 @@ done
 
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid
-that they automatically shown in Confluence, then go through the reviewal process and automatically
+that they have automatically shown in Confluence, then go through the reviewal process and automatically
 deploy them when PR got merged.
 
 ```yaml
@@ -900,12 +900,12 @@ We recommend to lint your markdown files with [markdownlint-cli2](https://github
 ## Issues, Bugs & Contributions
 
 I've started the project to solve my own problem and open sourced the solution so anyone who has a problem like me can solve it too.
-I have no profits/sponsors from this projects which means I don't really prioritize working on this project in my free time.
+I have no profits/sponsors from these projects which means I don't really prioritize working on this project in my free time.
 I still check the issues and do code reviews for Pull Requests which means if you encounter a bug in
 the program, you should not expect me to fix it as soon as possible, but I'll be very glad to
 merge your own contributions into the project and release the new version.
 
-I try to label all new issues so it's easy to find a bug or a feature request to fix/implement, if
+I try to label all new issues, so it's easy to find a bug or a feature request to fix/implement, if
 you are willing to help with the project, you can use the following labels to find issues, just make
 sure to reply in the issue to let everyone know you took the issue:
 
