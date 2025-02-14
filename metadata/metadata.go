@@ -17,6 +17,7 @@ const (
 	HeaderType        = `Type`
 	HeaderTitle       = `Title`
 	HeaderLayout      = `Layout`
+	HeaderEmoji       = `Emoji`
 	HeaderAttachment  = `Attachment`
 	HeaderLabel       = `Label`
 	HeaderInclude     = `Include`
@@ -31,6 +32,7 @@ type Meta struct {
 	Title             string
 	Layout            string
 	Sidebar           string
+	Emoji             string
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
@@ -106,6 +108,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 		case HeaderSidebar:
 			meta.Layout = "article"
 			meta.Sidebar = strings.TrimSpace(value)
+
+		case HeaderEmoji:
+			meta.Emoji = strings.TrimSpace(value)
 
 		case HeaderAttachment:
 			meta.Attachments = append(meta.Attachments, value)

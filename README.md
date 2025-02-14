@@ -29,6 +29,7 @@ File in the extended format should follow the specification:
 <!-- Parent: <parent 1> -->
 <!-- Parent: <parent 2> -->
 <!-- Title: <title> -->
+<!-- Emoji: 🚀 -->
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
@@ -977,6 +978,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/recrtl"><img src="https://avatars.githubusercontent.com/u/14078835?v=4?s=100" width="100px;" alt="recrtl"/><br /><sub><b>recrtl</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=recrtl" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/seletskiy"><img src="https://avatars.githubusercontent.com/u/674812?v=4?s=100" width="100px;" alt="Stanislav Seletskiy"/><br /><sub><b>Stanislav Seletskiy</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=seletskiy" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/nr18"><img src="https://avatars.githubusercontent.com/u/674812?v=4?s=100" width="100px;" alt="Joris Conijn"/><br /><sub><b>Joris Conijn</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=nr18" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
