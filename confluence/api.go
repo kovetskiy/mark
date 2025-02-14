@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
 	"github.com/kovetskiy/lorg"
@@ -48,7 +49,7 @@ type PageInfo struct {
 	Type  string `json:"type"`
 
 	Version struct {
-		Number int64 `json:"number"`
+		Number  int64  `json:"number"`
 		Message string `json:"message"`
 	} `json:"version"`
 
@@ -513,7 +514,7 @@ func (api *API) CreatePage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string, emojiString string) error {
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
@@ -521,6 +522,29 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		// picking only the last one, which is required by confluence
 		oldAncestors = []map[string]interface{}{
 			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
+		}
+	}
+
+	properties := map[string]interface{}{
+		// Fix to set full-width as has changed on Confluence APIs again.
+		// https://jira.atlassian.com/browse/CONFCLOUD-65447
+		//
+		"content-appearance-published": map[string]interface{}{
+			"value": appearance,
+		},
+		// content-appearance-draft should not be set as this is impacted by
+		// the user editor default configurations - which caused the sporadic published widths.
+	}
+
+	if emojiString != "" {
+		r, _ := utf8.DecodeRuneInString(emojiString)
+		unicodeHex := fmt.Sprintf("%x", r)
+
+		properties["emoji-title-draft"] = map[string]interface{}{
+			"value": unicodeHex,
+		}
+		properties["emoji-title-published"] = map[string]interface{}{
+			"value": unicodeHex,
 		}
 	}
 
@@ -541,16 +565,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 			},
 		},
 		"metadata": map[string]interface{}{
-			// Fix to set full-width as has changed on Confluence APIs again.
-			// https://jira.atlassian.com/browse/CONFCLOUD-65447
-			//
-			"properties": map[string]interface{}{
-				"content-appearance-published": map[string]interface{}{
-					"value": appearance,
-				},
-			},
-			// content-appearance-draft should not be set as this is impacted by
-			// the user editor default configurations - which caused the sporadic published widths.
+			"properties": properties,
 		},
 	}
 
@@ -601,7 +616,7 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 
 	request, err := api.rest.Res(
 		"content/"+page.ID+"/label", &LabelInfo{},
-    ).SetQuery(map[string]string{"name": label}).Delete()
+	).SetQuery(map[string]string{"name": label}).Delete()
 	if err != nil {
 		return nil, err
 	}
