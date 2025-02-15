@@ -29,7 +29,6 @@ File in the extended format should follow the specification:
 <!-- Parent: <parent 1> -->
 <!-- Parent: <parent 2> -->
 <!-- Title: <title> -->
-<!-- Emoji: 🚀 -->
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
@@ -69,6 +68,12 @@ Also, optional following headers are supported:
 ```
 
 Setting the sidebar creates a column on the right side.  You're able to add any valid HTML content. Adding this property sets the layout to `article`.
+
+```markdown
+<!-- Emoji: 🚀 -->
+```
+
+You can set a page emoji icon by specifying the icon in the headers.
 
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
