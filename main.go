@@ -286,13 +286,15 @@ func RunMark(cCtx *cli.Context) error {
 
 		target := processFile(file, api, cCtx, creds.PageID, creds.Username)
 
-		log.Infof(
-			nil,
-			"page successfully updated: %s",
-			creds.BaseURL+target.Links.Full,
-		)
-
-		fmt.Println(creds.BaseURL + target.Links.Full)
+		if target != nil { // on dry-run or compile-only, the target is nil
+			log.Infof(
+				nil,
+				"page successfully updated: %s",
+				creds.BaseURL+target.Links.Full,
+			)
+			
+			fmt.Println(creds.BaseURL + target.Links.Full)
+		}
 	}
 	return nil
 }
@@ -415,7 +417,7 @@ func processFile(
 
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"), cCtx.Bool("strip-linebreaks"))
 		fmt.Println(html)
-		os.Exit(0)
+		return nil
 	}
 
 	var target *confluence.PageInfo
