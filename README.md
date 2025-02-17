@@ -69,6 +69,12 @@ Also, optional following headers are supported:
 
 Setting the sidebar creates a column on the right side.  You're able to add any valid HTML content. Adding this property sets the layout to `article`.
 
+```markdown
+<!-- Emoji: 🚀 -->
+```
+
+You can set a page emoji icon by specifying the icon in the headers.
+
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
 
@@ -362,32 +368,32 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:children` to include Children Display macro
   * Reverse (Reverse Sort): Use with the `Sort Children By` parameter. When set, the sort order changes from ascending to descending.
-  * `true`
-  * `false` (Default)
+    * `true`
+    * `false` (Default)
   * Sort (Sort Children By):
-  * `creation` — to sort by content creation date
-  * `title` — to sort alphabetically on title
-  * `modified` — to sort of last modification date.
-  * If not specified, manual sorting is used if manually ordered, otherwise alphabetical.
+    * `creation` — to sort by content creation date
+    * `title` — to sort alphabetically on title
+    * `modified` — to sort of last modification date.
+    * If not specified, manual sorting is used if manually ordered, otherwise alphabetical.
   * Style (Heading Style): Choose the style used to display descendants.
-  * from `h1` to `h6`
-  * If not specified, default style is applied.
+    * from `h1` to `h6`
+    * If not specified, default style is applied.
   * Page (Parent Page):
-  * `/` — to list the top-level pages of the current space, i.e. those without parents.
-  * `pagename` — to list the children of the specified page.
-  * `spacekey:pagename` — to list the children of the specified page in the specified space.
-  * If not specified, the current page is used.
+    * `/` — to list the top-level pages of the current space, i.e. those without parents.
+    * `pagename` — to list the children of the specified page.
+    * `spacekey:pagename` — to list the children of the specified page in the specified space.
+    * If not specified, the current page is used.
   * Excerpt (Include Excerpts): Allows you to include a short excerpt under each page in the list.
-  * `none` - no excerpt will be displayed. (Default)
-  * `simple` - displays the first line of text contained in an Excerpt macro any of the returned pages. If there is not an Excerpt macro on the page, nothing will be shown.
-  * `rich content` - displays the contents of an Excerpt macro, or if there is not an Excerpt macro on the page, the first part of the page content, including formatted text, images and some macros.
+    * `none` - no excerpt will be displayed. (Default)
+    * `simple` - displays the first line of text contained in an Excerpt macro any of the returned pages. If there is not an Excerpt macro on the page, nothing will be shown.
+    * `rich content` - displays the contents of an Excerpt macro, or if there is not an Excerpt macro on the page, the first part of the page content, including formatted text, images and some macros.
   * First (Number of Children): Restrict the number of child pages that are displayed at the top level.
-  * If not specified, no limit is applied.
+    * If not specified, no limit is applied.
   * Depth (Depth of Descendants): Enter a number to specify the depth of descendants to display. For example, if the value is 2, the macro will display 2 levels of child pages. This setting has no effect if `Show Descendants` is enabled.
-  * If not specified, no limit is applied.
+    * If not specified, no limit is applied.
   * All (Show Descendants): Choose whether to display all the parent page's descendants.
-  * `true`
-  * `false` (Default)
+    * `true`
+    * `false` (Default)
 
   See: <https://confluence.atlassian.com/doc/children-display-macro-139501.html>
 
@@ -788,7 +794,7 @@ GLOBAL OPTIONS:
    --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
    --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
    --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
-   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accomodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
+   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accommodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
    --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
    --title-append-generated-hash                 appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
@@ -828,7 +834,7 @@ drop-h1 = true
 
 **NOTE**: The system specific locations are described in here:
 <https://pkg.go.dev/os#UserConfigDir>.
-Currently these are:
+Currently, these are:
 On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html if non-empty, else $HOME/.config. On Darwin, it returns $HOME/Library/Application Support. On Windows, it returns %AppData%. On Plan 9, it returns $home/lib.
 
 ## Tricks
@@ -869,7 +875,7 @@ done
 
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid
-that they automatically shown in Confluence, then go through the reviewal process and automatically
+that they have automatically shown in Confluence, then go through the reviewal process and automatically
 deploy them when PR got merged.
 
 ```yaml
@@ -899,12 +905,12 @@ We recommend to lint your markdown files with [markdownlint-cli2](https://github
 ## Issues, Bugs & Contributions
 
 I've started the project to solve my own problem and open sourced the solution so anyone who has a problem like me can solve it too.
-I have no profits/sponsors from this projects which means I don't really prioritize working on this project in my free time.
+I have no profits/sponsors from these projects which means I don't really prioritize working on this project in my free time.
 I still check the issues and do code reviews for Pull Requests which means if you encounter a bug in
 the program, you should not expect me to fix it as soon as possible, but I'll be very glad to
 merge your own contributions into the project and release the new version.
 
-I try to label all new issues so it's easy to find a bug or a feature request to fix/implement, if
+I try to label all new issues, so it's easy to find a bug or a feature request to fix/implement, if
 you are willing to help with the project, you can use the following labels to find issues, just make
 sure to reply in the issue to let everyone know you took the issue:
 
@@ -977,6 +983,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/recrtl"><img src="https://avatars.githubusercontent.com/u/14078835?v=4?s=100" width="100px;" alt="recrtl"/><br /><sub><b>recrtl</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=recrtl" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/seletskiy"><img src="https://avatars.githubusercontent.com/u/674812?v=4?s=100" width="100px;" alt="Stanislav Seletskiy"/><br /><sub><b>Stanislav Seletskiy</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=seletskiy" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/nr18"><img src="https://avatars.githubusercontent.com/u/1660601?v=4?s=100" width="100px;" alt="Joris Conijn"/><br /><sub><b>Joris Conijn</b></sub></a><br /><a href="https://github.com/kovetskiy/mark/commits?author=nr18" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

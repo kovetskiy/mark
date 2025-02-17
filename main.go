@@ -539,7 +539,7 @@ func processFile(
 		)
 
 		versionPattern := `\[v([a-f0-9]{40})]$`
-    re := regexp.MustCompile(versionPattern)
+		re := regexp.MustCompile(versionPattern)
 
 		matches := re.FindStringSubmatch(target.Version.Message)
 
@@ -565,9 +565,8 @@ func processFile(
 		finalVersionMessage = cCtx.String("version-message")
 	}
 
-
 	if shouldUpdatePage {
-		err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), finalVersionMessage, meta.Labels, meta.ContentAppearance)
+		err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), finalVersionMessage, meta.Labels, meta.ContentAppearance, meta.Emoji)
 		if err != nil {
 			log.Fatal(err)
 		}
