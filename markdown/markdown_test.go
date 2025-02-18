@@ -63,7 +63,7 @@ func TestCompileMarkdown(t *testing.T) {
 			D2Scale:         1.0,
 			DropFirstH1:     false,
 			StripNewlines:   false,
-			Features:        []string{},
+			Features:        []string{"mkdocsadmonitions"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -93,7 +93,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md":
 			variant = "-droph1"
 		default:
 			variant = ""
@@ -103,10 +103,10 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		cfg := types.MarkConfig{
 			MermaidProvider: "",
 			MermaidScale:    1.0,
-			D2Scale:	 1.0,
+			D2Scale:         1.0,
 			DropFirstH1:     true,
 			StripNewlines:   false,
-			Features:        []string{},
+			Features:        []string{"mkdocsadmonitions"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -137,7 +137,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/codes.md", "testdata/newlines.md", "testdata/macro-include.md":
+		case "testdata/quotes.md", "testdata/codes.md", "testdata/newlines.md", "testdata/macro-include.md", "testdata/admonitions.md":
 			variant = "-stripnewlines"
 		default:
 			variant = ""
@@ -151,7 +151,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			D2Scale:         1.0,
 			DropFirstH1:     false,
 			StripNewlines:   true,
-			Features:        []string{},
+			Features:        []string{"mkdocsadmonitions"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
