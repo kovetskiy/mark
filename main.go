@@ -286,7 +286,7 @@ func RunMark(cCtx *cli.Context) error {
 
 		target := processFile(file, api, cCtx, creds.PageID, creds.Username)
 
-		if target != nil { // on dry-run or compile-only, the target is nil
+		if target != nil && !(cCtx.Bool("dry-run") || cCtx.Bool("compile-only"))  { // on dry-run or compile-only, the target is nil
 			log.Infof(
 				nil,
 				"page successfully updated: %s",
