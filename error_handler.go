@@ -17,19 +17,18 @@ func NewErrorHandler(continueOnError bool) *FatalErrorHandler {
 }
 
 func (h *FatalErrorHandler) Handle(err error, format string, args ...interface{}) {
-	errorMesage := fmt.Sprintf(format, args...)
 
     if err == nil {	
 		if h.ContinueOnError {	
-			log.Error(errorMesage)
+			log.Error(fmt.Sprintf(format, args...))
 			return
 		}
-		log.Fatal(errorMesage)
+		log.Fatal(fmt.Sprintf(format, args...))
     }
     
-    if h.ContinueOnError { 
-        log.Errorf(err, errorMesage)
-		return
+    if h.ContinueOnError {
+        log.Errorf(err, format, args...)
+        return
     }
-    log.Fatalf(err, errorMesage)
+    log.Fatalf(err, format, args...)
 }
