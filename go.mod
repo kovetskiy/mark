@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.8.1
-	github.com/dreampuf/mermaid.go v0.0.23
+	github.com/dreampuf/mermaid.go v0.0.24
 	github.com/kovetskiy/gopencils v0.0.0-20240830111426-6b65e95c9cb0
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
@@ -19,17 +19,16 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.4.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20250120090109-d38428e4d9c8 // indirect
-	github.com/chromedp/chromedp v0.12.1 // indirect
+	github.com/chromedp/cdproto v0.0.0-20250222051814-50c6cb17f10a // indirect
+	github.com/chromedp/chromedp v0.13.0 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/go-json-experiment/json v0.0.0-20250211171154-1ae217ad3535 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/reconquest/cog v0.0.0-20240830113510-c7ba12d0beeb // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
