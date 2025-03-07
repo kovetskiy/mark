@@ -45,6 +45,12 @@ var flags = []cli.Flag{
 		EnvVars:   []string{"MARK_FILES"},
 	}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:    "continue-on-error",
+		Value:   false,
+		Usage:   "don't exit if an error occurs while processing a file, continue processing remaining files.",
+		EnvVars: []string{"MARK_CONTINUE_ON_ERROR"},
+	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
 		Name:    "compile-only",
 		Value:   false,
 		Usage:   "show resulting HTML and don't update Confluence page content.",
@@ -276,6 +282,8 @@ func RunMark(cCtx *cli.Context) error {
 		}
 	}
 
+	fatalErrorHandler := NewErrorHandler(cCtx.Bool("continue-on-error"))
+
 	// Loop through files matched by glob pattern
 	for _, file := range files {
 		log.Infof(
@@ -284,9 +292,9 @@ func RunMark(cCtx *cli.Context) error {
 			file,
 		)
 
-		target := processFile(file, api, cCtx, creds.PageID, creds.Username)
+		target := processFile(file, api, cCtx, creds.PageID, creds.Username, fatalErrorHandler)
 
-		if target != nil && !(cCtx.Bool("dry-run") || cCtx.Bool("compile-only"))  { // on dry-run or compile-only, the target is nil
+		if target != nil { // on dry-run or compile-only, the target is nil
 			log.Infof(
 				nil,
 				"page successfully updated: %s",
@@ -304,10 +312,12 @@ func processFile(
 	cCtx *cli.Context,
 	pageID string,
 	username string,
+	fatalErrorHandler *FatalErrorHandler,
 ) *confluence.PageInfo {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatal(err)
+		fatalErrorHandler.Handle(err, "unable to read file %q", file)
+		return nil
 	}
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
@@ -316,7 +326,8 @@ func processFile(
 
 	meta, markdown, err := metadata.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents, cCtx.Bool("title-append-generated-hash"))
 	if err != nil {
-		log.Fatal(err)
+		fatalErrorHandler.Handle(err, "unable to extract metadata from file %q", file)
+		return nil
 	}
 
 	if pageID != "" && meta != nil {
@@ -329,29 +340,24 @@ func processFile(
 	}
 
 	if pageID == "" && meta == nil {
-		log.Fatal(
-			`specified file doesn't contain metadata ` +
-				`and URL is not specified via command line ` +
-				`or doesn't contain pageId GET-parameter`,
-		)
+		fatalErrorHandler.Handle(nil, "specified file doesn't contain metadata and URL is not specified via command line or doesn't contain pageId GET-parameter")
+		return nil
 	}
 
 	if meta.Space == "" {
-		log.Fatal(
-			"space is not set ('Space' header is not set and '--space' option is not set)",
-		)
+		fatalErrorHandler.Handle(nil, "space is not set ('Space' header is not set and '--space' option is not set)")
+		return nil
 	}
 
 	if meta.Title == "" {
-		log.Fatal(
-			`page title is not set ('Title' header is not set ` +
-				`and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)`,
-		)
+		fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)")
+		return nil
 	}
 
 	stdlib, err := stdlib.New(api)
 	if err != nil {
-		log.Fatal(err)
+		fatalErrorHandler.Handle(err, "unable to retrieve standard library")
+		return nil
 	}
 
 	templates := stdlib.Templates
@@ -366,7 +372,8 @@ func processFile(
 			templates,
 		)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "unable to process includes")
+			return nil
 		}
 
 		if !recurse {
@@ -381,7 +388,8 @@ func processFile(
 		templates,
 	)
 	if err != nil {
-		log.Fatal(err)
+		fatalErrorHandler.Handle(err, "unable to extract macros")
+		return nil
 	}
 
 	macros = append(macros, stdlib.Macros...)
@@ -389,13 +397,15 @@ func processFile(
 	for _, macro := range macros {
 		markdown, err = macro.Apply(markdown)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "unable to apply macro")
+			return nil
 		}
 	}
 
 	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cCtx.String("space"), cCtx.Bool("title-from-h1"), parents, cCtx.Bool("title-append-generated-hash"))
 	if err != nil {
-		log.Fatalf(err, "unable to resolve relative links")
+		fatalErrorHandler.Handle(err, "unable to resolve relative links")
+		return nil
 	}
 
 	markdown = page.SubstituteLinks(markdown, links)
@@ -403,7 +413,8 @@ func processFile(
 	if cCtx.Bool("dry-run") {
 		_, _, err := page.ResolvePage(cCtx.Bool("dry-run"), api, meta)
 		if err != nil {
-			log.Fatalf(err, "unable to resolve page location")
+			fatalErrorHandler.Handle(err, "unable to resolve page location")
+			return nil
 		}
 	}
 
@@ -413,7 +424,6 @@ func processFile(
 				"the leading H1 heading will be excluded from the Confluence output",
 			)
 		}
-
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cCtx.String("mermaid-provider"), cCtx.Float64("mermaid-scale"), cCtx.Bool("drop-h1"), cCtx.Bool("strip-linebreaks"))
 		fmt.Println(html)
 		return nil
@@ -424,11 +434,8 @@ func processFile(
 	if meta != nil {
 		parent, page, err := page.ResolvePage(cCtx.Bool("dry-run"), api, meta)
 		if err != nil {
-			log.Fatalf(
-				karma.Describe("title", meta.Title).Reason(err),
-				"unable to resolve %s",
-				meta.Type,
-			)
+			fatalErrorHandler.Handle(karma.Describe("title", meta.Title).Reason(err), "unable to resolve %s", meta.Type)
+			return nil
 		}
 
 		if page == nil {
@@ -440,12 +447,8 @@ func processFile(
 				``,
 			)
 			if err != nil {
-				log.Fatalf(
-					err,
-					"can't create %s %q",
-					meta.Type,
-					meta.Title,
-				)
+				fatalErrorHandler.Handle(err, "can't create %s %q", meta.Type, meta.Title)
+				return nil
 			}
 			// (issues/139): A delay between the create and update call
 			// helps mitigate a 409 conflict that can occur when attempting
@@ -456,12 +459,14 @@ func processFile(
 		target = page
 	} else {
 		if pageID == "" {
-			log.Fatalf(nil, "URL should provide 'pageId' GET-parameter")
+			fatalErrorHandler.Handle(nil, "URL should provide 'pageId' GET-parameter")
+			return nil
 		}
 
 		page, err := api.GetPageByID(pageID)
 		if err != nil {
-			log.Fatalf(err, "unable to retrieve page by id")
+			fatalErrorHandler.Handle(err, "unable to retrieve page by id")
+			return nil
 		}
 
 		target = page
@@ -470,7 +475,8 @@ func processFile(
 	// Resolve attachments created from <!-- Attachment: --> directive
 	localAttachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
 	if err != nil {
-		log.Fatalf(err, "unable to locate attachments")
+		fatalErrorHandler.Handle(err, "unable to locate attachments")
+		return nil
 	}
 
 	attaches, err := attachment.ResolveAttachments(
@@ -479,7 +485,8 @@ func processFile(
 		localAttachments,
 	)
 	if err != nil {
-		log.Fatalf(err, "unable to create/update attachments")
+		fatalErrorHandler.Handle(err, "unable to create/update attachments")
+		return nil
 	}
 
 	markdown = attachment.CompileAttachmentLinks(markdown, attaches)
@@ -499,7 +506,8 @@ func processFile(
 		inlineAttachments,
 	)
 	if err != nil {
-		log.Fatalf(err, "unable to create/update attachments")
+		fatalErrorHandler.Handle(err, "unable to create/update attachments")
+		return nil
 	}
 
 	{
@@ -519,7 +527,8 @@ func processFile(
 			},
 		)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "unable to execute layout template")
+			return nil
 		}
 
 		html = buffer.String()
@@ -567,11 +576,14 @@ func processFile(
 	if shouldUpdatePage {
 		err = api.UpdatePage(target, html, cCtx.Bool("minor-edit"), finalVersionMessage, meta.Labels, meta.ContentAppearance, meta.Emoji)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "unable to update page")
+			return nil
 		}
 	}
 
-	updateLabels(api, target, meta)
+	if !updateLabels(api, target, meta, fatalErrorHandler) { // on error updating labels, return nil
+		return nil
+	}
 
 	if cCtx.Bool("edit-lock") {
 		log.Infof(
@@ -583,14 +595,15 @@ func processFile(
 
 		err := api.RestrictPageUpdates(target, username)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "unable to restrict page updates")
+			return nil
 		}
 	}
 
 	return target
 }
 
-func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *metadata.Meta) {
+func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *metadata.Meta, fatalErrorHandler *FatalErrorHandler) bool {
 	labelInfo, err := api.GetPageLabels(target, "global")
 	if err != nil {
 		log.Fatal(err)
@@ -613,16 +626,19 @@ func updateLabels(api *confluence.API, target *confluence.PageInfo, meta *metada
 	if len(addLabels) > 0 {
 		_, err = api.AddPageLabels(target, addLabels)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "error adding labels")
+			return false
 		}
 	}
 
 	for _, label := range delLabels {
 		_, err = api.DeletePageLabel(target, label)
 		if err != nil {
-			log.Fatal(err)
+			fatalErrorHandler.Handle(err, "error deleting labels")
+			return false
 		}
 	}
+	return true
 }
 
 // Page has label but label not in Metadata
