@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"fmt"
@@ -7,28 +7,28 @@ import (
 )
 
 type FatalErrorHandler struct {
-    ContinueOnError bool
+	ContinueOnError bool
 }
 
 func NewErrorHandler(continueOnError bool) *FatalErrorHandler {
-    return &FatalErrorHandler{
-        ContinueOnError: continueOnError,
-    }
+	return &FatalErrorHandler{
+		ContinueOnError: continueOnError,
+	}
 }
 
 func (h *FatalErrorHandler) Handle(err error, format string, args ...interface{}) {
 
-    if err == nil {	
-		if h.ContinueOnError {	
+	if err == nil {
+		if h.ContinueOnError {
 			log.Error(fmt.Sprintf(format, args...))
 			return
 		}
 		log.Fatal(fmt.Sprintf(format, args...))
-    }
-    
-    if h.ContinueOnError {
-        log.Errorf(err, format, args...)
-        return
-    }
-    log.Fatalf(err, format, args...)
+	}
+
+	if h.ContinueOnError {
+		log.Errorf(err, format, args...)
+		return
+	}
+	log.Fatalf(err, format, args...)
 }

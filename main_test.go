@@ -4,6 +4,7 @@ import (
 	"flag"
 	"testing"
 
+	"github.com/kovetskiy/mark/util"
 	"github.com/reconquest/pkg/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
@@ -33,7 +34,7 @@ func Test_setLogLevel(t *testing.T) {
 			set.String("log-level", tt.args.lvl, "")
 			cliCtx := cli.NewContext(nil, set, nil)
 
-			err := setLogLevel(cliCtx)
+			err := util.SetLogLevel(cliCtx)
 			if tt.expectedErr != "" {
 				assert.EqualError(t, err, tt.expectedErr)
 			} else {
