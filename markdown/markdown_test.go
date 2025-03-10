@@ -1,4 +1,4 @@
-package mark
+package mark_test
 
 import (
 	"os"
@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	mark "github.com/kovetskiy/mark/markdown"
 	"github.com/kovetskiy/mark/stdlib"
+	"github.com/kovetskiy/mark/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
@@ -53,7 +55,7 @@ func TestCompileMarkdown(t *testing.T) {
 			panic(err)
 		}
 		markdown, htmlname, html := loadData(t, filename, "")
-		actual, _ := CompileMarkdown(markdown, lib, filename, "", 1.0, false, false)
+		actual, _ := mark.CompileMarkdown(markdown, lib, filename, "", 1.0, false, false)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
 }
@@ -86,7 +88,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			variant = ""
 		}
 		markdown, htmlname, html := loadData(t, filename, variant)
-		actual, _ := CompileMarkdown(markdown, lib, filename, "", 1.0, true, false)
+		actual, _ := mark.CompileMarkdown(markdown, lib, filename, "", 1.0, true, false)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
 }
@@ -120,7 +122,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		}
 
 		markdown, htmlname, html := loadData(t, filename, variant)
-		actual, _ := CompileMarkdown(markdown, lib, filename, "", 1.0, false, true)
+		actual, _ := mark.CompileMarkdown(markdown, lib, filename, "", 1.0, false, true)
 		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
 	}
 }
@@ -158,7 +160,7 @@ func TestContinueOnError(t *testing.T) {
 		Flags:                flags,
 		EnableBashCompletion: true,
 		HideHelpCommand:      true,
-		Action:               RunMark,
+		Action:               util.RunMark,
 	}
 
 	filePath := filepath.Join("testdata", "batch-tests", "*.md")
