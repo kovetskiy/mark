@@ -128,47 +128,40 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 }
 
 func TestContinueOnError(t *testing.T) {
-	const (
-		markFileName = "temp-mark"
-	)
-
-	var flags = []cli.Flag{
-		altsrc.NewStringFlag(&cli.StringFlag{
-			Name:      "files",
-			Aliases:   []string{"f"},
-			Value:     "",
-			Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
-			TakesFile: true,
-			EnvVars:   []string{"MARK_FILES"},
-		}),
-		altsrc.NewBoolFlag(&cli.BoolFlag{
-			Name:    "continue-on-error",
-			Value:   false,
-			Usage:   "don't exit if an error occurs while processing a file, continue processing remaining files.",
-			EnvVars: []string{"MARK_CONTINUE_ON_ERROR"},
-		}),
-		altsrc.NewBoolFlag(&cli.BoolFlag{
-			Name:    "compile-only",
-			Value:   false,
-			Usage:   "show resulting HTML and don't update Confluence page content.",
-			EnvVars: []string{"MARK_COMPILE_ONLY"},
-		}),
-	}
-
 	app := &cli.App{
-		Name:                 markFileName,
-		Flags:                flags,
+		Name:        "temp-mark",
+		Usage:       "test usage",
+		Description: "mark unit tests",
+		Version:     "TEST-VERSION",
+		Flags:       util.Flags,
+		Before: altsrc.InitInputSourceWithContext(util.Flags,
+			func(context *cli.Context) (altsrc.InputSourceContext, error) {
+				if context.IsSet("config") {
+					filePath := context.String("config")
+					return altsrc.NewTomlSourceFromFile(filePath)
+				} else {
+					// Fall back to default if config is unset and path exists
+					_, err := os.Stat(util.ConfigFilePath())
+					if os.IsNotExist(err) {
+						return &altsrc.MapInputSource{}, nil
+					}
+					return altsrc.NewTomlSourceFromFile(util.ConfigFilePath())
+				}
+			}),
 		EnableBashCompletion: true,
 		HideHelpCommand:      true,
 		Action:               util.RunMark,
 	}
 
-	filePath := filepath.Join("testdata", "batch-tests", "*.md")
+	filePath := filepath.Join("..", "testdata", "batch-tests", "*.md")
 	argList := []string{
-		"--compile-only", "--continue-on-error", "-files", filePath,
+		"",
+		"--log-level", "INFO",
+		"--compile-only",
+		"--continue-on-error",
+		"--files", filePath,
 	}
 	err := app.Run(argList)
 
-	test := assert.New(t)
-	test.NoError(err, "App should run without errors when continue-on-error is enabled")
+	assert.NoError(t, err, "App should run without errors when continue-on-error is enabled")
 }
