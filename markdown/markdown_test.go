@@ -153,7 +153,7 @@ func TestContinueOnError(t *testing.T) {
 		Action:               util.RunMark,
 	}
 
-	filePath := filepath.Join("..", "testdata", "batch-tests", "*.md")
+	filePath := filepath.Join("testdata", "batch-tests", "*.md")
 	argList := []string{
 		"",
 		"--log-level", "INFO",
@@ -161,7 +161,7 @@ func TestContinueOnError(t *testing.T) {
 		"--continue-on-error",
 		"--files", filePath,
 	}
-	err := app.Run(argList)
 
+	err := app.Run(argList)
 	assert.NoError(t, err, "App should run without errors when continue-on-error is enabled")
 }
