@@ -201,7 +201,9 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 	if err != nil {
 		return Attachment{}, karma.Format(err, "unable to open file: %q", attachmentPath)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
