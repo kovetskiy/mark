@@ -260,7 +260,7 @@ func (api *API) CreateAttachment(
 
 	if len(result.Results) == 0 {
 		return info, errors.New(
-			"Confluence REST API for creating attachments returned " +
+			"the Confluence REST API for creating attachments returned " +
 				"0 json objects, expected at least 1",
 		)
 	}
@@ -794,21 +794,23 @@ func (api *API) RestrictPageUpdates(
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return errors.New(
-			"Confluence API returned unexpected status: 401 (Unauthorized)",
+			"the Confluence API returned unexpected status: 401 (Unauthorized)",
 		)
 	}
 
 	if request.Raw.StatusCode == http.StatusNotFound {
 		return errors.New(
-			"Confluence API returned unexpected status: 404 (Not Found)",
+			"the Confluence API returned unexpected status: 404 (Not Found)",
 		)
 	}
 
 	output, _ := io.ReadAll(request.Raw.Body)
-	defer request.Raw.Body.Close()
+	defer func() {
+		_ = request.Raw.Body.Close()
+	}()
 
 	return fmt.Errorf(
-		"Confluence API returned unexpected status: %v, "+
+		"the Confluence API returned unexpected status: %v, "+
 			"output: %q",
 		request.Raw.Status, output,
 	)

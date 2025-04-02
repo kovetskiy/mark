@@ -72,7 +72,7 @@ func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, nod
 						case html.EastAsianLineBreaksNone:
 							writeLineBreak = false
 						case html.EastAsianLineBreaksSimple:
-							writeLineBreak = !(util.IsEastAsianWideRune(thisLastRune) && util.IsEastAsianWideRune(siblingFirstRune))
+							writeLineBreak = !util.IsEastAsianWideRune(thisLastRune) || !util.IsEastAsianWideRune(siblingFirstRune)
 						case html.EastAsianLineBreaksCSS3Draft:
 							writeLineBreak = eastAsianLineBreaksCSS3DraftSoftLineBreak(thisLastRune, siblingFirstRune)
 						}

@@ -325,7 +325,7 @@ func processFile(
 	}
 
 	var finalVersionMessage string
-	var shouldUpdatePage bool = true
+	var shouldUpdatePage = true
 
 	if cCtx.Bool("changes-only") {
 		contentHash := getSHA1Hash(html)
