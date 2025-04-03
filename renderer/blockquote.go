@@ -3,6 +3,7 @@ package renderer
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -12,14 +13,16 @@ import (
 
 type ConfluenceBlockQuoteRenderer struct {
 	html.Config
-	LevelMap BlockQuoteLevelMap
+	LevelMap       BlockQuoteLevelMap
+	BlockQuoteNode ast.Node
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
 func NewConfluenceBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceBlockQuoteRenderer{
-		Config:   html.NewConfig(),
-		LevelMap: nil,
+		Config:         html.NewConfig(),
+		LevelMap:       nil,
+		BlockQuoteNode: nil,
 	}
 }
 
@@ -37,6 +40,14 @@ const (
 	Warn
 	Tip
 	None
+)
+
+// Define BlockQuoteClassifierType enum
+type BlockQuoteClassifierType int
+
+const (
+	Legacy BlockQuoteClassifierType = iota
+	GHAlerts
 )
 
 func (t BlockQuoteType) String() string {
@@ -93,8 +104,10 @@ func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) Blo
 }
 
 // ParseBlockQuoteType parses the first line of a blockquote and returns its type
-func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
+func ParseBlockQuoteType(node ast.Node, source []byte) (BlockQuoteType, BlockQuoteClassifierType, ast.Node) {
 	var t = None
+	var ct = Legacy
+	var context ast.Node = nil
 	var legacyClassifier = LegacyBlockQuoteClassifier()
 	var ghAlertsClassifier = GHAlertsBlockQuoteClassifier()
 
@@ -126,6 +139,8 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 							rightTextNode := rightNode.(*ast.Text)
 							if string(n.Value(source)) == "[" && string(rightTextNode.Value(source)) == "]" {
 								t = ghAlertsClassifier.ClassifyingBlockQuote(string(midTextNode.Value(source)))
+								ct = GHAlerts
+								context = midNode
 							}
 						}
 					}
@@ -150,7 +165,27 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 		return ast.WalkContinue, nil
 	})
 
-	return t
+	return t, ct, context
+}
+
+// Helper function to update the source in place
+func ghaAlertsUpdateSourceInPlace(source []byte, node ast.Node, value string) {
+	leftNode := node.PreviousSibling().(*ast.Text)
+	midNode := node.(*ast.Text)
+	rightNode := node.NextSibling().(*ast.Text)
+
+	title := string(midNode.Value(source))
+	sanitizedTitle := strings.Replace(strings.ToLower(title), "!", "", -1)
+	capitalizedValue := strings.ToUpper(sanitizedTitle[:1]) + sanitizedTitle[1:]
+	if value != "" {
+		capitalizedValue = strings.ToUpper(value[:1]) + value[1:]
+	}
+
+	// Modify the source byte slice directly
+	copy(source[leftNode.Segment.Start:leftNode.Segment.Stop], []byte(" "))
+	format := fmt.Sprintf("%%-%ds", len(title))
+	copy(source[midNode.Segment.Start:midNode.Segment.Stop], []byte(fmt.Sprintf(format, capitalizedValue)))
+	copy(source[rightNode.Segment.Start:rightNode.Segment.Stop], []byte(" "))
 }
 
 // GenerateBlockQuoteLevel walks a given node and returns a map of blockquote levels
@@ -184,17 +219,24 @@ func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, s
 		r.LevelMap = GenerateBlockQuoteLevel(node)
 	}
 
-	quoteType := ParseBlockQuoteType(node, source)
+	quoteType, classifierType, blockQuoteCtxNode := ParseBlockQuoteType(node, source)
 	quoteLevel := r.LevelMap.Level(node)
 
 	if quoteLevel == 0 && entering && quoteType != None {
+		r.BlockQuoteNode = node
+
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", quoteType)
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
 		}
+		if classifierType == GHAlerts {
+			// Using quoteType as value like so: ghaAlertsUpdateSourceInPlace(source, blockQuoteCtxNode, quoteType.String())
+			// Will result in the blockquote title replaced by the blockquote type
+			ghaAlertsUpdateSourceInPlace(source, blockQuoteCtxNode, "")
+		}
 		return ast.WalkContinue, nil
 	}
-	if quoteLevel == 0 && !entering && quoteType != None {
+	if quoteLevel == 0 && !entering && node == r.BlockQuoteNode {
 		suffix := "</ac:rich-text-body></ac:structured-macro>\n"
 		if _, err := writer.Write([]byte(suffix)); err != nil {
 			return ast.WalkStop, err
