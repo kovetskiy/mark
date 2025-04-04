@@ -1,11 +1,13 @@
 module github.com/kovetskiy/mark
 
-go 1.23
+go 1.23.0
+
+toolchain go1.23.3
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.8.1
 	github.com/dreampuf/mermaid.go v0.0.27
-	github.com/kovetskiy/gopencils v0.0.0-20240830111426-6b65e95c9cb0
+	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
 	github.com/reconquest/pkg v1.3.1-0.20240901105413-68c2adbf2b64
