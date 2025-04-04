@@ -105,7 +105,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 			Password: password,
 		}
 	}
-	rest := gopencils.Api(baseURL+"/rest/api", auth)
+	rest := gopencils.Api(baseURL+"/rest/api", auth, 3) // set option for 3 retries on failure
 	if username == "" {
 		if rest.Headers == nil {
 			rest.Headers = http.Header{}
@@ -113,10 +113,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
-	json := gopencils.Api(
-		baseURL+"/rpc/json-rpc/confluenceservice-v2",
-		auth,
-	)
+	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, 3)
 
 	if log.GetLevel() == lorg.LevelTrace {
 		rest.Logger = &tracer{"rest:"}
