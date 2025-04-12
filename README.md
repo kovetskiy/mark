@@ -783,7 +783,7 @@ USAGE:
    mark [global options]
 
 VERSION:
-   12.1.2
+   12.2.0
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
