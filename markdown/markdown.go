@@ -75,13 +75,13 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
-			extension.GFM,
 			extension.Footnote,
 			extension.DefinitionList,
 			extension.NewTable(
 				extension.WithTableCellAlignMethod(extension.TableCellAlignStyle),
 			),
 			confluenceExtension,
+                        extension.GFM,
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
