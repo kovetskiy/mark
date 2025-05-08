@@ -12,6 +12,7 @@ require (
 	github.com/reconquest/karma-go v1.5.0
 	github.com/reconquest/pkg v1.3.1-0.20240901105413-68c2adbf2b64
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
+	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.6
 	github.com/yuin/goldmark v1.7.11
