@@ -8,6 +8,7 @@ import (
 	crenderer "github.com/kovetskiy/mark/renderer"
 	"github.com/kovetskiy/mark/stdlib"
 	"github.com/reconquest/pkg/log"
+	mkDocsParser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/yuin/goldmark"
 
 	"github.com/yuin/goldmark/extension"
@@ -59,7 +60,14 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(), 100),
+		util.Prioritized(crenderer.NewConfluenceMkDocsAdmonitionRenderer(), 100),
 	))
+
+	m.Parser().AddOptions(
+		parser.WithBlockParsers(
+			util.Prioritized(mkDocsParser.NewAdmonitionParser(), 100),
+		),
+	)
 
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
