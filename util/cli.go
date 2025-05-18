@@ -134,14 +134,16 @@ func processFile(
 		return nil
 	}
 
-	if meta.Space == "" {
-		fatalErrorHandler.Handle(nil, "space is not set ('Space' header is not set and '--space' option is not set)")
-		return nil
-	}
+	if meta != nil {
+		if meta.Space == "" {
+			fatalErrorHandler.Handle(nil, "space is not set ('Space' header is not set and '--space' option is not set)")
+			return nil
+		}
 
-	if meta.Title == "" {
-		fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)")
-		return nil
+		if meta.Title == "" {
+			fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)")
+			return nil
+		}
 	}
 
 	stdlib, err := stdlib.New(api)
