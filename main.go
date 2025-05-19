@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/kovetskiy/mark/util"
 	"github.com/reconquest/pkg/log"
-	"github.com/urfave/cli/v2"
-	"github.com/urfave/cli/v2/altsrc"
+	"github.com/urfave/cli/v3"
 )
 
 const (
@@ -16,32 +16,18 @@ const (
 )
 
 func main() {
-	app := &cli.App{
+	cmd := &cli.Command{
 		Name:        "mark",
 		Usage:       usage,
 		Description: description,
 		Version:     version,
 		Flags:       util.Flags,
-		Before: altsrc.InitInputSourceWithContext(util.Flags,
-			func(context *cli.Context) (altsrc.InputSourceContext, error) {
-				if context.IsSet("config") {
-					filePath := context.String("config")
-					return altsrc.NewTomlSourceFromFile(filePath)
-				} else {
-					// Fall back to default if config is unset and path exists
-					_, err := os.Stat(util.ConfigFilePath())
-					if os.IsNotExist(err) {
-						return &altsrc.MapInputSource{}, nil
-					}
-					return altsrc.NewTomlSourceFromFile(util.ConfigFilePath())
-				}
-			}),
-		EnableBashCompletion: true,
-		HideHelpCommand:      true,
-		Action:               util.RunMark,
+		EnableShellCompletion: true,
+		HideHelpCommand:       true,
+		Action:                util.RunMark,
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := cmd.Run(context.TODO(), os.Args); err != nil {
 		log.Fatal(err)
 	}
 }

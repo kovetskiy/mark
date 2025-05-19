@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"os"
 	"path"
 	"path/filepath"
@@ -12,8 +13,7 @@ import (
 	"github.com/kovetskiy/mark/stdlib"
 	"github.com/kovetskiy/mark/util"
 	"github.com/stretchr/testify/assert"
-	"github.com/urfave/cli/v2"
-	"github.com/urfave/cli/v2/altsrc"
+	"github.com/urfave/cli/v3"
 )
 
 func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
@@ -128,29 +128,15 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 }
 
 func TestContinueOnError(t *testing.T) {
-	app := &cli.App{
-		Name:        "temp-mark",
-		Usage:       "test usage",
-		Description: "mark unit tests",
-		Version:     "TEST-VERSION",
-		Flags:       util.Flags,
-		Before: altsrc.InitInputSourceWithContext(util.Flags,
-			func(context *cli.Context) (altsrc.InputSourceContext, error) {
-				if context.IsSet("config") {
-					filePath := context.String("config")
-					return altsrc.NewTomlSourceFromFile(filePath)
-				} else {
-					// Fall back to default if config is unset and path exists
-					_, err := os.Stat(util.ConfigFilePath())
-					if os.IsNotExist(err) {
-						return &altsrc.MapInputSource{}, nil
-					}
-					return altsrc.NewTomlSourceFromFile(util.ConfigFilePath())
-				}
-			}),
-		EnableBashCompletion: true,
-		HideHelpCommand:      true,
-		Action:               util.RunMark,
+	cmd := &cli.Command{
+		Name:                  "temp-mark",
+		Usage:                 "test usage",
+		Description:           "mark unit tests",
+		Version:               "TEST-VERSION",
+		Flags:                 util.Flags,
+		EnableShellCompletion: true,
+		HideHelpCommand:       true,
+		Action:                util.RunMark,
 	}
 
 	filePath := filepath.Join("testdata", "batch-tests", "*.md")
@@ -162,6 +148,6 @@ func TestContinueOnError(t *testing.T) {
 		"--files", filePath,
 	}
 
-	err := app.Run(argList)
+	err := cmd.Run(context.TODO(), argList)
 	assert.NoError(t, err, "App should run without errors when continue-on-error is enabled")
 }
