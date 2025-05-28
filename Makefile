@@ -19,7 +19,7 @@ build:
 		-gcflags "-trimpath $(GOPATH)/src"
 
 test:
-	go test -race -coverprofile=profile.cov ./...
+	go test -race -coverprofile=profile.cov ./... -v
 
 image:
 	@echo :: building image $(NAME):$(VERSION)

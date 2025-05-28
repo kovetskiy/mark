@@ -719,7 +719,7 @@ Currently this is not compatible with the automated upload of inline images.
 ### Render Mermaid Diagram
 
 Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [Github does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
-As long as you have a code block and are marked as "mermaid", the mark will automatically render it as a PNG image and insert into before the code block.
+As long as you have a code block marked as "mermaid", mark will automatically render it as a PNG image and attach it to the page as a rendered version of the code block.
 
 ```mermaid title diagrams_example
 graph TD;
@@ -729,7 +729,17 @@ A-->B;
 In order to properly render mermaid, you can choose between the following mermaid providers:
 
 * "mermaid-go" via [mermaid.go](https://github.com/dreampuf/mermaid.go)
-* "cloudscript" via [cloudscript-io-mermaid-addon](https://marketplace.atlassian.com/apps/1219878/cloudscript-io-mermaid-addon)
+* "cloudscript" via [cloudscript-io-mermaid-addon](https://marketplace.atlassian.com/apps/1219878/cloudscript-io-mermaid-addon) (deprecated)
+
+### Render D2 Diagram
+
+Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
+This will transform the d2 diagram into a png that will be attached to Confluence, similar to how mermaid-go support works.
+All you need is a codeblock marked as "d2".
+
+```d2
+X -> Y
+```
 
 ## Installation
 
@@ -789,33 +799,36 @@ DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
 
 GLOBAL OPTIONS:
-   --files value, -f value                       use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
-   --compile-only                                show resulting HTML and don't update Confluence page content. (default: false) [$MARK_COMPILE_ONLY]
-   --dry-run                                     resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
-   --edit-lock, -k                               lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
-   --drop-h1, --h1_drop                          don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
-   --strip-linebreaks, -L                        remove linebreaks inside of tags, to accommodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
-   --title-from-h1, --h1_title                   extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
-   --title-append-generated-hash                 appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
-   --minor-edit                                  don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
-   --version-message value                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
-   --color value                                 display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]
-   --log-level value                             set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
-   --username value, -u value                    use specified username for updating Confluence page. [$MARK_USERNAME]
-   --password value, -p value                    use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
-   --target-url value, -l value                  edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
-   --base-url value, -b value, --base_url value  base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
-   --config value, -c value                      use the specified configuration file. (default: System specific) [$MARK_CONFIG]
-   --ci                                          run on CI mode. It won't fail if files are not found. (default: false) [$MARK_CI]
-   --space value                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
-   --parents value                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
-   --parents-delimiter value                     The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
-   --mermaid-provider value                      defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
-   --mermaid-scale value                         defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
-   --include-path value                          Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
-   --changes-only                                Avoids re-uploading pages that haven't changed since the last run. (default: false) [$MARK_CHANGES_ONLY]
-   --help, -h                                    show help
-   --version, -v                                 print the version
+   --files string, -f string                        use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
+   --continue-on-error                              don't exit if an error occurs while processing a file, continue processing remaining files. (default: false) [$MARK_CONTINUE_ON_ERROR]
+   --compile-only                                   show resulting HTML and don't update Confluence page content. (default: false) [$MARK_COMPILE_ONLY]
+   --dry-run                                        resolve page and ancestry, show resulting HTML and exit. (default: false) [$MARK_DRY_RUN]
+   --edit-lock, -k                                  lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. (default: false) [$MARK_EDIT_LOCK]
+   --drop-h1, --h1_drop                             don't include the first H1 heading in Confluence output. (default: false) [$MARK_H1_DROP]
+   --strip-linebreaks, -L                           remove linebreaks inside of tags, to accommodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
+   --title-from-h1, --h1_title                      extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_H1_TITLE]
+   --title-append-generated-hash                    appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
+   --minor-edit                                     don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
+   --version-message string                         add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
+   --color string                                   display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]
+   --log-level string                               set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
+   --username string, -u string                     use specified username for updating Confluence page. [$MARK_USERNAME]
+   --password string, -p string                     use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
+   --target-url string, -l string                   edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
+   --base-url string, -b string, --base_url string  base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
+   --config string, -c string                       use the specified configuration file. (default: "/home/mrueg/.config/mark") [$MARK_CONFIG]
+   --ci                                             run on CI mode. It won't fail if files are not found. (default: false) [$MARK_CI]
+   --space string                                   use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
+   --parents string                                 A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
+   --parents-delimiter string                       The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
+   --mermaid-provider string                        defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
+   --mermaid-scale float                            defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
+   --include-path string                            Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
+   --changes-only                                   Avoids re-uploading pages that haven't changed since the last run. (default: false) [$MARK_CHANGES_ONLY]
+   --d2-scale float                                 defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
+   --features string [ --features string ]          Enables optional features. Current features: d2, mermaid (default: "mermaid") [$MARK_FEATURES]
+   --help, -h                                       show help
+   --version, -v                                    print the version
 ```
 
 You can store user credentials in the configuration file, which should be

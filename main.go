@@ -17,11 +17,11 @@ const (
 
 func main() {
 	cmd := &cli.Command{
-		Name:        "mark",
-		Usage:       usage,
-		Description: description,
-		Version:     version,
-		Flags:       util.Flags,
+		Name:                  "mark",
+		Usage:                 usage,
+		Description:           description,
+		Version:               version,
+		Flags:                 util.Flags,
 		EnableShellCompletion: true,
 		HideHelpCommand:       true,
 		Action:                util.RunMark,

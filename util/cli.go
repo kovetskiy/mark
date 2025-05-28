@@ -23,6 +23,7 @@ import (
 	"github.com/kovetskiy/mark/metadata"
 	"github.com/kovetskiy/mark/page"
 	"github.com/kovetskiy/mark/stdlib"
+	"github.com/kovetskiy/mark/types"
 	"github.com/kovetskiy/mark/vfs"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
@@ -217,7 +218,15 @@ func processFile(
 				"the leading H1 heading will be excluded from the Confluence output",
 			)
 		}
-		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cmd.String("mermaid-provider"), cmd.Float("mermaid-scale"), cmd.Bool("drop-h1"), cmd.Bool("strip-linebreaks"))
+
+		cfg := types.MarkConfig{
+			MermaidProvider: cmd.String("mermaid-provider"),
+			MermaidScale:    cmd.Float("mermaid-scale"),
+			DropFirstH1:     cmd.Bool("drop-h1"),
+			StripNewlines:   cmd.Bool("strip-linebreaks"),
+			Features:        cmd.StringSlice("features"),
+		}
+		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 		fmt.Println(html)
 		return nil
 	}
@@ -289,8 +298,15 @@ func processFile(
 			"the leading H1 heading will be excluded from the Confluence output",
 		)
 	}
+	cfg := types.MarkConfig{
+		MermaidProvider: cmd.String("mermaid-provider"),
+		MermaidScale:    cmd.Float("mermaid-scale"),
+		DropFirstH1:     cmd.Bool("drop-h1"),
+		StripNewlines:   cmd.Bool("strip-linebreaks"),
+		Features:        cmd.StringSlice("features"),
+	}
 
-	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cmd.String("mermaid-provider"), cmd.Float("mermaid-scale"), cmd.Bool("drop-h1"), cmd.Bool("strip-linebreaks"))
+	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 
 	// Resolve attachements detected from markdown
 	_, err = attachment.ResolveAttachments(

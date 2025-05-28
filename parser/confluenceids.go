@@ -11,7 +11,6 @@ type ConfluenceIDs struct {
 	Values map[string]bool
 }
 
-
 // https://github.com/yuin/goldmark/blob/d9c03f07f08c2d36f23afe52dda865f05320ac86/parser/parser.go#L75
 func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 	value = util.TrimLeftSpace(value)
