@@ -55,7 +55,7 @@ var Flags = []cli.Flag{
 		Name:    "strip-linebreaks",
 		Value:   false,
 		Aliases: []string{"L"},
-		Usage:   "remove linebreaks inside of tags, to accomodate non-standard Confluence behavior",
+		Usage:   "remove linebreaks inside of tags, to accommodate non-standard Confluence behavior",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_STRIP_LINEBREAKS"), altsrctoml.TOML("strip_linebreaks", configFile)),
 	},
 	&cli.BoolFlag{
@@ -127,12 +127,12 @@ var Flags = []cli.Flag{
 			altsrctoml.TOML("base_url", configFile)),
 	},
 	&cli.StringFlag{
-		Name:      "config",
-		Aliases:   []string{"c"},
-		Value:     ConfigFilePath(),
-		Usage:     "use the specified configuration file.",
-		TakesFile: true,
-		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_CONFIG")),
+		Name:        "config",
+		Aliases:     []string{"c"},
+		Value:       ConfigFilePath(),
+		Usage:       "use the specified configuration file.",
+		TakesFile:   true,
+		Sources:     cli.NewValueSourceChain(cli.EnvVar("MARK_CONFIG")),
 		Destination: &filename,
 	},
 	&cli.BoolFlag{
@@ -183,5 +183,18 @@ var Flags = []cli.Flag{
 		Value:   false,
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes_only", configFile)),
+	},
+	&cli.FloatFlag{
+		Name:    "d2-scale",
+		Value:   1.0,
+		Usage:   "defines the scaling factor for d2 renderings.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2_scale", configFile)),
+	},
+
+	&cli.StringSliceFlag{
+		Name:    "features",
+		Value:   []string{"mermaid"},
+		Usage:   "Enables optional features. Current features: d2, mermaid",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", configFile)),
 	},
 }

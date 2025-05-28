@@ -7,6 +7,7 @@ import (
 	cparser "github.com/kovetskiy/mark/parser"
 	crenderer "github.com/kovetskiy/mark/renderer"
 	"github.com/kovetskiy/mark/stdlib"
+	"github.com/kovetskiy/mark/types"
 	"github.com/reconquest/pkg/log"
 	"github.com/yuin/goldmark"
 
@@ -20,26 +21,20 @@ import (
 // Renderer renders anchor [Node]s.
 type ConfluenceExtension struct {
 	html.Config
-	Stdlib          *stdlib.Lib
-	Path            string
-	MermaidProvider string
-	MermaidScale    float64
-	DropFirstH1     bool
-	StripNewlines   bool
-	Attachments     []attachment.Attachment
+	Stdlib      *stdlib.Lib
+	Path        string
+	MarkConfig  types.MarkConfig
+	Attachments []attachment.Attachment
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceExtension(stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool, stripNewlines bool) *ConfluenceExtension {
+func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceExtension {
 	return &ConfluenceExtension{
-		Config:          html.NewConfig(),
-		Stdlib:          stdlib,
-		Path:            path,
-		MermaidProvider: mermaidProvider,
-		MermaidScale:    mermaidScale,
-		DropFirstH1:     dropFirstH1,
-		StripNewlines:   stripNewlines,
-		Attachments:     []attachment.Attachment{},
+		Config:      html.NewConfig(),
+		Stdlib:      stdlib,
+		Path:        path,
+		MarkConfig:  cfg,
+		Attachments: []attachment.Attachment{},
 	}
 }
 
@@ -50,12 +45,12 @@ func (c *ConfluenceExtension) Attach(a attachment.Attachment) {
 func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.StripNewlines), 100),
+		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 100),
 		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib, c.Path), 100),
-		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MermaidProvider, c.MermaidScale), 100),
+		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig), 100),
 		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib), 100),
-		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.DropFirstH1), 100),
+		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.MarkConfig.DropFirstH1), 100),
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(), 100),
@@ -68,10 +63,10 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	))
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidProvider string, mermaidScale float64, dropFirstH1 bool, stripNewlines bool) (string, []attachment.Attachment) {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
-	confluenceExtension := NewConfluenceExtension(stdlib, path, mermaidProvider, mermaidScale, dropFirstH1, stripNewlines)
+	confluenceExtension := NewConfluenceExtension(stdlib, path, cfg)
 
 	converter := goldmark.New(
 		goldmark.WithExtensions(
@@ -81,7 +76,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, mermaidPr
 				extension.WithTableCellAlignMethod(extension.TableCellAlignStyle),
 			),
 			confluenceExtension,
-                        extension.GFM,
+			extension.GFM,
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),

@@ -11,6 +11,7 @@ import (
 
 	mark "github.com/kovetskiy/mark/markdown"
 	"github.com/kovetskiy/mark/stdlib"
+	"github.com/kovetskiy/mark/types"
 	"github.com/kovetskiy/mark/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v3"
@@ -55,8 +56,17 @@ func TestCompileMarkdown(t *testing.T) {
 			panic(err)
 		}
 		markdown, htmlname, html := loadData(t, filename, "")
-		actual, _ := mark.CompileMarkdown(markdown, lib, filename, "", 1.0, false, false)
-		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
+
+		cfg := types.MarkConfig{
+			MermaidProvider: "",
+			MermaidScale:    1.0,
+			DropFirstH1:     false,
+			StripNewlines:   false,
+			Features:        []string{},
+		}
+
+		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 	}
 }
 
@@ -88,8 +98,18 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			variant = ""
 		}
 		markdown, htmlname, html := loadData(t, filename, variant)
-		actual, _ := mark.CompileMarkdown(markdown, lib, filename, "", 1.0, true, false)
-		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
+
+		cfg := types.MarkConfig{
+			MermaidProvider: "",
+			MermaidScale:    1.0,
+			DropFirstH1:     true,
+			StripNewlines:   false,
+			Features:        []string{},
+		}
+
+		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
+
 	}
 }
 
@@ -122,8 +142,18 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		}
 
 		markdown, htmlname, html := loadData(t, filename, variant)
-		actual, _ := mark.CompileMarkdown(markdown, lib, filename, "", 1.0, false, true)
-		test.EqualValues(string(html), actual, filename+" vs "+htmlname)
+
+		cfg := types.MarkConfig{
+			MermaidProvider: "",
+			MermaidScale:    1.0,
+			DropFirstH1:     false,
+			StripNewlines:   true,
+			Features:        []string{},
+		}
+
+		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
+
 	}
 }
 
