@@ -143,7 +143,7 @@ func processFile(
 		}
 
 		if meta.Title == "" {
-			fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1_title' config is not set or there is no H1 in the file)")
+			fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1-title' config is not set or there is no H1 in the file)")
 			return nil
 		}
 	}
@@ -481,7 +481,7 @@ func ConfigFilePath() string {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return filepath.Join(fp, "mark")
+	return filepath.Join(fp, "mark.toml")
 }
 
 func SetLogLevel(cmd *cli.Command) error {
