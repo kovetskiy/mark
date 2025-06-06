@@ -18,7 +18,7 @@ require (
 	github.com/urfave/cli-altsrc/v3 v3.0.1
 	github.com/urfave/cli/v3 v3.3.3
 	github.com/yuin/goldmark v1.7.12
-	golang.org/x/tools v0.33.0
+	golang.org/x/tools v0.34.0
 	gopkg.in/yaml.v3 v3.0.1
 	oss.terrastruct.com/d2 v0.7.0
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
@@ -49,9 +49,9 @@ require (
 	github.com/zazab/zhash v0.0.0-20221031090444-2b0d50417446 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/image v0.20.0 // indirect
-	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/plot v0.14.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
