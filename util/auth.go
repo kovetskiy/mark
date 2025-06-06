@@ -61,14 +61,14 @@ func GetCredentials(
 		)
 	}
 
-	if url.Host == "" {
-		if baseURL == "" {
-			return nil, errors.New(
-				"confluence base URL should be specified using -l " +
-					"flag or be stored in configuration file",
-			)
-		}
-	} else {
+	if url.Host == "" && baseURL == "" {
+		return nil, errors.New(
+			"confluence base URL should be specified using -l " +
+				"flag or be stored in configuration file",
+		)
+	}
+	
+	if baseURL == "" {
 		baseURL = url.Scheme + "://" + url.Host
 	}
 
