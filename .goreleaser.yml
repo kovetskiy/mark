@@ -55,7 +55,7 @@ brews:
 
   install: |
     bin.install "mark"
-    generate_completions_from_executable("mark", "completion")
+    generate_completions_from_executable(bin/"mark", "completion")
 
   test: |
     system "#{bin}/mark", "version"
