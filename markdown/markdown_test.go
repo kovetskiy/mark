@@ -60,6 +60,7 @@ func TestCompileMarkdown(t *testing.T) {
 		cfg := types.MarkConfig{
 			MermaidProvider: "",
 			MermaidScale:    1.0,
+			D2Scale:         1.0,
 			DropFirstH1:     false,
 			StripNewlines:   false,
 			Features:        []string{},
@@ -102,6 +103,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		cfg := types.MarkConfig{
 			MermaidProvider: "",
 			MermaidScale:    1.0,
+			D2Scale:	 1.0,
 			DropFirstH1:     true,
 			StripNewlines:   false,
 			Features:        []string{},
@@ -146,6 +148,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		cfg := types.MarkConfig{
 			MermaidProvider: "",
 			MermaidScale:    1.0,
+			D2Scale:         1.0,
 			DropFirstH1:     false,
 			StripNewlines:   true,
 			Features:        []string{},
