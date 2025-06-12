@@ -1,9 +1,6 @@
-# This is an example goreleaser.yaml file with some sane defaults.
-# Make sure to check the documentation at http://goreleaser.com
 version: 2
 before:
   hooks:
-    # You may remove this if you don't use go modules.
     - go mod download
 builds:
 - env:
@@ -28,7 +25,7 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
 changelog:
   sort: asc
   filters:
@@ -38,24 +35,27 @@ changelog:
 
 # Publish on Homebrew Tap
 brews:
-  -
-    name: mark
-    repository:
-      owner: kovetskiy
-      name: homebrew-mark
-      branch: master
+- name: mark
+  repository:
+    owner: kovetskiy
+    name: homebrew-mark
+    branch: master
 
-    commit_author:
-      name: Egor Kovetskiy
-      email: e.kovetskiy@gmail.com
+  commit_author:
+    name: Egor Kovetskiy
+    email: e.kovetskiy@gmail.com
 
-    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+  commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
 
-    directory: Formula
+  directory: Formula
 
-    homepage: "https://github.com/kovetskiy/mark"
-    description: "Sync your markdown files with Confluence pages."
-    license: "Apache 2.0"
+  homepage: "https://github.com/kovetskiy/mark"
+  description: "Sync your markdown files with Confluence pages."
+  license: "Apache 2.0"
 
-    test: |
-      system "#{bin}/program", "version"
+  install: |
+    bin.install "mark"
+    generate_completions_from_executable("mark", "completion")
+
+  test: |
+    system "#{bin}/mark", "version"
