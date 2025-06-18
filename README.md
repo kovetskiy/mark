@@ -741,6 +741,16 @@ All you need is a codeblock marked as "d2".
 X -> Y
 ```
 
+### MkDocs' Admonitions
+
+Optionally you can enable mkdocs-style [Admonitions](https://squidfunk.github.io/mkdocs-material/reference/admonitions/) via `--features="mkdocsadmonitions"`.
+
+When enabled, this renders note, warning, tip, info admonitions as Confluence alerts.
+
+```markdown
+!!! note
+```
+
 ## Installation
 
 ### Homebrew
