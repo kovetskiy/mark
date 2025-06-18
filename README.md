@@ -7,7 +7,7 @@
 Mark — a tool for syncing your markdown documentation with Atlassian Confluence
 pages.
 
-Read the blog post discussing the tool — <https://samizdat.dev/use-markdown-for-confluence/>
+Read the blog post discussing the tool — [https://samizdat.dev/use-markdown-for-confluence/](https://web.archive.org/web/20200924162410/https://samizdat.dev/use-markdown-for-confluence/)
 
 This is very useful if you store documentation to your software in a Git
 repository and don't want to do an extra job of updating Confluence page using
