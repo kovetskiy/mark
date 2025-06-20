@@ -7,7 +7,7 @@ toolchain go1.24.2
 require (
 	github.com/bmatcuk/doublestar/v4 v4.8.1
 	github.com/chromedp/cdproto v0.0.0-20250403032234-65de8f5d025b
-	github.com/chromedp/chromedp v0.13.6
+	github.com/chromedp/chromedp v0.13.7
 	github.com/dreampuf/mermaid.go v0.0.27
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
