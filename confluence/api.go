@@ -266,6 +266,7 @@ func (api *API) FindPage(
 	if err != nil {
 		return nil, err
 	}
+
 	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.FindPage(space, title, pageType)
@@ -330,6 +331,7 @@ func (api *API) CreateAttachment(
 	if err != nil {
 		return info, err
 	}
+
 	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.CreateAttachment(pageID, name, comment, reader)
@@ -412,6 +414,7 @@ func (api *API) UpdateAttachment(
 	if err != nil {
 		return info, err
 	}
+
 	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.UpdateAttachment(pageID, attachID, name, comment, reader)
