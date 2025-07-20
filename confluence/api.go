@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
@@ -166,6 +167,11 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return nil, err
 	}
 
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.FindHomePage(space)
+	}
+
 	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
@@ -197,6 +203,11 @@ func (api *API) FindPage(
 	).Get(payload)
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.FindPage(space, title, pageType)
 	}
 
 	// allow 404 because it's fine if page is not found,
@@ -249,6 +260,11 @@ func (api *API) CreateAttachment(
 	request, err := resource.Post()
 	if err != nil {
 		return info, err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.CreateAttachment(pageID, name, comment, reader)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -319,6 +335,11 @@ func (api *API) UpdateAttachment(
 	request, err := resource.Post()
 	if err != nil {
 		return info, err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.UpdateAttachment(pageID, attachID, name, comment, reader)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -433,6 +454,11 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		return nil, err
 	}
 
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.GetAttachments(pageID)
+	}
+
 	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
@@ -454,6 +480,11 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	).Get(map[string]string{"expand": "ancestors,version"})
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.GetPageByID(pageID)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -502,6 +533,11 @@ func (api *API) CreatePage(
 	).Post(payload)
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.CreatePage(space, pageType, parent, title, body)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -573,6 +609,11 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		return err
 	}
 
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.UpdatePage(page, newContent, minorEdit, versionMessage, newLabels, appearance, emojiString)
+	}
+
 	if request.Raw.StatusCode != http.StatusOK {
 		return newErrorStatusNotOK(request)
 	}
@@ -602,6 +643,11 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 		return nil, err
 	}
 
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.AddPageLabels(page, newLabels)
+	}
+
 	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
@@ -618,6 +664,11 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		return nil, err
 	}
 
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.DeletePageLabel(page, label)
+	}
+
 	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
 		return nil, newErrorStatusNotOK(request)
 	}
@@ -632,6 +683,11 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 	).Get(map[string]string{"prefix": prefix})
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.GetPageLabels(page, prefix)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -728,6 +784,11 @@ func (api *API) RestrictPageUpdatesCloud(
 		return err
 	}
 
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.RestrictPageUpdatesCloud(page, allowedUser)
+	}
+
 	if request.Raw.StatusCode != http.StatusOK {
 		return newErrorStatusNotOK(request)
 	}
@@ -757,6 +818,11 @@ func (api *API) RestrictPageUpdatesServer(
 	})
 	if err != nil {
 		return err
+	}
+
+	if request.Raw.StatusCode == http.StatusTooManyRequests {
+		time.Sleep(1 * time.Second)
+		return api.RestrictPageUpdatesServer(page, allowedUser)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
