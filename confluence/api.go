@@ -2,10 +2,12 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -128,6 +130,52 @@ func NewAPI(baseURL string, username string, password string) *API {
 	}
 }
 
+// doWithRetry executes fn up to attempts times while the returned
+// *http.Response has status 429 or 5xx.
+// It applies exponential back-off with jitter between retries.
+func doWithRetry(
+	ctx context.Context,
+	attempts int,
+	fn func() (*http.Response, error),
+) (*http.Response, error) {
+	var (
+		resp *http.Response
+		err  error
+	)
+
+	// 1s, 2s, 4s … with ±25 % jitter
+	base := time.Second
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			jitter := time.Duration(rand.Int63n(int64(base/4))) - base/8
+			sleep := base + jitter
+			select {
+			case <-time.After(sleep):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			base *= 2
+		}
+
+		resp, err = fn()
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests {
+			return resp, nil
+		}
+
+		// Fully drain body so the connection can be re-used.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+
+	return resp, karma.Describe("attempts", attempts).Reason(
+		"exceeded max retries for 429 (Too Many Requests) status code",
+	)
+}
+
 func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	page, err := api.FindPage(space, ``, "page")
 	if err != nil {
@@ -156,27 +204,33 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 }
 
 func (api *API) FindHomePage(space string) (*PageInfo, error) {
+	var result SpaceInfo
 	payload := map[string]string{
 		"expand": "homepage",
 	}
 
-	request, err := api.rest.Res(
-		"space/"+space, &SpaceInfo{},
-	).Get(payload)
+	reqFn := func() (*http.Response, error) {
+		req, err := api.rest.Res("space/"+space, &result).Get(payload)
+		if err != nil {
+			return nil, err
+		}
+		return req.Raw, nil
+	}
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.FindHomePage(space)
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
 
-	return &request.Response.(*SpaceInfo).Homepage, nil
+	return &result.Homepage, nil
 }
 
 func (api *API) FindPage(
@@ -198,22 +252,29 @@ func (api *API) FindPage(
 		payload["title"] = title
 	}
 
-	request, err := api.rest.Res(
-		"content/", &result,
-	).Get(payload)
+	reqFn := func() (*http.Response, error) {
+		req, err := api.rest.Res(
+			"content/", &result,
+		).Get(payload)
+		if err != nil {
+			return nil, err
+		}
+		return req.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
-
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.FindPage(space, title, pageType)
 	}
 
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
-	if request.Raw.StatusCode != http.StatusNotFound && request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
 
 	if len(result.Results) == 0 {
@@ -257,18 +318,25 @@ func (api *API) CreateAttachment(
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
 
-	request, err := resource.Post()
+	reqFn := func() (*http.Response, error) {
+		request, err := resource.Post()
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return info, err
 	}
-
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.CreateAttachment(pageID, name, comment, reader)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return info, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return info, newErrorStatus(resp)
 	}
 
 	if len(result.Results) == 0 {
@@ -332,18 +400,25 @@ func (api *API) UpdateAttachment(
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
 
-	request, err := resource.Post()
+	reqFn := func() (*http.Response, error) {
+		request, err := resource.Post()
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return info, err
 	}
-
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.UpdateAttachment(pageID, attachID, name, comment, reader)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return info, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return info, newErrorStatus(resp)
 	}
 
 	err = json.Unmarshal(result, &extendedResponse)
@@ -447,20 +522,28 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		"limit":  "1000",
 	}
 
-	request, err := api.rest.Res(
-		"content/"+pageID+"/child/attachment", &result,
-	).Get(payload)
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/attachment", &result,
+		).Get(payload)
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.GetAttachments(pageID)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
 
 	for i, info := range result.Results {
@@ -475,23 +558,33 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
-	request, err := api.rest.Res(
-		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
+
+	var page PageInfo
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/"+pageID, &page,
+		).Get(map[string]string{"expand": "ancestors,version"})
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.GetPageByID(pageID)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
 
-	return request.Response.(*PageInfo), nil
+	return &page, nil
 }
 
 func (api *API) CreatePage(
@@ -528,23 +621,32 @@ func (api *API) CreatePage(
 		}
 	}
 
-	request, err := api.rest.Res(
-		"content/", &PageInfo{},
-	).Post(payload)
+	var page PageInfo
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/", &page,
+		).Post(payload)
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.CreatePage(space, pageType, parent, title, body)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
 
-	return request.Response.(*PageInfo), nil
+	return &page, nil
 }
 
 func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string, emojiString string) error {
@@ -602,20 +704,28 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		},
 	}
 
-	request, err := api.rest.Res(
-		"content/"+page.ID, &map[string]interface{}{},
-	).Put(payload)
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/"+page.ID, &map[string]interface{}{},
+		).Put(payload)
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.UpdatePage(page, newContent, minorEdit, versionMessage, newLabels, appearance, emojiString)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return newErrorStatus(resp)
 	}
 
 	return nil
@@ -636,64 +746,91 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 
 	payload := labels
 
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Post(payload)
+	var labelInfo LabelInfo
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/"+page.ID+"/label", &labelInfo,
+		).Post(payload)
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.AddPageLabels(page, newLabels)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
 
-	return request.Response.(*LabelInfo), nil
+	return &labelInfo, nil
 }
 
 func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
 
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).SetQuery(map[string]string{"name": label}).Delete()
+	var labelInfo LabelInfo
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/"+page.ID+"/label", &labelInfo,
+		).SetQuery(map[string]string{"name": label}).Delete()
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.DeletePageLabel(page, label)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return nil, newErrorStatus(resp)
 	}
 
-	return request.Response.(*LabelInfo), nil
+	return &labelInfo, nil
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
 
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Get(map[string]string{"prefix": prefix})
+	var labelInfo LabelInfo
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.Res(
+			"content/"+page.ID+"/label", &labelInfo,
+		).Get(map[string]string{"prefix": prefix})
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.GetPageLabels(page, prefix)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return nil, newErrorStatus(resp)
 	}
-	return request.Response.(*LabelInfo), nil
+	return &labelInfo, nil
 }
 
 func (api *API) GetUserByName(name string) (*User, error) {
@@ -763,34 +900,42 @@ func (api *API) RestrictPageUpdatesCloud(
 
 	var result interface{}
 
-	request, err := api.rest.
-		Res("content").
-		Id(page.ID).
-		Res("restriction", &result).
-		Post([]map[string]interface{}{
-			{
-				"operation": "update",
-				"restrictions": map[string]interface{}{
-					"user": []map[string]interface{}{
-						{
-							"type":      "known",
-							"accountId": user.AccountID,
+	reqFn := func() (*http.Response, error) {
+		request, err := api.rest.
+			Res("content").
+			Id(page.ID).
+			Res("restriction", &result).
+			Post([]map[string]interface{}{
+				{
+					"operation": "update",
+					"restrictions": map[string]interface{}{
+						"user": []map[string]interface{}{
+							{
+								"type":      "known",
+								"accountId": user.AccountID,
+							},
 						},
 					},
 				},
-			},
-		})
+			})
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.RestrictPageUpdatesCloud(page, allowedUser)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return newErrorStatus(resp)
 	}
 
 	return nil
@@ -805,28 +950,36 @@ func (api *API) RestrictPageUpdatesServer(
 		result interface{}
 	)
 
-	request, err := api.json.Res(
-		"setContentPermissions", &result,
-	).Post([]interface{}{
-		page.ID,
-		"Edit",
-		[]map[string]interface{}{
-			{
-				"userName": allowedUser,
+	reqFn := func() (*http.Response, error) {
+		request, err := api.json.Res(
+			"setContentPermissions", &result,
+		).Post([]interface{}{
+			page.ID,
+			"Edit",
+			[]map[string]interface{}{
+				{
+					"userName": allowedUser,
+				},
 			},
-		},
-	})
+		})
+		if err != nil {
+			return nil, err
+		}
+		return request.Raw, nil
+	}
+
+	resp, err := doWithRetry(context.Background(), 5, reqFn)
 	if err != nil {
 		return err
 	}
 
-	if request.Raw.StatusCode == http.StatusTooManyRequests {
+	if resp.StatusCode == http.StatusTooManyRequests {
 		time.Sleep(1 * time.Second)
 		return api.RestrictPageUpdatesServer(page, allowedUser)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if resp.StatusCode != http.StatusOK {
+		return newErrorStatus(resp)
 	}
 
 	if success, ok := result.(bool); !ok || !success {
@@ -854,27 +1007,17 @@ func (api *API) RestrictPageUpdates(
 	return err
 }
 
-func newErrorStatusNotOK(request *gopencils.Resource) error {
-	if request.Raw.StatusCode == http.StatusUnauthorized {
-		return errors.New(
-			"the Confluence API returned unexpected status: 401 (Unauthorized)",
-		)
+// newErrorStatus converts a non-2xx response into a useful error.
+func newErrorStatus(resp *http.Response) error {
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return errors.New("the Confluence API returned 401 (Unauthorized)")
+	case http.StatusNotFound:
+		return errors.New("the Confluence API returned 404 (Not Found)")
+	default:
+		return fmt.Errorf("the Confluence API returned %s: %s", resp.Status, body)
 	}
-
-	if request.Raw.StatusCode == http.StatusNotFound {
-		return errors.New(
-			"the Confluence API returned unexpected status: 404 (Not Found)",
-		)
-	}
-
-	output, _ := io.ReadAll(request.Raw.Body)
-	defer func() {
-		_ = request.Raw.Body.Close()
-	}()
-
-	return fmt.Errorf(
-		"the Confluence API returned unexpected status: %v, "+
-			"output: %q",
-		request.Raw.Status, output,
-	)
 }
