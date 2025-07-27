@@ -18,7 +18,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli-altsrc/v3 v3.0.1
 	github.com/urfave/cli/v3 v3.3.8
-	github.com/yuin/goldmark v1.7.12
+	github.com/yuin/goldmark v1.7.13
 	golang.org/x/tools v0.35.0
 	gopkg.in/yaml.v3 v3.0.1
 	oss.terrastruct.com/d2 v0.7.0
