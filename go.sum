@@ -96,8 +96,8 @@ github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOf
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/urfave/cli-altsrc/v3 v3.0.1 h1:v+gHk59syLk8ao9rYybZs43+D5ut/gzj0omqQ1XYl8k=
 github.com/urfave/cli-altsrc/v3 v3.0.1/go.mod h1:8UtsKKcxFVzvaoySFPfvQOk413T+IXJhaCWyyoPW3yM=
-github.com/urfave/cli/v3 v3.3.9 h1:54roEDJcTWuucl6MSQ3B+pQqt1ePh/xOQokhEYl5Gfs=
-github.com/urfave/cli/v3 v3.3.9/go.mod h1:FJSKtM/9AiiTOJL4fJ6TbMUkxBXn7GO9guZqoZtpYpo=
+github.com/urfave/cli/v3 v3.4.1 h1:1M9UOCy5bLmGnuu1yn3t3CB4rG79Rtoxuv1sPhnm6qM=
+github.com/urfave/cli/v3 v3.4.1/go.mod h1:FJSKtM/9AiiTOJL4fJ6TbMUkxBXn7GO9guZqoZtpYpo=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.7.13 h1:GPddIs617DnBLFFVJFgpo1aBfe/4xcvMc3SB5t/D0pA=
 github.com/yuin/goldmark v1.7.13/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
