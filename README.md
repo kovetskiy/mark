@@ -272,18 +272,43 @@ More details at Confluence [Code Block Macro](https://confluence.atlassian.com/d
 
 ### Block Quotes
 
-Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met
+Mark now supports GitHub Alerts to create highlighted information boxes using Github Flavored Markdown syntax!
+
+#### GitHub Alerts Support
+
+You can now use GitHub-style alert syntax in your markdown, and Mark will automatically convert them to Confluence macros:
+
+```markdown
+> [!NOTE]
+> This creates a blue info box - perfect for helpful information!
+
+> [!TIP] 
+> This creates a green tip box - great for best practices and suggestions!
+
+> [!IMPORTANT]
+> This creates a blue info box - ideal for critical information!
+
+> [!WARNING]
+> This creates a yellow warning box - use for important warnings!
+
+> [!CAUTION]
+> This creates a red warning box - perfect for dangerous situations!
+```
+
+#### Technical Details
+
+Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met:
 
 1. The BlockQuote is on the root level of the document (not nested)
-1. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note` or [Github MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
+2. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note` or [Github MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
 
-| Github Alerts | Confluence |
-| --- | --- |
-| Tip (green lightbulb) | Tip (green checkmark in circle) |
-| Note (blue I in circle) | Info (blue I in circle) |
-| Important (purple exclamation mark in speech bubble) | Info (blue I in circle) |
-| Warning (yellow exclamation mark in triangle) | Note (yellow exclamation mark in triangle) |
-| Caution (red exclamation mark in hexagon) | Warning (red exclamation mark in hexagon) |
+| Github Alerts | Confluence | Description |
+| --------------- | ------------ | ------------- |
+| `[!TIP]` (green lightbulb) | Tip (green checkmark in circle) | Helpful suggestions and best practices |
+| `[!NOTE]` (blue I in circle) | Info (blue I in circle) | General information and notes |
+| `[!IMPORTANT]` (purple exclamation mark in speech bubble) | Info (blue I in circle) | Critical information that needs attention |
+| `[!WARNING]` (yellow exclamation mark in triangle) | Note (yellow exclamation mark in triangle) | Important warnings and cautions |
+| `[!CAUTION]` (red exclamation mark in hexagon) | Warning (red exclamation mark in hexagon) | Dangerous situations requiring immediate attention |
 
 In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
 
