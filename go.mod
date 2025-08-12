@@ -17,7 +17,7 @@ require (
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli-altsrc/v3 v3.0.1
-	github.com/urfave/cli/v3 v3.3.9
+	github.com/urfave/cli/v3 v3.4.1
 	github.com/yuin/goldmark v1.7.13
 	golang.org/x/tools v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
