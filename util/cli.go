@@ -220,7 +220,6 @@ func processFile(
 		}
 
 		cfg := types.MarkConfig{
-			MermaidProvider: cmd.String("mermaid-provider"),
 			MermaidScale:    cmd.Float("mermaid-scale"),
 			D2Scale:         cmd.Float("d2-scale"),
 			DropFirstH1:     cmd.Bool("drop-h1"),
@@ -300,7 +299,6 @@ func processFile(
 		)
 	}
 	cfg := types.MarkConfig{
-		MermaidProvider: cmd.String("mermaid-provider"),
 		MermaidScale:    cmd.Float("mermaid-scale"),
 		D2Scale:         cmd.Float("d2-scale"),
 		DropFirstH1:     cmd.Bool("drop-h1"),

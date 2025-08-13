@@ -155,12 +155,6 @@ var Flags = []cli.Flag{
 		Usage:   "The delimiter used for the parents list",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_DELIMITER"), altsrctoml.TOML("parents-delimiter", altsrc.NewStringPtrSourcer(&filename))),
 	},
-	&cli.StringFlag{
-		Name:    "mermaid-provider",
-		Value:   "cloudscript",
-		Usage:   "defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_PROVIDER"), altsrctoml.TOML("mermaid-provider", altsrc.NewStringPtrSourcer(&filename))),
-	},
 	&cli.FloatFlag{
 		Name:    "mermaid-scale",
 		Value:   1.0,

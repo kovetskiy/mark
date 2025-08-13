@@ -114,9 +114,8 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		// This template is used for rendering code in ```
 		`ac:code`: text(
-			`<ac:structured-macro ac:name="{{ if eq .Language "mermaid" }}cloudscript-confluence-mermaid{{ else }}code{{ end }}">`,
-			/**/ `{{ if eq .Language "mermaid" }}<ac:parameter ac:name="showSource">true</ac:parameter>{{ else }}`,
-			/**/ `<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>{{ end }}`,
+			`<ac:structured-macro ac:name="code">`,
+			/**/ `<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>`,
 			/**/ `<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>`,
 			/**/ `{{ if .Theme }}<ac:parameter ac:name="theme">{{ .Theme }}</ac:parameter>{{ end }}`,
 			/**/ `{{ if .Linenumbers }}<ac:parameter ac:name="linenumbers">{{ .Linenumbers }}</ac:parameter>{{ end }}`,
