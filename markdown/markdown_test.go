@@ -58,7 +58,6 @@ func TestCompileMarkdown(t *testing.T) {
 		markdown, htmlname, html := loadData(t, filename, "")
 
 		cfg := types.MarkConfig{
-			MermaidProvider: "",
 			MermaidScale:    1.0,
 			D2Scale:         1.0,
 			DropFirstH1:     false,
@@ -101,7 +100,6 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		markdown, htmlname, html := loadData(t, filename, variant)
 
 		cfg := types.MarkConfig{
-			MermaidProvider: "",
 			MermaidScale:    1.0,
 			D2Scale:         1.0,
 			DropFirstH1:     true,
@@ -146,7 +144,6 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		markdown, htmlname, html := loadData(t, filename, variant)
 
 		cfg := types.MarkConfig{
-			MermaidProvider: "",
 			MermaidScale:    1.0,
 			D2Scale:         1.0,
 			DropFirstH1:     false,

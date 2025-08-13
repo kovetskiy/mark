@@ -724,11 +724,6 @@ graph TD;
 A-->B;
 ```
 
-In order to properly render mermaid, you can choose between the following mermaid providers:
-
-* "mermaid-go" via [mermaid.go](https://github.com/dreampuf/mermaid.go)
-* "cloudscript" via [cloudscript-io-mermaid-addon](https://marketplace.atlassian.com/apps/1219878/cloudscript-io-mermaid-addon) (deprecated)
-
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
@@ -829,7 +824,6 @@ GLOBAL OPTIONS:
    --space string                           use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string               The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
-   --mermaid-provider string                defines the mermaid provider to use. Supported options are: cloudscript, mermaid-go. (default: "cloudscript") [$MARK_MERMAID_PROVIDER]
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. (default: false) [$MARK_CHANGES_ONLY]

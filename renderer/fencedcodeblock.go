@@ -108,6 +108,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				collapse = false
 				continue
 			}
+
 			var i int
 			if _, err := fmt.Sscanf(option, "%d", &i); err == nil {
 				linenumbers = i > 0
@@ -158,7 +159,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 
-	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") && r.MarkConfig.MermaidProvider == "mermaid-go" {
+	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
 		attachment, err := mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
 		if err != nil {
 			log.Debugf(nil, "error: %v", err)
