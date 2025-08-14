@@ -10,23 +10,15 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// ConfluenceTextRenderer slightly alters the default goldmark behavior for
-// inline text block. It allows for soft breaks
-// (c.f. https://spec.commonmark.org/0.30/#softbreak)
-// to be rendered into HTML as either '\n' (the goldmark default)
-// or as ' '.
-// This latter option is useful for Confluence,
-// which inserts <br> tags into uploaded HTML where it sees '\n'.
-// See also https://sembr.org/ for partial motivation.
 type ConfluenceTextRenderer struct {
 	html.Config
 	softBreak rune
 }
 
-// NewConfluenceTextRenderer creates a new instance of the ConfluenceTextRenderer
-func NewConfluenceTextRenderer(stripNL bool, opts ...html.Option) renderer.NodeRenderer {
+// NewConfluenceTextRenderer creates a new instance of the renderer with GitHub Alerts support
+func NewConfluenceTextRenderer(stripNewlines bool, opts ...html.Option) renderer.NodeRenderer {
 	sb := '\n'
-	if stripNL {
+	if stripNewlines {
 		sb = ' '
 	}
 	return &ConfluenceTextRenderer{
@@ -35,29 +27,41 @@ func NewConfluenceTextRenderer(stripNL bool, opts ...html.Option) renderer.NodeR
 	}
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
+// RegisterFuncs implements NodeRenderer.RegisterFuncs
 func (r *ConfluenceTextRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindText, r.renderText)
 }
 
-// This is taken from https://github.com/yuin/goldmark/blob/v1.6.0/renderer/html/html.go#L719
-// with the hardcoded '\n' for soft breaks swapped for the configurable r.softBreak
-func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTextRenderer) renderText(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
+
 	n := node.(*ast.Text)
+
+	// Check if this text node has replacement content from the GHAlerts transformer
+	if replacementContent, hasAttribute := node.Attribute([]byte("replacement-content")); hasAttribute && replacementContent != nil {
+		if contentBytes, ok := replacementContent.([]byte); ok {
+			_, err := writer.Write(contentBytes)
+			if err != nil {
+				return ast.WalkStop, err
+			}
+			return ast.WalkContinue, nil
+		}
+	}
+
+	// Default text rendering behavior (same as original ConfluenceTextRenderer)
 	segment := n.Segment
 	if n.IsRaw() {
-		r.Writer.RawWrite(w, segment.Value(source))
+		r.Writer.RawWrite(writer, segment.Value(source))
 	} else {
 		value := segment.Value(source)
-		r.Writer.Write(w, value)
+		r.Writer.Write(writer, value)
 		if n.HardLineBreak() || (n.SoftLineBreak() && r.HardWraps) {
 			if r.XHTML {
-				_, _ = w.WriteString("<br />\n")
+				_, _ = writer.WriteString("<br />\n")
 			} else {
-				_, _ = w.WriteString("<br>\n")
+				_, _ = writer.WriteString("<br>\n")
 			}
 		} else if n.SoftLineBreak() {
 			if r.EastAsianLineBreaks != html.EastAsianLineBreaksNone && len(value) != 0 {
@@ -78,15 +82,16 @@ func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, nod
 						}
 
 						if writeLineBreak {
-							_ = w.WriteByte(byte(r.softBreak))
+							_ = writer.WriteByte(byte(r.softBreak))
 						}
 					}
 				}
 			} else {
-				_ = w.WriteByte(byte(r.softBreak))
+				_ = writer.WriteByte(byte(r.softBreak))
 			}
 		}
 	}
+
 	return ast.WalkContinue, nil
 }
 
