@@ -6,9 +6,9 @@ toolchain go1.24.2
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.9.1
-	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
+	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/chromedp/chromedp v0.14.1
-	github.com/dreampuf/mermaid.go v0.0.30
+	github.com/dreampuf/mermaid.go v0.0.31
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
