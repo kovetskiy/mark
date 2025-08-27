@@ -84,6 +84,13 @@ type LabelInfo struct {
 	Labels []Label `json:"results"`
 	Size   int     `json:"number"`
 }
+
+type FolderInfo struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	ParentID string `json:"parentId,omitempty"`
+	SpaceID  string `json:"spaceId"`
+}
 type form struct {
 	buffer io.Reader
 	writer *multipart.Writer
@@ -786,6 +793,27 @@ func (api *API) RestrictPageUpdates(
 	}
 
 	return err
+}
+
+// Folder API methods (Phase 2 implementation)
+func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderInfo, error) {
+	// TODO: Implement in Phase 2
+	return nil, fmt.Errorf("CreateFolder not yet implemented")
+}
+
+func (api *API) FindFolder(spaceID, title string) (*FolderInfo, error) {
+	// TODO: Implement in Phase 2
+	return nil, fmt.Errorf("FindFolder not yet implemented")
+}
+
+func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
+	// TODO: Implement in Phase 2
+	return nil, fmt.Errorf("GetFolderByID not yet implemented")
+}
+
+func (api *API) GetSpaceID(spaceKey string) (string, error) {
+	// TODO: Implement in Phase 2
+	return "", fmt.Errorf("GetSpaceID not yet implemented")
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
