@@ -26,6 +26,8 @@ File in the extended format should follow the specification:
 <!-- Space: <space key> -->
 <!-- Parent: <parent 1> -->
 <!-- Parent: <parent 2> -->
+<!-- Folder: <folder 1> -->
+<!-- Folder: <folder 2> -->
 <!-- Title: <title> -->
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
@@ -36,6 +38,10 @@ File in the extended format should follow the specification:
 
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
+
+The `Folder` header allows organizing pages within Confluence folders. Like `Parent` headers, 
+if Mark can't find the specified folder by title, it creates it. Folders and parents can be 
+mixed in the same document to create complex hierarchies.
 
 Also, optional following headers are supported:
 
