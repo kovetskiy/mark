@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -93,14 +94,18 @@ func convertSVGtoPNG(ctx context.Context, svg []byte, scale float64) (png []byte
 		model  *dom.BoxModel
 	)
 
-	// Create browser options for CI environments
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.DisableGPU,
-		chromedp.NoSandbox,
-		chromedp.NoFirstRun,
-		chromedp.NoDefaultBrowserCheck,
-		chromedp.Headless,
-	)
+	// Create browser options - more conservative for CI environments
+	opts := chromedp.DefaultExecAllocatorOptions[:]
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		// Enhanced options for CI environment
+		opts = append(opts,
+			chromedp.DisableGPU,
+			chromedp.NoSandbox,
+			chromedp.NoFirstRun,
+			chromedp.NoDefaultBrowserCheck,
+			chromedp.Headless,
+		)
+	}
 
 	allocCtx, cancel1 := chromedp.NewExecAllocator(ctx, opts...)
 	defer cancel1()
