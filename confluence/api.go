@@ -92,14 +92,15 @@ type FolderInfo struct {
 	Type       string `json:"type"`
 	Status     string `json:"status"`
 	Title      string `json:"title"`
+	SpaceID    string `json:"spaceId,omitempty"`
 	ParentID   string `json:"parentId,omitempty"`
 	ParentType string `json:"parentType,omitempty"`
 	Position   int    `json:"position,omitempty"`
 	AuthorID   string `json:"authorId,omitempty"`
 	OwnerID    string `json:"ownerId,omitempty"`
-	CreatedAt  string `json:"createdAt,omitempty"`
+	CreatedAt  interface{} `json:"createdAt,omitempty"`
 	Version    struct {
-		CreatedAt string `json:"createdAt"`
+		CreatedAt interface{} `json:"createdAt"`
 		Message   string `json:"message"`
 		Number    int    `json:"number"`
 		MinorEdit bool   `json:"minorEdit"`
@@ -138,7 +139,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
-	restV2 := gopencils.Api(baseURL+"/wiki/api/v2", auth, 3) // v2 API for folders and new features
+	restV2 := gopencils.Api(baseURL+"/api/v2", auth, 3) // v2 API for folders and new features
 	if username == "" {
 		if restV2.Headers == nil {
 			restV2.Headers = http.Header{}
@@ -825,8 +826,23 @@ func (api *API) RestrictPageUpdates(
 
 // Folder API methods (Phase 2 implementation)
 func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderInfo, error) {
+	actualSpaceID := spaceID
+	
+	// If we have a parent, we need to use the parent's space ID to avoid cross-space conflicts
+	if parentID != nil {
+		parentFolder, err := api.GetFolderByID(*parentID)
+		if err != nil {
+			return nil, karma.Format(err, "failed to get parent folder info for space consistency")
+		}
+		
+		// Use parent's space ID if available, otherwise fall back to provided spaceID
+		if parentFolder.SpaceID != "" {
+			actualSpaceID = parentFolder.SpaceID
+		}
+	}
+
 	payload := map[string]interface{}{
-		"spaceId": spaceID,
+		"spaceId": actualSpaceID, // Always required by API
 		"title":   title,
 	}
 
@@ -853,7 +869,7 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderIn
 	return request.Response.(*FolderInfo), nil
 }
 
-func (api *API) FindFolder(spaceID, title string) (*FolderInfo, error) {
+func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
 	// Use v1 content search API since v2 doesn't have a direct folder search endpoint
 	result := struct {
 		Results []struct {
@@ -863,8 +879,8 @@ func (api *API) FindFolder(spaceID, title string) (*FolderInfo, error) {
 		} `json:"results"`
 	}{}
 
-	// CQL query to search for folders by title and spaceId
-	cql := fmt.Sprintf("type=folder AND title=\"%s\"", title)
+	// CQL query to search for folders by title and space key
+	cql := fmt.Sprintf("type=folder AND title=\"%s\" AND space=\"%s\"", title, spaceKey)
 	
 	payload := map[string]string{
 		"cql":    cql,
@@ -919,7 +935,19 @@ func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
 }
 
 func (api *API) GetSpaceID(spaceKey string) (string, error) {
-	result := struct {
+	// Try v1 API first (more reliable for space lookup by key)
+	v1Result := struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}{}
+
+	request, err := api.rest.Res("space/"+spaceKey, &v1Result).Get()
+	if err == nil && request.Raw.StatusCode == http.StatusOK {
+		return v1Result.ID, nil
+	}
+
+	// Fallback to v2 API with query parameter
+	v2Result := struct {
 		Results []struct {
 			ID  string `json:"id"`
 			Key string `json:"key"`
@@ -930,13 +958,13 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 		"keys": spaceKey,
 	}
 
-	request, err := api.restV2.Res(
-		"spaces", &result,
+	request, err = api.restV2.Res(
+		"spaces", &v2Result,
 	).Get(payload)
 	if err != nil {
 		return "", karma.Format(
 			err,
-			"failed to get space ID for key %s",
+			"failed to get space ID for key %s (tried both v1 and v2 APIs)",
 			spaceKey,
 		)
 	}
@@ -945,11 +973,51 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 		return "", newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
+	if len(v2Result.Results) == 0 {
 		return "", fmt.Errorf("space with key %s not found", spaceKey)
 	}
 
-	return result.Results[0].ID, nil
+	return v2Result.Results[0].ID, nil
+}
+
+// CreatePageWithFolderParent creates a page with a folder as parent using REST API v2
+func (api *API) CreatePageWithFolderParent(
+	space string,
+	pageType string,
+	folderID string,
+	title string,
+	body string,
+) (*PageInfo, error) {
+	spaceID, err := api.GetSpaceID(space)
+	if err != nil {
+		return nil, err
+	}
+
+	// Using REST API v2 for pages with folder parents
+	payload := map[string]interface{}{
+		"spaceId":    spaceID,
+		"status":     "current",
+		"type":       pageType,
+		"title":      title,
+		"parentId":   folderID,
+		"parentType": "folder",
+		"body": map[string]interface{}{
+			"representation": "storage",
+			"value":          body,
+		},
+	}
+
+	result := &PageInfo{}
+	request, err := api.restV2.Res("pages", result).Post(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return result, nil
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {

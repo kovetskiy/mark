@@ -50,66 +50,148 @@ func ResolvePage(
 		}
 	}
 
-	ancestry := meta.Parents
-	if page != nil && !skipHomeAncestry {
-		ancestry = append(ancestry, page.Title)
-	}
+	// Handle mixed folder and page hierarchy
+	var parent *confluence.PageInfo
 
-	if len(ancestry) > 0 {
-		page, err := ValidateAncestry(
-			api,
-			meta.Space,
-			ancestry,
-		)
-		if err != nil {
-			return nil, nil, err
+	if len(meta.Folders) > 0 {
+		// Use new mixed ancestry logic for folders + pages
+		ancestry := meta.Parents
+		if page != nil && !skipHomeAncestry {
+			ancestry = append(ancestry, page.Title)
 		}
 
-		if page == nil {
-			log.Warningf(
-				nil,
-				"page %q is not found ",
-				meta.Parents[len(ancestry)-1],
+		if len(ancestry) > 0 {
+			// Validate existing page ancestry if it exists
+			existingPage, err := ValidateAncestry(
+				api,
+				meta.Space,
+				ancestry,
 			)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if existingPage == nil {
+				log.Warningf(
+					nil,
+					"page %q is not found ",
+					ancestry[len(ancestry)-1],
+				)
+			}
 		}
 
-		path := meta.Parents
-		path = append(path, meta.Title)
+		// Build the complete path for logging
+		fullPath := append(meta.Folders, meta.Parents...)
+		fullPath = append(fullPath, meta.Title)
 
 		log.Debugf(
 			nil,
-			"resolving page path: ??? > %s",
-			strings.Join(path, ` > `),
+			"resolving mixed hierarchy path: %s",
+			strings.Join(fullPath, ` > `),
+		)
+
+		parent, err = EnsureMixedAncestry(
+			dryRun,
+			api,
+			meta.Space,
+			meta.Folders,
+			meta.Parents,
+		)
+		if err != nil {
+			return nil, nil, karma.Format(
+				err,
+				"can't create mixed folder/page ancestry tree: folders=%s, pages=%s",
+				strings.Join(meta.Folders, ` > `),
+				strings.Join(meta.Parents, ` > `),
+			)
+		}
+	} else {
+		// Traditional page-only ancestry
+		ancestry := meta.Parents
+		if page != nil && !skipHomeAncestry {
+			ancestry = append(ancestry, page.Title)
+		}
+
+		if len(ancestry) > 0 {
+			page, err := ValidateAncestry(
+				api,
+				meta.Space,
+				ancestry,
+			)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if page == nil {
+				log.Warningf(
+					nil,
+					"page %q is not found ",
+					meta.Parents[len(ancestry)-1],
+				)
+			}
+
+			path := meta.Parents
+			path = append(path, meta.Title)
+
+			log.Debugf(
+				nil,
+				"resolving page path: ??? > %s",
+				strings.Join(path, ` > `),
+			)
+		}
+
+		parent, err = EnsureAncestry(
+			dryRun,
+			api,
+			meta.Space,
+			meta.Parents,
+		)
+		if err != nil {
+			return nil, nil, karma.Format(
+				err,
+				"can't create ancestry tree: %s",
+				strings.Join(meta.Parents, ` > `),
+			)
+		}
+	}
+
+	// Build the display path showing the complete hierarchy
+	var displayPath []string
+	
+	if len(meta.Folders) > 0 {
+		// Show folders first, then page hierarchy
+		displayPath = append(displayPath, meta.Folders...)
+		if parent != nil {
+			// Add page ancestors if any
+			for _, ancestor := range parent.Ancestors {
+				displayPath = append(displayPath, ancestor.Title)
+			}
+			displayPath = append(displayPath, parent.Title)
+		}
+	} else {
+		// Traditional page hierarchy
+		if parent != nil {
+			for _, ancestor := range parent.Ancestors {
+				displayPath = append(displayPath, ancestor.Title)
+			}
+			displayPath = append(displayPath, parent.Title)
+		}
+	}
+
+	if len(displayPath) > 0 {
+		log.Infof(
+			nil,
+			"page will be stored under path: %s > %s",
+			strings.Join(displayPath, ` > `),
+			meta.Title,
+		)
+	} else {
+		log.Infof(
+			nil,
+			"page will be stored at space root: %s",
+			meta.Title,
 		)
 	}
-
-	parent, err := EnsureAncestry(
-		dryRun,
-		api,
-		meta.Space,
-		meta.Parents,
-	)
-	if err != nil {
-		return nil, nil, karma.Format(
-			err,
-			"can't create ancestry tree: %s",
-			strings.Join(meta.Parents, ` > `),
-		)
-	}
-
-	titles := []string{}
-	for _, page := range parent.Ancestors {
-		titles = append(titles, page.Title)
-	}
-
-	titles = append(titles, parent.Title)
-
-	log.Infof(
-		nil,
-		"page will be stored under path: %s > %s",
-		strings.Join(titles, ` > `),
-		meta.Title,
-	)
 
 	return parent, page, nil
 }

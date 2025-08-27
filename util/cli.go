@@ -241,13 +241,26 @@ func processFile(
 		}
 
 		if page == nil {
-			page, err = api.CreatePage(
-				meta.Space,
-				meta.Type,
-				parent,
-				meta.Title,
-				``,
-			)
+			// Check if parent is actually a folder parent (special marker)
+			if parent != nil && parent.Type == "folder-parent" {
+				// Use CreatePageWithFolderParent for folder parents
+				page, err = api.CreatePageWithFolderParent(
+					meta.Space,
+					meta.Type,
+					parent.ID, // This is the folder ID
+					meta.Title,
+					``,
+				)
+			} else {
+				// Use normal CreatePage for page parents
+				page, err = api.CreatePage(
+					meta.Space,
+					meta.Type,
+					parent,
+					meta.Title,
+					``,
+				)
+			}
 			if err != nil {
 				fatalErrorHandler.Handle(err, "can't create %s %q", meta.Type, meta.Title)
 				return nil
