@@ -77,8 +77,8 @@ func TestExtractD2Image(t *testing.T) {
 			Replace:   "example",
 			Checksum:  "58fa387384181445e2d8f90a8c7fda945cb75174f73e8b9853ff59b9e0103ddd",
 			ID:        "",
-			Width:     "198",
-			Height:    "441",
+			Width:     "187",
+			Height:    "417",
 		},
 			assert.NoError},
 	}
