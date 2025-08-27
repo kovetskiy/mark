@@ -92,7 +92,20 @@ func convertSVGtoPNG(ctx context.Context, svg []byte, scale float64) (png []byte
 		result []byte
 		model  *dom.BoxModel
 	)
-	ctx, cancel := chromedp.NewContext(ctx)
+	
+	// Create browser options for CI environments
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.DisableGPU,
+		chromedp.NoSandbox,
+		chromedp.NoFirstRun,
+		chromedp.NoDefaultBrowserCheck,
+		chromedp.Headless,
+	)
+	
+	allocCtx, cancel1 := chromedp.NewExecAllocator(ctx, opts...)
+	defer cancel1()
+	
+	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
 	err = chromedp.Run(ctx,
