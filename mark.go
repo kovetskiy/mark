@@ -296,7 +296,11 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		}
 
 		if pg == nil {
-			pg, err = api.CreatePage(meta.Space, meta.Type, parent, meta.Title, ``)
+			if parent != nil && parent.Type == "folder-parent" {
+				pg, err = api.CreatePageWithFolderParent(meta.Space, meta.Type, parent.ID, meta.Title, ``)
+			} else {
+				pg, err = api.CreatePage(meta.Space, meta.Type, parent, meta.Title, ``)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
 			}
