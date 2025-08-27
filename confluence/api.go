@@ -28,6 +28,8 @@ type API struct {
 	// it's deprecated accordingly to Atlassian documentation,
 	// but it's only way to set permissions
 	json    *gopencils.Resource
+	// v2 API for newer endpoints like folders
+	restV2  *gopencils.Resource
 	BaseURL string
 }
 
@@ -86,10 +88,26 @@ type LabelInfo struct {
 }
 
 type FolderInfo struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	ParentID string `json:"parentId,omitempty"`
-	SpaceID  string `json:"spaceId"`
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	Status     string `json:"status"`
+	Title      string `json:"title"`
+	ParentID   string `json:"parentId,omitempty"`
+	ParentType string `json:"parentType,omitempty"`
+	Position   int    `json:"position,omitempty"`
+	AuthorID   string `json:"authorId,omitempty"`
+	OwnerID    string `json:"ownerId,omitempty"`
+	CreatedAt  string `json:"createdAt,omitempty"`
+	Version    struct {
+		CreatedAt string `json:"createdAt"`
+		Message   string `json:"message"`
+		Number    int    `json:"number"`
+		MinorEdit bool   `json:"minorEdit"`
+		AuthorID  string `json:"authorId"`
+	} `json:"version,omitempty"`
+	Links struct {
+		Base string `json:"base"`
+	} `json:"_links,omitempty"`
 }
 type form struct {
 	buffer io.Reader
@@ -120,15 +138,25 @@ func NewAPI(baseURL string, username string, password string) *API {
 		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
+	restV2 := gopencils.Api(baseURL+"/wiki/api/v2", auth, 3) // v2 API for folders and new features
+	if username == "" {
+		if restV2.Headers == nil {
+			restV2.Headers = http.Header{}
+		}
+		restV2.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
+	}
+
 	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, 3)
 
 	if log.GetLevel() == lorg.LevelTrace {
 		rest.Logger = &tracer{"rest:"}
+		restV2.Logger = &tracer{"rest-v2:"}
 		json.Logger = &tracer{"json-rpc:"}
 	}
 
 	return &API{
 		rest:    rest,
+		restV2:  restV2,
 		json:    json,
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
 	}
@@ -797,23 +825,131 @@ func (api *API) RestrictPageUpdates(
 
 // Folder API methods (Phase 2 implementation)
 func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderInfo, error) {
-	// TODO: Implement in Phase 2
-	return nil, fmt.Errorf("CreateFolder not yet implemented")
+	payload := map[string]interface{}{
+		"spaceId": spaceID,
+		"title":   title,
+	}
+
+	if parentID != nil {
+		payload["parentId"] = *parentID
+	}
+
+	request, err := api.restV2.Res(
+		"folders", &FolderInfo{},
+	).Post(payload)
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"failed to create folder %s in space %s",
+			title,
+			spaceID,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*FolderInfo), nil
 }
 
 func (api *API) FindFolder(spaceID, title string) (*FolderInfo, error) {
-	// TODO: Implement in Phase 2
-	return nil, fmt.Errorf("FindFolder not yet implemented")
+	// Use v1 content search API since v2 doesn't have a direct folder search endpoint
+	result := struct {
+		Results []struct {
+			ID    string `json:"id"`
+			Type  string `json:"type"`
+			Title string `json:"title"`
+		} `json:"results"`
+	}{}
+
+	// CQL query to search for folders by title and spaceId
+	cql := fmt.Sprintf("type=folder AND title=\"%s\"", title)
+	
+	payload := map[string]string{
+		"cql":    cql,
+		"limit":  "1",
+		"expand": "",
+	}
+
+	request, err := api.rest.Res(
+		"content/search", &result,
+	).Get(payload)
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"failed to search for folder %s",
+			title,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	if len(result.Results) == 0 {
+		return nil, nil // Folder not found
+	}
+
+	// Found a folder, now get its full details using v2 API
+	return api.GetFolderByID(result.Results[0].ID)
 }
 
 func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
-	// TODO: Implement in Phase 2
-	return nil, fmt.Errorf("GetFolderByID not yet implemented")
+	request, err := api.restV2.Res(
+		"folders/"+folderID, &FolderInfo{},
+	).Get()
+	if err != nil {
+		return nil, karma.Format(
+			err,
+			"failed to get folder by ID %s",
+			folderID,
+		)
+	}
+
+	if request.Raw.StatusCode == http.StatusNotFound {
+		return nil, nil // Folder not found
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return request.Response.(*FolderInfo), nil
 }
 
 func (api *API) GetSpaceID(spaceKey string) (string, error) {
-	// TODO: Implement in Phase 2
-	return "", fmt.Errorf("GetSpaceID not yet implemented")
+	result := struct {
+		Results []struct {
+			ID  string `json:"id"`
+			Key string `json:"key"`
+		} `json:"results"`
+	}{}
+
+	payload := map[string]string{
+		"keys": spaceKey,
+	}
+
+	request, err := api.restV2.Res(
+		"spaces", &result,
+	).Get(payload)
+	if err != nil {
+		return "", karma.Format(
+			err,
+			"failed to get space ID for key %s",
+			spaceKey,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return "", newErrorStatusNotOK(request)
+	}
+
+	if len(result.Results) == 0 {
+		return "", fmt.Errorf("space with key %s not found", spaceKey)
+	}
+
+	return result.Results[0].ID, nil
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
