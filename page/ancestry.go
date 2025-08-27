@@ -142,8 +142,8 @@ func EnsureMixedAncestry(
 			// Create a fake PageInfo that contains the folder ID in a special field
 			// The calling code can detect this and use CreatePageWithFolderParent
 			return &confluence.PageInfo{
-				ID:    folderParent.ID,    // Use folder ID
-				Type:  "folder-parent",    // Special marker
+				ID:    folderParent.ID, // Use folder ID
+				Type:  "folder-parent", // Special marker
 				Title: folderParent.Title,
 			}, nil
 		}

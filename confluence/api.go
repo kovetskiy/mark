@@ -27,7 +27,7 @@ type API struct {
 
 	// it's deprecated accordingly to Atlassian documentation,
 	// but it's only way to set permissions
-	json    *gopencils.Resource
+	json *gopencils.Resource
 	// v2 API for newer endpoints like folders
 	restV2  *gopencils.Resource
 	BaseURL string
@@ -88,23 +88,23 @@ type LabelInfo struct {
 }
 
 type FolderInfo struct {
-	ID         string `json:"id"`
-	Type       string `json:"type"`
-	Status     string `json:"status"`
-	Title      string `json:"title"`
-	SpaceID    string `json:"spaceId,omitempty"`
-	ParentID   string `json:"parentId,omitempty"`
-	ParentType string `json:"parentType,omitempty"`
-	Position   int    `json:"position,omitempty"`
-	AuthorID   string `json:"authorId,omitempty"`
-	OwnerID    string `json:"ownerId,omitempty"`
+	ID         string      `json:"id"`
+	Type       string      `json:"type"`
+	Status     string      `json:"status"`
+	Title      string      `json:"title"`
+	SpaceID    string      `json:"spaceId,omitempty"`
+	ParentID   string      `json:"parentId,omitempty"`
+	ParentType string      `json:"parentType,omitempty"`
+	Position   int         `json:"position,omitempty"`
+	AuthorID   string      `json:"authorId,omitempty"`
+	OwnerID    string      `json:"ownerId,omitempty"`
 	CreatedAt  interface{} `json:"createdAt,omitempty"`
 	Version    struct {
 		CreatedAt interface{} `json:"createdAt"`
-		Message   string `json:"message"`
-		Number    int    `json:"number"`
-		MinorEdit bool   `json:"minorEdit"`
-		AuthorID  string `json:"authorId"`
+		Message   string      `json:"message"`
+		Number    int         `json:"number"`
+		MinorEdit bool        `json:"minorEdit"`
+		AuthorID  string      `json:"authorId"`
 	} `json:"version,omitempty"`
 	Links struct {
 		Base string `json:"base"`
@@ -827,14 +827,14 @@ func (api *API) RestrictPageUpdates(
 // Folder API methods (Phase 2 implementation)
 func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderInfo, error) {
 	actualSpaceID := spaceID
-	
+
 	// If we have a parent, we need to use the parent's space ID to avoid cross-space conflicts
 	if parentID != nil {
 		parentFolder, err := api.GetFolderByID(*parentID)
 		if err != nil {
 			return nil, karma.Format(err, "failed to get parent folder info for space consistency")
 		}
-		
+
 		// Use parent's space ID if available, otherwise fall back to provided spaceID
 		if parentFolder.SpaceID != "" {
 			actualSpaceID = parentFolder.SpaceID
@@ -881,7 +881,7 @@ func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
 
 	// CQL query to search for folders by title and space key
 	cql := fmt.Sprintf("type=folder AND title=\"%s\" AND space=\"%s\"", title, spaceKey)
-	
+
 	payload := map[string]string{
 		"cql":    cql,
 		"limit":  "1",

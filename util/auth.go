@@ -67,7 +67,7 @@ func GetCredentials(
 				"flag or be stored in configuration file",
 		)
 	}
-	
+
 	if baseURL == "" {
 		baseURL = url.Scheme + "://" + url.Host
 	}

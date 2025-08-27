@@ -10,7 +10,6 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-
 var (
 	version = "dev"
 	commit  = "none"

@@ -220,11 +220,11 @@ func processFile(
 		}
 
 		cfg := types.MarkConfig{
-			MermaidScale:    cmd.Float("mermaid-scale"),
-			D2Scale:         cmd.Float("d2-scale"),
-			DropFirstH1:     cmd.Bool("drop-h1"),
-			StripNewlines:   cmd.Bool("strip-linebreaks"),
-			Features:        cmd.StringSlice("features"),
+			MermaidScale:  cmd.Float("mermaid-scale"),
+			D2Scale:       cmd.Float("d2-scale"),
+			DropFirstH1:   cmd.Bool("drop-h1"),
+			StripNewlines: cmd.Bool("strip-linebreaks"),
+			Features:      cmd.StringSlice("features"),
 		}
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 		fmt.Println(html)
@@ -312,11 +312,11 @@ func processFile(
 		)
 	}
 	cfg := types.MarkConfig{
-		MermaidScale:    cmd.Float("mermaid-scale"),
-		D2Scale:         cmd.Float("d2-scale"),
-		DropFirstH1:     cmd.Bool("drop-h1"),
-		StripNewlines:   cmd.Bool("strip-linebreaks"),
-		Features:        cmd.StringSlice("features"),
+		MermaidScale:  cmd.Float("mermaid-scale"),
+		D2Scale:       cmd.Float("d2-scale"),
+		DropFirstH1:   cmd.Bool("drop-h1"),
+		StripNewlines: cmd.Bool("strip-linebreaks"),
+		Features:      cmd.StringSlice("features"),
 	}
 
 	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cfg)

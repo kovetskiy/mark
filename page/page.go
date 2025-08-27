@@ -157,7 +157,7 @@ func ResolvePage(
 
 	// Build the display path showing the complete hierarchy
 	var displayPath []string
-	
+
 	if len(meta.Folders) > 0 {
 		// Show folders first, then page hierarchy
 		displayPath = append(displayPath, meta.Folders...)

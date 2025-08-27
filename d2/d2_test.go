@@ -100,7 +100,7 @@ func TestExtractD2Image(t *testing.T) {
 			expectedWidth, _ := strconv.Atoi(tt.want.Width)
 			actualWidth, _ := strconv.Atoi(got.Width)
 			assert.InDelta(t, expectedWidth, actualWidth, 5, "processD2(%v, %v) width", tt.name, string(tt.markdown))
-			
+
 			expectedHeight, _ := strconv.Atoi(tt.want.Height)
 			actualHeight, _ := strconv.Atoi(got.Height)
 			assert.InDelta(t, expectedHeight, actualHeight, 5, "processD2(%v, %v) height", tt.name, string(tt.markdown))

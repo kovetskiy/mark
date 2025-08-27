@@ -151,7 +151,7 @@ func TestExtractMeta_FolderHeadersWithCliParents(t *testing.T) {
 	cliParents := []string{"CLI Parent 1", "CLI Parent 2"}
 	meta, _, err := ExtractMeta([]byte(markdown), "", false, cliParents, false)
 	assert.NoError(t, err)
-	
+
 	// CLI parents should be prepended to any parents in the markdown, not folders
 	assert.Equal(t, cliParents, meta.Parents)
 	assert.Equal(t, []string{"API"}, meta.Folders)
