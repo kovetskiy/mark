@@ -1,7 +1,6 @@
 {
   "globs": [
     "*.md",
-    "!CLAUDE.md",
     ".github/**/*.md"
   ],
 

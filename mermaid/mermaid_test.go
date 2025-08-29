@@ -2,7 +2,6 @@ package mermaid
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 
 	"github.com/kovetskiy/mark/attachment"
@@ -25,7 +24,7 @@ func TestExtractMermaidImage(t *testing.T) {
 			Replace:   "example",
 			Checksum:  "1743a4f31ab66244591f06c8056e08053b8e0a554eb9a38709af6e9d145ac84f",
 			ID:        "",
-			Width:     "85",
+			Width:     "87",
 			Height:    "174",
 		},
 			assert.NoError},
@@ -43,14 +42,8 @@ func TestExtractMermaidImage(t *testing.T) {
 			assert.Equal(t, tt.want.Replace, got.Replace, "processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))
 			assert.Equal(t, tt.want.Checksum, got.Checksum, "processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))
 			assert.Equal(t, tt.want.ID, got.ID, "processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))
-			// Allow for small rendering differences between environments (±3 pixels)
-			expectedWidth, _ := strconv.Atoi(tt.want.Width)
-			actualWidth, _ := strconv.Atoi(got.Width)
-			assert.InDelta(t, expectedWidth, actualWidth, 3, "processMermaidLocally(%v, %v) width", tt.name, string(tt.markdown))
-
-			expectedHeight, _ := strconv.Atoi(tt.want.Height)
-			actualHeight, _ := strconv.Atoi(got.Height)
-			assert.InDelta(t, expectedHeight, actualHeight, 3, "processMermaidLocally(%v, %v) height", tt.name, string(tt.markdown))
+			assert.Equal(t, tt.want.Width, got.Width, "processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))
+			assert.Equal(t, tt.want.Height, got.Height, "processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))
 		})
 	}
 }
