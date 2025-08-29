@@ -811,6 +811,7 @@ GLOBAL OPTIONS:
    --strip-linebreaks, -L                   remove linebreaks inside of tags, to accommodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
    --title-from-h1                          extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_TITLE_FROM_H1]
    --title-append-generated-hash            appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
+   --title-from-filename                    use the filename (without extension) as the Confluence page title if no explicit 'Title' header or H1 heading is found. (default: false) [$MARK_TITLE_FROM_FILENAME]
    --minor-edit                             don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
    --version-message string                 add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --color string                           display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]

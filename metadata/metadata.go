@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -48,7 +49,7 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
 		offset int
@@ -141,7 +142,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 		}
 	}
 
-	if titleFromH1 || spaceFromCli != "" {
+	if titleFromH1 || spaceFromCli != "" || titleFromFilename {
 		if meta == nil {
 			meta = &Meta{}
 		}
@@ -156,6 +157,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 
 		if titleFromH1 && meta.Title == "" {
 			meta.Title = ExtractDocumentLeadingH1(data)
+		}
+		if titleFromFilename && meta.Title == "" && filename != "" {
+			base := filepath.Base(filename)
+			meta.Title = strings.TrimSuffix(base, filepath.Ext(base))
 		}
 		if spaceFromCli != "" && meta.Space == "" {
 			meta.Space = spaceFromCli

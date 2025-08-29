@@ -116,7 +116,7 @@ func processFile(
 
 	parents := strings.Split(cmd.String("parents"), cmd.String("parents-delimiter"))
 
-	meta, markdown, err := metadata.ExtractMeta(markdown, cmd.String("space"), cmd.Bool("title-from-h1"), parents, cmd.Bool("title-append-generated-hash"))
+	meta, markdown, err := metadata.ExtractMeta(markdown, cmd.String("space"), cmd.Bool("title-from-h1"), cmd.Bool("title-from-filename"), file, parents, cmd.Bool("title-append-generated-hash"))
 	if err != nil {
 		fatalErrorHandler.Handle(err, "unable to extract metadata from file %q", file)
 		return nil
@@ -132,7 +132,10 @@ func processFile(
 	}
 
 	if pageID == "" && meta == nil {
-		fatalErrorHandler.Handle(nil, "specified file doesn't contain metadata and URL is not specified via command line or doesn't contain pageId GET-parameter")
+		fatalErrorHandler.Handle(
+			nil,
+			"specified file doesn't contain metadata and URL is not specified via command line or doesn't contain pageId GET-parameter",
+		)
 		return nil
 	}
 
@@ -143,7 +146,10 @@ func processFile(
 		}
 
 		if meta.Title == "" {
-			fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1-title' config is not set or there is no H1 in the file)")
+			fatalErrorHandler.Handle(
+				nil,
+				"page title is not set: use the 'Title' header, or the --title-from-h1 / --title-from-filename flags",
+			)
 			return nil
 		}
 	}
@@ -196,7 +202,7 @@ func processFile(
 		}
 	}
 
-	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cmd.String("space"), cmd.Bool("title-from-h1"), parents, cmd.Bool("title-append-generated-hash"))
+	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cmd.String("space"), cmd.Bool("title-from-h1"), cmd.Bool("title-from-filename"), parents, cmd.Bool("title-append-generated-hash"))
 	if err != nil {
 		fatalErrorHandler.Handle(err, "unable to resolve relative links")
 		return nil
@@ -220,11 +226,11 @@ func processFile(
 		}
 
 		cfg := types.MarkConfig{
-			MermaidScale:    cmd.Float("mermaid-scale"),
-			D2Scale:         cmd.Float("d2-scale"),
-			DropFirstH1:     cmd.Bool("drop-h1"),
-			StripNewlines:   cmd.Bool("strip-linebreaks"),
-			Features:        cmd.StringSlice("features"),
+			MermaidScale:  cmd.Float("mermaid-scale"),
+			D2Scale:       cmd.Float("d2-scale"),
+			DropFirstH1:   cmd.Bool("drop-h1"),
+			StripNewlines: cmd.Bool("strip-linebreaks"),
+			Features:      cmd.StringSlice("features"),
 		}
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 		fmt.Println(html)
@@ -299,11 +305,11 @@ func processFile(
 		)
 	}
 	cfg := types.MarkConfig{
-		MermaidScale:    cmd.Float("mermaid-scale"),
-		D2Scale:         cmd.Float("d2-scale"),
-		DropFirstH1:     cmd.Bool("drop-h1"),
-		StripNewlines:   cmd.Bool("strip-linebreaks"),
-		Features:        cmd.StringSlice("features"),
+		MermaidScale:  cmd.Float("mermaid-scale"),
+		D2Scale:       cmd.Float("d2-scale"),
+		DropFirstH1:   cmd.Bool("drop-h1"),
+		StripNewlines: cmd.Bool("strip-linebreaks"),
+		Features:      cmd.StringSlice("features"),
 	}
 
 	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cfg)
