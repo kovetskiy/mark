@@ -2,7 +2,6 @@ package d2
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"testing"
 
