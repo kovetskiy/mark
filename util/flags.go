@@ -62,6 +62,12 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_H1"), altsrctoml.TOML("title-from-h1", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
+		Name:    "title-from-filename",
+		Value:   false,
+		Usage:   "use the filename (without extension) as the Confluence page title if no explicit 'Title' header or H1 heading is found.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_FILENAME"), altsrctoml.TOML("title-from-filename", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
 		Name:    "title-append-generated-hash",
 		Value:   false,
 		Usage:   "appends a short hash generated from the path of the page (space, parents, and title) to the title",
