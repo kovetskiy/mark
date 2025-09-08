@@ -150,6 +150,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:jira:ticket`: text(
 			`<ac:structured-macro ac:name="jira">`,
 			`<ac:parameter ac:name="key">{{ .Ticket }}</ac:parameter>`,
+			`<ac:parameter ac:name="server">{{ or .Server "System JIRA" }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
