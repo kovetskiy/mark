@@ -159,8 +159,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			meta.Title = ExtractDocumentLeadingH1(data)
 		}
 		if titleFromFilename && meta.Title == "" && filename != "" {
-			base := filepath.Base(filename)
-			meta.Title = strings.TrimSuffix(base, filepath.Ext(base))
+			setTitleFromFilename(meta, filename)
 		}
 		if spaceFromCli != "" && meta.Space == "" {
 			meta.Space = spaceFromCli
@@ -190,6 +189,11 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	}
 
 	return meta, data[offset:], nil
+}
+
+func setTitleFromFilename(meta *Meta, filename string) {
+	base := filepath.Base(filename)
+	meta.Title = strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading

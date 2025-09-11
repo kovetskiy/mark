@@ -28,3 +28,11 @@ func TestExtractDocumentLeadingH1(t *testing.T) {
 
 	assert.Equal(t, "a", actual)
 }
+
+func TestSetTitleFromFilename(t *testing.T) {
+	t.Run("set title from filename", func(t *testing.T) {
+		meta := &Meta{Title: ""}
+		setTitleFromFilename(meta, "/path/to/test.md")
+		assert.Equal(t, "test", meta.Title)
+	})
+}
