@@ -142,7 +142,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		}
 	}
 
-	if titleFromH1 || spaceFromCli != "" || titleFromFilename {
+	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
 		if meta == nil {
 			meta = &Meta{}
 		}
