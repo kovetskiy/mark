@@ -116,7 +116,7 @@ func processFile(
 
 	parents := strings.Split(cmd.String("parents"), cmd.String("parents-delimiter"))
 
-	meta, markdown, err := metadata.ExtractMeta(markdown, cmd.String("space"), cmd.Bool("title-from-h1"), parents, cmd.Bool("title-append-generated-hash"))
+	meta, markdown, err := metadata.ExtractMeta(markdown, cmd.String("space"), cmd.Bool("title-from-h1"), cmd.Bool("title-from-filename"), file, parents, cmd.Bool("title-append-generated-hash"))
 	if err != nil {
 		fatalErrorHandler.Handle(err, "unable to extract metadata from file %q", file)
 		return nil
@@ -143,7 +143,7 @@ func processFile(
 		}
 
 		if meta.Title == "" {
-			fatalErrorHandler.Handle(nil, "page title is not set ('Title' header is not set and '--title-from-h1' option and 'h1-title' config is not set or there is no H1 in the file)")
+			fatalErrorHandler.Handle(nil, "page title is not set: use the 'Title' header, or the --title-from-h1 / --title-from-filename flags")
 			return nil
 		}
 	}
@@ -196,7 +196,7 @@ func processFile(
 		}
 	}
 
-	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cmd.String("space"), cmd.Bool("title-from-h1"), parents, cmd.Bool("title-append-generated-hash"))
+	links, err := page.ResolveRelativeLinks(api, meta, markdown, filepath.Dir(file), cmd.String("space"), cmd.Bool("title-from-h1"), cmd.Bool("title-from-filename"), parents, cmd.Bool("title-append-generated-hash"))
 	if err != nil {
 		fatalErrorHandler.Handle(err, "unable to resolve relative links")
 		return nil

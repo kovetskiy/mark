@@ -1,6 +1,9 @@
 package util
 
 import (
+	"context"
+	"errors"
+
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
 	"github.com/urfave/cli/v3"
@@ -58,8 +61,14 @@ var Flags = []cli.Flag{
 	&cli.BoolFlag{
 		Name:    "title-from-h1",
 		Value:   false,
-		Usage:   "extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata.",
+		Usage:   "extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. Mutually exclusive with --title-from-filename.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_H1"), altsrctoml.TOML("title-from-h1", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
+		Name:    "title-from-filename",
+		Value:   false,
+		Usage:   "use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_FILENAME"), altsrctoml.TOML("title-from-filename", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
 		Name:    "title-append-generated-hash",
@@ -187,4 +196,12 @@ var Flags = []cli.Flag{
 		Usage:   "Enables optional features. Current features: d2, mermaid, mkdocsadmonitions",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
 	},
+}
+
+// CheckMutuallyExclusiveTitleFlags checks if both title-from-h1 and title-from-filename are set
+func CheckMutuallyExclusiveTitleFlags(context context.Context, command *cli.Command) (context.Context, error) {
+	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
+		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
+	}
+	return context, nil
 }
