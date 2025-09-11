@@ -10,7 +10,6 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-
 var (
 	version = "dev"
 	commit  = "none"
@@ -30,6 +29,7 @@ func main() {
 		Flags:                 util.Flags,
 		EnableShellCompletion: true,
 		HideHelpCommand:       true,
+		Before:                util.CheckMutuallyExclusiveTitleFlags,
 		Action:                util.RunMark,
 	}
 
