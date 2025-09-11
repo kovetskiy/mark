@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/reconquest/pkg/log"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const (
@@ -82,8 +84,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
 		}
 
-		//nolint:staticcheck
-		header := strings.Title(matches[1])
+		header := cases.Title(language.English).String(matches[1])
 
 		var value string
 		if len(matches) > 1 {
@@ -193,7 +194,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 func setTitleFromFilename(meta *Meta, filename string) {
 	base := filepath.Base(filename)
-	meta.Title = strings.TrimSuffix(base, filepath.Ext(base))
+	title := strings.TrimSuffix(base, filepath.Ext(base))
+	title = strings.ReplaceAll(title, "_", " ")
+	title = strings.ReplaceAll(title, "-", " ")
+	meta.Title = cases.Title(language.English).String(title)
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading
