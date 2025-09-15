@@ -186,8 +186,9 @@ You can use the `--title-from-h1` flag to extract the page title from the first 
 ### From the filename
 
 You can use the `--title-from-filename` flag to use the filename (without the extension) as the page title. `mark` will automatically convert the filename to a more readable title by:
-*   Replacing underscores (`_`) and dashes (`-`) with spaces.
-*   Applying title case to the filename.
+
+* Replacing underscores (`_`) and dashes (`-`) with spaces.
+* Applying title case to the filename.
 
 For example, a file named `my_awesome-page.md` will have the title "My Awesome Page".
 
