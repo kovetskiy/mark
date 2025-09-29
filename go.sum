@@ -31,8 +31,8 @@ github.com/dlclark/regexp2 v1.11.4 h1:rPYF9/LECdNymJufQKmri9gV604RvvABwgOA8un7yA
 github.com/dlclark/regexp2 v1.11.4/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/dop251/goja v0.0.0-20240927123429-241b342198c2 h1:Ux9RXuPQmTB4C1MKagNLme0krvq8ulewfor+ORO/QL4=
 github.com/dop251/goja v0.0.0-20240927123429-241b342198c2/go.mod h1:MxLav0peU43GgvwVgNbLAj1s/bSGboKkhuULvq/7hx4=
-github.com/dreampuf/mermaid.go v0.0.33 h1:3EWGmzzXz03QdyKBFjN0lD8IG4KonPjW8cox4YeTWOI=
-github.com/dreampuf/mermaid.go v0.0.33/go.mod h1:NDx5w3ixoEbWe6eZVUkspRHCe/N/krnhd2Z8iaiBneE=
+github.com/dreampuf/mermaid.go v0.0.34 h1:SQMCSf+I0GZfra2eL01ScRkMmhwdUT1rxuIBHKiU6tE=
+github.com/dreampuf/mermaid.go v0.0.34/go.mod h1:NDx5w3ixoEbWe6eZVUkspRHCe/N/krnhd2Z8iaiBneE=
 github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 h1:iizUGZ9pEquQS5jTGkh4AqeeHCMbfbjeb0zMt0aEFzs=
 github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2/go.mod h1:TiCD2a1pcmjd7YnhGH0f/zKNcCD06B029pHhzV23c2M=
 github.com/go-sourcemap/sourcemap v2.1.4+incompatible h1:a+iTbH5auLKxaNwQFg0B+TCYl6lbukKPc7b5x0n1s6Q=
