@@ -88,8 +88,8 @@ github.com/stefanfritsch/goldmark-admonitions v1.1.1 h1:SncsICdQrIYYaq02Ta+zyc9g
 github.com/stefanfritsch/goldmark-admonitions v1.1.1/go.mod h1:cOZK5O0gE6eWfpxTdjGUmeONW2IL9j3Zujv3KlZWlLo=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/urfave/cli-altsrc/v3 v3.0.1 h1:v+gHk59syLk8ao9rYybZs43+D5ut/gzj0omqQ1XYl8k=
-github.com/urfave/cli-altsrc/v3 v3.0.1/go.mod h1:8UtsKKcxFVzvaoySFPfvQOk413T+IXJhaCWyyoPW3yM=
+github.com/urfave/cli-altsrc/v3 v3.1.0 h1:6E5+kXeAWmRxXlPgdEVf9VqVoTJ2MJci0UMpUi/w/bA=
+github.com/urfave/cli-altsrc/v3 v3.1.0/go.mod h1:VcWVTGXcL3nrXUDJZagHAeUX702La3PKeWav7KpISqA=
 github.com/urfave/cli/v3 v3.4.1 h1:1M9UOCy5bLmGnuu1yn3t3CB4rG79Rtoxuv1sPhnm6qM=
 github.com/urfave/cli/v3 v3.4.1/go.mod h1:FJSKtM/9AiiTOJL4fJ6TbMUkxBXn7GO9guZqoZtpYpo=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=

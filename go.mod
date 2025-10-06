@@ -16,7 +16,7 @@ require (
 	github.com/reconquest/regexputil-go v0.0.0-20160905154124-38573e70c1f4
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.11.1
-	github.com/urfave/cli-altsrc/v3 v3.0.1
+	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.4.1
 	github.com/yuin/goldmark v1.7.13
 	golang.org/x/text v0.29.0
