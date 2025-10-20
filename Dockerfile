@@ -1,4 +1,4 @@
-FROM golang:1.25.2 AS builder
+FROM golang:1.25.3 AS builder
 ENV GOPATH="/go"
 WORKDIR /go/src/github.com/kovetskiy/mark
 COPY / .
