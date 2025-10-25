@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	"strings"
 
 	parser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/yuin/goldmark/ast"
@@ -114,8 +115,11 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
 		}
-		if string(n.Title) != "" {
-			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", string(n.Title))
+
+		title := strings.Trim(string(n.Title), "\"")
+
+		if title != "" {
+			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", title)
 			if _, err := writer.Write([]byte(titleHTML)); err != nil {
 				return ast.WalkStop, err
 			}
