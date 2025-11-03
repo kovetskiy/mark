@@ -120,7 +120,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			meta, _, err := ExtractMeta([]byte(tt.markdown), "", false, nil, false)
+			meta, _, err := ExtractMeta([]byte(tt.markdown), "", false, false, "", nil, false)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, meta)
 		})
@@ -136,7 +136,7 @@ func TestExtractMeta_FolderHeadersOrder(t *testing.T) {
 
 # Content`
 
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, nil, false)
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"First", "Second", "Third"}, meta.Folders)
 }
@@ -149,7 +149,7 @@ func TestExtractMeta_FolderHeadersWithCliParents(t *testing.T) {
 # Content`
 
 	cliParents := []string{"CLI Parent 1", "CLI Parent 2"}
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, cliParents, false)
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", cliParents, false)
 	assert.NoError(t, err)
 
 	// CLI parents should be prepended to any parents in the markdown, not folders
