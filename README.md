@@ -181,6 +181,25 @@ The key's value must be a string which defines the template's content.
   </tblbox>
 ```
 
+## Automatic Page Title
+
+If you don't want to specify the page title in the metadata of each file, `mark` provides two ways to set it automatically.
+
+### From the first H1 heading
+
+You can use the `--title-from-h1` flag to extract the page title from the first H1 heading in the markdown file. If no H1 heading is found, the title must be set in the page metadata.
+
+### From the filename
+
+You can use the `--title-from-filename` flag to use the filename (without the extension) as the page title. `mark` will automatically convert the filename to a more readable title by:
+
+* Replacing underscores (`_`) and dashes (`-`) with spaces.
+* Applying title case to the filename.
+
+For example, a file named `my_awesome-page.md` will have the title "My Awesome Page".
+
+These two options are mutually exclusive. If both flags are provided, `mark` will produce an error.
+
 ## Customizing the page layout
 
 If you set the Layout to plain, the page layout can be customized using HTML comments inside the markdown:
@@ -817,6 +836,7 @@ GLOBAL OPTIONS:
    --strip-linebreaks, -L                   remove linebreaks inside of tags, to accommodate non-standard Confluence behavior (default: false) [$MARK_STRIP_LINEBREAKS]
    --title-from-h1                          extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. (default: false) [$MARK_TITLE_FROM_H1]
    --title-append-generated-hash            appends a short hash generated from the path of the page (space, parents, and title) to the title (default: false) [$MARK_TITLE_APPEND_GENERATED_HASH]
+   --title-from-filename                    use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1. (default: false) [$MARK_TITLE_FROM_FILENAME]
    --minor-edit                             don't send notifications while updating Confluence page. (default: false) [$MARK_MINOR_EDIT]
    --version-message string                 add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --color string                           display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]

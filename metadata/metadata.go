@@ -5,10 +5,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/reconquest/pkg/log"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const (
@@ -50,7 +53,7 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
 		offset int
@@ -83,8 +86,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
 		}
 
-		//nolint:staticcheck
-		header := strings.Title(matches[1])
+		header := cases.Title(language.English).String(matches[1])
 
 		var value string
 		if len(matches) > 1 {
@@ -146,7 +148,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 		}
 	}
 
-	if titleFromH1 || spaceFromCli != "" {
+	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
 		if meta == nil {
 			meta = &Meta{}
 		}
@@ -161,6 +163,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 
 		if titleFromH1 && meta.Title == "" {
 			meta.Title = ExtractDocumentLeadingH1(data)
+		}
+		if titleFromFilename && meta.Title == "" && filename != "" {
+			setTitleFromFilename(meta, filename)
 		}
 		if spaceFromCli != "" && meta.Space == "" {
 			meta.Space = spaceFromCli
@@ -190,6 +195,14 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []s
 	}
 
 	return meta, data[offset:], nil
+}
+
+func setTitleFromFilename(meta *Meta, filename string) {
+	base := filepath.Base(filename)
+	title := strings.TrimSuffix(base, filepath.Ext(base))
+	title = strings.ReplaceAll(title, "_", " ")
+	title = strings.ReplaceAll(title, "-", " ")
+	meta.Title = cases.Title(language.English).String(title)
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading

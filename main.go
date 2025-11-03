@@ -30,6 +30,7 @@ func main() {
 		Flags:                 util.Flags,
 		EnableShellCompletion: true,
 		HideHelpCommand:       true,
+		Before:                util.CheckMutuallyExclusiveTitleFlags,
 		Action:                util.RunMark,
 	}
 

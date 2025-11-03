@@ -14,6 +14,9 @@ func ResolvePage(
 	api *confluence.API,
 	meta *metadata.Meta,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
+	if meta == nil {
+		return nil, nil, karma.Format(nil, "metadata is empty")
+	}
 	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {
 		return nil, nil, karma.Format(
