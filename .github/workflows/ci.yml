@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Go 1.x
       uses: actions/setup-go@v6
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
     - name: markdownlint-cli2-action
       uses: DavidAnson/markdownlint-cli2-action@v20
 
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Go 1.x
       uses: actions/setup-go@v6
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Go 1.x
       uses: actions/setup-go@v6
