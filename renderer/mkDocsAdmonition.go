@@ -2,7 +2,7 @@ package renderer
 
 import (
 	"fmt"
-	"strings"
+	"strconv"
 
 	parser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/yuin/goldmark/ast"
@@ -116,8 +116,7 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 			return ast.WalkStop, err
 		}
 
-		title := strings.Trim(string(n.Title), "\"")
-
+		title, _ := strconv.Unquote(string(n.Title))
 		if title != "" {
 			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", title)
 			if _, err := writer.Write([]byte(titleHTML)); err != nil {
