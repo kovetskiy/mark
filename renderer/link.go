@@ -26,7 +26,7 @@ func (r *ConfluenceLinkRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 // renderLink renders links specifically for confluence
 func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	n := node.(*ast.Link)
-	if string(n.Destination[0:3]) == "ac:" {
+	if len(n.Destination) >= 3 && string(n.Destination[0:3]) == "ac:" {
 		if entering {
 			_, err := writer.Write([]byte("<ac:link><ri:page ri:content-title=\""))
 			if err != nil {
