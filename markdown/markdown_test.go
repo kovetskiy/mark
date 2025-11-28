@@ -2,6 +2,7 @@ package mark_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -51,6 +52,7 @@ func TestCompileMarkdown(t *testing.T) {
 	}
 
 	for _, filename := range testcases {
+		fmt.Printf("Testing: %v\n", filename)
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)
@@ -58,11 +60,11 @@ func TestCompileMarkdown(t *testing.T) {
 		markdown, htmlname, html := loadData(t, filename, "")
 
 		cfg := types.MarkConfig{
-			MermaidScale:    1.0,
-			D2Scale:         1.0,
-			DropFirstH1:     false,
-			StripNewlines:   false,
-			Features:        []string{"mkdocsadmonitions"},
+			MermaidScale:  1.0,
+			D2Scale:       1.0,
+			DropFirstH1:   false,
+			StripNewlines: false,
+			Features:      []string{"mkdocsadmonitions"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -100,11 +102,11 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		markdown, htmlname, html := loadData(t, filename, variant)
 
 		cfg := types.MarkConfig{
-			MermaidScale:    1.0,
-			D2Scale:         1.0,
-			DropFirstH1:     true,
-			StripNewlines:   false,
-			Features:        []string{"mkdocsadmonitions"},
+			MermaidScale:  1.0,
+			D2Scale:       1.0,
+			DropFirstH1:   true,
+			StripNewlines: false,
+			Features:      []string{"mkdocsadmonitions"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -144,11 +146,11 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		markdown, htmlname, html := loadData(t, filename, variant)
 
 		cfg := types.MarkConfig{
-			MermaidScale:    1.0,
-			D2Scale:         1.0,
-			DropFirstH1:     false,
-			StripNewlines:   true,
-			Features:        []string{"mkdocsadmonitions"},
+			MermaidScale:  1.0,
+			D2Scale:       1.0,
+			DropFirstH1:   false,
+			StripNewlines: true,
+			Features:      []string{"mkdocsadmonitions"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
