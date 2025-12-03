@@ -189,6 +189,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		)
 	}
 
+	// Remove trailing spaces from title
+	meta.Title = strings.Trim(meta.Title, " ")
+	meta.Space = strings.Trim(meta.Space, " ")
 	return meta, data[offset:], nil
 }
 
