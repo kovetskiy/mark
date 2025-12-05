@@ -196,6 +196,12 @@ var Flags = []cli.Flag{
 		Usage:   "Enables optional features. Current features: d2, mermaid, mkdocsadmonitions",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.BoolFlag{
+		Name:    "insecure",
+		Value:   false,
+		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE"), altsrctoml.TOML("insecure", altsrc.NewStringPtrSourcer(&filename))),
+	},
 }
 
 // CheckMutuallyExclusiveTitleFlags checks if both title-from-h1 and title-from-filename are set
