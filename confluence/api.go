@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,7 +98,7 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 	log.Tracef(nil, tracer.prefix+" "+format, args...)
 }
 
-func NewAPI(baseURL string, username string, password string) *API {
+func NewAPI(baseURL string, username string, password string, insecure bool) *API {
 	var auth *gopencils.BasicAuth
 	if username != "" {
 		auth = &gopencils.BasicAuth{
@@ -105,7 +106,19 @@ func NewAPI(baseURL string, username string, password string) *API {
 			Password: password,
 		}
 	}
-	rest := gopencils.Api(baseURL+"/rest/api", auth, 3) // set option for 3 retries on failure
+
+	var httpClient *http.Client
+	if insecure {
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		}
+	}
+
+	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 3) // set option for 3 retries on failure
 	if username == "" {
 		if rest.Headers == nil {
 			rest.Headers = http.Header{}
@@ -113,7 +126,7 @@ func NewAPI(baseURL string, username string, password string) *API {
 		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
-	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, 3)
+	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, httpClient, 3)
 
 	if log.GetLevel() == lorg.LevelTrace {
 		rest.Logger = &tracer{"rest:"}
