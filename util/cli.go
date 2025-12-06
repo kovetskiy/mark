@@ -220,11 +220,11 @@ func processFile(
 		}
 
 		cfg := types.MarkConfig{
-			MermaidScale:    cmd.Float("mermaid-scale"),
-			D2Scale:         cmd.Float("d2-scale"),
-			DropFirstH1:     cmd.Bool("drop-h1"),
-			StripNewlines:   cmd.Bool("strip-linebreaks"),
-			Features:        cmd.StringSlice("features"),
+			MermaidScale:  cmd.Float("mermaid-scale"),
+			D2Scale:       cmd.Float("d2-scale"),
+			DropFirstH1:   cmd.Bool("drop-h1"),
+			StripNewlines: cmd.Bool("strip-linebreaks"),
+			Features:      cmd.StringSlice("features"),
 		}
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 		fmt.Println(html)
@@ -241,13 +241,26 @@ func processFile(
 		}
 
 		if page == nil {
-			page, err = api.CreatePage(
-				meta.Space,
-				meta.Type,
-				parent,
-				meta.Title,
-				``,
-			)
+			// Check if parent is actually a folder parent (special marker)
+			if parent != nil && parent.Type == "folder-parent" {
+				// Use CreatePageWithFolderParent for folder parents
+				page, err = api.CreatePageWithFolderParent(
+					meta.Space,
+					meta.Type,
+					parent.ID, // This is the folder ID
+					meta.Title,
+					``,
+				)
+			} else {
+				// Use normal CreatePage for page parents
+				page, err = api.CreatePage(
+					meta.Space,
+					meta.Type,
+					parent,
+					meta.Title,
+					``,
+				)
+			}
 			if err != nil {
 				fatalErrorHandler.Handle(err, "can't create %s %q", meta.Type, meta.Title)
 				return nil
@@ -299,11 +312,11 @@ func processFile(
 		)
 	}
 	cfg := types.MarkConfig{
-		MermaidScale:    cmd.Float("mermaid-scale"),
-		D2Scale:         cmd.Float("d2-scale"),
-		DropFirstH1:     cmd.Bool("drop-h1"),
-		StripNewlines:   cmd.Bool("strip-linebreaks"),
-		Features:        cmd.StringSlice("features"),
+		MermaidScale:  cmd.Float("mermaid-scale"),
+		D2Scale:       cmd.Float("d2-scale"),
+		DropFirstH1:   cmd.Bool("drop-h1"),
+		StripNewlines: cmd.Bool("strip-linebreaks"),
+		Features:      cmd.StringSlice("features"),
 	}
 
 	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cfg)

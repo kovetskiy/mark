@@ -16,6 +16,7 @@ import (
 
 const (
 	HeaderParent      = `Parent`
+	HeaderFolder      = `Folder`
 	HeaderSpace       = `Space`
 	HeaderType        = `Type`
 	HeaderTitle       = `Title`
@@ -30,6 +31,7 @@ const (
 
 type Meta struct {
 	Parents           []string
+	Folders           []string
 	Space             string
 	Type              string
 	Title             string
@@ -94,6 +96,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		switch header {
 		case HeaderParent:
 			meta.Parents = append(meta.Parents, value)
+
+		case HeaderFolder:
+			meta.Folders = append(meta.Folders, value)
 
 		case HeaderSpace:
 			meta.Space = strings.TrimSpace(value)
