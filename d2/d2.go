@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -63,7 +65,14 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 		return attachment.Attachment{}, err
 	}
 
-	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Diagram))
+	scaleAsBytes := make([]byte, 8)
+
+	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
+
+	d2Bytes := append(d2Diagram, scaleAsBytes...)
+
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
+
 	log.Debugf(nil, "Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {

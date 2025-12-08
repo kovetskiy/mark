@@ -22,7 +22,7 @@ func TestExtractMermaidImage(t *testing.T) {
 			Filename:  "example.png",
 			Name:      "example",
 			Replace:   "example",
-			Checksum:  "1743a4f31ab66244591f06c8056e08053b8e0a554eb9a38709af6e9d145ac84f",
+			Checksum:  "26296b73c960c25850b37bc9dd77cb24fce1a78db83b37755a25af7f8a48cc96",
 			ID:        "",
 			Width:     "87",
 			Height:    "174",
