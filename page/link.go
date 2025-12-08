@@ -3,16 +3,17 @@ package page
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/kovetskiy/mark/confluence"
 	"github.com/kovetskiy/mark/metadata"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
-	"golang.org/x/tools/godoc/util"
 )
 
 type LinkSubstitution struct {
@@ -93,7 +94,10 @@ func resolveLink(
 
 		linkContents, err := os.ReadFile(filepath)
 
-		if !util.IsText(linkContents) {
+		contentType := http.DetectContentType(linkContents)
+		// Check if the MIME type starts with "text/"
+		if !strings.HasPrefix(contentType, "text/") {
+			log.Debugf(nil, "Ignoring link to file %q: detected content type %v", filepath, contentType)
 			return "", nil
 		}
 
