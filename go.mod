@@ -20,7 +20,6 @@ require (
 	github.com/urfave/cli/v3 v3.6.1
 	github.com/yuin/goldmark v1.7.13
 	golang.org/x/text v0.32.0
-	golang.org/x/tools/godoc v0.1.0-deprecated
 	gopkg.in/yaml.v3 v3.0.1
 	oss.terrastruct.com/d2 v0.7.1
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
