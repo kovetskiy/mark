@@ -849,6 +849,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. (default: false) [$MARK_CHANGES_ONLY]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, mermaid (default: "mermaid") [$MARK_FEATURES]
+   --insecure-skip-tls-verify               Disables tls verification, useful for instances with self-signed certificates
    --help, -h                               show help
    --version, -v                            print the version
 ```
