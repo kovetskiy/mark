@@ -75,7 +75,7 @@ func TestExtractD2Image(t *testing.T) {
 			Filename:  "example.png",
 			Name:      "example",
 			Replace:   "example",
-			Checksum:  "58fa387384181445e2d8f90a8c7fda945cb75174f73e8b9853ff59b9e0103ddd",
+			Checksum:  "40e75f93e09da9242d4b1ab8e2892665ec7d5bd1ac78a4b65210ee219cf62297",
 			ID:        "",
 			Width:     "198",
 			Height:    "441",

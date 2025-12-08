@@ -3,6 +3,8 @@ package mermaid
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"math"
 	"strconv"
 	"time"
 
@@ -30,7 +32,13 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 		return attachment.Attachment{}, err
 	}
 
-	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidDiagram))
+	scaleAsBytes := make([]byte, 8)
+
+	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
+
+	mermaidBytes := append(mermaidDiagram, scaleAsBytes...)
+
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidBytes))
 	log.Debugf(nil, "Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
