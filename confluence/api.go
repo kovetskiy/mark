@@ -98,7 +98,7 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 	log.Tracef(nil, tracer.prefix+" "+format, args...)
 }
 
-func NewAPI(baseURL string, username string, password string, insecure bool) *API {
+func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
 	var auth *gopencils.BasicAuth
 	if username != "" {
 		auth = &gopencils.BasicAuth{
@@ -108,7 +108,7 @@ func NewAPI(baseURL string, username string, password string, insecure bool) *AP
 	}
 
 	var httpClient *http.Client
-	if insecure {
+	if insecureSkipVerify {
 		httpClient = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{

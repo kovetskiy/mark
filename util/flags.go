@@ -197,10 +197,10 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
-		Name:    "insecure",
+		Name:    "insecure-skip-tls-verify",
 		Value:   false,
 		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE"), altsrctoml.TOML("insecure", altsrc.NewStringPtrSourcer(&filename))),
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
 	},
 }
 
