@@ -202,6 +202,18 @@ var Flags = []cli.Flag{
 		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringMapFlag{
+		Name:    "additional-headers",
+		Value:   map[string]string{},
+		Usage:   "adding more headers to api requests",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ADDITIONAL_HEADERS"), altsrctoml.TOML("additional-headers", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "rest-api-suffix",
+		Value:   "/rest/api",
+		Usage:   "path to rest api",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_REST_API_SUFFIX"), altsrctoml.TOML("rest-api-suffix", altsrc.NewStringPtrSourcer(&filename))),
+	},
 }
 
 // CheckMutuallyExclusiveTitleFlags checks if both title-from-h1 and title-from-filename are set
