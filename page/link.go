@@ -200,8 +200,7 @@ func getConfluenceLink(
 	space, title string,
 ) (string, error) {
 	link := fmt.Sprintf(
-		"%s/display/%s/%s",
-		api.BaseURL,
+		"/display/%s/%s",
 		space,
 		url.QueryEscape(title),
 	)
@@ -212,7 +211,7 @@ func getConfluenceLink(
 	}
 
 	if page != nil {
-		link = api.BaseURL + page.Links.Full
+		link = page.Links.Full
 	}
 
 	linkUrl, err := url.Parse(link)

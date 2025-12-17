@@ -98,7 +98,22 @@ func (tracer *tracer) Printf(format string, args ...interface{}) {
 	log.Tracef(nil, tracer.prefix+" "+format, args...)
 }
 
-func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
+var _ http.RoundTripper = (*AddingHeaderTransport)(nil)
+
+type AddingHeaderTransport struct {
+	additionalHeaders map[string]string
+	wrapped           http.RoundTripper
+}
+
+func (a *AddingHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	for k, v := range a.additionalHeaders {
+		req.Header.Set(k, v)
+	}
+
+	return a.wrapped.RoundTrip(req)
+}
+
+func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool, additionalHeaders map[string]string, restApiSuffix string) *API {
 	var auth *gopencils.BasicAuth
 	if username != "" {
 		auth = &gopencils.BasicAuth{
@@ -107,22 +122,20 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		}
 	}
 
-	var httpClient *http.Client
-	if insecureSkipVerify {
-		httpClient = &http.Client{
-			Transport: &http.Transport{
+	httpClient := &http.Client{
+		Transport: &AddingHeaderTransport{
+			additionalHeaders: additionalHeaders,
+			wrapped: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
+					InsecureSkipVerify: insecureSkipVerify,
 				},
 			},
-		}
+		},
 	}
 
-	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 3) // set option for 3 retries on failure
+	rest := gopencils.Api(fmt.Sprintf("%s%s", baseURL, restApiSuffix), auth, httpClient, 3) // set option for 3 retries on failure
 	if username == "" {
-		if rest.Headers == nil {
-			rest.Headers = http.Header{}
-		}
+		rest.Headers = http.Header{}
 		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
@@ -511,7 +524,7 @@ func (api *API) CreatePage(
 	}
 
 	request, err := api.rest.Res(
-		"content/", &PageInfo{},
+		"content", &PageInfo{},
 	).Post(payload)
 	if err != nil {
 		return nil, err

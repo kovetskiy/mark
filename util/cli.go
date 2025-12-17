@@ -49,7 +49,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify"))
+	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify"), cmd.StringMap("additional-headers"), cmd.String("rest-api-suffix"))
 
 	files, err := doublestar.FilepathGlob(cmd.String("files"))
 	if err != nil {
