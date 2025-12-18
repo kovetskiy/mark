@@ -237,9 +237,9 @@ func normalizeConfluenceWebUIPath(path string) string {
 	}
 
 	// Example:
-	//   /ex/confluence/05594958-6d5d-4e00-9017-90926d8b82d5/wiki/spaces/DVT/pages/5645697027/DX
+	//   /ex/confluence/05532958-2d1d-4f01-2027-90926d8b54d5/wiki/spaces/MySpace/pages/2441299827/TEST
 	// ->
-	//   /wiki/spaces/DVT/pages/5645697027/DX
+	//   /wiki/spaces/MySpace/pages/2441299827/TEST
 	re := regexp.MustCompile(`^/ex/confluence/[^/]+(/wiki/.*)$`)
 	match := re.FindStringSubmatch(path)
 	if len(match) == 2 {
