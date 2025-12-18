@@ -227,19 +227,11 @@ func getConfluenceLink(
 
 // normalizeConfluenceWebUIPath rewrites Confluence Cloud "experience" URLs
 // ("/ex/confluence/<cloudId>/wiki/..."), to canonical wiki paths ("/wiki/...").
-//
-// This function is intentionally conservative and only touches the exact
-// experience prefix, so that local relative paths like "./img/foo.png" are not
-// impacted.
 func normalizeConfluenceWebUIPath(path string) string {
 	if path == "" {
 		return path
 	}
 
-	// Example:
-	//   /ex/confluence/05532958-2d1d-4f01-2027-90926d8b54d5/wiki/spaces/MySpace/pages/2441299827/TEST
-	// ->
-	//   /wiki/spaces/MySpace/pages/2441299827/TEST
 	re := regexp.MustCompile(`^/ex/confluence/[^/]+(/wiki/.*)$`)
 	match := re.FindStringSubmatch(path)
 	if len(match) == 2 {
