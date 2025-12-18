@@ -221,6 +221,30 @@ func getConfluenceLink(
 	}
 	// Confluence supports relative links to reference other pages:
 	// https://confluence.atlassian.com/doc/links-776656293.html
-	linkPath := linkUrl.Path
+	linkPath := normalizeConfluenceWebUIPath(linkUrl.Path)
 	return linkPath, nil
+}
+
+// normalizeConfluenceWebUIPath rewrites Confluence Cloud "experience" URLs
+// ("/ex/confluence/<cloudId>/wiki/..."), to canonical wiki paths ("/wiki/...").
+//
+// This function is intentionally conservative and only touches the exact
+// experience prefix, so that local relative paths like "./img/foo.png" are not
+// impacted.
+func normalizeConfluenceWebUIPath(path string) string {
+	if path == "" {
+		return path
+	}
+
+	// Example:
+	//   /ex/confluence/05594958-6d5d-4e00-9017-90926d8b82d5/wiki/spaces/DVT/pages/5645697027/DX
+	// ->
+	//   /wiki/spaces/DVT/pages/5645697027/DX
+	re := regexp.MustCompile(`^/ex/confluence/[^/]+(/wiki/.*)$`)
+	match := re.FindStringSubmatch(path)
+	if len(match) == 2 {
+		return match[1]
+	}
+
+	return path
 }
