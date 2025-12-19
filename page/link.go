@@ -40,6 +40,13 @@ func ResolveRelativeLinks(
 ) ([]LinkSubstitution, error) {
 	matches := parseLinks(string(markdown))
 
+	// If the user didn't provide --space, inherit the current document's space so
+	// relative links can be resolved within the same space.
+	spaceForLinks := spaceFromCli
+	if spaceForLinks == "" && meta != nil {
+		spaceForLinks = meta.Space
+	}
+
 	links := []LinkSubstitution{}
 	for _, match := range matches {
 		log.Tracef(
@@ -49,7 +56,7 @@ func ResolveRelativeLinks(
 			match.filename,
 			match.hash,
 		)
-		resolved, err := resolveLink(api, base, match, spaceFromCli, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash)
+		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash)
 		if err != nil {
 			return nil, karma.Format(err, "resolve link: %q", match.full)
 		}
@@ -71,7 +78,7 @@ func resolveLink(
 	api *confluence.API,
 	base string,
 	link markdownLink,
-	spaceFromCli string,
+	spaceForLinks string,
 	titleFromH1 bool,
 	titleFromFilename bool,
 	parents []string,
@@ -113,7 +120,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceFromCli, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash)
+		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash)
 		if err != nil {
 			log.Errorf(
 				err,
@@ -199,30 +206,60 @@ func getConfluenceLink(
 	api *confluence.API,
 	space, title string,
 ) (string, error) {
-	link := fmt.Sprintf(
-		"%s/display/%s/%s",
-		api.BaseURL,
-		space,
-		url.QueryEscape(title),
-	)
-
 	page, err := api.FindPage(space, title, "page")
 	if err != nil {
 		return "", karma.Format(err, "api: find page")
 	}
-
-	if page != nil {
-		link = api.BaseURL + page.Links.Full
+	if page == nil {
+		// Without a page ID there is no stable way to produce
+		// /wiki/spaces/<space>/pages/<id>/<name>.
+		return "", nil
 	}
 
-	linkUrl, err := url.Parse(link)
+	// Confluence Cloud web UI URLs can be returned either as a path ("/wiki/..." or
+	// "/ex/confluence/<cloudId>/wiki/...") or as a full absolute URL.
+	absolute, err := makeAbsoluteConfluenceWebUIURL(api.BaseURL, page.Links.Full)
 	if err != nil {
-		return "", karma.Format(err, "parse URL: %s", link)
+		return "", karma.Format(err, "build confluence webui URL")
 	}
-	// Confluence supports relative links to reference other pages:
-	// https://confluence.atlassian.com/doc/links-776656293.html
-	linkPath := normalizeConfluenceWebUIPath(linkUrl.Path)
-	return linkPath, nil
+
+	return absolute, nil
+}
+
+func makeAbsoluteConfluenceWebUIURL(baseURL string, webui string) (string, error) {
+	if webui == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(webui)
+	if err != nil {
+		return "", err
+	}
+
+	path := normalizeConfluenceWebUIPath(u.Path)
+	if path == "" {
+		return "", nil
+	}
+
+	// If Confluence returns an absolute URL, trust its host/scheme.
+	if u.Scheme != "" && u.Host != "" {
+		baseURL = u.Scheme + "://" + u.Host
+	}
+
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	result := baseURL + path
+	if u.RawQuery != "" {
+		result += "?" + u.RawQuery
+	}
+	if u.Fragment != "" {
+		result += "#" + u.Fragment
+	}
+
+	return result, nil
 }
 
 // normalizeConfluenceWebUIPath rewrites Confluence Cloud "experience" URLs
