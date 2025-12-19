@@ -51,3 +51,16 @@ func TestParseLinks(t *testing.T) {
 	assert.Equal(t, "example.md", links[7].full)
 	assert.Equal(t, len(links), 8)
 }
+
+func TestNormalizeConfluenceWebUIPath(t *testing.T) {
+	t.Run("confluence-cloud-experience-prefix", func(t *testing.T) {
+		input := "/ex/confluence/cloud-id/wiki/spaces/SPACE/pages/12345/PageName"
+		expected := "/wiki/spaces/SPACE/pages/12345/PageName"
+		assert.Equal(t, expected, normalizeConfluenceWebUIPath(input))
+	})
+
+	t.Run("already-canonical-wiki", func(t *testing.T) {
+		input := "/wiki/spaces/SPACE/pages/12345/PageName"
+		assert.Equal(t, input, normalizeConfluenceWebUIPath(input))
+	})
+}
