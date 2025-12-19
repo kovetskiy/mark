@@ -54,13 +54,13 @@ func TestParseLinks(t *testing.T) {
 
 func TestNormalizeConfluenceWebUIPath(t *testing.T) {
 	t.Run("confluence-cloud-experience-prefix", func(t *testing.T) {
-		input := "/ex/confluence/05532958-2d1d-4f01-2027-90926d8b54d5/wiki/spaces/MySpace/pages/2441299827/TEST"
-		expected := "/wiki/spaces/MySpace/pages/2441299827/TEST"
+		input := "/ex/confluence/cloud-id/wiki/spaces/SPACE/pages/12345/PageName"
+		expected := "/wiki/spaces/SPACE/pages/12345/PageName"
 		assert.Equal(t, expected, normalizeConfluenceWebUIPath(input))
 	})
 
 	t.Run("already-canonical-wiki", func(t *testing.T) {
-		input := "/wiki/spaces/MySpace/pages/2441299827/TEST"
+		input := "/wiki/spaces/SPACE/pages/12345/PageName"
 		assert.Equal(t, input, normalizeConfluenceWebUIPath(input))
 	})
 }
