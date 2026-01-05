@@ -74,9 +74,9 @@ func TestEncodeTinyLinkID(t *testing.T) {
 			expected: "EIAB",
 		},
 		{
-			name:     "large page ID from user example",
-			pageID:   5645697027,
-			expected: "A4CCUAE",
+			name:     "large page ID (Confluence Cloud)",
+			pageID:   5000000001,
+			expected: "AfIFKgE",
 		},
 		{
 			name:     "page ID 1",
@@ -114,15 +114,15 @@ func TestGenerateTinyLink(t *testing.T) {
 		{
 			name:     "cloud URL with trailing slash",
 			baseURL:  "https://example.atlassian.net/wiki/",
-			pageID:   "5645697027",
-			expected: "https://example.atlassian.net/wiki/x/A4CCUAE",
+			pageID:   "5000000001",
+			expected: "https://example.atlassian.net/wiki/x/AfIFKgE",
 			wantErr:  false,
 		},
 		{
 			name:     "cloud URL without trailing slash",
 			baseURL:  "https://example.atlassian.net/wiki",
-			pageID:   "5645697027",
-			expected: "https://example.atlassian.net/wiki/x/A4CCUAE",
+			pageID:   "5000000001",
+			expected: "https://example.atlassian.net/wiki/x/AfIFKgE",
 			wantErr:  false,
 		},
 		{
@@ -196,10 +196,10 @@ func TestEncodeTinyLinkIDMatchesPerl(t *testing.T) {
 func TestEncodeTinyLinkIDLargeIDs(t *testing.T) {
 	// Test large page IDs (> 32-bit) which are common in Confluence Cloud
 	// These exceed Perl's pack("L") but our implementation handles them
-	largeID := uint64(5645697027) // User's actual page ID from the issue
+	largeID := uint64(5000000001)
 	result := encodeTinyLinkID(largeID)
 	assert.NotEmpty(t, result)
-	assert.Equal(t, "A4CCUAE", result)
+	assert.Equal(t, "AfIFKgE", result)
 
 	// Verify the result is a valid URL-safe base64-like string
 	assert.Regexp(t, `^[A-Za-z0-9_-]+$`, result)
