@@ -2,12 +2,14 @@ package page
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/confluence"
@@ -200,8 +202,9 @@ func parseLinks(markdown string) []markdownLink {
 	return links
 }
 
-// getConfluenceLink build (to be) link for Confluence, and tries to verify from
-// API if there's real link available
+// getConfluenceLink builds a stable Confluence tiny link for the given page.
+// Tiny links use the format {baseURL}/x/{encodedPageID} and are immune to
+// Cloud-specific URL variations like /ex/confluence/<cloudId>/wiki/...
 func getConfluenceLink(
 	api *confluence.API,
 	space, title string,
@@ -211,69 +214,68 @@ func getConfluenceLink(
 		return "", karma.Format(err, "api: find page")
 	}
 	if page == nil {
-		// Without a page ID there is no stable way to produce
-		// /wiki/spaces/<space>/pages/<id>/<name>.
 		return "", nil
 	}
 
-	// Confluence Cloud web UI URLs can be returned either as a path ("/wiki/..." or
-	// "/ex/confluence/<cloudId>/wiki/...") or as a full absolute URL.
-	absolute, err := makeAbsoluteConfluenceWebUIURL(api.BaseURL, page.Links.Full)
+	tiny, err := GenerateTinyLink(api.BaseURL, page.ID)
 	if err != nil {
-		return "", karma.Format(err, "build confluence webui URL")
+		return "", karma.Format(err, "generate tiny link for page %s", page.ID)
 	}
 
-	return absolute, nil
+	return tiny, nil
 }
 
-func makeAbsoluteConfluenceWebUIURL(baseURL string, webui string) (string, error) {
-	if webui == "" {
-		return "", nil
-	}
-
-	u, err := url.Parse(webui)
+// GenerateTinyLink generates a Confluence tiny link from a page ID.
+// The algorithm converts the page ID to a little-endian 32-bit byte array,
+// base64-encodes it, and applies URL-safe transformations.
+// Format: {baseURL}/x/{encodedID}
+//
+// Reference: https://support.atlassian.com/confluence/kb/how-to-programmatically-generate-the-tiny-link-of-a-confluence-page
+func GenerateTinyLink(baseURL string, pageID string) (string, error) {
+	id, err := strconv.ParseUint(pageID, 10, 64)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("invalid page ID %q: %w", pageID, err)
 	}
 
-	path := normalizeConfluenceWebUIPath(u.Path)
-	if path == "" {
-		return "", nil
-	}
-
-	// If Confluence returns an absolute URL, trust its host/scheme.
-	if u.Scheme != "" && u.Host != "" {
-		baseURL = u.Scheme + "://" + u.Host
-	}
-
+	encoded := encodeTinyLinkID(id)
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
 
-	result := baseURL + path
-	if u.RawQuery != "" {
-		result += "?" + u.RawQuery
-	}
-	if u.Fragment != "" {
-		result += "#" + u.Fragment
-	}
-
-	return result, nil
+	return baseURL + "/x/" + encoded, nil
 }
 
-// normalizeConfluenceWebUIPath rewrites Confluence Cloud "experience" URLs
-// ("/ex/confluence/<cloudId>/wiki/..."), to canonical wiki paths ("/wiki/...").
-func normalizeConfluenceWebUIPath(path string) string {
-	if path == "" {
-		return path
+// encodeTinyLinkID encodes a page ID into the Confluence tiny link format.
+// This is the core algorithm extracted for testability.
+func encodeTinyLinkID(id uint64) string {
+	// Pack as little-endian. Use 8 bytes to support large page IDs,
+	// but the base64 trimming will remove unnecessary trailing zeros.
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, id)
+
+	// Trim trailing zero bytes (they become 'A' padding in base64)
+	for len(buf) > 1 && buf[len(buf)-1] == 0 {
+		buf = buf[:len(buf)-1]
 	}
 
-	re := regexp.MustCompile(`^/ex/confluence/[^/]+(/wiki/.*)$`)
-	match := re.FindStringSubmatch(path)
-	if len(match) == 2 {
-		return match[1]
+	// Base64 encode
+	encoded := base64.StdEncoding.EncodeToString(buf)
+
+	// Transform to URL-safe format:
+	// - Strip '=' padding
+	// - Replace '/' with '-'
+	// - Replace '+' with '_'
+	var result strings.Builder
+	for _, c := range encoded {
+		switch c {
+		case '=':
+			continue
+		case '/':
+			result.WriteByte('-')
+		case '+':
+			result.WriteByte('_')
+		default:
+			result.WriteRune(c)
+		}
 	}
 
-	return path
+	return result.String()
 }
