@@ -61,6 +61,7 @@ type PageInfo struct {
 
 	Links struct {
 		Full string `json:"webui"`
+		Base string `json:"-"` // Not from JSON; populated from response _links.base
 	} `json:"_links"`
 }
 
@@ -193,6 +194,9 @@ func (api *API) FindPage(
 ) (*PageInfo, error) {
 	result := struct {
 		Results []PageInfo `json:"results"`
+		Links   struct {
+			Base string `json:"base"`
+		} `json:"_links"`
 	}{}
 
 	payload := map[string]string{
@@ -222,7 +226,13 @@ func (api *API) FindPage(
 		return nil, nil
 	}
 
-	return &result.Results[0], nil
+	page := &result.Results[0]
+	// Populate the base URL from the response _links.base
+	if result.Links.Base != "" {
+		page.Links.Base = result.Links.Base
+	}
+
+	return page, nil
 }
 
 func (api *API) CreateAttachment(
