@@ -217,7 +217,15 @@ func getConfluenceLink(
 		return "", nil
 	}
 
-	tiny, err := GenerateTinyLink(api.BaseURL, page.ID)
+	// Prefer the base URL from the API response (_links.base) as it contains
+	// the canonical user-facing wiki URL (e.g., https://tenant.atlassian.net/wiki).
+	// Fall back to api.BaseURL if _links.base is not available.
+	baseURL := page.Links.Base
+	if baseURL == "" {
+		baseURL = api.BaseURL
+	}
+
+	tiny, err := GenerateTinyLink(baseURL, page.ID)
 	if err != nil {
 		return "", karma.Format(err, "generate tiny link for page %s", page.ID)
 	}
