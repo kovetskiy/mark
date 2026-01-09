@@ -237,48 +237,38 @@ Placeholder
 
 ### Code Blocks
 
-If you have long code blocks, you can make them collapsible with the [Code Block Macro]:
-
-```bash collapse
+````text
+```bash
 ...
 some long bash code block
 ...
 ```
+````
 
-And you can also add a title:
+| Parameter                      | Default |
+| ------------------------------ | ------- |
+| `collapse`                     | false   |
+| `title`                        | none    |
+| `linenumbers`                  | false   |
+| `1` (any number for firstline) | 1       |
 
-```bash collapse title Some long long bash function
-...
-some long bash code block
-...
-```
+Example:  
 
-Or linenumbers, by giving the first number
+* `bash collapse`  
+  If you have long code blocks, you can make them collapsible.
+* `bash collapse title Some long long bash function`  
+  And you can also add a title.
+* `bash linenumbers collapse title Some long long bash function`  
+  And linenumbers.
+* `bash 1 collapse title Some long long bash function`  
+  Or directly give a number as firstline number.
+* `bash 1 collapse midnight title Some long long bash function`  
+  And even themes.
+* `- 1 collapse midnight title Some long long code`  
+  Please note that, if you want to have a code block without a language
+  use `-` as the first character, if you want to have the other goodies.
 
-```bash 1 collapse title Some long long bash function
-...
-some long bash code block
-...
-```
-
-And even themes
-
-```bash 1 collapse midnight title Some long long bash function
-...
-some long bash code block
-...
-```
-
-Please note that, if you want to have a code block without a language
-use `-` as the first character, if you want to have the other goodies
-
-``` - 1 collapse midnight title Some long long code
-...
-some long code block
-...
-```
-
-[Code Block Macro]: https://confluence.atlassian.com/doc/code-block-macro-139390.html
+More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.  
 
 ### Block Quotes
 
