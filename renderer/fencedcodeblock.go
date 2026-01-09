@@ -108,6 +108,10 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				collapse = false
 				continue
 			}
+			if option == "linenumbers" {
+				linenumbers = true
+				continue
+			}
 
 			var i int
 			if _, err := fmt.Sscanf(option, "%d", &i); err == nil {
