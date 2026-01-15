@@ -151,7 +151,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="jira">`,
 			`<ac:parameter ac:name="key">{{ .Ticket }}</ac:parameter>`,
 			`{{ if .Server }}`,
-				`<ac:parameter ac:name="server">{{ .Server }}</ac:parameter>`,
+			`<ac:parameter ac:name="server">{{ .Server }}</ac:parameter>`,
 			`{{ end }}`,
 			`</ac:structured-macro>`,
 		),
@@ -449,6 +449,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ri:attachment ri:filename="{{ .Name | convertAttachment }}"/>`,
 			`</ac:parameter>`,
 			`<ac:parameter ac:name="autoplay">{{ or .AutoPlay "false"}}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+		/* https://confluence.atlassian.com/conf59/view-file-macro-792499226.html */
+		`ac:view-file`: text(
+			`<ac:structured-macro ac:name="view-file">`,
+			`<ac:parameter ac:name="name">`,
+			`<ri:attachment ri:filename="{{ .Name | convertAttachment }}"/>`,
+			`</ac:parameter>`,
+			`<ac:parameter ac:name="height">{{ or .Height 250 }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
