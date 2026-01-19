@@ -507,7 +507,7 @@ By default, mark provides several built-in templates and macros:
 
 * template `ac:view-file`
   * Name: Name of the file
-  * Height: height of the view                        
+  * Height: height of the view
 
 * macro `@{...}` to mention user by name specified in the braces.
 
