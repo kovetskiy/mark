@@ -505,6 +505,10 @@ By default, mark provides several built-in templates and macros:
   * Width: Width of the video (optional)
   * AutoPlay: Start playing the file on page load (default: false)
 
+* template `ac:view-file`
+  * Name: Name of the file
+  * Height: height of the view                        
+
 * macro `@{...}` to mention user by name specified in the braces.
 
 ## Template & Macros Usecases
