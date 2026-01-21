@@ -21,6 +21,8 @@ import (
 type User struct {
 	AccountID string `json:"accountId,omitempty"`
 	UserKey   string `json:"userKey,omitempty"`
+	UserName  string `json:"username,omitempty"`
+	UserType  string `json:"type,omitempty"`
 }
 
 type API struct {
@@ -767,31 +769,142 @@ func (api *API) RestrictPageUpdatesServer(
 		result interface{}
 	)
 
-	request, err := api.json.Res(
-		"setContentPermissions", &result,
-	).Post([]interface{}{
-		page.ID,
-		"Edit",
-		[]map[string]interface{}{
-			{
-				"userName": allowedUser,
-			},
-		},
-	})
+	user, err := api.GetCurrentUser()
 	if err != nil {
 		return err
 	}
+
+	url := fmt.Sprintf("content/%s/restriction", page.ID)
+	data := []interface{}{
+		map[string]interface{}{
+			"operation": "update",
+			"restrictions": map[string]interface{}{
+				"user": []map[string]interface{}{
+					{
+						"type":     user.UserType,
+						"username": user.UserName,
+					},
+				},
+			},
+		},
+	}
+	req := api.rest.Res(
+		url, &result,
+	)
+	request, err := req.Put(data)
+	if err != nil {
+		return err
+	}
+	/*
+	   [
+	       {
+	           "operation": "update",
+	           "restrictions": {
+	               "user": [
+	                   {
+	                       "type": "known",
+	                       "username": "username here"
+	                   }
+	               ]
+	           }
+	       }
+	   ]
+	*/
 
 	if request.Raw.StatusCode != http.StatusOK {
 		return newErrorStatusNotOK(request)
 	}
 
-	if success, ok := result.(bool); !ok || !success {
-		return fmt.Errorf(
-			"'true' response expected, but '%v' encountered",
-			result,
-		)
-	}
+	/*
+		Don't know how to adjust this. The response is
+		-----
+			{
+			"_links": {
+				"base": "CONFLUENCE-URL",
+				"byOperation": "CONFLUENCE-URL/rest/api/content/308576838/restriction/byOperation",
+				"context": ""
+			},
+			"limit": 200,
+			"restrictionsHash": "293b4be2a692fca6e35218ce22b48492835524aa078df302a7681d78dab9074e",
+			"results": [
+				{
+				"_expandable": {
+					"content": "/rest/api/content/308576838"
+				},
+				"_links": {
+					"self": "CONFLUENCE-URL/rest/api/content/308576838/restriction/byOperation/read"
+				},
+				"operation": "read",
+				"restrictions": {
+					"group": {
+					"limit": 200,
+					"results": [],
+					"size": 0,
+					"start": 0
+					},
+					"user": {
+					"limit": 200,
+					"results": [],
+					"size": 0,
+					"start": 0
+					}
+				}
+				},
+				{
+				"_expandable": {
+					"content": "/rest/api/content/308576838"
+				},
+				"_links": {
+					"self": "CONFLUENCE-URL/rest/api/content/308576838/restriction/byOperation/update"
+				},
+				"lastModificationDate": "2025-08-01T15:27:01.163+02:00",
+				"operation": "update",
+				"restrictions": {
+					"group": {
+					"limit": 200,
+					"results": [],
+					"size": 0,
+					"start": 0
+					},
+					"user": {
+					"limit": 200,
+					"results": [
+						{
+						"_expandable": {
+							"status": ""
+						},
+						"_links": {
+							"self": "CONFLUENCE-URL/rest/api/user?key=USER-KEY"
+						},
+						"displayName": "confluence-csa-automation",
+						"profilePicture": {
+							"height": 48,
+							"isDefault": false,
+							"path": "/download/attachments/155080056/user-avatar",
+							"width": 48
+						},
+						"type": "known",
+						"userKey": "USER-KEY",
+						"username": "confluence-csa-au"
+						}
+					],
+					"size": 1,
+					"start": 0
+					}
+				}
+				}
+			],
+			"size": 2,
+			"start": 0
+			}
+		-----
+		if success, ok := result.(bool); !ok || !success {
+			return fmt.Errorf(
+				"'true' response expected, but '%v' encountered",
+				result,
+			)
+		}
+	*/
 
 	return nil
 }
