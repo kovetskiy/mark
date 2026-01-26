@@ -120,6 +120,11 @@ follows the `Include` and `Delims` tag, if present:
      <yaml-data> -->
 ```
 
+**Note:** `Include` directives inside fenced code blocks (``` ``` ``` or
+`~~~`) are left untouched. This makes it possible to document Mark itself
+on a Mark-managed page without the example directives being expanded.
+Directives inside indented (4-space) code blocks are still expanded.
+
 Mark also supports attachments. The standard way involves declaring an
 `Attachment` along with the other items in the header, then have any links
 with the same path:
