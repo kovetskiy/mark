@@ -222,6 +222,8 @@ func processFile(
 		cfg := types.MarkConfig{
 			MermaidScale:  cmd.Float("mermaid-scale"),
 			D2Scale:       cmd.Float("d2-scale"),
+			D2Output:      strings.ToLower(cmd.String("d2-output")),
+			D2Bundle:      cmd.Bool("d2-bundle"),
 			DropFirstH1:   cmd.Bool("drop-h1"),
 			StripNewlines: cmd.Bool("strip-linebreaks"),
 			Features:      cmd.StringSlice("features"),
@@ -301,6 +303,8 @@ func processFile(
 	cfg := types.MarkConfig{
 		MermaidScale:  cmd.Float("mermaid-scale"),
 		D2Scale:       cmd.Float("d2-scale"),
+		D2Output:      strings.ToLower(cmd.String("d2-output")),
+		D2Bundle:      cmd.Bool("d2-bundle"),
 		DropFirstH1:   cmd.Bool("drop-h1"),
 		StripNewlines: cmd.Bool("strip-linebreaks"),
 		Features:      cmd.StringSlice("features"),
