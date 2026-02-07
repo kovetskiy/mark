@@ -70,6 +70,18 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
+	if slices.Contains(c.MarkConfig.Features, "mention") {
+		m.Parser().AddOptions(
+			parser.WithInlineParsers(
+				util.Prioritized(cparser.NewMentionParser(), 99),
+			),
+		)
+
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			util.Prioritized(crenderer.NewConfluenceMentionRenderer(c.Stdlib), 100),
+		))
+	}
+
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
 		// the <ac:*/> tags.
