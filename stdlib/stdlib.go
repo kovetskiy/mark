@@ -5,14 +5,12 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/confluence"
-	"github.com/kovetskiy/mark/macro"
 	"github.com/reconquest/pkg/log"
 
 	"github.com/reconquest/karma-go"
 )
 
 type Lib struct {
-	Macros    []macro.Macro
 	Templates *template.Template
 }
 
@@ -27,37 +25,11 @@ func New(api *confluence.API) (*Lib, error) {
 		return nil, err
 	}
 
-	lib.Macros, err = macros(lib.Templates)
 	if err != nil {
 		return nil, err
 	}
 
 	return &lib, nil
-}
-
-func macros(templates *template.Template) ([]macro.Macro, error) {
-	text := func(line ...string) []byte {
-		return []byte(strings.Join(line, "\n"))
-	}
-
-	macros, _, err := macro.ExtractMacros(
-		"",
-		"",
-		text(
-			`<!-- Macro: @\{([^}]+)\}`,
-			`     Template: ac:link:user`,
-			`     Name: ${1} -->`,
-
-			// TODO(seletskiy): more macros here
-		),
-
-		templates,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return macros, nil
 }
 
 func templates(api *confluence.API) (*template.Template, error) {
@@ -68,6 +40,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 	templates := template.New(`stdlib`).Funcs(
 		template.FuncMap{
 			"user": func(name string) *confluence.User {
+				if api == nil {
+					return nil
+				}
 				user, err := api.GetUserByName(name)
 				if err != nil {
 					log.Error(err)
