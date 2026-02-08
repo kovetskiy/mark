@@ -9,7 +9,6 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/chromedp/chromedp v0.14.2
 	github.com/dreampuf/mermaid.go v0.0.39
-	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
 	github.com/reconquest/pkg v1.3.1-0.20240901105413-68c2adbf2b64
@@ -23,6 +22,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	oss.terrastruct.com/d2 v0.7.1
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
+	resty.dev/v3 v3.0.0-beta.6
 )
 
 require (
