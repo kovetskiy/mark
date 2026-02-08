@@ -109,7 +109,7 @@ func TestProcessD2SVG(t *testing.T) {
 		t.Fatalf("ProcessD2SVG returned error: %v", err)
 	}
 
-	if !(bytes.HasPrefix(attachment.FileBytes, []byte("<svg")) || bytes.HasPrefix(attachment.FileBytes, []byte("<?xml"))) {
+	if !bytes.HasPrefix(attachment.FileBytes, []byte("<svg")) && !bytes.HasPrefix(attachment.FileBytes, []byte("<?xml")) {
 		t.Fatalf("expected svg output, got: %q", attachment.FileBytes[:20])
 	}
 
