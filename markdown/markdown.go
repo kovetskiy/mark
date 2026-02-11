@@ -56,6 +56,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(), 100),
+		util.Prioritized(crenderer.NewConfluenceMathLatexRenderer(), 100),
 	))
 
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
@@ -86,6 +87,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
 		// the <ac:*/> tags.
 		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
+		util.Prioritized(cparser.NewMathLatexParser(), 200),
 	))
 }
 
