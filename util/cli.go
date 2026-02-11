@@ -186,8 +186,6 @@ func processFile(
 		return nil
 	}
 
-	macros = append(macros, stdlib.Macros...)
-
 	for _, macro := range macros {
 		markdown, err = macro.Apply(markdown)
 		if err != nil {

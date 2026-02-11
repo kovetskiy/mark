@@ -810,7 +810,7 @@ USAGE:
    mark [global options]
 
 VERSION:
-   v15.1.0@b3a6f1efae97dfaa1400a3175cdd3377f8176e88
+   v15.2.0@1c82927c11a2999a39e5052aae6d2c65a201260c
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
@@ -834,7 +834,7 @@ GLOBAL OPTIONS:
    --password string, -p string             use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --target-url string, -l string           edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url string, -b string             base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
-   --config string, -c string               use the specified configuration file. (default: "$HOME/.config/mark.toml") [$MARK_CONFIG]
+   --config string, -c string               use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
    --ci                                     run on CI mode. It won't fail if files are not found. [$MARK_CI]
    --space string                           use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
@@ -845,7 +845,7 @@ GLOBAL OPTIONS:
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --d2-output string                       defines the output format for d2 renderings: png or svg. (default: "png") [$MARK_D2_OUTPUT]
    --d2-bundle                              inline external assets into generated d2 SVG (default: false) [$MARK_D2_BUNDLE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mkdocsadmonitions (default: "mermaid") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --help, -h                               show help
    --version, -v                            print the version
