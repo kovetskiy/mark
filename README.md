@@ -26,6 +26,7 @@ File in the extended format should follow the specification:
 <!-- Space: <space key> -->
 <!-- Parent: <parent 1> -->
 <!-- Parent: <parent 2> -->
+<!-- Parent-ID: <parent page id> -->
 <!-- Title: <title> -->
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
@@ -36,6 +37,15 @@ File in the extended format should follow the specification:
 
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
+
+Alternatively, you can specify a single parent page by ID:
+
+```markdown
+<!-- Parent-ID: <parent page id> -->
+```
+
+If `Parent-ID` is set, any `Parent` headers are ignored (a warning is logged),
+and the page is placed directly under the specified parent page.
 
 Also, optional following headers are supported:
 

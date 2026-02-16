@@ -36,6 +36,48 @@ func ResolvePage(
 		return nil, page, nil
 	}
 
+	if meta.ParentID != "" {
+		if len(meta.Parents) > 0 {
+			log.Warningf(
+				nil,
+				"Parent-ID is set; Parent headers will be ignored",
+			)
+		}
+
+		parent, err := api.GetPageByID(meta.ParentID)
+		if err != nil {
+			return nil, nil, karma.Format(
+				err,
+				"can't obtain parent page by id %q",
+				meta.ParentID,
+			)
+		}
+		if meta.Space != "" && parent.Space.Key != "" && parent.Space.Key != meta.Space {
+			return nil, nil, karma.Describe("parent_space", parent.Space.Key).
+				Describe("expected_space", meta.Space).
+				Format(
+					nil,
+					"parent page does not belong to the specified space",
+				)
+		}
+
+		titles := []string{}
+		for _, page := range parent.Ancestors {
+			titles = append(titles, page.Title)
+		}
+
+		titles = append(titles, parent.Title)
+
+		log.Infof(
+			nil,
+			"page will be stored under path: %s > %s",
+			strings.Join(titles, ` > `),
+			meta.Title,
+		)
+
+		return parent, page, nil
+	}
+
 	// check to see if home page is in Parents
 	homepage, err := api.FindHomePage(meta.Space)
 	if err != nil {
