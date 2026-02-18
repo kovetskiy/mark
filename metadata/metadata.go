@@ -26,6 +26,7 @@ const (
 	HeaderInclude     = `Include`
 	HeaderSidebar     = `Sidebar`
 	ContentAppearance = `Content-Appearance`
+	HeaderImageAlign  = `Image-Align`
 )
 
 type Meta struct {
@@ -39,6 +40,7 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
+	ImageAlign        string
 }
 
 const (
@@ -130,6 +132,17 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			} else {
 				meta.ContentAppearance = FullWidthContentAppearance
 			}
+
+		case HeaderImageAlign:
+			align := strings.ToLower(strings.TrimSpace(value))
+			if align != "left" && align != "center" && align != "right" {
+				log.Warningf(
+					nil,
+					`unknown image alignment %q, expected one of: left, center, right; passing through to Confluence`,
+					value,
+				)
+			}
+			meta.ImageAlign = align
 
 		default:
 			log.Errorf(

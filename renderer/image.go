@@ -20,15 +20,17 @@ type ConfluenceImageRenderer struct {
 	Stdlib      *stdlib.Lib
 	Path        string
 	Attachments attachment.Attacher
+	ImageAlign  string
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceImageRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
 		Attachments: attachments,
+		ImageAlign:  imageAlign,
 	}
 }
 
@@ -55,6 +57,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 			writer,
 			"ac:image",
 			struct {
+				Align      string
 				Width      string
 				Height     string
 				Title      string
@@ -62,6 +65,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				Attachment string
 				Url        string
 			}{
+				r.ImageAlign,
 				"",
 				"",
 				string(n.Title),
@@ -78,6 +82,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 			writer,
 			"ac:image",
 			struct {
+				Align      string
 				Width      string
 				Height     string
 				Title      string
@@ -85,6 +90,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				Attachment string
 				Url        string
 			}{
+				r.ImageAlign,
 				"",
 				"",
 				string(n.Title),

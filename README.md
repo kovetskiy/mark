@@ -30,6 +30,7 @@ File in the extended format should follow the specification:
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
+<!-- Image-Align: <left|center|right> -->
 
 <page contents>
 ```
@@ -72,6 +73,12 @@ Setting the sidebar creates a column on the right side.  You're able to add any 
 ```
 
 You can set a page emoji icon by specifying the icon in the headers.
+
+```markdown
+<!-- Image-Align: center -->
+```
+
+You can set the alignment for all images in the page. Common values are `left`, `center`, and `right`. This adds the `ac:align` attribute to image tags. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
 
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
@@ -844,6 +851,7 @@ GLOBAL OPTIONS:
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
+   --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help
    --version, -v                            print the version
 ```
@@ -858,6 +866,7 @@ password = "password-or-api-key-for-confluence-cloud"
 base-url = "http://confluence.local"
 title-from-h1 = true
 drop-h1 = true
+image-align = "center"
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
