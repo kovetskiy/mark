@@ -10,14 +10,13 @@ func TestCalculateAlign(t *testing.T) {
 		expectedAlign    string
 	}{
 		{"No alignment configured", "", "1000", ""},
-		{"No width available", "center", "", "center"},
-		{"Below threshold", "center", "500", "center"},
-		{"At threshold", "center", "760", "wide"},
-		{"Above threshold", "center", "1000", "wide"},
-		{"Left below threshold", "left", "700", "left"},
-		{"Left at threshold", "left", "760", "wide"},
-		{"Invalid width", "center", "abc", "center"},
-		{"Large image", "center", "2000", "wide"},
+		{"Center alignment small", "center", "500", "center"},
+		{"Left alignment small", "left", "500", "left"},
+		{"Right alignment small", "right", "500", "right"},
+		{"Left forced to center at 760px", "left", "760", "center"},
+		{"Left forced to center above 760px", "left", "1000", "center"},
+		{"Right forced to center at 1800px", "right", "1800", "center"},
+		{"No width provided", "left", "", "left"},
 	}
 
 	for _, tt := range tests {
@@ -37,16 +36,26 @@ func TestCalculateLayout(t *testing.T) {
 		width          string
 		expectedLayout string
 	}{
-		{"Left alignment", "left", "500", "align-start"},
-		{"Center alignment", "center", "500", "center"},
-		{"Right alignment", "right", "500", "align-end"},
-		{"Wide alignment", "wide", "1000", "center"},
-		{"Full-width threshold", "center", "1800", "full-width"},
-		{"Above full-width", "left", "2000", "full-width"},
-		{"Below full-width", "center", "1799", "center"},
-		{"No alignment", "", "1000", ""},
-		{"Unknown alignment", "justify", "500", ""},
+		// Small images (< 760px) use alignment-based layout
+		{"Left alignment small", "left", "500", "align-start"},
+		{"Center alignment small", "center", "500", "center"},
+		{"Right alignment small", "right", "500", "align-end"},
+		{"No alignment small", "", "500", ""},
+		
+		// Medium images (760-1799px) use "wide" layout (must be center align)
+		{"Center at 760px", "center", "760", "wide"},
+		{"Center at 1000px", "center", "1000", "wide"},
+		{"Center at 1799px", "center", "1799", "wide"},
+		
+		// Large images (>= 1800px) use "full-width" layout (must be center align)
+		{"Center at 1800px", "center", "1800", "full-width"},
+		{"Center at 2000px", "center", "2000", "full-width"},
+		
+		// Edge cases
+		{"No width", "center", "", "center"},
 		{"Invalid width", "center", "abc", "center"},
+		{"Empty alignment and width", "", "", ""},
+		{"No alignment configured", "", "1000", ""},
 	}
 
 	for _, tt := range tests {
@@ -67,8 +76,9 @@ func TestCalculateDisplayWidth(t *testing.T) {
 		expectedWidth string
 	}{
 		{"Full-width layout", "2000", "full-width", "1800"},
-		{"Center layout keeps original", "1000", "center", "1000"},
-		{"Align-start keeps original", "800", "align-start", "800"},
+		{"Wide layout keeps original", "1000", "wide", "1000"},
+		{"Center layout keeps original", "800", "center", "800"},
+		{"Align-start keeps original", "500", "align-start", "500"},
 		{"Empty original", "", "center", ""},
 		{"Empty layout", "1000", "", "1000"},
 	}
