@@ -3,6 +3,7 @@ package renderer
 import (
 	"bytes"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/attachment"
@@ -14,6 +15,30 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 )
+
+// calculateAlign determines the appropriate ac:align value based on width
+// Images >= 760px wide use "wide", otherwise use the configured alignment
+func calculateAlign(configuredAlign string, width string) string {
+	if configuredAlign == "" {
+		return ""
+	}
+	
+	if width == "" {
+		return configuredAlign
+	}
+	
+	// Parse width and check if >= 760
+	widthInt, err := strconv.Atoi(width)
+	if err != nil {
+		return configuredAlign
+	}
+	
+	if widthInt >= 760 {
+		return "wide"
+	}
+	
+	return configuredAlign
+}
 
 type ConfluenceImageRenderer struct {
 	html.Config
@@ -78,6 +103,8 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 
 		r.Attachments.Attach(attachments[0])
 
+		effectiveAlign := calculateAlign(r.ImageAlign, attachments[0].Width)
+
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
@@ -90,9 +117,9 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				Attachment string
 				Url        string
 			}{
-				r.ImageAlign,
-				"",
-				"",
+				effectiveAlign,
+				attachments[0].Width,
+				attachments[0].Height,
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
 				attachments[0].Filename,
