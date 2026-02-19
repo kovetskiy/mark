@@ -141,21 +141,29 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		r.Attachments.Attach(attachment)
 		
 		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
+		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
 		
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
-				Align      string
-				Width      string
-				Height     string
-				Title      string
-				Alt        string
-				Attachment string
-				Url        string
+				Align          string
+				Layout         string
+				OriginalWidth  string
+				OriginalHeight string
+				Width          string
+				Height         string
+				Title          string
+				Alt            string
+				Attachment     string
+				Url            string
 			}{
 				effectiveAlign,
+				effectiveLayout,
 				attachment.Width,
+				attachment.Height,
+				displayWidth,
 				attachment.Height,
 				attachment.Name,
 				"",
@@ -177,21 +185,29 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		r.Attachments.Attach(attachment)
 		
 		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
+		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
 		
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
-				Align      string
-				Width      string
-				Height     string
-				Title      string
-				Alt        string
-				Attachment string
-				Url        string
+				Align          string
+				Layout         string
+				OriginalWidth  string
+				OriginalHeight string
+				Width          string
+				Height         string
+				Title          string
+				Alt            string
+				Attachment     string
+				Url            string
 			}{
 				effectiveAlign,
+				effectiveLayout,
 				attachment.Width,
+				attachment.Height,
+				displayWidth,
 				attachment.Height,
 				attachment.Name,
 				"",
