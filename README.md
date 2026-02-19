@@ -85,7 +85,7 @@ You can set the alignment for all images in the page. Common values are `left`, 
 
 **Note**: Images with width >= 760px automatically use `ac:align="wide"` with `ac:layout="center"` instead of the configured alignment, as Confluence requires this for wide images.
 
-Custom values are passed through as-is with only the `ac:align` attribute. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
+Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
 
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
@@ -266,23 +266,23 @@ some long bash code block
 | `linenumbers`                  | false   |
 | `1` (any number for firstline) | 1       |
 
-Example:  
+Example:
 
-* `bash collapse`  
+* `bash collapse`
   If you have long code blocks, you can make them collapsible.
-* `bash collapse title Some long long bash function`  
+* `bash collapse title Some long long bash function`
   And you can also add a title.
-* `bash linenumbers collapse title Some long long bash function`  
+* `bash linenumbers collapse title Some long long bash function`
   And linenumbers.
-* `bash 1 collapse title Some long long bash function`  
+* `bash 1 collapse title Some long long bash function`
   Or directly give a number as firstline number.
-* `bash 1 collapse midnight title Some long long bash function`  
+* `bash 1 collapse midnight title Some long long bash function`
   And even themes.
-* `- 1 collapse midnight title Some long long code`  
+* `- 1 collapse midnight title Some long long code`
   Please note that, if you want to have a code block without a language
   use `-` as the first character, if you want to have the other goodies.
 
-More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.  
+More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.
 
 ### Block Quotes
 
