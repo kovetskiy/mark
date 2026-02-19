@@ -16,42 +16,49 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// calculateAlign determines the appropriate ac:align value based on width
-// Images >= 760px wide use "wide", otherwise use the configured alignment
+// calculateAlign determines the appropriate ac:align value
+// Images >= 760px must use "center" alignment, smaller images can use configured alignment
 func calculateAlign(configuredAlign string, width string) string {
+	// No alignment configured
 	if configuredAlign == "" {
 		return ""
 	}
 	
-	if width == "" {
-		return configuredAlign
-	}
-	
-	// Parse width and check if >= 760
-	widthInt, err := strconv.Atoi(width)
-	if err != nil {
-		return configuredAlign
-	}
-	
-	if widthInt >= 760 {
-		return "wide"
-	}
-	
-	return configuredAlign
-}
-
-// calculateLayout determines the appropriate ac:layout value based on alignment and width
-// Images >= 1800px use "full-width", otherwise based on alignment
-func calculateLayout(align string, width string) string {
-	// Check if full-width should be used
+	// Check if image is wide enough to require center alignment
 	if width != "" {
 		widthInt, err := strconv.Atoi(width)
-		if err == nil && widthInt >= 1800 {
-			return "full-width"
+		if err == nil && widthInt >= 760 {
+			return "center"
 		}
 	}
 	
-	// Otherwise use layout based on alignment
+	// For images < 760px, use configured alignment
+	return configuredAlign
+}
+
+// calculateLayout determines the appropriate ac:layout value based on width and alignment
+// Images >= 1800px use "full-width", images >= 760px use "wide", otherwise based on alignment
+// Returns empty string if no alignment is configured
+func calculateLayout(align string, width string) string {
+	// If no alignment configured, don't set layout
+	if align == "" {
+		return ""
+	}
+	
+	// Check width thresholds first
+	if width != "" {
+		widthInt, err := strconv.Atoi(width)
+		if err == nil {
+			if widthInt >= 1800 {
+				return "full-width"
+			}
+			if widthInt >= 760 {
+				return "wide"
+			}
+		}
+	}
+	
+	// For images < 760px, use layout based on alignment
 	switch align {
 	case "left":
 		return "align-start"
@@ -59,8 +66,6 @@ func calculateLayout(align string, width string) string {
 		return "center"
 	case "right":
 		return "align-end"
-	case "wide":
-		return "center"
 	default:
 		return ""
 	}
