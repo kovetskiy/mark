@@ -19,33 +19,29 @@ import (
 // calculateAlign determines the appropriate ac:align value
 // Images >= 760px must use "center" alignment, smaller images can use configured alignment
 func calculateAlign(configuredAlign string, width string) string {
-	// No alignment configured
 	if configuredAlign == "" {
 		return ""
 	}
-	
-	// Check if image is wide enough to require center alignment
+
 	if width != "" {
 		widthInt, err := strconv.Atoi(width)
 		if err == nil && widthInt >= 760 {
 			return "center"
 		}
 	}
-	
-	// For images < 760px, use configured alignment
+
 	return configuredAlign
 }
 
 // calculateLayout determines the appropriate ac:layout value based on width and alignment
 // Images >= 1800px use "full-width", images >= 760px use "wide", otherwise based on alignment
+// These thresholds are based on Confluence's behavior as of 2026-02, but may need adjustment in the future
 // Returns empty string if no alignment is configured
 func calculateLayout(align string, width string) string {
-	// If no alignment configured, don't set layout
 	if align == "" {
 		return ""
 	}
-	
-	// Check width thresholds first
+
 	if width != "" {
 		widthInt, err := strconv.Atoi(width)
 		if err == nil {
@@ -57,8 +53,7 @@ func calculateLayout(align string, width string) string {
 			}
 		}
 	}
-	
-	// For images < 760px, use layout based on alignment
+
 	switch align {
 	case "left":
 		return "align-start"
