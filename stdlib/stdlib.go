@@ -212,7 +212,10 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:image`: text(
 			`<ac:image`,
 			`{{ if .Align }} ac:align="{{ .Align }}"{{ end }}`,
-			`{{ if eq .Align "left" }} ac:layout="align-start"{{ else if eq .Align "center" }} ac:layout="center"{{ else if eq .Align "right" }} ac:layout="align-end"{{ else if eq .Align "wide" }} ac:layout="center"{{ end }}`,
+			`{{ if .Layout }} ac:layout="{{ .Layout }}"{{ end }}`,
+			`{{ if .OriginalWidth }} ac:original-width="{{ .OriginalWidth }}"{{ end }}`,
+			`{{ if .OriginalHeight }} ac:original-height="{{ .OriginalHeight }}"{{ end }}`,
+			`{{ if .Width }} ac:custom-width="true"{{ end }}`,
 			`{{ if .Width }} ac:width="{{ .Width }}"{{ end }}`,
 			`{{ if .Height }} ac:height="{{ .Height }}"{{ end }}`,
 			`{{ if .Title }} ac:title="{{ .Title }}"{{ end }}`,

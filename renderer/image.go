@@ -40,6 +40,43 @@ func calculateAlign(configuredAlign string, width string) string {
 	return configuredAlign
 }
 
+// calculateLayout determines the appropriate ac:layout value based on alignment and width
+// Images >= 1800px use "full-width", otherwise based on alignment
+func calculateLayout(align string, width string) string {
+	// Check if full-width should be used
+	if width != "" {
+		widthInt, err := strconv.Atoi(width)
+		if err == nil && widthInt >= 1800 {
+			return "full-width"
+		}
+	}
+	
+	// Otherwise use layout based on alignment
+	switch align {
+	case "left":
+		return "align-start"
+	case "center":
+		return "center"
+	case "right":
+		return "align-end"
+	case "wide":
+		return "center"
+	default:
+		return ""
+	}
+}
+
+// calculateDisplayWidth determines the display width
+// Full-width layout uses 1800px, otherwise uses original width
+func calculateDisplayWidth(originalWidth string, layout string) string {
+	if layout == "full-width" {
+		return "1800"
+	}
+	return originalWidth
+}
+
+
+
 type ConfluenceImageRenderer struct {
 	html.Config
 	Stdlib      *stdlib.Lib
@@ -82,15 +119,21 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 			writer,
 			"ac:image",
 			struct {
-				Align      string
-				Width      string
-				Height     string
-				Title      string
-				Alt        string
-				Attachment string
-				Url        string
+				Align          string
+				Layout         string
+				OriginalWidth  string
+				OriginalHeight string
+				Width          string
+				Height         string
+				Title          string
+				Alt            string
+				Attachment     string
+				Url            string
 			}{
 				r.ImageAlign,
+				calculateLayout(r.ImageAlign, ""),
+				"",
+				"",
 				"",
 				"",
 				string(n.Title),
@@ -104,21 +147,29 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 		r.Attachments.Attach(attachments[0])
 
 		effectiveAlign := calculateAlign(r.ImageAlign, attachments[0].Width)
+		effectiveLayout := calculateLayout(effectiveAlign, attachments[0].Width)
+		displayWidth := calculateDisplayWidth(attachments[0].Width, effectiveLayout)
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
-				Align      string
-				Width      string
-				Height     string
-				Title      string
-				Alt        string
-				Attachment string
-				Url        string
+				Align          string
+				Layout         string
+				OriginalWidth  string
+				OriginalHeight string
+				Width          string
+				Height         string
+				Title          string
+				Alt            string
+				Attachment     string
+				Url            string
 			}{
 				effectiveAlign,
+				effectiveLayout,
 				attachments[0].Width,
+				attachments[0].Height,
+				displayWidth,
 				attachments[0].Height,
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
