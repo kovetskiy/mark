@@ -30,6 +30,7 @@ File in the extended format should follow the specification:
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
+<!-- Image-Align: <left|center|right> -->
 
 <page contents>
 ```
@@ -72,6 +73,14 @@ Setting the sidebar creates a column on the right side.  You're able to add any 
 ```
 
 You can set a page emoji icon by specifying the icon in the headers.
+
+```markdown
+<!-- Image-Align: center -->
+```
+
+You can set the alignment for all images in the page. Common values are `left`, `center`, and `right`. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
+
+**Note**: Images with width >= 760px automatically use `center` instead of the configured alignment, as Confluence requires this for wide images.
 
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
@@ -252,23 +261,23 @@ some long bash code block
 | `linenumbers`                  | false   |
 | `1` (any number for firstline) | 1       |
 
-Example:  
+Example:
 
-* `bash collapse`  
+* `bash collapse`
   If you have long code blocks, you can make them collapsible.
-* `bash collapse title Some long long bash function`  
+* `bash collapse title Some long long bash function`
   And you can also add a title.
-* `bash linenumbers collapse title Some long long bash function`  
+* `bash linenumbers collapse title Some long long bash function`
   And linenumbers.
-* `bash 1 collapse title Some long long bash function`  
+* `bash 1 collapse title Some long long bash function`
   Or directly give a number as firstline number.
-* `bash 1 collapse midnight title Some long long bash function`  
+* `bash 1 collapse midnight title Some long long bash function`
   And even themes.
-* `- 1 collapse midnight title Some long long code`  
+* `- 1 collapse midnight title Some long long code`
   Please note that, if you want to have a code block without a language
   use `-` as the first character, if you want to have the other goodies.
 
-More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.  
+More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.
 
 ### Block Quotes
 
@@ -844,6 +853,7 @@ GLOBAL OPTIONS:
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
+   --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help
    --version, -v                            print the version
 ```
@@ -858,6 +868,7 @@ password = "password-or-api-key-for-confluence-cloud"
 base-url = "http://confluence.local"
 title-from-h1 = true
 drop-h1 = true
+image-align = "center"
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!

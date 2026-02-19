@@ -223,6 +223,7 @@ func processFile(
 			DropFirstH1:   cmd.Bool("drop-h1"),
 			StripNewlines: cmd.Bool("strip-linebreaks"),
 			Features:      cmd.StringSlice("features"),
+			ImageAlign:    getImageAlign(cmd, meta),
 		}
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 		fmt.Println(html)
@@ -302,6 +303,7 @@ func processFile(
 		DropFirstH1:   cmd.Bool("drop-h1"),
 		StripNewlines: cmd.Bool("strip-linebreaks"),
 		Features:      cmd.StringSlice("features"),
+		ImageAlign:    getImageAlign(cmd, meta),
 	}
 
 	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cfg)
@@ -472,6 +474,28 @@ func determineLabelsToAdd(meta *metadata.Meta, labelInfo *confluence.LabelInfo) 
 		}
 	}
 	return labels
+}
+
+func getImageAlign(cmd *cli.Command, meta *metadata.Meta) string {
+	// Header comment takes precedence over CLI flag
+	if meta != nil && meta.ImageAlign != "" {
+		return meta.ImageAlign
+	}
+
+	cliAlign := cmd.String("image-align")
+	if cliAlign != "" {
+		align := strings.ToLower(strings.TrimSpace(cliAlign))
+		if align != "left" && align != "center" && align != "right" {
+			log.Warningf(
+				nil,
+				"unknown --image-align value %q, expected one of: left, center, right; passing through to Confluence",
+				cliAlign,
+			)
+		}
+		return align
+	}
+
+	return ""
 }
 
 func ConfigFilePath() string {

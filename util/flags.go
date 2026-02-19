@@ -202,6 +202,12 @@ var Flags = []cli.Flag{
 		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:    "image-align",
+		Value:   "",
+		Usage:   "set image alignment (left, center, right). Can be overridden per-file via the Image-Align header.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_IMAGE_ALIGN"), altsrctoml.TOML("image-align", altsrc.NewStringPtrSourcer(&filename))),
+	},
 }
 
 // CheckMutuallyExclusiveTitleFlags checks if both title-from-h1 and title-from-filename are set
