@@ -139,10 +139,14 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 		r.Attachments.Attach(attachment)
+		
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
+				Align      string
 				Width      string
 				Height     string
 				Title      string
@@ -150,6 +154,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				Attachment string
 				Url        string
 			}{
+				effectiveAlign,
 				attachment.Width,
 				attachment.Height,
 				attachment.Name,
@@ -170,10 +175,14 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 		r.Attachments.Attach(attachment)
+		
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
+				Align      string
 				Width      string
 				Height     string
 				Title      string
@@ -181,6 +190,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				Attachment string
 				Url        string
 			}{
+				effectiveAlign,
 				attachment.Width,
 				attachment.Height,
 				attachment.Name,

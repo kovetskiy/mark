@@ -78,7 +78,14 @@ You can set a page emoji icon by specifying the icon in the headers.
 <!-- Image-Align: center -->
 ```
 
-You can set the alignment for all images in the page. Common values are `left`, `center`, and `right`. This adds the `ac:align` attribute to image tags. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
+You can set the alignment for all images in the page. Common values are `left`, `center`, and `right`. This adds the `ac:align` attribute to image tags and also sets the corresponding `ac:layout` attribute:
+- `left` → `ac:align="left" ac:layout="align-start"`
+- `center` → `ac:align="center" ac:layout="center"`
+- `right` → `ac:align="right" ac:layout="align-end"`
+
+**Note**: Images with width >= 760px automatically use `ac:align="wide"` with `ac:layout="center"` instead of the configured alignment, as Confluence requires this for wide images.
+
+Custom values are passed through as-is with only the `ac:align` attribute. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
 
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
