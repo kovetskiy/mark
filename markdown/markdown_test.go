@@ -64,7 +64,7 @@ func TestCompileMarkdown(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -94,7 +94,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md":
 			variant = "-droph1"
 		default:
 			variant = ""
@@ -106,7 +106,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   true,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -150,7 +150,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: true,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)

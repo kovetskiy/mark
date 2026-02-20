@@ -194,6 +194,21 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 
+	} else if lang == "plantuml" && slices.Contains(r.MarkConfig.Features, "plantuml") {
+		err := r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:plantuml",
+			struct {
+				Text string
+			}{
+				strings.TrimSuffix(string(lval), "\n"),
+			},
+		)
+
+		if err != nil {
+			return ast.WalkStop, err
+		}
+
 	} else {
 		err := r.Stdlib.Templates.ExecuteTemplate(
 			writer,
