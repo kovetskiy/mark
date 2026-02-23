@@ -16,6 +16,7 @@ import (
 
 const (
 	HeaderParent      = `Parent`
+	HeaderParentID    = `Parent-Id`
 	HeaderSpace       = `Space`
 	HeaderType        = `Type`
 	HeaderTitle       = `Title`
@@ -30,6 +31,7 @@ const (
 
 type Meta struct {
 	Parents           []string
+	ParentID          string
 	Space             string
 	Type              string
 	Title             string
@@ -94,6 +96,15 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		switch header {
 		case HeaderParent:
 			meta.Parents = append(meta.Parents, value)
+
+		case HeaderParentID:
+			if value == "" {
+				return nil, nil, fmt.Errorf("Parent-ID header value is empty")
+			}
+			if meta.ParentID != "" {
+				return nil, nil, fmt.Errorf("Parent-ID header is already set")
+			}
+			meta.ParentID = value
 
 		case HeaderSpace:
 			meta.Space = strings.TrimSpace(value)
@@ -172,13 +183,23 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	}
 
 	// Prepend parent pages that are defined via the cli flag
-	if len(parents) > 0 && parents[0] != "" {
+	if meta.ParentID != "" && len(parents) > 0 && parents[0] != "" {
+		log.Warningf(
+			nil,
+			"Parent-ID is set; CLI parents will be ignored",
+		)
+	}
+	if meta.ParentID == "" && len(parents) > 0 && parents[0] != "" {
 		meta.Parents = append(parents, meta.Parents...)
 	}
 
 	// deterministically generate a hash from the page's parents, space, and title
 	if titleAppendGeneratedHash {
-		path := strings.Join(append(meta.Parents, meta.Space, meta.Title), "/")
+		parents := meta.Parents
+		if meta.ParentID != "" {
+			parents = []string{meta.ParentID}
+		}
+		path := strings.Join(append(parents, meta.Space, meta.Title), "/")
 		pathHash := sha256.Sum256([]byte(path))
 		// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
 		meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
