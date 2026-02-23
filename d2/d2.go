@@ -8,7 +8,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -123,16 +122,15 @@ func ProcessD2SVG(title string, d2Diagram []byte, bundle bool, inputPath string,
 		return attachment.Attachment{}, err
 	}
 
+	logger := markSimpleLogger{}
+
+	out, err = imgbundler.BundleLocal(ctx, logger, inputPath, out, false)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
 	if bundle {
-		cacheImages := os.Getenv("IMG_CACHE") == "1"
-		logger := markSimpleLogger{}
-
-		out, err = imgbundler.BundleLocal(ctx, logger, inputPath, out, cacheImages)
-		if err != nil {
-			return attachment.Attachment{}, err
-		}
-
-		out, err = imgbundler.BundleRemote(ctx, logger, out, cacheImages)
+		out, err = imgbundler.BundleRemote(ctx, logger, out, false)
 		if err != nil {
 			return attachment.Attachment{}, err
 		}

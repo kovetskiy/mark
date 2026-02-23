@@ -104,7 +104,7 @@ func TestExtractD2Image(t *testing.T) {
 }
 
 func TestProcessD2SVG(t *testing.T) {
-	attachment, err := ProcessD2SVG("example", []byte(diagram), true, "-", 1.0)
+	attachment, err := ProcessD2SVG("example", []byte(diagram), true, "-", "", 1.0)
 	if err != nil {
 		t.Fatalf("ProcessD2SVG returned error: %v", err)
 	}
