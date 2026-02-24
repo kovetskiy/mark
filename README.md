@@ -740,7 +740,8 @@ A-->B;
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
-This will transform the d2 diagram into a png that will be attached to Confluence, similar to how mermaid-go support works.
+By default the diagram is transformed into a PNG that is attached to Confluence, similar to how mermaid-go support works. To upload the original SVG instead of a PNG, pass `--d2-output svg`.
+To inline external assets into the SVG (equivalent to `d2 --bundle`), pass `--d2-bundle`.
 All you need is a codeblock marked as "d2".
 
 ```d2
@@ -842,6 +843,8 @@ GLOBAL OPTIONS:
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
+   --d2-output string                       defines the output format for d2 renderings: png or svg. (default: "png") [$MARK_D2_OUTPUT]
+   --d2-bundle                              inline external assets into generated d2 SVG (default: false) [$MARK_D2_BUNDLE]
    --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --help, -h                               show help
