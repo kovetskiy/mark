@@ -4,8 +4,6 @@ github.com/Masterminds/semver/v3 v3.2.1 h1:RN9w6+7QoMeJVGyfmbcgs28Br8cvmnucEXnY0
 github.com/Masterminds/semver/v3 v3.2.1/go.mod h1:qvl/7zhW3nngYb5+80sSMF+FG2BjYrf8m9wsX0PNOMQ=
 github.com/PuerkitoBio/goquery v1.10.0 h1:6fiXdLuUvYs2OJSvNRqlNPoBm6YABE226xrbavY5Wv4=
 github.com/PuerkitoBio/goquery v1.10.0/go.mod h1:TjZZl68Q3eGHNBA8CWaxAN7rOU1EbDz3CWuolcO5Yu4=
-github.com/Shopify/toxiproxy/v2 v2.12.0 h1:d1x++lYZg/zijXPPcv7PH0MvHMzEI5aX/YuUi/Sw+yg=
-github.com/Shopify/toxiproxy/v2 v2.12.0/go.mod h1:R9Z38Pw6k2cGZWXHe7tbxjGW9azmY1KbDQJ1kd+h7Tk=
 github.com/alecthomas/assert/v2 v2.7.0 h1:QtqSACNS3tF7oasA8CU6A6sXZSBDqnm7RfpLl9bZqbE=
 github.com/alecthomas/assert/v2 v2.7.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
 github.com/alecthomas/chroma/v2 v2.14.0 h1:R3+wzpnUArGcQz7fCETQBzO5n9IMNi13iIs46aU4V9E=
@@ -49,8 +47,6 @@ github.com/google/pprof v0.0.0-20240927180334-d43a67379298 h1:dMHbguTqGtorivvHTa
 github.com/google/pprof v0.0.0-20240927180334-d43a67379298/go.mod h1:vavhavw2zAxS5dIdcRluK6cSGGPlZynqzFM8NdvU144=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a h1:OPt6gCghZXQ/WZpT6EhGkA7v+YMAYzcCb8SPQWmsb/8=
-github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a/go.mod h1:gRW37oDEg9LzOHApv31YzxKBICcCmPtDogaImsxZ6xc=
 github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4 h1:2eV8tF1u58dqRJMlFUD/Df26BxcIlGVy71rZHN+aNoI=
 github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4/go.mod h1:p1RuSvyflTF/G4ubeATGurCRKWkULOrN/4PUAEFRq0s=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
@@ -160,3 +156,5 @@ oss.terrastruct.com/d2 v0.7.1 h1:LafTW1UoXJGODvKDZ8obyBfGcc2k2vHZ3EzrabMqEVE=
 oss.terrastruct.com/d2 v0.7.1/go.mod h1:aT0PwLaxBZGgsWrIT8oSFYm5xoYX08BaOHewi5qLE2E=
 oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a h1:UXF/Z9i9tOx/wqGUOn/T12wZeez1Gg0sAVKKl7YUDwM=
 oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a/go.mod h1:eMWv0sOtD9T2RUl90DLWfuShZCYp4NrsqNpI8eqO6U4=
+resty.dev/v3 v3.0.0-beta.6 h1:ghRdNpoE8/wBCv+kTKIOauW1aCrSIeTq7GxtfYgtevU=
+resty.dev/v3 v3.0.0-beta.6/go.mod h1:NTOerrC/4T7/FE6tXIZGIysXXBdgNqwMZuKtxpea9NM=
