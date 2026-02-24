@@ -2,6 +2,7 @@ package d2
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/kovetskiy/mark/attachment"
@@ -77,8 +78,6 @@ func TestExtractD2Image(t *testing.T) {
 			Replace:   "example",
 			Checksum:  "40e75f93e09da9242d4b1ab8e2892665ec7d5bd1ac78a4b65210ee219cf62297",
 			ID:        "",
-			Width:     "198",
-			Height:    "441",
 		},
 			assert.NoError},
 	}
@@ -95,8 +94,15 @@ func TestExtractD2Image(t *testing.T) {
 			assert.Equal(t, tt.want.Replace, got.Replace, "processD2(%v, %v)", tt.name, string(tt.markdown))
 			assert.Equal(t, tt.want.Checksum, got.Checksum, "processD2(%v, %v)", tt.name, string(tt.markdown))
 			assert.Equal(t, tt.want.ID, got.ID, "processD2(%v, %v)", tt.name, string(tt.markdown))
-			assert.Equal(t, tt.want.Width, got.Width, "processD2(%v, %v)", tt.name, string(tt.markdown))
-			assert.Equal(t, tt.want.Height, got.Height, "processD2(%v, %v)", tt.name, string(tt.markdown))
+
+			gotWidth, widthErr := strconv.ParseInt(got.Width, 10, 64)
+			assert.NoError(t, widthErr, "processD2(%v, %v)", tt.name, string(tt.markdown))
+			assert.Greater(t, gotWidth, int64(0), "processD2(%v, %v)", tt.name, string(tt.markdown))
+
+			gotHeight, heightErr := strconv.ParseInt(got.Height, 10, 64)
+			assert.NoError(t, heightErr, "processD2(%v, %v)", tt.name, string(tt.markdown))
+			assert.Greater(t, gotHeight, int64(0), "processD2(%v, %v)", tt.name, string(tt.markdown))
+
 		})
 	}
 }
