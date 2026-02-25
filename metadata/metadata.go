@@ -134,15 +134,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			}
 
 		case HeaderImageAlign:
-			align := strings.ToLower(strings.TrimSpace(value))
-			if align != "left" && align != "center" && align != "right" {
-				log.Warningf(
-					nil,
-					`unknown image alignment %q, expected one of: left, center, right; passing through to Confluence`,
-					value,
-				)
-			}
-			meta.ImageAlign = align
+			meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
 
 		default:
 			log.Errorf(
