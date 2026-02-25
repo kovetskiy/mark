@@ -217,13 +217,19 @@ func processFile(
 			)
 		}
 
+		imageAlign, err := getImageAlign(cmd, meta)
+		if err != nil {
+			fatalErrorHandler.Handle(err, "unable to determine image-align")
+			return nil
+		}
+
 		cfg := types.MarkConfig{
 			MermaidScale:  cmd.Float("mermaid-scale"),
 			D2Scale:       cmd.Float("d2-scale"),
 			DropFirstH1:   cmd.Bool("drop-h1"),
 			StripNewlines: cmd.Bool("strip-linebreaks"),
 			Features:      cmd.StringSlice("features"),
-			ImageAlign:    getImageAlign(cmd, meta),
+			ImageAlign:    imageAlign,
 		}
 		html, _ := mark.CompileMarkdown(markdown, stdlib, file, cfg)
 		fmt.Println(html)
@@ -297,13 +303,19 @@ func processFile(
 			"the leading H1 heading will be excluded from the Confluence output",
 		)
 	}
+
+	imageAlign, err := getImageAlign(cmd, meta)
+	if err != nil {
+		fatalErrorHandler.Handle(err, "unable to determine image-align")
+		return nil
+	}
 	cfg := types.MarkConfig{
 		MermaidScale:  cmd.Float("mermaid-scale"),
 		D2Scale:       cmd.Float("d2-scale"),
 		DropFirstH1:   cmd.Bool("drop-h1"),
 		StripNewlines: cmd.Bool("strip-linebreaks"),
 		Features:      cmd.StringSlice("features"),
-		ImageAlign:    getImageAlign(cmd, meta),
+		ImageAlign:    imageAlign,
 	}
 
 	html, inlineAttachments := mark.CompileMarkdown(markdown, stdlib, file, cfg)
@@ -476,26 +488,25 @@ func determineLabelsToAdd(meta *metadata.Meta, labelInfo *confluence.LabelInfo) 
 	return labels
 }
 
-func getImageAlign(cmd *cli.Command, meta *metadata.Meta) string {
+func getImageAlign(cmd *cli.Command, meta *metadata.Meta) (string, error) {
 	// Header comment takes precedence over CLI flag
+	align := cmd.String("image-align")
 	if meta != nil && meta.ImageAlign != "" {
-		return meta.ImageAlign
+		align = meta.ImageAlign
 	}
 
-	cliAlign := cmd.String("image-align")
-	if cliAlign != "" {
-		align := strings.ToLower(strings.TrimSpace(cliAlign))
+	if align != "" {
+		align = strings.ToLower(strings.TrimSpace(align))
 		if align != "left" && align != "center" && align != "right" {
-			log.Warningf(
-				nil,
-				"unknown --image-align value %q, expected one of: left, center, right; passing through to Confluence",
-				cliAlign,
+			return "", fmt.Errorf(
+				`unknown image-align %q, expected one of: left, center, right`,
+				align,
 			)
 		}
-		return align
+		return align, nil
 	}
 
-	return ""
+	return "", nil
 }
 
 func ConfigFilePath() string {
