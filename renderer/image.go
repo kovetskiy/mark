@@ -170,7 +170,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				attachments[0].Width,
 				attachments[0].Height,
 				displayWidth,
-				attachments[0].Height,
+				"",
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
 				attachments[0].Filename,
