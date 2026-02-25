@@ -222,10 +222,14 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 		Replace:   name,
 	}
 
-	// Try to detect image dimensions
-	if config, _, err := image.DecodeConfig(bytes.NewReader(fileBytes)); err == nil {
-		attachment.Width = strconv.Itoa(config.Width)
-		attachment.Height = strconv.Itoa(config.Height)
+	// Try to detect image dimensions if it's an image attachment
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif":
+		if config, _, err := image.DecodeConfig(bytes.NewReader(fileBytes)); err == nil {
+			attachment.Width = strconv.Itoa(config.Width)
+			attachment.Height = strconv.Itoa(config.Height)
+		}
 	}
 
 	return attachment, nil
