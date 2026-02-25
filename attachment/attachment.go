@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/url"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/confluence"
@@ -210,12 +215,24 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 		return Attachment{}, karma.Format(err, "unable to read file: %q", attachmentPath)
 	}
 
-	return Attachment{
+	attachment := Attachment{
 		Name:      name,
 		Filename:  strings.ReplaceAll(name, "/", "_"),
 		FileBytes: fileBytes,
 		Replace:   name,
-	}, nil
+	}
+
+	// Try to detect image dimensions if it's an image attachment
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif":
+		if config, _, err := image.DecodeConfig(bytes.NewReader(fileBytes)); err == nil {
+			attachment.Width = strconv.Itoa(config.Width)
+			attachment.Height = strconv.Itoa(config.Height)
+		}
+	}
+
+	return attachment, nil
 }
 
 func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {

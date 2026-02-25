@@ -26,6 +26,7 @@ const (
 	HeaderInclude     = `Include`
 	HeaderSidebar     = `Sidebar`
 	ContentAppearance = `Content-Appearance`
+	HeaderImageAlign  = `Image-Align`
 )
 
 type Meta struct {
@@ -39,6 +40,7 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
+	ImageAlign        string
 }
 
 const (
@@ -130,6 +132,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			} else {
 				meta.ContentAppearance = FullWidthContentAppearance
 			}
+
+		case HeaderImageAlign:
+			meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
 
 		default:
 			log.Errorf(
