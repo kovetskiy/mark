@@ -56,6 +56,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(), 100),
+		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 	))
 
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
