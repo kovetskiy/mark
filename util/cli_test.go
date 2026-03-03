@@ -12,8 +12,9 @@ func runWithArgs(args []string) error {
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "title-from-h1"},
 			&cli.BoolFlag{Name: "title-from-filename"},
+			&cli.StringFlag{Name: "content-appearance"},
 		},
-		Before: CheckMutuallyExclusiveTitleFlags,
+		Before: CheckFlags,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return nil
 		},
@@ -45,6 +46,29 @@ func TestCheckMutuallyExclusiveTitleFlags(t *testing.T) {
 
 	t.Run("both flags set", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--title-from-h1", "--title-from-filename"})
+		if err == nil {
+			t.Errorf("expected error, got nil")
+		}
+	})
+}
+
+func TestContentAppearanceFlagValidation(t *testing.T) {
+	t.Run("fixed is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--content-appearance", "fixed"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("full-width is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--content-appearance", "full-width"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid value is rejected", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--content-appearance", "nope"})
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}

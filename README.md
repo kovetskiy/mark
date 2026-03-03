@@ -838,6 +838,7 @@ GLOBAL OPTIONS:
    --space string                           use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string               The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
+  --content-appearance string              default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed. [$MARK_CONTENT_APPEARANCE]
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]

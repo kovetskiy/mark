@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -164,6 +165,15 @@ var Flags = []cli.Flag{
 		Usage:   "The delimiter used for the parents list",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_DELIMITER"), altsrctoml.TOML("parents-delimiter", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:  "content-appearance",
+		Value: "",
+		Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed.",
+		Sources: cli.NewValueSourceChain(
+			cli.EnvVar("MARK_CONTENT_APPEARANCE"),
+			altsrctoml.TOML("content-appearance", altsrc.NewStringPtrSourcer(&filename)),
+		),
+	},
 	&cli.FloatFlag{
 		Name:    "mermaid-scale",
 		Value:   1.0,
@@ -204,10 +214,24 @@ var Flags = []cli.Flag{
 	},
 }
 
-// CheckMutuallyExclusiveTitleFlags checks if both title-from-h1 and title-from-filename are set
-func CheckMutuallyExclusiveTitleFlags(context context.Context, command *cli.Command) (context.Context, error) {
+// CheckFlags validates combinations and values of global flags.
+func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
+
+	contentAppearance := command.String("content-appearance")
+	if contentAppearance != "" {
+		switch contentAppearance {
+		case "full-width", "fixed":
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --content-appearance: %q (expected: full-width or fixed)",
+				contentAppearance,
+			)
+		}
+	}
+
 	return context, nil
 }
