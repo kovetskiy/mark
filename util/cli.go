@@ -116,7 +116,7 @@ func processFile(
 
 	parents := strings.Split(cmd.String("parents"), cmd.String("parents-delimiter"))
 
-	meta, markdown, err := metadata.ExtractMeta(markdown, cmd.String("space"), cmd.Bool("title-from-h1"), cmd.Bool("title-from-filename"), file, parents, cmd.Bool("title-append-generated-hash"))
+	meta, markdown, err := metadata.ExtractMeta(markdown, cmd.String("space"), cmd.Bool("title-from-h1"), cmd.Bool("title-from-filename"), file, parents, cmd.Bool("title-append-generated-hash"), cmd.String("content-appearance"))
 	if err != nil {
 		fatalErrorHandler.Handle(err, "unable to extract metadata from file %q", file)
 		return nil
