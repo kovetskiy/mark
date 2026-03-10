@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -160,14 +161,8 @@ func ProcessD2SVG(title string, d2Diagram []byte, bundle bool, inputPath string,
 	width := ""
 	height := ""
 	if boxModel != nil {
-		w := boxModel.width
-		h := boxModel.height
-		if scale > 0 {
-			w *= scale
-			h *= scale
-		}
-		width = strconv.FormatInt(int64(w), 10)
-		height = strconv.FormatInt(int64(h), 10)
+		width = formatSVGDimension(boxModel.width, scale)
+		height = formatSVGDimension(boxModel.height, scale)
 	}
 
 	fileName := title + ".svg"
@@ -182,6 +177,14 @@ func ProcessD2SVG(title string, d2Diagram []byte, bundle bool, inputPath string,
 		Width:     width,
 		Height:    height,
 	}, nil
+}
+
+func formatSVGDimension(value float64, scale float64) string {
+	if scale > 0 {
+		value *= scale
+	}
+
+	return strconv.FormatInt(int64(math.Round(value)), 10)
 }
 
 func convertSVGtoPNG(ctx context.Context, svg []byte, scale float64) (png []byte, m *dom.BoxModel, err error) {
@@ -217,9 +220,36 @@ func parseSVGDimensions(svg []byte) (*svgBox, error) {
 		return strconv.ParseFloat(val, 64)
 	}
 
+	parseViewBox := func(val string) (float64, float64, error) {
+		parts := strings.Fields(val)
+		if len(parts) != 4 {
+			return 0, 0, fmt.Errorf("invalid svg viewBox %q", val)
+		}
+
+		w, err := strconv.ParseFloat(parts[2], 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid svg viewBox width %q: %w", parts[2], err)
+		}
+
+		h, err := strconv.ParseFloat(parts[3], 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid svg viewBox height %q: %w", parts[3], err)
+		}
+
+		return w, h, nil
+	}
+
+	var parseErr error
+
 	for {
 		tok, err := dec.Token()
 		if err != nil {
+			if err == io.EOF {
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				return nil, fmt.Errorf("svg dimensions not found")
+			}
 			return nil, err
 		}
 
@@ -244,32 +274,30 @@ func parseSVGDimensions(svg []byte) (*svgBox, error) {
 		}
 
 		if widthStr != "" && heightStr != "" {
-			w, err := parseLength(widthStr)
-			if err != nil {
-				return nil, err
+			w, widthErr := parseLength(widthStr)
+			h, heightErr := parseLength(heightStr)
+			if widthErr == nil && heightErr == nil {
+				return &svgBox{width: w, height: h}, nil
 			}
-			h, err := parseLength(heightStr)
-			if err != nil {
-				return nil, err
+
+			if parseErr == nil {
+				if widthErr != nil {
+					parseErr = fmt.Errorf("invalid svg width %q: %w", widthStr, widthErr)
+				} else {
+					parseErr = fmt.Errorf("invalid svg height %q: %w", heightStr, heightErr)
+				}
 			}
-			return &svgBox{width: w, height: h}, nil
 		}
 
 		if viewBoxStr != "" {
-			parts := strings.Fields(viewBoxStr)
-			if len(parts) == 4 {
-				w, err := strconv.ParseFloat(parts[2], 64)
-				if err != nil {
-					return nil, err
-				}
-				h, err := strconv.ParseFloat(parts[3], 64)
-				if err != nil {
-					return nil, err
-				}
+			w, h, viewBoxErr := parseViewBox(viewBoxStr)
+			if viewBoxErr == nil {
 				return &svgBox{width: w, height: h}, nil
 			}
-		}
 
-		return nil, fmt.Errorf("svg dimensions not found")
+			if parseErr == nil {
+				parseErr = viewBoxErr
+			}
+		}
 	}
 }

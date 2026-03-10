@@ -135,3 +135,78 @@ func TestRenderD2SVGHasDimensions(t *testing.T) {
 		t.Fatalf("expected height attribute in svg, got %s", svg[:80])
 	}
 }
+
+func TestFormatSVGDimension(t *testing.T) {
+	tests := []struct {
+		name  string
+		value float64
+		scale float64
+		want  string
+	}{
+		{
+			name:  "round up at half",
+			value: 100.5,
+			scale: 1,
+			want:  "101",
+		},
+		{
+			name:  "round down below half",
+			value: 100.49,
+			scale: 1,
+			want:  "100",
+		},
+		{
+			name:  "apply positive scale before rounding",
+			value: 120.25,
+			scale: 1.5,
+			want:  "180",
+		},
+		{
+			name:  "ignore non-positive scale",
+			value: 42.6,
+			scale: 0,
+			want:  "43",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatSVGDimension(tt.value, tt.scale)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestParseSVGDimensionsFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		svg  string
+		want svgBox
+	}{
+		{
+			name: "fallback to viewBox when width and height are not parseable",
+			svg:  `<svg width="100%" height="100%" viewBox="0 0 640 480"></svg>`,
+			want: svgBox{width: 640, height: 480},
+		},
+		{
+			name: "continue scanning nested svg when first svg has no parseable dimensions",
+			svg:  `<svg width="100%" height="100%"><svg width="320" height="240"></svg></svg>`,
+			want: svgBox{width: 320, height: 240},
+		},
+		{
+			name: "use first parseable width and height when available",
+			svg:  `<svg width="800" height="600" viewBox="0 0 400 300"></svg>`,
+			want: svgBox{width: 800, height: 600},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSVGDimensions([]byte(tt.svg))
+			assert.NoError(t, err)
+			assert.NotNil(t, got)
+			assert.Equal(t, tt.want.width, got.width)
+			assert.Equal(t, tt.want.height, got.height)
+		})
+	}
+}

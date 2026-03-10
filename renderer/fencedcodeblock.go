@@ -27,6 +27,10 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Path        string
 }
 
+func invalidD2OutputError(value string) error {
+	return fmt.Errorf("unsupported d2-output %q: must be one of png or svg", value)
+}
+
 var reBlockDetails = regexp.MustCompile(
 	// (<Lang>|-) (collapse|<theme>|\d)* (title <title>)?
 
@@ -150,7 +154,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		case "png", "":
 			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
 		default:
-			return ast.WalkStop, fmt.Errorf("unsupported d2-output: %s", r.MarkConfig.D2Output)
+			return ast.WalkStop, invalidD2OutputError(r.MarkConfig.D2Output)
 		}
 		if err != nil {
 			log.Debugf(nil, "error: %v", err)
