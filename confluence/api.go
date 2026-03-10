@@ -49,6 +49,10 @@ type PageInfo struct {
 	Title string `json:"title"`
 	Type  string `json:"type"`
 
+	Space struct {
+		Key string `json:"key"`
+	} `json:"space"`
+
 	Version struct {
 		Number  int64  `json:"number"`
 		Message string `json:"message"`
@@ -474,7 +478,7 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
+	).Get(map[string]string{"expand": "ancestors,version,space"})
 	if err != nil {
 		return nil, err
 	}
