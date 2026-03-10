@@ -4,10 +4,10 @@ import "testing"
 
 func TestCalculateAlign(t *testing.T) {
 	tests := []struct {
-		name             string
-		configuredAlign  string
-		width            string
-		expectedAlign    string
+		name            string
+		configuredAlign string
+		width           string
+		expectedAlign   string
 	}{
 		{"No alignment configured", "", "1000", ""},
 		{"Center alignment small", "center", "500", "center"},
@@ -41,16 +41,16 @@ func TestCalculateLayout(t *testing.T) {
 		{"Center alignment small", "center", "500", "center"},
 		{"Right alignment small", "right", "500", "align-end"},
 		{"No alignment small", "", "500", ""},
-		
+
 		// Medium images (760-1799px) use "wide" layout (must be center align)
 		{"Center at 760px", "center", "760", "wide"},
 		{"Center at 1000px", "center", "1000", "wide"},
 		{"Center at 1799px", "center", "1799", "wide"},
-		
+
 		// Large images (>= 1800px) use "full-width" layout (must be center align)
 		{"Center at 1800px", "center", "1800", "full-width"},
 		{"Center at 2000px", "center", "2000", "full-width"},
-		
+
 		// Edge cases
 		{"No width", "center", "", "center"},
 		{"Invalid width", "center", "abc", "center"},
