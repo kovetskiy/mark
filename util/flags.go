@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -220,7 +221,7 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
 
-	contentAppearance := command.String("content-appearance")
+	contentAppearance := strings.TrimSpace(command.String("content-appearance"))
 	if contentAppearance != "" {
 		switch contentAppearance {
 		case "full-width", "fixed":
