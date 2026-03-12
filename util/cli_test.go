@@ -97,6 +97,8 @@ func Test_setLogLevel(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			prev := log.GetLevel()
+			t.Cleanup(func() { log.SetLevel(prev) })
 			cmd := &cli.Command{
 				Name: "test",
 				Flags: []cli.Flag{
