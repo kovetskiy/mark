@@ -390,8 +390,10 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		}
 	}
 
-	if err := updateLabels(api, target, labels); err != nil {
-		return nil, err
+	if meta != nil {
+		if err := updateLabels(api, target, labels); err != nil {
+			return nil, err
+		}
 	}
 
 	if config.EditLock {
