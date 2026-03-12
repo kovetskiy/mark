@@ -116,7 +116,9 @@ func Run(config Config) error {
 
 		if target != nil {
 			log.Infof(nil, "page successfully updated: %s", config.BaseURL+target.Links.Full)
-			fmt.Fprintln(config.output(), config.BaseURL+target.Links.Full)
+			if _, err := fmt.Fprintln(config.output(), config.BaseURL+target.Links.Full); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -264,7 +266,9 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			ImageAlign:    imageAlign,
 		}
 		html, _ := markmd.CompileMarkdown(markdown, std, file, cfg)
-		fmt.Fprintln(config.output(), html)
+		if _, err := fmt.Fprintln(config.output(), html); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
 
