@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -67,6 +68,20 @@ type Config struct {
 	Features        []string
 	ImageAlign      string
 	IncludePath     string
+
+	// Output is the writer used for result output (e.g. published page URLs,
+	// compiled HTML). If nil, output is discarded; the CLI sets this to
+	// os.Stdout.
+	Output io.Writer
+}
+
+// output returns the configured writer, falling back to io.Discard so that
+// library callers that do not set Output receive no implicit stdout writes.
+func (c Config) output() io.Writer {
+	if c.Output != nil {
+		return c.Output
+	}
+	return io.Discard
 }
 
 // Run processes all files matching Config.Files and publishes them to Confluence.
@@ -101,7 +116,7 @@ func Run(config Config) error {
 
 		if target != nil {
 			log.Infof(nil, "page successfully updated: %s", config.BaseURL+target.Links.Full)
-			fmt.Println(config.BaseURL + target.Links.Full)
+			fmt.Fprintln(config.output(), config.BaseURL+target.Links.Full)
 		}
 	}
 
@@ -243,7 +258,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			ImageAlign:    imageAlign,
 		}
 		html, _ := markmd.CompileMarkdown(markdown, std, file, cfg)
-		fmt.Println(html)
+		fmt.Fprintln(config.output(), html)
 		return nil, nil
 	}
 
