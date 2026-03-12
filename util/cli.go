@@ -116,7 +116,6 @@ func SetLogLevel(cmd *cli.Command) error {
 	default:
 		return fmt.Errorf("unknown log level: %s", logLevel)
 	}
-	log.GetLevel()
 
 	return nil
 }
