@@ -234,8 +234,14 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	markdown = page.SubstituteLinks(markdown, links)
 
 	if config.DryRun {
-		if _, _, err := page.ResolvePage(true, api, meta); err != nil {
-			return nil, fmt.Errorf("unable to resolve page location: %w", err)
+		if meta != nil {
+			if _, _, err := page.ResolvePage(true, api, meta); err != nil {
+				return nil, fmt.Errorf("unable to resolve page location: %w", err)
+			}
+		} else if config.PageID != "" {
+			if _, err := api.GetPageByID(config.PageID); err != nil {
+				return nil, fmt.Errorf("unable to resolve page by ID: %w", err)
+			}
 		}
 	}
 
