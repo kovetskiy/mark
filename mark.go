@@ -115,8 +115,8 @@ func Run(config Config) error {
 		}
 
 		if target != nil {
-			log.Infof(nil, "page successfully updated: %s", config.BaseURL+target.Links.Full)
-			if _, err := fmt.Fprintln(config.output(), config.BaseURL+target.Links.Full); err != nil {
+			log.Infof(nil, "page successfully updated: %s", api.BaseURL+target.Links.Full)
+			if _, err := fmt.Fprintln(config.output(), api.BaseURL+target.Links.Full); err != nil {
 				return err
 			}
 		}
