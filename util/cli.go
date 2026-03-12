@@ -83,6 +83,8 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		Features:        cmd.StringSlice("features"),
 		ImageAlign:      cmd.String("image-align"),
 		IncludePath:     cmd.String("include-path"),
+
+		Output: os.Stdout,
 	}
 
 	return mark.Run(config)
