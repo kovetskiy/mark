@@ -67,7 +67,7 @@ func TestCompileMarkdown(t *testing.T) {
 			Features:      []string{"mkdocsadmonitions", "mention"},
 		}
 
-		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 	}
 }
@@ -109,7 +109,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			Features:      []string{"mkdocsadmonitions", "mention"},
 		}
 
-		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
@@ -153,7 +153,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			Features:      []string{"mkdocsadmonitions", "mention"},
 		}
 
-		actual, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
