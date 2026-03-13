@@ -72,7 +72,7 @@ func ResolvePage(
 			log.Warningf(
 				nil,
 				"page %q is not found ",
-				meta.Parents[len(ancestry)-1],
+				ancestry[len(ancestry)-1],
 			)
 		}
 
