@@ -437,38 +437,55 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 }
 
 func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
-	result := struct {
+	type page struct {
 		Links struct {
 			Context string `json:"context"`
+			Next    string `json:"next"`
 		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
-	}{}
-
-	payload := map[string]string{
-		"expand": "version,container",
-		"limit":  "1000",
 	}
 
-	request, err := api.rest.Res(
-		"content/"+pageID+"/child/attachment", &result,
-	).Get(payload)
-	if err != nil {
-		return nil, err
-	}
+	const pageSize = 100
+	var all []AttachmentInfo
+	start := 0
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
+	for {
+		var result page
 
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
+		payload := map[string]string{
+			"expand": "version,container",
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
 		}
 
-		result.Results[i] = info
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/attachment", &result,
+		).Get(payload)
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		for i, info := range result.Results {
+			if info.Links.Context == "" {
+				info.Links.Context = result.Links.Context
+			}
+			result.Results[i] = info
+		}
+
+		all = append(all, result.Results...)
+
+		if len(result.Results) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Results)
 	}
 
-	return result.Results, nil
+	return all, nil
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
@@ -726,9 +743,16 @@ func (api *API) RestrictPageUpdatesCloud(
 	page *PageInfo,
 	allowedUser string,
 ) error {
-	user, err := api.GetCurrentUser()
+	user, err := api.GetUserByName(allowedUser)
 	if err != nil {
-		return err
+		// Fall back to the currently authenticated user if the specified
+		// user cannot be resolved by name (e.g. on Confluence Cloud where
+		// only accountId is accepted and name lookup may fail).
+		currentUser, currentErr := api.GetCurrentUser()
+		if currentErr != nil {
+			return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
+		}
+		user = currentUser
 	}
 
 	var result interface{}
