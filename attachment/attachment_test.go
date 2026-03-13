@@ -27,7 +27,7 @@ type virtualOpener struct {
 	PathToBuf map[string]*bufferCloser
 }
 
-func (o *virtualOpener) Open(name string) (io.ReadWriteCloser, error) {
+func (o *virtualOpener) Open(name string) (io.ReadCloser, error) {
 	if buf, ok := o.PathToBuf[name]; ok {
 		return buf, nil
 	}
