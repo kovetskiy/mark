@@ -557,7 +557,10 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	if emojiString != "" {
-		r, _ := utf8.DecodeRuneInString(emojiString)
+		r, size := utf8.DecodeRuneInString(emojiString)
+		if r == utf8.RuneError && size <= 1 {
+			return fmt.Errorf("invalid UTF-8 in emoji: %q", emojiString)
+		}
 		unicodeHex := fmt.Sprintf("%x", r)
 
 		properties["emoji-title-draft"] = map[string]interface{}{
