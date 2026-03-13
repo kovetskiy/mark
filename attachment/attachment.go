@@ -61,7 +61,7 @@ func ResolveAttachments(
 
 	remotes, err := api.GetAttachments(page.ID)
 	if err != nil {
-		panic(err)
+		return nil, karma.Format(err, "unable to get attachments for page %s", page.ID)
 	}
 
 	existing := []Attachment{}
@@ -153,7 +153,7 @@ func ResolveAttachments(
 	}
 
 	for i := range existing {
-		log.Infof(nil, "keeping unmodified attachment: %q", attachments[i].Name)
+		log.Infof(nil, "keeping unmodified attachment: %q", existing[i].Name)
 	}
 
 	attachments = []Attachment{}
