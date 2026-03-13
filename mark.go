@@ -412,7 +412,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			html,
 			config.MinorEdit,
 			finalVersionMessage,
-			labels,
 			contentAppearance,
 			emoji,
 		)
