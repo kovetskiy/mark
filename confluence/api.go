@@ -108,6 +108,9 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		}
 	}
 
+	// Normalize baseURL once before building all derived endpoints.
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
 	var httpClient *http.Client
 	if insecureSkipVerify {
 		httpClient = &http.Client{
@@ -137,7 +140,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	return &API{
 		rest:    rest,
 		json:    json,
-		BaseURL: strings.TrimSuffix(baseURL, "/"),
+		BaseURL: baseURL,
 	}
 }
 
@@ -663,6 +666,10 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 
 	if request.Raw.StatusCode == http.StatusNoContent {
 		return nil, nil
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	return request.Response.(*LabelInfo), nil
