@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"bytes"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -143,6 +144,9 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 			},
 		)
 	} else {
+		if len(attachments) == 0 {
+			return ast.WalkStop, fmt.Errorf("no attachment resolved for %q", string(n.Destination))
+		}
 
 		r.Attachments.Attach(attachments[0])
 
