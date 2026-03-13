@@ -102,16 +102,15 @@ func resolveLink(
 		}
 
 		linkContents, err := os.ReadFile(filepath)
+		if err != nil {
+			return "", karma.Format(err, "read file: %s", filepath)
+		}
 
 		contentType := http.DetectContentType(linkContents)
 		// Check if the MIME type starts with "text/"
 		if !strings.HasPrefix(contentType, "text/") {
 			log.Debugf(nil, "Ignoring link to file %q: detected content type %v", filepath, contentType)
 			return "", nil
-		}
-
-		if err != nil {
-			return "", karma.Format(err, "read file: %s", filepath)
 		}
 
 		linkContents = bytes.ReplaceAll(
