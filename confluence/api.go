@@ -1,21 +1,20 @@
 package confluence
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/kovetskiy/gopencils"
 	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
+	"resty.dev/v3"
 )
 
 type User struct {
@@ -24,11 +23,11 @@ type User struct {
 }
 
 type API struct {
-	rest *gopencils.Resource
+	rest *resty.Client
 
 	// it's deprecated accordingly to Atlassian documentation,
 	// but it's only way to set permissions
-	json    *gopencils.Resource
+	json    *resty.Client
 	BaseURL string
 }
 
@@ -86,52 +85,50 @@ type LabelInfo struct {
 	Labels []Label `json:"results"`
 	Size   int     `json:"number"`
 }
-type form struct {
-	buffer io.Reader
-	writer *multipart.Writer
-}
-
 type tracer struct {
 	prefix string
 }
 
-func (tracer *tracer) Printf(format string, args ...interface{}) {
+func (tracer *tracer) Errorf(format string, args ...interface{}) {
+	log.Tracef(nil, tracer.prefix+" "+format, args...)
+}
+
+func (tracer *tracer) Warnf(format string, args ...interface{}) {
+	log.Tracef(nil, tracer.prefix+" "+format, args...)
+}
+
+func (tracer *tracer) Debugf(format string, args ...interface{}) {
 	log.Tracef(nil, tracer.prefix+" "+format, args...)
 }
 
 func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
-	var auth *gopencils.BasicAuth
+	rest := resty.New().
+		SetBaseURL(baseURL+"/rest/api").
+		SetRetryCount(3)
+
+	json := resty.New().
+		SetBaseURL(baseURL+"/rpc/json-rpc/confluenceservice-v2").
+		SetRetryCount(3)
+
 	if username != "" {
-		auth = &gopencils.BasicAuth{
-			Username: username,
-			Password: password,
-		}
+		rest.SetBasicAuth(username, password)
+		json.SetBasicAuth(username, password)
+	} else {
+		rest.SetAuthToken(password)
+		json.SetAuthToken(password)
 	}
 
-	var httpClient *http.Client
 	if insecureSkipVerify {
-		httpClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-		}
+		tlsConfig := &tls.Config{InsecureSkipVerify: true}
+		rest.SetTLSClientConfig(tlsConfig)
+		json.SetTLSClientConfig(tlsConfig)
 	}
-
-	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 3) // set option for 3 retries on failure
-	if username == "" {
-		if rest.Headers == nil {
-			rest.Headers = http.Header{}
-		}
-		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
-	}
-
-	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, httpClient, 3)
 
 	if log.GetLevel() == lorg.LevelTrace {
-		rest.Logger = &tracer{"rest:"}
-		json.Logger = &tracer{"json-rpc:"}
+		rest.SetDebug(true)
+		rest.SetLogger(&tracer{"rest:"})
+		json.SetDebug(true)
+		json.SetLogger(&tracer{"json-rpc:"})
 	}
 
 	return &API{
@@ -169,22 +166,22 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 }
 
 func (api *API) FindHomePage(space string) (*PageInfo, error) {
-	payload := map[string]string{
-		"expand": "homepage",
-	}
-
-	request, err := api.rest.Res(
-		"space/"+space, &SpaceInfo{},
-	).Get(payload)
+	var result SpaceInfo
+	resp, err := api.rest.R().
+		SetQueryParams(map[string]string{
+			"expand": "homepage",
+		}).
+		SetResult(&result).
+		Get("space/" + space)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
-	return &request.Response.(*SpaceInfo).Homepage, nil
+	return &result.Homepage, nil
 }
 
 func (api *API) FindPage(
@@ -209,17 +206,18 @@ func (api *API) FindPage(
 		payload["title"] = title
 	}
 
-	request, err := api.rest.Res(
-		"content/", &result,
-	).Get(payload)
+	resp, err := api.rest.R().
+		SetQueryParams(payload).
+		SetResult(&result).
+		Get("content/")
 	if err != nil {
 		return nil, err
 	}
 
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
-	if request.Raw.StatusCode != http.StatusNotFound && request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusNotFound && resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
 	if len(result.Results) == 0 {
@@ -241,13 +239,6 @@ func (api *API) CreateAttachment(
 	comment string,
 	reader io.Reader,
 ) (AttachmentInfo, error) {
-	var info AttachmentInfo
-
-	form, err := getAttachmentPayload(name, comment, reader)
-	if err != nil {
-		return AttachmentInfo{}, err
-	}
-
 	var result struct {
 		Links struct {
 			Context string `json:"context"`
@@ -255,31 +246,24 @@ func (api *API) CreateAttachment(
 		Results []AttachmentInfo `json:"results"`
 	}
 
-	resource := api.rest.Res(
-		"content/"+pageID+"/child/attachment", &result,
-	)
-
-	resource.Payload = form.buffer
-	oldHeaders := resource.Headers.Clone()
-	resource.Headers = http.Header{}
-	if resource.Api.BasicAuth == nil {
-		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
-	}
-
-	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
-	resource.SetHeader("X-Atlassian-Token", "no-check")
-
-	request, err := resource.Post()
+	resp, err := api.rest.R().
+		SetFileReader("file", name, reader).
+		SetFormData(map[string]string{
+			"comment": comment,
+		}).
+		SetHeader("X-Atlassian-Token", "no-check").
+		SetResult(&result).
+		Post("content/" + pageID + "/child/attachment")
 	if err != nil {
-		return info, err
+		return AttachmentInfo{}, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return info, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return AttachmentInfo{}, newErrorResponseNotOK(resp)
 	}
 
 	if len(result.Results) == 0 {
-		return info, errors.New(
+		return AttachmentInfo{}, errors.New(
 			"the Confluence REST API for creating attachments returned " +
 				"0 json objects, expected at least 1",
 		)
@@ -293,9 +277,7 @@ func (api *API) CreateAttachment(
 		result.Results[i] = info
 	}
 
-	info = result.Results[0]
-
-	return info, nil
+	return result.Results[0], nil
 }
 
 // UpdateAttachment uploads a new version of the same attachment if the
@@ -309,11 +291,22 @@ func (api *API) UpdateAttachment(
 	comment string,
 	reader io.Reader,
 ) (AttachmentInfo, error) {
-	var info AttachmentInfo
+	var result json.RawMessage
 
-	form, err := getAttachmentPayload(name, comment, reader)
+	resp, err := api.rest.R().
+		SetFileReader("file", name, reader).
+		SetFormData(map[string]string{
+			"comment": comment,
+		}).
+		SetHeader("X-Atlassian-Token", "no-check").
+		SetResult(&result).
+		Post("content/" + pageID + "/child/attachment/" + attachID + "/data")
 	if err != nil {
 		return AttachmentInfo{}, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return AttachmentInfo{}, newErrorResponseNotOK(resp)
 	}
 
 	var extendedResponse struct {
@@ -323,34 +316,9 @@ func (api *API) UpdateAttachment(
 		Results []AttachmentInfo `json:"results"`
 	}
 
-	var result json.RawMessage
-
-	resource := api.rest.Res(
-		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
-	)
-
-	resource.Payload = form.buffer
-	oldHeaders := resource.Headers.Clone()
-	resource.Headers = http.Header{}
-	if resource.Api.BasicAuth == nil {
-		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
-	}
-
-	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
-	resource.SetHeader("X-Atlassian-Token", "no-check")
-
-	request, err := resource.Post()
-	if err != nil {
-		return info, err
-	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return info, newErrorStatusNotOK(request)
-	}
-
 	err = json.Unmarshal(result, &extendedResponse)
 	if err != nil {
-		return info, karma.Format(
+		return AttachmentInfo{}, karma.Format(
 			err,
 			"unable to unmarshal JSON response as full response format: %s",
 			string(result),
@@ -366,15 +334,13 @@ func (api *API) UpdateAttachment(
 			extendedResponse.Results[i] = info
 		}
 
-		info = extendedResponse.Results[0]
-
-		return info, nil
+		return extendedResponse.Results[0], nil
 	}
 
 	var shortResponse AttachmentInfo
 	err = json.Unmarshal(result, &shortResponse)
 	if err != nil {
-		return info, karma.Format(
+		return AttachmentInfo{}, karma.Format(
 			err,
 			"unable to unmarshal JSON response as short response format: %s",
 			string(result),
@@ -382,58 +348,6 @@ func (api *API) UpdateAttachment(
 	}
 
 	return shortResponse, nil
-}
-
-func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error) {
-	var (
-		payload = bytes.NewBuffer(nil)
-		writer  = multipart.NewWriter(payload)
-	)
-
-	content, err := writer.CreateFormFile("file", name)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to create form file",
-		)
-	}
-
-	_, err = io.Copy(content, reader)
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to copy i/o between form-file and file",
-		)
-	}
-
-	commentWriter, err := writer.CreateFormField("comment")
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to create form field for comment",
-		)
-	}
-
-	_, err = commentWriter.Write([]byte(comment))
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to write comment in form-field",
-		)
-	}
-
-	err = writer.Close()
-	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to close form-writer",
-		)
-	}
-
-	return &form{
-		buffer: payload,
-		writer: writer,
-	}, nil
 }
 
 func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
@@ -444,20 +358,19 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		Results []AttachmentInfo `json:"results"`
 	}{}
 
-	payload := map[string]string{
-		"expand": "version,container",
-		"limit":  "1000",
-	}
-
-	request, err := api.rest.Res(
-		"content/"+pageID+"/child/attachment", &result,
-	).Get(payload)
+	resp, err := api.rest.R().
+		SetQueryParams(map[string]string{
+			"expand": "version,container",
+			"limit":  "1000",
+		}).
+		SetResult(&result).
+		Get("content/" + pageID + "/child/attachment")
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
 	for i, info := range result.Results {
@@ -472,18 +385,22 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
-	request, err := api.rest.Res(
-		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
+	var result PageInfo
+	resp, err := api.rest.R().
+		SetQueryParams(map[string]string{
+			"expand": "ancestors,version",
+		}).
+		SetResult(&result).
+		Get("content/" + pageID)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
-	return request.Response.(*PageInfo), nil
+	return &result, nil
 }
 
 func (api *API) CreatePage(
@@ -520,18 +437,20 @@ func (api *API) CreatePage(
 		}
 	}
 
-	request, err := api.rest.Res(
-		"content/", &PageInfo{},
-	).Post(payload)
+	var result PageInfo
+	resp, err := api.rest.R().
+		SetBody(payload).
+		SetResult(&result).
+		Post("content/")
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
-	return request.Response.(*PageInfo), nil
+	return &result, nil
 }
 
 func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string, emojiString string) error {
@@ -589,15 +508,15 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		},
 	}
 
-	request, err := api.rest.Res(
-		"content/"+page.ID, &map[string]interface{}{},
-	).Put(payload)
+	resp, err := api.rest.R().
+		SetBody(payload).
+		Put("content/" + page.ID)
 	if err != nil {
 		return err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return newErrorResponseNotOK(resp)
 	}
 
 	return nil
@@ -618,49 +537,53 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 
 	payload := labels
 
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Post(payload)
+	var result LabelInfo
+	resp, err := api.rest.R().
+		SetBody(payload).
+		SetResult(&result).
+		Post("content/" + page.ID + "/label")
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
-	return request.Response.(*LabelInfo), nil
+	return &result, nil
 }
 
 func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
-
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).SetQuery(map[string]string{"name": label}).Delete()
+	var result LabelInfo
+	resp, err := api.rest.R().
+		SetQueryParam("name", label).
+		SetResult(&result).
+		Delete("content/" + page.ID + "/label")
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK && resp.StatusCode() != http.StatusNoContent {
+		return nil, newErrorResponseNotOK(resp)
 	}
 
-	return request.Response.(*LabelInfo), nil
+	return &result, nil
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
-
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Get(map[string]string{"prefix": prefix})
+	var result LabelInfo
+	resp, err := api.rest.R().
+		SetQueryParam("prefix", prefix).
+		SetResult(&result).
+		Get("content/" + page.ID + "/label")
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, newErrorResponseNotOK(resp)
 	}
-	return request.Response.(*LabelInfo), nil
+	return &result, nil
 }
 
 func (api *API) GetUserByName(name string) (*User, error) {
@@ -671,23 +594,20 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	}
 
 	// Try the new path first
-	_, err := api.rest.
-		Res("search").
-		Res("user", &response).
-		Get(map[string]string{
-			"cql": fmt.Sprintf("user.fullname~%q", name),
-		})
+	_, err := api.rest.R().
+		SetQueryParam("cql", fmt.Sprintf("user.fullname~%q", name)).
+		SetResult(&response).
+		Get("search/user")
 	if err != nil {
 		return nil, err
 	}
 
 	// Try old path
 	if len(response.Results) == 0 {
-		_, err := api.rest.
-			Res("search", &response).
-			Get(map[string]string{
-				"cql": fmt.Sprintf("user.fullname~%q", name),
-			})
+		_, err := api.rest.R().
+			SetQueryParam("cql", fmt.Sprintf("user.fullname~%q", name)).
+			SetResult(&response).
+			Get("search")
 		if err != nil {
 			return nil, err
 		}
@@ -708,10 +628,9 @@ func (api *API) GetUserByName(name string) (*User, error) {
 func (api *API) GetCurrentUser() (*User, error) {
 	var user User
 
-	_, err := api.rest.
-		Res("user").
-		Res("current", &user).
-		Get()
+	_, err := api.rest.R().
+		SetResult(&user).
+		Get("user/current")
 	if err != nil {
 		return nil, err
 	}
@@ -730,11 +649,8 @@ func (api *API) RestrictPageUpdatesCloud(
 
 	var result interface{}
 
-	request, err := api.rest.
-		Res("content").
-		Id(page.ID).
-		Res("restriction", &result).
-		Post([]map[string]interface{}{
+	resp, err := api.rest.R().
+		SetBody([]map[string]interface{}{
 			{
 				"operation": "update",
 				"restrictions": map[string]interface{}{
@@ -746,13 +662,15 @@ func (api *API) RestrictPageUpdatesCloud(
 					},
 				},
 			},
-		})
+		}).
+		SetResult(&result).
+		Post("content/" + page.ID + "/restriction")
 	if err != nil {
 		return err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return newErrorResponseNotOK(resp)
 	}
 
 	return nil
@@ -767,23 +685,24 @@ func (api *API) RestrictPageUpdatesServer(
 		result interface{}
 	)
 
-	request, err := api.json.Res(
-		"setContentPermissions", &result,
-	).Post([]interface{}{
-		page.ID,
-		"Edit",
-		[]map[string]interface{}{
-			{
-				"userName": allowedUser,
+	resp, err := api.json.R().
+		SetBody([]interface{}{
+			page.ID,
+			"Edit",
+			[]map[string]interface{}{
+				{
+					"userName": allowedUser,
+				},
 			},
-		},
-	})
+		}).
+		SetResult(&result).
+		Post("setContentPermissions")
 	if err != nil {
 		return err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if resp.StatusCode() != http.StatusOK {
+		return newErrorResponseNotOK(resp)
 	}
 
 	if success, ok := result.(bool); !ok || !success {
@@ -802,7 +721,8 @@ func (api *API) RestrictPageUpdates(
 ) error {
 	var err error
 
-	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "jira.com") || strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
+	u, _ := url.Parse(api.rest.BaseURL())
+	if strings.HasSuffix(u.Host, "jira.com") || strings.HasSuffix(u.Host, "atlassian.net") {
 		err = api.RestrictPageUpdatesCloud(page, allowedUser)
 	} else {
 		err = api.RestrictPageUpdatesServer(page, allowedUser)
@@ -811,27 +731,22 @@ func (api *API) RestrictPageUpdates(
 	return err
 }
 
-func newErrorStatusNotOK(request *gopencils.Resource) error {
-	if request.Raw.StatusCode == http.StatusUnauthorized {
+func newErrorResponseNotOK(resp *resty.Response) error {
+	if resp.StatusCode() == http.StatusUnauthorized {
 		return errors.New(
 			"the Confluence API returned unexpected status: 401 (Unauthorized)",
 		)
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound {
+	if resp.StatusCode() == http.StatusNotFound {
 		return errors.New(
 			"the Confluence API returned unexpected status: 404 (Not Found)",
 		)
 	}
 
-	output, _ := io.ReadAll(request.Raw.Body)
-	defer func() {
-		_ = request.Raw.Body.Close()
-	}()
-
 	return fmt.Errorf(
 		"the Confluence API returned unexpected status: %v, "+
 			"output: %q",
-		request.Raw.Status, output,
+		resp.Status(), resp.String(),
 	)
 }
