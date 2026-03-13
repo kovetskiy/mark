@@ -181,5 +181,8 @@ func TestContinueOnError(t *testing.T) {
 	}
 
 	err := cmd.Run(context.TODO(), argList)
-	assert.NoError(t, err, "App should run without errors when continue-on-error is enabled")
+	// --continue-on-error processes all files even when some fail, but still
+	// returns an error to allow callers/CI to detect partial failures.
+	assert.Error(t, err, "App should report partial failure when continue-on-error is enabled and some files fail")
+	assert.ErrorContains(t, err, "one or more files failed to process")
 }
