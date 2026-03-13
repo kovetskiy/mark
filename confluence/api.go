@@ -180,7 +180,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -691,7 +691,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	}
 
 	// Try the new path first
-	_, err := api.rest.
+	request, err := api.rest.
 		Res("search").
 		Res("user", &response).
 		Get(map[string]string{
@@ -700,16 +700,22 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
 
 	// Try old path
 	if len(response.Results) == 0 {
-		_, err := api.rest.
+		request, err := api.rest.
 			Res("search", &response).
 			Get(map[string]string{
 				"cql": fmt.Sprintf("user.fullname~%q", name),
 			})
 		if err != nil {
 			return nil, err
+		}
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
 		}
 	}
 
