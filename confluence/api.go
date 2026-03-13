@@ -108,6 +108,9 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		}
 	}
 
+	// Normalize baseURL once before building all derived endpoints.
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
 	var httpClient *http.Client
 	if insecureSkipVerify {
 		httpClient = &http.Client{
@@ -137,7 +140,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	return &API{
 		rest:    rest,
 		json:    json,
-		BaseURL: strings.TrimSuffix(baseURL, "/"),
+		BaseURL: baseURL,
 	}
 }
 
@@ -180,7 +183,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -437,38 +440,55 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 }
 
 func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
-	result := struct {
+	type page struct {
 		Links struct {
 			Context string `json:"context"`
+			Next    string `json:"next"`
 		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
-	}{}
-
-	payload := map[string]string{
-		"expand": "version,container",
-		"limit":  "1000",
 	}
 
-	request, err := api.rest.Res(
-		"content/"+pageID+"/child/attachment", &result,
-	).Get(payload)
-	if err != nil {
-		return nil, err
-	}
+	const pageSize = 100
+	var all []AttachmentInfo
+	start := 0
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
+	for {
+		var result page
 
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
+		payload := map[string]string{
+			"expand": "version,container",
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
 		}
 
-		result.Results[i] = info
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/attachment", &result,
+		).Get(payload)
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		for i, info := range result.Results {
+			if info.Links.Context == "" {
+				info.Links.Context = result.Links.Context
+			}
+			result.Results[i] = info
+		}
+
+		all = append(all, result.Results...)
+
+		if len(result.Results) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Results)
 	}
 
-	return result.Results, nil
+	return all, nil
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
@@ -534,7 +554,7 @@ func (api *API) CreatePage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string, emojiString string) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
@@ -557,7 +577,10 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	if emojiString != "" {
-		r, _ := utf8.DecodeRuneInString(emojiString)
+		r, size := utf8.DecodeRuneInString(emojiString)
+		if r == utf8.RuneError && size <= 1 {
+			return fmt.Errorf("invalid UTF-8 in emoji: %q", emojiString)
+		}
 		unicodeHex := fmt.Sprintf("%x", r)
 
 		properties["emoji-title-draft"] = map[string]interface{}{
@@ -641,7 +664,11 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
+	if request.Raw.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -649,18 +676,46 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
-
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Get(map[string]string{"prefix": prefix})
-	if err != nil {
-		return nil, err
+	type labelPage struct {
+		Links struct {
+			Next string `json:"next"`
+		} `json:"_links"`
+		Labels []Label `json:"results"`
+		Size   int     `json:"number"`
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	const pageSize = 50
+	var all []Label
+	start := 0
+
+	for {
+		var result labelPage
+
+		request, err := api.rest.Res(
+			"content/"+page.ID+"/label", &result,
+		).Get(map[string]string{
+			"prefix": prefix,
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Labels...)
+
+		if len(result.Labels) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Labels)
 	}
-	return request.Response.(*LabelInfo), nil
+
+	return &LabelInfo{Labels: all, Size: len(all)}, nil
 }
 
 func (api *API) GetUserByName(name string) (*User, error) {
@@ -671,7 +726,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	}
 
 	// Try the new path first
-	_, err := api.rest.
+	request, err := api.rest.
 		Res("search").
 		Res("user", &response).
 		Get(map[string]string{
@@ -680,16 +735,22 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
 
 	// Try old path
 	if len(response.Results) == 0 {
-		_, err := api.rest.
+		request, err := api.rest.
 			Res("search", &response).
 			Get(map[string]string{
 				"cql": fmt.Sprintf("user.fullname~%q", name),
 			})
 		if err != nil {
 			return nil, err
+		}
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
 		}
 	}
 
@@ -708,12 +769,16 @@ func (api *API) GetUserByName(name string) (*User, error) {
 func (api *API) GetCurrentUser() (*User, error) {
 	var user User
 
-	_, err := api.rest.
+	request, err := api.rest.
 		Res("user").
 		Res("current", &user).
 		Get()
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	return &user, nil
@@ -723,9 +788,16 @@ func (api *API) RestrictPageUpdatesCloud(
 	page *PageInfo,
 	allowedUser string,
 ) error {
-	user, err := api.GetCurrentUser()
+	user, err := api.GetUserByName(allowedUser)
 	if err != nil {
-		return err
+		// Fall back to the currently authenticated user if the specified
+		// user cannot be resolved by name (e.g. on Confluence Cloud where
+		// only accountId is accepted and name lookup may fail).
+		currentUser, currentErr := api.GetCurrentUser()
+		if currentErr != nil {
+			return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
+		}
+		user = currentUser
 	}
 
 	var result interface{}
@@ -812,6 +884,10 @@ func (api *API) RestrictPageUpdates(
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
+	defer func() {
+		_ = request.Raw.Body.Close()
+	}()
+
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return errors.New(
 			"the Confluence API returned unexpected status: 401 (Unauthorized)",
@@ -825,9 +901,6 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	}
 
 	output, _ := io.ReadAll(request.Raw.Body)
-	defer func() {
-		_ = request.Raw.Body.Close()
-	}()
 
 	return fmt.Errorf(
 		"the Confluence API returned unexpected status: %v, "+

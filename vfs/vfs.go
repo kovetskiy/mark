@@ -6,13 +6,13 @@ import (
 )
 
 type Opener interface {
-	Open(name string) (io.ReadWriteCloser, error)
+	Open(name string) (io.ReadCloser, error)
 }
 
 type LocalOSOpener struct {
 }
 
-func (o LocalOSOpener) Open(name string) (io.ReadWriteCloser, error) {
+func (o LocalOSOpener) Open(name string) (io.ReadCloser, error) {
 	return os.Open(name)
 }
 

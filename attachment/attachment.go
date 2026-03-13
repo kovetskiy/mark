@@ -61,7 +61,7 @@ func ResolveAttachments(
 
 	remotes, err := api.GetAttachments(page.ID)
 	if err != nil {
-		panic(err)
+		return nil, karma.Format(err, "unable to get attachments for page %s", page.ID)
 	}
 
 	existing := []Attachment{}
@@ -153,7 +153,7 @@ func ResolveAttachments(
 	}
 
 	for i := range existing {
-		log.Infof(nil, "keeping unmodified attachment: %q", attachments[i].Name)
+		log.Infof(nil, "keeping unmodified attachment: %q", existing[i].Name)
 	}
 
 	attachments = []Attachment{}
@@ -170,16 +170,16 @@ func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []stri
 		return nil, err
 	}
 
-	for _, attachment := range attachments {
-		checksum, err := GetChecksum(bytes.NewReader(attachment.FileBytes))
+	for i := range attachments {
+		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
 			return nil, karma.Format(
 				err,
-				"unable to get checksum for attachment: %q", attachment.Name,
+				"unable to get checksum for attachment: %q", attachments[i].Name,
 			)
 		}
 
-		attachment.Checksum = checksum
+		attachments[i].Checksum = checksum
 	}
 	return attachments, err
 }

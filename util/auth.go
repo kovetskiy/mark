@@ -46,7 +46,7 @@ func GetCredentials(
 			)
 		}
 
-		password = string(stdin)
+		password = strings.TrimSpace(string(stdin))
 	}
 
 	if compileOnly && targetURL == "" {

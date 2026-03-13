@@ -47,6 +47,7 @@ func (macro *Macro) Apply(
 					err,
 					"unable to unmarshal macros config template",
 				)
+				return match
 			}
 
 			var buffer bytes.Buffer
@@ -60,6 +61,7 @@ func (macro *Macro) Apply(
 					err,
 					"unable to execute macros template",
 				)
+				return match
 			}
 
 			return buffer.Bytes()

@@ -63,10 +63,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if err := scanner.Err(); err != nil {
-			return nil, nil, err
-		}
-
 		offset += len(line) + 1
 
 		matches := reHeaderPatternV2.FindStringSubmatch(line)
@@ -88,7 +84,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		header := cases.Title(language.English).String(matches[1])
 
 		var value string
-		if len(matches) > 1 {
+		if len(matches) > 2 {
 			value = strings.TrimSpace(matches[2])
 		}
 
@@ -145,6 +141,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 			continue
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
 	}
 
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {

@@ -72,7 +72,7 @@ func ParseTitle(lang string) string {
 		// it's found, check if title is given and return it
 		start := index + 6
 		if len(lang) > start {
-			return lang[start:]
+			return strings.TrimSpace(lang[start:])
 		}
 	}
 	return ""

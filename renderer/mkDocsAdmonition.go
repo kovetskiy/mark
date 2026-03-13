@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	stdhtml "html"
 	"strconv"
 
 	parser "github.com/stefanfritsch/goldmark-admonitions"
@@ -18,14 +19,12 @@ var MkDocsAdmonitionAttributeFilter = html.GlobalAttributeFilter
 // nodes as (X)HTML.
 type ConfluenceMkDocsAdmonitionRenderer struct {
 	html.Config
-	LevelMap MkDocsAdmonitionLevelMap
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceMkDocsAdmonitionRenderer creates a new instance of the ConfluenceRenderer
 func NewConfluenceMkDocsAdmonitionRenderer(opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceMkDocsAdmonitionRenderer{
-		Config:   html.NewConfig(),
-		LevelMap: nil,
+		Config: html.NewConfig(),
 	}
 }
 
@@ -49,12 +48,6 @@ func (t MkDocsAdmonitionType) String() string {
 	return []string{"info", "note", "warning", "tip", "none"}[t]
 }
 
-type MkDocsAdmonitionLevelMap map[ast.Node]int
-
-func (m MkDocsAdmonitionLevelMap) Level(node ast.Node) int {
-	return m[node]
-}
-
 func ParseMkDocsAdmonitionType(node ast.Node) MkDocsAdmonitionType {
 	n, ok := node.(*parser.Admonition)
 	if !ok {
@@ -75,42 +68,13 @@ func ParseMkDocsAdmonitionType(node ast.Node) MkDocsAdmonitionType {
 	}
 }
 
-// GenerateMkDocsAdmonitionLevel walks a given node and returns a map of blockquote levels
-func GenerateMkDocsAdmonitionLevel(someNode ast.Node) MkDocsAdmonitionLevelMap {
-
-	// We define state variable that tracks BlockQuote level while we walk the tree
-	admonitionLevel := 0
-	AdmonitionLevelMap := make(map[ast.Node]int)
-
-	rootNode := someNode
-	for rootNode.Parent() != nil {
-		rootNode = rootNode.Parent()
-	}
-	_ = ast.Walk(rootNode, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if node.Kind() == ast.KindBlockquote && entering {
-			AdmonitionLevelMap[node] = admonitionLevel
-			admonitionLevel += 1
-		}
-		if node.Kind() == ast.KindBlockquote && !entering {
-			admonitionLevel -= 1
-		}
-		return ast.WalkContinue, nil
-	})
-	return AdmonitionLevelMap
-}
-
-// renderBlockQuote will render a BlockQuote
+// renderMkDocsAdmonition renders an admonition node as a Confluence structured macro.
+// All admonitions (including nested ones) are rendered as Confluence macros.
 func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	//	Initialize BlockQuote level map
 	n := node.(*parser.Admonition)
-	if r.LevelMap == nil {
-		r.LevelMap = GenerateMkDocsAdmonitionLevel(node)
-	}
-
 	admonitionType := ParseMkDocsAdmonitionType(node)
-	admonitionLevel := r.LevelMap.Level(node)
 
-	if admonitionLevel == 0 && entering && admonitionType != ANone {
+	if entering && admonitionType != ANone {
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", admonitionType)
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
@@ -118,7 +82,7 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 
 		title, _ := strconv.Unquote(string(n.Title))
 		if title != "" {
-			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", title)
+			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", stdhtml.EscapeString(title))
 			if _, err := writer.Write([]byte(titleHTML)); err != nil {
 				return ast.WalkStop, err
 			}
@@ -126,7 +90,7 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 
 		return ast.WalkContinue, nil
 	}
-	if admonitionLevel == 0 && !entering && admonitionType != ANone {
+	if !entering && admonitionType != ANone {
 		suffix := "</ac:rich-text-body></ac:structured-macro>\n"
 		if _, err := writer.Write([]byte(suffix)); err != nil {
 			return ast.WalkStop, err

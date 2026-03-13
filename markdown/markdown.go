@@ -90,7 +90,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	))
 }
 
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment) {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
 	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
 
 	confluenceExtension := NewConfluenceExtension(stdlib, path, cfg)
@@ -119,12 +119,12 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	err := converter.Convert(markdown, &buf, parser.WithContext(ctx))
 
 	if err != nil {
-		panic(err)
+		return "", nil, err
 	}
 
 	html := buf.Bytes()
 
 	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
 
-	return string(html), confluenceExtension.Attachments
+	return string(html), confluenceExtension.Attachments, nil
 }
