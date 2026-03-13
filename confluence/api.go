@@ -824,10 +824,11 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		)
 	}
 
-	output, _ := io.ReadAll(request.Raw.Body)
 	defer func() {
 		_ = request.Raw.Body.Close()
 	}()
+
+	output, _ := io.ReadAll(request.Raw.Body)
 
 	return fmt.Errorf(
 		"the Confluence API returned unexpected status: %v, "+
