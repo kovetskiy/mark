@@ -185,8 +185,13 @@ func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 }
 
 func parseLinks(markdown string) []markdownLink {
-	// Matches links but not inline images
-	re := regexp.MustCompile(`[^\!]\[.+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
+	// Matches markdown links but not inline images (![ ... ]).
+	// Group 1: full link target (path + optional hash)
+	// Group 2: file path portion
+	// Group 3: hash portion
+	// The leading (?:^|[^!]) anchor prevents matching image syntax without
+	// consuming a character that belongs to a preceding link or word.
+	re := regexp.MustCompile(`(?:^|[^!])\[.+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
 	matches := re.FindAllStringSubmatch(markdown, -1)
 
 	links := make([]markdownLink, len(matches))
