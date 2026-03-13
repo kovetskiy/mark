@@ -100,6 +100,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		// This template is used for rendering PlantUML diagrams
+		`ac:plantuml`: text(
+			`<ac:structured-macro ac:name="plantuml">`,
+			/**/ `<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
+			`</ac:structured-macro>`,
+		),
+
 		`ac:status`: text(
 			`<ac:structured-macro ac:name="status">`,
 			`<ac:parameter ac:name="colour">{{ or .Color "Grey" }}</ac:parameter>`,
