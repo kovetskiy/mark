@@ -661,26 +661,54 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		return nil, newErrorStatusNotOK(request)
+	if request.Raw.StatusCode == http.StatusNoContent {
+		return nil, nil
 	}
 
 	return request.Response.(*LabelInfo), nil
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
-
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Get(map[string]string{"prefix": prefix})
-	if err != nil {
-		return nil, err
+	type labelPage struct {
+		Links struct {
+			Next string `json:"next"`
+		} `json:"_links"`
+		Labels []Label `json:"results"`
+		Size   int     `json:"number"`
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	const pageSize = 50
+	var all []Label
+	start := 0
+
+	for {
+		var result labelPage
+
+		request, err := api.rest.Res(
+			"content/"+page.ID+"/label", &result,
+		).Get(map[string]string{
+			"prefix": prefix,
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Labels...)
+
+		if len(result.Labels) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Labels)
 	}
-	return request.Response.(*LabelInfo), nil
+
+	return &LabelInfo{Labels: all, Size: len(all)}, nil
 }
 
 func (api *API) GetUserByName(name string) (*User, error) {
@@ -734,12 +762,16 @@ func (api *API) GetUserByName(name string) (*User, error) {
 func (api *API) GetCurrentUser() (*User, error) {
 	var user User
 
-	_, err := api.rest.
+	request, err := api.rest.
 		Res("user").
 		Res("current", &user).
 		Get()
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	return &user, nil
@@ -845,6 +877,10 @@ func (api *API) RestrictPageUpdates(
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
+	defer func() {
+		_ = request.Raw.Body.Close()
+	}()
+
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return errors.New(
 			"the Confluence API returned unexpected status: 401 (Unauthorized)",
@@ -856,10 +892,6 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 			"the Confluence API returned unexpected status: 404 (Not Found)",
 		)
 	}
-
-	defer func() {
-		_ = request.Raw.Body.Close()
-	}()
 
 	output, _ := io.ReadAll(request.Raw.Body)
 
