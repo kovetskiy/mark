@@ -1,6 +1,7 @@
 package stdlib
 
 import (
+	"html"
 	"strings"
 	"text/template"
 
@@ -21,10 +22,6 @@ func New(api *confluence.API) (*Lib, error) {
 	)
 
 	lib.Templates, err = templates(api)
-	if err != nil {
-		return nil, err
-	}
-
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +64,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 					"_",
 				)
 			},
+			"xmlesc": func(s string) string {
+				return html.EscapeString(s)
+			},
 		},
 	)
 
@@ -90,20 +90,20 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// This template is used for rendering code in ```
 		`ac:code`: text(
 			`<ac:structured-macro ac:name="code">`,
-			/**/ `<ac:parameter ac:name="language">{{ .Language }}</ac:parameter>`,
+			/**/ `<ac:parameter ac:name="language">{{ .Language | xmlesc }}</ac:parameter>`,
 			/**/ `<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>`,
-			/**/ `{{ if .Theme }}<ac:parameter ac:name="theme">{{ .Theme }}</ac:parameter>{{ end }}`,
+			/**/ `{{ if .Theme }}<ac:parameter ac:name="theme">{{ .Theme | xmlesc }}</ac:parameter>{{ end }}`,
 			/**/ `{{ if .Linenumbers }}<ac:parameter ac:name="linenumbers">{{ .Linenumbers }}</ac:parameter>{{ end }}`,
 			/**/ `{{ if .Firstline }}<ac:parameter ac:name="firstline">{{ .Firstline }}</ac:parameter>{{ end }}`,
-			/**/ `{{ if .Title }}<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{ end }}`,
+			/**/ `{{ if .Title }}<ac:parameter ac:name="title">{{ .Title | xmlesc }}</ac:parameter>{{ end }}`,
 			/**/ `<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
 			`</ac:structured-macro>`,
 		),
 
 		`ac:status`: text(
 			`<ac:structured-macro ac:name="status">`,
-			`<ac:parameter ac:name="colour">{{ or .Color "Grey" }}</ac:parameter>`,
-			`<ac:parameter ac:name="title">{{ or .Title .Color }}</ac:parameter>`,
+			`<ac:parameter ac:name="colour">{{ or .Color "Grey" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="title">{{ or .Title .Color | xmlesc }}</ac:parameter>`,
 			`<ac:parameter ac:name="subtle">{{ or .Subtle false }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
@@ -161,7 +161,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:box`: text(
 			`<ac:structured-macro ac:name="{{ .Name }}">`,
 			`<ac:parameter ac:name="icon">{{ or .Icon "false" }}</ac:parameter>`,
-			`{{ if .Title }}<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>{{ end }}`,
+			`{{ if .Title }}<ac:parameter ac:name="title">{{ .Title | xmlesc }}</ac:parameter>{{ end }}`,
 			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
 			`</ac:structured-macro>`,
 		),
