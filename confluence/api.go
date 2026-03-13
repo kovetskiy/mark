@@ -534,7 +534,7 @@ func (api *API) CreatePage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string, emojiString string) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
 	nextPageVersion := page.Version.Number + 1
 	oldAncestors := []map[string]interface{}{}
 
