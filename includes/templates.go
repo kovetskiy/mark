@@ -113,7 +113,7 @@ func ProcessIncludes(
 		contents,
 		func(spec []byte) []byte {
 			if err != nil {
-				return nil
+				return spec
 			}
 
 			groups := reIncludeDirective.FindSubmatch(spec)
@@ -143,7 +143,7 @@ func ProcessIncludes(
 						"unable to unmarshal template data config",
 					)
 
-				return nil
+				return spec
 			}
 
 			log.Tracef(vardump(facts, data), "including template %q", path)
@@ -151,7 +151,7 @@ func ProcessIncludes(
 			templates, err = LoadTemplate(base, includePath, path, left, right, templates)
 			if err != nil {
 				err = facts.Format(err, "unable to load template")
-				return nil
+				return spec
 			}
 
 			var buffer bytes.Buffer
@@ -163,7 +163,7 @@ func ProcessIncludes(
 					"unable to execute template",
 				)
 
-				return nil
+				return spec
 			}
 
 			recurse = true
