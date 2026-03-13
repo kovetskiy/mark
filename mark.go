@@ -265,7 +265,10 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			Features:      config.Features,
 			ImageAlign:    imageAlign,
 		}
-		html, _ := markmd.CompileMarkdown(markdown, std, file, cfg)
+		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("unable to compile markdown: %w", err)
+		}
 		if _, err := fmt.Fprintln(config.output(), html); err != nil {
 			return nil, err
 		}
@@ -340,7 +343,10 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		ImageAlign:    imageAlign,
 	}
 
-	html, inlineAttachments := markmd.CompileMarkdown(markdown, std, file, cfg)
+	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to compile markdown: %w", err)
+	}
 
 	if _, err = attachment.ResolveAttachments(api, target, inlineAttachments); err != nil {
 		return nil, fmt.Errorf("unable to create/update attachments: %w", err)
