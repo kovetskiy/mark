@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kovetskiy/mark/util"
+	"github.com/kovetskiy/mark/v16/util"
 	"github.com/reconquest/pkg/log"
 	"github.com/urfave/cli/v3"
 )

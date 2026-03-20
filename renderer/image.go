@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/attachment"
-	"github.com/kovetskiy/mark/stdlib"
-	"github.com/kovetskiy/mark/vfs"
+	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"

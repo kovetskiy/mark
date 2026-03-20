@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/confluence"
-	"github.com/kovetskiy/mark/vfs"
+	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )

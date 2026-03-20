@@ -1,4 +1,4 @@
-module github.com/kovetskiy/mark
+module github.com/kovetskiy/mark/v16
 
 go 1.25.0
 

@@ -3,7 +3,7 @@ package renderer
 import (
 	"strings"
 
-	"github.com/kovetskiy/mark/stdlib"
+	"github.com/kovetskiy/mark/v16/stdlib"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/lorg"
-	mark "github.com/kovetskiy/mark"
+	mark "github.com/kovetskiy/mark/v16"
 	"github.com/reconquest/pkg/log"
 	"github.com/urfave/cli/v3"
 )

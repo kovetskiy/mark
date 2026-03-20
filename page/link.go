@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/confluence"
-	"github.com/kovetskiy/mark/metadata"
+	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
 )
