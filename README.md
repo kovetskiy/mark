@@ -778,13 +778,13 @@ brew install mark
 ### Go Install / Go Get
 
 ```bash
-go install github.com/kovetskiy/mark@latest
+go install github.com/kovetskiy/mark/cmd/mark@latest
 ```
 
 For older versions
 
 ```bash
-go get -v github.com/kovetskiy/mark
+go get -v github.com/kovetskiy/mark/cmd/mark
 ```
 
 ### Releases
