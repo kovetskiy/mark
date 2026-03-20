@@ -6,11 +6,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/attachment"
-	"github.com/kovetskiy/mark/d2"
-	"github.com/kovetskiy/mark/mermaid"
-	"github.com/kovetskiy/mark/stdlib"
-	"github.com/kovetskiy/mark/types"
+	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/types"
 	"github.com/reconquest/pkg/log"
 
 	"github.com/yuin/goldmark/ast"

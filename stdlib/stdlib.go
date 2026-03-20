@@ -5,7 +5,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kovetskiy/mark/confluence"
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/reconquest/pkg/log"
 
 	"github.com/reconquest/karma-go"

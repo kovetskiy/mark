@@ -13,7 +13,7 @@ import (
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/chromedp"
 
-	"github.com/kovetskiy/mark/attachment"
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/reconquest/pkg/log"
 
 	"oss.terrastruct.com/d2/d2graph"
