@@ -1,11 +1,11 @@
 module github.com/kovetskiy/mark/v16
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
-	github.com/chromedp/chromedp v0.14.2
+	github.com/chromedp/cdproto v0.0.0-20260320225252-cf654f46fc63
+	github.com/chromedp/chromedp v0.15.0
 	github.com/dreampuf/mermaid.go v0.0.39
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
@@ -33,7 +33,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/dop251/goja v0.0.0-20240927123429-241b342198c2 // indirect
-	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
@@ -52,7 +52,7 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/net v0.44.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
