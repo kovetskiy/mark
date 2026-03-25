@@ -735,13 +735,10 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
 
 	// Try old path
-	if len(response.Results) == 0 {
-		request, err := api.rest.
+	if request.Raw.StatusCode != http.StatusOK || len(response.Results) == 0 {
+		request, err = api.rest.
 			Res("search", &response).
 			Get(map[string]string{
 				"cql": fmt.Sprintf("user.fullname~%q", name),
