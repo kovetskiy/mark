@@ -6,7 +6,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
-	github.com/dreampuf/mermaid.go v0.0.39
+	github.com/dreampuf/mermaid.go v0.0.40
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
