@@ -145,7 +145,8 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 		)
 	} else {
 		if len(attachments) == 0 {
-			return ast.WalkStop, fmt.Errorf("no attachment resolved for %q", string(n.Destination))
+			line, col := GetLineCol(source, node.Pos())
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: no attachment resolved for %q", line, col, string(n.Destination))
 		}
 
 		r.Attachments.Attach(attachments[0])

@@ -11,7 +11,6 @@ import (
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/reconquest/pkg/log"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -135,8 +134,8 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
 		attachment, err := d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
 		if err != nil {
-			log.Debugf(nil, "error: %v", err)
-			return ast.WalkStop, err
+			line, col := GetLineCol(source, node.Pos())
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %v", line, col, err)
 		}
 		r.Attachments.Attach(attachment)
 
@@ -179,8 +178,8 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
 		attachment, err := mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
 		if err != nil {
-			log.Debugf(nil, "error: %v", err)
-			return ast.WalkStop, err
+			line, col := GetLineCol(source, node.Pos())
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: mermaid rendering failed: %v", line, col, err)
 		}
 		r.Attachments.Attach(attachment)
 
