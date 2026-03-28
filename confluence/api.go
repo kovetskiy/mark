@@ -13,9 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
-	"github.com/kovetskiy/lorg"
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type User struct {
@@ -96,7 +96,7 @@ type tracer struct {
 }
 
 func (tracer *tracer) Printf(format string, args ...interface{}) {
-	log.Tracef(nil, tracer.prefix+" "+format, args...)
+	log.Trace().Msgf(tracer.prefix+" "+format, args...)
 }
 
 func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
@@ -132,7 +132,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 
 	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, httpClient, 3)
 
-	if log.GetLevel() == lorg.LevelTrace {
+	if zerolog.GlobalLevel() == zerolog.TraceLevel {
 		rest.Logger = &tracer{"rest:"}
 		json.Logger = &tracer{"json-rpc:"}
 	}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v3"
 )
@@ -83,22 +83,22 @@ func Test_setLogLevel(t *testing.T) {
 	}
 	tests := map[string]struct {
 		args        args
-		want        log.Level
+		want        zerolog.Level
 		expectedErr string
 	}{
-		"invalid": {args: args{lvl: "INVALID"}, want: log.LevelInfo, expectedErr: "unknown log level: INVALID"},
-		"empty":   {args: args{lvl: ""}, want: log.LevelInfo, expectedErr: "unknown log level: "},
-		"info":    {args: args{lvl: log.LevelInfo.String()}, want: log.LevelInfo},
-		"debug":   {args: args{lvl: log.LevelDebug.String()}, want: log.LevelDebug},
-		"trace":   {args: args{lvl: log.LevelTrace.String()}, want: log.LevelTrace},
-		"warning": {args: args{lvl: log.LevelWarning.String()}, want: log.LevelWarning},
-		"error":   {args: args{lvl: log.LevelError.String()}, want: log.LevelError},
-		"fatal":   {args: args{lvl: log.LevelFatal.String()}, want: log.LevelFatal},
+		"invalid": {args: args{lvl: "INVALID"}, want: zerolog.InfoLevel, expectedErr: "unknown log level: INVALID"},
+		"empty":   {args: args{lvl: ""}, want: zerolog.InfoLevel, expectedErr: "unknown log level: "},
+		"info":    {args: args{lvl: "INFO"}, want: zerolog.InfoLevel},
+		"debug":   {args: args{lvl: "DEBUG"}, want: zerolog.DebugLevel},
+		"trace":   {args: args{lvl: "TRACE"}, want: zerolog.TraceLevel},
+		"warning": {args: args{lvl: "WARNING"}, want: zerolog.WarnLevel},
+		"error":   {args: args{lvl: "ERROR"}, want: zerolog.ErrorLevel},
+		"fatal":   {args: args{lvl: "FATAL"}, want: zerolog.FatalLevel},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			prev := log.GetLevel()
-			t.Cleanup(func() { log.SetLevel(prev) })
+			prev := zerolog.GlobalLevel()
+			t.Cleanup(func() { zerolog.SetGlobalLevel(prev) })
 			cmd := &cli.Command{
 				Name: "test",
 				Flags: []cli.Flag{
@@ -114,7 +114,7 @@ func Test_setLogLevel(t *testing.T) {
 				assert.EqualError(t, err, tt.expectedErr)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.want, log.GetLevel())
+				assert.Equal(t, tt.want, zerolog.GlobalLevel())
 			}
 		})
 	}

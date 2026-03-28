@@ -8,8 +8,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/includes"
-	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -190,11 +189,9 @@ func ExtractMacros(
 
 			macro.Config = config
 
-			log.Tracef(
-				facts.Describe("config", macro.Config),
-				"loaded macro %q",
-				expr,
-			)
+			log.Trace().
+				Interface("vardump", facts.Describe("config", macro.Config)).
+				Msgf("loaded macro %q", expr)
 
 			macros = append(macros, macro)
 

@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 )
 
 // <!-- Include: <template path>
@@ -146,7 +146,7 @@ func ProcessIncludes(
 				return spec
 			}
 
-			log.Tracef(vardump(facts, data), "including template %q", path)
+			log.Trace().Interface("vardump", vardump(facts, data)).Msgf("including template %q", path)
 
 			templates, err = LoadTemplate(base, includePath, path, left, right, templates)
 			if err != nil {

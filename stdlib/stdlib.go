@@ -6,7 +6,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 
 	"github.com/reconquest/karma-go"
 )
@@ -42,7 +42,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 				}
 				user, err := api.GetUserByName(name)
 				if err != nil {
-					log.Error(err)
+					log.Error().Err(err).Send()
 				}
 
 				return user

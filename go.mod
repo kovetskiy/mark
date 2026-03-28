@@ -8,9 +8,8 @@ require (
 	github.com/chromedp/chromedp v0.15.1
 	github.com/dreampuf/mermaid.go v0.0.40
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
-	github.com/kovetskiy/lorg v1.2.1-0.20240830111423-ba4fe8b6f7c4
 	github.com/reconquest/karma-go v1.5.0
-	github.com/reconquest/pkg v1.3.1-0.20240901105413-68c2adbf2b64
+	github.com/rs/zerolog v1.35.0
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
@@ -41,13 +40,13 @@ require (
 	github.com/google/pprof v0.0.0-20240927180334-d43a67379298 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mazznoer/csscolorparser v0.1.5 // indirect
 	github.com/orisano/pixelmatch v0.0.0-20230914042517-fa304d1dc785 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/reconquest/cog v0.0.0-20240830113510-c7ba12d0beeb // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
-	github.com/zazab/zhash v0.0.0-20221031090444-2b0d50417446 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/net v0.44.0 // indirect

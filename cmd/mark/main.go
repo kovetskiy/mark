@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/kovetskiy/mark/v16/util"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -34,6 +34,6 @@ func main() {
 	}
 
 	if err := cmd.Run(context.TODO(), os.Args); err != nil {
-		log.Fatal(err)
+		log.Fatal().Msg(err.Error())
 	}
 }

@@ -1,9 +1,7 @@
 package util
 
 import (
-	"fmt"
-
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 )
 
 type FatalErrorHandler struct {
@@ -20,15 +18,15 @@ func (h *FatalErrorHandler) Handle(err error, format string, args ...interface{}
 
 	if err == nil {
 		if h.ContinueOnError {
-			log.Error(fmt.Sprintf(format, args...))
+			log.Error().Msgf(format, args...)
 			return
 		}
-		log.Fatal(fmt.Sprintf(format, args...))
+		log.Fatal().Msgf(format, args...)
 	}
 
 	if h.ContinueOnError {
-		log.Errorf(err, format, args...)
+		log.Error().Err(err).Msgf(format, args...)
 		return
 	}
-	log.Fatalf(err, format, args...)
+	log.Fatal().Err(err).Msgf(format, args...)
 }

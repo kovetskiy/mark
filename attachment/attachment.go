@@ -19,7 +19,7 @@ import (
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -101,7 +101,7 @@ func ResolveAttachments(
 	}
 
 	for i, attachment := range creating {
-		log.Infof(nil, "creating attachment: %q", attachment.Name)
+		log.Info().Msgf("creating attachment: %q", attachment.Name)
 
 		info, err := api.CreateAttachment(
 			page.ID,
@@ -127,7 +127,7 @@ func ResolveAttachments(
 	}
 
 	for i, attachment := range updating {
-		log.Infof(nil, "updating attachment: %q", attachment.Name)
+		log.Info().Msgf("updating attachment: %q", attachment.Name)
 
 		info, err := api.UpdateAttachment(
 			page.ID,
@@ -153,7 +153,7 @@ func ResolveAttachments(
 	}
 
 	for i := range existing {
-		log.Infof(nil, "keeping unmodified attachment: %q", existing[i].Name)
+		log.Info().Msgf("keeping unmodified attachment: %q", existing[i].Name)
 	}
 
 	attachments = []Attachment{}
@@ -260,7 +260,7 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		if bytes.Contains(markdown, []byte("attachment://"+replace)) {
 			from := "attachment://" + replace
 
-			log.Debugf(nil, "replacing legacy link: %q -> %q", from, to)
+			log.Debug().Msgf("replacing legacy link: %q -> %q", from, to)
 
 			markdown = bytes.ReplaceAll(
 				markdown,
@@ -274,7 +274,7 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		if bytes.Contains(markdown, []byte(replace)) {
 			from := replace
 
-			log.Debugf(nil, "replacing link: %q -> %q", from, to)
+			log.Debug().Msgf("replacing link: %q -> %q", from, to)
 
 			markdown = bytes.ReplaceAll(
 				markdown,
@@ -286,7 +286,7 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		}
 
 		if !found {
-			log.Warningf(nil, "unused attachment: %s", replace)
+			log.Warn().Msgf("unused attachment: %s", replace)
 		}
 	}
 

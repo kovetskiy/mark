@@ -6,7 +6,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 )
 
 func EnsureAncestry(
@@ -33,7 +33,7 @@ func EnsureAncestry(
 			break
 		}
 
-		log.Debugf(nil, "parent page %q exists: %s", title, page.Links.Full)
+		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
 
 		rest = ancestry[i:]
 		parent = page
@@ -57,12 +57,12 @@ func EnsureAncestry(
 		return parent, nil
 	}
 
-	log.Debugf(
-		nil,
-		"empty pages under %q to be created: %s",
-		parent.Title,
-		strings.Join(rest, ` > `),
-	)
+	log.Debug().
+		Msgf(
+			"empty pages under %q to be created: %s",
+			parent.Title,
+			strings.Join(rest, ` > `),
+		)
 
 	if !dryRun {
 		for _, title := range rest {
@@ -78,13 +78,13 @@ func EnsureAncestry(
 			parent = page
 		}
 	} else {
-		log.Infof(
-			nil,
-			"skipping page creation due to enabled dry-run mode, "+
-				"need to create %d pages: %v",
-			len(rest),
-			rest,
-		)
+		log.Info().
+			Msgf(
+				"skipping page creation due to enabled dry-run mode, "+
+					"need to create %d pages: %v",
+				len(rest),
+				rest,
+			)
 	}
 
 	return parent, nil
@@ -116,7 +116,7 @@ func ValidateAncestry(
 		}
 
 		if page.ID == homepage.ID {
-			log.Debugf(nil, "page is homepage for space %q", space)
+			log.Debug().Msgf("page is homepage for space %q", space)
 			isHomepage = true
 		} else {
 			return nil, fmt.Errorf(`page %q has no parents`, page.Title)

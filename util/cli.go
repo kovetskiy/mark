@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kovetskiy/lorg"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	mark "github.com/kovetskiy/mark/v16"
-	"github.com/reconquest/pkg/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -18,14 +18,54 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	if cmd.String("color") == "never" {
-		log.GetLogger().SetFormat(
-			lorg.NewFormat(
-				`${time:2006-01-02 15:04:05.000} ${level:%s:left:true} ${prefix}%s`,
-			),
-		)
-		log.GetLogger().SetOutput(os.Stderr)
+	zerolog.TimeFieldFormat = "2006-01-02 15:04:05.000"
+
+	output := zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "2006-01-02 15:04:05.000",
+		FormatLevel: func(i interface{}) string {
+			var l string
+			if ll, ok := i.(string); ok {
+				switch ll {
+				case "trace":
+					l = "TRACE"
+				case "debug":
+					l = "DEBUG"
+				case "info":
+					l = "INFO"
+				case "warn":
+					l = "WARNING"
+				case "error":
+					l = "ERROR"
+				case "fatal":
+					l = "FATAL"
+				case "panic":
+					l = "PANIC"
+				default:
+					l = strings.ToUpper(ll)
+				}
+			} else {
+				l = strings.ToUpper(fmt.Sprintf("%s", i))
+			}
+			return l
+		},
+		FormatFieldName: func(i interface{}) string {
+			return ""
+		},
+		FormatFieldValue: func(i interface{}) string {
+			return fmt.Sprintf("%s", i)
+		},
+		FormatErrFieldName: func(i interface{}) string {
+			return ""
+		},
+		FormatErrFieldValue: func(i interface{}) string {
+			return fmt.Sprintf("%s", i)
+		},
 	}
+	if cmd.String("color") == "never" {
+		output.NoColor = true
+	}
+	log.Logger = zerolog.New(output).With().Timestamp().Logger()
 
 	creds, err := GetCredentials(
 		cmd.String("username"),
@@ -38,13 +78,13 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	log.Debug("config:")
+	log.Debug().Msg("config:")
 	for _, f := range cmd.Flags {
 		flag := f.Names()
 		if flag[0] == "password" {
-			log.Debugf(nil, "%20s: %v", flag[0], "******")
+			log.Debug().Msgf("%20s: %v", flag[0], "******")
 		} else {
-			log.Debugf(nil, "%20s: %v", flag[0], cmd.Value(flag[0]))
+			log.Debug().Msgf("%20s: %v", flag[0], cmd.Value(flag[0]))
 		}
 	}
 
@@ -93,7 +133,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 func ConfigFilePath() string {
 	fp, err := os.UserConfigDir()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Send()
 	}
 	return filepath.Join(fp, "mark.toml")
 }
@@ -101,18 +141,18 @@ func ConfigFilePath() string {
 func SetLogLevel(cmd *cli.Command) error {
 	logLevel := cmd.String("log-level")
 	switch strings.ToUpper(logLevel) {
-	case lorg.LevelTrace.String():
-		log.SetLevel(lorg.LevelTrace)
-	case lorg.LevelDebug.String():
-		log.SetLevel(lorg.LevelDebug)
-	case lorg.LevelInfo.String():
-		log.SetLevel(lorg.LevelInfo)
-	case lorg.LevelWarning.String():
-		log.SetLevel(lorg.LevelWarning)
-	case lorg.LevelError.String():
-		log.SetLevel(lorg.LevelError)
-	case lorg.LevelFatal.String():
-		log.SetLevel(lorg.LevelFatal)
+	case "TRACE":
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	case "DEBUG":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "INFO":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "WARNING":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "ERROR":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	case "FATAL":
+		zerolog.SetGlobalLevel(zerolog.FatalLevel)
 	default:
 		return fmt.Errorf("unknown log level: %s", logLevel)
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 
 	"oss.terrastruct.com/d2/d2graph"
 	"oss.terrastruct.com/d2/d2layouts/d2dagrelayout"
@@ -59,7 +59,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 		return attachment.Attachment{}, err
 	}
 
-	log.Debugf(nil, "Rendering: %q", title)
+	log.Debug().Msgf("Rendering: %q", title)
 	pngBytes, boxModel, err := convertSVGtoPNG(ctx, out, scale)
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -73,7 +73,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
 
-	log.Debugf(nil, "Checksum: %q -> %s", title, checkSum)
+	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err

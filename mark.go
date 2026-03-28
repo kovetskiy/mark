@@ -25,7 +25,7 @@ import (
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 )
 
 // Config holds all configuration options for running Mark.
@@ -96,7 +96,7 @@ func Run(config Config) error {
 	if len(files) == 0 {
 		msg := "no files matched"
 		if config.CI {
-			log.Warning(msg)
+			log.Warn().Msg(msg)
 		} else {
 			return fmt.Errorf("%s", msg)
 		}
@@ -104,12 +104,12 @@ func Run(config Config) error {
 
 	var hasErrors bool
 	for _, file := range files {
-		log.Infof(nil, "processing %s", file)
+		log.Info().Msgf("processing %s", file)
 
 		target, err := ProcessFile(file, api, config)
 		if err != nil {
 			if config.ContinueOnError {
-				log.Errorf(err, "processing %s", file)
+				log.Error().Err(err).Msgf("processing %s", file)
 				hasErrors = true
 				continue
 			}
@@ -117,7 +117,7 @@ func Run(config Config) error {
 		}
 
 		if target != nil {
-			log.Infof(nil, "page successfully updated: %s", api.BaseURL+target.Links.Full)
+			log.Info().Msgf("page successfully updated: %s", api.BaseURL+target.Links.Full)
 			if _, err := fmt.Fprintln(config.output(), api.BaseURL+target.Links.Full); err != nil {
 				return err
 			}
@@ -156,7 +156,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	}
 
 	if config.PageID != "" && meta != nil {
-		log.Warning(
+		log.Warn().Msg(
 			`specified file contains metadata, ` +
 				`but it will be ignored due specified command line URL`,
 		)
@@ -255,7 +255,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	if config.CompileOnly || config.DryRun {
 		if config.DropH1 {
-			log.Info("the leading H1 heading will be excluded from the Confluence output")
+			log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 		}
 
 		imageAlign, err := getImageAlign(config.ImageAlign, meta)
@@ -335,7 +335,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	markdown = attachment.CompileAttachmentLinks(markdown, attaches)
 
 	if config.DropH1 {
-		log.Info("the leading H1 heading will be excluded from the Confluence output")
+		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
 
 	imageAlign, err := getImageAlign(config.ImageAlign, meta)
@@ -399,13 +399,13 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	if config.ChangesOnly {
 		contentHash := sha1Hash(html)
-		log.Debugf(nil, "content hash: %s", contentHash)
+		log.Debug().Msgf("content hash: %s", contentHash)
 
 		re := regexp.MustCompile(`\[v([a-f0-9]{40})]$`)
 		if matches := re.FindStringSubmatch(target.Version.Message); len(matches) > 1 {
-			log.Debugf(nil, "previous content hash: %s", matches[1])
+			log.Debug().Msgf("previous content hash: %s", matches[1])
 			if matches[1] == contentHash {
-				log.Infof(nil, "page %q is already up to date", target.Title)
+				log.Info().Msgf("page %q is already up to date", target.Title)
 				shouldUpdatePage = false
 			}
 		}
@@ -436,8 +436,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	}
 
 	if config.EditLock {
-		log.Infof(
-			nil,
+		log.Info().Msgf(
 			`edit locked on page %q by user %q to prevent manual edits`,
 			target.Title,
 			config.Username,
@@ -456,18 +455,18 @@ func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels [
 		return err
 	}
 
-	log.Debug("Page Labels:")
-	log.Debug(labelInfo.Labels)
-	log.Debug("Meta Labels:")
-	log.Debug(metaLabels)
+	log.Debug().Msg("Page Labels:")
+	log.Debug().Interface("labels", labelInfo.Labels).Send()
+	log.Debug().Msg("Meta Labels:")
+	log.Debug().Interface("labels", metaLabels).Send()
 
 	delLabels := determineLabelsToRemove(labelInfo, metaLabels)
-	log.Debug("Del Labels:")
-	log.Debug(delLabels)
+	log.Debug().Msg("Del Labels:")
+	log.Debug().Interface("labels", delLabels).Send()
 
 	addLabels := determineLabelsToAdd(metaLabels, labelInfo)
-	log.Debug("Add Labels:")
-	log.Debug(addLabels)
+	log.Debug().Msg("Add Labels:")
+	log.Debug().Interface("labels", addLabels).Send()
 
 	if len(addLabels) > 0 {
 		if _, err = api.AddPageLabels(target, addLabels); err != nil {
