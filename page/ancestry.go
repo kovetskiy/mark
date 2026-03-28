@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -22,11 +21,7 @@ func EnsureAncestry(
 	for i, title := range ancestry {
 		page, err := api.FindPage(space, title, "page")
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				`error during finding parent page with title %q`,
-				title,
-			)
+			return nil, fmt.Errorf("error during finding parent page with title %q: %w", title, err)
 		}
 
 		if page == nil {
@@ -44,11 +39,7 @@ func EnsureAncestry(
 	} else {
 		page, err := api.FindRootPage(space)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"can't find root page for space %q",
-				space,
-			)
+			return nil, fmt.Errorf("can't find root page for space %q: %w", space, err)
 		}
 
 		parent = page
@@ -68,11 +59,7 @@ func EnsureAncestry(
 		for _, title := range rest {
 			page, err := api.CreatePage(space, "page", parent, title, ``)
 			if err != nil {
-				return nil, karma.Format(
-					err,
-					`error during creating parent page with title %q`,
-					title,
-				)
+				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
 			}
 
 			parent = page
@@ -108,11 +95,7 @@ func ValidateAncestry(
 	if len(page.Ancestors) < 1 {
 		homepage, err := api.FindHomePage(space)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"can't obtain home page from space %q",
-				space,
-			)
+			return nil, fmt.Errorf("can't obtain home page from space %q: %w", space, err)
 		}
 
 		if page.ID == homepage.ID {
@@ -148,10 +131,10 @@ func ValidateAncestry(
 		}
 
 		if !valid {
-			return nil, karma.Describe("title", page.Title).
-				Describe("actual", strings.Join(actual, " > ")).
-				Describe("expected", strings.Join(ancestry, " > ")).
-				Format(nil, "the page has fewer parents than expected")
+			return nil, fmt.Errorf(
+				"the page has fewer parents than expected: title=%q, actual=[%s], expected=[%s]",
+				page.Title, strings.Join(actual, " > "), strings.Join(ancestry, " > "),
+			)
 		}
 	}
 
@@ -173,12 +156,10 @@ func ValidateAncestry(
 				list = append(list, ancestor.Title)
 			}
 
-			return nil, karma.Describe("expected parent", parent).
-				Describe("list", strings.Join(list, "; ")).
-				Format(
-					nil,
-					"unexpected ancestry tree, did not find expected parent page in the tree",
-				)
+			return nil, fmt.Errorf(
+				"unexpected ancestry tree, did not find expected parent page %q in the tree: actual=[%s]",
+				parent, strings.Join(list, "; "),
+			)
 		}
 	}
 

@@ -1,11 +1,11 @@
 package page
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -15,15 +15,11 @@ func ResolvePage(
 	meta *metadata.Meta,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
 	if meta == nil {
-		return nil, nil, karma.Format(nil, "metadata is empty")
+		return nil, nil, fmt.Errorf("metadata is empty")
 	}
 	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {
-		return nil, nil, karma.Format(
-			err,
-			"error while finding page %q",
-			meta.Title,
-		)
+		return nil, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
 
 	if meta.Type == "blogpost" {
@@ -39,11 +35,7 @@ func ResolvePage(
 	// check to see if home page is in Parents
 	homepage, err := api.FindHomePage(meta.Space)
 	if err != nil {
-		return nil, nil, karma.Format(
-			err,
-			"can't obtain home page from space %q",
-			meta.Space,
-		)
+		return nil, nil, fmt.Errorf("can't obtain home page from space %q: %w", meta.Space, err)
 	}
 
 	skipHomeAncestry := false
@@ -93,11 +85,7 @@ func ResolvePage(
 		meta.Parents,
 	)
 	if err != nil {
-		return nil, nil, karma.Format(
-			err,
-			"can't create ancestry tree: %s",
-			strings.Join(meta.Parents, ` > `),
-		)
+		return nil, nil, fmt.Errorf("can't create ancestry tree %q: %w", strings.Join(meta.Parents, ` > `), err)
 	}
 
 	titles := []string{}

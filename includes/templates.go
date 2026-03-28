@@ -11,7 +11,6 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -35,8 +34,7 @@ func LoadTemplate(
 	templates *template.Template,
 ) (*template.Template, error) {
 	var (
-		name  = strings.TrimSuffix(path, filepath.Ext(path))
-		facts = karma.Describe("name", name)
+		name = strings.TrimSuffix(path, filepath.Ext(path))
 	)
 
 	if template := templates.Lookup(name); template != nil {
@@ -51,11 +49,7 @@ func LoadTemplate(
 			body, err = os.ReadFile(filepath.Join(includePath, path))
 		}
 		if err != nil {
-			err = facts.Format(
-				err,
-				"unable to read template file",
-			)
-			return nil, err
+			return nil, fmt.Errorf("unable to read template file %q: %w", path, err)
 		}
 
 	}
@@ -68,12 +62,7 @@ func LoadTemplate(
 
 	templates, err = templates.New(name).Delims(left, right).Parse(string(body))
 	if err != nil {
-		err = facts.Format(
-			err,
-			"unable to parse template",
-		)
-
-		return nil, err
+		return nil, fmt.Errorf("unable to parse template %q: %w", name, err)
 	}
 
 	return templates, nil
@@ -85,23 +74,15 @@ func ProcessIncludes(
 	contents []byte,
 	templates *template.Template,
 ) (*template.Template, []byte, bool, error) {
-	vardump := func(
-		facts *karma.Context,
+	formatVardump := func(
 		data map[string]interface{},
-	) *karma.Context {
+	) string {
+		var parts []string
 		for key, value := range data {
-			key = "var " + key
-			facts = facts.Describe(
-				key,
-				strings.ReplaceAll(
-					fmt.Sprint(value),
-					"\n",
-					"\n"+strings.Repeat(" ", len(key)+2),
-				),
-			)
+			parts = append(parts, fmt.Sprintf("%s=%v", key, value))
 		}
 
-		return facts
+		return strings.Join(parts, ", ")
 	}
 
 	var (
@@ -125,8 +106,6 @@ func ProcessIncludes(
 				right      = string(groups[4])
 				config     = groups[5]
 				data       = map[string]interface{}{}
-
-				facts = karma.Describe("path", path)
 			)
 
 			if delimsNone == "none" {
@@ -136,21 +115,16 @@ func ProcessIncludes(
 
 			err = yaml.Unmarshal(config, &data)
 			if err != nil {
-				err = facts.
-					Describe("config", string(config)).
-					Format(
-						err,
-						"unable to unmarshal template data config",
-					)
+				err = fmt.Errorf("unable to unmarshal template data config (path=%q, config=%q): %w", path, string(config), err)
 
 				return spec
 			}
 
-			log.Trace().Interface("vardump", vardump(facts, data)).Msgf("including template %q", path)
+			log.Trace().Interface("vardump", data).Msgf("including template %q", path)
 
 			templates, err = LoadTemplate(base, includePath, path, left, right, templates)
 			if err != nil {
-				err = facts.Format(err, "unable to load template")
+				err = fmt.Errorf("unable to load template %q: %w", path, err)
 				return spec
 			}
 
@@ -158,10 +132,7 @@ func ProcessIncludes(
 
 			err = templates.Execute(&buffer, data)
 			if err != nil {
-				err = vardump(facts, data).Format(
-					err,
-					"unable to execute template",
-				)
+				err = fmt.Errorf("unable to execute template %q (vars: %s): %w", path, formatVardump(data), err)
 
 				return spec
 			}

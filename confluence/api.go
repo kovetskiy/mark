@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -147,11 +146,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	page, err := api.FindPage(space, ``, "page")
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"can't obtain first page from space %q",
-			space,
-		)
+		return nil, fmt.Errorf("can't obtain first page from space %q: %w", space, err)
 	}
 
 	if page == nil {
@@ -353,11 +348,7 @@ func (api *API) UpdateAttachment(
 
 	err = json.Unmarshal(result, &extendedResponse)
 	if err != nil {
-		return info, karma.Format(
-			err,
-			"unable to unmarshal JSON response as full response format: %s",
-			string(result),
-		)
+		return info, fmt.Errorf("unable to unmarshal JSON response as full response format (JSON=%s): %w", string(result), err)
 	}
 
 	if len(extendedResponse.Results) > 0 {
@@ -377,11 +368,7 @@ func (api *API) UpdateAttachment(
 	var shortResponse AttachmentInfo
 	err = json.Unmarshal(result, &shortResponse)
 	if err != nil {
-		return info, karma.Format(
-			err,
-			"unable to unmarshal JSON response as short response format: %s",
-			string(result),
-		)
+		return info, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
 	}
 
 	return shortResponse, nil
@@ -395,42 +382,27 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 
 	content, err := writer.CreateFormFile("file", name)
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to create form file",
-		)
+		return nil, fmt.Errorf("unable to create form file: %w", err)
 	}
 
 	_, err = io.Copy(content, reader)
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to copy i/o between form-file and file",
-		)
+		return nil, fmt.Errorf("unable to copy i/o between form-file and file: %w", err)
 	}
 
 	commentWriter, err := writer.CreateFormField("comment")
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to create form field for comment",
-		)
+		return nil, fmt.Errorf("unable to create form field for comment: %w", err)
 	}
 
 	_, err = commentWriter.Write([]byte(comment))
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to write comment in form-field",
-		)
+		return nil, fmt.Errorf("unable to write comment in form-field: %w", err)
 	}
 
 	err = writer.Close()
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to close form-writer",
-		)
+		return nil, fmt.Errorf("unable to close form-writer: %w", err)
 	}
 
 	return &form{
@@ -753,11 +725,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 
 	if len(response.Results) == 0 {
 
-		return nil, karma.
-			Describe("name", name).
-			Reason(
-				"user with given name is not found",
-			)
+		return nil, fmt.Errorf("user with name %q is not found", name)
 	}
 
 	return &response.Results[0].User, nil

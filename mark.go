@@ -24,7 +24,6 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -286,7 +285,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	if meta != nil {
 		parent, pg, err := page.ResolvePage(false, api, meta)
 		if err != nil {
-			return nil, karma.Describe("title", meta.Title).Reason(err)
+			return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 		}
 
 		if pg == nil {
