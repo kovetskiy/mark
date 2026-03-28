@@ -9,7 +9,7 @@ import (
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 	mkDocsParser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/yuin/goldmark"
 
@@ -91,7 +91,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 }
 
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	log.Tracef(nil, "rendering markdown:\n%s", string(markdown))
+	log.Trace().Msgf("rendering markdown:\n%s", string(markdown))
 
 	confluenceExtension := NewConfluenceExtension(stdlib, path, cfg)
 
@@ -124,7 +124,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 
 	html := buf.Bytes()
 
-	log.Tracef(nil, "rendered markdown to html:\n%s", string(html))
+	log.Trace().Msgf("rendered markdown to html:\n%s", string(html))
 
 	return string(html), confluenceExtension.Attachments, nil
 }

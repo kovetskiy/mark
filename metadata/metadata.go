@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -132,12 +132,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
 
 		default:
-			log.Errorf(
-				nil,
-				`encountered unknown header %q line: %#v`,
-				header,
-				line,
-			)
+			log.Error().
+				Err(nil).
+				Msgf(`encountered unknown header %q line: %#v`, header, line)
 
 			continue
 		}
@@ -193,11 +190,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		pathHash := sha256.Sum256([]byte(path))
 		// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
 		meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
-		log.Debugf(
-			nil,
-			"appended hash to page title: %s",
-			meta.Title,
-		)
+		log.Debug().Msgf("appended hash to page title: %s", meta.Title)
 	}
 
 	// Remove trailing spaces from title

@@ -15,7 +15,7 @@ import (
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 )
 
 type LinkSubstitution struct {
@@ -51,13 +51,13 @@ func ResolveRelativeLinks(
 
 	links := []LinkSubstitution{}
 	for _, match := range matches {
-		log.Tracef(
-			nil,
-			"found a relative link: full=%s filename=%s hash=%s",
-			match.full,
-			match.filename,
-			match.hash,
-		)
+		log.Trace().
+			Msgf(
+				"found a relative link: full=%s filename=%s hash=%s",
+				match.full,
+				match.filename,
+				match.hash,
+			)
 		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash)
 		if err != nil {
 			return nil, karma.Format(err, "resolve link: %q", match.full)
@@ -91,7 +91,7 @@ func resolveLink(
 	if len(link.filename) > 0 {
 		filepath := filepath.Join(base, link.filename)
 
-		log.Tracef(nil, "filepath: %s", filepath)
+		log.Trace().Msgf("filepath: %s", filepath)
 		stat, err := os.Stat(filepath)
 		if err != nil {
 			return "", nil
@@ -109,7 +109,7 @@ func resolveLink(
 		contentType := http.DetectContentType(linkContents)
 		// Check if the MIME type starts with "text/"
 		if !strings.HasPrefix(contentType, "text/") {
-			log.Debugf(nil, "Ignoring link to file %q: detected content type %v", filepath, contentType)
+			log.Debug().Msgf("Ignoring link to file %q: detected content type %v", filepath, contentType)
 			return "", nil
 		}
 
@@ -123,11 +123,12 @@ func resolveLink(
 		// not markdown or have mark required metadata
 		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash, "")
 		if err != nil {
-			log.Errorf(
-				err,
-				"unable to extract metadata from %q; ignoring the relative link",
-				filepath,
-			)
+			log.Error().
+				Err(err).
+				Msgf(
+					"unable to extract metadata from %q; ignoring the relative link",
+					filepath,
+				)
 
 			return "", nil
 		}
@@ -136,12 +137,12 @@ func resolveLink(
 			return "", nil
 		}
 
-		log.Tracef(
-			nil,
-			"extracted metadata: space=%s title=%s",
-			linkMeta.Space,
-			linkMeta.Title,
-		)
+		log.Trace().
+			Msgf(
+				"extracted metadata: space=%s title=%s",
+				linkMeta.Space,
+				linkMeta.Title,
+			)
 
 		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
@@ -172,7 +173,7 @@ func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 			continue
 		}
 
-		log.Tracef(nil, "substitute link: %q -> %q", link.From, link.To)
+		log.Trace().Msgf("substitute link: %q -> %q", link.From, link.To)
 
 		markdown = bytes.ReplaceAll(
 			markdown,
