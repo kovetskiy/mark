@@ -14,7 +14,6 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -60,7 +59,7 @@ func ResolveRelativeLinks(
 			)
 		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash)
 		if err != nil {
-			return nil, karma.Format(err, "resolve link: %q", match.full)
+			return nil, fmt.Errorf("resolve link %q: %w", match.full, err)
 		}
 
 		if resolved == "" {
@@ -103,7 +102,7 @@ func resolveLink(
 
 		linkContents, err := os.ReadFile(filepath)
 		if err != nil {
-			return "", karma.Format(err, "read file: %s", filepath)
+			return "", fmt.Errorf("read file %s: %w", filepath, err)
 		}
 
 		contentType := http.DetectContentType(linkContents)
@@ -146,13 +145,7 @@ func resolveLink(
 
 		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
-			return "", karma.Format(
-				err,
-				"find confluence page: %s / %s / %s",
-				filepath,
-				linkMeta.Space,
-				linkMeta.Title,
-			)
+			return "", fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", filepath, linkMeta.Space, linkMeta.Title, err)
 		}
 
 		if result == "" {
@@ -217,14 +210,14 @@ func getConfluenceLink(
 	// Try to find as a page first
 	page, err := api.FindPage(space, title, "page")
 	if err != nil {
-		return "", karma.Format(err, "api: find page")
+		return "", fmt.Errorf("api: find page %q in space %q: %w", title, space, err)
 	}
 
 	// If not found as a page, try to find as a blog post
 	if page == nil {
 		page, err = api.FindPage(space, title, "blogpost")
 		if err != nil {
-			return "", karma.Format(err, "api: find blogpost")
+			return "", fmt.Errorf("api: find blogpost %q in space %q: %w", title, space, err)
 		}
 	}
 
@@ -242,7 +235,7 @@ func getConfluenceLink(
 
 	tiny, err := GenerateTinyLink(baseURL, page.ID)
 	if err != nil {
-		return "", karma.Format(err, "generate tiny link for page %s", page.ID)
+		return "", fmt.Errorf("generate tiny link for page %s: %w", page.ID, err)
 	}
 
 	return tiny, nil

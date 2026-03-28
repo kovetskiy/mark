@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/vfs"
-	"github.com/reconquest/karma-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -50,10 +50,7 @@ func ResolveAttachments(
 	for i := range attachments {
 		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to get checksum for attachment: %q", attachments[i].Name,
-			)
+			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
 		}
 
 		attachments[i].Checksum = checksum
@@ -61,7 +58,7 @@ func ResolveAttachments(
 
 	remotes, err := api.GetAttachments(page.ID)
 	if err != nil {
-		return nil, karma.Format(err, "unable to get attachments for page %s", page.ID)
+		return nil, fmt.Errorf("unable to get attachments for page %s: %w", page.ID, err)
 	}
 
 	existing := []Attachment{}
@@ -110,11 +107,7 @@ func ResolveAttachments(
 			bytes.NewReader(attachment.FileBytes),
 		)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to create attachment %q",
-				attachment.Name,
-			)
+			return nil, fmt.Errorf("unable to create attachment %q: %w", attachment.Name, err)
 		}
 
 		attachment.ID = info.ID
@@ -137,11 +130,7 @@ func ResolveAttachments(
 			bytes.NewReader(attachment.FileBytes),
 		)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to update attachment %q",
-				attachment.Name,
-			)
+			return nil, fmt.Errorf("unable to update attachment %q: %w", attachment.Name, err)
 		}
 
 		attachment.Link = path.Join(
@@ -173,10 +162,7 @@ func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []stri
 	for i := range attachments {
 		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to get checksum for attachment: %q", attachments[i].Name,
-			)
+			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
 		}
 
 		attachments[i].Checksum = checksum
@@ -204,7 +190,7 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 	attachmentPath := filepath.Join(base, name)
 	file, err := opener.Open(attachmentPath)
 	if err != nil {
-		return Attachment{}, karma.Format(err, "unable to open file: %q", attachmentPath)
+		return Attachment{}, fmt.Errorf("unable to open file %q: %w", attachmentPath, err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -212,7 +198,7 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		return Attachment{}, karma.Format(err, "unable to read file: %q", attachmentPath)
+		return Attachment{}, fmt.Errorf("unable to read file %q: %w", attachmentPath, err)
 	}
 
 	attachment := Attachment{

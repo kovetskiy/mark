@@ -1,14 +1,13 @@
 package stdlib
 
 import (
+	"fmt"
 	"html"
 	"strings"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
-
-	"github.com/reconquest/karma-go"
 )
 
 type Lib struct {
@@ -445,12 +444,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 	} {
 		templates, err = templates.New(name).Parse(body)
 		if err != nil {
-			return nil, karma.
-				Describe("template", body).
-				Format(
-					err,
-					"unable to parse template",
-				)
+			return nil, fmt.Errorf("unable to parse template %q (body=%s): %w", name, body, err)
 		}
 	}
 

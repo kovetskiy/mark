@@ -2,12 +2,11 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"strings"
-
-	"github.com/reconquest/karma-go"
 )
 
 type Credentials struct {
@@ -40,10 +39,7 @@ func GetCredentials(
 	if password == "-" {
 		stdin, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to read password from stdin",
-			)
+			return nil, fmt.Errorf("unable to read password from stdin: %w", err)
 		}
 
 		password = strings.TrimSpace(string(stdin))
@@ -55,10 +51,7 @@ func GetCredentials(
 
 	url, err := url.Parse(targetURL)
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to parse %q as url", targetURL,
-		)
+		return nil, fmt.Errorf("unable to parse %q as url: %w", targetURL, err)
 	}
 
 	if url.Host == "" && baseURL == "" {

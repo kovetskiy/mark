@@ -41,10 +41,7 @@ func (macro *Macro) Apply(
 
 			err = yaml.Unmarshal([]byte(macro.Config), &config)
 			if err != nil {
-				err = karma.Format(
-					err,
-					"unable to unmarshal macros config template",
-				)
+				err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
 				return match
 			}
 
@@ -55,10 +52,7 @@ func (macro *Macro) Apply(
 				macro.Regexp.FindSubmatch(match),
 			))
 			if err != nil {
-				err = karma.Format(
-					err,
-					"unable to execute macros template",
-				)
+				err = fmt.Errorf("unable to execute macros template: %w", err)
 				return match
 			}
 
@@ -136,10 +130,7 @@ func ExtractMacros(
 
 				err = yaml.Unmarshal([]byte(config), &cfg)
 				if err != nil {
-					err = karma.Format(
-						err,
-						"unable to unmarshal macros config template",
-					)
+					err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
 
 					return nil
 				}
@@ -156,33 +147,22 @@ func ExtractMacros(
 
 				macro.Template, err = templates.New(template).Parse(body)
 				if err != nil {
-					err = karma.Format(
-						err,
-						"unable to parse template",
-					)
+					err = fmt.Errorf("unable to parse template: %w", err)
 
 					return nil
 				}
 			} else {
 				macro.Template, err = includes.LoadTemplate(base, includePath, template, "{{", "}}", templates)
 				if err != nil {
-					err = karma.Format(err, "unable to load template")
+					err = fmt.Errorf("unable to load template: %w", err)
 
 					return nil
 				}
 			}
 
-			facts := karma.
-				Describe("template", template).
-				Describe("expr", expr)
-
 			macro.Regexp, err = regexp.Compile(expr)
 			if err != nil {
-				err = facts.
-					Format(
-						err,
-						"unable to compile macros regexp",
-					)
+				err = fmt.Errorf("unable to compile macros regexp (expr=%q, template=%q): %w", expr, template, err)
 
 				return nil
 			}
@@ -190,7 +170,11 @@ func ExtractMacros(
 			macro.Config = config
 
 			log.Trace().
-				Interface("vardump", facts.Describe("config", macro.Config)).
+				Interface("vardump", map[string]interface{}{
+					"expr":     expr,
+					"template": template,
+					"config":   macro.Config,
+				}).
 				Msgf("loaded macro %q", expr)
 
 			macros = append(macros, macro)
