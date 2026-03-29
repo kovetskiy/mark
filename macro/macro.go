@@ -10,7 +10,6 @@ import (
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/reconquest/karma-go"
 	"github.com/reconquest/pkg/log"
-	"github.com/reconquest/regexputil-go"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -126,13 +125,9 @@ func ExtractMacros(
 			groups := reMacroDirective.FindStringSubmatch(string(spec))
 
 			var (
-				expr     = regexputil.Subexp(reMacroDirective, groups, "expr")
-				template = regexputil.Subexp(
-					reMacroDirective,
-					groups,
-					"template",
-				)
-				config = regexputil.Subexp(reMacroDirective, groups, "config")
+				expr     = groups[reMacroDirective.SubexpIndex("expr")]
+				template = groups[reMacroDirective.SubexpIndex("template")]
+				config   = groups[reMacroDirective.SubexpIndex("config")]
 			)
 
 			var macro Macro
