@@ -64,18 +64,9 @@ func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
 	}
 }
 
-func GHAlertsBlockQuoteClassifier() BlockQuoteClassifier {
-	return BlockQuoteClassifier{
-		patternMap: map[string]*regexp.Regexp{
-			"info": regexp.MustCompile(`(?i)^\!(note|important)`),
-			"note": regexp.MustCompile(`(?i)^\!warning`),
-			"warn": regexp.MustCompile(`(?i)^\!caution`),
-			"tip":  regexp.MustCompile(`(?i)^\!tip`),
-		},
-	}
-}
-
 // ClassifyingBlockQuote compares a string against a set of patterns and returns a BlockQuoteType
+// Note: GitHub Alerts ([!NOTE], [!TIP], etc.) are now handled by the superior transformer approach
+// in the GitHub Alerts extension, not by this legacy blockquote renderer
 func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) BlockQuoteType {
 
 	var t = None
@@ -93,10 +84,11 @@ func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) Blo
 }
 
 // ParseBlockQuoteType parses the first line of a blockquote and returns its type
+// Note: This legacy function only handles traditional "info:", "note:", etc. syntax
+// GitHub Alerts ([!NOTE], [!TIP], etc.) are handled by the GitHub Alerts transformer
 func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 	var t = None
 	var legacyClassifier = LegacyBlockQuoteClassifier()
-	var ghAlertsClassifier = GHAlertsBlockQuoteClassifier()
 
 	countParagraphs := 0
 	_ = ast.Walk(node, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -109,27 +101,6 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 			if node.Kind() == ast.KindText {
 				n := node.(*ast.Text)
 				t = legacyClassifier.ClassifyingBlockQuote(string(n.Value(source)))
-				// If the node is a text node but classification returned none do not give up!
-				// Find the next two sibling nodes midNode and rightNode,
-				// 1. If both are also a text node
-				// 2. and the original node (node) text value is '['
-				// 3. and the rightNode text value is ']'
-				// It means with high degree of confidence that the original md doc contains a Github alert type of blockquote
-				// Classifying the next text type node (midNode) will confirm that.
-				if t == None {
-					midNode := node.NextSibling()
-
-					if midNode != nil && midNode.Kind() == ast.KindText {
-						rightNode := midNode.NextSibling()
-						midTextNode := midNode.(*ast.Text)
-						if rightNode != nil && rightNode.Kind() == ast.KindText {
-							rightTextNode := rightNode.(*ast.Text)
-							if string(n.Value(source)) == "[" && string(rightTextNode.Value(source)) == "]" {
-								t = ghAlertsClassifier.ClassifyingBlockQuote(string(midTextNode.Value(source)))
-							}
-						}
-					}
-				}
 				countParagraphs += 1
 			}
 			if node.Kind() == ast.KindHTMLBlock {
