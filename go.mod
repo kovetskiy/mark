@@ -6,7 +6,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
-	github.com/dreampuf/mermaid.go v0.0.40
+	github.com/dreampuf/mermaid.go v0.1.0
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.0
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
