@@ -296,6 +296,18 @@ Block Quotes are converted to Confluence Info/Warn/Note box when the following c
 
 In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
 
+### Task Lists
+
+Mark supports [GitHub Flavored Markdown task lists](https://github.github.com/gfm/#task-list-items-extension-).
+Task lists are automatically converted to Confluence `ac:task-list` elements.
+
+```markdown
+- [x] Finished task
+- [ ] Unfinished task
+```
+
+If a list is "mixed" (contains both tasks and regular list items), it will fall back to a standard HTML list with textual markers like `[x]` or `[ ]` to ensure validity in Confluence storage format.
+
 ## Template & Macros
 
 By default, mark provides several built-in templates and macros:
@@ -775,16 +787,10 @@ brew tap kovetskiy/mark
 brew install mark
 ```
 
-### Go Install / Go Get
+### Go Install
 
 ```bash
 go install github.com/kovetskiy/mark/v16/cmd/mark@latest
-```
-
-For older versions
-
-```bash
-go get -v github.com/kovetskiy/mark/v16/cmd/mark
 ```
 
 ### Releases
@@ -818,7 +824,7 @@ USAGE:
    mark [global options]
 
 VERSION:
-   v15.5.0@9a26f657c7f2d708ae53722cad03b048c72c9db2
+   v16.x.x
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
