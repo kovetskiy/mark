@@ -20,11 +20,12 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 	defer cancel()
 
 	log.Debug().Msgf("Setting up Mermaid renderer: %q", title)
-	renderer, err := mermaid.NewRenderEngine(ctx)
+	renderer, err := mermaid.NewRenderEngine(ctx, nil)
 
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
+	defer renderer.Cancel()
 
 	log.Debug().Msgf("Rendering: %q", title)
 	pngBytes, boxModel, err := renderer.RenderAsScaledPng(string(mermaidDiagram), scale)
