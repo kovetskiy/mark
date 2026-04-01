@@ -58,6 +58,12 @@ type PageInfo struct {
 		Title string `json:"title"`
 	} `json:"ancestors"`
 
+	Body struct {
+		Storage struct {
+			Value string `json:"value"`
+		} `json:"storage"`
+	} `json:"body"`
+
 	Links struct {
 		Full string `json:"webui"`
 		Base string `json:"-"` // Not from JSON; populated from response _links.base
@@ -85,6 +91,19 @@ type LabelInfo struct {
 	Labels []Label `json:"results"`
 	Size   int     `json:"number"`
 }
+
+type InlineComments struct {
+	Results []struct {
+		Extensions struct {
+			Location         string `json:"location"`
+			InlineProperties struct {
+				OriginalSelection string `json:"originalSelection"`
+				MarkerRef         string `json:"markerRef"`
+			} `json:"inlineProperties"`
+		} `json:"extensions"`
+	} `json:"results"`
+}
+
 type form struct {
 	buffer io.Reader
 	writer *multipart.Writer
@@ -463,10 +482,13 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 	return all, nil
 }
 
-func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
+func (api *API) GetPageByID(pageID string, expand string) (*PageInfo, error) {
+	if expand == "" {
+		expand = "ancestors,version"
+	}
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
+	).Get(map[string]string{"expand": expand})
 	if err != nil {
 		return nil, err
 	}
@@ -476,6 +498,22 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	}
 
 	return request.Response.(*PageInfo), nil
+}
+
+func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
+	result := &InlineComments{}
+	request, err := api.rest.Res(
+		"content/"+pageID+"/child/comment", result,
+	).Get(map[string]string{"expand": "extensions.inlineProperties"})
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return result, nil
 }
 
 func (api *API) CreatePage(
