@@ -115,6 +115,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		VersionMessage: cmd.String("version-message"),
 		EditLock:       cmd.Bool("edit-lock"),
 		ChangesOnly:    cmd.Bool("changes-only"),
+		PreserveComments: cmd.Bool("preserve-comments"),
 
 		DropH1:          cmd.Bool("drop-h1"),
 		StripLinebreaks: cmd.Bool("strip-linebreaks"),

@@ -194,6 +194,12 @@ var Flags = []cli.Flag{
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.BoolFlag{
+		Name:    "preserve-comments",
+		Value:   false,
+		Usage:   "fetch and preserve inline comments on existing Confluence pages.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PRESERVE_COMMENTS"), altsrctoml.TOML("preserve-comments", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.FloatFlag{
 		Name:    "d2-scale",
 		Value:   1.0,
