@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"path/filepath"
@@ -59,6 +60,7 @@ type Config struct {
 	VersionMessage string
 	EditLock       bool
 	ChangesOnly    bool
+	PreserveComments bool
 
 	// Rendering
 	DropH1          bool
@@ -247,7 +249,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 				return nil, fmt.Errorf("unable to resolve page location: %w", err)
 			}
 		} else if config.PageID != "" {
-			if _, err := api.GetPageByID(config.PageID); err != nil {
+			if _, err := api.GetPageByID(config.PageID, ""); err != nil {
 				return nil, fmt.Errorf("unable to resolve page by ID: %w", err)
 			}
 		}
@@ -282,6 +284,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	}
 
 	var target *confluence.PageInfo
+	var pageCreated bool
 
 	if meta != nil {
 		parent, pg, err := page.ResolvePage(false, api, meta)
@@ -298,11 +301,12 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			// conflict that can occur when attempting to update a page just
 			// after it was created. See issues/139.
 			time.Sleep(1 * time.Second)
+			pageCreated = true
 		}
 
 		target = pg
 	} else {
-		pg, err := api.GetPageByID(config.PageID)
+		pg, err := api.GetPageByID(config.PageID, "")
 		if err != nil {
 			return nil, fmt.Errorf("unable to retrieve page by id: %w", err)
 		}
@@ -392,6 +396,24 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			return nil, fmt.Errorf("unable to execute layout template: %w", err)
 		}
 		html = buffer.String()
+	}
+
+	if config.PreserveComments && !pageCreated {
+		pg, err := api.GetPageByID(target.ID, "ancestors,version,body.storage")
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
+		}
+		target = pg
+
+		comments, err := api.GetInlineComments(target.ID)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
+		}
+
+		html, err = MergeComments(html, target.Body.Storage.Value, comments)
+		if err != nil {
+			return nil, fmt.Errorf("unable to merge inline comments: %w", err)
+		}
 	}
 
 	var finalVersionMessage string
@@ -530,4 +552,163 @@ func sha1Hash(input string) string {
 	h := sha1.New()
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func levenshteinDistance(s1, s2 string) int {
+	if len(s1) == 0 {
+		return len(s2)
+	}
+	if len(s2) == 0 {
+		return len(s1)
+	}
+
+	r1 := []rune(s1)
+	r2 := []rune(s2)
+
+	rows := len(r1) + 1
+	cols := len(r2) + 1
+
+	dist := make([][]int, rows)
+	for i := range dist {
+		dist[i] = make([]int, cols)
+	}
+
+	for i := 0; i < rows; i++ {
+		dist[i][0] = i
+	}
+	for j := 0; j < cols; j++ {
+		dist[0][j] = j
+	}
+
+	for i := 1; i < rows; i++ {
+		for j := 1; j < cols; j++ {
+			cost := 0
+			if r1[i-1] != r2[j-1] {
+				cost = 1
+			}
+			dist[i][j] = min(
+				dist[i-1][j]+1,      // deletion
+				dist[i][j-1]+1,      // insertion
+				dist[i-1][j-1]+cost, // substitution
+			)
+		}
+	}
+	return dist[len(r1)][len(r2)]
+}
+
+func min(vals ...int) int {
+	res := vals[0]
+	for _, v := range vals[1:] {
+		if v < res {
+			res = v
+		}
+	}
+	return res
+}
+
+type commentContext struct {
+	before string
+	after  string
+}
+
+func MergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
+	// 1. Extract context for each comment from oldBody
+	contexts := make(map[string]commentContext)
+	markerRegex := regexp.MustCompile(`<ac:inline-comment-marker ac:ref="([^"]+)">([^<]*)</ac:inline-comment-marker>`)
+	matches := markerRegex.FindAllStringSubmatchIndex(oldBody, -1)
+	for _, match := range matches {
+		ref := oldBody[match[2]:match[3]]
+		// context around the tag
+		before := oldBody[max(0, match[0]-100):match[0]]
+		after := oldBody[match[1]:min(len(oldBody), match[1]+100)]
+		contexts[ref] = commentContext{
+			before: before,
+			after:  after,
+		}
+	}
+
+	type replacement struct {
+		start int
+		end   int
+		ref   string
+	}
+	var replacements []replacement
+
+	for _, comment := range comments.Results {
+		if comment.Extensions.Location != "inline" {
+			continue
+		}
+
+		ref := comment.Extensions.InlineProperties.MarkerRef
+		selection := comment.Extensions.InlineProperties.OriginalSelection
+
+		ctx, hasCtx := contexts[ref]
+
+		// Find all occurrences of selection in newBody
+		// Selection in newBody might be HTML escaped
+		escapedSelection := html.EscapeString(selection)
+
+		var bestStart = -1
+		var bestEnd = -1
+		var minDistance = 1000000
+
+		// Find all occurrences
+		currentPos := 0
+		for {
+			index := strings.Index(newBody[currentPos:], escapedSelection)
+			if index == -1 {
+				break
+			}
+			start := currentPos + index
+			end := start + len(escapedSelection)
+
+			// Calculate distance
+			distance := 0
+			if hasCtx {
+				newBefore := newBody[max(0, start-100):start]
+				newAfter := newBody[end:min(len(newBody), end+100)]
+				distance = levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
+			} else {
+				// If no context, we just take the first match or any match.
+				// But we prefer matches with less distance to some default?
+				// Actually, without context, we can't do much better than the first match.
+			}
+
+			if distance < minDistance {
+				minDistance = distance
+				bestStart = start
+				bestEnd = end
+			}
+
+			currentPos = start + 1
+		}
+
+		if bestStart != -1 {
+			replacements = append(replacements, replacement{
+				start: bestStart,
+				end:   bestEnd,
+				ref:   ref,
+			})
+		}
+	}
+
+	// Sort replacements from back to front to avoid offset issues
+	slices.SortFunc(replacements, func(a, b replacement) int {
+		return b.start - a.start
+	})
+
+	// Apply replacements
+	for _, r := range replacements {
+		// Ensure we don't overlap with already replaced parts
+		// (though since we go back to front, it's mostly fine unless selections overlapped originally)
+		selection := newBody[r.start:r.end]
+		withComment := fmt.Sprintf(
+			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
+			r.ref,
+			selection,
+		)
+		newBody = newBody[:r.start] + withComment + newBody[r.end:]
+	}
+
+	return newBody, nil
 }
