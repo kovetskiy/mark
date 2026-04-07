@@ -614,6 +614,9 @@ type commentContext struct {
 }
 
 func MergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
+	if comments == nil {
+		return newBody, nil
+	}
 	// 1. Extract context for each comment from oldBody
 	contexts := make(map[string]commentContext)
 	matches := markerRegex.FindAllStringSubmatchIndex(oldBody, -1)
