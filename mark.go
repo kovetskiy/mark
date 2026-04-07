@@ -697,10 +697,16 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		return b.start - a.start
 	})
 
-	// Apply replacements
+	// Apply replacements back-to-front. Track the minimum start of any
+	// applied replacement so that overlapping candidates (whose end exceeds
+	// that boundary) are dropped rather than corrupting the body.
+	minAppliedStart := len(newBody)
 	for _, r := range replacements {
-		// Ensure we don't overlap with already replaced parts
-		// (though since we go back to front, it's mostly fine unless selections overlapped originally)
+		if r.end > minAppliedStart {
+			// Overlaps with an already-applied replacement; skip.
+			continue
+		}
+		minAppliedStart = r.start
 		selection := newBody[r.start:r.end]
 		withComment := fmt.Sprintf(
 			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
