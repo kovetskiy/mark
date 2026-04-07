@@ -37,7 +37,7 @@ func (macro *Macro) Apply(
 	content = macro.Regexp.ReplaceAllFunc(
 		content,
 		func(match []byte) []byte {
-			config := map[string]interface{}{}
+			config := map[string]any{}
 
 			err = yaml.Unmarshal([]byte(macro.Config), &config)
 			if err != nil {
@@ -63,21 +63,21 @@ func (macro *Macro) Apply(
 	return content, err
 }
 
-func (macro *Macro) configure(node interface{}, groups [][]byte) interface{} {
+func (macro *Macro) configure(node any, groups [][]byte) any {
 	switch node := node.(type) {
-	case map[interface{}]interface{}:
+	case map[any]any:
 		for key, value := range node {
 			node[key] = macro.configure(value, groups)
 		}
 
 		return node
-	case map[string]interface{}:
+	case map[string]any:
 		for key, value := range node {
 			node[key] = macro.configure(value, groups)
 		}
 
 		return node
-	case []interface{}:
+	case []any:
 		for key, value := range node {
 			node[key] = macro.configure(value, groups)
 		}
@@ -126,7 +126,7 @@ func ExtractMacros(
 			var macro Macro
 
 			if strings.HasPrefix(template, "#") {
-				cfg := map[string]interface{}{}
+				cfg := map[string]any{}
 
 				err = yaml.Unmarshal([]byte(config), &cfg)
 				if err != nil {
@@ -170,7 +170,7 @@ func ExtractMacros(
 			macro.Config = config
 
 			log.Trace().
-				Interface("vardump", map[string]interface{}{
+				Interface("vardump", map[string]any{
 					"expr":     expr,
 					"template": template,
 					"config":   macro.Config,

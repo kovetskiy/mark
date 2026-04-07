@@ -14,7 +14,7 @@ func NewErrorHandler(continueOnError bool) *FatalErrorHandler {
 	}
 }
 
-func (h *FatalErrorHandler) Handle(err error, format string, args ...interface{}) {
+func (h *FatalErrorHandler) Handle(err error, format string, args ...any) {
 
 	if err == nil {
 		if h.ContinueOnError {

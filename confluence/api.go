@@ -94,7 +94,7 @@ type tracer struct {
 	prefix string
 }
 
-func (tracer *tracer) Printf(format string, args ...interface{}) {
+func (tracer *tracer) Printf(format string, args ...any) {
 	log.Trace().Msgf(tracer.prefix+" "+format, args...)
 }
 
@@ -485,21 +485,21 @@ func (api *API) CreatePage(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"type":  pageType,
 		"title": title,
-		"space": map[string]interface{}{
+		"space": map[string]any{
 			"key": space,
 		},
-		"body": map[string]interface{}{
-			"storage": map[string]interface{}{
+		"body": map[string]any{
+			"storage": map[string]any{
 				"representation": "storage",
 				"value":          body,
 			},
 		},
-		"metadata": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"editor": map[string]interface{}{
+		"metadata": map[string]any{
+			"properties": map[string]any{
+				"editor": map[string]any{
 					"value": "v2",
 				},
 			},
@@ -507,7 +507,7 @@ func (api *API) CreatePage(
 	}
 
 	if parent != nil {
-		payload["ancestors"] = []map[string]interface{}{
+		payload["ancestors"] = []map[string]any{
 			{"id": parent.ID},
 		}
 	}
@@ -528,20 +528,20 @@ func (api *API) CreatePage(
 
 func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
 	nextPageVersion := page.Version.Number + 1
-	oldAncestors := []map[string]interface{}{}
+	oldAncestors := []map[string]any{}
 
 	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
 		// picking only the last one, which is required by confluence
-		oldAncestors = []map[string]interface{}{
+		oldAncestors = []map[string]any{
 			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
 		}
 	}
 
-	properties := map[string]interface{}{
+	properties := map[string]any{
 		// Fix to set full-width as has changed on Confluence APIs again.
 		// https://jira.atlassian.com/browse/CONFCLOUD-65447
 		//
-		"content-appearance-published": map[string]interface{}{
+		"content-appearance-published": map[string]any{
 			"value": appearance,
 		},
 		// content-appearance-draft should not be set as this is impacted by
@@ -555,37 +555,37 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		}
 		unicodeHex := fmt.Sprintf("%x", r)
 
-		properties["emoji-title-draft"] = map[string]interface{}{
+		properties["emoji-title-draft"] = map[string]any{
 			"value": unicodeHex,
 		}
-		properties["emoji-title-published"] = map[string]interface{}{
+		properties["emoji-title-published"] = map[string]any{
 			"value": unicodeHex,
 		}
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"id":    page.ID,
 		"type":  page.Type,
 		"title": page.Title,
-		"version": map[string]interface{}{
+		"version": map[string]any{
 			"number":    nextPageVersion,
 			"minorEdit": minorEdit,
 			"message":   versionMessage,
 		},
 		"ancestors": oldAncestors,
-		"body": map[string]interface{}{
-			"storage": map[string]interface{}{
+		"body": map[string]any{
+			"storage": map[string]any{
 				"value":          newContent,
 				"representation": "storage",
 			},
 		},
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"properties": properties,
 		},
 	}
 
 	request, err := api.rest.Res(
-		"content/"+page.ID, &map[string]interface{}{},
+		"content/"+page.ID, &map[string]any{},
 	).Put(payload)
 	if err != nil {
 		return err
@@ -600,10 +600,10 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 
 func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, error) {
 
-	labels := []map[string]interface{}{}
+	labels := []map[string]any{}
 	for _, label := range newLabels {
 		if label != "" {
-			item := map[string]interface{}{
+			item := map[string]any{
 				"prefix": "global",
 				"name":   label,
 			}
@@ -765,17 +765,17 @@ func (api *API) RestrictPageUpdatesCloud(
 		user = currentUser
 	}
 
-	var result interface{}
+	var result any
 
 	request, err := api.rest.
 		Res("content").
 		Id(page.ID).
 		Res("restriction", &result).
-		Post([]map[string]interface{}{
+		Post([]map[string]any{
 			{
 				"operation": "update",
-				"restrictions": map[string]interface{}{
-					"user": []map[string]interface{}{
+				"restrictions": map[string]any{
+					"user": []map[string]any{
 						{
 							"type":      "known",
 							"accountId": user.AccountID,
@@ -801,15 +801,15 @@ func (api *API) RestrictPageUpdatesServer(
 ) error {
 	var (
 		err    error
-		result interface{}
+		result any
 	)
 
 	request, err := api.json.Res(
 		"setContentPermissions", &result,
-	).Post([]interface{}{
+	).Post([]any{
 		page.ID,
 		"Edit",
-		[]map[string]interface{}{
+		[]map[string]any{
 			{
 				"userName": allowedUser,
 			},
