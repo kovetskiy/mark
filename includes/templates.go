@@ -75,7 +75,7 @@ func ProcessIncludes(
 	templates *template.Template,
 ) (*template.Template, []byte, bool, error) {
 	formatVardump := func(
-		data map[string]interface{},
+		data map[string]any,
 	) string {
 		var parts []string
 		for key, value := range data {
@@ -105,7 +105,7 @@ func ProcessIncludes(
 				left       = string(groups[3])
 				right      = string(groups[4])
 				config     = groups[5]
-				data       = map[string]interface{}{}
+				data       = map[string]any{}
 			)
 
 			if delimsNone == "none" {

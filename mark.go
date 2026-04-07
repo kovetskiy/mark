@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -97,7 +98,7 @@ func Run(config Config) error {
 		if config.CI {
 			log.Warn().Msg(msg)
 		} else {
-			return fmt.Errorf("%s", msg)
+			return errors.New(msg)
 		}
 	}
 

@@ -23,7 +23,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	output := zerolog.ConsoleWriter{
 		Out:        os.Stderr,
 		TimeFormat: "2006-01-02 15:04:05.000",
-		FormatLevel: func(i interface{}) string {
+		FormatLevel: func(i any) string {
 			var l string
 			if ll, ok := i.(string); ok {
 				switch ll {
@@ -49,16 +49,16 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 			}
 			return l
 		},
-		FormatFieldName: func(i interface{}) string {
+		FormatFieldName: func(i any) string {
 			return ""
 		},
-		FormatFieldValue: func(i interface{}) string {
+		FormatFieldValue: func(i any) string {
 			return fmt.Sprintf("%s", i)
 		},
-		FormatErrFieldName: func(i interface{}) string {
+		FormatErrFieldName: func(i any) string {
 			return ""
 		},
-		FormatErrFieldValue: func(i interface{}) string {
+		FormatErrFieldValue: func(i any) string {
 			return fmt.Sprintf("%s", i)
 		},
 	}

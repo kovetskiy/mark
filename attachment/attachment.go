@@ -13,7 +13,8 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"sort"
+	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -235,8 +236,8 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 	// attachments/a.jpg
 	// attachments/a.jpg.jpg
 	// so we replace longer and then shorter
-	sort.SliceStable(replaces, func(i, j int) bool {
-		return len(replaces[i]) > len(replaces[j])
+	slices.SortStableFunc(replaces, func(a, b string) int {
+		return cmp.Compare(len(b), len(a))
 	})
 
 	for _, replace := range replaces {
