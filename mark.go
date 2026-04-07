@@ -710,7 +710,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		selection := newBody[r.start:r.end]
 		withComment := fmt.Sprintf(
 			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
-			r.ref,
+			html.EscapeString(r.ref),
 			selection,
 		)
 		newBody = newBody[:r.start] + withComment + newBody[r.end:]
