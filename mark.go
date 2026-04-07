@@ -668,10 +668,6 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 				newBefore := newBody[max(0, start-100):start]
 				newAfter := newBody[end:min(len(newBody), end+100)]
 				distance = levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
-			} else {
-				// If no context, we just take the first match or any match.
-				// But we prefer matches with less distance to some default?
-				// Actually, without context, we can't do much better than the first match.
 			}
 
 			if distance < minDistance {
