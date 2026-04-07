@@ -29,6 +29,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var markerRegex = regexp.MustCompile(`<ac:inline-comment-marker ac:ref="([^"]+)">([^<]*)</ac:inline-comment-marker>`)
+
 // Config holds all configuration options for running Mark.
 type Config struct {
 	// Connection settings
@@ -614,7 +616,6 @@ type commentContext struct {
 func MergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
 	// 1. Extract context for each comment from oldBody
 	contexts := make(map[string]commentContext)
-	markerRegex := regexp.MustCompile(`<ac:inline-comment-marker ac:ref="([^"]+)">([^<]*)</ac:inline-comment-marker>`)
 	matches := markerRegex.FindAllStringSubmatchIndex(oldBody, -1)
 	for _, match := range matches {
 		ref := oldBody[match[2]:match[3]]
