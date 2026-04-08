@@ -140,3 +140,17 @@ func TestMergeComments_EmptySelection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, body, result)
 }
+
+// TestMergeComments_DuplicateMarkerRef verifies that multiple comment results
+// sharing the same MarkerRef (e.g. threaded replies) produce exactly one
+// <ac:inline-comment-marker> insertion rather than nested duplicates.
+func TestMergeComments_DuplicateMarkerRef(t *testing.T) {
+	body := "<p>Hello world</p>"
+	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-dup">world</ac:inline-comment-marker></p>`
+	// Two results with identical ref — simulates threaded replies.
+	comments := makeComments("world", "uuid-dup", "world", "uuid-dup")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-dup">world</ac:inline-comment-marker></p>`, result)
+}

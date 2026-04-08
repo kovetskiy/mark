@@ -93,6 +93,10 @@ type LabelInfo struct {
 }
 
 type InlineComments struct {
+	Links struct {
+		Context string `json:"context"`
+		Next    string `json:"next"`
+	} `json:"_links"`
 	Results []struct {
 		Extensions struct {
 			Location         string `json:"location"`
@@ -501,19 +505,41 @@ func (api *API) GetPageByID(pageID string, expand string) (*PageInfo, error) {
 }
 
 func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
-	result := &InlineComments{}
-	request, err := api.rest.Res(
-		"content/"+pageID+"/child/comment", result,
-	).Get(map[string]string{"expand": "extensions.inlineProperties"})
-	if err != nil {
-		return nil, err
+	const pageSize = 100
+	all := &InlineComments{}
+	start := 0
+
+	for {
+		result := &InlineComments{}
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/comment", result,
+		).Get(map[string]string{
+			"expand": "extensions.inlineProperties",
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		if all.Links.Context == "" {
+			all.Links = result.Links
+		}
+
+		all.Results = append(all.Results, result.Results...)
+
+		if len(result.Results) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Results)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
-
-	return result, nil
+	return all, nil
 }
 
 func (api *API) CreatePage(
