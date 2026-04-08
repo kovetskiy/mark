@@ -349,3 +349,21 @@ func TestMergeComments_DuplicateMarkerRefDropped(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, body, result) // body unchanged, single warning logged
 }
+
+// TestMergeComments_CDATASelection verifies that a selection inside a
+// CDATA-backed macro body (e.g. ac:code) is matched even though < and > are
+// stored as raw characters rather than HTML entities. The raw form is tried as
+// a fallback when the escaped form is not found.
+func TestMergeComments_CDATASelection(t *testing.T) {
+	// New body contains a code macro with CDATA — raw < and > in the content.
+	body := `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <nil> }]]></ac:plain-text-body></ac:structured-macro>`
+	// Old body has the marker around the raw selection inside CDATA.
+	oldBody := `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <ac:inline-comment-marker ac:ref="uuid-cdata"><nil></ac:inline-comment-marker> }]]></ac:plain-text-body></ac:structured-macro>`
+	// The API returns the raw (unescaped) selection.
+	comments := makeComments("<nil>", "uuid-cdata")
+
+	result, err := mergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	// The raw selection "<nil>" should be found and wrapped with a marker.
+	assert.Equal(t, `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <ac:inline-comment-marker ac:ref="uuid-cdata"><nil></ac:inline-comment-marker> }]]></ac:plain-text-body></ac:structured-macro>`, result)
+}

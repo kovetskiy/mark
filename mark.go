@@ -669,6 +669,11 @@ type commentContext struct {
 // pages where a selection is short or very common.
 const maxCandidates = 100
 
+// contextWindowBytes is the number of bytes of surrounding text captured as
+// context around each inline-comment marker. It is used both when extracting
+// context from oldBody and when scoring candidates in newBody.
+const contextWindowBytes = 100
+
 func mergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
 	if comments == nil {
 		return newBody, nil
@@ -679,8 +684,8 @@ func mergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 	for _, match := range matches {
 		ref := oldBody[match[2]:match[3]]
 		// context around the tag
-		before := contextBefore(oldBody, match[0], 100)
-		after := contextAfter(oldBody, match[1], 100)
+		before := contextBefore(oldBody, match[0], contextWindowBytes)
+		after := contextAfter(oldBody, match[1], contextWindowBytes)
 		contexts[ref] = commentContext{
 			before: before,
 			after:  after,
@@ -726,80 +731,95 @@ func mergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 
 		ctx, hasCtx := contexts[ref]
 
-		// Find all occurrences of selection in newBody
-		// Selection in newBody might be HTML escaped
+		// Build the list of forms to search for in newBody. The escaped form
+		// is tried first (normal XML text nodes). The raw form is appended as a
+		// fallback for text inside CDATA-backed macro bodies (e.g. ac:code),
+		// where < and > are stored unescaped inside <![CDATA[...]]>.
 		escapedSelection := htmlEscapeText(selection)
+		searchForms := []string{escapedSelection}
+		if selection != escapedSelection {
+			searchForms = append(searchForms, selection)
+		}
 
 		var bestStart = -1
 		var bestEnd = -1
 		var minDistance = 1000000
 
-		// Find all occurrences, capped at maxCandidates to bound CPU cost.
-		currentPos := 0
+		// Iterate over search forms; stop as soon as we have a definitive best.
 		candidates := 0
-		for {
-			index := strings.Index(newBody[currentPos:], escapedSelection)
-			if index == -1 {
+		stopSearch := false
+		for _, form := range searchForms {
+			if stopSearch {
 				break
 			}
-			start := currentPos + index
-			end := start + len(escapedSelection)
+			currentPos := 0
+			for {
+				index := strings.Index(newBody[currentPos:], form)
+				if index == -1 {
+					break
+				}
+				start := currentPos + index
+				end := start + len(form)
 
-			// Skip candidates that start or end in the middle of a multi-byte
-			// UTF-8 rune; such a match would produce invalid UTF-8 output.
-			if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
+				// Skip candidates that start or end in the middle of a multi-byte
+				// UTF-8 rune; such a match would produce invalid UTF-8 output.
+				if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
+					currentPos = start + 1
+					continue
+				}
+
+				candidates++
+				if candidates > maxCandidates {
+					stopSearch = true
+					break
+				}
+
+				if !hasCtx {
+					// No context available; use the first occurrence.
+					bestStart = start
+					bestEnd = end
+					stopSearch = true
+					break
+				}
+
+				newBefore := contextBefore(newBody, start, contextWindowBytes)
+				newAfter := contextAfter(newBody, end, contextWindowBytes)
+
+				// Fast path: exact context match is the best possible result.
+				if newBefore == ctx.before && newAfter == ctx.after {
+					bestStart = start
+					bestEnd = end
+					stopSearch = true
+					break
+				}
+
+				// Lower-bound pruning: Levenshtein distance is at least the
+				// absolute difference in rune counts. Use rune counts (not byte
+				// lengths) to match the unit levenshteinDistance operates on,
+				// avoiding false skips for multibyte UTF-8 content.
+				lbBefore := utf8.RuneCountInString(ctx.before) - utf8.RuneCountInString(newBefore)
+				if lbBefore < 0 {
+					lbBefore = -lbBefore
+				}
+				lbAfter := utf8.RuneCountInString(ctx.after) - utf8.RuneCountInString(newAfter)
+				if lbAfter < 0 {
+					lbAfter = -lbAfter
+				}
+				if lbBefore+lbAfter >= minDistance {
+					currentPos = start + 1
+					continue
+				}
+
+				distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
+
+				if distance < minDistance {
+					minDistance = distance
+					bestStart = start
+					bestEnd = end
+				}
+
 				currentPos = start + 1
-				continue
 			}
-
-			candidates++
-			if candidates > maxCandidates {
-				break
-			}
-
-			if !hasCtx {
-				// No context available; use the first occurrence.
-				bestStart = start
-				bestEnd = end
-				break
-			}
-
-			newBefore := contextBefore(newBody, start, 100)
-			newAfter := contextAfter(newBody, end, 100)
-
-			// Fast path: exact context match is the best possible result.
-			if newBefore == ctx.before && newAfter == ctx.after {
-				bestStart = start
-				bestEnd = end
-				break
-			}
-
-			// Lower-bound pruning: Levenshtein distance is at least the
-			// absolute difference in rune counts. Use rune counts (not byte
-			// lengths) to match the unit levenshteinDistance operates on,
-			// avoiding false skips for multibyte UTF-8 content.
-			lbBefore := utf8.RuneCountInString(ctx.before) - utf8.RuneCountInString(newBefore)
-			if lbBefore < 0 {
-				lbBefore = -lbBefore
-			}
-			lbAfter := utf8.RuneCountInString(ctx.after) - utf8.RuneCountInString(newAfter)
-			if lbAfter < 0 {
-				lbAfter = -lbAfter
-			}
-			if lbBefore+lbAfter >= minDistance {
-				currentPos = start + 1
-				continue
-			}
-
-			distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
-
-			if distance < minDistance {
-				minDistance = distance
-				bestStart = start
-				bestEnd = end
-			}
-
-			currentPos = start + 1
 		}
 
 		if bestStart != -1 {
