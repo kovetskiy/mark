@@ -621,35 +621,36 @@ func levenshteinDistance(s1, s2 string) int {
 		return len(r1)
 	}
 
-	rows := len(r1) + 1
-	cols := len(r2) + 1
-
-	dist := make([][]int, rows)
-	for i := range dist {
-		dist[i] = make([]int, cols)
+	// Use two rolling rows instead of a full matrix to reduce allocations
+	// from O(m×n) to O(n). Swap r1/r2 so r2 is the shorter string, keeping
+	// the row width (len(r2)+1) as small as possible.
+	if len(r1) < len(r2) {
+		r1, r2 = r2, r1
 	}
 
-	for i := 0; i < rows; i++ {
-		dist[i][0] = i
-	}
-	for j := 0; j < cols; j++ {
-		dist[0][j] = j
+	prev := make([]int, len(r2)+1)
+	curr := make([]int, len(r2)+1)
+
+	for j := range prev {
+		prev[j] = j
 	}
 
-	for i := 1; i < rows; i++ {
-		for j := 1; j < cols; j++ {
+	for i := 1; i <= len(r1); i++ {
+		curr[0] = i
+		for j := 1; j <= len(r2); j++ {
 			cost := 0
 			if r1[i-1] != r2[j-1] {
 				cost = 1
 			}
-			dist[i][j] = min(
-				dist[i-1][j]+1,      // deletion
-				dist[i][j-1]+1,      // insertion
-				dist[i-1][j-1]+cost, // substitution
+			curr[j] = min(
+				prev[j]+1,      // deletion
+				curr[j-1]+1,    // insertion
+				prev[j-1]+cost, // substitution
 			)
 		}
+		prev, curr = curr, prev
 	}
-	return dist[len(r1)][len(r2)]
+	return prev[len(r2)]
 }
 
 type commentContext struct {
