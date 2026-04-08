@@ -158,7 +158,10 @@ func TestMergeComments_NilComments(t *testing.T) {
 }
 
 // TestMergeComments_HTMLEntities verifies that selections containing HTML
-// entities beyond &amp; (&lt;, &gt;, &#39;) are matched correctly.
+// entities (&lt;, &gt;) are matched correctly. The API returns raw (unescaped)
+// text for OriginalSelection; htmlEscapeText encodes &, < and > to their
+// entity forms before searching. Note: apostrophes encoded as &#39; in the
+// new body are a known limitation — the search uses literal ' for apostrophes.
 func TestMergeComments_HTMLEntities(t *testing.T) {
 	body := `<p>Hello &lt;world&gt; it&#39;s me</p>`
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`
@@ -169,6 +172,22 @@ func TestMergeComments_HTMLEntities(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`, result)
 }
+
+// TestMergeComments_ApostropheSelection verifies that a selection containing a
+// literal apostrophe is found when the new body also contains a literal
+// apostrophe (as mark's renderer typically emits). This exercises the
+// htmlEscapeText path which intentionally does not encode ' or ".
+func TestMergeComments_ApostropheSelection(t *testing.T) {
+	body := `<p>Hello it's a test</p>`
+	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos">it's</ac:inline-comment-marker> a test</p>`
+	// The API returns the raw (unescaped) selection text with a literal apostrophe.
+	comments := makeComments("it's", "uuid-apos")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos">it's</ac:inline-comment-marker> a test</p>`, result)
+}
+
 
 // TestMergeComments_NestedTags verifies that a marker whose stored content
 // contains nested inline tags (e.g. <strong>) is still recognised by
