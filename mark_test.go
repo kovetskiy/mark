@@ -112,3 +112,19 @@ func TestMergeComments_HTMLEntities(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`, result)
 }
+
+// TestMergeComments_NestedTags verifies that a marker whose stored content
+// contains nested inline tags (e.g. <strong>) is still recognised by
+// markerRegex and the comment is correctly relocated into the new body.
+func TestMergeComments_NestedTags(t *testing.T) {
+	// The new body contains plain bold text (no marker yet).
+	body := "<p>Hello <strong>world</strong></p>"
+	// The old body already has the marker wrapping the bold tag.
+	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-nested"><strong>world</strong></ac:inline-comment-marker></p>`
+	// The API returns the raw selected text without markup.
+	comments := makeComments("world", "uuid-nested")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>Hello <strong><ac:inline-comment-marker ac:ref="uuid-nested">world</ac:inline-comment-marker></strong></p>`, result)
+}

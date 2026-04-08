@@ -29,7 +29,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var markerRegex = regexp.MustCompile(`<ac:inline-comment-marker ac:ref="([^"]+)">([^<]*)</ac:inline-comment-marker>`)
+var markerRegex = regexp.MustCompile(`(?s)<ac:inline-comment-marker ac:ref="([^"]+)">(.*?)</ac:inline-comment-marker>`)
 
 // Config holds all configuration options for running Mark.
 type Config struct {
