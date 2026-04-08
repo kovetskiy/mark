@@ -784,9 +784,20 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		}
 	}
 
-	// Sort replacements from back to front to avoid offset issues
-	slices.SortFunc(replacements, func(a, b replacement) int {
-		return b.start - a.start
+	// Sort replacements from back to front to avoid offset issues.
+	// Use a stable sort with ref as a tie-breaker so the ordering is
+	// deterministic when two markers resolve to the same start offset.
+	slices.SortStableFunc(replacements, func(a, b replacement) int {
+		if a.start != b.start {
+			return b.start - a.start
+		}
+		if a.ref < b.ref {
+			return -1
+		}
+		if a.ref > b.ref {
+			return 1
+		}
+		return 0
 	})
 
 	// Apply replacements back-to-front. Track the minimum start of any
