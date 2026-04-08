@@ -160,8 +160,7 @@ func TestMergeComments_NilComments(t *testing.T) {
 // TestMergeComments_HTMLEntities verifies that selections containing HTML
 // entities (&lt;, &gt;) are matched correctly. The API returns raw (unescaped)
 // text for OriginalSelection; htmlEscapeText encodes &, < and > to their
-// entity forms before searching. Note: apostrophes encoded as &#39; in the
-// new body are a known limitation — the search uses literal ' for apostrophes.
+// entity forms before searching.
 func TestMergeComments_HTMLEntities(t *testing.T) {
 	body := `<p>Hello &lt;world&gt; it&#39;s me</p>`
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`
@@ -171,6 +170,26 @@ func TestMergeComments_HTMLEntities(t *testing.T) {
 	result, err := mergeComments(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`, result)
+}
+
+// TestMergeComments_ApostropheEncoded verifies the known limitation: when a
+// selection includes an apostrophe that Confluence stores as the numeric
+// entity &#39; in the page body, mergeComments cannot locate the selection
+// (htmlEscapeText does not encode ' to &#39;) and the comment is dropped with
+// a warning rather than panicking or producing invalid output.
+func TestMergeComments_ApostropheEncoded(t *testing.T) {
+	// New body uses &#39; entity (as Confluence sometimes stores apostrophes).
+	body := `<p>Hello &lt;world&gt; it&#39;s me</p>`
+	// Old body has the comment marker around a selection that includes an apostrophe.
+	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos-enc">&lt;world&gt; it&#39;s</ac:inline-comment-marker> me</p>`
+	// The API returns the raw unescaped selection including a literal apostrophe.
+	comments := makeComments("<world> it's", "uuid-apos-enc")
+
+	result, err := mergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	// The comment is dropped (body unchanged) because htmlEscapeText("it's")
+	// produces "it's", which doesn't match "it&#39;s" in the new body.
+	assert.Equal(t, body, result)
 }
 
 // TestMergeComments_ApostropheSelection verifies that a selection containing a
