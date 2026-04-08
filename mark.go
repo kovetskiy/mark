@@ -733,6 +733,30 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 
 			newBefore := contextBefore(newBody, start, 100)
 			newAfter := contextAfter(newBody, end, 100)
+
+			// Fast path: exact context match is the best possible result.
+			if newBefore == ctx.before && newAfter == ctx.after {
+				bestStart = start
+				bestEnd = end
+				break
+			}
+
+			// Lower-bound pruning: Levenshtein distance is at least the
+			// absolute difference in string lengths. Skip the full
+			// computation if it can't beat the current best.
+			lbBefore := len(ctx.before) - len(newBefore)
+			if lbBefore < 0 {
+				lbBefore = -lbBefore
+			}
+			lbAfter := len(ctx.after) - len(newAfter)
+			if lbAfter < 0 {
+				lbAfter = -lbAfter
+			}
+			if lbBefore+lbAfter >= minDistance {
+				currentPos = start + 1
+				continue
+			}
+
 			distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
 
 			if distance < minDistance {

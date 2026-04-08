@@ -13,18 +13,15 @@ func makeComments(pairs ...string) *confluence.InlineComments {
 	c := &confluence.InlineComments{}
 	for i := 0; i+1 < len(pairs); i += 2 {
 		selection, ref := pairs[i], pairs[i+1]
-		c.Results = append(c.Results, struct {
-			Extensions struct {
-				Location         string `json:"location"`
-				InlineProperties struct {
-					OriginalSelection string `json:"originalSelection"`
-					MarkerRef         string `json:"markerRef"`
-				} `json:"inlineProperties"`
-			} `json:"extensions"`
-		}{})
-		c.Results[len(c.Results)-1].Extensions.Location = "inline"
-		c.Results[len(c.Results)-1].Extensions.InlineProperties.OriginalSelection = selection
-		c.Results[len(c.Results)-1].Extensions.InlineProperties.MarkerRef = ref
+		c.Results = append(c.Results, confluence.InlineCommentResult{
+			Extensions: confluence.InlineCommentExtensions{
+				Location: "inline",
+				InlineProperties: confluence.InlineCommentProperties{
+					OriginalSelection: selection,
+					MarkerRef:         ref,
+				},
+			},
+		})
 	}
 	return c
 }

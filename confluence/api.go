@@ -92,20 +92,26 @@ type LabelInfo struct {
 	Size   int     `json:"number"`
 }
 
+type InlineCommentProperties struct {
+	OriginalSelection string `json:"originalSelection"`
+	MarkerRef         string `json:"markerRef"`
+}
+
+type InlineCommentExtensions struct {
+	Location         string                  `json:"location"`
+	InlineProperties InlineCommentProperties `json:"inlineProperties"`
+}
+
+type InlineCommentResult struct {
+	Extensions InlineCommentExtensions `json:"extensions"`
+}
+
 type InlineComments struct {
 	Links struct {
 		Context string `json:"context"`
 		Next    string `json:"next"`
 	} `json:"_links"`
-	Results []struct {
-		Extensions struct {
-			Location         string `json:"location"`
-			InlineProperties struct {
-				OriginalSelection string `json:"originalSelection"`
-				MarkerRef         string `json:"markerRef"`
-			} `json:"inlineProperties"`
-		} `json:"extensions"`
-	} `json:"results"`
+	Results []InlineCommentResult `json:"results"`
 }
 
 type form struct {
