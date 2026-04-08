@@ -632,14 +632,19 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 	}
 
 	type replacement struct {
-		start int
-		end   int
-		ref   string
+		start     int
+		end       int
+		ref       string
+		selection string
 	}
 	var replacements []replacement
 
 	for _, comment := range comments.Results {
 		if comment.Extensions.Location != "inline" {
+			log.Warn().
+				Str("location", comment.Extensions.Location).
+				Str("ref", comment.Extensions.InlineProperties.MarkerRef).
+				Msg("inline comment skipped: location is not \"inline\"; comment will be lost")
 			continue
 		}
 
@@ -688,10 +693,16 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 
 		if bestStart != -1 {
 			replacements = append(replacements, replacement{
-				start: bestStart,
-				end:   bestEnd,
-				ref:   ref,
+				start:     bestStart,
+				end:       bestEnd,
+				ref:       ref,
+				selection: selection,
 			})
+		} else {
+			log.Warn().
+				Str("ref", ref).
+				Str("selection", selection).
+				Msg("inline comment dropped: selected text not found in new body; comment will be lost")
 		}
 	}
 
@@ -711,6 +722,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			// Drop it and warn so the user knows the comment was skipped.
 			log.Warn().
 				Str("ref", r.ref).
+				Str("selection", r.selection).
 				Int("start", r.start).
 				Int("end", r.end).
 				Int("conflicting_start", minAppliedStart).
