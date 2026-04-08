@@ -437,7 +437,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			return nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
 		}
 
-		html, err = MergeComments(html, target.Body.Storage.Value, comments)
+		html, err = mergeComments(html, target.Body.Storage.Value, comments)
 		if err != nil {
 			return nil, fmt.Errorf("unable to merge inline comments: %w", err)
 		}
@@ -658,7 +658,18 @@ type commentContext struct {
 	after  string
 }
 
-func MergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
+// mergeComments re-embeds inline comment markers from the Confluence API into
+// newBody (the updated storage HTML about to be uploaded). It extracts context
+// from each existing marker in oldBody and uses Levenshtein distance to
+// relocate each marker to the best-matching position in newBody, so comment
+// threads survive page edits even when the surrounding text has shifted.
+//
+// At most maxCandidates occurrences of each selection are evaluated with
+// Levenshtein distance; further occurrences are ignored to bound CPU cost on
+// pages where a selection is short or very common.
+const maxCandidates = 100
+
+func mergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
 	if comments == nil {
 		return newBody, nil
 	}
@@ -723,8 +734,9 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		var bestEnd = -1
 		var minDistance = 1000000
 
-		// Find all occurrences
+		// Find all occurrences, capped at maxCandidates to bound CPU cost.
 		currentPos := 0
+		candidates := 0
 		for {
 			index := strings.Index(newBody[currentPos:], escapedSelection)
 			if index == -1 {
@@ -738,6 +750,11 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
 				currentPos = start + 1
 				continue
+			}
+
+			candidates++
+			if candidates > maxCandidates {
+				break
 			}
 
 			if !hasCtx {
