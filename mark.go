@@ -86,6 +86,8 @@ type Config struct {
 	DropH1          bool
 	StripLinebreaks bool
 	MermaidScale    float64
+	MermaidOutput   string
+	MermaidBundle   bool
 	D2Scale         float64
 	MathFormat      string
 	MathScale       float64
@@ -694,6 +696,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 		cfg := types.MarkConfig{
 			MermaidScale:  config.MermaidScale,
+			MermaidOutput: config.MermaidOutput,
+			MermaidBundle: config.MermaidBundle,
 			D2Scale:       config.D2Scale,
 			MathFormat:    config.MathFormat,
 			MathScale:     config.MathScale,
@@ -914,6 +918,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	cfg := types.MarkConfig{
 		MermaidScale:  config.MermaidScale,
+		MermaidOutput: config.MermaidOutput,
+		MermaidBundle: config.MermaidBundle,
 		D2Scale:       config.D2Scale,
 		MathFormat:    config.MathFormat,
 		MathScale:     config.MathScale,

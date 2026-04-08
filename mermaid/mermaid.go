@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,26 +89,27 @@ func discardEngine(engine *mermaid.RenderEngine) {
 	engine.Cancel()
 }
 
-// renderPNG renders one diagram, deciding from mermaid.go's sentinel errors
-// whether the engine survived the failure and whether another attempt is worth
-// making.
-func renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel, error) {
+// render runs one diagram through the shared engine, deciding from mermaid.go's
+// sentinel errors whether the engine survived the failure and whether another
+// attempt is worth making. What to render with it is left to the caller, since
+// a PNG and an SVG differ in nothing else.
+func render(title string, once func(ctx context.Context, engine *mermaid.RenderEngine) error) error {
 	for attempt := 1; ; attempt++ {
 		engine, err := getMermaidEngine()
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 
 		// The context bounds the wait for a turn on the engine's page as well as
 		// the render, which the engine's own timeout does not: that clock only
 		// starts once the render begins.
 		ctx, cancel := context.WithTimeout(context.Background(), renderTimeout)
-		pngBytes, boxModel, err := engine.RenderAsScaledPngContext(ctx, diagram, scale)
+		err = once(ctx, engine)
 		cancel()
 
 		switch {
 		case err == nil:
-			return pngBytes, boxModel, nil
+			return nil
 
 		case errors.Is(err, mermaid.ErrTargetCrashed), errors.Is(err, mermaid.ErrEngineClosed):
 			// Every later render on this engine fails the same way, so it is
@@ -117,30 +120,66 @@ func renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel,
 				log.Warn().Err(err).Msgf("Mermaid render engine died on %q, retrying with a new browser", title)
 				continue
 			}
-			return nil, nil, err
+			return err
 
 		case errors.Is(err, mermaid.ErrRenderException):
 			// The diagram is what failed, so the engine is still good and a
 			// retry would fail identically. mermaid.go keeps chrome's
 			// *runtime.ExceptionDetails in the chain, so the message already
 			// names the mermaid parse error.
-			return nil, nil, fmt.Errorf("invalid mermaid diagram: %w", err)
+			return fmt.Errorf("invalid mermaid diagram: %w", err)
 
 		case errors.Is(err, context.DeadlineExceeded):
 			// Cancelling a render only aborts its in-flight commands, so the
 			// engine stays usable and is kept for the next diagram. Retrying is
 			// not worth another renderTimeout on a diagram that has already
 			// shown it does not settle.
-			return nil, nil, fmt.Errorf("mermaid rendering timed out after %v: %w", renderTimeout, err)
+			return fmt.Errorf("mermaid rendering timed out after %v: %w", renderTimeout, err)
 
 		default:
 			// An unclassified failure says nothing about whether the browser
 			// survived it, so it is discarded: starting the next diagram over is
 			// cheap next to producing a page with a diagram missing from it.
 			discardEngine(engine)
-			return nil, nil, err
+			return err
 		}
 	}
+}
+
+func renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel, error) {
+	var (
+		pngBytes []byte
+		boxModel *mermaid.BoxModel
+	)
+
+	err := render(title, func(ctx context.Context, engine *mermaid.RenderEngine) error {
+		var err error
+		pngBytes, boxModel, err = engine.RenderAsScaledPngContext(ctx, diagram, scale)
+
+		return err
+	})
+
+	return pngBytes, boxModel, err
+}
+
+// renderSVG renders one diagram as the SVG the browser drew, rather than a
+// picture of it. bundle keeps the diagram's own source in the SVG's <desc>
+// element, which is what makes the drawing editable again from the attachment.
+func renderSVG(title, diagram string, bundle bool) (string, error) {
+	var svg string
+
+	err := render(title, func(ctx context.Context, engine *mermaid.RenderEngine) error {
+		var err error
+		if bundle {
+			svg, err = engine.RenderContext(ctx, diagram, mermaid.WithBundle())
+		} else {
+			svg, err = engine.RenderContext(ctx, diagram)
+		}
+
+		return err
+	})
+
+	return svg, err
 }
 
 func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
@@ -179,6 +218,150 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 		Width:     strconv.FormatInt(boxModel.Width, 10),
 		Height:    strconv.FormatInt(boxModel.Height, 10),
 	}, nil
+}
+
+// ProcessMermaidSVG publishes a diagram as the SVG it was drawn as: one file at
+// every zoom, and text that stays text. MermaidScale has nothing to multiply
+// here and does not apply.
+func ProcessMermaidSVG(title string, mermaidDiagram []byte) (attachment.Attachment, error) {
+	return processMermaidSVG(title, mermaidDiagram, false)
+}
+
+// ProcessMermaidWithBundle does the same and keeps the diagram's source inside
+// the SVG, in its <desc> element, so that what was published can be opened and
+// edited again without the document it came from.
+func ProcessMermaidWithBundle(title string, mermaidDiagram []byte) (attachment.Attachment, error) {
+	return processMermaidSVG(title, mermaidDiagram, true)
+}
+
+func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool) (attachment.Attachment, error) {
+	log.Debug().Msgf("Rendering SVG (bundle=%v): %q", bundle, title)
+
+	svg, err := renderSVG(title, string(mermaidDiagram), bundle)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
+	// The flag goes into the checksum for the same reason the scale does on the
+	// PNG side: the same diagram published with and without its source is two
+	// different attachments, and a checksum taken over the diagram alone would
+	// call the second one unchanged and leave the first in place.
+	checksumInput := make([]byte, 0, len(mermaidDiagram)+1)
+	checksumInput = append(checksumInput, mermaidDiagram...)
+	checksumInput = append(checksumInput, boolByte(bundle))
+
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(checksumInput))
+	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
+
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
+	if title == "" {
+		title = checkSum
+	}
+
+	width, height := extractSVGDimensions(svg)
+
+	return attachment.Attachment{
+		ID:        "",
+		Name:      title,
+		Filename:  title + ".svg",
+		FileBytes: []byte(svg),
+		Checksum:  checkSum,
+		Replace:   title,
+		Width:     width,
+		Height:    height,
+	}, nil
+}
+
+func boolByte(b bool) byte {
+	if b {
+		return 1
+	}
+
+	return 0
+}
+
+// extractSVGDimensions reports the size of a rendered diagram in pixels, which
+// is what decides its alignment and display width on the page.
+//
+// The root element's width and height are preferred, and the viewBox is the
+// fallback for either of them -- mermaid draws a diagram wide enough to need
+// one as width="100%", which is not a number of pixels and would otherwise be
+// read as 100 of them, laying out a wide diagram as a narrow one.
+func extractSVGDimensions(svg string) (width, height string) {
+	var attrWidth, attrHeight, attrViewBox string
+
+	decoder := xml.NewDecoder(strings.NewReader(svg))
+
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			break
+		}
+
+		element, ok := token.(xml.StartElement)
+		if !ok || element.Name.Local != "svg" {
+			continue
+		}
+
+		for _, attr := range element.Attr {
+			switch attr.Name.Local {
+			case "width":
+				attrWidth = attr.Value
+			case "height":
+				attrHeight = attr.Value
+			case "viewBox":
+				attrViewBox = attr.Value
+			}
+		}
+
+		break
+	}
+
+	width = absoluteLength(attrWidth)
+	height = absoluteLength(attrHeight)
+
+	// "minX minY width height", separated by whitespace or commas.
+	if (width == "" || height == "") && attrViewBox != "" {
+		fields := strings.Fields(strings.ReplaceAll(attrViewBox, ",", " "))
+		if len(fields) == 4 {
+			if width == "" {
+				width = absoluteLength(fields[2])
+			}
+
+			if height == "" {
+				height = absoluteLength(fields[3])
+			}
+		}
+	}
+
+	return width, height
+}
+
+// absoluteLength reads a length that is a number of pixels -- bare, or written
+// with px -- and returns it rounded, or "" for anything else. A relative unit
+// (%, em, rem, vw, vh) is not a size on its own, so it is reported as unknown
+// rather than as the number in front of it.
+func absoluteLength(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	if suffix := strings.TrimSuffix(value, "px"); suffix != value {
+		value = strings.TrimSpace(suffix)
+	} else if last := value[len(value)-1]; last < '0' || last > '9' {
+		return ""
+	}
+
+	pixels, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(pixels) || math.IsInf(pixels, 0) {
+		return ""
+	}
+
+	return strconv.Itoa(int(math.Round(pixels)))
 }
 
 func Cleanup() {

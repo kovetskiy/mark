@@ -1251,6 +1251,17 @@ graph TD;
 A-->B;
 ```
 
+A diagram is published as a PNG by default, scaled by `--mermaid-scale`.
+`--mermaid-output=svg` publishes the drawing itself instead: one file that is
+sharp at any zoom and whose text stays text, on an instance that displays an SVG
+attachment. A scale has nothing to multiply there, so setting one alongside it
+is refused rather than quietly ignored.
+
+`--mermaid-bundle` keeps the diagram's own source inside that SVG, in its
+`<desc>` element, so what was published can be opened and edited again from the
+attachment without the document it came from. It needs `--mermaid-output=svg`:
+a PNG has nowhere to keep it.
+
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
@@ -1599,7 +1610,9 @@ GLOBAL OPTIONS:
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string               The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
    --content-appearance string              default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default. [$MARK_CONTENT_APPEARANCE]
-   --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
+   --mermaid-scale float                    defines the scaling factor for mermaid PNG renderings; not accepted when mermaid-output is svg. (default: 1) [$MARK_MERMAID_SCALE]
+   --mermaid-output string                  image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MERMAID_OUTPUT]
+   --mermaid-bundle                         keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg. [$MARK_MERMAID_BUNDLE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --output-format string                   how to report what the run did: "url" prints the address of each published page (the default), "json" prints one object describing the whole run, "github" prints GitHub Actions workflow commands so that failures appear against the file that caused them. [$MARK_OUTPUT_FORMAT]

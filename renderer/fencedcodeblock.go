@@ -269,16 +269,31 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
-		attachment, err := mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
+		var (
+			att attachment.Attachment
+			err error
+		)
+
+		switch {
+		case r.MarkConfig.MermaidOutput == "svg" && r.MarkConfig.MermaidBundle:
+			att, err = mermaid.ProcessMermaidWithBundle(title, lval)
+
+		case r.MarkConfig.MermaidOutput == "svg":
+			att, err = mermaid.ProcessMermaidSVG(title, lval)
+
+		default:
+			att, err = mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
+		}
+
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: mermaid rendering failed: %w", line, col, err)
 		}
-		r.Attachments.Attach(attachment)
+		r.Attachments.Attach(att)
 
-		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
-		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
-		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, att.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, att.Width)
+		displayWidth := calculateDisplayWidth(att.Width, effectiveLayout)
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
@@ -297,8 +312,8 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			}{
 				effectiveAlign,
 				effectiveLayout,
-				attachment.Width,
-				attachment.Height,
+				att.Width,
+				att.Height,
 				displayWidth,
 				"",
 				// The display title, not the attachment name: when the author gave
@@ -308,7 +323,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				// diagram. The attachment keeps its checksum-derived name.
 				title,
 				"",
-				attachment.Filename,
+				att.Filename,
 				"",
 			},
 		)

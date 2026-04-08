@@ -129,6 +129,8 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		DropH1:          cmd.Bool("drop-h1"),
 		StripLinebreaks: cmd.Bool("strip-linebreaks"),
 		MermaidScale:    cmd.Float("mermaid-scale"),
+		MermaidOutput:   cmd.String("mermaid-output"),
+		MermaidBundle:   cmd.Bool("mermaid-bundle"),
 		D2Scale:         cmd.Float("d2-scale"),
 		MathFormat:      cmd.String("math-format"),
 		MathScale:       cmd.Float("math-scale"),
