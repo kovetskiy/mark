@@ -7,6 +7,65 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// ---------------------------------------------------------------------------
+// Helper function unit tests
+// ---------------------------------------------------------------------------
+
+func TestTruncateSelection(t *testing.T) {
+	assert.Equal(t, "hello", truncateSelection("hello", 10))
+	assert.Equal(t, "hello", truncateSelection("hello", 5))
+	assert.Equal(t, "hell…", truncateSelection("hello", 4))
+	assert.Equal(t, "", truncateSelection("", 5))
+	// Multibyte runes count as single units.
+	assert.Equal(t, "世界…", truncateSelection("世界 is the world", 2))
+}
+
+func TestLevenshteinDistance(t *testing.T) {
+	tests := []struct {
+		s1, s2 string
+		want   int
+	}{
+		{"", "", 0},
+		{"abc", "", 3},
+		{"", "abc", 3},
+		{"abc", "abc", 0},
+		{"abc", "axc", 1},   // one substitution
+		{"abc", "ab", 1},    // one deletion
+		{"ab", "abc", 1},    // one insertion
+		{"kitten", "sitting", 3},
+		// Multibyte: é is one rune, so distance from "héllo" to "hello" is 1.
+		{"héllo", "hello", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.s1+"/"+tt.s2, func(t *testing.T) {
+			assert.Equal(t, tt.want, levenshteinDistance(tt.s1, tt.s2))
+		})
+	}
+}
+
+func TestContextBefore(t *testing.T) {
+	// Basic cases.
+	assert.Equal(t, "", contextBefore("hello", 0, 10))
+	assert.Equal(t, "hello", contextBefore("hello", 5, 10))
+	assert.Equal(t, "llo", contextBefore("hello", 5, 3))
+
+	// "héllo" is 6 bytes (h=1, é=2, l=1, l=1, o=1).
+	// maxBytes=4 → raw start=2, which lands mid-rune (é's continuation byte).
+	// Should advance to byte 3 (first 'l').
+	assert.Equal(t, "llo", contextBefore("héllo", 6, 4))
+}
+
+func TestContextAfter(t *testing.T) {
+	// Basic cases.
+	assert.Equal(t, "", contextAfter("hello", 5, 10))
+	assert.Equal(t, "hello", contextAfter("hello", 0, 10))
+	assert.Equal(t, "hel", contextAfter("hello", 0, 3))
+
+	// "héllo" is 6 bytes. contextAfter(s, 0, 2) → raw end=2 (é's continuation
+	// byte), which is not a rune start. Should back up to 1, returning just "h".
+	assert.Equal(t, "h", contextAfter("héllo", 0, 2))
+}
+
 // makeComments builds an InlineComments value from alternating
 // (selection, markerRef) pairs, all with location "inline".
 func makeComments(pairs ...string) *confluence.InlineComments {
@@ -151,4 +210,77 @@ func TestMergeComments_DuplicateMarkerRef(t *testing.T) {
 	result, err := MergeComments(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-dup">world</ac:inline-comment-marker></p>`, result)
+}
+
+// ---------------------------------------------------------------------------
+// Additional MergeComments scenario tests
+// ---------------------------------------------------------------------------
+
+// TestMergeComments_MultipleComments verifies that two non-overlapping comments
+// are both correctly re-embedded via back-to-front replacement.
+func TestMergeComments_MultipleComments(t *testing.T) {
+	body := "<p>Hello world and foo bar</p>"
+	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-1">world</ac:inline-comment-marker> and foo <ac:inline-comment-marker ac:ref="uuid-2">bar</ac:inline-comment-marker></p>`
+	comments := makeComments("world", "uuid-1", "bar", "uuid-2")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-1">world</ac:inline-comment-marker> and foo <ac:inline-comment-marker ac:ref="uuid-2">bar</ac:inline-comment-marker></p>`, result)
+}
+
+// TestMergeComments_EmptyResults verifies that an InlineComments value with a
+// non-nil but empty Results slice is handled gracefully.
+func TestMergeComments_EmptyResults(t *testing.T) {
+	body := "<p>Hello world</p>"
+	result, err := MergeComments(body, body, &confluence.InlineComments{})
+	assert.NoError(t, err)
+	assert.Equal(t, body, result)
+}
+
+// TestMergeComments_NonInlineLocation verifies that page-level comments
+// (location != "inline") are silently skipped and the body is unchanged.
+func TestMergeComments_NonInlineLocation(t *testing.T) {
+	body := "<p>Hello world</p>"
+	comments := &confluence.InlineComments{
+		Results: []confluence.InlineCommentResult{
+			{
+				Extensions: confluence.InlineCommentExtensions{
+					Location: "page",
+					InlineProperties: confluence.InlineCommentProperties{
+						OriginalSelection: "Hello",
+						MarkerRef:         "uuid-page",
+					},
+				},
+			},
+		},
+	}
+	result, err := MergeComments(body, body, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, body, result)
+}
+
+// TestMergeComments_NoContext verifies that when a comment's MarkerRef has no
+// corresponding marker in oldBody (no context available) the first occurrence
+// of the selection in the new body is used.
+func TestMergeComments_NoContext(t *testing.T) {
+	body := "<p>foo bar foo</p>"
+	oldBody := "<p>foo bar foo</p>" // no markers → no context
+	comments := makeComments("foo", "uuid-noctx")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	// First occurrence of "foo" is at position 3.
+	assert.Equal(t, `<p><ac:inline-comment-marker ac:ref="uuid-noctx">foo</ac:inline-comment-marker> bar foo</p>`, result)
+}
+
+// TestMergeComments_UTF8 verifies that selections and bodies containing
+// multibyte UTF-8 characters are handled correctly.
+func TestMergeComments_UTF8(t *testing.T) {
+	body := "<p>こんにちは世界</p>"
+	oldBody := `<p>こんにちは<ac:inline-comment-marker ac:ref="uuid-jp">世界</ac:inline-comment-marker></p>`
+	comments := makeComments("世界", "uuid-jp")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>こんにちは<ac:inline-comment-marker ac:ref="uuid-jp">世界</ac:inline-comment-marker></p>`, result)
 }
