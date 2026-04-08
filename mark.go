@@ -742,13 +742,14 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			}
 
 			// Lower-bound pruning: Levenshtein distance is at least the
-			// absolute difference in string lengths. Skip the full
-			// computation if it can't beat the current best.
-			lbBefore := len(ctx.before) - len(newBefore)
+			// absolute difference in rune counts. Use rune counts (not byte
+			// lengths) to match the unit levenshteinDistance operates on,
+			// avoiding false skips for multibyte UTF-8 content.
+			lbBefore := utf8.RuneCountInString(ctx.before) - utf8.RuneCountInString(newBefore)
 			if lbBefore < 0 {
 				lbBefore = -lbBefore
 			}
-			lbAfter := len(ctx.after) - len(newAfter)
+			lbAfter := utf8.RuneCountInString(ctx.after) - utf8.RuneCountInString(newAfter)
 			if lbAfter < 0 {
 				lbAfter = -lbAfter
 			}

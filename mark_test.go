@@ -59,7 +59,8 @@ func TestMergeComments_Disambiguation(t *testing.T) {
 }
 
 // TestMergeComments_SelectionMissing verifies that a comment whose selection
-// no longer appears in the new body is silently dropped without panicking.
+// no longer appears in the new body is dropped without returning an error or panicking.
+// A warning is logged so the user knows the comment was not relocated.
 func TestMergeComments_SelectionMissing(t *testing.T) {
 	body := "<p>Completely different content</p>"
 	oldBody := `<p><ac:inline-comment-marker ac:ref="uuid-gone">old text</ac:inline-comment-marker></p>`
