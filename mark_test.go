@@ -284,3 +284,30 @@ func TestMergeComments_UTF8(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>こんにちは<ac:inline-comment-marker ac:ref="uuid-jp">世界</ac:inline-comment-marker></p>`, result)
 }
+
+// TestMergeComments_SelectionWithQuotes verifies that a selection containing
+// apostrophes or double-quotes is found correctly in the new body even though
+// html.EscapeString would encode those characters. Only &, <, > should be
+// escaped when searching.
+func TestMergeComments_SelectionWithQuotes(t *testing.T) {
+	body := `<p>It's a "test" page</p>`
+	oldBody := `<p>It's a <ac:inline-comment-marker ac:ref="uuid-q">"test"</ac:inline-comment-marker> page</p>`
+	comments := makeComments(`"test"`, "uuid-q")
+
+	result, err := MergeComments(body, oldBody, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>It's a <ac:inline-comment-marker ac:ref="uuid-q">"test"</ac:inline-comment-marker> page</p>`, result)
+}
+
+// TestMergeComments_DuplicateMarkerRefDropped verifies that when multiple
+// comment results share the same MarkerRef and the selection cannot be found,
+// only a single warning is emitted (not one per result).
+func TestMergeComments_DuplicateMarkerRefDropped(t *testing.T) {
+	body := "<p>Hello world</p>"
+	// Duplicate refs, but selection "gone" is not present in body or oldBody.
+	comments := makeComments("gone", "uuid-dup2", "gone", "uuid-dup2")
+
+	result, err := MergeComments(body, body, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, body, result) // body unchanged, single warning logged
+}

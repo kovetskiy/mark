@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"html"
+	stdhtml "html"
 	"io"
 	"os"
 	"path/filepath"
@@ -560,6 +560,18 @@ func sha1Hash(input string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// htmlEscapeText escapes only the characters that Confluence storage HTML
+// always encodes in text nodes (&, <, >). Unlike html.EscapeString it does NOT
+// escape single-quotes or double-quotes, because those are frequently left
+// unescaped inside text nodes by the Confluence editor and by mark's own
+// renderer, so escaping them would prevent the selection-search from finding
+// a valid match.
+var htmlTextReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+func htmlEscapeText(s string) string {
+	return htmlTextReplacer.Replace(s)
+}
+
 // truncateSelection returns a truncated preview of s for use in log messages,
 // capped at maxRunes runes, with an ellipsis appended when trimmed.
 func truncateSelection(s string, maxRunes int) string {
@@ -689,6 +701,9 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			// The marker only needs to be inserted once; skip duplicates.
 			continue
 		}
+		// Mark ref as seen immediately so subsequent results for the same ref
+		// (threaded replies) are always deduplicated, even if this one is dropped.
+		seenRefs[ref] = true
 
 		if selection == "" {
 			log.Warn().
@@ -701,7 +716,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 
 		// Find all occurrences of selection in newBody
 		// Selection in newBody might be HTML escaped
-		escapedSelection := html.EscapeString(selection)
+		escapedSelection := htmlEscapeText(selection)
 
 		var bestStart = -1
 		var bestEnd = -1
@@ -770,7 +785,6 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		}
 
 		if bestStart != -1 {
-			seenRefs[ref] = true
 			replacements = append(replacements, replacement{
 				start:     bestStart,
 				end:       bestEnd,
@@ -823,7 +837,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		selection := newBody[r.start:r.end]
 		withComment := fmt.Sprintf(
 			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
-			html.EscapeString(r.ref),
+			stdhtml.EscapeString(r.ref),
 			selection,
 		)
 		newBody = newBody[:r.start] + withComment + newBody[r.end:]
