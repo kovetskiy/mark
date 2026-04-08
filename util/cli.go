@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	mark "github.com/kovetskiy/mark/v16"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	mark "github.com/kovetskiy/mark/v16"
 	"github.com/urfave/cli/v3"
 )
 
@@ -111,10 +111,10 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
 		ContentAppearance:        cmd.String("content-appearance"),
 
-		MinorEdit:      cmd.Bool("minor-edit"),
-		VersionMessage: cmd.String("version-message"),
-		EditLock:       cmd.Bool("edit-lock"),
-		ChangesOnly:    cmd.Bool("changes-only"),
+		MinorEdit:        cmd.Bool("minor-edit"),
+		VersionMessage:   cmd.String("version-message"),
+		EditLock:         cmd.Bool("edit-lock"),
+		ChangesOnly:      cmd.Bool("changes-only"),
 		PreserveComments: cmd.Bool("preserve-comments"),
 
 		DropH1:          cmd.Bool("drop-h1"),

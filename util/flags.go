@@ -197,7 +197,7 @@ var Flags = []cli.Flag{
 	&cli.BoolFlag{
 		Name:    "preserve-comments",
 		Value:   false,
-		Usage:   "fetch and preserve inline comments on existing Confluence pages.",
+		Usage:   "Fetch and preserve inline comments on existing Confluence pages.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PRESERVE_COMMENTS"), altsrctoml.TOML("preserve-comments", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.FloatFlag{

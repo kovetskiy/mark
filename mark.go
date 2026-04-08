@@ -59,10 +59,10 @@ type Config struct {
 	ContentAppearance        string
 
 	// Page updates
-	MinorEdit      bool
-	VersionMessage string
-	EditLock       bool
-	ChangesOnly    bool
+	MinorEdit        bool
+	VersionMessage   string
+	EditLock         bool
+	ChangesOnly      bool
 	PreserveComments bool
 
 	// Rendering
@@ -401,24 +401,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		html = buffer.String()
 	}
 
-	if config.PreserveComments && !pageCreated {
-		pg, err := api.GetPageByIDExpanded(target.ID, "ancestors,version,body.storage")
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
-		}
-		target = pg
-
-		comments, err := api.GetInlineComments(target.ID)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
-		}
-
-		html, err = MergeComments(html, target.Body.Storage.Value, comments)
-		if err != nil {
-			return nil, fmt.Errorf("unable to merge inline comments: %w", err)
-		}
-	}
-
 	var finalVersionMessage string
 	shouldUpdatePage := true
 
@@ -438,6 +420,27 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		finalVersionMessage = fmt.Sprintf("%s [v%s]", config.VersionMessage, contentHash)
 	} else {
 		finalVersionMessage = config.VersionMessage
+	}
+
+	// Only fetch the old body and inline comments when we know the page will
+	// actually be updated. This avoids unnecessary API round-trips for no-op
+	// runs (e.g. when --changes-only determines the content is unchanged).
+	if shouldUpdatePage && config.PreserveComments && !pageCreated {
+		pg, err := api.GetPageByIDExpanded(target.ID, "ancestors,version,body.storage")
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
+		}
+		target = pg
+
+		comments, err := api.GetInlineComments(target.ID)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
+		}
+
+		html, err = MergeComments(html, target.Body.Storage.Value, comments)
+		if err != nil {
+			return nil, fmt.Errorf("unable to merge inline comments: %w", err)
+		}
 	}
 
 	if shouldUpdatePage {
@@ -637,16 +640,6 @@ func levenshteinDistance(s1, s2 string) int {
 	return dist[len(r1)][len(r2)]
 }
 
-func min(vals ...int) int {
-	res := vals[0]
-	for _, v := range vals[1:] {
-		if v < res {
-			res = v
-		}
-	}
-	return res
-}
-
 type commentContext struct {
 	before string
 	after  string
@@ -723,6 +716,13 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			}
 			start := currentPos + index
 			end := start + len(escapedSelection)
+
+			// Skip candidates that start or end in the middle of a multi-byte
+			// UTF-8 rune; such a match would produce invalid UTF-8 output.
+			if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
+				currentPos = start + 1
+				continue
+			}
 
 			if !hasCtx {
 				// No context available; use the first occurrence.
