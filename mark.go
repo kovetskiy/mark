@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -251,7 +252,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 				return nil, fmt.Errorf("unable to resolve page location: %w", err)
 			}
 		} else if config.PageID != "" {
-			if _, err := api.GetPageByID(config.PageID, ""); err != nil {
+			if _, err := api.GetPageByID(config.PageID); err != nil {
 				return nil, fmt.Errorf("unable to resolve page by ID: %w", err)
 			}
 		}
@@ -308,7 +309,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 		target = pg
 	} else {
-		pg, err := api.GetPageByID(config.PageID, "")
+		pg, err := api.GetPageByID(config.PageID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to retrieve page by id: %w", err)
 		}
@@ -401,7 +402,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	}
 
 	if config.PreserveComments && !pageCreated {
-		pg, err := api.GetPageByID(target.ID, "ancestors,version,body.storage")
+		pg, err := api.GetPageByIDExpanded(target.ID, "ancestors,version,body.storage")
 		if err != nil {
 			return nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
 		}
@@ -556,16 +557,54 @@ func sha1Hash(input string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func levenshteinDistance(s1, s2 string) int {
-	if len(s1) == 0 {
-		return len(s2)
+// truncateSelection returns a truncated preview of s for use in log messages,
+// capped at maxRunes runes, with an ellipsis appended when trimmed.
+func truncateSelection(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
 	}
-	if len(s2) == 0 {
-		return len(s1)
-	}
+	return string(runes[:maxRunes]) + "…"
+}
 
+// contextBefore returns up to maxBytes of s ending at byteEnd, trimmed
+// forward to the nearest valid UTF-8 rune start so the slice is never
+// split across a multi-byte sequence.
+func contextBefore(s string, byteEnd, maxBytes int) string {
+	start := byteEnd - maxBytes
+	if start < 0 {
+		start = 0
+	}
+	for start < byteEnd && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:byteEnd]
+}
+
+// contextAfter returns up to maxBytes of s starting at byteStart, trimmed
+// back to the nearest valid UTF-8 rune start so the slice is never split
+// across a multi-byte sequence.
+func contextAfter(s string, byteStart, maxBytes int) string {
+	end := byteStart + maxBytes
+	if end >= len(s) {
+		return s[byteStart:]
+	}
+	for end > byteStart && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[byteStart:end]
+}
+
+func levenshteinDistance(s1, s2 string) int {
 	r1 := []rune(s1)
 	r2 := []rune(s2)
+
+	if len(r1) == 0 {
+		return len(r2)
+	}
+	if len(r2) == 0 {
+		return len(r1)
+	}
 
 	rows := len(r1) + 1
 	cols := len(r2) + 1
@@ -623,8 +662,8 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 	for _, match := range matches {
 		ref := oldBody[match[2]:match[3]]
 		// context around the tag
-		before := oldBody[max(0, match[0]-100):match[0]]
-		after := oldBody[match[1]:min(len(oldBody), match[1]+100)]
+		before := contextBefore(oldBody, match[0], 100)
+		after := contextAfter(oldBody, match[1], 100)
 		contexts[ref] = commentContext{
 			before: before,
 			after:  after,
@@ -638,18 +677,25 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		selection string
 	}
 	var replacements []replacement
+	seenRefs := make(map[string]bool)
 
 	for _, comment := range comments.Results {
 		if comment.Extensions.Location != "inline" {
-			log.Warn().
+			log.Debug().
 				Str("location", comment.Extensions.Location).
 				Str("ref", comment.Extensions.InlineProperties.MarkerRef).
-				Msg("inline comment skipped: location is not \"inline\"; comment will be lost")
+				Msg("comment ignored during inline marker merge: not an inline comment")
 			continue
 		}
 
 		ref := comment.Extensions.InlineProperties.MarkerRef
 		selection := comment.Extensions.InlineProperties.OriginalSelection
+
+		if seenRefs[ref] {
+			// Multiple results share the same MarkerRef (e.g. threaded replies).
+			// The marker only needs to be inserted once; skip duplicates.
+			continue
+		}
 
 		if selection == "" {
 			log.Warn().
@@ -685,8 +731,8 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 				break
 			}
 
-			newBefore := newBody[max(0, start-100):start]
-			newAfter := newBody[end:min(len(newBody), end+100)]
+			newBefore := contextBefore(newBody, start, 100)
+			newAfter := contextAfter(newBody, end, 100)
 			distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
 
 			if distance < minDistance {
@@ -699,6 +745,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		}
 
 		if bestStart != -1 {
+			seenRefs[ref] = true
 			replacements = append(replacements, replacement{
 				start:     bestStart,
 				end:       bestEnd,
@@ -708,7 +755,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		} else {
 			log.Warn().
 				Str("ref", ref).
-				Str("selection", selection).
+				Str("selection_preview", truncateSelection(selection, 50)).
 				Msg("inline comment dropped: selected text not found in new body; comment will be lost")
 		}
 	}
@@ -729,7 +776,7 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			// Drop it and warn so the user knows the comment was skipped.
 			log.Warn().
 				Str("ref", r.ref).
-				Str("selection", r.selection).
+				Str("selection_preview", truncateSelection(r.selection, 50)).
 				Int("start", r.start).
 				Int("end", r.end).
 				Int("conflicting_start", minAppliedStart).

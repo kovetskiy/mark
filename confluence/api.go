@@ -486,10 +486,11 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 	return all, nil
 }
 
-func (api *API) GetPageByID(pageID string, expand string) (*PageInfo, error) {
-	if expand == "" {
-		expand = "ancestors,version"
-	}
+func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
+	return api.GetPageByIDExpanded(pageID, "ancestors,version")
+}
+
+func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
 	).Get(map[string]string{"expand": expand})
