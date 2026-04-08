@@ -781,6 +781,13 @@ graph TD;
 A-->B;
 ```
 
+By default diagrams are rendered as PNG. Use `--mermaid-output` to select the output format:
+
+* `--mermaid-output=png` (default) — renders as a scaled PNG. Use `--mermaid-scale` to control the scaling factor.
+* `--mermaid-output=svg` — renders as a resolution-independent SVG. `--mermaid-scale` is not applicable and will produce an error if set.
+
+When using SVG output, you can optionally embed the original diagram source inside the SVG `<desc>` element by passing `--mermaid-bundle`. This allows the source to be recovered from the attachment later. `--mermaid-bundle` is not applicable with PNG output and will produce an error if set.
+
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
@@ -877,7 +884,9 @@ GLOBAL OPTIONS:
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string               The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
    --content-appearance string              default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed. [$MARK_CONTENT_APPEARANCE]
-   --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
+   --mermaid-scale float                    Scaling factor for mermaid PNG renderings. Not applicable when --mermaid-output=svg. (default: 1) [$MARK_MERMAID_SCALE]
+   --mermaid-output string                  Output format for mermaid diagrams: 'png' (default, respects --mermaid-scale) or 'svg' (resolution-independent, --mermaid-scale is not applicable). (default: "png") [$MARK_MERMAID_OUTPUT]
+   --mermaid-bundle                         Embed the mermaid diagram source in the SVG <desc> element. Only valid with --mermaid-output=svg; errors if used with --mermaid-output=png. [$MARK_MERMAID_BUNDLE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
