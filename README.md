@@ -999,11 +999,10 @@ MARK_PRESERVE_COMMENTS=true mark -f docs/page.md
 
 **Limitations:**
 
-- If the commented text was deleted from the document, the inline comment cannot be relocated and will be lost. `mark` logs a warning in this case.
-- Overlapping selections (two comments anchored to the same stretch of text) are detected; the second one is dropped with a warning rather than producing malformed markup.
-- `--preserve-comments` is automatically skipped for newly created pages (there are no comments to preserve yet).
-- When combined with `--changes-only`, the comment-preservation API calls are skipped entirely on runs where the page content has not changed, avoiding unnecessary round-trips.
-
+* If the commented text was deleted from the document, the inline comment cannot be relocated and will be lost. `mark` logs a warning in this case.
+* Overlapping selections (two comments anchored to the same stretch of text) are detected; the second one is dropped with a warning rather than producing malformed markup.
+* `--preserve-comments` is automatically skipped for newly created pages (there are no comments to preserve yet).
+* When combined with `--changes-only`, the comment-preservation API calls are skipped entirely on runs where the page content has not changed, avoiding unnecessary round-trips.
 
 ## Issues, Bugs & Contributions
 
