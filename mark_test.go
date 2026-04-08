@@ -128,3 +128,15 @@ func TestMergeComments_NestedTags(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <strong><ac:inline-comment-marker ac:ref="uuid-nested">world</ac:inline-comment-marker></strong></p>`, result)
 }
+
+// TestMergeComments_EmptySelection verifies that a comment with an empty
+// OriginalSelection is skipped without panicking and the body is returned
+// unchanged.
+func TestMergeComments_EmptySelection(t *testing.T) {
+	body := "<p>Hello world</p>"
+	comments := makeComments("", "uuid-empty")
+
+	result, err := MergeComments(body, body, comments)
+	assert.NoError(t, err)
+	assert.Equal(t, body, result)
+}

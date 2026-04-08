@@ -651,6 +651,13 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 		ref := comment.Extensions.InlineProperties.MarkerRef
 		selection := comment.Extensions.InlineProperties.OriginalSelection
 
+		if selection == "" {
+			log.Warn().
+				Str("ref", ref).
+				Msg("inline comment skipped: original selection is empty; comment will be lost")
+			continue
+		}
+
 		ctx, hasCtx := contexts[ref]
 
 		// Find all occurrences of selection in newBody
