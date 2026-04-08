@@ -58,6 +58,12 @@ type PageInfo struct {
 		Title string `json:"title"`
 	} `json:"ancestors"`
 
+	Body struct {
+		Storage struct {
+			Value string `json:"value"`
+		} `json:"storage"`
+	} `json:"body"`
+
 	Links struct {
 		Full string `json:"webui"`
 		Base string `json:"-"` // Not from JSON; populated from response _links.base
@@ -85,6 +91,29 @@ type LabelInfo struct {
 	Labels []Label `json:"results"`
 	Size   int     `json:"number"`
 }
+
+type InlineCommentProperties struct {
+	OriginalSelection string `json:"originalSelection"`
+	MarkerRef         string `json:"markerRef"`
+}
+
+type InlineCommentExtensions struct {
+	Location         string                  `json:"location"`
+	InlineProperties InlineCommentProperties `json:"inlineProperties"`
+}
+
+type InlineCommentResult struct {
+	Extensions InlineCommentExtensions `json:"extensions"`
+}
+
+type InlineComments struct {
+	Links struct {
+		Context string `json:"context"`
+		Next    string `json:"next"`
+	} `json:"_links"`
+	Results []InlineCommentResult `json:"results"`
+}
+
 type form struct {
 	buffer io.Reader
 	writer *multipart.Writer
@@ -464,9 +493,13 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
+	return api.GetPageByIDExpanded(pageID, "ancestors,version")
+}
+
+func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
+	).Get(map[string]string{"expand": expand})
 	if err != nil {
 		return nil, err
 	}
@@ -476,6 +509,44 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	}
 
 	return request.Response.(*PageInfo), nil
+}
+
+func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
+	const pageSize = 100
+	all := &InlineComments{}
+	start := 0
+
+	for {
+		result := &InlineComments{}
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/comment", result,
+		).Get(map[string]string{
+			"expand": "extensions.inlineProperties",
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		if all.Links.Context == "" {
+			all.Links = result.Links
+		}
+
+		all.Results = append(all.Results, result.Results...)
+
+		if len(result.Results) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Results)
+	}
+
+	return all, nil
 }
 
 func (api *API) CreatePage(

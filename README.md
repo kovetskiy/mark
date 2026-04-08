@@ -880,6 +880,7 @@ GLOBAL OPTIONS:
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
+   --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
@@ -902,6 +903,8 @@ image-align = "center"
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
+
+**NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.
 
 **NOTE**: The system specific locations are described in here:
 <https://pkg.go.dev/os#UserConfigDir>.
@@ -972,6 +975,34 @@ mark -f "**/docs/*.md"
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.
+
+### Preserving Inline Comments
+
+When collaborators leave inline comments on a Confluence page, updating the page via `mark` will normally erase those comments because the stored body is fully replaced. The `--preserve-comments` flag re-attaches inline comment markers to the new page body before uploading, so existing review threads survive updates.
+
+```bash
+mark --preserve-comments -f docs/page.md
+```
+
+Or via environment variable:
+
+```bash
+MARK_PRESERVE_COMMENTS=true mark -f docs/page.md
+```
+
+**How it works:**
+
+1. Before uploading, `mark` fetches the current page body and all inline comment markers from the Confluence API.
+2. For each existing `<ac:inline-comment-marker>` tag it records the content wrapped by that marker plus a short context window immediately before the opening tag and immediately after the closing tag in the old body (not around the raw selection text, so the context is stable even when the marker wraps additional inline markup such as `<strong>`).
+3. It searches the new body for the same selected text and picks the occurrence whose surrounding context best matches the original (using Levenshtein distance), so the marker lands in the right place even if nearby text has shifted.
+4. The updated body—with all markers re-embedded—is then uploaded as normal.
+
+**Limitations:**
+
+* If the commented text was deleted from the document, the inline comment cannot be relocated and will be lost. `mark` logs a warning in this case.
+* Overlapping selections (two comments anchored to the same stretch of text) are detected; the earlier overlapping match is dropped with a warning, and the later one (higher byte offset) is kept, rather than producing malformed markup.
+* `--preserve-comments` is automatically skipped for newly created pages (there are no comments to preserve yet).
+* When combined with `--changes-only`, the comment-preservation API calls are skipped entirely on runs where the page content has not changed, avoiding unnecessary round-trips.
 
 ## Issues, Bugs & Contributions
 
