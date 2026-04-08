@@ -702,11 +702,19 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 
 	// Apply replacements back-to-front. Track the minimum start of any
 	// applied replacement so that overlapping candidates (whose end exceeds
-	// that boundary) are dropped rather than corrupting the body.
+	// that boundary) are dropped rather than producing nested or malformed
+	// <ac:inline-comment-marker> tags.
 	minAppliedStart := len(newBody)
 	for _, r := range replacements {
 		if r.end > minAppliedStart {
-			// Overlaps with an already-applied replacement; skip.
+			// This replacement overlaps with an already-applied one.
+			// Drop it and warn so the user knows the comment was skipped.
+			log.Warn().
+				Str("ref", r.ref).
+				Int("start", r.start).
+				Int("end", r.end).
+				Int("conflicting_start", minAppliedStart).
+				Msg("inline comment marker dropped: selection overlaps an already-placed marker")
 			continue
 		}
 		minAppliedStart = r.start
