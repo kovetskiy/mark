@@ -904,6 +904,8 @@ image-align = "center"
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
+**NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.
+
 **NOTE**: The system specific locations are described in here:
 <https://pkg.go.dev/os#UserConfigDir>.
 Currently, these are:
@@ -973,6 +975,35 @@ mark -f "**/docs/*.md"
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.
+
+### Preserving Inline Comments
+
+When collaborators leave inline comments on a Confluence page, updating the page via `mark` will normally erase those comments because the stored body is fully replaced. The `--preserve-comments` flag re-attaches inline comment markers to the new page body before uploading, so existing review threads survive updates.
+
+```bash
+mark --preserve-comments -f docs/page.md
+```
+
+Or via environment variable:
+
+```bash
+MARK_PRESERVE_COMMENTS=true mark -f docs/page.md
+```
+
+**How it works:**
+
+1. Before uploading, `mark` fetches the current page body and all inline comment markers from the Confluence API.
+2. For each marker it records a short snippet of text immediately before and after the commented selection (context window).
+3. It searches the new body for the same selected text and picks the occurrence whose surrounding context best matches the original (using Levenshtein distance), so the marker lands in the right place even if nearby text has shifted.
+4. The updated body—with all markers re-embedded—is then uploaded as normal.
+
+**Limitations:**
+
+- If the commented text was deleted from the document, the inline comment cannot be relocated and will be lost. `mark` logs a warning in this case.
+- Overlapping selections (two comments anchored to the same stretch of text) are detected; the second one is dropped with a warning rather than producing malformed markup.
+- `--preserve-comments` is automatically skipped for newly created pages (there are no comments to preserve yet).
+- When combined with `--changes-only`, the comment-preservation API calls are skipped entirely on runs where the page content has not changed, avoiding unnecessary round-trips.
+
 
 ## Issues, Bugs & Contributions
 
