@@ -224,8 +224,20 @@ var Flags = []cli.Flag{
 	&cli.FloatFlag{
 		Name:    "mermaid-scale",
 		Value:   1.0,
-		Usage:   "defines the scaling factor for mermaid renderings.",
+		Usage:   "defines the scaling factor for mermaid PNG renderings; not accepted when mermaid-output is svg.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "mermaid-output",
+		Value:   "png",
+		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
+		Name:    "mermaid-bundle",
+		Value:   false,
+		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), altsrctoml.TOML("mermaid-bundle", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
 		Name:    "math-format",
@@ -433,6 +445,35 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 				imageAlign,
 			)
 		}
+	}
+
+	mermaidOutput := strings.TrimSpace(command.String("mermaid-output"))
+	if mermaidOutput != "" {
+		switch mermaidOutput {
+		case "png", "svg":
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --mermaid-output: %q (expected: png or svg)",
+				mermaidOutput,
+			)
+		}
+	}
+
+	// A scale that does nothing and a bundle that goes nowhere are both worth
+	// saying out loud rather than dropping: each was set on purpose, and each
+	// silently does not happen. Asked of IsSet rather than of the value, so
+	// that the defaults -- which every run carries -- contradict nothing.
+	if mermaidOutput == "svg" && command.IsSet("mermaid-scale") {
+		return context, errors.New(
+			"--mermaid-scale does not apply to --mermaid-output=svg: an SVG is the same drawing at every size",
+		)
+	}
+
+	if mermaidOutput == "png" && command.IsSet("mermaid-bundle") {
+		return context, errors.New(
+			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
+		)
 	}
 
 	mathFormat := strings.TrimSpace(command.String("math-format"))
