@@ -666,13 +666,16 @@ func MergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 			start := currentPos + index
 			end := start + len(escapedSelection)
 
-			// Calculate distance
-			distance := 0
-			if hasCtx {
-				newBefore := newBody[max(0, start-100):start]
-				newAfter := newBody[end:min(len(newBody), end+100)]
-				distance = levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
+			if !hasCtx {
+				// No context available; use the first occurrence.
+				bestStart = start
+				bestEnd = end
+				break
 			}
+
+			newBefore := newBody[max(0, start-100):start]
+			newAfter := newBody[end:min(len(newBody), end+100)]
+			distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
 
 			if distance < minDistance {
 				minDistance = distance
