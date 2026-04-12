@@ -144,6 +144,13 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		return nil, nil, err
 	}
 
+	// Cap offset to data length. The scanner loop adds +1 per line to
+	// account for the stripped newline, but the final line of a file may
+	// not end with a newline, making offset exceed len(data).
+	if offset > len(data) {
+		offset = len(data)
+	}
+
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
 		if meta == nil {
 			meta = &Meta{}

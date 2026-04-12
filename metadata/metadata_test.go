@@ -89,3 +89,33 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
 	})
 }
+
+func TestExtractMetaNoTrailingNewline(t *testing.T) {
+	t.Run("header-only file without trailing newline does not panic", func(t *testing.T) {
+		data := []byte("# Blogs")
+
+		assert.NotPanics(t, func() {
+			_, _, _ = ExtractMeta(data, "", true, false, "", nil, false, "")
+		})
+	})
+
+	t.Run("body without trailing newline", func(t *testing.T) {
+		data := []byte("some content")
+
+		meta, body, err := ExtractMeta(data, "", false, false, "", nil, false, "")
+		assert.NoError(t, err)
+		assert.Nil(t, meta)
+		assert.Equal(t, []byte("some content"), body)
+	})
+
+	t.Run("metadata headers without trailing newline on last header", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->")
+
+		meta, body, err := ExtractMeta(data, "", false, false, "", nil, false, "")
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, "Example", meta.Title)
+		assert.Equal(t, "DOC", meta.Space)
+		assert.Empty(t, body)
+	})
+}
