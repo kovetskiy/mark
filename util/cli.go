@@ -120,12 +120,24 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		DropH1:          cmd.Bool("drop-h1"),
 		StripLinebreaks: cmd.Bool("strip-linebreaks"),
 		MermaidScale:    cmd.Float("mermaid-scale"),
+		MermaidOutput:   cmd.String("mermaid-output"),
+		MermaidBundle:   cmd.Bool("mermaid-bundle"),
 		D2Scale:         cmd.Float("d2-scale"),
 		Features:        cmd.StringSlice("features"),
 		ImageAlign:      cmd.String("image-align"),
 		IncludePath:     cmd.String("include-path"),
 
 		Output: os.Stdout,
+	}
+
+	if config.MermaidOutput != "png" && config.MermaidOutput != "svg" {
+		return fmt.Errorf("--mermaid-output must be 'png' or 'svg', got %q", config.MermaidOutput)
+	}
+	if cmd.IsSet("mermaid-scale") && config.MermaidOutput == "svg" {
+		return fmt.Errorf("--mermaid-scale is not applicable when --mermaid-output=svg")
+	}
+	if cmd.IsSet("mermaid-bundle") && config.MermaidOutput == "png" {
+		return fmt.Errorf("--mermaid-bundle is not applicable when --mermaid-output=png")
 	}
 
 	return mark.Run(config)

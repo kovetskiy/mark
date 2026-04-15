@@ -178,8 +178,20 @@ var Flags = []cli.Flag{
 	&cli.FloatFlag{
 		Name:    "mermaid-scale",
 		Value:   1.0,
-		Usage:   "defines the scaling factor for mermaid renderings.",
+		Usage:   "Scaling factor for mermaid PNG renderings. Not applicable when --mermaid-output=svg.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "mermaid-output",
+		Value:   "png",
+		Usage:   "Output format for mermaid diagrams: 'png' (default, respects --mermaid-scale) or 'svg' (resolution-independent, --mermaid-scale is not applicable).",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
+		Name:    "mermaid-bundle",
+		Value:   false,
+		Usage:   "Embed the mermaid diagram source in the SVG <desc> element. Only valid with --mermaid-output=svg; errors if used with --mermaid-output=png.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), altsrctoml.TOML("mermaid-bundle", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
 		Name:      "include-path",

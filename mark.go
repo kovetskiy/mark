@@ -69,6 +69,8 @@ type Config struct {
 	DropH1          bool
 	StripLinebreaks bool
 	MermaidScale    float64
+	MermaidOutput   string
+	MermaidBundle   bool
 	D2Scale         float64
 	Features        []string
 	ImageAlign      string
@@ -270,6 +272,8 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 		cfg := types.MarkConfig{
 			MermaidScale:  config.MermaidScale,
+			MermaidOutput: config.MermaidOutput,
+			MermaidBundle: config.MermaidBundle,
 			D2Scale:       config.D2Scale,
 			DropFirstH1:   config.DropH1,
 			StripNewlines: config.StripLinebreaks,
@@ -352,6 +356,8 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	cfg := types.MarkConfig{
 		MermaidScale:  config.MermaidScale,
+		MermaidOutput: config.MermaidOutput,
+		MermaidBundle: config.MermaidBundle,
 		D2Scale:       config.D2Scale,
 		DropFirstH1:   config.DropH1,
 		StripNewlines: config.StripLinebreaks,
