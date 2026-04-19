@@ -150,7 +150,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			if inputPath == "" {
 				inputPath = "-"
 			}
-			attachment, err = d2.ProcessD2SVG(title, lval, r.MarkConfig.D2Bundle, inputPath, r.MarkConfig.D2Scale)
+			attachment, err = d2.ProcessD2SVG(title, lval, inputPath, r.MarkConfig.D2Scale)
 		case "png", "":
 			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
 		default:

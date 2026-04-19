@@ -110,7 +110,7 @@ func TestExtractD2Image(t *testing.T) {
 }
 
 func TestProcessD2SVG(t *testing.T) {
-	attachment, err := ProcessD2SVG("example", []byte(diagram), true, "-", 1.0)
+	attachment, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0)
 	if err != nil {
 		t.Fatalf("ProcessD2SVG returned error: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestProcessD2SVG(t *testing.T) {
 	assert.Equal(t, "example.svg", attachment.Filename)
 	assert.Equal(t, "example", attachment.Name)
 	assert.Equal(t, "example", attachment.Replace)
-	assert.Equal(t, "ba1dfc2b732c33fcc52b4f9f4f67a7a59c053e8dc3aefbc5a8b0e94c12d98352", attachment.Checksum)
+	assert.Equal(t, "58fa387384181445e2d8f90a8c7fda945cb75174f73e8b9853ff59b9e0103ddd", attachment.Checksum)
 	assert.NotEmpty(t, attachment.Width)
 	assert.NotEmpty(t, attachment.Height)
 }

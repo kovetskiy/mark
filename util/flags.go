@@ -189,12 +189,6 @@ var Flags = []cli.Flag{
 		Usage:   "defines the scaling factor for d2 renderings.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2-scale", altsrc.NewStringPtrSourcer(&filename))),
 	},
-	&cli.BoolFlag{
-		Name:    "d2-bundle",
-		Value:   false,
-		Usage:   "inline external assets into generated d2 SVG (similar to d2 --bundle).",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_BUNDLE"), altsrctoml.TOML("d2-bundle", altsrc.NewStringPtrSourcer(&filename))),
-	},
 	&cli.StringFlag{
 		Name:    "d2-output",
 		Value:   "png",

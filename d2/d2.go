@@ -113,7 +113,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 	}, nil
 }
 
-func ProcessD2SVG(title string, d2Diagram []byte, bundle bool, inputPath string, scale float64) (attachment.Attachment, error) {
+func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float64) (attachment.Attachment, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
@@ -130,11 +130,9 @@ func ProcessD2SVG(title string, d2Diagram []byte, bundle bool, inputPath string,
 		return attachment.Attachment{}, err
 	}
 
-	if bundle {
-		out, err = imgbundler.BundleRemote(ctx, logger, out, false)
-		if err != nil {
-			return attachment.Attachment{}, err
-		}
+	out, err = imgbundler.BundleRemote(ctx, logger, out, false)
+	if err != nil {
+		return attachment.Attachment{}, err
 	}
 
 	boxModel, err := parseSVGDimensions(out)
@@ -142,14 +140,7 @@ func ProcessD2SVG(title string, d2Diagram []byte, bundle bool, inputPath string,
 		log.Debugf(nil, "could not read svg dimensions: %v", err)
 	}
 
-	checksumSource := append([]byte{}, d2Diagram...)
-	if bundle {
-		checksumSource = append(checksumSource, 1)
-	} else {
-		checksumSource = append(checksumSource, 0)
-	}
-
-	checkSum, err := attachment.GetChecksum(bytes.NewReader(checksumSource))
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Diagram))
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
