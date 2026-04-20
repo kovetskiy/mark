@@ -7,10 +7,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kovetskiy/mark/includes"
-	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
-	"github.com/reconquest/regexputil-go"
+	"github.com/kovetskiy/mark/v16/includes"
+	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -39,14 +37,12 @@ func (macro *Macro) Apply(
 	content = macro.Regexp.ReplaceAllFunc(
 		content,
 		func(match []byte) []byte {
-			config := map[string]interface{}{}
+			config := map[string]any{}
 
 			err = yaml.Unmarshal([]byte(macro.Config), &config)
 			if err != nil {
-				err = karma.Format(
-					err,
-					"unable to unmarshal macros config template",
-				)
+				err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
+				return match
 			}
 
 			var buffer bytes.Buffer
@@ -56,10 +52,8 @@ func (macro *Macro) Apply(
 				macro.Regexp.FindSubmatch(match),
 			))
 			if err != nil {
-				err = karma.Format(
-					err,
-					"unable to execute macros template",
-				)
+				err = fmt.Errorf("unable to execute macros template: %w", err)
+				return match
 			}
 
 			return buffer.Bytes()
@@ -69,21 +63,21 @@ func (macro *Macro) Apply(
 	return content, err
 }
 
-func (macro *Macro) configure(node interface{}, groups [][]byte) interface{} {
+func (macro *Macro) configure(node any, groups [][]byte) any {
 	switch node := node.(type) {
-	case map[interface{}]interface{}:
+	case map[any]any:
 		for key, value := range node {
 			node[key] = macro.configure(value, groups)
 		}
 
 		return node
-	case map[string]interface{}:
+	case map[string]any:
 		for key, value := range node {
 			node[key] = macro.configure(value, groups)
 		}
 
 		return node
-	case []interface{}:
+	case []any:
 		for key, value := range node {
 			node[key] = macro.configure(value, groups)
 		}
@@ -124,26 +118,19 @@ func ExtractMacros(
 			groups := reMacroDirective.FindStringSubmatch(string(spec))
 
 			var (
-				expr     = regexputil.Subexp(reMacroDirective, groups, "expr")
-				template = regexputil.Subexp(
-					reMacroDirective,
-					groups,
-					"template",
-				)
-				config = regexputil.Subexp(reMacroDirective, groups, "config")
+				expr     = groups[reMacroDirective.SubexpIndex("expr")]
+				template = groups[reMacroDirective.SubexpIndex("template")]
+				config   = groups[reMacroDirective.SubexpIndex("config")]
 			)
 
 			var macro Macro
 
 			if strings.HasPrefix(template, "#") {
-				cfg := map[string]interface{}{}
+				cfg := map[string]any{}
 
 				err = yaml.Unmarshal([]byte(config), &cfg)
 				if err != nil {
-					err = karma.Format(
-						err,
-						"unable to unmarshal macros config template",
-					)
+					err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
 
 					return nil
 				}
@@ -160,44 +147,35 @@ func ExtractMacros(
 
 				macro.Template, err = templates.New(template).Parse(body)
 				if err != nil {
-					err = karma.Format(
-						err,
-						"unable to parse template",
-					)
+					err = fmt.Errorf("unable to parse template: %w", err)
 
 					return nil
 				}
 			} else {
 				macro.Template, err = includes.LoadTemplate(base, includePath, template, "{{", "}}", templates)
 				if err != nil {
-					err = karma.Format(err, "unable to load template")
+					err = fmt.Errorf("unable to load template: %w", err)
 
 					return nil
 				}
 			}
 
-			facts := karma.
-				Describe("template", template).
-				Describe("expr", expr)
-
 			macro.Regexp, err = regexp.Compile(expr)
 			if err != nil {
-				err = facts.
-					Format(
-						err,
-						"unable to compile macros regexp",
-					)
+				err = fmt.Errorf("unable to compile macros regexp (expr=%q, template=%q): %w", expr, template, err)
 
 				return nil
 			}
 
 			macro.Config = config
 
-			log.Tracef(
-				facts.Describe("config", macro.Config),
-				"loaded macro %q",
-				expr,
-			)
+			log.Trace().
+				Interface("vardump", map[string]any{
+					"expr":     expr,
+					"template": template,
+					"config":   macro.Config,
+				}).
+				Msgf("loaded macro %q", expr)
 
 			macros = append(macros, macro)
 

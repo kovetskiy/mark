@@ -16,8 +16,8 @@ import (
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/chromedp"
 
-	"github.com/kovetskiy/mark/attachment"
-	"github.com/reconquest/pkg/log"
+	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/rs/zerolog/log"
 
 	"oss.terrastruct.com/d2/d2graph"
 	"oss.terrastruct.com/d2/d2layouts/d2dagrelayout"
@@ -36,9 +36,9 @@ var renderTimeout = 120 * time.Second
 // expected by d2's imgbundler.
 type markSimpleLogger struct{}
 
-func (markSimpleLogger) Debug(s string) { log.Debugf(nil, "%s", s) }
-func (markSimpleLogger) Info(s string)  { log.Infof(nil, "%s", s) }
-func (markSimpleLogger) Error(s string) { log.Errorf(nil, "%s", s) }
+func (markSimpleLogger) Debug(s string) { log.Debug().Msg(s) }
+func (markSimpleLogger) Info(s string)  { log.Info().Msg(s) }
+func (markSimpleLogger) Error(s string) { log.Error().Msg(s) }
 
 func renderD2ToSVG(ctx context.Context, d2Diagram []byte) ([]byte, error) {
 	ruler, err := textmeasure.NewRuler()
@@ -76,7 +76,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 		return attachment.Attachment{}, err
 	}
 
-	log.Debugf(nil, "Rendering: %q", title)
+	log.Debug().Msgf("Rendering: %q", title)
 	pngBytes, boxModel, err := convertSVGtoPNG(ctx, out, scale)
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -90,7 +90,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
 
-	log.Debugf(nil, "Checksum: %q -> %s", title, checkSum)
+	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -137,7 +137,7 @@ func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float6
 
 	boxModel, err := parseSVGDimensions(out)
 	if err != nil {
-		log.Debugf(nil, "could not read svg dimensions: %v", err)
+		log.Debug().Err(err).Msg("could not read svg dimensions")
 	}
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Diagram))

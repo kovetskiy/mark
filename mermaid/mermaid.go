@@ -9,8 +9,8 @@ import (
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
-	"github.com/kovetskiy/mark/attachment"
-	"github.com/reconquest/pkg/log"
+	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/rs/zerolog/log"
 )
 
 var renderTimeout = 120 * time.Second
@@ -19,14 +19,15 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
 	defer cancel()
 
-	log.Debugf(nil, "Setting up Mermaid renderer: %q", title)
-	renderer, err := mermaid.NewRenderEngine(ctx)
+	log.Debug().Msgf("Setting up Mermaid renderer: %q", title)
+	renderer, err := mermaid.NewRenderEngine(ctx, nil)
 
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
+	defer renderer.Cancel()
 
-	log.Debugf(nil, "Rendering: %q", title)
+	log.Debug().Msgf("Rendering: %q", title)
 	pngBytes, boxModel, err := renderer.RenderAsScaledPng(string(mermaidDiagram), scale)
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -39,7 +40,7 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 	mermaidBytes := append(mermaidDiagram, scaleAsBytes...)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidBytes))
-	log.Debugf(nil, "Checksum: %q -> %s", title, checkSum)
+	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err

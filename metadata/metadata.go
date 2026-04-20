@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -26,6 +26,7 @@ const (
 	HeaderInclude     = `Include`
 	HeaderSidebar     = `Sidebar`
 	ContentAppearance = `Content-Appearance`
+	HeaderImageAlign  = `Image-Align`
 )
 
 type Meta struct {
@@ -39,6 +40,7 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
+	ImageAlign        string
 }
 
 const (
@@ -51,7 +53,7 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
 		offset int
@@ -60,10 +62,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	scanner := bufio.NewScanner(bytes.NewBuffer(data))
 	for scanner.Scan() {
 		line := scanner.Text()
-
-		if err := scanner.Err(); err != nil {
-			return nil, nil, err
-		}
 
 		offset += len(line) + 1
 
@@ -81,13 +79,12 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		if meta == nil {
 			meta = &Meta{}
 			meta.Type = "page"                                  // Default if not specified
-			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
 		}
 
 		header := cases.Title(language.English).String(matches[1])
 
 		var value string
-		if len(matches) > 1 {
+		if len(matches) > 2 {
 			value = strings.TrimSpace(matches[2])
 		}
 
@@ -131,16 +128,20 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				meta.ContentAppearance = FullWidthContentAppearance
 			}
 
+		case HeaderImageAlign:
+			meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
+
 		default:
-			log.Errorf(
-				nil,
-				`encountered unknown header %q line: %#v`,
-				header,
-				line,
-			)
+			log.Error().
+				Err(nil).
+				Msgf(`encountered unknown header %q line: %#v`, header, line)
 
 			continue
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
 	}
 
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
@@ -152,10 +153,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			meta.Type = "page"
 		}
 
-		if meta.ContentAppearance == "" {
-			meta.ContentAppearance = FullWidthContentAppearance // Default to full-width for backwards compatibility
-		}
-
 		if titleFromH1 && meta.Title == "" {
 			meta.Title = ExtractDocumentLeadingH1(data)
 		}
@@ -165,6 +162,17 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		if spaceFromCli != "" && meta.Space == "" {
 			meta.Space = spaceFromCli
 		}
+	}
+
+	// Use the global content appearance flag if the header is not set in the document
+	if meta != nil && defaultContentAppearance != "" && meta.ContentAppearance == "" {
+		if strings.TrimSpace(defaultContentAppearance) == FixedContentAppearance {
+			meta.ContentAppearance = FixedContentAppearance
+		} else {
+			meta.ContentAppearance = FullWidthContentAppearance
+		}
+	} else if meta != nil && meta.ContentAppearance == "" {
+		meta.ContentAppearance = FullWidthContentAppearance // Default to full-width if nothing else is set for backwards compatibility
 	}
 
 	if meta == nil {
@@ -182,11 +190,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		pathHash := sha256.Sum256([]byte(path))
 		// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
 		meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
-		log.Debugf(
-			nil,
-			"appended hash to page title: %s",
-			meta.Title,
-		)
+		log.Debug().Msgf("appended hash to page title: %s", meta.Title)
 	}
 
 	// Remove trailing spaces from title

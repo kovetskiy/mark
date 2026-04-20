@@ -30,6 +30,7 @@ File in the extended format should follow the specification:
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
+<!-- Image-Align: <left|center|right> -->
 
 <page contents>
 ```
@@ -72,6 +73,14 @@ Setting the sidebar creates a column on the right side.  You're able to add any 
 ```
 
 You can set a page emoji icon by specifying the icon in the headers.
+
+```markdown
+<!-- Image-Align: center -->
+```
+
+You can set the alignment for all images in the page. Common values are `left`, `center`, and `right`. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
+
+**Note**: Images with width >= 760px automatically use `center` instead of the configured alignment, as Confluence requires this for wide images.
 
 Mark supports Go templates, which can be included into article by using path
 to the template relative to current working dir, e.g.:
@@ -252,40 +261,75 @@ some long bash code block
 | `linenumbers`                  | false   |
 | `1` (any number for firstline) | 1       |
 
-Example:  
+Example:
 
-* `bash collapse`  
+* `bash collapse`
   If you have long code blocks, you can make them collapsible.
-* `bash collapse title Some long long bash function`  
+* `bash collapse title Some long long bash function`
   And you can also add a title.
-* `bash linenumbers collapse title Some long long bash function`  
+* `bash linenumbers collapse title Some long long bash function`
   And linenumbers.
-* `bash 1 collapse title Some long long bash function`  
+* `bash 1 collapse title Some long long bash function`
   Or directly give a number as firstline number.
-* `bash 1 collapse midnight title Some long long bash function`  
+* `bash 1 collapse midnight title Some long long bash function`
   And even themes.
-* `- 1 collapse midnight title Some long long code`  
+* `- 1 collapse midnight title Some long long code`
   Please note that, if you want to have a code block without a language
   use `-` as the first character, if you want to have the other goodies.
 
-More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.  
+More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.
 
 ### Block Quotes
 
-Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met
+#### GitHub Alerts Support
+
+You can now use GitHub-style alert syntax in your markdown, and Mark will automatically convert them to Confluence macros:
+
+```markdown
+> [!NOTE]
+> This creates a blue info box - perfect for helpful information!
+
+> [!TIP]
+> This creates a green tip box - great for best practices and suggestions!
+
+> [!IMPORTANT]
+> This creates a blue info box - ideal for critical information!
+
+> [!WARNING]
+> This creates a yellow warning box - use for important warnings!
+
+> [!CAUTION]
+> This creates a red warning box - perfect for dangerous situations!
+```
+
+#### Technical Details
+
+Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met:
 
 1. The BlockQuote is on the root level of the document (not nested)
-1. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note` or [Github MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
+2. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note` or [GitHub MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
 
-| Github Alerts | Confluence |
-| --- | --- |
-| Tip (green lightbulb) | Tip (green checkmark in circle) |
-| Note (blue I in circle) | Info (blue I in circle) |
-| Important (purple exclamation mark in speech bubble) | Info (blue I in circle) |
-| Warning (yellow exclamation mark in triangle) | Note (yellow exclamation mark in triangle) |
-| Caution (red exclamation mark in hexagon) | Warning (red exclamation mark in hexagon) |
+| GitHub Alerts | Confluence | Description |
+| --------------- | ------------ | ------------- |
+| `[!TIP]` (green lightbulb) | Tip (green checkmark in circle) | Helpful suggestions and best practices |
+| `[!NOTE]` (blue I in circle) | Info (blue I in circle) | General information and notes |
+| `[!IMPORTANT]` (purple exclamation mark in speech bubble) | Info (blue I in circle) | Critical information that needs attention |
+| `[!WARNING]` (yellow exclamation mark in triangle) | Note (yellow exclamation mark in triangle) | Important warnings and cautions |
+| `[!CAUTION]` (red exclamation mark in hexagon) | Warning (red exclamation mark in hexagon) | Dangerous situations requiring immediate attention |
 
 In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
+
+### Task Lists
+
+Mark supports [GitHub Flavored Markdown task lists](https://github.github.com/gfm/#task-list-items-extension-).
+Task lists are automatically converted to Confluence `ac:task-list` elements.
+
+```markdown
+- [x] Finished task
+- [ ] Unfinished task
+```
+
+If a list is "mixed" (contains both tasks and regular list items), it will fall back to a standard HTML list with textual markers like `[x]` or `[ ]` to ensure validity in Confluence storage format.
 
 ## Template & Macros
 
@@ -729,7 +773,7 @@ Currently this is not compatible with the automated upload of inline images.
 
 ### Render Mermaid Diagram
 
-Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [Github does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
+Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [GitHub does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
 As long as you have a code block marked as "mermaid", mark will automatically render it as a PNG image and attach it to the page as a rendered version of the code block.
 
 ```mermaid title diagrams_example
@@ -766,16 +810,10 @@ brew tap kovetskiy/mark
 brew install mark
 ```
 
-### Go Install / Go Get
+### Go Install
 
 ```bash
-go install github.com/kovetskiy/mark@latest
-```
-
-For older versions
-
-```bash
-go get -v github.com/kovetskiy/mark
+go install github.com/kovetskiy/mark/v16/cmd/mark@latest
 ```
 
 ### Releases
@@ -809,7 +847,7 @@ USAGE:
    mark [global options]
 
 VERSION:
-   v15.2.0@1c82927c11a2999a39e5052aae6d2c65a201260c
+   v16.x.x
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
@@ -838,13 +876,16 @@ GLOBAL OPTIONS:
    --space string                           use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string               The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
+   --content-appearance string              default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed. [$MARK_CONTENT_APPEARANCE]
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
+   --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --d2-output string                       defines the output format for d2 renderings: png or svg. (default: "png") [$MARK_D2_OUTPUT]
    --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
+   --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help
    --version, -v                            print the version
 ```
@@ -859,9 +900,12 @@ password = "password-or-api-key-for-confluence-cloud"
 base-url = "http://confluence.local"
 title-from-h1 = true
 drop-h1 = true
+image-align = "center"
 ```
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
+
+**NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.
 
 **NOTE**: The system specific locations are described in here:
 <https://pkg.go.dev/os#UserConfigDir>.
@@ -932,6 +976,34 @@ mark -f "**/docs/*.md"
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.
+
+### Preserving Inline Comments
+
+When collaborators leave inline comments on a Confluence page, updating the page via `mark` will normally erase those comments because the stored body is fully replaced. The `--preserve-comments` flag re-attaches inline comment markers to the new page body before uploading, so existing review threads survive updates.
+
+```bash
+mark --preserve-comments -f docs/page.md
+```
+
+Or via environment variable:
+
+```bash
+MARK_PRESERVE_COMMENTS=true mark -f docs/page.md
+```
+
+**How it works:**
+
+1. Before uploading, `mark` fetches the current page body and all inline comment markers from the Confluence API.
+2. For each existing `<ac:inline-comment-marker>` tag it records the content wrapped by that marker plus a short context window immediately before the opening tag and immediately after the closing tag in the old body (not around the raw selection text, so the context is stable even when the marker wraps additional inline markup such as `<strong>`).
+3. It searches the new body for the same selected text and picks the occurrence whose surrounding context best matches the original (using Levenshtein distance), so the marker lands in the right place even if nearby text has shifted.
+4. The updated body—with all markers re-embedded—is then uploaded as normal.
+
+**Limitations:**
+
+* If the commented text was deleted from the document, the inline comment cannot be relocated and will be lost. `mark` logs a warning in this case.
+* Overlapping selections (two comments anchored to the same stretch of text) are detected; the earlier overlapping match is dropped with a warning, and the later one (higher byte offset) is kept, rather than producing malformed markup.
+* `--preserve-comments` is automatically skipped for newly created pages (there are no comments to preserve yet).
+* When combined with `--changes-only`, the comment-preservation API calls are skipped entirely on runs where the page content has not changed, avoiding unnecessary round-trips.
 
 ## Issues, Bugs & Contributions
 

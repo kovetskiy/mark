@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/kovetskiy/mark/attachment"
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/stretchr/testify/assert"
 )
 

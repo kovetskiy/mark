@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/kovetskiy/mark/attachment"
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,7 +96,6 @@ func TestExtractD2Image(t *testing.T) {
 			assert.Equal(t, tt.want.Replace, got.Replace, "processD2(%v, %v)", tt.name, string(tt.markdown))
 			assert.Equal(t, tt.want.Checksum, got.Checksum, "processD2(%v, %v)", tt.name, string(tt.markdown))
 			assert.Equal(t, tt.want.ID, got.ID, "processD2(%v, %v)", tt.name, string(tt.markdown))
-
 			// Dimensions can vary slightly by renderer/runtime; just ensure we set positive values
 			gotWidth, widthErr := strconv.ParseInt(got.Width, 10, 64)
 			assert.NoError(t, widthErr, "processD2(%v, %v)", tt.name, string(tt.markdown))

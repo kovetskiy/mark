@@ -13,9 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
-	"github.com/kovetskiy/lorg"
-	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type User struct {
@@ -59,6 +58,12 @@ type PageInfo struct {
 		Title string `json:"title"`
 	} `json:"ancestors"`
 
+	Body struct {
+		Storage struct {
+			Value string `json:"value"`
+		} `json:"storage"`
+	} `json:"body"`
+
 	Links struct {
 		Full string `json:"webui"`
 		Base string `json:"-"` // Not from JSON; populated from response _links.base
@@ -86,6 +91,29 @@ type LabelInfo struct {
 	Labels []Label `json:"results"`
 	Size   int     `json:"number"`
 }
+
+type InlineCommentProperties struct {
+	OriginalSelection string `json:"originalSelection"`
+	MarkerRef         string `json:"markerRef"`
+}
+
+type InlineCommentExtensions struct {
+	Location         string                  `json:"location"`
+	InlineProperties InlineCommentProperties `json:"inlineProperties"`
+}
+
+type InlineCommentResult struct {
+	Extensions InlineCommentExtensions `json:"extensions"`
+}
+
+type InlineComments struct {
+	Links struct {
+		Context string `json:"context"`
+		Next    string `json:"next"`
+	} `json:"_links"`
+	Results []InlineCommentResult `json:"results"`
+}
+
 type form struct {
 	buffer io.Reader
 	writer *multipart.Writer
@@ -95,8 +123,8 @@ type tracer struct {
 	prefix string
 }
 
-func (tracer *tracer) Printf(format string, args ...interface{}) {
-	log.Tracef(nil, tracer.prefix+" "+format, args...)
+func (tracer *tracer) Printf(format string, args ...any) {
+	log.Trace().Msgf(tracer.prefix+" "+format, args...)
 }
 
 func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
@@ -107,6 +135,9 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 			Password: password,
 		}
 	}
+
+	// Normalize baseURL once before building all derived endpoints.
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	var httpClient *http.Client
 	if insecureSkipVerify {
@@ -129,7 +160,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 
 	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, httpClient, 3)
 
-	if log.GetLevel() == lorg.LevelTrace {
+	if zerolog.GlobalLevel() == zerolog.TraceLevel {
 		rest.Logger = &tracer{"rest:"}
 		json.Logger = &tracer{"json-rpc:"}
 	}
@@ -137,18 +168,14 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	return &API{
 		rest:    rest,
 		json:    json,
-		BaseURL: strings.TrimSuffix(baseURL, "/"),
+		BaseURL: baseURL,
 	}
 }
 
 func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	page, err := api.FindPage(space, ``, "page")
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"can't obtain first page from space %q",
-			space,
-		)
+		return nil, fmt.Errorf("can't obtain first page from space %q: %w", space, err)
 	}
 
 	if page == nil {
@@ -180,7 +207,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return nil, err
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode != http.StatusOK {
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -350,11 +377,7 @@ func (api *API) UpdateAttachment(
 
 	err = json.Unmarshal(result, &extendedResponse)
 	if err != nil {
-		return info, karma.Format(
-			err,
-			"unable to unmarshal JSON response as full response format: %s",
-			string(result),
-		)
+		return info, fmt.Errorf("unable to unmarshal JSON response as full response format (JSON=%s): %w", string(result), err)
 	}
 
 	if len(extendedResponse.Results) > 0 {
@@ -374,11 +397,7 @@ func (api *API) UpdateAttachment(
 	var shortResponse AttachmentInfo
 	err = json.Unmarshal(result, &shortResponse)
 	if err != nil {
-		return info, karma.Format(
-			err,
-			"unable to unmarshal JSON response as short response format: %s",
-			string(result),
-		)
+		return info, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
 	}
 
 	return shortResponse, nil
@@ -392,42 +411,27 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 
 	content, err := writer.CreateFormFile("file", name)
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to create form file",
-		)
+		return nil, fmt.Errorf("unable to create form file: %w", err)
 	}
 
 	_, err = io.Copy(content, reader)
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to copy i/o between form-file and file",
-		)
+		return nil, fmt.Errorf("unable to copy i/o between form-file and file: %w", err)
 	}
 
 	commentWriter, err := writer.CreateFormField("comment")
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to create form field for comment",
-		)
+		return nil, fmt.Errorf("unable to create form field for comment: %w", err)
 	}
 
 	_, err = commentWriter.Write([]byte(comment))
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to write comment in form-field",
-		)
+		return nil, fmt.Errorf("unable to write comment in form-field: %w", err)
 	}
 
 	err = writer.Close()
 	if err != nil {
-		return nil, karma.Format(
-			err,
-			"unable to close form-writer",
-		)
+		return nil, fmt.Errorf("unable to close form-writer: %w", err)
 	}
 
 	return &form{
@@ -437,44 +441,65 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 }
 
 func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
-	result := struct {
+	type page struct {
 		Links struct {
 			Context string `json:"context"`
+			Next    string `json:"next"`
 		} `json:"_links"`
 		Results []AttachmentInfo `json:"results"`
-	}{}
-
-	payload := map[string]string{
-		"expand": "version,container",
-		"limit":  "1000",
 	}
 
-	request, err := api.rest.Res(
-		"content/"+pageID+"/child/attachment", &result,
-	).Get(payload)
-	if err != nil {
-		return nil, err
-	}
+	const pageSize = 100
+	var all []AttachmentInfo
+	start := 0
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
+	for {
+		var result page
 
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
+		payload := map[string]string{
+			"expand": "version,container",
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
 		}
 
-		result.Results[i] = info
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/attachment", &result,
+		).Get(payload)
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		for i, info := range result.Results {
+			if info.Links.Context == "" {
+				info.Links.Context = result.Links.Context
+			}
+			result.Results[i] = info
+		}
+
+		all = append(all, result.Results...)
+
+		if len(result.Results) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Results)
 	}
 
-	return result.Results, nil
+	return all, nil
 }
 
 func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
+	return api.GetPageByIDExpanded(pageID, "ancestors,version")
+}
+
+func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": "ancestors,version"})
+	).Get(map[string]string{"expand": expand})
 	if err != nil {
 		return nil, err
 	}
@@ -486,6 +511,44 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 	return request.Response.(*PageInfo), nil
 }
 
+func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
+	const pageSize = 100
+	all := &InlineComments{}
+	start := 0
+
+	for {
+		result := &InlineComments{}
+		request, err := api.rest.Res(
+			"content/"+pageID+"/child/comment", result,
+		).Get(map[string]string{
+			"expand": "extensions.inlineProperties",
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		if all.Links.Context == "" {
+			all.Links = result.Links
+		}
+
+		all.Results = append(all.Results, result.Results...)
+
+		if len(result.Results) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Results)
+	}
+
+	return all, nil
+}
+
 func (api *API) CreatePage(
 	space string,
 	pageType string,
@@ -493,21 +556,21 @@ func (api *API) CreatePage(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"type":  pageType,
 		"title": title,
-		"space": map[string]interface{}{
+		"space": map[string]any{
 			"key": space,
 		},
-		"body": map[string]interface{}{
-			"storage": map[string]interface{}{
+		"body": map[string]any{
+			"storage": map[string]any{
 				"representation": "storage",
 				"value":          body,
 			},
 		},
-		"metadata": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"editor": map[string]interface{}{
+		"metadata": map[string]any{
+			"properties": map[string]any{
+				"editor": map[string]any{
 					"value": "v2",
 				},
 			},
@@ -515,7 +578,7 @@ func (api *API) CreatePage(
 	}
 
 	if parent != nil {
-		payload["ancestors"] = []map[string]interface{}{
+		payload["ancestors"] = []map[string]any{
 			{"id": parent.ID},
 		}
 	}
@@ -534,22 +597,22 @@ func (api *API) CreatePage(
 	return request.Response.(*PageInfo), nil
 }
 
-func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, newLabels []string, appearance string, emojiString string) error {
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
 	nextPageVersion := page.Version.Number + 1
-	oldAncestors := []map[string]interface{}{}
+	oldAncestors := []map[string]any{}
 
 	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
 		// picking only the last one, which is required by confluence
-		oldAncestors = []map[string]interface{}{
+		oldAncestors = []map[string]any{
 			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
 		}
 	}
 
-	properties := map[string]interface{}{
+	properties := map[string]any{
 		// Fix to set full-width as has changed on Confluence APIs again.
 		// https://jira.atlassian.com/browse/CONFCLOUD-65447
 		//
-		"content-appearance-published": map[string]interface{}{
+		"content-appearance-published": map[string]any{
 			"value": appearance,
 		},
 		// content-appearance-draft should not be set as this is impacted by
@@ -557,40 +620,43 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	if emojiString != "" {
-		r, _ := utf8.DecodeRuneInString(emojiString)
+		r, size := utf8.DecodeRuneInString(emojiString)
+		if r == utf8.RuneError && size <= 1 {
+			return fmt.Errorf("invalid UTF-8 in emoji: %q", emojiString)
+		}
 		unicodeHex := fmt.Sprintf("%x", r)
 
-		properties["emoji-title-draft"] = map[string]interface{}{
+		properties["emoji-title-draft"] = map[string]any{
 			"value": unicodeHex,
 		}
-		properties["emoji-title-published"] = map[string]interface{}{
+		properties["emoji-title-published"] = map[string]any{
 			"value": unicodeHex,
 		}
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"id":    page.ID,
 		"type":  page.Type,
 		"title": page.Title,
-		"version": map[string]interface{}{
+		"version": map[string]any{
 			"number":    nextPageVersion,
 			"minorEdit": minorEdit,
 			"message":   versionMessage,
 		},
 		"ancestors": oldAncestors,
-		"body": map[string]interface{}{
-			"storage": map[string]interface{}{
+		"body": map[string]any{
+			"storage": map[string]any{
 				"value":          newContent,
 				"representation": "storage",
 			},
 		},
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"properties": properties,
 		},
 	}
 
 	request, err := api.rest.Res(
-		"content/"+page.ID, &map[string]interface{}{},
+		"content/"+page.ID, &map[string]any{},
 	).Put(payload)
 	if err != nil {
 		return err
@@ -605,10 +671,10 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 
 func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, error) {
 
-	labels := []map[string]interface{}{}
+	labels := []map[string]any{}
 	for _, label := range newLabels {
 		if label != "" {
-			item := map[string]interface{}{
+			item := map[string]any{
 				"prefix": "global",
 				"name":   label,
 			}
@@ -641,7 +707,11 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		return nil, err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
+	if request.Raw.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -649,18 +719,46 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
-
-	request, err := api.rest.Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Get(map[string]string{"prefix": prefix})
-	if err != nil {
-		return nil, err
+	type labelPage struct {
+		Links struct {
+			Next string `json:"next"`
+		} `json:"_links"`
+		Labels []Label `json:"results"`
+		Size   int     `json:"number"`
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	const pageSize = 50
+	var all []Label
+	start := 0
+
+	for {
+		var result labelPage
+
+		request, err := api.rest.Res(
+			"content/"+page.ID+"/label", &result,
+		).Get(map[string]string{
+			"prefix": prefix,
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"start":  fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Labels...)
+
+		if len(result.Labels) < pageSize || result.Links.Next == "" {
+			break
+		}
+
+		start += len(result.Labels)
 	}
-	return request.Response.(*LabelInfo), nil
+
+	return &LabelInfo{Labels: all, Size: len(all)}, nil
 }
 
 func (api *API) GetUserByName(name string) (*User, error) {
@@ -671,7 +769,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	}
 
 	// Try the new path first
-	_, err := api.rest.
+	request, err := api.rest.
 		Res("search").
 		Res("user", &response).
 		Get(map[string]string{
@@ -682,8 +780,8 @@ func (api *API) GetUserByName(name string) (*User, error) {
 	}
 
 	// Try old path
-	if len(response.Results) == 0 {
-		_, err := api.rest.
+	if request.Raw.StatusCode != http.StatusOK || len(response.Results) == 0 {
+		request, err = api.rest.
 			Res("search", &response).
 			Get(map[string]string{
 				"cql": fmt.Sprintf("user.fullname~%q", name),
@@ -691,15 +789,14 @@ func (api *API) GetUserByName(name string) (*User, error) {
 		if err != nil {
 			return nil, err
 		}
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
 	}
 
 	if len(response.Results) == 0 {
 
-		return nil, karma.
-			Describe("name", name).
-			Reason(
-				"user with given name is not found",
-			)
+		return nil, fmt.Errorf("user with name %q is not found", name)
 	}
 
 	return &response.Results[0].User, nil
@@ -708,12 +805,16 @@ func (api *API) GetUserByName(name string) (*User, error) {
 func (api *API) GetCurrentUser() (*User, error) {
 	var user User
 
-	_, err := api.rest.
+	request, err := api.rest.
 		Res("user").
 		Res("current", &user).
 		Get()
 	if err != nil {
 		return nil, err
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
 	}
 
 	return &user, nil
@@ -723,22 +824,29 @@ func (api *API) RestrictPageUpdatesCloud(
 	page *PageInfo,
 	allowedUser string,
 ) error {
-	user, err := api.GetCurrentUser()
+	user, err := api.GetUserByName(allowedUser)
 	if err != nil {
-		return err
+		// Fall back to the currently authenticated user if the specified
+		// user cannot be resolved by name (e.g. on Confluence Cloud where
+		// only accountId is accepted and name lookup may fail).
+		currentUser, currentErr := api.GetCurrentUser()
+		if currentErr != nil {
+			return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
+		}
+		user = currentUser
 	}
 
-	var result interface{}
+	var result any
 
 	request, err := api.rest.
 		Res("content").
 		Id(page.ID).
 		Res("restriction", &result).
-		Post([]map[string]interface{}{
+		Post([]map[string]any{
 			{
 				"operation": "update",
-				"restrictions": map[string]interface{}{
-					"user": []map[string]interface{}{
+				"restrictions": map[string]any{
+					"user": []map[string]any{
 						{
 							"type":      "known",
 							"accountId": user.AccountID,
@@ -764,15 +872,15 @@ func (api *API) RestrictPageUpdatesServer(
 ) error {
 	var (
 		err    error
-		result interface{}
+		result any
 	)
 
 	request, err := api.json.Res(
 		"setContentPermissions", &result,
-	).Post([]interface{}{
+	).Post([]any{
 		page.ID,
 		"Edit",
-		[]map[string]interface{}{
+		[]map[string]any{
 			{
 				"userName": allowedUser,
 			},
@@ -812,6 +920,10 @@ func (api *API) RestrictPageUpdates(
 }
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
+	defer func() {
+		_ = request.Raw.Body.Close()
+	}()
+
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return errors.New(
 			"the Confluence API returned unexpected status: 401 (Unauthorized)",
@@ -825,9 +937,6 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	}
 
 	output, _ := io.ReadAll(request.Raw.Body)
-	defer func() {
-		_ = request.Raw.Body.Close()
-	}()
 
 	return fmt.Errorf(
 		"the Confluence API returned unexpected status: %v, "+

@@ -7,4 +7,5 @@ type MarkConfig struct {
 	DropFirstH1   bool
 	StripNewlines bool
 	Features      []string
+	ImageAlign    string
 }

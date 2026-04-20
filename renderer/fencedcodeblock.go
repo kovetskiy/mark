@@ -6,12 +6,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/attachment"
-	"github.com/kovetskiy/mark/d2"
-	"github.com/kovetskiy/mark/mermaid"
-	"github.com/kovetskiy/mark/stdlib"
-	"github.com/kovetskiy/mark/types"
-	"github.com/reconquest/pkg/log"
+	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/types"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -78,7 +77,7 @@ func ParseTitle(lang string) string {
 		// it's found, check if title is given and return it
 		start := index + 6
 		if len(lang) > start {
-			return lang[start:]
+			return strings.TrimSpace(lang[start:])
 		}
 	}
 	return ""
@@ -157,23 +156,36 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, invalidD2OutputError(r.MarkConfig.D2Output)
 		}
 		if err != nil {
-			log.Debugf(nil, "error: %v", err)
-			return ast.WalkStop, err
+			line, col := GetLineCol(source, node.Pos())
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %v", line, col, err)
 		}
 		r.Attachments.Attach(attachment)
+
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
+		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
+
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
-				Width      string
-				Height     string
-				Title      string
-				Alt        string
-				Attachment string
-				Url        string
+				Align          string
+				Layout         string
+				OriginalWidth  string
+				OriginalHeight string
+				Width          string
+				Height         string
+				Title          string
+				Alt            string
+				Attachment     string
+				Url            string
 			}{
+				effectiveAlign,
+				effectiveLayout,
 				attachment.Width,
 				attachment.Height,
+				displayWidth,
+				"",
 				attachment.Name,
 				"",
 				attachment.Filename,
@@ -188,23 +200,36 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
 		attachment, err := mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
 		if err != nil {
-			log.Debugf(nil, "error: %v", err)
-			return ast.WalkStop, err
+			line, col := GetLineCol(source, node.Pos())
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: mermaid rendering failed: %v", line, col, err)
 		}
 		r.Attachments.Attach(attachment)
+
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
+		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
+
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:image",
 			struct {
-				Width      string
-				Height     string
-				Title      string
-				Alt        string
-				Attachment string
-				Url        string
+				Align          string
+				Layout         string
+				OriginalWidth  string
+				OriginalHeight string
+				Width          string
+				Height         string
+				Title          string
+				Alt            string
+				Attachment     string
+				Url            string
 			}{
+				effectiveAlign,
+				effectiveLayout,
 				attachment.Width,
 				attachment.Height,
+				displayWidth,
+				"",
 				attachment.Name,
 				"",
 				attachment.Filename,

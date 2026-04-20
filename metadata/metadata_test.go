@@ -60,3 +60,32 @@ func TestSetTitleFromFilename(t *testing.T) {
 		assert.Equal(t, "Already Title Cased", meta.Title)
 	})
 }
+
+func TestExtractMetaContentAppearance(t *testing.T) {
+	t.Run("default fills missing content appearance", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, FixedContentAppearance)
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, FixedContentAppearance, meta.ContentAppearance)
+	})
+
+	t.Run("header takes precedence over default", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: full-width -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, FixedContentAppearance)
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
+	})
+
+	t.Run("falls back to full-width when default isn't set", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, "")
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
+	})
+}

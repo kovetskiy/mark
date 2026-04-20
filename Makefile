@@ -16,7 +16,9 @@ build:
 	@echo :: building go binary $(VERSION)
 	CGO_ENABLED=0 go build \
 		-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
-		-gcflags "-trimpath $(GOPATH)/src"
+		-gcflags "-trimpath $(GOPATH)/src" \
+		-o $(NAME) \
+		./cmd/mark
 
 test:
 	go test -race -coverprofile=profile.cov ./... -v

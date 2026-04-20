@@ -3,6 +3,8 @@ package util
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -164,6 +166,15 @@ var Flags = []cli.Flag{
 		Usage:   "The delimiter used for the parents list",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_DELIMITER"), altsrctoml.TOML("parents-delimiter", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:  "content-appearance",
+		Value: "",
+		Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed.",
+		Sources: cli.NewValueSourceChain(
+			cli.EnvVar("MARK_CONTENT_APPEARANCE"),
+			altsrctoml.TOML("content-appearance", altsrc.NewStringPtrSourcer(&filename)),
+		),
+	},
 	&cli.FloatFlag{
 		Name:    "mermaid-scale",
 		Value:   1.0,
@@ -182,6 +193,12 @@ var Flags = []cli.Flag{
 		Value:   false,
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
+		Name:    "preserve-comments",
+		Value:   false,
+		Usage:   "Fetch and preserve inline comments on existing Confluence pages.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PRESERVE_COMMENTS"), altsrctoml.TOML("preserve-comments", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.FloatFlag{
 		Name:    "d2-scale",
@@ -208,12 +225,32 @@ var Flags = []cli.Flag{
 		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:    "image-align",
+		Value:   "",
+		Usage:   "set image alignment (left, center, right). Can be overridden per-file via the Image-Align header.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_IMAGE_ALIGN"), altsrctoml.TOML("image-align", altsrc.NewStringPtrSourcer(&filename))),
+	},
 }
 
-// CheckMutuallyExclusiveTitleFlags checks if both title-from-h1 and title-from-filename are set
-func CheckMutuallyExclusiveTitleFlags(context context.Context, command *cli.Command) (context.Context, error) {
+// CheckFlags validates combinations and values of global flags.
+func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
+
+	contentAppearance := strings.TrimSpace(command.String("content-appearance"))
+	if contentAppearance != "" {
+		switch contentAppearance {
+		case "full-width", "fixed":
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --content-appearance: %q (expected: full-width or fixed)",
+				contentAppearance,
+			)
+		}
+	}
+
 	return context, nil
 }

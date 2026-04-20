@@ -12,10 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/confluence"
-	"github.com/kovetskiy/mark/metadata"
-	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/rs/zerolog/log"
 )
 
 type LinkSubstitution struct {
@@ -51,16 +50,16 @@ func ResolveRelativeLinks(
 
 	links := []LinkSubstitution{}
 	for _, match := range matches {
-		log.Tracef(
-			nil,
-			"found a relative link: full=%s filename=%s hash=%s",
-			match.full,
-			match.filename,
-			match.hash,
-		)
+		log.Trace().
+			Msgf(
+				"found a relative link: full=%s filename=%s hash=%s",
+				match.full,
+				match.filename,
+				match.hash,
+			)
 		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash)
 		if err != nil {
-			return nil, karma.Format(err, "resolve link: %q", match.full)
+			return nil, fmt.Errorf("resolve link %q: %w", match.full, err)
 		}
 
 		if resolved == "" {
@@ -91,7 +90,7 @@ func resolveLink(
 	if len(link.filename) > 0 {
 		filepath := filepath.Join(base, link.filename)
 
-		log.Tracef(nil, "filepath: %s", filepath)
+		log.Trace().Msgf("filepath: %s", filepath)
 		stat, err := os.Stat(filepath)
 		if err != nil {
 			return "", nil
@@ -102,16 +101,15 @@ func resolveLink(
 		}
 
 		linkContents, err := os.ReadFile(filepath)
+		if err != nil {
+			return "", fmt.Errorf("read file %s: %w", filepath, err)
+		}
 
 		contentType := http.DetectContentType(linkContents)
 		// Check if the MIME type starts with "text/"
 		if !strings.HasPrefix(contentType, "text/") {
-			log.Debugf(nil, "Ignoring link to file %q: detected content type %v", filepath, contentType)
+			log.Debug().Msgf("Ignoring link to file %q: detected content type %v", filepath, contentType)
 			return "", nil
-		}
-
-		if err != nil {
-			return "", karma.Format(err, "read file: %s", filepath)
 		}
 
 		linkContents = bytes.ReplaceAll(
@@ -122,13 +120,14 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash)
+		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash, "")
 		if err != nil {
-			log.Errorf(
-				err,
-				"unable to extract metadata from %q; ignoring the relative link",
-				filepath,
-			)
+			log.Error().
+				Err(err).
+				Msgf(
+					"unable to extract metadata from %q; ignoring the relative link",
+					filepath,
+				)
 
 			return "", nil
 		}
@@ -137,22 +136,16 @@ func resolveLink(
 			return "", nil
 		}
 
-		log.Tracef(
-			nil,
-			"extracted metadata: space=%s title=%s",
-			linkMeta.Space,
-			linkMeta.Title,
-		)
-
-		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
-		if err != nil {
-			return "", karma.Format(
-				err,
-				"find confluence page: %s / %s / %s",
-				filepath,
+		log.Trace().
+			Msgf(
+				"extracted metadata: space=%s title=%s",
 				linkMeta.Space,
 				linkMeta.Title,
 			)
+
+		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
+		if err != nil {
+			return "", fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", filepath, linkMeta.Space, linkMeta.Title, err)
 		}
 
 		if result == "" {
@@ -173,7 +166,7 @@ func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 			continue
 		}
 
-		log.Tracef(nil, "substitute link: %q -> %q", link.From, link.To)
+		log.Trace().Msgf("substitute link: %q -> %q", link.From, link.To)
 
 		markdown = bytes.ReplaceAll(
 			markdown,
@@ -186,8 +179,13 @@ func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
 }
 
 func parseLinks(markdown string) []markdownLink {
-	// Matches links but not inline images
-	re := regexp.MustCompile(`[^\!]\[.+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
+	// Matches markdown links but not inline images (![ ... ]).
+	// Group 1: full link target (path + optional hash)
+	// Group 2: file path portion
+	// Group 3: hash portion
+	// The leading (?:^|[^!]) anchor prevents matching image syntax without
+	// consuming a character that belongs to a preceding link or word.
+	re := regexp.MustCompile(`(?:^|[^!])\[.+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
 	matches := re.FindAllStringSubmatch(markdown, -1)
 
 	links := make([]markdownLink, len(matches))
@@ -212,14 +210,14 @@ func getConfluenceLink(
 	// Try to find as a page first
 	page, err := api.FindPage(space, title, "page")
 	if err != nil {
-		return "", karma.Format(err, "api: find page")
+		return "", fmt.Errorf("api: find page %q in space %q: %w", title, space, err)
 	}
 
 	// If not found as a page, try to find as a blog post
 	if page == nil {
 		page, err = api.FindPage(space, title, "blogpost")
 		if err != nil {
-			return "", karma.Format(err, "api: find blogpost")
+			return "", fmt.Errorf("api: find blogpost %q in space %q: %w", title, space, err)
 		}
 	}
 
@@ -237,7 +235,7 @@ func getConfluenceLink(
 
 	tiny, err := GenerateTinyLink(baseURL, page.ID)
 	if err != nil {
-		return "", karma.Format(err, "generate tiny link for page %s", page.ID)
+		return "", fmt.Errorf("generate tiny link for page %s: %w", page.ID, err)
 	}
 
 	return tiny, nil

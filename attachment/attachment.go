@@ -4,17 +4,23 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/url"
 	"path"
 	"path/filepath"
-	"sort"
+	"cmp"
+	"slices"
+	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/confluence"
-	"github.com/kovetskiy/mark/vfs"
-	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/vfs"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -45,10 +51,7 @@ func ResolveAttachments(
 	for i := range attachments {
 		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to get checksum for attachment: %q", attachments[i].Name,
-			)
+			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
 		}
 
 		attachments[i].Checksum = checksum
@@ -56,7 +59,7 @@ func ResolveAttachments(
 
 	remotes, err := api.GetAttachments(page.ID)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("unable to get attachments for page %s: %w", page.ID, err)
 	}
 
 	existing := []Attachment{}
@@ -96,7 +99,7 @@ func ResolveAttachments(
 	}
 
 	for i, attachment := range creating {
-		log.Infof(nil, "creating attachment: %q", attachment.Name)
+		log.Info().Msgf("creating attachment: %q", attachment.Name)
 
 		info, err := api.CreateAttachment(
 			page.ID,
@@ -105,11 +108,7 @@ func ResolveAttachments(
 			bytes.NewReader(attachment.FileBytes),
 		)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to create attachment %q",
-				attachment.Name,
-			)
+			return nil, fmt.Errorf("unable to create attachment %q: %w", attachment.Name, err)
 		}
 
 		attachment.ID = info.ID
@@ -122,7 +121,7 @@ func ResolveAttachments(
 	}
 
 	for i, attachment := range updating {
-		log.Infof(nil, "updating attachment: %q", attachment.Name)
+		log.Info().Msgf("updating attachment: %q", attachment.Name)
 
 		info, err := api.UpdateAttachment(
 			page.ID,
@@ -132,11 +131,7 @@ func ResolveAttachments(
 			bytes.NewReader(attachment.FileBytes),
 		)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to update attachment %q",
-				attachment.Name,
-			)
+			return nil, fmt.Errorf("unable to update attachment %q: %w", attachment.Name, err)
 		}
 
 		attachment.Link = path.Join(
@@ -148,7 +143,7 @@ func ResolveAttachments(
 	}
 
 	for i := range existing {
-		log.Infof(nil, "keeping unmodified attachment: %q", attachments[i].Name)
+		log.Info().Msgf("keeping unmodified attachment: %q", existing[i].Name)
 	}
 
 	attachments = []Attachment{}
@@ -165,16 +160,13 @@ func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []stri
 		return nil, err
 	}
 
-	for _, attachment := range attachments {
-		checksum, err := GetChecksum(bytes.NewReader(attachment.FileBytes))
+	for i := range attachments {
+		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"unable to get checksum for attachment: %q", attachment.Name,
-			)
+			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
 		}
 
-		attachment.Checksum = checksum
+		attachments[i].Checksum = checksum
 	}
 	return attachments, err
 }
@@ -199,7 +191,7 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 	attachmentPath := filepath.Join(base, name)
 	file, err := opener.Open(attachmentPath)
 	if err != nil {
-		return Attachment{}, karma.Format(err, "unable to open file: %q", attachmentPath)
+		return Attachment{}, fmt.Errorf("unable to open file %q: %w", attachmentPath, err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -207,15 +199,27 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		return Attachment{}, karma.Format(err, "unable to read file: %q", attachmentPath)
+		return Attachment{}, fmt.Errorf("unable to read file %q: %w", attachmentPath, err)
 	}
 
-	return Attachment{
+	attachment := Attachment{
 		Name:      name,
 		Filename:  strings.ReplaceAll(name, "/", "_"),
 		FileBytes: fileBytes,
 		Replace:   name,
-	}, nil
+	}
+
+	// Try to detect image dimensions if it's an image attachment
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif":
+		if config, _, err := image.DecodeConfig(bytes.NewReader(fileBytes)); err == nil {
+			attachment.Width = strconv.Itoa(config.Width)
+			attachment.Height = strconv.Itoa(config.Height)
+		}
+	}
+
+	return attachment, nil
 }
 
 func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
@@ -232,8 +236,8 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 	// attachments/a.jpg
 	// attachments/a.jpg.jpg
 	// so we replace longer and then shorter
-	sort.SliceStable(replaces, func(i, j int) bool {
-		return len(replaces[i]) > len(replaces[j])
+	slices.SortStableFunc(replaces, func(a, b string) int {
+		return cmp.Compare(len(b), len(a))
 	})
 
 	for _, replace := range replaces {
@@ -243,7 +247,7 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		if bytes.Contains(markdown, []byte("attachment://"+replace)) {
 			from := "attachment://" + replace
 
-			log.Debugf(nil, "replacing legacy link: %q -> %q", from, to)
+			log.Debug().Msgf("replacing legacy link: %q -> %q", from, to)
 
 			markdown = bytes.ReplaceAll(
 				markdown,
@@ -257,7 +261,7 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		if bytes.Contains(markdown, []byte(replace)) {
 			from := replace
 
-			log.Debugf(nil, "replacing link: %q -> %q", from, to)
+			log.Debug().Msgf("replacing link: %q -> %q", from, to)
 
 			markdown = bytes.ReplaceAll(
 				markdown,
@@ -269,7 +273,7 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 		}
 
 		if !found {
-			log.Warningf(nil, "unused attachment: %s", replace)
+			log.Warn().Msgf("unused attachment: %s", replace)
 		}
 	}
 

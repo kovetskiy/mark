@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kovetskiy/mark/confluence"
-	"github.com/reconquest/karma-go"
-	"github.com/reconquest/pkg/log"
+	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/rs/zerolog/log"
 )
 
 func EnsureAncestry(
@@ -22,18 +21,14 @@ func EnsureAncestry(
 	for i, title := range ancestry {
 		page, err := api.FindPage(space, title, "page")
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				`error during finding parent page with title %q`,
-				title,
-			)
+			return nil, fmt.Errorf("error during finding parent page with title %q: %w", title, err)
 		}
 
 		if page == nil {
 			break
 		}
 
-		log.Debugf(nil, "parent page %q exists: %s", title, page.Links.Full)
+		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
 
 		rest = ancestry[i:]
 		parent = page
@@ -44,11 +39,7 @@ func EnsureAncestry(
 	} else {
 		page, err := api.FindRootPage(space)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"can't find root page for space %q",
-				space,
-			)
+			return nil, fmt.Errorf("can't find root page for space %q: %w", space, err)
 		}
 
 		parent = page
@@ -57,34 +48,30 @@ func EnsureAncestry(
 		return parent, nil
 	}
 
-	log.Debugf(
-		nil,
-		"empty pages under %q to be created: %s",
-		parent.Title,
-		strings.Join(rest, ` > `),
-	)
+	log.Debug().
+		Msgf(
+			"empty pages under %q to be created: %s",
+			parent.Title,
+			strings.Join(rest, ` > `),
+		)
 
 	if !dryRun {
 		for _, title := range rest {
 			page, err := api.CreatePage(space, "page", parent, title, ``)
 			if err != nil {
-				return nil, karma.Format(
-					err,
-					`error during creating parent page with title %q`,
-					title,
-				)
+				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
 			}
 
 			parent = page
 		}
 	} else {
-		log.Infof(
-			nil,
-			"skipping page creation due to enabled dry-run mode, "+
-				"need to create %d pages: %v",
-			len(rest),
-			rest,
-		)
+		log.Info().
+			Msgf(
+				"skipping page creation due to enabled dry-run mode, "+
+					"need to create %d pages: %v",
+				len(rest),
+				rest,
+			)
 	}
 
 	return parent, nil
@@ -108,15 +95,11 @@ func ValidateAncestry(
 	if len(page.Ancestors) < 1 {
 		homepage, err := api.FindHomePage(space)
 		if err != nil {
-			return nil, karma.Format(
-				err,
-				"can't obtain home page from space %q",
-				space,
-			)
+			return nil, fmt.Errorf("can't obtain home page from space %q: %w", space, err)
 		}
 
 		if page.ID == homepage.ID {
-			log.Debugf(nil, "page is homepage for space %q", space)
+			log.Debug().Msgf("page is homepage for space %q", space)
 			isHomepage = true
 		} else {
 			return nil, fmt.Errorf(`page %q has no parents`, page.Title)
@@ -148,10 +131,10 @@ func ValidateAncestry(
 		}
 
 		if !valid {
-			return nil, karma.Describe("title", page.Title).
-				Describe("actual", strings.Join(actual, " > ")).
-				Describe("expected", strings.Join(ancestry, " > ")).
-				Format(nil, "the page has fewer parents than expected")
+			return nil, fmt.Errorf(
+				"the page has fewer parents than expected: title=%q, actual=[%s], expected=[%s]",
+				page.Title, strings.Join(actual, " > "), strings.Join(ancestry, " > "),
+			)
 		}
 	}
 
@@ -173,12 +156,10 @@ func ValidateAncestry(
 				list = append(list, ancestor.Title)
 			}
 
-			return nil, karma.Describe("expected parent", parent).
-				Describe("list", strings.Join(list, "; ")).
-				Format(
-					nil,
-					"unexpected ancestry tree, did not find expected parent page in the tree",
-				)
+			return nil, fmt.Errorf(
+				"unexpected ancestry tree, did not find expected parent page %q in the tree: actual=[%s]",
+				parent, strings.Join(list, "; "),
+			)
 		}
 	}
 

@@ -3,7 +3,8 @@ before:
   hooks:
     - go mod download
 builds:
-- env:
+- main: ./cmd/mark
+  env:
   - CGO_ENABLED=0
   gcflags:
     - all=-trimpath={{.Env.GOPATH}}
