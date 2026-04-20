@@ -23,6 +23,11 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Stdlib      *stdlib.Lib
 	MarkConfig  types.MarkConfig
 	Attachments attachment.Attacher
+	Path        string
+}
+
+func invalidD2OutputError(value string) error {
+	return fmt.Errorf("unsupported d2-output %q: must be one of png or svg", value)
 }
 
 var reBlockDetails = regexp.MustCompile(
@@ -32,12 +37,13 @@ var reBlockDetails = regexp.MustCompile(
 )
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		MarkConfig:  cfg,
 		Attachments: attachments,
+		Path:        path,
 	}
 }
 
@@ -132,7 +138,23 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	}
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
-		attachment, err := d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		var (
+			attachment attachment.Attachment
+			err        error
+		)
+
+		switch r.MarkConfig.D2Output {
+		case "svg":
+			inputPath := r.Path
+			if inputPath == "" {
+				inputPath = "-"
+			}
+			attachment, err = d2.ProcessD2SVG(title, lval, inputPath, r.MarkConfig.D2Scale)
+		case "png", "":
+			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		default:
+			return ast.WalkStop, invalidD2OutputError(r.MarkConfig.D2Output)
+		}
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %v", line, col, err)

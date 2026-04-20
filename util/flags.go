@@ -206,6 +206,12 @@ var Flags = []cli.Flag{
 		Usage:   "defines the scaling factor for d2 renderings.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2-scale", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:    "d2-output",
+		Value:   "png",
+		Usage:   "defines the output format for d2 renderings: png or svg.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_OUTPUT"), altsrctoml.TOML("d2-output", altsrc.NewStringPtrSourcer(&filename))),
+	},
 
 	&cli.StringSliceFlag{
 		Name:    "features",
