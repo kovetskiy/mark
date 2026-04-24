@@ -1,28 +1,38 @@
 package renderer
 
 import (
+	"path/filepath"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/vfs"
+	"golang.org/x/net/html"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
+	htmlrenderer "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 )
 
 type ConfluenceHTMLBlockRenderer struct {
-	html.Config
+	htmlrenderer.Config
+	Stdlib      *stdlib.Lib
+	Path        string
+	Attachments attachment.Attacher
+	ImageAlign  string
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...htmlrenderer.Option) renderer.NodeRenderer {
 	return &ConfluenceHTMLBlockRenderer{
-		Config: html.NewConfig(),
+		Config:      htmlrenderer.NewConfig(),
+		Stdlib:      stdlib,
+		Path:        path,
+		Attachments: attachments,
+		ImageAlign:  imageAlign,
 	}
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
 func (r *ConfluenceHTMLBlockRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindHTMLBlock, r.renderHTMLBlock)
 }
@@ -36,8 +46,9 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 	l := n.Lines().Len()
 	for i := 0; i < l; i++ {
 		line := n.Lines().At(i)
+		raw := strings.TrimSpace(string(line.Value(source)))
 
-		switch strings.Trim(string(line.Value(source)), "\n") {
+		switch raw {
 		case "<!-- ac:layout -->":
 			_, _ = w.WriteString("<ac:layout>\n")
 			return ast.WalkContinue, nil
@@ -77,11 +88,127 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 		case "<!-- ac:placeholder end -->":
 			_, _ = w.WriteString("</ac:placeholder>\n")
 			return ast.WalkContinue, nil
+		}
 
+		if status, err := r.tryRenderImgTag(w, raw); status != ast.WalkContinue || err != nil {
+			return status, err
 		}
 	}
 	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+}
 
+// tryRenderImgTag checks if raw is an <img> tag and renders it as ac:image.
+// Returns WalkSkipChildren if handled, WalkContinue if not an img tag.
+func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw string) (ast.WalkStatus, error) {
+	if !strings.HasPrefix(strings.ToLower(raw), "<img ") {
+		return ast.WalkContinue, nil
+	}
+
+	src, width, alt, title := parseImgAttrs(raw)
+	if src == "" {
+		return ast.WalkContinue, nil
+	}
+
+	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})
+	if err != nil || len(attachments) == 0 {
+		// Not a local file — treat as URL
+		escapedURL := strings.ReplaceAll(src, "&", "&amp;")
+		effectiveAlign := r.ImageAlign
+		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
+			Align          string
+			Layout         string
+			OriginalWidth  string
+			OriginalHeight string
+			Width          string
+			Height         string
+			Title          string
+			Alt            string
+			Attachment     string
+			Url            string
+		}{
+			effectiveAlign,
+			calculateLayout(effectiveAlign, width),
+			"", "", width, "", title, alt, "", escapedURL,
+		})
+		if err != nil {
+			return ast.WalkStop, err
+		}
+		return ast.WalkSkipChildren, nil
+	}
+
+	r.Attachments.Attach(attachments[0])
+
+	// Width from the <img> tag takes precedence over the detected file width.
+	effectiveWidth := width
+	if effectiveWidth == "" {
+		effectiveWidth = attachments[0].Width
+	}
+
+	effectiveAlign := calculateAlign(r.ImageAlign, effectiveWidth)
+	effectiveLayout := calculateLayout(effectiveAlign, effectiveWidth)
+	displayWidth := calculateDisplayWidth(effectiveWidth, effectiveLayout)
+
+	err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
+		Align          string
+		Layout         string
+		OriginalWidth  string
+		OriginalHeight string
+		Width          string
+		Height         string
+		Title          string
+		Alt            string
+		Attachment     string
+		Url            string
+	}{
+		effectiveAlign,
+		effectiveLayout,
+		attachments[0].Width,
+		attachments[0].Height,
+		displayWidth,
+		"",
+		title,
+		alt,
+		attachments[0].Filename,
+		"",
+	})
+	if err != nil {
+		return ast.WalkStop, err
+	}
+	return ast.WalkSkipChildren, nil
+}
+
+// parseImgAttrs parses src, width, alt, and title from an HTML <img> tag.
+func parseImgAttrs(raw string) (src, width, alt, title string) {
+	doc, err := html.ParseFragment(strings.NewReader(raw), nil)
+	if err != nil {
+		return
+	}
+	// html.ParseFragment wraps output in <html><head/><body>…</body></html>
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "img" {
+			for _, a := range n.Attr {
+				switch a.Key {
+				case "src":
+					src = a.Val
+				case "width":
+					width = a.Val
+				case "alt":
+					alt = a.Val
+				case "title":
+					title = a.Val
+				}
+			}
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for _, n := range doc {
+		walk(n)
+	}
+	return
 }
 
 func (r *ConfluenceHTMLBlockRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {

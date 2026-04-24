@@ -772,6 +772,20 @@ The width will be the commented html after the image (in this case 300px).
 
 Currently this is not compatible with the automated upload of inline images.
 
+### Use HTML img tags
+
+Markdown natively supports HTML `<img>` tags, making them a convenient way to control image size while keeping the document readable in standard Markdown renderers like GitHub. Using `width` keeps large images from dominating the page without any mark-specific syntax.
+
+Previously, sizing an uploaded image in Confluence required two steps: upload the image via the `![]()` syntax, then adjust its size separately using a macro. With `<img>` tag support both happen in one pass.
+
+```markdown
+<img src="diagram.png" width="600" alt="Architecture" title="Arch diagram" />
+
+<img src="https://example.com/logo.png" alt="External logo" />
+```
+
+Local files are uploaded as attachments; URLs are linked directly. Supported attributes: `src`, `width`, `alt`, `title`. The `width` attribute takes precedence over the detected file width when uploading local attachments.
+
 ### Render Mermaid Diagram
 
 Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [GitHub does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
