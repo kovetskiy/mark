@@ -109,6 +109,11 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
+			// WithAttribute enables the {#id .class} syntax for headings (e.g. # Title {#custom-id}).
+			// Although goldmark parses attributes on all block elements, each renderer only
+			// outputs attributes via its own filter (e.g. HeadingAttributeFilter,
+			// ParagraphAttributeFilter), so non-heading nodes are unaffected in practice.
+			parser.WithAttribute(),
 		),
 		goldmark.WithRendererOptions(
 			html.WithUnsafe(),
