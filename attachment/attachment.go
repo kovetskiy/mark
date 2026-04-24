@@ -49,6 +49,13 @@ func ResolveAttachments(
 	attachments []Attachment,
 ) ([]Attachment, error) {
 	for i := range attachments {
+		// Skip checksum computation if already set (e.g. by mermaid/d2 renderers
+		// which use the source content as the stable checksum rather than the
+		// rendered PNG bytes, which may be non-deterministic across environments).
+		if attachments[i].Checksum != "" {
+			continue
+		}
+
 		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
 			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
