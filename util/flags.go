@@ -169,7 +169,7 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:  "content-appearance",
 		Value: "",
-		Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed.",
+		Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default.",
 		Sources: cli.NewValueSourceChain(
 			cli.EnvVar("MARK_CONTENT_APPEARANCE"),
 			altsrctoml.TOML("content-appearance", altsrc.NewStringPtrSourcer(&filename)),
@@ -236,11 +236,11 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	contentAppearance := strings.TrimSpace(command.String("content-appearance"))
 	if contentAppearance != "" {
 		switch contentAppearance {
-		case "full-width", "fixed":
+		case "full-width", "fixed", "default":
 			// ok
 		default:
 			return context, fmt.Errorf(
-				"invalid value for --content-appearance: %q (expected: full-width or fixed)",
+				"invalid value for --content-appearance: %q (expected: full-width, fixed, or default)",
 				contentAppearance,
 			)
 		}
