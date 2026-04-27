@@ -8,7 +8,7 @@ require (
 	github.com/chromedp/chromedp v0.15.1
 	github.com/dreampuf/mermaid.go v0.2.0
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
-	github.com/rs/zerolog v1.35.0
+	github.com/rs/zerolog v1.35.1
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
