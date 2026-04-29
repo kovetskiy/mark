@@ -792,6 +792,21 @@ All you need is a codeblock marked as "d2".
 X -> Y
 ```
 
+### Render PlantUML Diagram
+
+Mark supports [PlantUML](https://plantuml.com/) diagrams using the [Confluence PlantUML macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml). This feature is enabled by default.
+
+When you include a code block marked as "plantuml", mark will wrap it in the appropriate Confluence macro, allowing the PlantUML plugin in Confluence to render the diagram.
+
+**Note:** This requires the PlantUML plugin to be installed in your Confluence instance.
+
+```plantuml
+@startuml
+Alice -> Bob: Authentication Request
+Bob --> Alice: Authentication Response
+@enduml
+```
+
 ### MkDocs' Admonitions
 
 Optionally you can enable mkdocs-style [Admonitions](https://squidfunk.github.io/mkdocs-material/reference/admonitions/) via `--features="mkdocsadmonitions"`.
@@ -883,7 +898,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention", "plantuml") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help
