@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"slices"
@@ -168,6 +170,45 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				"",
 				attachment.Filename,
 				"",
+			},
+		)
+
+		if err != nil {
+			return ast.WalkStop, err
+		}
+
+	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid-cloud") {
+		// Native mermaid support through the confluence plugin mermaid-cloud: upload .md attachment and use mermaid-cloud macro
+		// https://stratus-addons.atlassian.net/wiki/spaces/MDFC/pages/3088416802/Quickstart
+		diagramName := title
+		if diagramName == "" {
+			// Generate unique name from content hash to avoid collisions
+			// when multiple untitled mermaid diagrams exist on one page
+			hash := sha256.Sum256(lval)
+			diagramName = "mermaid-" + hex.EncodeToString(hash[:])[:8]
+		}
+		att := attachment.Attachment{
+			Name:      diagramName,
+			Filename:  diagramName + ".md",
+			FileBytes: lval,
+			Replace:   diagramName,
+			Checksum:  "", // will be computed by ResolveAttachments,
+		}
+		r.Attachments.Attach(att)
+
+		err := r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:mermaid-cloud",
+			struct {
+				Filename string
+				Format   string
+				Zoom     string
+				Toolbar  string
+			}{
+				att.Filename,
+				"text/plain",
+				"fit",
+				"bottom",
 			},
 		)
 
