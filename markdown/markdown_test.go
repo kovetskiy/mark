@@ -64,7 +64,7 @@ func TestCompileMarkdown(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -106,7 +106,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   true,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -150,7 +150,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: true,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
