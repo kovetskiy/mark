@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
@@ -239,9 +240,9 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
 
-	if command.Float("d2-scale") <= 0 {
+	if slices.Contains(command.StringSlice("features"), "d2") && command.Float("d2-scale") <= 0 {
 		return context, fmt.Errorf(
-			"invalid value for --d2-scale: %v (expected: > 0)",
+			"invalid value for --d2-scale: %v (expected: > 0 when d2 feature is enabled)",
 			command.Float("d2-scale"),
 		)
 	}

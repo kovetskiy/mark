@@ -17,6 +17,7 @@ func runWithArgs(args []string) error {
 			&cli.FloatFlag{Name: "d2-scale", Value: 1.0},
 			&cli.StringFlag{Name: "d2-output"},
 			&cli.StringFlag{Name: "content-appearance"},
+			&cli.StringSliceFlag{Name: "features", Value: []string{"mermaid", "mention"}},
 		},
 		Before: CheckFlags,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -131,17 +132,31 @@ func TestD2ScaleFlagValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("zero is rejected", func(t *testing.T) {
+	t.Run("zero is accepted when d2 feature is disabled", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--d2-scale", "0"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("zero is rejected when d2 feature is enabled", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--features", "d2", "--d2-scale", "0"})
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
 	})
 
-	t.Run("negative value is rejected", func(t *testing.T) {
-		err := runWithArgs([]string{"cmd", "--d2-scale", "-1"})
+	t.Run("negative value is rejected when d2 feature is enabled", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--features", "d2", "--d2-scale", "-1"})
 		if err == nil {
 			t.Errorf("expected error, got nil")
+		}
+	})
+
+	t.Run("negative value is accepted when d2 feature is disabled", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-scale", "-1"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
 		}
 	})
 }

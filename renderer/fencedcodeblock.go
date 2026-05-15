@@ -18,12 +18,17 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// ConfluenceFencedCodeBlockRenderer renders fenced code blocks for Confluence.
 type ConfluenceFencedCodeBlockRenderer struct {
 	html.Config
 	Stdlib      *stdlib.Lib
 	MarkConfig  types.MarkConfig
 	Attachments attachment.Attacher
-	Path        string
+	// Path is the source markdown file path used as the base for resolving
+	// local assets referenced by D2 blocks when SVG output is enabled.
+	// An empty path is allowed and causes D2 asset bundling to use "-" instead,
+	// which skips file-backed local resolution.
+	Path string
 }
 
 func invalidD2OutputError(value string) error {
@@ -36,7 +41,10 @@ var reBlockDetails = regexp.MustCompile(
 	`^(?:(\w*)|-)\s*\b(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
 )
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceFencedCodeBlockRenderer creates a fenced code block renderer.
+// The path argument is the source markdown file path used for local D2 asset
+// resolution when SVG output is enabled. An empty path is allowed and falls
+// back to "-", so D2 rendering proceeds without a file-backed local base path.
 func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
