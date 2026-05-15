@@ -795,7 +795,7 @@ X -> Y
 ### Render PlantUML Diagrams
 
 Optionally you can enable [PlantUML](https://plantuml.com/) diagram rendering via `--features="plantuml"`.
-Unlike Mermaid and D2 which are rendered locally, a codeblocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml).
+Unlike Mermaid and D2 which are rendered locally, code blocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml).
 This requires the PlantUML for Confluence macro to be installed in your Confluence instance.
 
 ```plantuml

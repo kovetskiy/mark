@@ -159,6 +159,35 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 	}
 }
 
+func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	markdown, _, html := loadData(t, "testdata/plantuml.md", "-nofeature")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"mkdocsadmonitions", "mention"},
+	}
+
+	actual, _, _ := mark.CompileMarkdown(markdown, lib, "testdata/plantuml.md", cfg)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
+}
+
 func TestContinueOnError(t *testing.T) {
 	cmd := &cli.Command{
 		Name:                  "temp-mark",
