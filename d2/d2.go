@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -137,7 +138,11 @@ func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float6
 
 	boxModel, err := parseSVGDimensions(out)
 	if err != nil {
-		log.Debug().Err(err).Msg("could not read svg dimensions")
+		log.Warn().
+			Err(err).
+			Str("title", title).
+			Str("input_path", inputPath).
+			Msg("could not read svg dimensions; width and height metadata will be omitted")
 	}
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Diagram))
@@ -235,7 +240,7 @@ func parseSVGDimensions(svg []byte) (*svgBox, error) {
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				if parseErr != nil {
 					return nil, parseErr
 				}

@@ -14,6 +14,7 @@ func runWithArgs(args []string) error {
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "title-from-h1"},
 			&cli.BoolFlag{Name: "title-from-filename"},
+			&cli.StringFlag{Name: "d2-output"},
 			&cli.StringFlag{Name: "content-appearance"},
 		},
 		Before: CheckFlags,
@@ -71,6 +72,36 @@ func TestContentAppearanceFlagValidation(t *testing.T) {
 
 	t.Run("invalid value is rejected", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--content-appearance", "nope"})
+		if err == nil {
+			t.Errorf("expected error, got nil")
+		}
+	})
+}
+
+func TestD2OutputFlagValidation(t *testing.T) {
+	t.Run("empty is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("png is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-output", "png"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("svg is accepted case-insensitively", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-output", "SVG"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid value is rejected", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-output", "pdf"})
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}

@@ -139,8 +139,8 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
 		var (
-			attachment attachment.Attachment
-			err        error
+			att attachment.Attachment
+			err error
 		)
 
 		switch r.MarkConfig.D2Output {
@@ -149,9 +149,9 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			if inputPath == "" {
 				inputPath = "-"
 			}
-			attachment, err = d2.ProcessD2SVG(title, lval, inputPath, r.MarkConfig.D2Scale)
+			att, err = d2.ProcessD2SVG(title, lval, inputPath, r.MarkConfig.D2Scale)
 		case "png", "":
-			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+			att, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
 		default:
 			return ast.WalkStop, invalidD2OutputError(r.MarkConfig.D2Output)
 		}
@@ -159,11 +159,11 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %v", line, col, err)
 		}
-		r.Attachments.Attach(attachment)
+		r.Attachments.Attach(att)
 
-		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
-		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
-		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, att.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, att.Width)
+		displayWidth := calculateDisplayWidth(att.Width, effectiveLayout)
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
@@ -182,13 +182,13 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			}{
 				effectiveAlign,
 				effectiveLayout,
-				attachment.Width,
-				attachment.Height,
+				att.Width,
+				att.Height,
 				displayWidth,
 				"",
-				attachment.Name,
+				att.Name,
 				"",
-				attachment.Filename,
+				att.Filename,
 				"",
 			},
 		)
