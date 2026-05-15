@@ -111,9 +111,7 @@ func TestD2OutputFlagValidation(t *testing.T) {
 
 	t.Run("invalid value is rejected", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--d2-output", "pdf"})
-		if err == nil {
-			t.Errorf("expected error, got nil")
-		}
+		assert.EqualError(t, err, `invalid value for D2Output: "pdf" (expected: png, svg, or empty)`)
 	})
 }
 
@@ -141,16 +139,12 @@ func TestD2ScaleFlagValidation(t *testing.T) {
 
 	t.Run("zero is rejected when d2 feature is enabled", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--features", "d2", "--d2-scale", "0"})
-		if err == nil {
-			t.Errorf("expected error, got nil")
-		}
+		assert.EqualError(t, err, "invalid value for D2Scale: 0 (expected: > 0 when D2 feature is enabled)")
 	})
 
 	t.Run("negative value is rejected when d2 feature is enabled", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--features", "d2", "--d2-scale", "-1"})
-		if err == nil {
-			t.Errorf("expected error, got nil")
-		}
+		assert.EqualError(t, err, "invalid value for D2Scale: -1 (expected: > 0 when D2 feature is enabled)")
 	})
 
 	t.Run("negative value is accepted when d2 feature is disabled", func(t *testing.T) {
@@ -159,12 +153,6 @@ func TestD2ScaleFlagValidation(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
-}
-
-func TestNormalizeD2Output(t *testing.T) {
-	assert.Equal(t, "svg", normalizeD2Output(" SVG "))
-	assert.Equal(t, "png", normalizeD2Output("png"))
-	assert.Equal(t, "", normalizeD2Output(" \t "))
 }
 
 func Test_setLogLevel(t *testing.T) {

@@ -90,20 +90,32 @@ func (c Config) output() io.Writer {
 	return io.Discard
 }
 
-func normalizeAndValidateConfig(config Config) (Config, error) {
-	config.D2Output = strings.ToLower(strings.TrimSpace(config.D2Output))
-	if config.D2Output != "" && config.D2Output != "png" && config.D2Output != "svg" {
-		return config, fmt.Errorf(
+// NormalizeAndValidateD2Config normalizes D2 output settings and validates
+// D2-specific configuration shared by library and CLI entry points.
+func NormalizeAndValidateD2Config(output string, scale float64, features []string) (string, error) {
+	output = strings.ToLower(strings.TrimSpace(output))
+	if output != "" && output != "png" && output != "svg" {
+		return output, fmt.Errorf(
 			"invalid value for D2Output: %q (expected: png, svg, or empty)",
-			config.D2Output,
+			output,
 		)
 	}
 
-	if slices.Contains(config.Features, "d2") && config.D2Scale <= 0 {
-		return config, fmt.Errorf(
+	if slices.Contains(features, "d2") && scale <= 0 {
+		return output, fmt.Errorf(
 			"invalid value for D2Scale: %v (expected: > 0 when D2 feature is enabled)",
-			config.D2Scale,
+			scale,
 		)
+	}
+
+	return output, nil
+}
+
+func normalizeAndValidateConfig(config Config) (Config, error) {
+	output, err := NormalizeAndValidateD2Config(config.D2Output, config.D2Scale, config.Features)
+	config.D2Output = output
+	if err != nil {
+		return config, err
 	}
 
 	return config, nil

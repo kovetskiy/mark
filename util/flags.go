@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
+	mark "github.com/kovetskiy/mark/v16"
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
 	"github.com/urfave/cli/v3"
@@ -240,24 +240,12 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
 
-	if slices.Contains(command.StringSlice("features"), "d2") && command.Float("d2-scale") <= 0 {
-		return context, fmt.Errorf(
-			"invalid value for --d2-scale: %v (expected: > 0 when d2 feature is enabled)",
-			command.Float("d2-scale"),
-		)
-	}
-
-	d2Output := normalizeD2Output(command.String("d2-output"))
-	if d2Output != "" {
-		switch d2Output {
-		case "png", "svg":
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --d2-output: %q (expected: png or svg)",
-				d2Output,
-			)
-		}
+	if _, err := mark.NormalizeAndValidateD2Config(
+		command.String("d2-output"),
+		command.Float("d2-scale"),
+		command.StringSlice("features"),
+	); err != nil {
+		return context, err
 	}
 
 	contentAppearance := strings.TrimSpace(command.String("content-appearance"))
