@@ -159,6 +159,36 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 	}
 }
 
+func TestCompileMarkdownInlineLinkCard(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	const fixture = "testdata/inline-link-card.md"
+	markdown, htmlname, html := loadData(t, fixture, "-inlinecard")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"mkdocsadmonitions", "mention", "inline-link-card"},
+	}
+
+	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
+}
+
 func TestContinueOnError(t *testing.T) {
 	cmd := &cli.Command{
 		Name:                  "temp-mark",
