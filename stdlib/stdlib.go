@@ -440,7 +440,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
-       `ac:plantuml`: text(
+		`ac:plantuml`: text(
 			`<ac:structured-macro ac:name="plantuml">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
 			`</ac:structured-macro>`,
