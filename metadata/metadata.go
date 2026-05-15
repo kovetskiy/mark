@@ -46,6 +46,7 @@ type Meta struct {
 const (
 	FullWidthContentAppearance = "full-width"
 	FixedContentAppearance     = "fixed"
+	DefaultContentAppearance   = "default"
 )
 
 var (
@@ -122,9 +123,12 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			continue
 
 		case ContentAppearance:
-			if strings.TrimSpace(value) == FixedContentAppearance {
+			switch strings.TrimSpace(value) {
+			case FixedContentAppearance:
 				meta.ContentAppearance = FixedContentAppearance
-			} else {
+			case DefaultContentAppearance:
+				meta.ContentAppearance = DefaultContentAppearance
+			default:
 				meta.ContentAppearance = FullWidthContentAppearance
 			}
 
@@ -166,9 +170,12 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 	// Use the global content appearance flag if the header is not set in the document
 	if meta != nil && defaultContentAppearance != "" && meta.ContentAppearance == "" {
-		if strings.TrimSpace(defaultContentAppearance) == FixedContentAppearance {
+		switch strings.TrimSpace(defaultContentAppearance) {
+		case FixedContentAppearance:
 			meta.ContentAppearance = FixedContentAppearance
-		} else {
+		case DefaultContentAppearance:
+			meta.ContentAppearance = DefaultContentAppearance
+		default:
 			meta.ContentAppearance = FullWidthContentAppearance
 		}
 	} else if meta != nil && meta.ContentAppearance == "" {

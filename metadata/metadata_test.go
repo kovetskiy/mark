@@ -88,4 +88,22 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 		assert.NotNil(t, meta)
 		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
 	})
+
+	t.Run("default appearance via cli flag", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, DefaultContentAppearance)
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
+	})
+
+	t.Run("default appearance via header", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: default -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, "")
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
+	})
 }
