@@ -7,6 +7,48 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestNormalizeAndValidateConfig(t *testing.T) {
+	t.Run("normalizes D2 output", func(t *testing.T) {
+		config, err := normalizeAndValidateConfig(Config{D2Output: " SVG "})
+		assert.NoError(t, err)
+		assert.Equal(t, "svg", config.D2Output)
+	})
+
+	t.Run("rejects invalid D2 output", func(t *testing.T) {
+		_, err := normalizeAndValidateConfig(Config{D2Output: "pdf"})
+		assert.EqualError(t, err, `invalid value for D2Output: "pdf" (expected: png, svg, or empty)`)
+	})
+
+	t.Run("requires positive D2 scale when D2 is enabled", func(t *testing.T) {
+		_, err := normalizeAndValidateConfig(Config{
+			D2Scale:  0,
+			Features: []string{"d2"},
+		})
+		assert.EqualError(t, err, "invalid value for D2Scale: 0 (expected: > 0 when D2 feature is enabled)")
+	})
+
+	t.Run("allows non-positive D2 scale when D2 is disabled", func(t *testing.T) {
+		_, err := normalizeAndValidateConfig(Config{D2Scale: 0})
+		assert.NoError(t, err)
+	})
+}
+
+func TestRun_ValidatesConfigBeforeGlobbing(t *testing.T) {
+	err := Run(Config{
+		Files:    "[",
+		D2Output: "pdf",
+	})
+	assert.EqualError(t, err, `invalid value for D2Output: "pdf" (expected: png, svg, or empty)`)
+}
+
+func TestProcessFile_ValidatesConfigBeforeReadingFile(t *testing.T) {
+	_, err := ProcessFile("does-not-exist.md", nil, Config{
+		D2Scale:  0,
+		Features: []string{"d2"},
+	})
+	assert.EqualError(t, err, "invalid value for D2Scale: 0 (expected: > 0 when D2 feature is enabled)")
+}
+
 // ---------------------------------------------------------------------------
 // Helper function unit tests
 // ---------------------------------------------------------------------------
@@ -29,9 +71,9 @@ func TestLevenshteinDistance(t *testing.T) {
 		{"abc", "", 3},
 		{"", "abc", 3},
 		{"abc", "abc", 0},
-		{"abc", "axc", 1},   // one substitution
-		{"abc", "ab", 1},    // one deletion
-		{"ab", "abc", 1},    // one insertion
+		{"abc", "axc", 1}, // one substitution
+		{"abc", "ab", 1},  // one deletion
+		{"ab", "abc", 1},  // one insertion
 		{"kitten", "sitting", 3},
 		// Multibyte: é is one rune, so distance from "héllo" to "hello" is 1.
 		{"héllo", "hello", 1},
@@ -206,7 +248,6 @@ func TestMergeComments_ApostropheSelection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos">it's</ac:inline-comment-marker> a test</p>`, result)
 }
-
 
 // TestMergeComments_NestedTags verifies that a marker whose stored content
 // contains nested inline tags (e.g. <strong>) is still recognised by

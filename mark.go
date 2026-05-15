@@ -90,8 +90,33 @@ func (c Config) output() io.Writer {
 	return io.Discard
 }
 
+func normalizeAndValidateConfig(config Config) (Config, error) {
+	config.D2Output = strings.ToLower(strings.TrimSpace(config.D2Output))
+	if config.D2Output != "" && config.D2Output != "png" && config.D2Output != "svg" {
+		return config, fmt.Errorf(
+			"invalid value for D2Output: %q (expected: png, svg, or empty)",
+			config.D2Output,
+		)
+	}
+
+	if slices.Contains(config.Features, "d2") && config.D2Scale <= 0 {
+		return config, fmt.Errorf(
+			"invalid value for D2Scale: %v (expected: > 0 when D2 feature is enabled)",
+			config.D2Scale,
+		)
+	}
+
+	return config, nil
+}
+
 // Run processes all files matching Config.Files and publishes them to Confluence.
 func Run(config Config) error {
+	var err error
+	config, err = normalizeAndValidateConfig(config)
+	if err != nil {
+		return err
+	}
+
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
 
 	files, err := doublestar.FilepathGlob(config.Files)
@@ -140,6 +165,12 @@ func Run(config Config) error {
 // ProcessFile processes a single markdown file and publishes it to Confluence.
 // Returns nil for the page info when compile-only or dry-run mode is active.
 func ProcessFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	var err error
+	config, err = normalizeAndValidateConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read file %q: %w", file, err)

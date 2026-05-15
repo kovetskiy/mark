@@ -14,6 +14,7 @@ func runWithArgs(args []string) error {
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "title-from-h1"},
 			&cli.BoolFlag{Name: "title-from-filename"},
+			&cli.FloatFlag{Name: "d2-scale", Value: 1.0},
 			&cli.StringFlag{Name: "d2-output"},
 			&cli.StringFlag{Name: "content-appearance"},
 		},
@@ -100,12 +101,55 @@ func TestD2OutputFlagValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("svg is accepted with surrounding whitespace", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-output", " SVG "})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
 	t.Run("invalid value is rejected", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--d2-output", "pdf"})
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
 	})
+}
+
+func TestD2ScaleFlagValidation(t *testing.T) {
+	t.Run("default is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("positive value is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-scale", "1.5"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("zero is rejected", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-scale", "0"})
+		if err == nil {
+			t.Errorf("expected error, got nil")
+		}
+	})
+
+	t.Run("negative value is rejected", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--d2-scale", "-1"})
+		if err == nil {
+			t.Errorf("expected error, got nil")
+		}
+	})
+}
+
+func TestNormalizeD2Output(t *testing.T) {
+	assert.Equal(t, "svg", normalizeD2Output(" SVG "))
+	assert.Equal(t, "png", normalizeD2Output("png"))
+	assert.Equal(t, "", normalizeD2Output(" \t "))
 }
 
 func Test_setLogLevel(t *testing.T) {

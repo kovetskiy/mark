@@ -239,7 +239,14 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
 
-	d2Output := strings.TrimSpace(strings.ToLower(command.String("d2-output")))
+	if command.Float("d2-scale") <= 0 {
+		return context, fmt.Errorf(
+			"invalid value for --d2-scale: %v (expected: > 0)",
+			command.Float("d2-scale"),
+		)
+	}
+
+	d2Output := normalizeD2Output(command.String("d2-output"))
 	if d2Output != "" {
 		switch d2Output {
 		case "png", "svg":
