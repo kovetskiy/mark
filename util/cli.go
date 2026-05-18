@@ -89,14 +89,6 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	parents := strings.Split(cmd.String("parents"), cmd.String("parents-delimiter"))
-	d2Output, err := mark.NormalizeAndValidateD2Config(
-		cmd.String("d2-output"),
-		cmd.Float("d2-scale"),
-		cmd.StringSlice("features"),
-	)
-	if err != nil {
-		return err
-	}
 
 	config := mark.Config{
 		BaseURL:               creds.BaseURL,
@@ -129,7 +121,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		StripLinebreaks: cmd.Bool("strip-linebreaks"),
 		MermaidScale:    cmd.Float("mermaid-scale"),
 		D2Scale:         cmd.Float("d2-scale"),
-		D2Output:        d2Output,
+		D2Output:        cmd.String("d2-output"),
 		Features:        cmd.StringSlice("features"),
 		ImageAlign:      cmd.String("image-align"),
 		IncludePath:     cmd.String("include-path"),

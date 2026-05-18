@@ -203,6 +203,16 @@ func TestParseSVGDimensionsFallback(t *testing.T) {
 			svg:  `<svg width="800" height="600" viewBox="0 0 400 300"></svg>`,
 			want: svgBox{width: 800, height: 600},
 		},
+		{
+			name: "parse supported absolute css units",
+			svg:  `<svg width="6pc" height="1in"></svg>`,
+			want: svgBox{width: 96, height: 96},
+		},
+		{
+			name: "fall back to viewBox for unsupported relative units",
+			svg:  `<svg width="10em" height="20em" viewBox="0 0 640 480"></svg>`,
+			want: svgBox{width: 640, height: 480},
+		},
 	}
 
 	for _, tt := range tests {

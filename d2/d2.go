@@ -212,7 +212,33 @@ func parseSVGDimensions(svg []byte) (*svgBox, error) {
 
 	parseLength := func(val string) (float64, error) {
 		val = strings.TrimSpace(val)
-		val = strings.TrimSuffix(val, "px")
+
+		absoluteUnits := []struct {
+			suffix string
+			scale  float64
+		}{
+			{suffix: "px", scale: 1},
+			{suffix: "in", scale: 96},
+			{suffix: "cm", scale: 96 / 2.54},
+			{suffix: "mm", scale: 96 / 25.4},
+			{suffix: "q", scale: 96 / 101.6},
+			{suffix: "pt", scale: 96 / 72},
+			{suffix: "pc", scale: 16},
+		}
+
+		for _, unit := range absoluteUnits {
+			if !strings.HasSuffix(val, unit.suffix) {
+				continue
+			}
+
+			num, err := strconv.ParseFloat(strings.TrimSuffix(val, unit.suffix), 64)
+			if err != nil {
+				return 0, err
+			}
+
+			return num * unit.scale, nil
+		}
+
 		return strconv.ParseFloat(val, 64)
 	}
 
