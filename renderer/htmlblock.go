@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -90,8 +92,10 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			return ast.WalkContinue, nil
 		}
 
-		if status, err := r.tryRenderImgTag(w, raw); status != ast.WalkContinue || err != nil {
-			return status, err
+		if l == 1 {
+			if status, err := r.tryRenderImgTag(w, raw); status != ast.WalkContinue || err != nil {
+				return status, err
+			}
 		}
 	}
 	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
@@ -109,11 +113,9 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		return ast.WalkContinue, nil
 	}
 
-	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})
-	if err != nil || len(attachments) == 0 {
-		// Not a local file — treat as URL
+	if u, err := url.Parse(src); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
 		escapedURL := strings.ReplaceAll(src, "&", "&amp;")
-		effectiveAlign := r.ImageAlign
+		effectiveAlign := calculateAlign(r.ImageAlign, width)
 		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
 			Align          string
 			Layout         string
@@ -134,6 +136,14 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 			return ast.WalkStop, err
 		}
 		return ast.WalkSkipChildren, nil
+	}
+
+	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})
+	if err != nil {
+		return ast.WalkStop, fmt.Errorf("resolving img src %q: %w", src, err)
+	}
+	if len(attachments) == 0 {
+		return ast.WalkStop, fmt.Errorf("img src %q: no attachment resolved", src)
 	}
 
 	r.Attachments.Attach(attachments[0])
