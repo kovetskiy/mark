@@ -116,6 +116,16 @@ func isURLScheme(s string) bool {
 	return false
 }
 
+// isDangerousScheme reports whether s is a scheme that must never be rendered,
+// regardless of context.
+func isDangerousScheme(s string) bool {
+	switch s {
+	case "javascript", "vbscript", "file":
+		return true
+	}
+	return false
+}
+
 // tryRenderImgTag checks if raw is an <img> tag and renders it as ac:image.
 // Returns WalkSkipChildren if handled, WalkContinue if not an img tag.
 func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw string) (ast.WalkStatus, error) {
@@ -126,13 +136,8 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	alt = htmlstdlib.EscapeString(alt)
 	title = htmlstdlib.EscapeString(title)
 
-	if u, err := url.Parse(src); err == nil && u.Scheme != "" && !isURLScheme(u.Scheme) {
-		// Reject unknown hierarchical URLs (e.g. file://) and known-dangerous opaque schemes.
-		// Unknown opaque schemes with no authority (e.g. "images:foo.png") are left to local
-		// file resolution below, since they are likely filenames containing a colon.
-		if u.Opaque == "" || u.Scheme == "javascript" || u.Scheme == "vbscript" {
-			return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
-		}
+	if u, err := url.Parse(src); err == nil && isDangerousScheme(u.Scheme) {
+		return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
 	} else if err == nil && isURLScheme(u.Scheme) {
 		escapedURL := htmlstdlib.EscapeString(src)
 		effectiveAlign := calculateAlign(r.ImageAlign, width)

@@ -367,6 +367,54 @@ func TestTryRenderImgTag_UnsupportedSchemeRejected(t *testing.T) {
 	}
 }
 
+// TestTryRenderImgTag_BlobScheme documents that blob: URIs must not fall through
+// to local file resolution and then silently render as ri:url with a literal blob: string.
+// They should be treated as an external URL (ri:url) or rejected, not as local paths.
+func TestTryRenderImgTag_BlobScheme(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, `<img src="blob:https://example.com/some-uuid" />`)
+	if err != nil {
+		t.Fatalf("blob: URI should not error, got: %v", err)
+	}
+	if status == ast.WalkStop {
+		t.Error("blob: URI should not return WalkStop")
+	}
+	if !strings.Contains(buf.String(), `ri:url`) {
+		t.Errorf("blob: URI should render as ri:url, got: %s", buf.String())
+	}
+}
+
+// TestTryRenderImgTag_UnknownSchemeGraceful documents that unknown hierarchical schemes
+// (e.g. sftp://) must not abort the document walk with WalkStop.
+// They should either render as ri:url or be skipped, but never be fatal.
+func TestTryRenderImgTag_UnknownSchemeGraceful(t *testing.T) {
+	schemes := []struct {
+		name string
+		src  string
+	}{
+		{"sftp", "sftp://host/img.png"},
+		{"s3", "s3://bucket/img.png"},
+		{"ssh", "ssh://host/img.png"},
+	}
+
+	for _, tt := range schemes {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+			var buf bufWriter
+			status, err := r.tryRenderImgTag(&buf, `<img src="`+tt.src+`" />`)
+			if err != nil {
+				t.Errorf("scheme %q should not error, got: %v", tt.src, err)
+			}
+			if status == ast.WalkStop {
+				t.Errorf("scheme %q should not return WalkStop, must not abort document render", tt.src)
+			}
+		})
+	}
+}
+
 func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
 	schemes := []struct {
 		name string
