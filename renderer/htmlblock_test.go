@@ -2,7 +2,9 @@ package renderer
 
 import (
 	"bytes"
-	"io"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +12,6 @@ import (
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/yuin/goldmark/ast"
 )
 
@@ -92,17 +93,19 @@ func (f *fakeAttacher) Attach(a attachment.Attachment) {
 	f.attached = append(f.attached, a)
 }
 
-// fakeOpener implements vfs.Opener by returning fixed content for known paths.
-type fakeOpener struct {
-	files map[string][]byte
-}
-
-func (f *fakeOpener) Open(name string) (io.ReadCloser, error) {
-	data, ok := f.files[name]
-	if !ok {
-		return nil, os.ErrNotExist
+// makePNG writes a minimal valid PNG to path and returns its path.
+func makePNG(t *testing.T, path string) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	defer func() { _ = f.Close() }()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Attacher, path string) *ConfluenceHTMLBlockRenderer {
@@ -169,16 +172,8 @@ func TestTryRenderImgTag_URL_WideAlignForced(t *testing.T) {
 }
 
 func TestTryRenderImgTag_LocalAttachment(t *testing.T) {
-	// Write a tiny 1x1 PNG so image.DecodeConfig succeeds.
 	tmpDir := t.TempDir()
-	pngBytes, _ := os.ReadFile(filepath.Join("..", "testdata", "test.png"))
-	if pngBytes == nil {
-		t.Skip("testdata/test.png not found")
-	}
-	imgPath := filepath.Join(tmpDir, "arch.png")
-	if err := os.WriteFile(imgPath, pngBytes, 0644); err != nil {
-		t.Fatal(err)
-	}
+	makePNG(t, filepath.Join(tmpDir, "arch.png"))
 
 	attacher := &fakeAttacher{}
 	r := newTestRenderer(t, "left", attacher, filepath.Join(tmpDir, "page.md"))
@@ -243,6 +238,52 @@ func TestTryRenderImgTag_NotImgTag(t *testing.T) {
 	}
 }
 
-// fakeVFSOpener lets us inject controlled file content into ResolveLocalAttachments.
-// This is needed for testing without relying on the real filesystem permission behaviour.
-var _ vfs.Opener = (*fakeOpener)(nil)
+// TestTryRenderImgTag_AltTitleXMLEscaped documents that special XML characters in alt/title
+// must be escaped in the rendered output (currently failing — bug to be fixed).
+func TestTryRenderImgTag_AltTitleXMLEscaped(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	_, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/x.png" alt="A &amp; B" title='He said "hi"' />`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `ac:alt="A & B"`) {
+		t.Error("unescaped & in alt attribute produces malformed XML")
+	}
+	if strings.Contains(out, `ac:title="He said "hi""`) {
+		t.Error("unescaped \" in title attribute produces malformed XML")
+	}
+}
+
+// TestTryRenderImgTag_MissingLocalFile documents that a missing local file should not abort
+// the entire render — it should fall back gracefully (currently fails with WalkStop — bug to be fixed).
+func TestTryRenderImgTag_MissingLocalFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	r := newTestRenderer(t, "", &fakeAttacher{}, filepath.Join(tmpDir, "page.md"))
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, `<img src="nonexistent.png" />`)
+	if err != nil {
+		t.Errorf("missing local file should not abort render, got error: %v", err)
+	}
+	if status == ast.WalkStop {
+		t.Error("missing local file should not return WalkStop")
+	}
+}
+
+// TestTryRenderImgTag_NonHTTPScheme documents that non-http/https URLs (e.g. data:) should
+// not fall through to ResolveLocalAttachments and hard-error (currently failing — bug to be fixed).
+func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, `<img src="data:image/png;base64,abc" />`)
+	if err != nil {
+		t.Errorf("non-http scheme should not cause an error, got: %v", err)
+	}
+	if status == ast.WalkStop {
+		t.Error("non-http scheme should not return WalkStop")
+	}
+}
