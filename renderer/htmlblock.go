@@ -106,6 +106,16 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
 }
 
+// isURLScheme reports whether s is a recognised URL scheme that should be
+// treated as a remote reference rather than a local file path.
+func isURLScheme(s string) bool {
+	switch s {
+	case "http", "https", "ftp", "ftps", "data", "mailto":
+		return true
+	}
+	return false
+}
+
 // tryRenderImgTag checks if raw is an <img> tag and renders it as ac:image.
 // Returns WalkSkipChildren if handled, WalkContinue if not an img tag.
 func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw string) (ast.WalkStatus, error) {
@@ -116,13 +126,15 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	alt = htmlstdlib.EscapeString(alt)
 	title = htmlstdlib.EscapeString(title)
 
-	if u, err := url.Parse(src); err == nil && u.Scheme != "" {
+	if u, err := url.Parse(src); err == nil && isURLScheme(u.Scheme) {
 		escapedURL := htmlstdlib.EscapeString(src)
 		effectiveAlign := calculateAlign(r.ImageAlign, width)
+		effectiveLayout := calculateLayout(effectiveAlign, width)
+		displayWidth := calculateDisplayWidth(width, effectiveLayout)
 		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
 			Align:  effectiveAlign,
-			Layout: calculateLayout(effectiveAlign, width),
-			Width:  width,
+			Layout: effectiveLayout,
+			Width:  displayWidth,
 			Title:  title,
 			Alt:    alt,
 			Url:    escapedURL,
@@ -141,10 +153,12 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		// File not found — fall back to rendering as a URL.
 		escapedURL := htmlstdlib.EscapeString(src)
 		effectiveAlign := calculateAlign(r.ImageAlign, width)
+		effectiveLayout := calculateLayout(effectiveAlign, width)
+		displayWidth := calculateDisplayWidth(width, effectiveLayout)
 		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
 			Align:  effectiveAlign,
-			Layout: calculateLayout(effectiveAlign, width),
-			Width:  width,
+			Layout: effectiveLayout,
+			Width:  displayWidth,
 			Title:  title,
 			Alt:    alt,
 			Url:    escapedURL,

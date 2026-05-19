@@ -299,6 +299,48 @@ func TestTryRenderImgTag_MissingLocalFile(t *testing.T) {
 	}
 }
 
+// TestTryRenderImgTag_FilenameWithColon documents that a local filename containing a colon
+// (e.g. "images:foo.png") must be resolved as a local attachment, not treated as a URL.
+func TestTryRenderImgTag_FilenameWithColon(t *testing.T) {
+	tmpDir := t.TempDir()
+	makePNG(t, filepath.Join(tmpDir, "images:foo.png"))
+
+	attacher := &fakeAttacher{}
+	r := newTestRenderer(t, "", attacher, filepath.Join(tmpDir, "page.md"))
+
+	var buf bufWriter
+	_, err := r.tryRenderImgTag(&buf, `<img src="images:foo.png" />`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(attacher.attached) != 1 {
+		t.Errorf("expected local file to be attached, got %d attachments; output: %s", len(attacher.attached), buf.String())
+	}
+	if !strings.Contains(buf.String(), `ri:attachment`) {
+		t.Errorf("expected ri:attachment for local file with colon in name, got: %s", buf.String())
+	}
+}
+
+// TestTryRenderImgTag_URL_FullWidthDisplayWidth documents that a wide external image
+// must have its display width normalized to 1800 when layout is full-width,
+// consistent with the attachment branch and calculateDisplayWidth.
+func TestTryRenderImgTag_URL_FullWidthDisplayWidth(t *testing.T) {
+	r := newTestRenderer(t, "center", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	_, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/wide.png" width="2000" />`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `ac:width="2000"`) {
+		t.Errorf("full-width layout should normalize ac:width to 1800, got: %s", out)
+	}
+	if !strings.Contains(out, `ac:width="1800"`) {
+		t.Errorf("expected ac:width=\"1800\" for full-width layout, got: %s", out)
+	}
+}
+
 func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
 	schemes := []struct {
 		name string
