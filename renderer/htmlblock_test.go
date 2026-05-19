@@ -289,17 +289,31 @@ func TestTryRenderImgTag_MissingLocalFile(t *testing.T) {
 	}
 }
 
-// TestTryRenderImgTag_NonHTTPScheme documents that non-http/https URLs (e.g. data:) should
-// not fall through to ResolveLocalAttachments and hard-error (currently failing — bug to be fixed).
 func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
-	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
-
-	var buf bufWriter
-	status, err := r.tryRenderImgTag(&buf, `<img src="data:image/png;base64,abc" />`)
-	if err != nil {
-		t.Errorf("non-http scheme should not cause an error, got: %v", err)
+	schemes := []struct {
+		name string
+		src  string
+	}{
+		{"data URI", "data:image/png;base64,abc"},
+		{"ftp", "ftp://example.com/img.png"},
+		{"mailto", "mailto:test@example.com"},
 	}
-	if status == ast.WalkStop {
-		t.Error("non-http scheme should not return WalkStop")
+
+	for _, tt := range schemes {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+			var buf bufWriter
+			status, err := r.tryRenderImgTag(&buf, `<img src="`+tt.src+`" />`)
+			if err != nil {
+				t.Errorf("scheme %q should not cause an error, got: %v", tt.src, err)
+			}
+			if status == ast.WalkStop {
+				t.Errorf("scheme %q should not return WalkStop", tt.src)
+			}
+			if !strings.Contains(buf.String(), `ri:url`) {
+				t.Errorf("scheme %q should render as ri:url, got: %s", tt.src, buf.String())
+			}
+		})
 	}
 }

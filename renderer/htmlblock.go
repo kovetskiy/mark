@@ -116,7 +116,7 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	alt = htmlstdlib.EscapeString(alt)
 	title = htmlstdlib.EscapeString(title)
 
-	if u, err := url.Parse(src); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+	if u, err := url.Parse(src); err == nil && u.Scheme != "" {
 		escapedURL := strings.ReplaceAll(src, "&", "&amp;")
 		effectiveAlign := calculateAlign(r.ImageAlign, width)
 		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
