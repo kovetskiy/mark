@@ -415,6 +415,49 @@ func TestTryRenderImgTag_UnknownSchemeGraceful(t *testing.T) {
 	}
 }
 
+// TestTryRenderImgTag_AttachmentFilenameXMLEscaped documents that a local
+// filename containing XML-special characters (decoded from HTML entities in
+// the src attribute) must be escaped before appearing in ri:filename.
+// e.g. src="arch&amp;logo.png" decodes to arch&logo.png which would produce
+// malformed XML if written as-is into ri:filename="arch&logo.png".
+func TestTryRenderImgTag_AttachmentFilenameXMLEscaped(t *testing.T) {
+	tmpDir := t.TempDir()
+	makePNG(t, filepath.Join(tmpDir, "arch&logo.png"))
+
+	attacher := &fakeAttacher{}
+	r := newTestRenderer(t, "", attacher, filepath.Join(tmpDir, "page.md"))
+
+	var buf bufWriter
+	_, err := r.tryRenderImgTag(&buf, `<img src="arch&amp;logo.png" />`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `ri:filename="arch&logo.png"`) {
+		t.Error("unescaped & in ri:filename produces malformed XML")
+	}
+	if !strings.Contains(out, `ri:filename="arch&amp;logo.png"`) {
+		t.Errorf("expected escaped ri:filename, got: %s", out)
+	}
+}
+
+// TestTryRenderImgTag_WidthXMLEscaped documents that a width attribute
+// containing XML-special characters must not appear unescaped in ac:width.
+// e.g. width="100&amp;x" decodes to 100&x which would produce malformed XML.
+func TestTryRenderImgTag_WidthXMLEscaped(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	_, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/img.png" width="100&amp;x" />`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `ac:width="100&x"`) {
+		t.Error("unescaped & in ac:width produces malformed XML")
+	}
+}
+
 func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
 	schemes := []struct {
 		name string

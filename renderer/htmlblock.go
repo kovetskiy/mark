@@ -135,6 +135,7 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	}
 	alt = htmlstdlib.EscapeString(alt)
 	title = htmlstdlib.EscapeString(title)
+	width = htmlstdlib.EscapeString(width)
 
 	if u, err := url.Parse(src); err == nil && isDangerousScheme(u.Scheme) {
 		return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
@@ -204,7 +205,7 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		Width:          displayWidth,
 		Title:          title,
 		Alt:            alt,
-		Attachment:     attachments[0].Filename,
+		Attachment:     htmlstdlib.EscapeString(attachments[0].Filename),
 	})
 	if err != nil {
 		return ast.WalkStop, err
