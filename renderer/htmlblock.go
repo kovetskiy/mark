@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	htmlstdlib "html"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,8 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	if src == "" {
 		return ast.WalkContinue, nil
 	}
+	alt = htmlstdlib.EscapeString(alt)
+	title = htmlstdlib.EscapeString(title)
 
 	if u, err := url.Parse(src); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
 		escapedURL := strings.ReplaceAll(src, "&", "&amp;")
