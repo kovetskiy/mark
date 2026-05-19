@@ -1,9 +1,11 @@
 package renderer
 
 import (
+	"errors"
 	"fmt"
 	htmlstdlib "html"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -143,7 +145,32 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 
 	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})
 	if err != nil {
-		return ast.WalkStop, fmt.Errorf("resolving img src %q: %w", src, err)
+		if !errors.Is(err, os.ErrNotExist) {
+			return ast.WalkStop, fmt.Errorf("resolving img src %q: %w", src, err)
+		}
+		// File not found — fall back to rendering as a URL.
+		escapedURL := htmlstdlib.EscapeString(src)
+		effectiveAlign := calculateAlign(r.ImageAlign, width)
+		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
+			Align          string
+			Layout         string
+			OriginalWidth  string
+			OriginalHeight string
+			Width          string
+			Height         string
+			Title          string
+			Alt            string
+			Attachment     string
+			Url            string
+		}{
+			effectiveAlign,
+			calculateLayout(effectiveAlign, width),
+			"", "", width, "", title, alt, "", escapedURL,
+		})
+		if err != nil {
+			return ast.WalkStop, err
+		}
+		return ast.WalkSkipChildren, nil
 	}
 	if len(attachments) == 0 {
 		return ast.WalkStop, fmt.Errorf("img src %q: no attachment resolved", src)
