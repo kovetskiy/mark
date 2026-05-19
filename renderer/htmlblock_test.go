@@ -143,16 +143,30 @@ func TestTryRenderImgTag_URL(t *testing.T) {
 	}
 }
 
-func TestTryRenderImgTag_URL_AmpersandEscaped(t *testing.T) {
+func TestTryRenderImgTag_URL_XMLEscaped(t *testing.T) {
 	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
 
-	var buf bufWriter
-	_, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/img?a=1&b=2" />`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tests := []struct {
+		name    string
+		src     string
+		wantURL string
+	}{
+		{"ampersand", "https://example.com/img?a=1&b=2", `https://example.com/img?a=1&amp;b=2`},
+		{"less than", "https://example.com/img?a=<1", `https://example.com/img?a=&lt;1`},
+		{"quote (html-encoded in src)", `https://example.com/img?a=&quot;1&quot;`, `https://example.com/img?a=&#34;1&#34;`},
 	}
-	if !strings.Contains(buf.String(), `ri:value="https://example.com/img?a=1&amp;b=2"`) {
-		t.Errorf("ampersand not escaped in output: %s", buf.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bufWriter
+			_, err := r.tryRenderImgTag(&buf, `<img src="`+tt.src+`" />`)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(buf.String(), `ri:value="`+tt.wantURL+`"`) {
+				t.Errorf("URL not correctly escaped in output: %s", buf.String())
+			}
+		})
 	}
 }
 
@@ -254,8 +268,6 @@ func TestTryRenderImgTag_NotImgTag(t *testing.T) {
 	}
 }
 
-// TestTryRenderImgTag_AltTitleXMLEscaped documents that special XML characters in alt/title
-// must be escaped in the rendered output (currently failing — bug to be fixed).
 func TestTryRenderImgTag_AltTitleXMLEscaped(t *testing.T) {
 	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
 
@@ -273,8 +285,6 @@ func TestTryRenderImgTag_AltTitleXMLEscaped(t *testing.T) {
 	}
 }
 
-// TestTryRenderImgTag_MissingLocalFile documents that a missing local file should not abort
-// the entire render — it should fall back gracefully (currently fails with WalkStop — bug to be fixed).
 func TestTryRenderImgTag_MissingLocalFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	r := newTestRenderer(t, "", &fakeAttacher{}, filepath.Join(tmpDir, "page.md"))
