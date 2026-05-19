@@ -123,21 +123,13 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	if u, err := url.Parse(src); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
 		escapedURL := strings.ReplaceAll(src, "&", "&amp;")
 		effectiveAlign := calculateAlign(r.ImageAlign, width)
-		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
-			Align          string
-			Layout         string
-			OriginalWidth  string
-			OriginalHeight string
-			Width          string
-			Height         string
-			Title          string
-			Alt            string
-			Attachment     string
-			Url            string
-		}{
-			effectiveAlign,
-			calculateLayout(effectiveAlign, width),
-			"", "", width, "", title, alt, "", escapedURL,
+		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
+			Align:  effectiveAlign,
+			Layout: calculateLayout(effectiveAlign, width),
+			Width:  width,
+			Title:  title,
+			Alt:    alt,
+			Url:    escapedURL,
 		})
 		if err != nil {
 			return ast.WalkStop, err
@@ -153,21 +145,13 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		// File not found — fall back to rendering as a URL.
 		escapedURL := htmlstdlib.EscapeString(src)
 		effectiveAlign := calculateAlign(r.ImageAlign, width)
-		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
-			Align          string
-			Layout         string
-			OriginalWidth  string
-			OriginalHeight string
-			Width          string
-			Height         string
-			Title          string
-			Alt            string
-			Attachment     string
-			Url            string
-		}{
-			effectiveAlign,
-			calculateLayout(effectiveAlign, width),
-			"", "", width, "", title, alt, "", escapedURL,
+		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
+			Align:  effectiveAlign,
+			Layout: calculateLayout(effectiveAlign, width),
+			Width:  width,
+			Title:  title,
+			Alt:    alt,
+			Url:    escapedURL,
 		})
 		if err != nil {
 			return ast.WalkStop, err
@@ -190,33 +174,34 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	effectiveLayout := calculateLayout(effectiveAlign, effectiveWidth)
 	displayWidth := calculateDisplayWidth(effectiveWidth, effectiveLayout)
 
-	err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", struct {
-		Align          string
-		Layout         string
-		OriginalWidth  string
-		OriginalHeight string
-		Width          string
-		Height         string
-		Title          string
-		Alt            string
-		Attachment     string
-		Url            string
-	}{
-		effectiveAlign,
-		effectiveLayout,
-		attachments[0].Width,
-		attachments[0].Height,
-		displayWidth,
-		"",
-		title,
-		alt,
-		attachments[0].Filename,
-		"",
+	err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
+		Align:          effectiveAlign,
+		Layout:         effectiveLayout,
+		OriginalWidth:  attachments[0].Width,
+		OriginalHeight: attachments[0].Height,
+		Width:          displayWidth,
+		Title:          title,
+		Alt:            alt,
+		Attachment:     attachments[0].Filename,
 	})
 	if err != nil {
 		return ast.WalkStop, err
 	}
 	return ast.WalkSkipChildren, nil
+}
+
+// acImageParams holds the parameters for the ac:image template.
+type acImageParams struct {
+	Align          string
+	Layout         string
+	OriginalWidth  string
+	OriginalHeight string
+	Width          string
+	Height         string
+	Title          string
+	Alt            string
+	Attachment     string
+	Url            string
 }
 
 // parseImgAttrs parses src, width, alt, and title from an HTML <img> tag.
