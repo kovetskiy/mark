@@ -99,6 +99,8 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			if status, err := r.tryRenderImgTag(w, raw); status != ast.WalkContinue || err != nil {
 				return status, err
 			}
+		} else {
+			break
 		}
 	}
 	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
