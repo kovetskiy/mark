@@ -802,6 +802,25 @@ When enabled, this renders note, warning, tip, info admonitions as Confluence al
 !!! note
 ```
 
+### Inline Link Cards
+
+Optionally you can render bare URLs as Confluence Cloud **inline smart cards** via `--features="inline-link-card"`.
+
+When enabled, auto-detected URLs in markdown (e.g. `<https://example.com>` or
+a bare URL on its own line) are rendered with the `data-card-appearance="inline"`
+attribute, which Confluence Cloud uses as a hint to display the link as an
+inline card preview (page title, Jira issue summary, GitHub repo card, etc.)
+instead of a plain blue hyperlink.
+
+```markdown
+See <https://your-instance.atlassian.net/wiki/spaces/DOCS/pages/12345/Page+Title>
+for context.
+```
+
+Only **auto-detected URLs** (bare URLs / `<…>` autolinks) are affected.
+Markdown-explicit links (`[label](https://…)`) keep their author-chosen
+display text and render as regular hyperlinks, unchanged.
+
 ## Installation
 
 ### Homebrew
