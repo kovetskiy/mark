@@ -109,10 +109,6 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 // tryRenderImgTag checks if raw is an <img> tag and renders it as ac:image.
 // Returns WalkSkipChildren if handled, WalkContinue if not an img tag.
 func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw string) (ast.WalkStatus, error) {
-	if !strings.HasPrefix(strings.ToLower(raw), "<img ") {
-		return ast.WalkContinue, nil
-	}
-
 	src, width, alt, title := parseImgAttrs(raw)
 	if src == "" {
 		return ast.WalkContinue, nil

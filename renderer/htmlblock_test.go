@@ -222,6 +222,22 @@ func TestTryRenderImgTag_LocalFile_IOError(t *testing.T) {
 	}
 }
 
+func TestTryRenderImgTag_TabAfterImg(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, "<img\tsrc=\"https://example.com/logo.png\" />")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkSkipChildren {
+		t.Errorf("status = %v, want WalkSkipChildren", status)
+	}
+	if !strings.Contains(buf.String(), `ri:url ri:value="https://example.com/logo.png"`) {
+		t.Errorf("output missing ri:url: %s", buf.String())
+	}
+}
+
 func TestTryRenderImgTag_NotImgTag(t *testing.T) {
 	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
 
