@@ -341,6 +341,32 @@ func TestTryRenderImgTag_URL_FullWidthDisplayWidth(t *testing.T) {
 	}
 }
 
+func TestTryRenderImgTag_UnsupportedSchemeRejected(t *testing.T) {
+	schemes := []struct {
+		name string
+		src  string
+	}{
+		{"javascript", "javascript:alert(1)"},
+		{"file", "file:///etc/passwd"},
+		{"vbscript", "vbscript:msgbox(1)"},
+	}
+
+	for _, tt := range schemes {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+			var buf bufWriter
+			_, err := r.tryRenderImgTag(&buf, `<img src="`+tt.src+`" />`)
+			if err == nil {
+				t.Errorf("scheme %q should return an error, got nil; output: %s", tt.src, buf.String())
+			}
+			if strings.Contains(buf.String(), `ri:url`) {
+				t.Errorf("scheme %q must not appear in ri:url output, got: %s", tt.src, buf.String())
+			}
+		})
+	}
+}
+
 func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
 	schemes := []struct {
 		name string

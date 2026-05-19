@@ -126,7 +126,14 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	alt = htmlstdlib.EscapeString(alt)
 	title = htmlstdlib.EscapeString(title)
 
-	if u, err := url.Parse(src); err == nil && isURLScheme(u.Scheme) {
+	if u, err := url.Parse(src); err == nil && u.Scheme != "" && !isURLScheme(u.Scheme) {
+		// Reject unknown hierarchical URLs (e.g. file://) and known-dangerous opaque schemes.
+		// Unknown opaque schemes with no authority (e.g. "images:foo.png") are left to local
+		// file resolution below, since they are likely filenames containing a colon.
+		if u.Opaque == "" || u.Scheme == "javascript" || u.Scheme == "vbscript" {
+			return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
+		}
+	} else if err == nil && isURLScheme(u.Scheme) {
 		escapedURL := htmlstdlib.EscapeString(src)
 		effectiveAlign := calculateAlign(r.ImageAlign, width)
 		effectiveLayout := calculateLayout(effectiveAlign, width)
