@@ -94,7 +94,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/heading-anchor.md":
 			variant = "-droph1"
 		default:
 			variant = ""
