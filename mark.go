@@ -149,7 +149,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, err := ProcessFile(file, api, config)
+		target, err := processFileValidated(file, api, config)
 		if err != nil {
 			if config.ContinueOnError {
 				log.Error().Err(err).Msgf("processing %s", file)
@@ -183,6 +183,10 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, err
 	}
 
+	return processFileValidated(file, api, config)
+}
+
+func processFileValidated(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read file %q: %w", file, err)

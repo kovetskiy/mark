@@ -109,21 +109,23 @@ func TestExtractD2Image(t *testing.T) {
 }
 
 func TestProcessD2SVG(t *testing.T) {
-	attachment, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0)
+	gotAttachment, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0)
 	if err != nil {
 		t.Fatalf("ProcessD2SVG returned error: %v", err)
 	}
 
-	if !bytes.HasPrefix(attachment.FileBytes, []byte("<svg")) && !bytes.HasPrefix(attachment.FileBytes, []byte("<?xml")) {
-		t.Fatalf("expected svg output, got: %q", attachment.FileBytes[:20])
+	if !bytes.HasPrefix(gotAttachment.FileBytes, []byte("<svg")) && !bytes.HasPrefix(gotAttachment.FileBytes, []byte("<?xml")) {
+		t.Fatalf("expected svg output, got: %q", gotAttachment.FileBytes[:20])
 	}
 
-	assert.Equal(t, "example.svg", attachment.Filename)
-	assert.Equal(t, "example", attachment.Name)
-	assert.Equal(t, "example", attachment.Replace)
-	assert.Equal(t, "58fa387384181445e2d8f90a8c7fda945cb75174f73e8b9853ff59b9e0103ddd", attachment.Checksum)
-	assert.NotEmpty(t, attachment.Width)
-	assert.NotEmpty(t, attachment.Height)
+	assert.Equal(t, "example.svg", gotAttachment.Filename)
+	assert.Equal(t, "example", gotAttachment.Name)
+	assert.Equal(t, "example", gotAttachment.Replace)
+	wantChecksum, err := attachment.GetChecksum(bytes.NewReader(gotAttachment.FileBytes))
+	assert.NoError(t, err)
+	assert.Equal(t, wantChecksum, gotAttachment.Checksum)
+	assert.NotEmpty(t, gotAttachment.Width)
+	assert.NotEmpty(t, gotAttachment.Height)
 }
 
 func TestRenderD2SVGHasDimensions(t *testing.T) {
@@ -212,6 +214,11 @@ func TestParseSVGDimensionsFallback(t *testing.T) {
 			name: "fall back to viewBox for unsupported relative units",
 			svg:  `<svg width="10em" height="20em" viewBox="0 0 640 480"></svg>`,
 			want: svgBox{width: 640, height: 480},
+		},
+		{
+			name: "parse supported uppercase css units",
+			svg:  `<svg width="1IN" height="72PT"></svg>`,
+			want: svgBox{width: 96, height: 96},
 		},
 	}
 

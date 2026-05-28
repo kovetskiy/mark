@@ -145,7 +145,7 @@ func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float6
 			Msg("could not read svg dimensions; width and height metadata will be omitted")
 	}
 
-	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Diagram))
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(out))
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -212,6 +212,7 @@ func parseSVGDimensions(svg []byte) (*svgBox, error) {
 
 	parseLength := func(val string) (float64, error) {
 		val = strings.TrimSpace(val)
+		val = strings.ToLower(val)
 
 		absoluteUnits := []struct {
 			suffix string
@@ -222,7 +223,7 @@ func parseSVGDimensions(svg []byte) (*svgBox, error) {
 			{suffix: "cm", scale: 96 / 2.54},
 			{suffix: "mm", scale: 96 / 25.4},
 			{suffix: "q", scale: 96 / 101.6},
-			{suffix: "pt", scale: 96 / 72},
+			{suffix: "pt", scale: 96.0 / 72},
 			{suffix: "pc", scale: 16},
 		}
 
