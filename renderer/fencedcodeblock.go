@@ -18,11 +18,21 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// ConfluenceFencedCodeBlockRenderer renders fenced code blocks for Confluence.
 type ConfluenceFencedCodeBlockRenderer struct {
 	html.Config
 	Stdlib      *stdlib.Lib
 	MarkConfig  types.MarkConfig
 	Attachments attachment.Attacher
+	// Path is the source markdown file path used as the base for resolving
+	// local assets referenced by D2 blocks when SVG output is enabled.
+	// An empty path is allowed and causes D2 asset bundling to use "-" instead,
+	// which skips file-backed local resolution.
+	Path string
+}
+
+func invalidD2OutputError(value string) error {
+	return fmt.Errorf("unsupported d2-output %q: must be one of png or svg", value)
 }
 
 var reBlockDetails = regexp.MustCompile(
@@ -31,13 +41,17 @@ var reBlockDetails = regexp.MustCompile(
 	`^(?:(\w*)|-)\s*\b(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
 )
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, opts ...html.Option) renderer.NodeRenderer {
+// NewConfluenceFencedCodeBlockRenderer creates a fenced code block renderer.
+// The path argument is the source markdown file path used for local D2 asset
+// resolution when SVG output is enabled. An empty path is allowed and falls
+// back to "-", so D2 rendering proceeds without a file-backed local base path.
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		MarkConfig:  cfg,
 		Attachments: attachments,
+		Path:        path,
 	}
 }
 
@@ -132,16 +146,32 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	}
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
-		attachment, err := d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		var (
+			att attachment.Attachment
+			err error
+		)
+
+		switch r.MarkConfig.D2Output {
+		case "svg":
+			inputPath := r.Path
+			if inputPath == "" {
+				inputPath = "-"
+			}
+			att, err = d2.ProcessD2SVG(title, lval, inputPath, r.MarkConfig.D2Scale)
+		case "png", "":
+			att, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		default:
+			return ast.WalkStop, invalidD2OutputError(r.MarkConfig.D2Output)
+		}
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %v", line, col, err)
 		}
-		r.Attachments.Attach(attachment)
+		r.Attachments.Attach(att)
 
-		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
-		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
-		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
+		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, att.Width)
+		effectiveLayout := calculateLayout(effectiveAlign, att.Width)
+		displayWidth := calculateDisplayWidth(att.Width, effectiveLayout)
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
@@ -160,13 +190,13 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			}{
 				effectiveAlign,
 				effectiveLayout,
-				attachment.Width,
-				attachment.Height,
+				att.Width,
+				att.Height,
 				displayWidth,
 				"",
-				attachment.Name,
+				att.Name,
 				"",
-				attachment.Filename,
+				att.Filename,
 				"",
 			},
 		)

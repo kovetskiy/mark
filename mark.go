@@ -70,6 +70,7 @@ type Config struct {
 	StripLinebreaks bool
 	MermaidScale    float64
 	D2Scale         float64
+	D2Output        string
 	Features        []string
 	ImageAlign      string
 	IncludePath     string
@@ -89,8 +90,45 @@ func (c Config) output() io.Writer {
 	return io.Discard
 }
 
+// NormalizeAndValidateD2Config normalizes D2 output settings and validates
+// D2-specific configuration shared by library and CLI entry points.
+func NormalizeAndValidateD2Config(output string, scale float64, features []string) (string, error) {
+	output = strings.ToLower(strings.TrimSpace(output))
+	if output != "" && output != "png" && output != "svg" {
+		return output, fmt.Errorf(
+			"invalid value for D2Output: %q (expected: png, svg, or empty)",
+			output,
+		)
+	}
+
+	if slices.Contains(features, "d2") && scale <= 0 {
+		return output, fmt.Errorf(
+			"invalid value for D2Scale: %v (expected: > 0 when D2 feature is enabled)",
+			scale,
+		)
+	}
+
+	return output, nil
+}
+
+func normalizeAndValidateConfig(config Config) (Config, error) {
+	output, err := NormalizeAndValidateD2Config(config.D2Output, config.D2Scale, config.Features)
+	config.D2Output = output
+	if err != nil {
+		return config, err
+	}
+
+	return config, nil
+}
+
 // Run processes all files matching Config.Files and publishes them to Confluence.
 func Run(config Config) error {
+	var err error
+	config, err = normalizeAndValidateConfig(config)
+	if err != nil {
+		return err
+	}
+
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
 
 	files, err := doublestar.FilepathGlob(config.Files)
@@ -111,7 +149,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, err := ProcessFile(file, api, config)
+		target, err := processFileValidated(file, api, config)
 		if err != nil {
 			if config.ContinueOnError {
 				log.Error().Err(err).Msgf("processing %s", file)
@@ -139,6 +177,16 @@ func Run(config Config) error {
 // ProcessFile processes a single markdown file and publishes it to Confluence.
 // Returns nil for the page info when compile-only or dry-run mode is active.
 func ProcessFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	var err error
+	config, err = normalizeAndValidateConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return processFileValidated(file, api, config)
+}
+
+func processFileValidated(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -271,6 +319,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		cfg := types.MarkConfig{
 			MermaidScale:  config.MermaidScale,
 			D2Scale:       config.D2Scale,
+			D2Output:      config.D2Output,
 			DropFirstH1:   config.DropH1,
 			StripNewlines: config.StripLinebreaks,
 			Features:      config.Features,
@@ -353,6 +402,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	cfg := types.MarkConfig{
 		MermaidScale:  config.MermaidScale,
 		D2Scale:       config.D2Scale,
+		D2Output:      config.D2Output,
 		DropFirstH1:   config.DropH1,
 		StripNewlines: config.StripLinebreaks,
 		Features:      config.Features,

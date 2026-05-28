@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	mark "github.com/kovetskiy/mark/v16"
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
 	"github.com/urfave/cli/v3"
@@ -206,6 +207,12 @@ var Flags = []cli.Flag{
 		Usage:   "defines the scaling factor for d2 renderings.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2-scale", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:    "d2-output",
+		Value:   "png",
+		Usage:   "defines the output format for d2 renderings: png or svg.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_OUTPUT"), altsrctoml.TOML("d2-output", altsrc.NewStringPtrSourcer(&filename))),
+	},
 
 	&cli.StringSliceFlag{
 		Name:    "features",
@@ -231,6 +238,14 @@ var Flags = []cli.Flag{
 func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
+	}
+
+	if _, err := mark.NormalizeAndValidateD2Config(
+		command.String("d2-output"),
+		command.Float("d2-scale"),
+		command.StringSlice("features"),
+	); err != nil {
+		return context, err
 	}
 
 	contentAppearance := strings.TrimSpace(command.String("content-appearance"))
