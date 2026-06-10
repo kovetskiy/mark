@@ -138,10 +138,14 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		return ast.WalkContinue, nil
 	}
 
-	if u, err := url.Parse(src); err == nil && isDangerousScheme(u.Scheme) {
-		return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
-	} else if err == nil && (isURLScheme(u.Scheme) || strings.Contains(src, "://")) {
-		return r.renderImgURL(w, src, width, alt, title)
+	if u, err := url.Parse(src); err == nil {
+		scheme := strings.ToLower(u.Scheme)
+		if isDangerousScheme(scheme) {
+			return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
+		}
+		if isURLScheme(scheme) || strings.Contains(src, "://") {
+			return r.renderImgURL(w, src, width, alt, title)
+		}
 	}
 
 	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})

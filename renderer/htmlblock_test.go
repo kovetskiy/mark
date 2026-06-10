@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -327,6 +328,10 @@ func TestTryRenderImgTag_MissingLocalFile(t *testing.T) {
 // TestTryRenderImgTag_FilenameWithColon documents that a local filename containing a colon
 // (e.g. "images:foo.png") must be resolved as a local attachment, not treated as a URL.
 func TestTryRenderImgTag_FilenameWithColon(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("colon filenames are not valid on Windows")
+	}
+
 	tmpDir := t.TempDir()
 	makePNG(t, filepath.Join(tmpDir, "images:foo.png"))
 
@@ -343,6 +348,23 @@ func TestTryRenderImgTag_FilenameWithColon(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `ri:attachment`) {
 		t.Errorf("expected ri:attachment for local file with colon in name, got: %s", buf.String())
+	}
+}
+
+func TestTryRenderImgTag_WindowsPathGraceful(t *testing.T) {
+	tmpDir := t.TempDir()
+	r := newTestRenderer(t, "", &fakeAttacher{}, filepath.Join(tmpDir, "page.md"))
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, `<img src="C:\images\foo.png" />`)
+	if err != nil {
+		t.Fatalf("Windows-style path should not be rejected as a URL scheme, got: %v", err)
+	}
+	if status == ast.WalkStop {
+		t.Error("Windows-style path should not abort document render")
+	}
+	if !strings.Contains(buf.String(), `ri:url ri:value="C:\images\foo.png"`) {
+		t.Errorf("Windows-style path should fall back to ri:url, got: %s", buf.String())
 	}
 }
 
@@ -372,8 +394,11 @@ func TestTryRenderImgTag_UnsupportedSchemeRejected(t *testing.T) {
 		src  string
 	}{
 		{"javascript", "javascript:alert(1)"},
+		{"mixed-case javascript", "JaVaScRiPt:alert(1)"},
 		{"file", "file:///etc/passwd"},
+		{"uppercase file", "FILE:///etc/passwd"},
 		{"vbscript", "vbscript:msgbox(1)"},
+		{"mixed-case vbscript", "VbScRiPt:msgbox(1)"},
 	}
 
 	for _, tt := range schemes {
