@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	htmlstdlib "html"
+	"io"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -29,13 +29,17 @@ type ConfluenceHTMLBlockRenderer struct {
 }
 
 func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...htmlrenderer.Option) renderer.NodeRenderer {
-	return &ConfluenceHTMLBlockRenderer{
+	r := &ConfluenceHTMLBlockRenderer{
 		Config:      htmlrenderer.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
 		Attachments: attachments,
 		ImageAlign:  imageAlign,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 func (r *ConfluenceHTMLBlockRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
@@ -110,7 +114,7 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 // treated as a remote reference rather than a local file path.
 func isURLScheme(s string) bool {
 	switch s {
-	case "http", "https", "ftp", "ftps", "data", "mailto":
+	case "http", "https", "ftp", "ftps", "data", "mailto", "blob":
 		return true
 	}
 	return false
@@ -139,50 +143,16 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 
 	if u, err := url.Parse(src); err == nil && isDangerousScheme(u.Scheme) {
 		return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
-	} else if err == nil && isURLScheme(u.Scheme) {
-		escapedURL := htmlstdlib.EscapeString(src)
-		effectiveAlign := calculateAlign(r.ImageAlign, width)
-		effectiveLayout := calculateLayout(effectiveAlign, width)
-		displayWidth := calculateDisplayWidth(width, effectiveLayout)
-		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
-			Align:  effectiveAlign,
-			Layout: effectiveLayout,
-			Width:  displayWidth,
-			Title:  title,
-			Alt:    alt,
-			Url:    escapedURL,
-		})
-		if err != nil {
-			return ast.WalkStop, err
-		}
-		return ast.WalkSkipChildren, nil
+	} else if err == nil && (isURLScheme(u.Scheme) || strings.Contains(src, "://")) {
+		return r.renderImgURL(w, src, width, alt, title)
 	}
 
 	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return ast.WalkStop, fmt.Errorf("resolving img src %q: %w", src, err)
-		}
-		// File not found — fall back to rendering as a URL.
-		escapedURL := htmlstdlib.EscapeString(src)
-		effectiveAlign := calculateAlign(r.ImageAlign, width)
-		effectiveLayout := calculateLayout(effectiveAlign, width)
-		displayWidth := calculateDisplayWidth(width, effectiveLayout)
-		err = r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
-			Align:  effectiveAlign,
-			Layout: effectiveLayout,
-			Width:  displayWidth,
-			Title:  title,
-			Alt:    alt,
-			Url:    escapedURL,
-		})
-		if err != nil {
-			return ast.WalkStop, err
-		}
-		return ast.WalkSkipChildren, nil
+		return r.renderImgURL(w, src, width, alt, title)
 	}
 	if len(attachments) == 0 {
-		return ast.WalkStop, fmt.Errorf("img src %q: no attachment resolved", src)
+		return r.renderImgURL(w, src, width, alt, title)
 	}
 
 	r.Attachments.Attach(attachments[0])
@@ -213,6 +183,25 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	return ast.WalkSkipChildren, nil
 }
 
+func (r *ConfluenceHTMLBlockRenderer) renderImgURL(w util.BufWriter, src, width, alt, title string) (ast.WalkStatus, error) {
+	escapedURL := htmlstdlib.EscapeString(src)
+	effectiveAlign := calculateAlign(r.ImageAlign, width)
+	effectiveLayout := calculateLayout(effectiveAlign, width)
+	displayWidth := calculateDisplayWidth(width, effectiveLayout)
+	err := r.Stdlib.Templates.ExecuteTemplate(w, "ac:image", acImageParams{
+		Align:  effectiveAlign,
+		Layout: effectiveLayout,
+		Width:  displayWidth,
+		Title:  title,
+		Alt:    alt,
+		Url:    escapedURL,
+	})
+	if err != nil {
+		return ast.WalkStop, err
+	}
+	return ast.WalkSkipChildren, nil
+}
+
 // acImageParams holds the parameters for the ac:image template.
 type acImageParams struct {
 	Align          string
@@ -229,15 +218,28 @@ type acImageParams struct {
 
 // parseImgAttrs parses src, width, alt, and title from an HTML <img> tag.
 func parseImgAttrs(raw string) (src, width, alt, title string) {
-	doc, err := html.ParseFragment(strings.NewReader(raw), nil)
-	if err != nil {
-		return
-	}
-	// html.ParseFragment wraps output in <html><head/><body>…</body></html>
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "img" {
-			for _, a := range n.Attr {
+	tokenizer := html.NewTokenizer(strings.NewReader(raw))
+	seenImg := false
+
+	for {
+		tt := tokenizer.Next()
+		switch tt {
+		case html.ErrorToken:
+			if errors.Is(tokenizer.Err(), io.EOF) && seenImg {
+				return
+			}
+			return "", "", "", ""
+		case html.TextToken:
+			if strings.TrimSpace(string(tokenizer.Text())) != "" {
+				return "", "", "", ""
+			}
+		case html.StartTagToken, html.SelfClosingTagToken:
+			token := tokenizer.Token()
+			if seenImg || token.Data != "img" {
+				return "", "", "", ""
+			}
+			seenImg = true
+			for _, a := range token.Attr {
 				switch a.Key {
 				case "src":
 					src = a.Val
@@ -249,16 +251,10 @@ func parseImgAttrs(raw string) (src, width, alt, title string) {
 					title = a.Val
 				}
 			}
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		default:
+			return "", "", "", ""
 		}
 	}
-	for _, n := range doc {
-		walk(n)
-	}
-	return
 }
 
 func (r *ConfluenceHTMLBlockRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {

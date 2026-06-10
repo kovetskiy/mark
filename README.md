@@ -774,7 +774,7 @@ Currently this is not compatible with the automated upload of inline images.
 
 ### Use HTML img tags
 
-Markdown natively supports HTML `<img>` tags, making them a convenient way to control image size while keeping the document readable in standard Markdown renderers like GitHub. Using `width` keeps large images from dominating the page without any mark-specific syntax.
+Markdown natively supports standalone HTML `<img>` blocks, making them a convenient way to control image size while keeping the document readable in standard Markdown renderers like GitHub. Put the `<img>` tag on its own line so mark can convert it into a Confluence image. Using `width` keeps large images from dominating the page without any mark-specific syntax.
 
 Previously, sizing an uploaded image in Confluence required two steps: upload the image via the `![]()` syntax, then adjust its size separately using a macro. With `<img>` tag support both happen in one pass.
 

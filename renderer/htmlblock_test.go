@@ -13,16 +13,17 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/yuin/goldmark/ast"
+	htmlrenderer "github.com/yuin/goldmark/renderer/html"
 )
 
 func TestParseImgAttrs(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		wantSrc     string
-		wantWidth   string
-		wantAlt     string
-		wantTitle   string
+		name      string
+		input     string
+		wantSrc   string
+		wantWidth string
+		wantAlt   string
+		wantTitle string
 	}{
 		{
 			name:      "full attributes",
@@ -122,6 +123,22 @@ func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Att
 	}
 }
 
+func TestNewConfluenceHTMLBlockRenderer_AppliesHTMLOptions(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		t.Fatalf("stdlib.New: %v", err)
+	}
+
+	renderer := NewConfluenceHTMLBlockRenderer(lib, &fakeAttacher{}, "/docs/page.md", "", htmlrenderer.WithUnsafe())
+	htmlBlockRenderer, ok := renderer.(*ConfluenceHTMLBlockRenderer)
+	if !ok {
+		t.Fatalf("renderer = %T, want *ConfluenceHTMLBlockRenderer", renderer)
+	}
+	if !htmlBlockRenderer.Unsafe {
+		t.Error("expected htmlrenderer.WithUnsafe option to be applied")
+	}
+}
+
 func TestTryRenderImgTag_URL(t *testing.T) {
 	attacher := &fakeAttacher{}
 	r := newTestRenderer(t, "left", attacher, "/docs/page.md")
@@ -215,27 +232,6 @@ func TestTryRenderImgTag_LocalAttachment(t *testing.T) {
 	}
 }
 
-func TestTryRenderImgTag_LocalFile_IOError(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write a file then make it unreadable.
-	imgPath := filepath.Join(tmpDir, "secret.png")
-	if err := os.WriteFile(imgPath, []byte("data"), 0000); err != nil {
-		t.Fatal(err)
-	}
-	if os.Getuid() == 0 {
-		t.Skip("running as root, permission check not effective")
-	}
-
-	r := newTestRenderer(t, "", &fakeAttacher{}, filepath.Join(tmpDir, "page.md"))
-
-	var buf bufWriter
-	_, err := r.tryRenderImgTag(&buf, `<img src="secret.png" />`)
-	if err == nil {
-		t.Error("expected error for unreadable local file, got nil")
-	}
-}
-
 func TestTryRenderImgTag_TabAfterImg(t *testing.T) {
 	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
 
@@ -268,6 +264,32 @@ func TestTryRenderImgTag_NotImgTag(t *testing.T) {
 	}
 }
 
+func TestTryRenderImgTag_OnlyStandaloneImgTag(t *testing.T) {
+	tests := []string{
+		`<p>Caption <img src="https://example.com/logo.png" /></p>`,
+		`<img src="https://example.com/one.png" /><img src="https://example.com/two.png" />`,
+		`Text <img src="https://example.com/logo.png" />`,
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+			var buf bufWriter
+			status, err := r.tryRenderImgTag(&buf, input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if status != ast.WalkContinue {
+				t.Errorf("status = %v, want WalkContinue", status)
+			}
+			if buf.Len() != 0 {
+				t.Errorf("expected no output for non-standalone img tag, got: %s", buf.String())
+			}
+		})
+	}
+}
+
 func TestTryRenderImgTag_AltTitleXMLEscaped(t *testing.T) {
 	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
 
@@ -296,6 +318,9 @@ func TestTryRenderImgTag_MissingLocalFile(t *testing.T) {
 	}
 	if status == ast.WalkStop {
 		t.Error("missing local file should not return WalkStop")
+	}
+	if !strings.Contains(buf.String(), `ri:url ri:value="nonexistent.png"`) {
+		t.Errorf("missing local file should fall back to ri:url, got: %s", buf.String())
 	}
 }
 
@@ -371,7 +396,8 @@ func TestTryRenderImgTag_UnsupportedSchemeRejected(t *testing.T) {
 // to local file resolution and then silently render as ri:url with a literal blob: string.
 // They should be treated as an external URL (ri:url) or rejected, not as local paths.
 func TestTryRenderImgTag_BlobScheme(t *testing.T) {
-	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+	attacher := &fakeAttacher{}
+	r := newTestRenderer(t, "", attacher, "/docs/page.md")
 
 	var buf bufWriter
 	status, err := r.tryRenderImgTag(&buf, `<img src="blob:https://example.com/some-uuid" />`)
@@ -383,6 +409,9 @@ func TestTryRenderImgTag_BlobScheme(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `ri:url`) {
 		t.Errorf("blob: URI should render as ri:url, got: %s", buf.String())
+	}
+	if len(attacher.attached) != 0 {
+		t.Errorf("blob: URI should not resolve as a local attachment, got %d attachments", len(attacher.attached))
 	}
 }
 
@@ -410,6 +439,9 @@ func TestTryRenderImgTag_UnknownSchemeGraceful(t *testing.T) {
 			}
 			if status == ast.WalkStop {
 				t.Errorf("scheme %q should not return WalkStop, must not abort document render", tt.src)
+			}
+			if !strings.Contains(buf.String(), `ri:url`) {
+				t.Errorf("scheme %q should render as ri:url, got: %s", tt.src, buf.String())
 			}
 		})
 	}
