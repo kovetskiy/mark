@@ -786,6 +786,8 @@ Previously, sizing an uploaded image in Confluence required two steps: upload th
 
 Local files are uploaded as attachments; URLs are linked directly. Supported attributes: `src`, `width`, `alt`, `title`. The `width` attribute takes precedence over the detected file width when uploading local attachments.
 
+Multiple standalone `<img>` tags may be placed on consecutive lines. Tags embedded inside other HTML blocks are left as raw HTML.
+
 ### Render Mermaid Diagram
 
 Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [GitHub does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
