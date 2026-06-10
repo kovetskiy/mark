@@ -107,6 +107,13 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			break
 		}
 	}
+
+	if l > 1 {
+		if status, err := r.tryRenderImgTagLines(w, source, n); status != ast.WalkContinue || err != nil {
+			return status, err
+		}
+	}
+
 	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
 }
 
@@ -181,6 +188,40 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	if err != nil {
 		return ast.WalkStop, err
 	}
+	return ast.WalkSkipChildren, nil
+}
+
+func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagLines(w util.BufWriter, source []byte, node *ast.HTMLBlock) (ast.WalkStatus, error) {
+	l := node.Lines().Len()
+	lines := make([]string, 0, l)
+
+	for i := 0; i < l; i++ {
+		line := node.Lines().At(i)
+		raw := strings.TrimSpace(string(line.Value(source)))
+		if raw == "" {
+			continue
+		}
+		src, _, _, _ := parseImgAttrs(raw)
+		if src == "" {
+			return ast.WalkContinue, nil
+		}
+		lines = append(lines, raw)
+	}
+
+	if len(lines) == 0 {
+		return ast.WalkContinue, nil
+	}
+
+	for _, raw := range lines {
+		status, err := r.tryRenderImgTag(w, raw)
+		if err != nil {
+			return status, err
+		}
+		if status != ast.WalkSkipChildren {
+			return ast.WalkContinue, nil
+		}
+	}
+
 	return ast.WalkSkipChildren, nil
 }
 

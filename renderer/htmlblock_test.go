@@ -15,6 +15,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/yuin/goldmark/ast"
 	htmlrenderer "github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/text"
 )
 
 func TestParseImgAttrs(t *testing.T) {
@@ -110,18 +111,34 @@ func makePNG(t *testing.T, path string) {
 	}
 }
 
+func newHTMLBlockFromSource(source []byte) *ast.HTMLBlock {
+	node := ast.NewHTMLBlock(ast.HTMLBlockType6)
+	start := 0
+	for start <= len(source) {
+		offset := bytes.IndexByte(source[start:], '\n')
+		if offset < 0 {
+			node.Lines().Append(text.NewSegment(start, len(source)))
+			break
+		}
+		end := start + offset
+		node.Lines().Append(text.NewSegment(start, end))
+		start = end + 1
+	}
+	return node
+}
+
 func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Attacher, path string) *ConfluenceHTMLBlockRenderer {
 	t.Helper()
 	lib, err := stdlib.New(nil)
 	if err != nil {
 		t.Fatalf("stdlib.New: %v", err)
 	}
-	return &ConfluenceHTMLBlockRenderer{
-		Stdlib:      lib,
-		Path:        path,
-		Attachments: attachments,
-		ImageAlign:  imageAlign,
+	renderer := NewConfluenceHTMLBlockRenderer(lib, attachments, path, imageAlign)
+	htmlBlockRenderer, ok := renderer.(*ConfluenceHTMLBlockRenderer)
+	if !ok {
+		t.Fatalf("renderer = %T, want *ConfluenceHTMLBlockRenderer", renderer)
 	}
+	return htmlBlockRenderer
 }
 
 func TestNewConfluenceHTMLBlockRenderer_AppliesHTMLOptions(t *testing.T) {
@@ -230,6 +247,104 @@ func TestTryRenderImgTag_LocalAttachment(t *testing.T) {
 	}
 	if !strings.Contains(out, `ac:title="T"`) {
 		t.Errorf("output missing title: %s", out)
+	}
+}
+
+func TestRenderHTMLBlock_ConsecutiveStandaloneImgTags(t *testing.T) {
+	tmpDir := t.TempDir()
+	makePNG(t, filepath.Join(tmpDir, "one.png"))
+	makePNG(t, filepath.Join(tmpDir, "two.png"))
+
+	attacher := &fakeAttacher{}
+	r := newTestRenderer(t, "", attacher, filepath.Join(tmpDir, "page.md"))
+	source := []byte(`<img src="one.png" width="300" />
+<img src="two.png" width="400" />`)
+
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkSkipChildren {
+		t.Errorf("status = %v, want WalkSkipChildren", status)
+	}
+	if len(attacher.attached) != 2 {
+		t.Fatalf("expected 2 attachments, got %d", len(attacher.attached))
+	}
+	out := buf.String()
+	if !strings.Contains(out, `ri:attachment ri:filename="one.png"`) {
+		t.Errorf("output missing first attachment: %s", out)
+	}
+	if !strings.Contains(out, `ri:attachment ri:filename="two.png"`) {
+		t.Errorf("output missing second attachment: %s", out)
+	}
+}
+
+func TestRenderHTMLBlock_MixedHTMLFallsBackWithoutPartialConversion(t *testing.T) {
+	tmpDir := t.TempDir()
+	makePNG(t, filepath.Join(tmpDir, "one.png"))
+	makePNG(t, filepath.Join(tmpDir, "two.png"))
+
+	tests := []struct {
+		name     string
+		source   string
+		contains []string
+	}{
+		{
+			name: "div with one img",
+			source: `<div>
+  <img src="one.png" />
+</div>`,
+			contains: []string{`<div>`, `<img src="one.png" />`, `</div>`},
+		},
+		{
+			name: "div with two imgs",
+			source: `<div>
+  <img src="one.png" />
+  <img src="two.png" />
+</div>`,
+			contains: []string{`<div>`, `<img src="one.png" />`, `<img src="two.png" />`, `</div>`},
+		},
+		{
+			name: "img other html img",
+			source: `<img src="one.png" />
+<hr />
+<img src="two.png" />`,
+			contains: []string{`<img src="one.png" />`, `<hr />`, `<img src="two.png" />`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attacher := &fakeAttacher{}
+			r := newTestRenderer(t, "", attacher, filepath.Join(tmpDir, "page.md"))
+			r.Unsafe = true
+			source := []byte(tt.source)
+			node := newHTMLBlockFromSource(source)
+
+			var buf bufWriter
+			status, err := r.renderHTMLBlock(&buf, source, node, true)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if status != ast.WalkContinue {
+				t.Errorf("status = %v, want WalkContinue", status)
+			}
+			if len(attacher.attached) != 0 {
+				t.Fatalf("expected no attachments for mixed HTML fallback, got %d", len(attacher.attached))
+			}
+			out := buf.String()
+			for _, want := range tt.contains {
+				if !strings.Contains(out, want) {
+					t.Errorf("expected raw HTML fallback to contain %q, got: %s", want, out)
+				}
+			}
+			if strings.Contains(out, `<ac:image`) {
+				t.Errorf("mixed HTML block must not be partially converted, got: %s", out)
+			}
+		})
 	}
 }
 
