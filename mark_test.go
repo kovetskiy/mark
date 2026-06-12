@@ -29,9 +29,9 @@ func TestLevenshteinDistance(t *testing.T) {
 		{"abc", "", 3},
 		{"", "abc", 3},
 		{"abc", "abc", 0},
-		{"abc", "axc", 1},   // one substitution
-		{"abc", "ab", 1},    // one deletion
-		{"ab", "abc", 1},    // one insertion
+		{"abc", "axc", 1}, // one substitution
+		{"abc", "ab", 1},  // one deletion
+		{"ab", "abc", 1},  // one insertion
 		{"kitten", "sitting", 3},
 		// Multibyte: é is one rune, so distance from "héllo" to "hello" is 1.
 		{"héllo", "hello", 1},
@@ -206,7 +206,6 @@ func TestMergeComments_ApostropheSelection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos">it's</ac:inline-comment-marker> a test</p>`, result)
 }
-
 
 // TestMergeComments_NestedTags verifies that a marker whose stored content
 // contains nested inline tags (e.g. <strong>) is still recognised by

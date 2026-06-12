@@ -22,19 +22,19 @@ import (
 )
 
 var layoutComments = map[string]string{
-	"<!-- ac:layout -->":                                   "<ac:layout>\n",
-	"<!-- ac:layout end -->":                               "</ac:layout>\n",
-	"<!-- ac:layout-section type:single -->":               "<ac:layout-section ac:type=\"single\">\n",
+	"<!-- ac:layout -->":                                  "<ac:layout>\n",
+	"<!-- ac:layout end -->":                              "</ac:layout>\n",
+	"<!-- ac:layout-section type:single -->":              "<ac:layout-section ac:type=\"single\">\n",
 	"<!-- ac:layout-section type:two_equal -->":           "<ac:layout-section ac:type=\"two_equal\">\n",
 	"<!-- ac:layout-section type:two_left_sidebar -->":    "<ac:layout-section ac:type=\"two_left_sidebar\">\n",
 	"<!-- ac:layout-section type:two_right_sidebar -->":   "<ac:layout-section ac:type=\"two_right_sidebar\">\n",
 	"<!-- ac:layout-section type:three -->":               "<ac:layout-section ac:type=\"three\">\n",
 	"<!-- ac:layout-section type:three_with_sidebars -->": "<ac:layout-section ac:type=\"three_with_sidebars\">\n",
-	"<!-- ac:layout-section end -->":                       "</ac:layout-section>\n",
-	"<!-- ac:layout-cell -->":                              "<ac:layout-cell>\n",
-	"<!-- ac:layout-cell end -->":                          "</ac:layout-cell>\n",
-	"<!-- ac:placeholder -->":                              "<ac:placeholder>\n",
-	"<!-- ac:placeholder end -->":                          "</ac:placeholder>\n",
+	"<!-- ac:layout-section end -->":                      "</ac:layout-section>\n",
+	"<!-- ac:layout-cell -->":                             "<ac:layout-cell>\n",
+	"<!-- ac:layout-cell end -->":                         "</ac:layout-cell>\n",
+	"<!-- ac:placeholder -->":                             "<ac:placeholder>\n",
+	"<!-- ac:placeholder end -->":                         "</ac:placeholder>\n",
 }
 
 // containsImgTag checks case-insensitively whether a string contains an '<img' substring.

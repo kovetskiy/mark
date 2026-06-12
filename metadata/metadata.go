@@ -79,7 +79,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 		if meta == nil {
 			meta = &Meta{}
-			meta.Type = "page"                                  // Default if not specified
+			meta.Type = "page" // Default if not specified
 		}
 
 		header := cases.Title(language.English).String(matches[1])

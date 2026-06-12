@@ -76,8 +76,6 @@ func calculateDisplayWidth(originalWidth string, layout string) string {
 	return originalWidth
 }
 
-
-
 type ConfluenceImageRenderer struct {
 	html.Config
 	Stdlib      *stdlib.Lib
