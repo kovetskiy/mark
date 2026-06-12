@@ -786,6 +786,12 @@ Previously, sizing an uploaded image in Confluence required two steps: upload th
 
 Local files are uploaded as attachments; URLs are linked directly. Supported attributes: `src`, `width`, `alt`, `title`. The `width` attribute takes precedence over the detected file width when uploading local attachments.
 
+#### Validation & Safety Rules:
+* **Width:** Must be a positive integer without units or surrounding whitespace (e.g., `width="600"` is valid; `width="100%"` or `width="600px"` are invalid and will skip conversion, falling back to raw HTML).
+* **Scheme Sanitization:** Dangerous URL schemes (such as `javascript:`, `vbscript:`, or `file:`) in the `src` attribute are strictly blocked, returning a compilation error instead of outputting unsafe content.
+* **Safe-mode Integration:** Standalone `<img>` tags are converted and resolved even in safe mode (when other unsafe raw HTML is disabled) because their content, schemes, and attributes are strictly sanitized and whitelisted.
+* **Absolute Path Fallback:** To prevent system file access or path traversal, absolute paths (e.g. `/etc/...` or `C:\...`) and UNC paths (`\\server\...`) are not attached locally; they are safely fallback-rendered as external links (`ri:url`).
+
 Multiple standalone `<img>` tags may be placed on consecutive lines. Tags embedded inside other HTML blocks are left as raw HTML.
 
 ### Render Mermaid Diagram

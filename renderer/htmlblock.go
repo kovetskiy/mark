@@ -21,6 +21,36 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+var layoutComments = map[string]string{
+	"<!-- ac:layout -->":                                   "<ac:layout>\n",
+	"<!-- ac:layout end -->":                               "</ac:layout>\n",
+	"<!-- ac:layout-section type:single -->":               "<ac:layout-section ac:type=\"single\">\n",
+	"<!-- ac:layout-section type:two_equal -->":           "<ac:layout-section ac:type=\"two_equal\">\n",
+	"<!-- ac:layout-section type:two_left_sidebar -->":    "<ac:layout-section ac:type=\"two_left_sidebar\">\n",
+	"<!-- ac:layout-section type:two_right_sidebar -->":   "<ac:layout-section ac:type=\"two_right_sidebar\">\n",
+	"<!-- ac:layout-section type:three -->":               "<ac:layout-section ac:type=\"three\">\n",
+	"<!-- ac:layout-section type:three_with_sidebars -->": "<ac:layout-section ac:type=\"three_with_sidebars\">\n",
+	"<!-- ac:layout-section end -->":                       "</ac:layout-section>\n",
+	"<!-- ac:layout-cell -->":                              "<ac:layout-cell>\n",
+	"<!-- ac:layout-cell end -->":                          "</ac:layout-cell>\n",
+	"<!-- ac:placeholder -->":                              "<ac:placeholder>\n",
+	"<!-- ac:placeholder end -->":                          "</ac:placeholder>\n",
+}
+
+// containsImgTag checks case-insensitively whether a string contains an '<img' substring.
+// This is a zero-allocation fast-path check to avoid parsing overhead.
+func containsImgTag(s string) bool {
+	for i := 0; i < len(s)-3; i++ {
+		if s[i] == '<' &&
+			(s[i+1] == 'i' || s[i+1] == 'I') &&
+			(s[i+2] == 'm' || s[i+2] == 'M') &&
+			(s[i+3] == 'g' || s[i+3] == 'G') {
+			return true
+		}
+	}
+	return false
+}
+
 type ConfluenceHTMLBlockRenderer struct {
 	htmlrenderer.Config
 	Stdlib      *stdlib.Lib
@@ -81,7 +111,7 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 		content := contentBuilder.String()
 
 		// Fast path: skip parsing if there are no img tags
-		if !strings.Contains(strings.ToLower(content), "<img") {
+		if !containsImgTag(content) {
 			return r.goldmarkRenderHTMLBlock(w, source, node, entering)
 		}
 
@@ -142,49 +172,16 @@ func tryRenderLayoutComments(w util.BufWriter, source []byte, node *ast.HTMLBloc
 		}
 	}
 	for _, raw := range lines {
-		switch raw {
-		case "<!-- ac:layout -->":
-			_, _ = w.WriteString("<ac:layout>\n")
-		case "<!-- ac:layout end -->":
-			_, _ = w.WriteString("</ac:layout>\n")
-		case "<!-- ac:layout-section type:single -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"single\">\n")
-		case "<!-- ac:layout-section type:two_equal -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_equal\">\n")
-		case "<!-- ac:layout-section type:two_left_sidebar -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_left_sidebar\">\n")
-		case "<!-- ac:layout-section type:two_right_sidebar -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_right_sidebar\">\n")
-		case "<!-- ac:layout-section type:three -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"three\">\n")
-		case "<!-- ac:layout-section type:three_with_sidebars -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"three_with_sidebars\">\n")
-		case "<!-- ac:layout-section end -->":
-			_, _ = w.WriteString("</ac:layout-section>\n")
-		case "<!-- ac:layout-cell -->":
-			_, _ = w.WriteString("<ac:layout-cell>\n")
-		case "<!-- ac:layout-cell end -->":
-			_, _ = w.WriteString("</ac:layout-cell>\n")
-		case "<!-- ac:placeholder -->":
-			_, _ = w.WriteString("<ac:placeholder>\n")
-		case "<!-- ac:placeholder end -->":
-			_, _ = w.WriteString("</ac:placeholder>\n")
+		if output, ok := layoutComments[raw]; ok {
+			_, _ = w.WriteString(output)
 		}
 	}
 	return true, nil
 }
 
 func isLayoutComment(raw string) bool {
-	switch raw {
-	case "<!-- ac:layout -->", "<!-- ac:layout end -->",
-		"<!-- ac:layout-section type:single -->", "<!-- ac:layout-section type:two_equal -->",
-		"<!-- ac:layout-section type:two_left_sidebar -->", "<!-- ac:layout-section type:two_right_sidebar -->",
-		"<!-- ac:layout-section type:three -->", "<!-- ac:layout-section type:three_with_sidebars -->",
-		"<!-- ac:layout-section end -->", "<!-- ac:layout-cell -->", "<!-- ac:layout-cell end -->",
-		"<!-- ac:placeholder -->", "<!-- ac:placeholder end -->":
-		return true
-	}
-	return false
+	_, ok := layoutComments[raw]
+	return ok
 }
 
 // isURLScheme reports whether s is a recognised URL scheme that should be
@@ -304,6 +301,12 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagNode(w util.BufWriter, n *h
 		if isURLScheme(scheme) || strings.HasPrefix(sanitizedSrc, "//") || strings.Contains(sanitizedSrc, "://") {
 			return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 		}
+	}
+
+	// Force ri:url fallback for absolute paths or Windows UNC/drive paths
+	// to prevent local file exfiltration outside relative directories.
+	if filepath.IsAbs(sanitizedSrc) || strings.HasPrefix(sanitizedSrc, "\\\\") {
+		return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 	}
 
 	if r.Attachments == nil {
