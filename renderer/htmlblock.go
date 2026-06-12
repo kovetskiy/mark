@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	htmlstdlib "html"
-	"io"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -65,8 +64,8 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 
 	n := node.(*ast.HTMLBlock)
 	l := n.Lines().Len()
-	for i := 0; i < l; i++ {
-		line := n.Lines().At(i)
+	if l == 1 {
+		line := n.Lines().At(0)
 		raw := strings.TrimSpace(string(line.Value(source)))
 
 		switch raw {
@@ -110,19 +109,48 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			_, _ = w.WriteString("</ac:placeholder>\n")
 			return ast.WalkContinue, nil
 		}
-
-		if r.ConvertImgs && l == 1 {
-			if status, err := r.tryRenderImgTag(w, raw); status != ast.WalkContinue || err != nil {
-				return status, err
-			}
-		} else {
-			break
-		}
 	}
 
-	if r.ConvertImgs && l > 1 {
-		if status, err := r.tryRenderImgTagLines(w, source, n); status != ast.WalkContinue || err != nil {
-			return status, err
+	if r.ConvertImgs {
+		var contentBuilder strings.Builder
+		for i := 0; i < l; i++ {
+			line := n.Lines().At(i)
+			contentBuilder.Write(line.Value(source))
+		}
+		content := contentBuilder.String()
+
+		if imgNodes, ok := parseHTML(content); ok {
+			// Pre-validate all image nodes before writing anything to w
+			for _, imgNode := range imgNodes {
+				var src, width string
+				for _, a := range imgNode.Attr {
+					switch a.Key {
+					case "src":
+						src = a.Val
+					case "width":
+						width = a.Val
+					}
+				}
+				_, valid, err := validateImgTagConversionInput(src, width)
+				if err != nil {
+					return ast.WalkStop, err
+				}
+				if !valid {
+					return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+				}
+			}
+
+			// Convert all images
+			for _, imgNode := range imgNodes {
+				status, err := r.tryRenderImgTagNode(w, imgNode)
+				if err != nil {
+					return status, err
+				}
+				if status != ast.WalkSkipChildren {
+					return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+				}
+			}
+			return ast.WalkSkipChildren, nil
 		}
 	}
 
@@ -176,11 +204,16 @@ func validateImgWidth(width string) error {
 	return nil
 }
 
-func validateImgTagConversionInput(src, width string) (bool, error) {
+func validateImgTagConversionInput(src, width string) (string, bool, error) {
+	// Sanitize src by stripping leading/trailing whitespace and ASCII control characters
+	src = strings.TrimFunc(src, func(r rune) bool {
+		return r <= ' ' || r == 127
+	})
+
 	if u, err := url.Parse(src); err == nil {
 		scheme := strings.ToLower(u.Scheme)
 		if isDangerousScheme(scheme) {
-			return false, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
+			return "", false, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
 		}
 	}
 
@@ -191,23 +224,40 @@ func validateImgTagConversionInput(src, width string) (bool, error) {
 				Str("width", width).
 				Err(err).
 				Msg("skipping html img conversion")
-			return false, nil
+			return "", false, nil
 		}
-		return false, err
+		return "", false, err
 	}
 
-	return true, nil
+	return src, true, nil
 }
 
 // tryRenderImgTag checks if raw is an <img> tag and renders it as ac:image.
 // Returns WalkSkipChildren if handled, WalkContinue if not an img tag.
 func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw string) (ast.WalkStatus, error) {
-	src, width, alt, title := parseImgAttrs(raw)
-	if src == "" {
+	imgNodes, ok := parseHTML(raw)
+	if !ok || len(imgNodes) != 1 {
 		return ast.WalkContinue, nil
 	}
+	return r.tryRenderImgTagNode(w, imgNodes[0])
+}
 
-	valid, err := validateImgTagConversionInput(src, width)
+func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagNode(w util.BufWriter, n *html.Node) (ast.WalkStatus, error) {
+	var src, width, alt, title string
+	for _, a := range n.Attr {
+		switch a.Key {
+		case "src":
+			src = a.Val
+		case "width":
+			width = a.Val
+		case "alt":
+			alt = a.Val
+		case "title":
+			title = a.Val
+		}
+	}
+
+	sanitizedSrc, valid, err := validateImgTagConversionInput(src, width)
 	if err != nil {
 		return ast.WalkStop, err
 	}
@@ -215,19 +265,19 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		return ast.WalkContinue, nil
 	}
 
-	if u, err := url.Parse(src); err == nil {
+	if u, err := url.Parse(sanitizedSrc); err == nil {
 		scheme := strings.ToLower(u.Scheme)
-		if isURLScheme(scheme) || strings.HasPrefix(src, "//") || strings.Contains(src, "://") {
-			return r.renderImgURL(w, src, width, alt, title)
+		if isURLScheme(scheme) || strings.HasPrefix(sanitizedSrc, "//") || strings.Contains(sanitizedSrc, "://") {
+			return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 		}
 	}
 
-	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{src})
+	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{sanitizedSrc})
 	if err != nil {
-		return r.renderImgURL(w, src, width, alt, title)
+		return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 	}
 	if len(attachments) == 0 {
-		return r.renderImgURL(w, src, width, alt, title)
+		return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 	}
 
 	r.Attachments.Attach(attachments[0])
@@ -255,51 +305,6 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 	if err != nil {
 		return ast.WalkStop, err
 	}
-	return ast.WalkSkipChildren, nil
-}
-
-func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagLines(w util.BufWriter, source []byte, node *ast.HTMLBlock) (ast.WalkStatus, error) {
-	l := node.Lines().Len()
-	lines := make([]string, 0, l)
-
-	for i := 0; i < l; i++ {
-		line := node.Lines().At(i)
-		raw := strings.TrimSpace(string(line.Value(source)))
-		if raw == "" {
-			continue
-		}
-		src, _, _, _ := parseImgAttrs(raw)
-		if src == "" {
-			return ast.WalkContinue, nil
-		}
-		lines = append(lines, raw)
-	}
-
-	if len(lines) == 0 {
-		return ast.WalkContinue, nil
-	}
-
-	for _, raw := range lines {
-		src, width, _, _ := parseImgAttrs(raw)
-		valid, err := validateImgTagConversionInput(src, width)
-		if err != nil {
-			return ast.WalkStop, err
-		}
-		if !valid {
-			return ast.WalkContinue, nil
-		}
-	}
-
-	for _, raw := range lines {
-		status, err := r.tryRenderImgTag(w, raw)
-		if err != nil {
-			return status, err
-		}
-		if status != ast.WalkSkipChildren {
-			return ast.WalkContinue, nil
-		}
-	}
-
 	return ast.WalkSkipChildren, nil
 }
 
@@ -336,45 +341,75 @@ type acImageParams struct {
 	Url            string
 }
 
-// parseImgAttrs parses src, width, alt, and title from an HTML <img> tag.
-func parseImgAttrs(raw string) (src, width, alt, title string) {
-	tokenizer := html.NewTokenizer(strings.NewReader(raw))
-	seenImg := false
-
-	for {
-		tt := tokenizer.Next()
-		switch tt {
-		case html.ErrorToken:
-			if errors.Is(tokenizer.Err(), io.EOF) && seenImg {
-				return
-			}
-			return "", "", "", ""
-		case html.TextToken:
-			if strings.TrimSpace(string(tokenizer.Text())) != "" {
-				return "", "", "", ""
-			}
-		case html.StartTagToken, html.SelfClosingTagToken:
-			token := tokenizer.Token()
-			if seenImg || token.Data != "img" {
-				return "", "", "", ""
-			}
-			seenImg = true
-			for _, a := range token.Attr {
-				switch a.Key {
-				case "src":
-					src = a.Val
-				case "width":
-					width = a.Val
-				case "alt":
-					alt = a.Val
-				case "title":
-					title = a.Val
+func parseHTML(content string) ([]*html.Node, bool) {
+	doc, err := html.Parse(strings.NewReader(content))
+	if err != nil {
+		return nil, false
+	}
+	var imgs []*html.Node
+	var valid = true
+	var traverse func(*html.Node)
+	traverse = func(n *html.Node) {
+		if !valid {
+			return
+		}
+		switch n.Type {
+		case html.ElementNode:
+			switch n.Data {
+			case "html", "head", "body":
+				// Standard containers, traverse children
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					traverse(c)
 				}
+			case "img":
+				imgs = append(imgs, n)
+				// An image node shouldn't contain other element nodes
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					if c.Type == html.ElementNode {
+						valid = false
+						return
+					}
+				}
+			default:
+				// Any other element is invalid
+				valid = false
 			}
-		default:
-			return "", "", "", ""
+		case html.TextNode:
+			// Text is only valid if it's whitespace
+			if strings.TrimSpace(n.Data) != "" {
+				valid = false
+			}
+		case html.CommentNode:
+			// Comments are valid
+		case html.DocumentNode, html.DoctypeNode:
+			// Document roots, traverse children
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				traverse(c)
+			}
 		}
 	}
+	traverse(doc)
+	return imgs, valid && len(imgs) > 0
+}
+
+func parseImgAttrs(raw string) (src, width, alt, title string) {
+	imgNodes, ok := parseHTML(raw)
+	if !ok || len(imgNodes) != 1 {
+		return
+	}
+	for _, a := range imgNodes[0].Attr {
+		switch a.Key {
+		case "src":
+			src = a.Val
+		case "width":
+			width = a.Val
+		case "alt":
+			alt = a.Val
+		case "title":
+			title = a.Val
+		}
+	}
+	return
 }
 
 func (r *ConfluenceHTMLBlockRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {

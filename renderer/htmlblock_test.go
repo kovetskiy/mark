@@ -820,3 +820,61 @@ func TestTryRenderImgTag_NonHTTPScheme(t *testing.T) {
 		})
 	}
 }
+
+func TestTryRenderImgTag_WhitespaceBypassScheme(t *testing.T) {
+	bypassSchemes := []struct {
+		name string
+		src  string
+	}{
+		{"leading space", " javascript:alert(1)"},
+		{"trailing space", "javascript:alert(1) "},
+		{"leading newline", "\njavascript:alert(1)"},
+		{"trailing newline", "javascript:alert(1)\n"},
+		{"leading control character", "\x00javascript:alert(1)"},
+		{"trailing control character", "javascript:alert(1)\x00"},
+		{"mixed spacing file", "\tfile:///etc/passwd"},
+	}
+
+	for _, tt := range bypassSchemes {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+			var buf bufWriter
+			_, err := r.tryRenderImgTag(&buf, `<img src="`+tt.src+`" />`)
+			if err == nil {
+				t.Errorf("bypass scheme %q should return an error, got nil", tt.src)
+			}
+			if strings.Contains(buf.String(), `ri:url`) {
+				t.Errorf("bypass scheme %q must not render as ri:url, got: %s", tt.src, buf.String())
+			}
+		})
+	}
+}
+
+func TestRenderHTMLBlock_MultiLineImgTag(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+	source := []byte(`<img src="https://example.com/logo.png"
+     width="600"
+     alt="Architecture" />`)
+
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkSkipChildren {
+		t.Errorf("status = %v, want WalkSkipChildren", status)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `ri:url ri:value="https://example.com/logo.png"`) {
+		t.Errorf("output missing ri:url: %s", out)
+	}
+	if !strings.Contains(out, `ac:width="600"`) {
+		t.Errorf("output missing width: %s", out)
+	}
+	if !strings.Contains(out, `ac:alt="Architecture"`) {
+		t.Errorf("output missing alt: %s", out)
+	}
+}
