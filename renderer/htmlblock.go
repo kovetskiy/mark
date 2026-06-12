@@ -151,18 +151,7 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, line str
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			w,
 			"ac:image",
-			struct {
-				Align          string
-				Layout         string
-				OriginalWidth  string
-				OriginalHeight string
-				Width          string
-				Height         string
-				Title          string
-				Alt            string
-				Attachment     string
-				Url            string
-			}{
+			acImageParams{
 				Align:  effectiveAlign,
 				Layout: effectiveLayout,
 				Width:  displayWidth,
@@ -189,18 +178,7 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, line str
 	err = r.Stdlib.Templates.ExecuteTemplate(
 		w,
 		"ac:image",
-		struct {
-			Align          string
-			Layout         string
-			OriginalWidth  string
-			OriginalHeight string
-			Width          string
-			Height         string
-			Title          string
-			Alt            string
-			Attachment     string
-			Url            string
-		}{
+		acImageParams{
 			Align:          effectiveAlign,
 			Layout:         effectiveLayout,
 			OriginalWidth:  attachments[0].Width,
@@ -240,4 +218,18 @@ func (r *ConfluenceHTMLBlockRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, 
 		}
 	}
 	return ast.WalkContinue, nil
+}
+
+// acImageParams holds the parameters for the ac:image template.
+type acImageParams struct {
+	Align          string
+	Layout         string
+	OriginalWidth  string
+	OriginalHeight string
+	Width          string
+	Height         string
+	Title          string
+	Alt            string
+	Attachment     string
+	Url            string
 }
