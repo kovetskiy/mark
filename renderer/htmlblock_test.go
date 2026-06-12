@@ -970,3 +970,52 @@ func TestRenderHTMLBlock_ConsecutiveLayoutComments(t *testing.T) {
 		t.Errorf("expected layout:\n%q\ngot:\n%q", expected, out)
 	}
 }
+
+func TestRenderHTMLBlock_CommentAndImgSingleBlock(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+	r.Unsafe = true
+	source := []byte(`<!-- note -->
+<img src="https://example.com/logo.png" alt="Test Image" />`)
+
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue (so raw HTML renderer handles it)", status)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "<!-- note -->") {
+		t.Error("comment was dropped from the output")
+	}
+	if !strings.Contains(out, `<img src="https://example.com/logo.png" alt="Test Image" />`) {
+		t.Error("raw image tag was missing from raw HTML fallback")
+	}
+}
+
+func TestRenderHTMLBlock_CommentAndImgLiteralBackslashN(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+	r.Unsafe = true
+	// Use backtick string, but escape the backslash to form a literal '\\n'
+	source := []byte(`<!-- note -->\\n<img src="https://example.com/logo.png" alt="Test Image" />`)
+
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue (so raw HTML renderer handles it)", status)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `<!-- note -->\\n<img src="https://example.com/logo.png" alt="Test Image" />`) {
+		t.Error("literal \\n representation fell back incorrectly or was mangled")
+	}
+}
+
+

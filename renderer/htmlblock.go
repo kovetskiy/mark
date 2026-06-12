@@ -421,7 +421,8 @@ func parseHTML(content string) ([]*html.Node, bool) {
 				valid = false
 			}
 		case html.CommentNode:
-			// Comments are valid
+			// Any comment invalidates the standalone conversion to prevent silent comment data loss
+			valid = false
 		case html.DocumentNode, html.DoctypeNode:
 			// Document roots, traverse children
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
