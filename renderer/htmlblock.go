@@ -64,51 +64,12 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 
 	n := node.(*ast.HTMLBlock)
 	l := n.Lines().Len()
-	if l == 1 {
-		line := n.Lines().At(0)
-		raw := strings.TrimSpace(string(line.Value(source)))
 
-		switch raw {
-		case "<!-- ac:layout -->":
-			_, _ = w.WriteString("<ac:layout>\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout end -->":
-			_, _ = w.WriteString("</ac:layout>\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section type:single -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"single\">\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section type:two_equal -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_equal\">\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section type:two_left_sidebar -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_left_sidebar\">\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section type:two_right_sidebar -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_right_sidebar\">\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section type:three -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"three\">\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section type:three_with_sidebars -->":
-			_, _ = w.WriteString("<ac:layout-section ac:type=\"three_with_sidebars\">\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-section end -->":
-			_, _ = w.WriteString("</ac:layout-section>\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-cell -->":
-			_, _ = w.WriteString("<ac:layout-cell>\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:layout-cell end -->":
-			_, _ = w.WriteString("</ac:layout-cell>\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:placeholder -->":
-			_, _ = w.WriteString("<ac:placeholder>\n")
-			return ast.WalkContinue, nil
-		case "<!-- ac:placeholder end -->":
-			_, _ = w.WriteString("</ac:placeholder>\n")
-			return ast.WalkContinue, nil
+	if ok, err := tryRenderLayoutComments(w, source, n); ok || err != nil {
+		if err != nil {
+			return ast.WalkStop, err
 		}
+		return ast.WalkContinue, nil
 	}
 
 	if r.ConvertImgs {
@@ -118,6 +79,11 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			contentBuilder.Write(line.Value(source))
 		}
 		content := contentBuilder.String()
+
+		// Fast path: skip parsing if there are no img tags
+		if !strings.Contains(strings.ToLower(content), "<img") {
+			return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+		}
 
 		if imgNodes, ok := parseHTML(content); ok {
 			// Pre-validate all image nodes before writing anything to w
@@ -155,6 +121,70 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 	}
 
 	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+}
+
+func tryRenderLayoutComments(w util.BufWriter, source []byte, node *ast.HTMLBlock) (bool, error) {
+	l := node.Lines().Len()
+	var lines []string
+	for i := 0; i < l; i++ {
+		line := node.Lines().At(i)
+		raw := strings.TrimSpace(string(line.Value(source)))
+		if raw != "" {
+			lines = append(lines, raw)
+		}
+	}
+	if len(lines) == 0 {
+		return false, nil
+	}
+	for _, raw := range lines {
+		if !isLayoutComment(raw) {
+			return false, nil
+		}
+	}
+	for _, raw := range lines {
+		switch raw {
+		case "<!-- ac:layout -->":
+			_, _ = w.WriteString("<ac:layout>\n")
+		case "<!-- ac:layout end -->":
+			_, _ = w.WriteString("</ac:layout>\n")
+		case "<!-- ac:layout-section type:single -->":
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"single\">\n")
+		case "<!-- ac:layout-section type:two_equal -->":
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_equal\">\n")
+		case "<!-- ac:layout-section type:two_left_sidebar -->":
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_left_sidebar\">\n")
+		case "<!-- ac:layout-section type:two_right_sidebar -->":
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"two_right_sidebar\">\n")
+		case "<!-- ac:layout-section type:three -->":
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"three\">\n")
+		case "<!-- ac:layout-section type:three_with_sidebars -->":
+			_, _ = w.WriteString("<ac:layout-section ac:type=\"three_with_sidebars\">\n")
+		case "<!-- ac:layout-section end -->":
+			_, _ = w.WriteString("</ac:layout-section>\n")
+		case "<!-- ac:layout-cell -->":
+			_, _ = w.WriteString("<ac:layout-cell>\n")
+		case "<!-- ac:layout-cell end -->":
+			_, _ = w.WriteString("</ac:layout-cell>\n")
+		case "<!-- ac:placeholder -->":
+			_, _ = w.WriteString("<ac:placeholder>\n")
+		case "<!-- ac:placeholder end -->":
+			_, _ = w.WriteString("</ac:placeholder>\n")
+		}
+	}
+	return true, nil
+}
+
+func isLayoutComment(raw string) bool {
+	switch raw {
+	case "<!-- ac:layout -->", "<!-- ac:layout end -->",
+		"<!-- ac:layout-section type:single -->", "<!-- ac:layout-section type:two_equal -->",
+		"<!-- ac:layout-section type:two_left_sidebar -->", "<!-- ac:layout-section type:two_right_sidebar -->",
+		"<!-- ac:layout-section type:three -->", "<!-- ac:layout-section type:three_with_sidebars -->",
+		"<!-- ac:layout-section end -->", "<!-- ac:layout-cell -->", "<!-- ac:layout-cell end -->",
+		"<!-- ac:placeholder -->", "<!-- ac:placeholder end -->":
+		return true
+	}
+	return false
 }
 
 // isURLScheme reports whether s is a recognised URL scheme that should be
@@ -209,6 +239,10 @@ func validateImgTagConversionInput(src, width string) (string, bool, error) {
 	src = strings.TrimFunc(src, func(r rune) bool {
 		return r <= ' ' || r == 127
 	})
+
+	if src == "" {
+		return "", false, nil
+	}
 
 	if u, err := url.Parse(src); err == nil {
 		scheme := strings.ToLower(u.Scheme)
@@ -270,6 +304,10 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagNode(w util.BufWriter, n *h
 		if isURLScheme(scheme) || strings.HasPrefix(sanitizedSrc, "//") || strings.Contains(sanitizedSrc, "://") {
 			return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 		}
+	}
+
+	if r.Attachments == nil {
+		return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 	}
 
 	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{sanitizedSrc})

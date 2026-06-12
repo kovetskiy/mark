@@ -15,6 +15,7 @@ require (
 	github.com/urfave/cli/v3 v3.8.0
 	github.com/yuin/goldmark v1.8.2
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/net v0.44.0
 	golang.org/x/text v0.36.0
 	oss.terrastruct.com/d2 v0.7.1
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
@@ -48,7 +49,6 @@ require (
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/image v0.38.0 // indirect
-	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
