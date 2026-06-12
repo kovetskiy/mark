@@ -115,3 +115,20 @@ func TestHTMLBlock_NonImgTagFallback(t *testing.T) {
 		t.Errorf("expected fallback output to contain original HTML, got: %s", out)
 	}
 }
+
+func TestHTMLBlock_DangerousURL(t *testing.T) {
+	r := newTestRenderer(t, "left", &fakeAttacher{}, "/docs/page.md")
+	// Unsafe = false by default, which should reject dangerous URLs
+	
+	var buf bufWriter
+	source := []byte(`<img src="javascript:alert(1)" />`)
+	node := newHTMLBlockFromSource(source)
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// It should fall back, meaning status is WalkContinue
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue for dangerous URL", status)
+	}
+}

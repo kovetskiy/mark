@@ -127,6 +127,9 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, line str
 	}
 
 	src := srcMatch[1]
+	if !r.Unsafe && html.IsDangerousURL([]byte(src)) {
+		return ast.WalkContinue, nil
+	}
 	var width, alt, title string
 	if wMatch := widthRegex.FindStringSubmatch(attrs); wMatch != nil {
 		width = wMatch[1]
