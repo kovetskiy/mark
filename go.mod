@@ -6,17 +6,17 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
-	github.com/dreampuf/mermaid.go v0.2.0
+	github.com/dreampuf/mermaid.go v0.2.1
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.1
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
-	github.com/urfave/cli/v3 v3.8.0
+	github.com/urfave/cli/v3 v3.9.0
 	github.com/yuin/goldmark v1.8.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/net v0.44.0
-	golang.org/x/text v0.36.0
+	golang.org/x/text v0.38.0
 	oss.terrastruct.com/d2 v0.7.1
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
 )
