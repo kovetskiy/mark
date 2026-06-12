@@ -37,16 +37,24 @@ var layoutComments = map[string]string{
 	"<!-- ac:placeholder end -->":                         "</ac:placeholder>\n",
 }
 
-// containsImgTag checks case-insensitively whether a string contains an '<img' substring.
-// This is a zero-allocation fast-path check to avoid parsing overhead.
-func containsImgTag(s string) bool {
-	for i := 0; i < len(s)-3; i++ {
-		if s[i] == '<' &&
-			(s[i+1] == 'i' || s[i+1] == 'I') &&
-			(s[i+2] == 'm' || s[i+2] == 'M') &&
-			(s[i+3] == 'g' || s[i+3] == 'G') {
+// containsImgTagBytes checks case-insensitively whether a byte slice contains an '<img' substring.
+// This is a zero-allocation fast-path check.
+func containsImgTagBytes(b []byte) bool {
+	for i := 0; i < len(b)-3; i++ {
+		if b[i] == '<' &&
+			(b[i+1] == 'i' || b[i+1] == 'I') &&
+			(b[i+2] == 'm' || b[i+2] == 'M') &&
+			(b[i+3] == 'g' || b[i+3] == 'G') {
 			return true
 		}
+	}
+	return false
+}
+
+func isWindowsDrivePath(s string) bool {
+	if len(s) >= 3 && s[1] == ':' && (s[2] == '/' || s[2] == '\\') {
+		c := s[0]
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 	}
 	return false
 }
@@ -103,17 +111,25 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 	}
 
 	if r.ConvertImgs {
+		// Zero-allocation scan lines first
+		hasImgCandidate := false
+		for i := 0; i < l; i++ {
+			line := n.Lines().At(i)
+			if containsImgTagBytes(line.Value(source)) {
+				hasImgCandidate = true
+				break
+			}
+		}
+		if !hasImgCandidate {
+			return r.goldmarkRenderHTMLBlock(w, source, node, entering)
+		}
+
 		var contentBuilder strings.Builder
 		for i := 0; i < l; i++ {
 			line := n.Lines().At(i)
 			contentBuilder.Write(line.Value(source))
 		}
 		content := contentBuilder.String()
-
-		// Fast path: skip parsing if there are no img tags
-		if !containsImgTag(content) {
-			return r.goldmarkRenderHTMLBlock(w, source, node, entering)
-		}
 
 		if imgNodes, ok := parseHTML(content); ok {
 			// Pre-validate all image nodes before writing anything to w
@@ -305,7 +321,7 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagNode(w util.BufWriter, n *h
 
 	// Force ri:url fallback for absolute paths or Windows UNC/drive paths
 	// to prevent local file exfiltration outside relative directories.
-	if filepath.IsAbs(sanitizedSrc) || strings.HasPrefix(sanitizedSrc, "\\\\") {
+	if filepath.IsAbs(sanitizedSrc) || isWindowsDrivePath(sanitizedSrc) || strings.HasPrefix(sanitizedSrc, "\\\\") {
 		return r.renderImgURL(w, sanitizedSrc, width, alt, title)
 	}
 

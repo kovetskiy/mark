@@ -148,7 +148,7 @@ func makePNG(t *testing.T, path string) {
 func newHTMLBlockFromSource(source []byte) *ast.HTMLBlock {
 	node := ast.NewHTMLBlock(ast.HTMLBlockType6)
 	start := 0
-	for start <= len(source) {
+	for start < len(source) {
 		offset := bytes.IndexByte(source[start:], '\n')
 		if offset < 0 {
 			node.Lines().Append(text.NewSegment(start, len(source)))
