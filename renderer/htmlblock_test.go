@@ -167,7 +167,7 @@ func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Att
 	if err != nil {
 		t.Fatalf("stdlib.New: %v", err)
 	}
-	renderer := NewConfluenceHTMLBlockRenderer(lib, attachments, path, imageAlign)
+	renderer := NewConfluenceHTMLBlockRendererWithAttachments(lib, attachments, path, imageAlign)
 	htmlBlockRenderer, ok := renderer.(*ConfluenceHTMLBlockRenderer)
 	if !ok {
 		t.Fatalf("renderer = %T, want *ConfluenceHTMLBlockRenderer", renderer)
@@ -181,13 +181,44 @@ func TestNewConfluenceHTMLBlockRenderer_AppliesHTMLOptions(t *testing.T) {
 		t.Fatalf("stdlib.New: %v", err)
 	}
 
-	renderer := NewConfluenceHTMLBlockRenderer(lib, &fakeAttacher{}, "/docs/page.md", "", htmlrenderer.WithUnsafe())
+	renderer := NewConfluenceHTMLBlockRenderer(lib, htmlrenderer.WithUnsafe())
 	htmlBlockRenderer, ok := renderer.(*ConfluenceHTMLBlockRenderer)
 	if !ok {
 		t.Fatalf("renderer = %T, want *ConfluenceHTMLBlockRenderer", renderer)
 	}
 	if !htmlBlockRenderer.Unsafe {
 		t.Error("expected htmlrenderer.WithUnsafe option to be applied")
+	}
+}
+
+func TestNewConfluenceHTMLBlockRenderer_PreservesLegacyConstructorBehavior(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		t.Fatalf("stdlib.New: %v", err)
+	}
+
+	renderer := NewConfluenceHTMLBlockRenderer(lib, htmlrenderer.WithUnsafe())
+	htmlBlockRenderer, ok := renderer.(*ConfluenceHTMLBlockRenderer)
+	if !ok {
+		t.Fatalf("renderer = %T, want *ConfluenceHTMLBlockRenderer", renderer)
+	}
+	source := []byte(`<img src="https://example.com/logo.png" />`)
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := htmlBlockRenderer.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue", status)
+	}
+	out := buf.String()
+	if strings.Contains(out, `<ac:image`) {
+		t.Errorf("legacy constructor should not enable img conversion, got: %s", out)
+	}
+	if !strings.Contains(out, `<img src="https://example.com/logo.png" />`) {
+		t.Errorf("legacy constructor should preserve raw HTML fallback, got: %s", out)
 	}
 }
 

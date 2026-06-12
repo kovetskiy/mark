@@ -28,15 +28,25 @@ type ConfluenceHTMLBlockRenderer struct {
 	Path        string
 	Attachments attachment.Attacher
 	ImageAlign  string
+	ConvertImgs bool
 }
 
-func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...htmlrenderer.Option) renderer.NodeRenderer {
+func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, opts ...htmlrenderer.Option) renderer.NodeRenderer {
+	return newConfluenceHTMLBlockRenderer(stdlib, nil, "", "", false, opts...)
+}
+
+func NewConfluenceHTMLBlockRendererWithAttachments(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...htmlrenderer.Option) renderer.NodeRenderer {
+	return newConfluenceHTMLBlockRenderer(stdlib, attachments, path, imageAlign, true, opts...)
+}
+
+func newConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, convertImgs bool, opts ...htmlrenderer.Option) renderer.NodeRenderer {
 	r := &ConfluenceHTMLBlockRenderer{
 		Config:      htmlrenderer.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
 		Attachments: attachments,
 		ImageAlign:  imageAlign,
+		ConvertImgs: convertImgs,
 	}
 	for _, opt := range opts {
 		opt.SetHTMLOption(&r.Config)
@@ -101,7 +111,7 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 			return ast.WalkContinue, nil
 		}
 
-		if l == 1 {
+		if r.ConvertImgs && l == 1 {
 			if status, err := r.tryRenderImgTag(w, raw); status != ast.WalkContinue || err != nil {
 				return status, err
 			}
@@ -110,7 +120,7 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 		}
 	}
 
-	if l > 1 {
+	if r.ConvertImgs && l > 1 {
 		if status, err := r.tryRenderImgTagLines(w, source, n); status != ast.WalkContinue || err != nil {
 			return status, err
 		}
