@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/vfs"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/net/html"
 
 	"github.com/yuin/goldmark/ast"
@@ -137,6 +139,56 @@ func isDangerousScheme(s string) bool {
 	return false
 }
 
+type invalidImgWidthError struct {
+	width string
+}
+
+func (e *invalidImgWidthError) Error() string {
+	return fmt.Sprintf("invalid width %q: expected a positive integer pixel value", e.width)
+}
+
+func validateImgWidth(width string) error {
+	if width == "" {
+		return nil
+	}
+
+	for _, r := range width {
+		if r < '0' || r > '9' {
+			return &invalidImgWidthError{width: width}
+		}
+	}
+
+	n, err := strconv.Atoi(width)
+	if err != nil || n <= 0 {
+		return &invalidImgWidthError{width: width}
+	}
+
+	return nil
+}
+
+func validateImgTagConversionInput(src, width string) (bool, error) {
+	if u, err := url.Parse(src); err == nil {
+		scheme := strings.ToLower(u.Scheme)
+		if isDangerousScheme(scheme) {
+			return false, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
+		}
+	}
+
+	if err := validateImgWidth(width); err != nil {
+		var widthErr *invalidImgWidthError
+		if errors.As(err, &widthErr) {
+			log.Warn().
+				Str("width", width).
+				Err(err).
+				Msg("skipping html img conversion")
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 // tryRenderImgTag checks if raw is an <img> tag and renders it as ac:image.
 // Returns WalkSkipChildren if handled, WalkContinue if not an img tag.
 func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw string) (ast.WalkStatus, error) {
@@ -145,12 +197,17 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTag(w util.BufWriter, raw stri
 		return ast.WalkContinue, nil
 	}
 
+	valid, err := validateImgTagConversionInput(src, width)
+	if err != nil {
+		return ast.WalkStop, err
+	}
+	if !valid {
+		return ast.WalkContinue, nil
+	}
+
 	if u, err := url.Parse(src); err == nil {
 		scheme := strings.ToLower(u.Scheme)
-		if isDangerousScheme(scheme) {
-			return ast.WalkStop, fmt.Errorf("img src %q: unsupported URL scheme %q", src, u.Scheme)
-		}
-		if isURLScheme(scheme) || strings.Contains(src, "://") {
+		if isURLScheme(scheme) || strings.HasPrefix(src, "//") || strings.Contains(src, "://") {
 			return r.renderImgURL(w, src, width, alt, title)
 		}
 	}
@@ -210,6 +267,17 @@ func (r *ConfluenceHTMLBlockRenderer) tryRenderImgTagLines(w util.BufWriter, sou
 
 	if len(lines) == 0 {
 		return ast.WalkContinue, nil
+	}
+
+	for _, raw := range lines {
+		src, width, _, _ := parseImgAttrs(raw)
+		valid, err := validateImgTagConversionInput(src, width)
+		if err != nil {
+			return ast.WalkStop, err
+		}
+		if !valid {
+			return ast.WalkContinue, nil
+		}
 	}
 
 	for _, raw := range lines {

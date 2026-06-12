@@ -81,6 +81,40 @@ func TestParseImgAttrs(t *testing.T) {
 	}
 }
 
+func TestValidateImgWidth(t *testing.T) {
+	tests := []struct {
+		name    string
+		width   string
+		wantErr bool
+	}{
+		{name: "empty", width: ""},
+		{name: "one", width: "1"},
+		{name: "standard", width: "600"},
+		{name: "wide", width: "1800"},
+		{name: "zero", width: "0", wantErr: true},
+		{name: "negative", width: "-1", wantErr: true},
+		{name: "plus", width: "+1", wantErr: true},
+		{name: "decimal", width: "12.5", wantErr: true},
+		{name: "percent", width: "100%", wantErr: true},
+		{name: "css unit", width: "100px", wantErr: true},
+		{name: "leading space", width: " 100", wantErr: true},
+		{name: "trailing space", width: "100 ", wantErr: true},
+		{name: "entity expanded junk", width: "100&x", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateImgWidth(tt.width)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
 // bufWriter wraps bytes.Buffer to satisfy util.BufWriter.
 type bufWriter struct{ bytes.Buffer }
 
@@ -220,6 +254,26 @@ func TestTryRenderImgTag_URL_WideAlignForced(t *testing.T) {
 	}
 }
 
+func TestTryRenderImgTag_ProtocolRelativeURL(t *testing.T) {
+	attacher := &fakeAttacher{}
+	r := newTestRenderer(t, "", attacher, "/docs/page.md")
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, `<img src="//example.com/logo.png" />`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkSkipChildren {
+		t.Errorf("status = %v, want WalkSkipChildren", status)
+	}
+	if len(attacher.attached) != 0 {
+		t.Errorf("protocol-relative URL should not attach local files, got %d attachments", len(attacher.attached))
+	}
+	if !strings.Contains(buf.String(), `ri:url ri:value="//example.com/logo.png"`) {
+		t.Errorf("protocol-relative URL should render as ri:url, got: %s", buf.String())
+	}
+}
+
 func TestTryRenderImgTag_LocalAttachment(t *testing.T) {
 	tmpDir := t.TempDir()
 	makePNG(t, filepath.Join(tmpDir, "arch.png"))
@@ -279,6 +333,41 @@ func TestRenderHTMLBlock_ConsecutiveStandaloneImgTags(t *testing.T) {
 	}
 	if !strings.Contains(out, `ri:attachment ri:filename="two.png"`) {
 		t.Errorf("output missing second attachment: %s", out)
+	}
+}
+
+func TestRenderHTMLBlock_ConsecutiveImgTagsInvalidWidthFallsBackWithoutPartialConversion(t *testing.T) {
+	tmpDir := t.TempDir()
+	makePNG(t, filepath.Join(tmpDir, "one.png"))
+
+	attacher := &fakeAttacher{}
+	r := newTestRenderer(t, "", attacher, filepath.Join(tmpDir, "page.md"))
+	r.Unsafe = true
+	source := []byte(`<img src="one.png" width="300" />
+<img src="https://example.com/two.png" width="100px" />`)
+
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue", status)
+	}
+	if len(attacher.attached) != 0 {
+		t.Fatalf("invalid multi-line conversion must not attach partial output, got %d attachments", len(attacher.attached))
+	}
+	out := buf.String()
+	if strings.Contains(out, `<ac:image`) {
+		t.Errorf("invalid multi-line conversion must fall back without partial ac:image output, got: %s", out)
+	}
+	if !strings.Contains(out, `<img src="one.png" width="300" />`) {
+		t.Errorf("expected fallback to contain first raw img tag, got: %s", out)
+	}
+	if !strings.Contains(out, `<img src="https://example.com/two.png" width="100px" />`) {
+		t.Errorf("expected fallback to contain invalid raw img tag, got: %s", out)
 	}
 }
 
@@ -401,6 +490,45 @@ func TestTryRenderImgTag_OnlyStandaloneImgTag(t *testing.T) {
 			}
 			if buf.Len() != 0 {
 				t.Errorf("expected no output for non-standalone img tag, got: %s", buf.String())
+			}
+		})
+	}
+}
+
+func TestTryRenderImgTag_InvalidWidthFallsBack(t *testing.T) {
+	tests := []struct {
+		name  string
+		width string
+	}{
+		{name: "zero", width: "0"},
+		{name: "negative", width: "-1"},
+		{name: "plus", width: "+1"},
+		{name: "decimal", width: "12.5"},
+		{name: "percent", width: "100%"},
+		{name: "css unit", width: "100px"},
+		{name: "leading space", width: " 100"},
+		{name: "trailing space", width: "100 "},
+		{name: "entity expanded junk", width: "100&amp;x"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attacher := &fakeAttacher{}
+			r := newTestRenderer(t, "", attacher, "/docs/page.md")
+
+			var buf bufWriter
+			status, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/img.png" width="`+tt.width+`" />`)
+			if err != nil {
+				t.Fatalf("invalid width should fall back without error, got: %v", err)
+			}
+			if status != ast.WalkContinue {
+				t.Errorf("status = %v, want WalkContinue", status)
+			}
+			if buf.Len() != 0 {
+				t.Errorf("invalid width should not emit converted output, got: %s", buf.String())
+			}
+			if len(attacher.attached) != 0 {
+				t.Errorf("invalid width should not attach local files, got %d attachments", len(attacher.attached))
 			}
 		})
 	}
@@ -613,20 +741,23 @@ func TestTryRenderImgTag_AttachmentFilenameXMLEscaped(t *testing.T) {
 	}
 }
 
-// TestTryRenderImgTag_WidthXMLEscaped documents that a width attribute
-// containing XML-special characters must not appear unescaped in ac:width.
-// e.g. width="100&amp;x" decodes to 100&x which would produce malformed XML.
-func TestTryRenderImgTag_WidthXMLEscaped(t *testing.T) {
+// TestTryRenderImgTag_InvalidWidthDoesNotEmitMalformedXML documents that a
+// width attribute containing XML-special characters must not be converted into
+// ac:width. e.g. width="100&amp;x" decodes to 100&x.
+func TestTryRenderImgTag_InvalidWidthDoesNotEmitMalformedXML(t *testing.T) {
 	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
 
 	var buf bufWriter
-	_, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/img.png" width="100&amp;x" />`)
+	status, err := r.tryRenderImgTag(&buf, `<img src="https://example.com/img.png" width="100&amp;x" />`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue", status)
+	}
 	out := buf.String()
-	if strings.Contains(out, `ac:width="100&x"`) {
-		t.Error("unescaped & in ac:width produces malformed XML")
+	if strings.Contains(out, `<ac:image`) || strings.Contains(out, `ac:width`) {
+		t.Errorf("invalid width should not emit ac:image output, got: %s", out)
 	}
 }
 
