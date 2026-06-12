@@ -878,3 +878,95 @@ func TestRenderHTMLBlock_MultiLineImgTag(t *testing.T) {
 		t.Errorf("output missing alt: %s", out)
 	}
 }
+
+func TestTryRenderImgTag_AbsolutePathFallback(t *testing.T) {
+	paths := []struct {
+		name string
+		src  string
+	}{
+		{"unix absolute", "/etc/passwd"},
+		{"windows absolute", "C:\\windows\\system32\\cmd.exe"},
+		{"windows unc", "\\\\server\\share\\img.png"},
+	}
+
+	for _, tt := range paths {
+		t.Run(tt.name, func(t *testing.T) {
+			attacher := &fakeAttacher{}
+			r := newTestRenderer(t, "", attacher, "/docs/page.md")
+
+			var buf bufWriter
+			status, err := r.tryRenderImgTag(&buf, `<img src="`+tt.src+`" />`)
+			if err != nil {
+				t.Fatalf("absolute path should not error, got: %v", err)
+			}
+			if status != ast.WalkSkipChildren {
+				t.Errorf("status = %v, want WalkSkipChildren", status)
+			}
+			out := buf.String()
+			if !strings.Contains(out, `ri:url`) {
+				t.Errorf("absolute path should fall back to ri:url, got: %s", out)
+			}
+			if len(attacher.attached) != 0 {
+				t.Errorf("absolute path should not resolve as local attachment, attached count: %d", len(attacher.attached))
+			}
+		})
+	}
+}
+
+func TestTryRenderImgTag_EmptySrc(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+
+	var buf bufWriter
+	status, err := r.tryRenderImgTag(&buf, `<img src="" />`)
+	if err != nil {
+		t.Fatalf("empty src should not error, got: %v", err)
+	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue (raw HTML fallback)", status)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("empty src should not write output, got: %s", buf.String())
+	}
+}
+
+func TestTryRenderImgTag_NilAttacher(t *testing.T) {
+	r := newTestRenderer(t, "", nil, "/docs/page.md")
+
+	var buf bufWriter
+	// Should fall back to URL rendering instead of panicking on nil Attachments
+	status, err := r.tryRenderImgTag(&buf, `<img src="local.png" />`)
+	if err != nil {
+		t.Fatalf("nil attacher should not error, got: %v", err)
+	}
+	if status != ast.WalkSkipChildren {
+		t.Errorf("status = %v, want WalkSkipChildren", status)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `ri:url`) {
+		t.Errorf("nil attacher should fall back to URL, got: %s", out)
+	}
+}
+
+func TestRenderHTMLBlock_ConsecutiveLayoutComments(t *testing.T) {
+	r := newTestRenderer(t, "", &fakeAttacher{}, "/docs/page.md")
+	source := []byte(`<!-- ac:layout -->
+<!-- ac:layout-cell -->
+<!-- ac:layout-cell end -->
+<!-- ac:layout end -->`)
+
+	node := newHTMLBlockFromSource(source)
+
+	var buf bufWriter
+	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != ast.WalkContinue {
+		t.Errorf("status = %v, want WalkContinue (so parser visits children/succeeds)", status)
+	}
+	out := buf.String()
+	expected := "<ac:layout>\n<ac:layout-cell>\n</ac:layout-cell>\n</ac:layout>\n"
+	if out != expected {
+		t.Errorf("expected layout:\n%q\ngot:\n%q", expected, out)
+	}
+}
