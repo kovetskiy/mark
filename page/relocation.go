@@ -67,6 +67,14 @@ func EnsurePageUnderFolderParent(
 		return fmt.Errorf("page %q not found after move", pg.Title)
 	}
 
+	pageType := pg.Type
 	*pg = *refreshed
+	if pg.Type == "" {
+		if pageType != "" {
+			pg.Type = pageType
+		} else {
+			pg.Type = "page"
+		}
+	}
 	return nil
 }
