@@ -22,6 +22,15 @@ func ResolvePage(
 		return nil, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
 
+	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && !pageUnderParents(page, meta.Parents) {
+		log.Warn().Msgf(
+			"page %q exists outside MARK_PARENTS %q; will create or relocate under folder hierarchy",
+			meta.Title,
+			strings.Join(meta.Parents, " > "),
+		)
+		page = nil
+	}
+
 	if meta.Type == "blogpost" {
 		log.Info().
 			Msgf(
@@ -49,31 +58,6 @@ func ResolvePage(
 	var parent *confluence.PageInfo
 
 	if len(meta.Folders) > 0 {
-		// Use new mixed ancestry logic for folders + pages
-		ancestry := meta.Parents
-		if page != nil && !skipHomeAncestry {
-			ancestry = append(ancestry, page.Title)
-		}
-
-		if len(ancestry) > 0 {
-			// Validate existing page ancestry if it exists
-			existingPage, err := ValidateAncestry(
-				api,
-				meta.Space,
-				ancestry,
-			)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			if existingPage == nil {
-				log.Warn().
-					Msgf(
-						"page %q is not found ",
-						ancestry[len(ancestry)-1],
-					)
-			}
-		}
 
 		// Build the complete path for logging
 		fullPath := append(meta.Folders, meta.Parents...)
