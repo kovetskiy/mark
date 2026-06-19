@@ -29,3 +29,24 @@ func TestImmediateParentID(t *testing.T) {
 		t.Fatalf("got %q, want folder-1", got)
 	}
 }
+
+func TestPageUnderParents(t *testing.T) {
+	t.Parallel()
+
+	anchor := []string{"NinjaOne"}
+	pg := &confluence.PageInfo{
+		Ancestors: []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}{{ID: "1", Title: "MSP"}, {ID: "2", Title: "NinjaOne"}},
+	}
+	if !pageUnderParents(pg, anchor) {
+		t.Fatal("expected page under NinjaOne anchor")
+	}
+	if pageUnderParents(&confluence.PageInfo{Ancestors: []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}{{ID: "1", Title: "MSP"}}}, anchor) {
+		t.Fatal("expected page outside NinjaOne anchor")
+	}
+}
