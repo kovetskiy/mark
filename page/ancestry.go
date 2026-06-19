@@ -15,6 +15,22 @@ type ParentInfo struct {
 	Type  string // "page" or "folder"
 }
 
+// ponytail: process-wide folder cache; mark syncs files sequentially so no lock needed.
+var createdFolderCache = map[string]string{}
+
+func folderCacheKey(space, title string) string {
+	return space + "\x00" + title
+}
+
+func cacheFolder(space, title, id string) {
+	createdFolderCache[folderCacheKey(space, title)] = id
+}
+
+func cachedFolderID(space, title string) (string, bool) {
+	id, ok := createdFolderCache[folderCacheKey(space, title)]
+	return id, ok
+}
+
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation
 func EnsureFolderAncestry(
 	dryRun bool,
@@ -37,7 +53,14 @@ func EnsureFolderAncestry(
 
 	// Find existing folders from the beginning of the hierarchy
 	for i, title := range folders {
-		folder, err := api.FindFolder(space, title)
+		var folder *confluence.FolderInfo
+		var err error
+
+		if id, ok := cachedFolderID(space, title); ok {
+			folder, err = api.GetFolderByID(id)
+		} else {
+			folder, err = api.FindFolder(space, title)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
 		}
@@ -59,6 +82,7 @@ func EnsureFolderAncestry(
 			}
 		}
 
+		cacheFolder(space, title, folder.ID)
 		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
@@ -93,7 +117,11 @@ func EnsureFolderAncestry(
 			if err != nil {
 				// Another file in the same run may have created this folder already.
 				if strings.Contains(err.Error(), "folder exists with the same title") {
-					folder, err = api.FindFolder(space, title)
+					if id, ok := cachedFolderID(space, title); ok {
+						folder, err = api.GetFolderByID(id)
+					} else {
+						folder, err = api.FindFolder(space, title)
+					}
 				}
 				if err != nil {
 					return nil, fmt.Errorf(
@@ -110,6 +138,8 @@ func EnsureFolderAncestry(
 					)
 				}
 			}
+
+			cacheFolder(space, title, folder.ID)
 
 			parent = &ParentInfo{
 				ID:    folder.ID,
