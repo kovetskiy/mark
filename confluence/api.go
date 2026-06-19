@@ -994,28 +994,29 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderIn
 }
 
 func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
-	// Use v1 content search API since v2 doesn't have a direct folder search endpoint
+	// CQL folder search lives on /rest/api/search (not content/search).
 	result := struct {
 		Results []struct {
-			ID    string `json:"id"`
-			Type  string `json:"type"`
-			Title string `json:"title"`
+			Content struct {
+				ID    string `json:"id"`
+				Type  string `json:"type"`
+				Title string `json:"title"`
+			} `json:"content"`
 		} `json:"results"`
 	}{}
 
-	// CQL query to search for folders by title and space key
-	escapedTitle := strings.ReplaceAll(title, "\\", "\\\\")
-	escapedTitle = strings.ReplaceAll(escapedTitle, "\"", "\\\"")
-	cql := fmt.Sprintf("type=folder AND title=\"%s\" AND space=\"%s\"", escapedTitle, spaceKey)
+	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
+	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
+	cql := fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey)
 
 	payload := map[string]string{
 		"cql":    cql,
 		"limit":  "1",
-		"expand": "",
+		"expand": "content",
 	}
 
 	request, err := api.rest.Res(
-		"content/search", &result,
+		"search", &result,
 	).Get(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search for folder %s: %w", title, err)
@@ -1025,12 +1026,17 @@ func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
+	if len(result.Results) == 0 || result.Results[0].Content.ID == "" {
 		return nil, nil // Folder not found
 	}
 
+	item := result.Results[0].Content
+	if item.Type != "folder" {
+		return nil, nil
+	}
+
 	// Found a folder, now get its full details using v2 API
-	return api.GetFolderByID(result.Results[0].ID)
+	return api.GetFolderByID(item.ID)
 }
 
 func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
