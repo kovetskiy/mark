@@ -91,7 +91,24 @@ func EnsureFolderAncestry(
 		for _, title := range rest {
 			folder, err := api.CreateFolder(spaceID, title, parentID)
 			if err != nil {
-				return nil, fmt.Errorf("error creating folder with title %q: %w", title, err)
+				// Another file in the same run may have created this folder already.
+				if strings.Contains(err.Error(), "folder exists with the same title") {
+					folder, err = api.FindFolder(space, title)
+				}
+				if err != nil {
+					return nil, fmt.Errorf(
+						"error creating folder with title %q: %w",
+						title,
+						err,
+					)
+				}
+				if folder == nil {
+					return nil, fmt.Errorf(
+						"folder %q reported as existing but could not be found in space %q",
+						title,
+						space,
+					)
+				}
 			}
 
 			parent = &ParentInfo{
