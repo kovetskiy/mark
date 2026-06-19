@@ -31,6 +31,36 @@ func cachedFolderID(space, contextID, title string) (string, bool) {
 	return id, ok
 }
 
+func resolveFolder(
+	api *confluence.API,
+	space, title, underID string,
+	anchorPageID *string,
+) (*confluence.FolderInfo, error) {
+	folder, err := api.FindFolder(space, title, underID)
+	if err != nil {
+		return nil, err
+	}
+	if folder != nil {
+		return folder, nil
+	}
+
+	// Top-level wiki folder may exist at space root from an earlier sync; move it under MARK_PARENTS.
+	if underID != "" && anchorPageID != nil && underID == *anchorPageID {
+		folder, err = api.FindFolder(space, title, "")
+		if err != nil || folder == nil {
+			return folder, err
+		}
+		if folder.ParentID != *anchorPageID {
+			if err := api.MoveContentAppend(folder.ID, *anchorPageID); err != nil {
+				return nil, fmt.Errorf("move folder %q under MARK_PARENTS page: %w", title, err)
+			}
+			return api.GetFolderByID(folder.ID)
+		}
+	}
+
+	return nil, nil
+}
+
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
 func EnsureFolderAncestry(
@@ -68,7 +98,7 @@ func EnsureFolderAncestry(
 		if id, ok := cachedFolderID(space, underID, title); ok {
 			folder, err = api.GetFolderByID(id)
 		} else {
-			folder, err = api.FindFolder(space, title, underID)
+			folder, err = resolveFolder(api, space, title, underID, anchorPageID)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
@@ -131,7 +161,7 @@ func EnsureFolderAncestry(
 					if id, ok := cachedFolderID(space, underID, title); ok {
 						folder, err = api.GetFolderByID(id)
 					} else {
-						folder, err = api.FindFolder(space, title, underID)
+						folder, err = resolveFolder(api, space, title, underID, anchorPageID)
 					}
 				}
 				if err != nil {

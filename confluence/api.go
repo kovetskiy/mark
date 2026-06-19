@@ -1147,6 +1147,21 @@ func (api *API) CreatePageWithFolderParent(
 	return result, nil
 }
 
+// MoveContentAppend relocates any content (page, folder, etc.) under targetID using the v1 move API.
+func (api *API) MoveContentAppend(contentID, targetID string) error {
+	path := fmt.Sprintf("content/%s/move/append/%s", contentID, targetID)
+	request, err := api.rest.Res(path, nil).Put(map[string]interface{}{})
+	if err != nil {
+		return fmt.Errorf("failed to move content %s under %s: %w", contentID, targetID, err)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return newErrorStatusNotOK(request)
+	}
+
+	return nil
+}
+
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	defer func() {
 		_ = request.Raw.Body.Close()
