@@ -149,15 +149,9 @@ func ResolvePage(
 	var displayPath []string
 
 	if len(meta.Folders) > 0 {
-		// Show folders first, then page hierarchy
+		// MARK_PARENTS anchor, then folder chain, then leaf page
+		displayPath = append(displayPath, meta.Parents...)
 		displayPath = append(displayPath, meta.Folders...)
-		if parent != nil {
-			// Add page ancestors if any
-			for _, ancestor := range parent.Ancestors {
-				displayPath = append(displayPath, ancestor.Title)
-			}
-			displayPath = append(displayPath, parent.Title)
-		}
 	} else {
 		// Traditional page hierarchy
 		if parent != nil {

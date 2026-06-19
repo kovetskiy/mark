@@ -954,29 +954,33 @@ func (api *API) RestrictPageUpdates(
 }
 
 // Folder API methods (Phase 2 implementation)
-func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderInfo, error) {
+func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType string) (*FolderInfo, error) {
 	actualSpaceID := spaceID
 
-	// If we have a parent, we need to use the parent's space ID to avoid cross-space conflicts
-	if parentID != nil {
+	if parentType == "" {
+		parentType = "folder"
+	}
+
+	// If we have a folder parent, use the parent's space ID to avoid cross-space conflicts.
+	if parentID != nil && parentType == "folder" {
 		parentFolder, err := api.GetFolderByID(*parentID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get parent folder info for space consistency: %w", err)
 		}
 
-		// Use parent's space ID if available, otherwise fall back to provided spaceID
 		if parentFolder.SpaceID != "" {
 			actualSpaceID = parentFolder.SpaceID
 		}
 	}
 
 	payload := map[string]interface{}{
-		"spaceId": actualSpaceID, // Always required by API
+		"spaceId": actualSpaceID,
 		"title":   title,
 	}
 
 	if parentID != nil {
 		payload["parentId"] = *parentID
+		payload["parentType"] = parentType
 	}
 
 	request, err := api.restV2.Res(
@@ -993,7 +997,7 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string) (*FolderIn
 	return request.Response.(*FolderInfo), nil
 }
 
-func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
+func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo, error) {
 	// CQL folder search lives on /rest/api/search (not content/search).
 	result := struct {
 		Results []struct {
@@ -1008,6 +1012,9 @@ func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
 	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
 	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
 	cql := fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey)
+	if underAncestorID != "" {
+		cql += fmt.Sprintf(` AND ancestor=%s`, underAncestorID)
+	}
 
 	payload := map[string]string{
 		"cql":    cql,

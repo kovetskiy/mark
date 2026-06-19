@@ -18,25 +18,27 @@ type ParentInfo struct {
 // ponytail: process-wide folder cache; mark syncs files sequentially so no lock needed.
 var createdFolderCache = map[string]string{}
 
-func folderCacheKey(space, title string) string {
-	return space + "\x00" + title
+func folderCacheKey(space, contextID, title string) string {
+	return space + "\x00" + contextID + "\x00" + title
 }
 
-func cacheFolder(space, title, id string) {
-	createdFolderCache[folderCacheKey(space, title)] = id
+func cacheFolder(space, contextID, title, id string) {
+	createdFolderCache[folderCacheKey(space, contextID, title)] = id
 }
 
-func cachedFolderID(space, title string) (string, bool) {
-	id, ok := createdFolderCache[folderCacheKey(space, title)]
+func cachedFolderID(space, contextID, title string) (string, bool) {
+	id, ok := createdFolderCache[folderCacheKey(space, contextID, title)]
 	return id, ok
 }
 
-// EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation
+// EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
+// Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
 func EnsureFolderAncestry(
 	dryRun bool,
 	api *confluence.API,
 	space string,
 	folders []string,
+	anchorPageID *string,
 ) (*ParentInfo, error) {
 	if len(folders) == 0 {
 		return nil, nil
@@ -56,10 +58,17 @@ func EnsureFolderAncestry(
 		var folder *confluence.FolderInfo
 		var err error
 
-		if id, ok := cachedFolderID(space, title); ok {
+		underID := ""
+		if parent != nil {
+			underID = parent.ID
+		} else if anchorPageID != nil {
+			underID = *anchorPageID
+		}
+
+		if id, ok := cachedFolderID(space, underID, title); ok {
 			folder, err = api.GetFolderByID(id)
 		} else {
-			folder, err = api.FindFolder(space, title)
+			folder, err = api.FindFolder(space, title, underID)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
@@ -69,20 +78,7 @@ func EnsureFolderAncestry(
 			break
 		}
 
-		// Verify this folder is at the expected level of hierarchy
-		if i == 0 {
-			// The root folder in our list should not have a folder parent
-			if folder.ParentType == "folder" && folder.ParentID != "" {
-				break
-			}
-		} else {
-			// Subsequent folders must have the previous folder as parent
-			if folder.ParentID != parent.ID || folder.ParentType != "folder" {
-				break
-			}
-		}
-
-		cacheFolder(space, title, folder.ID)
+		cacheFolder(space, underID, title, folder.ID)
 		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
@@ -107,20 +103,35 @@ func EnsureFolderAncestry(
 	)
 
 	if !dryRun {
-		var parentID *string
-		if parent != nil {
-			parentID = &parent.ID
-		}
-
 		for _, title := range rest {
-			folder, err := api.CreateFolder(spaceID, title, parentID)
+			var folder *confluence.FolderInfo
+			var err error
+
+			if parent == nil {
+				if anchorPageID == nil {
+					return nil, fmt.Errorf(
+						"cannot create top-level folder %q without a MARK_PARENTS anchor page",
+						title,
+					)
+				}
+				folder, err = api.CreateFolder(spaceID, title, anchorPageID, "page")
+			} else {
+				pid := parent.ID
+				folder, err = api.CreateFolder(spaceID, title, &pid, "folder")
+			}
 			if err != nil {
+				underID := ""
+				if parent != nil {
+					underID = parent.ID
+				} else if anchorPageID != nil {
+					underID = *anchorPageID
+				}
 				// Another file in the same run may have created this folder already.
 				if strings.Contains(err.Error(), "folder exists with the same title") {
-					if id, ok := cachedFolderID(space, title); ok {
+					if id, ok := cachedFolderID(space, underID, title); ok {
 						folder, err = api.GetFolderByID(id)
 					} else {
-						folder, err = api.FindFolder(space, title)
+						folder, err = api.FindFolder(space, title, underID)
 					}
 				}
 				if err != nil {
@@ -139,14 +150,19 @@ func EnsureFolderAncestry(
 				}
 			}
 
-			cacheFolder(space, title, folder.ID)
+			underID := ""
+			if parent != nil {
+				underID = parent.ID
+			} else if anchorPageID != nil {
+				underID = *anchorPageID
+			}
+			cacheFolder(space, underID, title, folder.ID)
 
 			parent = &ParentInfo{
 				ID:    folder.ID,
 				Title: folder.Title,
 				Type:  "folder",
 			}
-			parentID = &parent.ID
 		}
 	} else {
 		log.Info().Msgf(
@@ -168,7 +184,8 @@ func EnsureFolderAncestry(
 	return parent, nil
 }
 
-// EnsureMixedAncestry creates both folders and pages in the correct order
+// EnsureMixedAncestry creates folders under the MARK_PARENTS anchor page, then returns a folder-parent
+// marker so leaf pages are created inside the deepest folder.
 func EnsureMixedAncestry(
 	dryRun bool,
 	api *confluence.API,
@@ -176,87 +193,43 @@ func EnsureMixedAncestry(
 	folders []string,
 	pages []string,
 ) (*confluence.PageInfo, error) {
-	// First, create the folder hierarchy
-	folderParent, err := EnsureFolderAncestry(dryRun, api, space, folders)
+	var anchorPageID *string
+
+	if len(pages) > 0 {
+		anchor, err := EnsureAncestry(dryRun, api, space, pages)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve MARK_PARENTS page ancestry: %w", err)
+		}
+		if anchor == nil {
+			return nil, fmt.Errorf("MARK_PARENTS page chain %q could not be resolved", strings.Join(pages, " > "))
+		}
+		anchorPageID = &anchor.ID
+	}
+
+	if len(folders) == 0 {
+		if len(pages) == 0 {
+			return nil, nil
+		}
+		return EnsureAncestry(dryRun, api, space, pages)
+	}
+
+	folderParent, err := EnsureFolderAncestry(dryRun, api, space, folders, anchorPageID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder hierarchy: %w", err)
 	}
 
-	// If we have no page hierarchy, the target page will be created directly under the folder
-	if len(pages) == 0 {
-		// We need to create a special page that represents the folder parent
-		// This is a bit of a hack, but we'll use the folder ID as a special marker
-		if folderParent != nil {
-			// Create a fake PageInfo that contains the folder ID in a special field
-			// The calling code can detect this and use CreatePageWithFolderParent
-			return &confluence.PageInfo{
-				ID:    folderParent.ID, // Use folder ID
-				Type:  "folder-parent", // Special marker
-				Title: folderParent.Title,
-			}, nil
+	if folderParent == nil {
+		if anchorPageID != nil {
+			return &confluence.PageInfo{ID: *anchorPageID, Title: pages[len(pages)-1]}, nil
 		}
 		return nil, nil
 	}
 
-	// Now handle page ancestry, starting from the folder parent
-	var pageParent *confluence.PageInfo
-
-	if folderParent != nil {
-		// Find existing pages under the folder parent
-		rest := pages
-		for i, title := range pages {
-			page, err := api.FindPage(space, title, "page")
-			if err != nil {
-				return nil, fmt.Errorf("error finding page %q: %w", title, err)
-			}
-
-			if page == nil {
-				break
-			}
-
-			// Verify this page is actually under our folder parent
-			// (we could add validation here if needed)
-			log.Debug().Msgf("page %q exists under folder hierarchy", title)
-			rest = pages[i:]
-			pageParent = page
-		}
-
-		if pageParent != nil {
-			rest = rest[1:]
-		}
-
-		// Create remaining pages
-		if len(rest) > 0 && !dryRun {
-			if pageParent == nil {
-				// Create first page under folder
-				page, err := api.CreatePageWithFolderParent(space, "page", folderParent.ID, rest[0], "")
-				if err != nil {
-					return nil, fmt.Errorf("error creating page %q under folder: %w", rest[0], err)
-				}
-				pageParent = page
-				rest = rest[1:]
-			}
-
-			// Create remaining pages in hierarchy
-			for _, title := range rest {
-				page, err := api.CreatePage(space, "page", pageParent, title, "")
-				if err != nil {
-					return nil, fmt.Errorf("error creating page %q: %w", title, err)
-				}
-				pageParent = page
-			}
-		} else if len(rest) > 0 && dryRun {
-			log.Info().Msgf("skipping page creation due to dry-run mode, need to create %d pages: %v", len(rest), rest)
-		}
-	} else {
-		// No folders, use standard page ancestry
-		pageParent, err = EnsureAncestry(dryRun, api, space, pages)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return pageParent, nil
+	return &confluence.PageInfo{
+		ID:    folderParent.ID,
+		Type:  "folder-parent",
+		Title: folderParent.Title,
+	}, nil
 }
 
 func EnsureAncestry(
