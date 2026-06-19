@@ -327,6 +327,14 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		target = pg
 	}
 
+	if target != nil && target.Type == "" {
+		if meta != nil && meta.Type != "" {
+			target.Type = meta.Type
+		} else {
+			target.Type = "page"
+		}
+	}
+
 	// Collect attachments declared via <!-- Attachment: --> directives.
 	var declaredAttachments []string
 	if meta != nil {
