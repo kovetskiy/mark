@@ -309,6 +309,10 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			// after it was created. See issues/139.
 			time.Sleep(1 * time.Second)
 			pageCreated = true
+		} else if parent != nil && parent.Type == "folder-parent" {
+			if err := page.EnsurePageUnderFolderParent(api, pg, parent.ID); err != nil {
+				return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
+			}
 		}
 
 		target = pg
