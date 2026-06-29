@@ -44,6 +44,9 @@ The `Folder` header allows organizing pages within Confluence folders. Like `Par
 if Mark can't find the specified folder by title, it creates it. Folders and parents can be
 mixed in the same document to create complex hierarchies.
 
+> [!NOTE]
+> Folder support is currently only available on Confluence Cloud and is not supported in Confluence Server / Data Center.
+
 Also, optional following headers are supported:
 
 ```markdown
