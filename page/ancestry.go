@@ -46,6 +46,19 @@ func EnsureFolderAncestry(
 			break
 		}
 
+		// Verify this folder is at the expected level of hierarchy
+		if i == 0 {
+			// The root folder in our list should not have a folder parent
+			if folder.ParentType == "folder" && folder.ParentID != "" {
+				break
+			}
+		} else {
+			// Subsequent folders must have the previous folder as parent
+			if folder.ParentID != parent.ID || folder.ParentType != "folder" {
+				break
+			}
+		}
+
 		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
