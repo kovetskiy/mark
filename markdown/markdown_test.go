@@ -64,7 +64,7 @@ func TestCompileMarkdown(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -94,7 +94,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md":
 			variant = "-droph1"
 		default:
 			variant = ""
@@ -106,7 +106,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   true,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
@@ -150,13 +150,42 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: true,
-			Features:      []string{"mkdocsadmonitions", "mention"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
 		}
 
 		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
+}
+
+func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	markdown, _, html := loadData(t, "testdata/plantuml.md", "-nofeature")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"mkdocsadmonitions", "mention"},
+	}
+
+	actual, _, _ := mark.CompileMarkdown(markdown, lib, "testdata/plantuml.md", cfg)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
 }
 
 func TestContinueOnError(t *testing.T) {
