@@ -41,6 +41,15 @@ func resolveFolder(
 		return nil, err
 	}
 	if folder != nil {
+		if underID == "" {
+			if folder.ParentType == "folder" || folder.ParentType == "page" {
+				return nil, nil
+			}
+		} else {
+			if folder.ParentID != underID {
+				return nil, nil
+			}
+		}
 		return folder, nil
 	}
 
@@ -49,6 +58,10 @@ func resolveFolder(
 		folder, err = api.FindFolder(space, title, "")
 		if err != nil || folder == nil {
 			return folder, err
+		}
+		// Validate that the folder found at space root does not have any folder or page parent
+		if folder.ParentType == "folder" || folder.ParentType == "page" {
+			return nil, nil
 		}
 		if folder.ParentID != *anchorPageID {
 			if err := api.MoveContentAppend(folder.ID, *anchorPageID); err != nil {
