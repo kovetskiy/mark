@@ -17,6 +17,9 @@ func ResolvePage(
 	if meta == nil {
 		return nil, nil, fmt.Errorf("metadata is empty")
 	}
+	if len(meta.Folders) > 0 && !api.IsCloud() {
+		return nil, nil, fmt.Errorf("folder support is currently only available on Confluence Cloud")
+	}
 	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)

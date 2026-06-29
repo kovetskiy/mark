@@ -938,13 +938,18 @@ func (api *API) RestrictPageUpdatesServer(
 	return nil
 }
 
+func (api *API) IsCloud() bool {
+	host := api.rest.Api.BaseUrl.Host
+	return strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net")
+}
+
 func (api *API) RestrictPageUpdates(
 	page *PageInfo,
 	allowedUser string,
 ) error {
 	var err error
 
-	if strings.HasSuffix(api.rest.Api.BaseUrl.Host, "jira.com") || strings.HasSuffix(api.rest.Api.BaseUrl.Host, "atlassian.net") {
+	if api.IsCloud() {
 		err = api.RestrictPageUpdatesCloud(page, allowedUser)
 	} else {
 		err = api.RestrictPageUpdatesServer(page, allowedUser)
