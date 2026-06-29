@@ -990,7 +990,7 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 		return nil, fmt.Errorf("failed to create folder %s in space %s: %w", title, spaceID, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
 		return nil, newErrorStatusNotOK(request)
 	}
 
