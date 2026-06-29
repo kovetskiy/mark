@@ -782,6 +782,11 @@ graph TD;
 A-->B;
 ```
 
+#### Render Mermaid Diagram in browser
+Optionally you can enable mermaid diagram storing as text content and rendering in browser via `--features="mermaid-cloud"`.
+
+But this requires the [Mermaid Diagrams for Confluence](https://marketplace.atlassian.com/apps/1226567/mermaid-diagrams-for-confluence?hosting=cloud&tab=overview) macro to be installed in your Confluence instance.
+
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.

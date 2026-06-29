@@ -448,6 +448,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="format">{{ or .Format "text/plain" }}</ac:parameter>`,
 			`<ac:parameter ac:name="zoom">{{ or .Zoom "fit" }}</ac:parameter>`,
 			`<ac:parameter ac:name="toolbar">{{ or .Toolbar "bottom" }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		`ac:plantuml`: text(
 			`<ac:structured-macro ac:name="plantuml">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
