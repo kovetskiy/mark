@@ -1004,7 +1004,9 @@ func (api *API) FindFolder(spaceKey, title string) (*FolderInfo, error) {
 	}{}
 
 	// CQL query to search for folders by title and space key
-	cql := fmt.Sprintf("type=folder AND title=\"%s\" AND space=\"%s\"", title, spaceKey)
+	escapedTitle := strings.ReplaceAll(title, "\\", "\\\\")
+	escapedTitle = strings.ReplaceAll(escapedTitle, "\"", "\\\"")
+	cql := fmt.Sprintf("type=folder AND title=\"%s\" AND space=\"%s\"", escapedTitle, spaceKey)
 
 	payload := map[string]string{
 		"cql":    cql,
