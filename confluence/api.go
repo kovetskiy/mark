@@ -1144,6 +1144,8 @@ func (api *API) CreatePageWithFolderParent(
 		return nil, newErrorStatusNotOK(request)
 	}
 
+	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
+
 	return result, nil
 }
 
