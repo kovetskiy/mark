@@ -237,15 +237,35 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 	request, err := api.rest.Res(
 		"space/"+space, &SpaceInfo{},
 	).Get(payload)
+	if err == nil && request.Raw.StatusCode == http.StatusOK {
+		return &request.Response.(*SpaceInfo).Homepage, nil
+	}
+
+	// Confluence Cloud answers 404 on the v1 space endpoint for tokens
+	// without classic scopes; fall back to the v2 spaces API.
+	v2Result := struct {
+		Results []struct {
+			ID         string `json:"id"`
+			HomepageID string `json:"homepageId"`
+		} `json:"results"`
+	}{}
+
+	request, err = api.restV2.Res(
+		"spaces", &v2Result,
+	).Get(map[string]string{"keys": space})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get space %s (tried both v1 and v2 APIs): %w", space, err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	return &request.Response.(*SpaceInfo).Homepage, nil
+	if len(v2Result.Results) == 0 || v2Result.Results[0].HomepageID == "" {
+		return nil, fmt.Errorf("space with key %s not found", space)
+	}
+
+	return api.GetPageByID(v2Result.Results[0].HomepageID)
 }
 
 func (api *API) FindPage(
@@ -940,7 +960,11 @@ func (api *API) RestrictPageUpdatesServer(
 
 func (api *API) IsCloud() bool {
 	host := api.rest.Api.BaseUrl.Host
-	return strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net")
+	// api.atlassian.com is the gateway required by scoped API tokens
+	// (https://api.atlassian.com/ex/confluence/<cloudId>/wiki).
+	return strings.HasSuffix(host, "jira.com") ||
+		strings.HasSuffix(host, "atlassian.net") ||
+		host == "api.atlassian.com"
 }
 
 func (api *API) RestrictPageUpdates(
