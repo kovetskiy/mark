@@ -13,7 +13,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.10.1
-	github.com/yuin/goldmark v1.8.2
+	github.com/yuin/goldmark v1.8.4
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/text v0.39.0
 	oss.terrastruct.com/d2 v0.7.1
