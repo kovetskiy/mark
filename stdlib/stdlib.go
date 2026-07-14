@@ -440,6 +440,17 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/* Mermaid Diagrams for Confluence (mermaid-cloud macro) */
+		/* https://marketplace.atlassian.com/apps/1226567/mermaid-diagrams-for-confluence?hosting=cloud&tab=overview */
+		`ac:mermaid-cloud`: text(
+			`<ac:structured-macro ac:name="mermaid-cloud" ac:schema-version="1">`,
+			`<ac:parameter ac:name="filename">{{ .Filename | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="format">{{ or .Format "text/plain" }}</ac:parameter>`,
+			`<ac:parameter ac:name="zoom">{{ or .Zoom "fit" }}</ac:parameter>`,
+			`<ac:parameter ac:name="toolbar">{{ or .Toolbar "bottom" }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
 		`ac:plantuml`: text(
 			`<ac:structured-macro ac:name="plantuml">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
