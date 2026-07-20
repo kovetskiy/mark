@@ -39,6 +39,11 @@ func pageCacheKey(space, title, pageType string) string {
 	return space + "\x00" + title + "\x00" + pageType
 }
 
+func (api *API) invalidatePage(space, title, pageType string) {
+	key := pageCacheKey(space, title, pageType)
+	delete(api.pageCache, key)
+}
+
 type SpaceInfo struct {
 	ID   int    `json:"id"`
 	Key  string `json:"key"`
@@ -639,8 +644,7 @@ func (api *API) CreatePage(
 	}
 
 	page := request.Response.(*PageInfo)
-	key := pageCacheKey(space, title, pageType)
-	api.pageCache[key] = page
+	api.invalidatePage(space, title, pageType)
 
 	return page, nil
 }
@@ -1146,8 +1150,7 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
-	key := pageCacheKey(space, title, pageType)
-	api.pageCache[key] = result
+	api.invalidatePage(space, title, pageType)
 
 	return result, nil
 }
