@@ -20,14 +20,11 @@ import (
 type User struct {
 	AccountID string `json:"accountId,omitempty"`
 	UserKey   string `json:"userKey,omitempty"`
+	Username  string `json:"username,omitempty"`
 }
 
 type API struct {
 	rest *gopencils.Resource
-
-	// it's deprecated accordingly to Atlassian documentation,
-	// but it's only way to set permissions
-	json *gopencils.Resource
 	// v2 API for newer endpoints like folders
 	restV2  *gopencils.Resource
 	BaseURL string
@@ -190,18 +187,14 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		restV2.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
-	json := gopencils.Api(baseURL+"/rpc/json-rpc/confluenceservice-v2", auth, httpClient, 3)
-
 	if zerolog.GlobalLevel() == zerolog.TraceLevel {
 		rest.Logger = &tracer{"rest:"}
 		restV2.Logger = &tracer{"rest-v2:"}
-		json.Logger = &tracer{"json-rpc:"}
 	}
 
 	return &API{
 		rest:    rest,
 		restV2:  restV2,
-		json:    json,
 		BaseURL: baseURL,
 	}
 }
@@ -854,15 +847,19 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
-func (api *API) RestrictPageUpdatesCloud(
+func (api *API) IsCloud() bool {
+	host := api.rest.Api.BaseUrl.Host
+	return strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net")
+}
+
+func (api *API) RestrictPageUpdates(
 	page *PageInfo,
 	allowedUser string,
 ) error {
 	user, err := api.GetUserByName(allowedUser)
 	if err != nil {
 		// Fall back to the currently authenticated user if the specified
-		// user cannot be resolved by name (e.g. on Confluence Cloud where
-		// only accountId is accepted and name lookup may fail).
+		// user cannot be resolved by name.
 		currentUser, currentErr := api.GetCurrentUser()
 		if currentErr != nil {
 			return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
@@ -870,8 +867,18 @@ func (api *API) RestrictPageUpdatesCloud(
 		user = currentUser
 	}
 
-	var result any
+	userMap := map[string]any{
+		"type": "known",
+	}
+	if user.AccountID != "" {
+		userMap["accountId"] = user.AccountID
+	} else if user.Username != "" {
+		userMap["username"] = user.Username
+	} else {
+		userMap["username"] = allowedUser
+	}
 
+	var result any
 	request, err := api.rest.
 		Res("content").
 		Id(page.ID).
@@ -881,10 +888,7 @@ func (api *API) RestrictPageUpdatesCloud(
 				"operation": "update",
 				"restrictions": map[string]any{
 					"user": []map[string]any{
-						{
-							"type":      "known",
-							"accountId": user.AccountID,
-						},
+						userMap,
 					},
 				},
 			},
@@ -898,64 +902,6 @@ func (api *API) RestrictPageUpdatesCloud(
 	}
 
 	return nil
-}
-
-func (api *API) RestrictPageUpdatesServer(
-	page *PageInfo,
-	allowedUser string,
-) error {
-	var (
-		err    error
-		result any
-	)
-
-	request, err := api.json.Res(
-		"setContentPermissions", &result,
-	).Post([]any{
-		page.ID,
-		"Edit",
-		[]map[string]any{
-			{
-				"userName": allowedUser,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
-	}
-
-	if success, ok := result.(bool); !ok || !success {
-		return fmt.Errorf(
-			"'true' response expected, but '%v' encountered",
-			result,
-		)
-	}
-
-	return nil
-}
-
-func (api *API) IsCloud() bool {
-	host := api.rest.Api.BaseUrl.Host
-	return strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net")
-}
-
-func (api *API) RestrictPageUpdates(
-	page *PageInfo,
-	allowedUser string,
-) error {
-	var err error
-
-	if api.IsCloud() {
-		err = api.RestrictPageUpdatesCloud(page, allowedUser)
-	} else {
-		err = api.RestrictPageUpdatesServer(page, allowedUser)
-	}
-
-	return err
 }
 
 // Folder API methods (Phase 2 implementation)
