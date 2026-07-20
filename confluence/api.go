@@ -42,9 +42,25 @@ func pageCacheKey(space, title, pageType string) string {
 	return space + "\x00" + title + "\x00" + pageType
 }
 
+// setCacheEntry sets a cache entry. Requires api.pageCacheMutex to be locked by the caller.
+func (api *API) setCacheEntry(key string, page *PageInfo) {
+	if oldPage, ok := api.pageCache[key]; ok && oldPage != nil {
+		if page == nil || oldPage.ID != page.ID {
+			delete(api.pageCacheByID, oldPage.ID)
+		}
+	}
+	api.pageCache[key] = page
+	if page != nil {
+		api.pageCacheByID[page.ID] = page
+	}
+}
+
 func (api *API) invalidatePage(space, title, pageType string) {
 	key := pageCacheKey(space, title, pageType)
 	api.pageCacheMutex.Lock()
+	if oldPage, ok := api.pageCache[key]; ok && oldPage != nil {
+		delete(api.pageCacheByID, oldPage.ID)
+	}
 	delete(api.pageCache, key)
 	api.pageCacheMutex.Unlock()
 }
@@ -323,7 +339,7 @@ func (api *API) FindPage(
 	}
 
 	if len(result.Results) == 0 {
-		api.pageCache[key] = nil
+		api.setCacheEntry(key, nil)
 		return nil, nil
 	}
 
@@ -333,8 +349,7 @@ func (api *API) FindPage(
 		page.Links.Base = result.Links.Base
 	}
 
-	api.pageCache[key] = page
-	api.pageCacheByID[page.ID] = page
+	api.setCacheEntry(key, page)
 	return page, nil
 }
 
@@ -708,8 +723,7 @@ func (api *API) CreatePage(
 	key := pageCacheKey(space, cacheTitle, cacheType)
 
 	api.pageCacheMutex.Lock()
-	api.pageCache[key] = page
-	api.pageCacheByID[page.ID] = page
+	api.setCacheEntry(key, page)
 	api.pageCacheMutex.Unlock()
 
 	return page, nil
@@ -1228,8 +1242,7 @@ func (api *API) CreatePageWithFolderParent(
 	key := pageCacheKey(space, cacheTitle, cacheType)
 
 	api.pageCacheMutex.Lock()
-	api.pageCache[key] = result
-	api.pageCacheByID[result.ID] = result
+	api.setCacheEntry(key, result)
 	api.pageCacheMutex.Unlock()
 
 	return result, nil
