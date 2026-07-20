@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -52,10 +51,6 @@ const (
 	DefaultContentAppearance   = "default"
 )
 
-var (
-	reHeaderPatternV2 = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
-)
-
 func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string) (*Meta, []byte, error) {
 	var (
 		meta   *Meta
@@ -82,8 +77,8 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				lineSeg := lines.At(i)
 				line := string(lineSeg.Value(data))
 
-				matches := reHeaderPatternV2.FindStringSubmatch(line)
-				if matches == nil {
+				key, value, ok := parseHeaderComment(line)
+				if !ok {
 					shouldBreak = true
 					break
 				}
@@ -93,12 +88,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					meta.Type = "page" // Default if not specified
 				}
 
-				header := cases.Title(language.English).String(matches[1])
-
-				var value string
-				if len(matches) > 2 {
-					value = strings.TrimSpace(matches[2])
-				}
+				header := cases.Title(language.English).String(key)
 
 				switch header {
 				case HeaderParent:
@@ -257,4 +247,25 @@ func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 	})
 
 	return h1Text
+}
+
+// parseHeaderComment checks if a line is a valid metadata header comment of the form "<!-- key: value -->".
+func parseHeaderComment(line string) (string, string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "<!--") || !strings.HasSuffix(line, "-->") {
+		return "", "", false
+	}
+
+	// Strip "<!--" and "-->"
+	content := line[4 : len(line)-3]
+	content = strings.TrimSpace(content)
+
+	colonIdx := strings.Index(content, ":")
+	if colonIdx == -1 {
+		return "", "", false
+	}
+
+	key := strings.TrimSpace(content[:colonIdx])
+	value := strings.TrimSpace(content[colonIdx+1:])
+	return key, value, true
 }
