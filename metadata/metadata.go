@@ -53,8 +53,7 @@ const (
 )
 
 var (
-	reHeaderPatternV2    = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
-	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
+	reHeaderPatternV2 = regexp.MustCompile(`<!--\s*([^:]+):\s*(.*)\s*-->`)
 )
 
 func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string) (*Meta, []byte, error) {
@@ -85,7 +84,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				matches := reHeaderPatternV2.FindStringSubmatch(line)
 				if matches == nil {
-					matches = reHeaderPatternMacro.FindStringSubmatch(line)
 					shouldBreak = true
 					break
 				}
