@@ -123,17 +123,21 @@ func getChromeCtx(ctx context.Context) (context.Context, error) {
 		)
 	}
 
-	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	cCtx, cCancel := chromedp.NewContext(allocCtx)
 
 	err := chromedp.Run(cCtx)
 	if err != nil {
 		cCancel()
+		allocCancel()
 		return nil, err
 	}
 
 	chromeCtx = cCtx
-	chromeCtxCancel = cCancel
+	chromeCtxCancel = func() {
+		cCancel()
+		allocCancel()
+	}
 	return chromeCtx, nil
 }
 
