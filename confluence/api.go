@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
@@ -847,9 +848,41 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
+var (
+	isCloudFlag    bool
+	isCloudChecked bool
+	isCloudMutex   sync.Mutex
+)
+
 func (api *API) IsCloud() bool {
+	isCloudMutex.Lock()
+	defer isCloudMutex.Unlock()
+
+	if isCloudChecked {
+		return isCloudFlag
+	}
+
+	// 1. Fast path: check default domain suffix
 	host := api.rest.Api.BaseUrl.Hostname()
-	return strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net")
+	if strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net") {
+		isCloudFlag = true
+		isCloudChecked = true
+		return isCloudFlag
+	}
+
+	// 2. Slow path: probe Cloud-only v2 API endpoint
+	var result any
+	request, err := api.restV2.Res("spaces", &result).Get(map[string]string{
+		"limit": "1",
+	})
+	if err == nil && (request.Raw.StatusCode == http.StatusOK || request.Raw.StatusCode == http.StatusForbidden) {
+		isCloudFlag = true
+	} else {
+		isCloudFlag = false
+	}
+
+	isCloudChecked = true
+	return isCloudFlag
 }
 
 func (api *API) RestrictPageUpdates(
