@@ -48,4 +48,15 @@ func TestPageCache(t *testing.T) {
 	api.pageCacheByID[cachedPage.ID] = cachedPage
 	api.updateCachedPageVersion(cachedPage.ID, 42)
 	assert.Equal(t, int64(42), api.pageCache[key].Version.Number)
+
+	// 5. Concurrent Cache Operations
+	// Validates RWMutex under concurrent goroutines.
+	done := make(chan bool)
+	go func() {
+		api.updateCachedPageVersion(cachedPage.ID, 100)
+		done <- true
+	}()
+	_, err = api.FindPage(space, title, pageType)
+	assert.NoError(t, err)
+	<-done
 }
