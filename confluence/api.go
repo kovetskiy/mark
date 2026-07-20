@@ -43,6 +43,13 @@ func pageCacheKey(space, title, pageType string) string {
 }
 
 func (api *API) lazyInit() {
+	api.pageCacheMutex.RLock()
+	if api.pageCache != nil && api.pageCacheByID != nil {
+		api.pageCacheMutex.RUnlock()
+		return
+	}
+	api.pageCacheMutex.RUnlock()
+
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 	if api.pageCache == nil {
@@ -101,6 +108,10 @@ func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 				updatedEntry = &newEntry
 			}
 		}
+	}
+
+	if updatedEntry != nil {
+		api.pageCacheByID[id] = updatedEntry
 	}
 }
 
