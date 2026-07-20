@@ -44,11 +44,10 @@ func (api *API) invalidatePage(space, title, pageType string) {
 	delete(api.pageCache, key)
 }
 
-func (api *API) invalidatePageByID(id string) {
-	for key, entry := range api.pageCache {
+func (api *API) updateCachedPageVersion(id string, newVersion int64) {
+	for _, entry := range api.pageCache {
 		if entry != nil && entry.ID == id {
-			delete(api.pageCache, key)
-			break
+			entry.Version.Number = newVersion
 		}
 	}
 }
@@ -755,7 +754,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	page.Version.Number = nextPageVersion
-	api.invalidatePageByID(page.ID)
+	api.updateCachedPageVersion(page.ID, nextPageVersion)
 	return nil
 }
 
