@@ -301,7 +301,10 @@ func parseAttachmentLink(attachLink string) string {
 	if err != nil {
 		return strings.ReplaceAll(attachLink, "&", "&amp;")
 	} else {
-		return uri.Path +
-			"?" + url.QueryEscape(uri.Query().Encode())
+		query := uri.Query().Encode()
+		if query == "" {
+			return uri.Path
+		}
+		return uri.Path + "?" + query
 	}
 }

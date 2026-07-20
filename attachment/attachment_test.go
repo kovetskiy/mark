@@ -88,3 +88,40 @@ func TestPrepareAttachmentsWithSubDirBase(t *testing.T) {
 
 	assert.Equal(t, len(attaches), 3)
 }
+
+func TestParseAttachmentLink(t *testing.T) {
+	tests := []struct {
+		name       string
+		attachLink string
+		expected   string
+	}{
+		{
+			name:       "valid URL with multiple query parameters",
+			attachLink: "https://example.com/download/attachments/12345/foo.png?version=1&modificationDate=123",
+			expected:   "/download/attachments/12345/foo.png?modificationDate=123&version=1",
+		},
+		{
+			name:       "valid URL without query parameters",
+			attachLink: "https://example.com/download/attachments/12345/foo.png",
+			expected:   "/download/attachments/12345/foo.png",
+		},
+		{
+			name:       "invalid URL (relative path without scheme)",
+			attachLink: "/download/attachments/12345/foo.png?version=1&modificationDate=123",
+			expected:   "/download/attachments/12345/foo.png?modificationDate=123&version=1",
+		},
+		{
+			name:       "invalid URI with invalid port (triggers ParseRequestURI error)",
+			attachLink: "http://[::1]:foo/bar?version=1&modificationDate=123",
+			expected:   "http://[::1]:foo/bar?version=1&amp;modificationDate=123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := parseAttachmentLink(tt.attachLink)
+			assert.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
