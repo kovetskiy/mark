@@ -10,6 +10,9 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -221,11 +224,28 @@ func setTitleFromFilename(meta *Meta, filename string) {
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading
 func ExtractDocumentLeadingH1(markdown []byte) string {
-	h1 := regexp.MustCompile(`#[^#]\s*(.*)\s*\n`)
-	groups := h1.FindSubmatch(markdown)
-	if groups == nil {
-		return ""
-	} else {
-		return string(groups[1])
-	}
+	reader := text.NewReader(markdown)
+	parser := goldmark.DefaultParser()
+	doc := parser.Parse(reader)
+
+	var h1Text string
+	// Walk the AST to find the first Level 1 Heading
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			if heading, ok := n.(*ast.Heading); ok && heading.Level == 1 {
+				var buf strings.Builder
+				_ = ast.Walk(heading, func(child ast.Node, childEntering bool) (ast.WalkStatus, error) {
+					if childEntering && child.Kind() == ast.KindText {
+						buf.Write(child.(*ast.Text).Value(markdown))
+					}
+					return ast.WalkContinue, nil
+				})
+				h1Text = buf.String()
+				return ast.WalkStop, nil
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+
+	return h1Text
 }
