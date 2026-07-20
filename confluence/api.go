@@ -31,6 +31,12 @@ type API struct {
 
 	isCloudFlag    bool
 	isCloudChecked bool
+
+	pageCache map[string]*PageInfo
+}
+
+func pageCacheKey(space, title, pageType string) string {
+	return space + "\x00" + title + "\x00" + pageType
 }
 
 type SpaceInfo struct {
@@ -196,9 +202,10 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	}
 
 	return &API{
-		rest:    rest,
-		restV2:  restV2,
-		BaseURL: baseURL,
+		rest:      rest,
+		restV2:    restV2,
+		BaseURL:   baseURL,
+		pageCache: make(map[string]*PageInfo),
 	}
 }
 
@@ -249,6 +256,11 @@ func (api *API) FindPage(
 	title string,
 	pageType string,
 ) (*PageInfo, error) {
+	key := pageCacheKey(space, title, pageType)
+	if page, ok := api.pageCache[key]; ok {
+		return page, nil
+	}
+
 	result := struct {
 		Results []PageInfo `json:"results"`
 		Links   struct {
@@ -280,6 +292,7 @@ func (api *API) FindPage(
 	}
 
 	if len(result.Results) == 0 {
+		api.pageCache[key] = nil
 		return nil, nil
 	}
 
@@ -289,6 +302,7 @@ func (api *API) FindPage(
 		page.Links.Base = result.Links.Base
 	}
 
+	api.pageCache[key] = page
 	return page, nil
 }
 
@@ -624,7 +638,11 @@ func (api *API) CreatePage(
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	return request.Response.(*PageInfo), nil
+	page := request.Response.(*PageInfo)
+	key := pageCacheKey(space, title, pageType)
+	api.pageCache[key] = page
+
+	return page, nil
 }
 
 func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
@@ -696,6 +714,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		return newErrorStatusNotOK(request)
 	}
 
+	page.Version.Number = nextPageVersion
 	return nil
 }
 
@@ -1127,6 +1146,8 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
+	key := pageCacheKey(space, title, pageType)
+	api.pageCache[key] = result
 
 	return result, nil
 }
