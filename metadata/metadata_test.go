@@ -234,3 +234,20 @@ func TestExtractMeta_FolderHeadersWithCliParents(t *testing.T) {
 	assert.Equal(t, cliParents, meta.Parents)
 	assert.Equal(t, []string{"API"}, meta.Folders)
 }
+
+func TestExtractDocumentLeadingH1_WithCodeBlockComments(t *testing.T) {
+	markdown := []byte(`
+Some introductory text.
+
+` + "```" + `bash
+# This is a bash comment
+echo "Hello World"
+` + "```" + `
+
+# Actual H1 Heading with **bold** formatting
+`)
+
+	actual := ExtractDocumentLeadingH1(markdown)
+	assert.Equal(t, "Actual H1 Heading with bold formatting", actual)
+}
+
