@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
+	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -35,6 +37,18 @@ func getMermaidEngine() (*mermaid.RenderEngine, error) {
 	return mermaidEngine, nil
 }
 
+var renderTimeout = 120 * time.Second
+
+func resetEngine() {
+	mermaidMutex.Lock()
+	defer mermaidMutex.Unlock()
+
+	if mermaidEngine != nil {
+		mermaidEngine.Cancel()
+		mermaidEngine = nil
+	}
+}
+
 func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
 	renderer, err := getMermaidEngine()
 	if err != nil {
@@ -42,9 +56,33 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 	}
 
 	log.Debug().Msgf("Rendering: %q", title)
-	pngBytes, boxModel, err := renderer.RenderAsScaledPng(string(mermaidDiagram), scale)
-	if err != nil {
-		return attachment.Attachment{}, err
+
+	type renderResult struct {
+		pngBytes []byte
+		boxModel *mermaid.BoxModel
+		err      error
+	}
+
+	ch := make(chan renderResult, 1)
+	go func() {
+		pngBytes, boxModel, err := renderer.RenderAsScaledPng(string(mermaidDiagram), scale)
+		ch <- renderResult{pngBytes, boxModel, err}
+	}()
+
+	var pngBytes []byte
+	var boxModel *mermaid.BoxModel
+
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			return attachment.Attachment{}, res.err
+		}
+		pngBytes = res.pngBytes
+		boxModel = res.boxModel
+	case <-time.After(renderTimeout):
+		log.Error().Msgf("Mermaid rendering timed out after %v, resetting engine", renderTimeout)
+		resetEngine()
+		return attachment.Attachment{}, fmt.Errorf("mermaid rendering timed out after %v", renderTimeout)
 	}
 
 	scaleAsBytes := make([]byte, 8)
