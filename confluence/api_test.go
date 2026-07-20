@@ -28,7 +28,7 @@ func TestPageCache(t *testing.T) {
 	// This must not panic (meaning it didn't use api.rest) and must return the cached page.
 	res, err := api.FindPage(space, title, pageType)
 	assert.NoError(t, err)
-	assert.Equal(t, cachedPage, res)
+	assert.Same(t, cachedPage, res)
 
 	// 2. Cache Hit on non-existent page (cached nil result)
 	api.pageCache[key] = nil

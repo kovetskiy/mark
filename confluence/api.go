@@ -678,7 +678,15 @@ func (api *API) CreatePage(
 		page.Ancestors = ancestors
 	}
 
-	key := pageCacheKey(space, title, pageType)
+	cacheTitle := title
+	if page.Title != "" {
+		cacheTitle = page.Title
+	}
+	cacheType := pageType
+	if page.Type != "" {
+		cacheType = page.Type
+	}
+	key := pageCacheKey(space, cacheTitle, cacheType)
 	api.pageCache[key] = page
 
 	return page, nil
@@ -1186,7 +1194,15 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
-	key := pageCacheKey(space, title, pageType)
+	cacheTitle := title
+	if result.Title != "" {
+		cacheTitle = result.Title
+	}
+	cacheType := pageType
+	if result.Type != "" {
+		cacheType = result.Type
+	}
+	key := pageCacheKey(space, cacheTitle, cacheType)
 	api.pageCache[key] = result
 
 	return result, nil
