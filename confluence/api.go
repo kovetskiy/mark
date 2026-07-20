@@ -848,7 +848,7 @@ func (api *API) GetCurrentUser() (*User, error) {
 }
 
 func (api *API) IsCloud() bool {
-	host := api.rest.Api.BaseUrl.Host
+	host := api.rest.Api.BaseUrl.Hostname()
 	return strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net")
 }
 
@@ -856,24 +856,26 @@ func (api *API) RestrictPageUpdates(
 	page *PageInfo,
 	allowedUser string,
 ) error {
-	user, err := api.GetUserByName(allowedUser)
-	if err != nil {
-		// Fall back to the currently authenticated user if the specified
-		// user cannot be resolved by name.
-		currentUser, currentErr := api.GetCurrentUser()
-		if currentErr != nil {
-			return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
-		}
-		user = currentUser
-	}
-
 	userMap := map[string]any{
 		"type": "known",
 	}
-	if user.AccountID != "" {
+
+	if api.IsCloud() {
+		user, err := api.GetUserByName(allowedUser)
+		if err != nil {
+			// Fall back to the currently authenticated user if the specified
+			// user cannot be resolved by name.
+			currentUser, currentErr := api.GetCurrentUser()
+			if currentErr != nil {
+				return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
+			}
+			user = currentUser
+		}
+
+		if user.AccountID == "" {
+			return fmt.Errorf("resolved user %q has no accountId", allowedUser)
+		}
 		userMap["accountId"] = user.AccountID
-	} else if user.Username != "" {
-		userMap["username"] = user.Username
 	} else {
 		userMap["username"] = allowedUser
 	}
