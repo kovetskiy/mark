@@ -19,9 +19,11 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/d2"
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/macro"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
+	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/page"
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -898,4 +900,10 @@ func mergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 	}
 
 	return newBody, nil
+}
+
+// Cleanup closes any shared resources (such as headless Chrome sessions).
+func Cleanup() {
+	d2.Cleanup()
+	mermaid.Cleanup()
 }
