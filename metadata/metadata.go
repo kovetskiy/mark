@@ -1,8 +1,6 @@
 package metadata
 
 import (
-	"bufio"
-	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
@@ -65,96 +63,113 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		offset int
 	)
 
-	scanner := bufio.NewScanner(bytes.NewBuffer(data))
-	for scanner.Scan() {
-		line := scanner.Text()
+	reader := text.NewReader(data)
+	parser := goldmark.DefaultParser()
+	doc := parser.Parse(reader)
 
-		offset += len(line) + 1
+	var lastStop int
+	shouldBreak := false
 
-		matches := reHeaderPatternV2.FindStringSubmatch(line)
-		if matches == nil {
-			matches = reHeaderPatternMacro.FindStringSubmatch(line)
-			// If we have a match, then we started reading a macro.
-			// We want to keep it in the document for it to be read by ExtractMacros
-			if matches != nil {
-				offset -= len(line) + 1
+	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
+		if htmlBlock, ok := child.(*ast.HTMLBlock); ok {
+			lines := htmlBlock.Lines()
+			if lines.Len() > 0 {
+				if lastStop > 0 && lines.At(0).Start != lastStop {
+					break
+				}
 			}
+
+			for i := 0; i < lines.Len(); i++ {
+				lineSeg := lines.At(i)
+				line := string(lineSeg.Value(data))
+
+				matches := reHeaderPatternV2.FindStringSubmatch(line)
+				if matches == nil {
+					matches = reHeaderPatternMacro.FindStringSubmatch(line)
+					shouldBreak = true
+					break
+				}
+
+				if meta == nil {
+					meta = &Meta{}
+					meta.Type = "page" // Default if not specified
+				}
+
+				header := cases.Title(language.English).String(matches[1])
+
+				var value string
+				if len(matches) > 2 {
+					value = strings.TrimSpace(matches[2])
+				}
+
+				switch header {
+				case HeaderParent:
+					meta.Parents = append(meta.Parents, value)
+
+				case HeaderFolder:
+					meta.Folders = append(meta.Folders, value)
+
+				case HeaderSpace:
+					meta.Space = strings.TrimSpace(value)
+
+				case HeaderType:
+					meta.Type = strings.TrimSpace(value)
+
+				case HeaderTitle:
+					meta.Title = strings.TrimSpace(value)
+
+				case HeaderLayout:
+					meta.Layout = strings.TrimSpace(value)
+
+				case HeaderSidebar:
+					meta.Layout = "article"
+					meta.Sidebar = strings.TrimSpace(value)
+
+				case HeaderEmoji:
+					meta.Emoji = strings.TrimSpace(value)
+
+				case HeaderAttachment:
+					meta.Attachments = append(meta.Attachments, value)
+
+				case HeaderLabel:
+					meta.Labels = append(meta.Labels, value)
+
+				case HeaderInclude:
+					// Includes are parsed by a different func
+					lastStop = lineSeg.Stop
+					continue
+
+				case ContentAppearance:
+					switch strings.TrimSpace(value) {
+					case FixedContentAppearance:
+						meta.ContentAppearance = FixedContentAppearance
+					case DefaultContentAppearance:
+						meta.ContentAppearance = DefaultContentAppearance
+					default:
+						meta.ContentAppearance = FullWidthContentAppearance
+					}
+
+				case HeaderImageAlign:
+					meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
+
+				default:
+					log.Error().
+						Err(nil).
+						Msgf(`encountered unknown header %q line: %#v`, header, line)
+				}
+
+				lastStop = lineSeg.Stop
+			}
+
+			if shouldBreak {
+				break
+			}
+		} else {
 			break
 		}
-
-		if meta == nil {
-			meta = &Meta{}
-			meta.Type = "page"                                  // Default if not specified
-		}
-
-		header := cases.Title(language.English).String(matches[1])
-
-		var value string
-		if len(matches) > 2 {
-			value = strings.TrimSpace(matches[2])
-		}
-
-		switch header {
-		case HeaderParent:
-			meta.Parents = append(meta.Parents, value)
-
-		case HeaderFolder:
-			meta.Folders = append(meta.Folders, value)
-
-		case HeaderSpace:
-			meta.Space = strings.TrimSpace(value)
-
-		case HeaderType:
-			meta.Type = strings.TrimSpace(value)
-
-		case HeaderTitle:
-			meta.Title = strings.TrimSpace(value)
-
-		case HeaderLayout:
-			meta.Layout = strings.TrimSpace(value)
-
-		case HeaderSidebar:
-			meta.Layout = "article"
-			meta.Sidebar = strings.TrimSpace(value)
-
-		case HeaderEmoji:
-			meta.Emoji = strings.TrimSpace(value)
-
-		case HeaderAttachment:
-			meta.Attachments = append(meta.Attachments, value)
-
-		case HeaderLabel:
-			meta.Labels = append(meta.Labels, value)
-
-		case HeaderInclude:
-			// Includes are parsed by a different func
-			continue
-
-		case ContentAppearance:
-			switch strings.TrimSpace(value) {
-			case FixedContentAppearance:
-				meta.ContentAppearance = FixedContentAppearance
-			case DefaultContentAppearance:
-				meta.ContentAppearance = DefaultContentAppearance
-			default:
-				meta.ContentAppearance = FullWidthContentAppearance
-			}
-
-		case HeaderImageAlign:
-			meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
-
-		default:
-			log.Error().
-				Err(nil).
-				Msgf(`encountered unknown header %q line: %#v`, header, line)
-
-			continue
-		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, nil, err
-	}
+	offset = lastStop
 
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
 		if meta == nil {
