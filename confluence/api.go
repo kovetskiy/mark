@@ -10,7 +10,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
@@ -32,7 +31,6 @@ type API struct {
 
 	isCloudFlag    bool
 	isCloudChecked bool
-	isCloudMutex   sync.Mutex
 }
 
 type SpaceInfo struct {
@@ -853,9 +851,6 @@ func (api *API) GetCurrentUser() (*User, error) {
 }
 
 func (api *API) IsCloud() bool {
-	api.isCloudMutex.Lock()
-	defer api.isCloudMutex.Unlock()
-
 	if api.isCloudChecked {
 		return api.isCloudFlag
 	}
