@@ -128,6 +128,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		Output: os.Stdout,
 	}
 
+	defer mark.Cleanup()
 	return mark.Run(config)
 }
 
