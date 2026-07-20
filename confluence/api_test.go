@@ -162,8 +162,10 @@ func TestPageCacheZeroValueAPI(t *testing.T) {
 	// updateCachedPageVersion should not panic
 	api.updateCachedPageVersion("12345", 2)
 
-	// setCacheEntry should not panic
-	api.pageCacheMutex.Lock()
-	api.setCacheEntry("key", &PageInfo{ID: "123"})
-	api.pageCacheMutex.Unlock()
+	// setCacheEntry should not panic after lazyInit
+	api2 := &API{}
+	api2.lazyInit()
+	api2.pageCacheMutex.Lock()
+	api2.setCacheEntry("key", &PageInfo{ID: "123"})
+	api2.pageCacheMutex.Unlock()
 }
