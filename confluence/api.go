@@ -42,6 +42,21 @@ func pageCacheKey(space, title, pageType string) string {
 	return space + "\x00" + title + "\x00" + pageType
 }
 
+func clonePageInfo(page *PageInfo) *PageInfo {
+	if page == nil {
+		return nil
+	}
+	cp := *page
+	if len(page.Ancestors) > 0 {
+		cp.Ancestors = make([]struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}, len(page.Ancestors))
+		copy(cp.Ancestors, page.Ancestors)
+	}
+	return &cp
+}
+
 func (api *API) lazyInit() {
 	api.pageCacheMutex.RLock()
 	if api.pageCache != nil && api.pageCacheByID != nil {
@@ -62,14 +77,15 @@ func (api *API) lazyInit() {
 
 // setCacheEntry sets a cache entry. Requires api.pageCacheMutex to be locked by the caller.
 func (api *API) setCacheEntry(key string, page *PageInfo) {
+	clonedPage := clonePageInfo(page)
 	if oldPage, ok := api.pageCache[key]; ok && oldPage != nil {
 		if page == nil || oldPage.ID != page.ID {
 			delete(api.pageCacheByID, oldPage.ID)
 		}
 	}
-	api.pageCache[key] = page
-	if page != nil {
-		api.pageCacheByID[page.ID] = page
+	api.pageCache[key] = clonedPage
+	if clonedPage != nil {
+		api.pageCacheByID[clonedPage.ID] = clonedPage
 	}
 }
 
@@ -91,10 +107,10 @@ func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 
 	var updatedEntry *PageInfo
 	if entry, ok := api.pageCacheByID[id]; ok && entry != nil {
-		newEntry := *entry
+		newEntry := clonePageInfo(entry)
 		newEntry.Version.Number = newVersion
-		api.pageCacheByID[id] = &newEntry
-		updatedEntry = &newEntry
+		api.pageCacheByID[id] = newEntry
+		updatedEntry = newEntry
 	}
 
 	for key, entry := range api.pageCache {
@@ -102,10 +118,10 @@ func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 			if updatedEntry != nil {
 				api.pageCache[key] = updatedEntry
 			} else {
-				newEntry := *entry
+				newEntry := clonePageInfo(entry)
 				newEntry.Version.Number = newVersion
-				api.pageCache[key] = &newEntry
-				updatedEntry = &newEntry
+				api.pageCache[key] = newEntry
+				updatedEntry = newEntry
 			}
 		}
 	}
@@ -338,11 +354,7 @@ func (api *API) FindPage(
 	api.pageCacheMutex.RLock()
 	if page, ok := api.pageCache[key]; ok {
 		api.pageCacheMutex.RUnlock()
-		if page == nil {
-			return nil, nil
-		}
-		copyPage := *page
-		return &copyPage, nil
+		return clonePageInfo(page), nil
 	}
 	api.pageCacheMutex.RUnlock()
 
@@ -382,11 +394,7 @@ func (api *API) FindPage(
 	// Double-checked locking: check if the cache was populated by another goroutine
 	// while the network request was in-flight.
 	if cachedPage, ok := api.pageCache[key]; ok {
-		if cachedPage == nil {
-			return nil, nil
-		}
-		copyPage := *cachedPage
-		return &copyPage, nil
+		return clonePageInfo(cachedPage), nil
 	}
 
 	if len(result.Results) == 0 {
@@ -416,7 +424,7 @@ func (api *API) FindPage(
 	if canonicalKey != key {
 		api.setCacheEntry(canonicalKey, &page)
 	}
-	return &page, nil
+	return clonePageInfo(&page), nil
 }
 
 func (api *API) CreateAttachment(
