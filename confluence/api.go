@@ -44,6 +44,15 @@ func (api *API) invalidatePage(space, title, pageType string) {
 	delete(api.pageCache, key)
 }
 
+func (api *API) invalidatePageByID(id string) {
+	for key, entry := range api.pageCache {
+		if entry != nil && entry.ID == id {
+			delete(api.pageCache, key)
+			break
+		}
+	}
+}
+
 type SpaceInfo struct {
 	ID   int    `json:"id"`
 	Key  string `json:"key"`
@@ -644,7 +653,34 @@ func (api *API) CreatePage(
 	}
 
 	page := request.Response.(*PageInfo)
-	api.invalidatePage(space, title, pageType)
+	
+	if parent != nil {
+		ancestors := make([]struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}, len(parent.Ancestors)+1)
+
+		for i, a := range parent.Ancestors {
+			ancestors[i] = struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+			}{
+				ID:    a.ID,
+				Title: a.Title,
+			}
+		}
+		ancestors[len(parent.Ancestors)] = struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}{
+			ID:    parent.ID,
+			Title: parent.Title,
+		}
+		page.Ancestors = ancestors
+	}
+
+	key := pageCacheKey(space, title, pageType)
+	api.pageCache[key] = page
 
 	return page, nil
 }
@@ -719,6 +755,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	page.Version.Number = nextPageVersion
+	api.invalidatePageByID(page.ID)
 	return nil
 }
 
@@ -1150,7 +1187,8 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
-	api.invalidatePage(space, title, pageType)
+	key := pageCacheKey(space, title, pageType)
+	api.pageCache[key] = result
 
 	return result, nil
 }
