@@ -353,8 +353,9 @@ func (api *API) FindPage(
 	key := pageCacheKey(space, title, pageType)
 	api.pageCacheMutex.RLock()
 	if page, ok := api.pageCache[key]; ok {
+		cloned := clonePageInfo(page)
 		api.pageCacheMutex.RUnlock()
-		return clonePageInfo(page), nil
+		return cloned, nil
 	}
 	api.pageCacheMutex.RUnlock()
 
