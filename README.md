@@ -20,7 +20,42 @@ Mark uses an extended file format, which, still being valid markdown,
 contains several HTML-ish metadata headers, which can be used to locate page inside
 Confluence instance and update it accordingly.
 
-File in the extended format should follow the specification:
+File metadata can be written as YAML front matter when the `frontmatter`
+feature is enabled. Because specifying `--features` replaces the defaults,
+include the default features explicitly if needed:
+
+```shell
+mark --features=mermaid --features=mention --features=frontmatter
+```
+
+YAML front matter uses the following format:
+
+```markdown
+---
+space: <space key>
+parents:
+  - <parent 1>
+  - <parent 2>
+folders:
+  - <folder 1>
+  - <folder 2>
+title: <title>
+attachments:
+  - <local path>
+labels:
+  - <label 1>
+  - <label 2>
+image-align: <left|center|right>
+---
+
+<page contents>
+```
+
+The legacy HTML header format is also supported:
+
+When both formats are present, HTML headers override matching scalar front
+matter values. Repeatable parents, folders, attachments, and labels are
+appended to the values from front matter.
 
 ```markdown
 <!-- Space: <space key> -->
@@ -905,7 +940,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, frontmatter, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help

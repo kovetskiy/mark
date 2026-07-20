@@ -147,6 +147,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	}
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
+	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
 
 	meta, markdown, err := metadata.ExtractMeta(
 		markdown,
@@ -157,6 +158,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		config.Parents,
 		config.TitleAppendGeneratedHash,
 		config.ContentAppearance,
+		frontMatterEnabled,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
@@ -241,6 +243,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		config.TitleFromFilename,
 		config.Parents,
 		config.TitleAppendGeneratedHash,
+		frontMatterEnabled,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve relative links: %w", err)

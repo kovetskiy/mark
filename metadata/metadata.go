@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
@@ -9,7 +10,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"go.abhg.dev/goldmark/frontmatter"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -51,15 +54,134 @@ const (
 	DefaultContentAppearance   = "default"
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string) (*Meta, []byte, error) {
-	var (
-		meta   *Meta
-		offset int
-	)
+type yamlFrontMatter struct {
+	Parents                     []string `yaml:"parents"`
+	Parent                      string   `yaml:"parent"`
+	Folders                     []string `yaml:"folders"`
+	Folder                      string   `yaml:"folder"`
+	Space                       string   `yaml:"space"`
+	Type                        string   `yaml:"type"`
+	Title                       string   `yaml:"title"`
+	Layout                      string   `yaml:"layout"`
+	Sidebar                     string   `yaml:"sidebar"`
+	Emoji                       string   `yaml:"emoji"`
+	Attachments                 []string `yaml:"attachments"`
+	Attachment                  string   `yaml:"attachment"`
+	Labels                      []string `yaml:"labels"`
+	Label                       string   `yaml:"label"`
+	ContentAppearance           string   `yaml:"content-appearance"`
+	ContentAppearanceUnderscore string   `yaml:"content_appearance"`
+	ImageAlign                  string   `yaml:"image-align"`
+	ImageAlignUnderscore        string   `yaml:"image_align"`
+}
 
-	reader := text.NewReader(data)
-	parser := goldmark.DefaultParser()
-	doc := parser.Parse(reader)
+func (frontMatter yamlFrontMatter) meta() *Meta {
+	meta := &Meta{
+		Space:   strings.TrimSpace(frontMatter.Space),
+		Type:    strings.TrimSpace(frontMatter.Type),
+		Title:   strings.TrimSpace(frontMatter.Title),
+		Layout:  strings.TrimSpace(frontMatter.Layout),
+		Sidebar: strings.TrimSpace(frontMatter.Sidebar),
+		Emoji:   strings.TrimSpace(frontMatter.Emoji),
+	}
+	if meta.Type == "" {
+		meta.Type = "page"
+	}
+	if meta.Sidebar != "" {
+		meta.Layout = "article"
+	}
+
+	meta.Parents = appendTrimmed(meta.Parents, frontMatter.Parent)
+	meta.Parents = appendTrimmed(meta.Parents, frontMatter.Parents...)
+	meta.Folders = appendTrimmed(meta.Folders, frontMatter.Folder)
+	meta.Folders = appendTrimmed(meta.Folders, frontMatter.Folders...)
+	meta.Attachments = appendTrimmed(meta.Attachments, frontMatter.Attachment)
+	meta.Attachments = appendTrimmed(meta.Attachments, frontMatter.Attachments...)
+	meta.Labels = appendTrimmed(meta.Labels, frontMatter.Label)
+	meta.Labels = appendTrimmed(meta.Labels, frontMatter.Labels...)
+
+	if value := firstNonEmpty(frontMatter.ContentAppearance, frontMatter.ContentAppearanceUnderscore); value != "" {
+		setContentAppearance(meta, value)
+	}
+	meta.ImageAlign = strings.ToLower(strings.TrimSpace(firstNonEmpty(frontMatter.ImageAlign, frontMatter.ImageAlignUnderscore)))
+
+	return meta
+}
+
+func appendTrimmed(dst []string, values ...string) []string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			dst = append(dst, value)
+		}
+	}
+	return dst
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func setContentAppearance(meta *Meta, value string) {
+	switch strings.TrimSpace(value) {
+	case FixedContentAppearance:
+		meta.ContentAppearance = FixedContentAppearance
+	case DefaultContentAppearance:
+		meta.ContentAppearance = DefaultContentAppearance
+	default:
+		meta.ContentAppearance = FullWidthContentAppearance
+	}
+}
+
+func stripFrontMatter(data []byte) ([]byte, error) {
+	delimiter, rest, ok := bytes.Cut(data, []byte("\n"))
+	if !ok {
+		return nil, fmt.Errorf("unterminated YAML front matter")
+	}
+	delimiter = bytes.TrimSuffix(delimiter, []byte("\r"))
+
+	for {
+		line, remaining, hasNewline := bytes.Cut(rest, []byte("\n"))
+		if bytes.Equal(bytes.TrimSuffix(line, []byte("\r")), delimiter) {
+			return remaining, nil
+		}
+		if !hasNewline {
+			return nil, fmt.Errorf("unterminated YAML front matter")
+		}
+		rest = remaining
+	}
+}
+
+func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string, frontMatterEnabled bool) (*Meta, []byte, error) {
+	var meta *Meta
+	body := data
+
+	markdown := goldmark.New()
+	if frontMatterEnabled {
+		(&frontmatter.Extender{
+			Formats: []frontmatter.Format{frontmatter.YAML},
+		}).Extend(markdown)
+	}
+
+	ctx := parser.NewContext()
+	doc := markdown.Parser().Parse(text.NewReader(data), parser.WithContext(ctx))
+	if frontMatterData := frontmatter.Get(ctx); frontMatterData != nil {
+		var parsed yamlFrontMatter
+		if err := frontMatterData.Decode(&parsed); err != nil {
+			return nil, nil, fmt.Errorf("decode YAML front matter: %w", err)
+		}
+
+		meta = parsed.meta()
+		var err error
+		body, err = stripFrontMatter(data)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 
 	var lastStop int
 	shouldBreak := false
@@ -128,14 +250,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					continue
 
 				case ContentAppearance:
-					switch strings.TrimSpace(value) {
-					case FixedContentAppearance:
-						meta.ContentAppearance = FixedContentAppearance
-					case DefaultContentAppearance:
-						meta.ContentAppearance = DefaultContentAppearance
-					default:
-						meta.ContentAppearance = FullWidthContentAppearance
-					}
+					setContentAppearance(meta, value)
 
 				case HeaderImageAlign:
 					meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
@@ -157,7 +272,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		}
 	}
 
-	offset = lastStop
+	if lastStop > 0 {
+		body = data[lastStop:]
+	}
 
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
 		if meta == nil {
@@ -181,14 +298,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 	// Use the global content appearance flag if the header is not set in the document
 	if meta != nil && defaultContentAppearance != "" && meta.ContentAppearance == "" {
-		switch strings.TrimSpace(defaultContentAppearance) {
-		case FixedContentAppearance:
-			meta.ContentAppearance = FixedContentAppearance
-		case DefaultContentAppearance:
-			meta.ContentAppearance = DefaultContentAppearance
-		default:
-			meta.ContentAppearance = FullWidthContentAppearance
-		}
+		setContentAppearance(meta, defaultContentAppearance)
 	} else if meta != nil && meta.ContentAppearance == "" {
 		meta.ContentAppearance = FullWidthContentAppearance // Default to full-width if nothing else is set for backwards compatibility
 	}
@@ -214,7 +324,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	// Remove trailing spaces from title
 	meta.Title = strings.Trim(meta.Title, " ")
 	meta.Space = strings.Trim(meta.Space, " ")
-	return meta, data[offset:], nil
+	return meta, body, nil
 }
 
 func setTitleFromFilename(meta *Meta, filename string) {
