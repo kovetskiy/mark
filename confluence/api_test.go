@@ -46,11 +46,19 @@ func TestPageCache(t *testing.T) {
 	_, ok := api.pageCache[key]
 	assert.False(t, ok)
 
-	// 4. Cache Version Update replaces cached pointer with copy containing updated version
+	// 4. Cache Version Update replaces cached pointer with copy containing updated version (across all alias pointers mapping to the same ID)
+	aliasPage := &PageInfo{
+		ID:    cachedPage.ID,
+		Title: "Alias Title",
+		Type:  pageType,
+	}
+	aliasKey := pageCacheKey(space, "Alias Title", pageType)
 	api.pageCache[key] = cachedPage
+	api.pageCache[aliasKey] = aliasPage
 	api.pageCacheByID[cachedPage.ID] = cachedPage
 	api.updateCachedPageVersion(cachedPage.ID, 42)
 	assert.Equal(t, int64(42), api.pageCache[key].Version.Number)
+	assert.Equal(t, int64(42), api.pageCache[aliasKey].Version.Number)
 
 	// 5. Concurrent Cache Operations
 	// Validates RWMutex under concurrent goroutines using tight loops to create contention.

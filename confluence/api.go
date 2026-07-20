@@ -82,22 +82,26 @@ func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
-	entry, ok := api.pageCacheByID[id]
-	if !ok || entry == nil {
-		return
+	var updatedEntry *PageInfo
+	if entry, ok := api.pageCacheByID[id]; ok && entry != nil {
+		newEntry := *entry
+		newEntry.Version.Number = newVersion
+		api.pageCacheByID[id] = &newEntry
+		updatedEntry = &newEntry
 	}
 
-	// Create a shallow copy of the cached page info to avoid data races
-	newEntry := *entry
-	newEntry.Version.Number = newVersion
-
-	// Replace the pointer in both maps
-	for key, e := range api.pageCache {
-		if e == entry {
-			api.pageCache[key] = &newEntry
+	for key, entry := range api.pageCache {
+		if entry != nil && entry.ID == id {
+			if updatedEntry != nil {
+				api.pageCache[key] = updatedEntry
+			} else {
+				newEntry := *entry
+				newEntry.Version.Number = newVersion
+				api.pageCache[key] = &newEntry
+				updatedEntry = &newEntry
+			}
 		}
 	}
-	api.pageCacheByID[id] = &newEntry
 }
 
 type SpaceInfo struct {
