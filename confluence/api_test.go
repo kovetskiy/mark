@@ -8,7 +8,8 @@ import (
 
 func TestPageCache(t *testing.T) {
 	api := &API{
-		pageCache: make(map[string]*PageInfo),
+		pageCache:     make(map[string]*PageInfo),
+		pageCacheByID: make(map[string]*PageInfo),
 	}
 
 	space := "TEST"
@@ -44,6 +45,7 @@ func TestPageCache(t *testing.T) {
 
 	// 4. Cache Version Update updates version in-place
 	api.pageCache[key] = cachedPage
+	api.pageCacheByID[cachedPage.ID] = cachedPage
 	api.updateCachedPageVersion(cachedPage.ID, 42)
 	assert.Equal(t, int64(42), api.pageCache[key].Version.Number)
 }
