@@ -29,7 +29,8 @@ func TestPageCache(t *testing.T) {
 	// This must not panic (meaning it didn't use api.rest) and must return the cached page.
 	res, err := api.FindPage(space, title, pageType)
 	assert.NoError(t, err)
-	assert.Same(t, cachedPage, res)
+	assert.Equal(t, cachedPage, res)
+	assert.NotSame(t, cachedPage, res) // Verify defensive copy
 
 	// 2. Cache Hit on non-existent page (cached nil result)
 	api.pageCache[key] = nil
@@ -50,13 +51,17 @@ func TestPageCache(t *testing.T) {
 	assert.Equal(t, int64(42), api.pageCache[key].Version.Number)
 
 	// 5. Concurrent Cache Operations
-	// Validates RWMutex under concurrent goroutines.
+	// Validates RWMutex under concurrent goroutines using tight loops to create contention.
 	done := make(chan bool)
 	go func() {
-		api.updateCachedPageVersion(cachedPage.ID, 100)
+		for i := 0; i < 1000; i++ {
+			api.updateCachedPageVersion(cachedPage.ID, int64(i))
+		}
 		done <- true
 	}()
-	_, err = api.FindPage(space, title, pageType)
-	assert.NoError(t, err)
+	for i := 0; i < 1000; i++ {
+		_, err = api.FindPage(space, title, pageType)
+		assert.NoError(t, err)
+	}
 	<-done
 }
