@@ -44,7 +44,7 @@ func TestPageCache(t *testing.T) {
 	_, ok := api.pageCache[key]
 	assert.False(t, ok)
 
-	// 4. Cache Version Update updates version in-place
+	// 4. Cache Version Update replaces cached pointer with copy containing updated version
 	api.pageCache[key] = cachedPage
 	api.pageCacheByID[cachedPage.ID] = cachedPage
 	api.updateCachedPageVersion(cachedPage.ID, 42)
