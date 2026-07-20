@@ -179,7 +179,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		}
 
 		if titleFromH1 && meta.Title == "" {
-			meta.Title = ExtractDocumentLeadingH1(data)
+			meta.Title = ExtractDocumentLeadingH1(doc, data)
 		}
 		if titleFromFilename && meta.Title == "" && filename != "" {
 			setTitleFromFilename(meta, filename)
@@ -236,11 +236,7 @@ func setTitleFromFilename(meta *Meta, filename string) {
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading
-func ExtractDocumentLeadingH1(markdown []byte) string {
-	reader := text.NewReader(markdown)
-	parser := goldmark.DefaultParser()
-	doc := parser.Parse(reader)
-
+func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 	var h1Text string
 	// Walk the AST to find the first Level 1 Heading
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
