@@ -365,14 +365,16 @@ func (api *API) FindPage(
 		return nil, nil
 	}
 
-	page := &result.Results[0]
-	// Populate the base URL from the response _links.base
+	page := result.Results[0]
+	// Populate the base URL from the response _links.base or fallback to BaseURL
 	if result.Links.Base != "" {
 		page.Links.Base = result.Links.Base
+	} else if page.Links.Base == "" {
+		page.Links.Base = api.BaseURL
 	}
 
-	api.setCacheEntry(key, page)
-	return page, nil
+	api.setCacheEntry(key, &page)
+	return &page, nil
 }
 
 func (api *API) CreateAttachment(
@@ -743,6 +745,10 @@ func (api *API) CreatePage(
 		cacheType = page.Type
 	}
 	key := pageCacheKey(space, cacheTitle, cacheType)
+
+	if page.Links.Base == "" {
+		page.Links.Base = api.BaseURL
+	}
 
 	api.pageCacheMutex.Lock()
 	api.setCacheEntry(key, page)
@@ -1253,6 +1259,9 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
+	if result.Links.Base == "" {
+		result.Links.Base = api.BaseURL
+	}
 	cacheTitle := title
 	if result.Title != "" {
 		cacheTitle = result.Title
