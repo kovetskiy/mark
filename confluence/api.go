@@ -29,6 +29,10 @@ type API struct {
 	// v2 API for newer endpoints like folders
 	restV2  *gopencils.Resource
 	BaseURL string
+
+	isCloudFlag    bool
+	isCloudChecked bool
+	isCloudMutex   sync.Mutex
 }
 
 type SpaceInfo struct {
@@ -848,26 +852,20 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
-var (
-	isCloudFlag    bool
-	isCloudChecked bool
-	isCloudMutex   sync.Mutex
-)
-
 func (api *API) IsCloud() bool {
-	isCloudMutex.Lock()
-	defer isCloudMutex.Unlock()
+	api.isCloudMutex.Lock()
+	defer api.isCloudMutex.Unlock()
 
-	if isCloudChecked {
-		return isCloudFlag
+	if api.isCloudChecked {
+		return api.isCloudFlag
 	}
 
 	// 1. Fast path: check default domain suffix
 	host := api.rest.Api.BaseUrl.Hostname()
 	if strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net") {
-		isCloudFlag = true
-		isCloudChecked = true
-		return isCloudFlag
+		api.isCloudFlag = true
+		api.isCloudChecked = true
+		return api.isCloudFlag
 	}
 
 	// 2. Slow path: probe Cloud-only v2 API endpoint
@@ -876,13 +874,13 @@ func (api *API) IsCloud() bool {
 		"limit": "1",
 	})
 	if err == nil && (request.Raw.StatusCode == http.StatusOK || request.Raw.StatusCode == http.StatusForbidden) {
-		isCloudFlag = true
+		api.isCloudFlag = true
 	} else {
-		isCloudFlag = false
+		api.isCloudFlag = false
 	}
 
-	isCloudChecked = true
-	return isCloudFlag
+	api.isCloudChecked = true
+	return api.isCloudFlag
 }
 
 func (api *API) RestrictPageUpdates(
@@ -932,7 +930,10 @@ func (api *API) RestrictPageUpdates(
 		return err
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
+		if !api.IsCloud() && (request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode == http.StatusMethodNotAllowed) {
+			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", request.Raw.StatusCode)
+		}
 		return newErrorStatusNotOK(request)
 	}
 
