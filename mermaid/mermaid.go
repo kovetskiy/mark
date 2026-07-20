@@ -7,14 +7,11 @@ import (
 	"math"
 	"strconv"
 	"sync"
-	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/rs/zerolog/log"
 )
-
-var renderTimeout = 120 * time.Second
 
 var (
 	mermaidEngine *mermaid.RenderEngine
