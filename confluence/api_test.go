@@ -41,4 +41,10 @@ func TestPageCache(t *testing.T) {
 	api.invalidatePage(space, title, pageType)
 	_, ok := api.pageCache[key]
 	assert.False(t, ok)
+
+	// 4. Cache Invalidation by ID removes entry
+	api.pageCache[key] = cachedPage
+	api.invalidatePageByID(cachedPage.ID)
+	_, ok = api.pageCache[key]
+	assert.False(t, ok)
 }
