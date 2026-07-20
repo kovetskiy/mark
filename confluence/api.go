@@ -67,10 +67,24 @@ func (api *API) invalidatePage(space, title, pageType string) {
 
 func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 	api.pageCacheMutex.Lock()
-	if entry, ok := api.pageCacheByID[id]; ok && entry != nil {
-		entry.Version.Number = newVersion
+	defer api.pageCacheMutex.Unlock()
+
+	entry, ok := api.pageCacheByID[id]
+	if !ok || entry == nil {
+		return
 	}
-	api.pageCacheMutex.Unlock()
+
+	// Create a shallow copy of the cached page info to avoid data races
+	newEntry := *entry
+	newEntry.Version.Number = newVersion
+
+	// Replace the pointer in both maps
+	for key, e := range api.pageCache {
+		if e == entry {
+			api.pageCache[key] = &newEntry
+		}
+	}
+	api.pageCacheByID[id] = &newEntry
 }
 
 type SpaceInfo struct {
@@ -295,7 +309,11 @@ func (api *API) FindPage(
 	api.pageCacheMutex.RLock()
 	if page, ok := api.pageCache[key]; ok {
 		api.pageCacheMutex.RUnlock()
-		return page, nil
+		if page == nil {
+			return nil, nil
+		}
+		copyPage := *page
+		return &copyPage, nil
 	}
 	api.pageCacheMutex.RUnlock()
 
@@ -335,7 +353,11 @@ func (api *API) FindPage(
 	// Double-checked locking: check if the cache was populated by another goroutine
 	// while the network request was in-flight.
 	if cachedPage, ok := api.pageCache[key]; ok {
-		return cachedPage, nil
+		if cachedPage == nil {
+			return nil, nil
+		}
+		copyPage := *cachedPage
+		return &copyPage, nil
 	}
 
 	if len(result.Results) == 0 {
