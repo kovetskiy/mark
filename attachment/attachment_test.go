@@ -124,4 +124,3 @@ func TestParseAttachmentLink(t *testing.T) {
 		})
 	}
 }
-

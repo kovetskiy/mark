@@ -1,6 +1,8 @@
 package confluence
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,4 +66,93 @@ func TestPageCache(t *testing.T) {
 		assert.NoError(t, err)
 	}
 	<-done
+}
+
+func TestPageCacheFindPageMissAndHit(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		// Return a mock Confluence response
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"results": [
+				{
+					"id": "12345",
+					"title": "My Page",
+					"type": "page",
+					"version": {
+						"number": 1
+					}
+				}
+			],
+			"_links": {
+				"base": "http://mock-confluence"
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	api := NewAPI(server.URL, "username", "password", true)
+
+	space := "TEST"
+	title := "My Page"
+	pageType := "page"
+
+	// First call: cache miss, triggers HTTP request to server
+	res1, err := api.FindPage(space, title, pageType)
+	assert.NoError(t, err)
+	assert.NotNil(t, res1)
+	assert.Equal(t, "12345", res1.ID)
+	assert.Equal(t, 1, callCount)
+
+	// Second call: cache hit, should NOT trigger HTTP request
+	res2, err := api.FindPage(space, title, pageType)
+	assert.NoError(t, err)
+	assert.NotNil(t, res2)
+	assert.Equal(t, "12345", res2.ID)
+	assert.Equal(t, 1, callCount) // callCount remains 1!
+	assert.Equal(t, res1.Version.Number, res2.Version.Number)
+}
+
+func TestPageCacheFindPageNegativeCache(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results": []}`))
+	}))
+	defer server.Close()
+
+	api := NewAPI(server.URL, "username", "password", true)
+
+	space := "TEST"
+	title := "Missing Page"
+	pageType := "page"
+
+	// First call: cache miss, returns nil
+	res1, err := api.FindPage(space, title, pageType)
+	assert.NoError(t, err)
+	assert.Nil(t, res1)
+	assert.Equal(t, 1, callCount)
+
+	// Second call: cache hit, returns nil without network call
+	res2, err := api.FindPage(space, title, pageType)
+	assert.NoError(t, err)
+	assert.Nil(t, res2)
+	assert.Equal(t, 1, callCount)
+}
+
+func TestPageCacheZeroValueAPI(t *testing.T) {
+	// Verifies lazy initialization handles zero-valued API structures
+	api := &API{}
+
+	// invalidatePage should not panic
+	api.invalidatePage("TEST", "Title", "page")
+
+	// updateCachedPageVersion should not panic
+	api.updateCachedPageVersion("12345", 2)
+
+	// setCacheEntry should not panic (tested via invalidatePage)
 }

@@ -42,6 +42,17 @@ func pageCacheKey(space, title, pageType string) string {
 	return space + "\x00" + title + "\x00" + pageType
 }
 
+func (api *API) lazyInit() {
+	api.pageCacheMutex.Lock()
+	defer api.pageCacheMutex.Unlock()
+	if api.pageCache == nil {
+		api.pageCache = make(map[string]*PageInfo)
+	}
+	if api.pageCacheByID == nil {
+		api.pageCacheByID = make(map[string]*PageInfo)
+	}
+}
+
 // setCacheEntry sets a cache entry. Requires api.pageCacheMutex to be locked by the caller.
 func (api *API) setCacheEntry(key string, page *PageInfo) {
 	if oldPage, ok := api.pageCache[key]; ok && oldPage != nil {
@@ -56,6 +67,7 @@ func (api *API) setCacheEntry(key string, page *PageInfo) {
 }
 
 func (api *API) invalidatePage(space, title, pageType string) {
+	api.lazyInit()
 	key := pageCacheKey(space, title, pageType)
 	api.pageCacheMutex.Lock()
 	if oldPage, ok := api.pageCache[key]; ok && oldPage != nil {
@@ -66,6 +78,7 @@ func (api *API) invalidatePage(space, title, pageType string) {
 }
 
 func (api *API) updateCachedPageVersion(id string, newVersion int64) {
+	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
@@ -305,6 +318,7 @@ func (api *API) FindPage(
 	title string,
 	pageType string,
 ) (*PageInfo, error) {
+	api.lazyInit()
 	key := pageCacheKey(space, title, pageType)
 	api.pageCacheMutex.RLock()
 	if page, ok := api.pageCache[key]; ok {
@@ -373,7 +387,20 @@ func (api *API) FindPage(
 		page.Links.Base = api.BaseURL
 	}
 
+	cacheTitle := title
+	if page.Title != "" {
+		cacheTitle = page.Title
+	}
+	cacheType := pageType
+	if page.Type != "" {
+		cacheType = page.Type
+	}
+	canonicalKey := pageCacheKey(space, cacheTitle, cacheType)
+
 	api.setCacheEntry(key, &page)
+	if canonicalKey != key {
+		api.setCacheEntry(canonicalKey, &page)
+	}
 	return &page, nil
 }
 
@@ -710,7 +737,7 @@ func (api *API) CreatePage(
 	}
 
 	page := request.Response.(*PageInfo)
-	
+
 	if parent != nil {
 		ancestors := make([]struct {
 			ID    string `json:"id"`
@@ -750,6 +777,7 @@ func (api *API) CreatePage(
 		page.Links.Base = api.BaseURL
 	}
 
+	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	api.setCacheEntry(key, page)
 	api.pageCacheMutex.Unlock()
@@ -1272,6 +1300,7 @@ func (api *API) CreatePageWithFolderParent(
 	}
 	key := pageCacheKey(space, cacheTitle, cacheType)
 
+	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	api.setCacheEntry(key, result)
 	api.pageCacheMutex.Unlock()
