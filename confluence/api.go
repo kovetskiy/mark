@@ -316,6 +316,12 @@ func (api *API) FindPage(
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
+	// Double-checked locking: check if the cache was populated by another goroutine
+	// while the network request was in-flight.
+	if cachedPage, ok := api.pageCache[key]; ok {
+		return cachedPage, nil
+	}
+
 	if len(result.Results) == 0 {
 		api.pageCache[key] = nil
 		return nil, nil
