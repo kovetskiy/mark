@@ -162,5 +162,8 @@ func TestPageCacheZeroValueAPI(t *testing.T) {
 	// updateCachedPageVersion should not panic
 	api.updateCachedPageVersion("12345", 2)
 
-	// setCacheEntry should not panic (tested via invalidatePage)
+	// setCacheEntry should not panic
+	api.pageCacheMutex.Lock()
+	api.setCacheEntry("key", &PageInfo{ID: "123"})
+	api.pageCacheMutex.Unlock()
 }
