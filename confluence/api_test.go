@@ -35,4 +35,10 @@ func TestPageCache(t *testing.T) {
 	res, err = api.FindPage(space, title, pageType)
 	assert.NoError(t, err)
 	assert.Nil(t, res)
+
+	// 3. Cache Invalidation removes entry
+	api.pageCache[key] = cachedPage
+	api.invalidatePage(space, title, pageType)
+	_, ok := api.pageCache[key]
+	assert.False(t, ok)
 }
