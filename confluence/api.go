@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
@@ -32,7 +33,9 @@ type API struct {
 	isCloudFlag    bool
 	isCloudChecked bool
 
-	pageCache map[string]*PageInfo
+	pageCache      map[string]*PageInfo
+	pageCacheByID  map[string]*PageInfo
+	pageCacheMutex sync.RWMutex
 }
 
 func pageCacheKey(space, title, pageType string) string {
@@ -41,15 +44,17 @@ func pageCacheKey(space, title, pageType string) string {
 
 func (api *API) invalidatePage(space, title, pageType string) {
 	key := pageCacheKey(space, title, pageType)
+	api.pageCacheMutex.Lock()
 	delete(api.pageCache, key)
+	api.pageCacheMutex.Unlock()
 }
 
 func (api *API) updateCachedPageVersion(id string, newVersion int64) {
-	for _, entry := range api.pageCache {
-		if entry != nil && entry.ID == id {
-			entry.Version.Number = newVersion
-		}
+	api.pageCacheMutex.Lock()
+	if entry, ok := api.pageCacheByID[id]; ok && entry != nil {
+		entry.Version.Number = newVersion
 	}
+	api.pageCacheMutex.Unlock()
 }
 
 type SpaceInfo struct {
@@ -215,10 +220,11 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	}
 
 	return &API{
-		rest:      rest,
-		restV2:    restV2,
-		BaseURL:   baseURL,
-		pageCache: make(map[string]*PageInfo),
+		rest:          rest,
+		restV2:        restV2,
+		BaseURL:       baseURL,
+		pageCache:     make(map[string]*PageInfo),
+		pageCacheByID: make(map[string]*PageInfo),
 	}
 }
 
@@ -270,9 +276,12 @@ func (api *API) FindPage(
 	pageType string,
 ) (*PageInfo, error) {
 	key := pageCacheKey(space, title, pageType)
+	api.pageCacheMutex.RLock()
 	if page, ok := api.pageCache[key]; ok {
+		api.pageCacheMutex.RUnlock()
 		return page, nil
 	}
+	api.pageCacheMutex.RUnlock()
 
 	result := struct {
 		Results []PageInfo `json:"results"`
@@ -304,6 +313,9 @@ func (api *API) FindPage(
 		return nil, newErrorStatusNotOK(request)
 	}
 
+	api.pageCacheMutex.Lock()
+	defer api.pageCacheMutex.Unlock()
+
 	if len(result.Results) == 0 {
 		api.pageCache[key] = nil
 		return nil, nil
@@ -316,6 +328,7 @@ func (api *API) FindPage(
 	}
 
 	api.pageCache[key] = page
+	api.pageCacheByID[page.ID] = page
 	return page, nil
 }
 
@@ -687,7 +700,11 @@ func (api *API) CreatePage(
 		cacheType = page.Type
 	}
 	key := pageCacheKey(space, cacheTitle, cacheType)
+
+	api.pageCacheMutex.Lock()
 	api.pageCache[key] = page
+	api.pageCacheByID[page.ID] = page
+	api.pageCacheMutex.Unlock()
 
 	return page, nil
 }
@@ -1203,7 +1220,11 @@ func (api *API) CreatePageWithFolderParent(
 		cacheType = result.Type
 	}
 	key := pageCacheKey(space, cacheTitle, cacheType)
+
+	api.pageCacheMutex.Lock()
 	api.pageCache[key] = result
+	api.pageCacheByID[result.ID] = result
+	api.pageCacheMutex.Unlock()
 
 	return result, nil
 }
