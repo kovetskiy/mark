@@ -106,14 +106,14 @@ func TestParseAttachmentLink(t *testing.T) {
 			expected:   "/download/attachments/12345/foo.png",
 		},
 		{
-			name:       "invalid URL (relative path without scheme)",
+			name:       "valid relative path URL (without scheme)",
 			attachLink: "/download/attachments/12345/foo.png?version=1&modificationDate=123",
 			expected:   "/download/attachments/12345/foo.png?modificationDate=123&version=1",
 		},
 		{
 			name:       "invalid URI with invalid port (triggers ParseRequestURI error)",
 			attachLink: "http://[::1]:foo/bar?version=1&modificationDate=123",
-			expected:   "http://[::1]:foo/bar?version=1&amp;modificationDate=123",
+			expected:   "http://[::1]:foo/bar?version=1&modificationDate=123",
 		},
 	}
 
