@@ -38,6 +38,7 @@ func ResolveRelativeLinks(
 	titleFromFilename bool,
 	parents []string,
 	titleAppendGeneratedHash bool,
+	frontMatterEnabled bool,
 ) ([]LinkSubstitution, error) {
 	matches := parseLinks(string(markdown))
 
@@ -57,7 +58,7 @@ func ResolveRelativeLinks(
 				match.filename,
 				match.hash,
 			)
-		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash)
+		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash, frontMatterEnabled)
 		if err != nil {
 			return nil, fmt.Errorf("resolve link %q: %w", match.full, err)
 		}
@@ -84,6 +85,7 @@ func resolveLink(
 	titleFromFilename bool,
 	parents []string,
 	titleAppendGeneratedHash bool,
+	frontMatterEnabled bool,
 ) (string, error) {
 	var result string
 
@@ -120,7 +122,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash, "")
+		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash, "", frontMatterEnabled)
 		if err != nil {
 			log.Error().
 				Err(err).
