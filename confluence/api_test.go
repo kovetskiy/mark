@@ -3,6 +3,7 @@ package confluence
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,9 +78,9 @@ func TestPageCache(t *testing.T) {
 }
 
 func TestPageCacheFindPageMissAndHit(t *testing.T) {
-	callCount := 0
+	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		atomic.AddInt32(&callCount, 1)
 		// Return a mock Confluence response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -112,21 +113,21 @@ func TestPageCacheFindPageMissAndHit(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, res1)
 	assert.Equal(t, "12345", res1.ID)
-	assert.Equal(t, 1, callCount)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount))
 
 	// Second call: cache hit, should NOT trigger HTTP request
 	res2, err := api.FindPage(space, title, pageType)
 	assert.NoError(t, err)
 	assert.NotNil(t, res2)
 	assert.Equal(t, "12345", res2.ID)
-	assert.Equal(t, 1, callCount) // callCount remains 1!
+	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount)) // callCount remains 1!
 	assert.Equal(t, res1.Version.Number, res2.Version.Number)
 }
 
 func TestPageCacheFindPageNegativeCache(t *testing.T) {
-	callCount := 0
+	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"results": []}`))
@@ -143,13 +144,13 @@ func TestPageCacheFindPageNegativeCache(t *testing.T) {
 	res1, err := api.FindPage(space, title, pageType)
 	assert.NoError(t, err)
 	assert.Nil(t, res1)
-	assert.Equal(t, 1, callCount)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount))
 
 	// Second call: cache hit, returns nil without network call
 	res2, err := api.FindPage(space, title, pageType)
 	assert.NoError(t, err)
 	assert.Nil(t, res2)
-	assert.Equal(t, 1, callCount)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount))
 }
 
 func TestPageCacheZeroValueAPI(t *testing.T) {
