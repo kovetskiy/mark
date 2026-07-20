@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"cmp"
 	"slices"
 	"strconv"
 	"strings"

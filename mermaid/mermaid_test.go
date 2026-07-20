@@ -25,7 +25,6 @@ func TestExtractMermaidImage(t *testing.T) {
 			Replace:   "example",
 			Checksum:  "26296b73c960c25850b37bc9dd77cb24fce1a78db83b37755a25af7f8a48cc96",
 			ID:        "",
-
 		},
 			assert.NoError},
 	}

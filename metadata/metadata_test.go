@@ -239,4 +239,3 @@ func TestExtractMeta_FolderHeadersWithCliParents(t *testing.T) {
 	assert.Equal(t, cliParents, meta.Parents)
 	assert.Equal(t, []string{"API"}, meta.Folders)
 }
-
