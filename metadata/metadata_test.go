@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/text"
 )
 
 func TestExtractDocumentLeadingH1(t *testing.T) {
@@ -24,7 +26,10 @@ func TestExtractDocumentLeadingH1(t *testing.T) {
 		panic(err)
 	}
 
-	actual := ExtractDocumentLeadingH1(markdown)
+	reader := text.NewReader(markdown)
+	parser := goldmark.DefaultParser()
+	doc := parser.Parse(reader)
+	actual := ExtractDocumentLeadingH1(doc, markdown)
 
 	assert.Equal(t, "a", actual)
 }
@@ -247,7 +252,10 @@ echo "Hello World"
 # Actual H1 Heading with **bold** formatting
 `)
 
-	actual := ExtractDocumentLeadingH1(markdown)
+	reader := text.NewReader(markdown)
+	parser := goldmark.DefaultParser()
+	doc := parser.Parse(reader)
+	actual := ExtractDocumentLeadingH1(doc, markdown)
 	assert.Equal(t, "Actual H1 Heading with bold formatting", actual)
 }
 
