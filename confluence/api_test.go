@@ -42,9 +42,8 @@ func TestPageCache(t *testing.T) {
 	_, ok := api.pageCache[key]
 	assert.False(t, ok)
 
-	// 4. Cache Invalidation by ID removes entry
+	// 4. Cache Version Update updates version in-place
 	api.pageCache[key] = cachedPage
-	api.invalidatePageByID(cachedPage.ID)
-	_, ok = api.pageCache[key]
-	assert.False(t, ok)
+	api.updateCachedPageVersion(cachedPage.ID, 42)
+	assert.Equal(t, int64(42), api.pageCache[key].Version.Number)
 }
