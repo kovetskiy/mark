@@ -249,3 +249,31 @@ func TestContinueOnError(t *testing.T) {
 	assert.Error(t, err, "App should report partial failure when continue-on-error is enabled and some files fail")
 	assert.ErrorContains(t, err, "one or more files failed to process")
 }
+
+func TestDetailsFeature(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	markdown := []byte(`<details>
+<summary>Summary Text</summary>
+Some content
+</details>`)
+
+	// 1. With details feature enabled
+	cfgEnabled := types.MarkConfig{
+		Features: []string{"details"},
+	}
+	actualEnabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgEnabled)
+	assert.NoError(t, err)
+	assert.Contains(t, actualEnabled, `<ac:structured-macro ac:name="expand">`)
+	assert.Contains(t, actualEnabled, `<ac:parameter ac:name="title">Summary Text</ac:parameter>`)
+	assert.Contains(t, actualEnabled, `<ac:rich-text-body>`)
+
+	// 2. Without details feature enabled
+	cfgDisabled := types.MarkConfig{
+		Features: []string{"mermaid", "mention"},
+	}
+	actualDisabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgDisabled)
+	assert.NoError(t, err)
+	assert.NotContains(t, actualDisabled, `<ac:structured-macro ac:name="expand">`)
+	assert.Contains(t, actualDisabled, `<details>`)
+}
