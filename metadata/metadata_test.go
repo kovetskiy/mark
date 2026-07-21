@@ -187,11 +187,11 @@ image-align: center
 func TestExtractMetaYAMLFrontMatterScalarAliases(t *testing.T) {
 	markdown := `---
 space: DOCS
-parent: Parent
-folder: Folder
+parents: [ Parent ]
+folders: [ Folder ]
 title: Test Page
-attachment: image.png
-label: alpha
+attachments: [ image.png ]
+labels: [ alpha ]
 content_appearance: fixed
 image_align: right
 ---
@@ -275,7 +275,7 @@ title: YAML Title
 labels:
   - yaml
 ---
-<!-- Space: LEGACY -->
+<!-- Space: HTML -->
 <!-- Title: HTML Title -->
 <!-- Parent: Parent Page -->
 <!-- Label: html -->
@@ -284,12 +284,34 @@ labels:
 
 	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
 	assert.NoError(t, err)
-	assert.Equal(t, "LEGACY", meta.Space)
+	assert.Equal(t, "HTML", meta.Space)
 	assert.Equal(t, "HTML Title", meta.Title)
 	assert.Equal(t, []string{"Parent Page"}, meta.Parents)
 	assert.Equal(t, []string{"yaml", "html"}, meta.Labels)
 	assert.Equal(t, "# Content\n", string(body))
 }
+
+func TestExtractMetaYAMLFrontMatterSmartKeys(t *testing.T) {
+	markdown := `---
+SPACE: DOCS
+parents: [ "A Single Parent" ]
+Folders: [ "Folder A", "Folder B" ]
+Content_Appearance: fixed
+Image-Align: center
+---
+# Content
+`
+
+	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	assert.NoError(t, err)
+	assert.Equal(t, "DOCS", meta.Space)
+	assert.Equal(t, []string{"A Single Parent"}, meta.Parents)
+	assert.Equal(t, []string{"Folder A", "Folder B"}, meta.Folders)
+	assert.Equal(t, FixedContentAppearance, meta.ContentAppearance)
+	assert.Equal(t, "center", meta.ImageAlign)
+	assert.Equal(t, "# Content\n", string(body))
+}
+
 
 func TestExtractMetaYAMLFrontMatterWithoutTrailingNewline(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test Page\n---"
