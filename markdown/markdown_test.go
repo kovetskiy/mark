@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	mark "github.com/kovetskiy/mark/v16/markdown"
+	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/util"
@@ -59,15 +60,26 @@ func TestCompileMarkdown(t *testing.T) {
 		}
 		markdown, htmlname, html := loadData(t, filename, "")
 
+		var body []byte
+		if filename == "testdata/frontmatter.md" {
+			var err error
+			_, body, err = metadata.ExtractMeta(markdown, "", false, false, "", nil, false, "", true)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			body = markdown
+		}
+
 		cfg := types.MarkConfig{
 			MermaidScale:  1.0,
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		actual, _, _ := mark.CompileMarkdown(body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 	}
 }
@@ -94,22 +106,33 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/codeblock-comments.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md":
 			variant = "-droph1"
 		default:
 			variant = ""
 		}
 		markdown, htmlname, html := loadData(t, filename, variant)
 
+		var body []byte
+		if filename == "testdata/frontmatter.md" {
+			var err error
+			_, body, err = metadata.ExtractMeta(markdown, "", false, false, "", nil, false, "", true)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			body = markdown
+		}
+
 		cfg := types.MarkConfig{
 			MermaidScale:  1.0,
 			D2Scale:       1.0,
 			DropFirstH1:   true,
 			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		actual, _, _ := mark.CompileMarkdown(body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
@@ -145,15 +168,26 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 
 		markdown, htmlname, html := loadData(t, filename, variant)
 
+		var body []byte
+		if filename == "testdata/frontmatter.md" {
+			var err error
+			_, body, err = metadata.ExtractMeta(markdown, "", false, false, "", nil, false, "", true)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			body = markdown
+		}
+
 		cfg := types.MarkConfig{
 			MermaidScale:  1.0,
 			D2Scale:       1.0,
 			DropFirstH1:   false,
 			StripNewlines: true,
-			Features:      []string{"mkdocsadmonitions", "mention", "plantuml"},
+			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := mark.CompileMarkdown(markdown, lib, filename, cfg)
+		actual, _, _ := mark.CompileMarkdown(body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}

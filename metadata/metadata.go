@@ -54,74 +54,28 @@ const (
 	DefaultContentAppearance   = "default"
 )
 
-type yamlFrontMatter struct {
-	Parents                     []string `yaml:"parents"`
-	Parent                      string   `yaml:"parent"`
-	Folders                     []string `yaml:"folders"`
-	Folder                      string   `yaml:"folder"`
-	Space                       string   `yaml:"space"`
-	Type                        string   `yaml:"type"`
-	Title                       string   `yaml:"title"`
-	Layout                      string   `yaml:"layout"`
-	Sidebar                     string   `yaml:"sidebar"`
-	Emoji                       string   `yaml:"emoji"`
-	Attachments                 []string `yaml:"attachments"`
-	Attachment                  string   `yaml:"attachment"`
-	Labels                      []string `yaml:"labels"`
-	Label                       string   `yaml:"label"`
-	ContentAppearance           string   `yaml:"content-appearance"`
-	ContentAppearanceUnderscore string   `yaml:"content_appearance"`
-	ImageAlign                  string   `yaml:"image-align"`
-	ImageAlignUnderscore        string   `yaml:"image_align"`
-}
-
-func (frontMatter yamlFrontMatter) meta() *Meta {
-	meta := &Meta{
-		Space:   strings.TrimSpace(frontMatter.Space),
-		Type:    strings.TrimSpace(frontMatter.Type),
-		Title:   strings.TrimSpace(frontMatter.Title),
-		Layout:  strings.TrimSpace(frontMatter.Layout),
-		Sidebar: strings.TrimSpace(frontMatter.Sidebar),
-		Emoji:   strings.TrimSpace(frontMatter.Emoji),
+func toStringSlice(val any) []string {
+	v, ok := val.([]any)
+	if !ok {
+		return nil
 	}
-	if meta.Type == "" {
-		meta.Type = "page"
-	}
-	if meta.Sidebar != "" {
-		meta.Layout = "article"
-	}
-
-	meta.Parents = appendTrimmed(meta.Parents, frontMatter.Parent)
-	meta.Parents = appendTrimmed(meta.Parents, frontMatter.Parents...)
-	meta.Folders = appendTrimmed(meta.Folders, frontMatter.Folder)
-	meta.Folders = appendTrimmed(meta.Folders, frontMatter.Folders...)
-	meta.Attachments = appendTrimmed(meta.Attachments, frontMatter.Attachment)
-	meta.Attachments = appendTrimmed(meta.Attachments, frontMatter.Attachments...)
-	meta.Labels = appendTrimmed(meta.Labels, frontMatter.Label)
-	meta.Labels = appendTrimmed(meta.Labels, frontMatter.Labels...)
-
-	if value := firstNonEmpty(frontMatter.ContentAppearance, frontMatter.ContentAppearanceUnderscore); value != "" {
-		setContentAppearance(meta, value)
-	}
-	meta.ImageAlign = strings.ToLower(strings.TrimSpace(firstNonEmpty(frontMatter.ImageAlign, frontMatter.ImageAlignUnderscore)))
-
-	return meta
-}
-
-func appendTrimmed(dst []string, values ...string) []string {
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			dst = append(dst, value)
+	var res []string
+	for _, item := range v {
+		if s, ok := item.(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
+				res = append(res, s)
+			}
 		}
 	}
-	return dst
+	return res
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
+func toString(val any) string {
+	if val == nil {
+		return ""
+	}
+	if s, ok := val.(string); ok {
+		return strings.TrimSpace(s)
 	}
 	return ""
 }
@@ -142,11 +96,11 @@ func stripFrontMatter(data []byte) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("unterminated YAML front matter")
 	}
-	delimiter = bytes.TrimSuffix(delimiter, []byte("\r"))
+	delimiter = bytes.TrimRight(delimiter, " \r\t")
 
 	for {
 		line, remaining, hasNewline := bytes.Cut(rest, []byte("\n"))
-		if bytes.Equal(bytes.TrimSuffix(line, []byte("\r")), delimiter) {
+		if bytes.Equal(bytes.TrimRight(line, " \r\t"), delimiter) {
 			return remaining, nil
 		}
 		if !hasNewline {
@@ -170,12 +124,50 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	ctx := parser.NewContext()
 	doc := markdown.Parser().Parse(text.NewReader(data), parser.WithContext(ctx))
 	if frontMatterData := frontmatter.Get(ctx); frontMatterData != nil {
-		var parsed yamlFrontMatter
+		var parsed map[string]any
 		if err := frontMatterData.Decode(&parsed); err != nil {
 			return nil, nil, fmt.Errorf("decode YAML front matter: %w", err)
 		}
 
-		meta = parsed.meta()
+		meta = &Meta{}
+		meta.Type = "page" // Default type
+
+		for k, v := range parsed {
+			normKey := strings.ToLower(k)
+			normKey = strings.ReplaceAll(normKey, "-", "")
+			normKey = strings.ReplaceAll(normKey, "_", "")
+
+			switch normKey {
+			case "parents":
+				meta.Parents = append(meta.Parents, toStringSlice(v)...)
+			case "folders":
+				meta.Folders = append(meta.Folders, toStringSlice(v)...)
+			case "space":
+				meta.Space = toString(v)
+			case "type":
+				meta.Type = toString(v)
+			case "title":
+				meta.Title = toString(v)
+			case "layout":
+				meta.Layout = toString(v)
+			case "sidebar":
+				meta.Sidebar = toString(v)
+				if meta.Sidebar != "" {
+					meta.Layout = "article"
+				}
+			case "emoji":
+				meta.Emoji = toString(v)
+			case "attachments":
+				meta.Attachments = append(meta.Attachments, toStringSlice(v)...)
+			case "labels":
+				meta.Labels = append(meta.Labels, toStringSlice(v)...)
+			case "contentappearance":
+				setContentAppearance(meta, toString(v))
+			case "imagealign":
+				meta.ImageAlign = strings.ToLower(toString(v))
+			}
+		}
+
 		var err error
 		body, err = stripFrontMatter(data)
 		if err != nil {
