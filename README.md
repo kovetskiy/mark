@@ -863,6 +863,19 @@ When enabled, this renders note, warning, tip, info admonitions as Confluence al
 !!! note
 ```
 
+### HTML Details/Summary Macro
+
+Optionally you can enable auto-conversion of standard HTML `<details>` and `<summary>` tags to native Confluence `expand` macros via `--features="details"`.
+
+When enabled, this maps standard HTML details blocks directly to Confluence expand macros:
+
+```markdown
+<details>
+<summary>Click to expand</summary>
+This is the hidden content.
+</details>
+```
+
 ## Installation
 
 ### Homebrew
@@ -944,7 +957,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, frontmatter, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, details, frontmatter, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help

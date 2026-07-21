@@ -131,17 +131,22 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 	return string(html), nil
 }
 
-// CompileMarkdown compiles markdown to Confluence Storage Format with GitHub Alerts support
-// This is the main function that now uses the enhanced GitHub Alerts transformer by default
-// for superior processing of [!NOTE], [!TIP], [!WARNING], [!CAUTION], [!IMPORTANT] syntax.
-// Note: This is a breaking change from previous versions which rendered these markers literally.
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
 	html, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
 		err = ghAlertsExtension.Pipeline.GetError()
 	}
-	return html, ghAlertsExtension.Attachments, err
+	if err != nil {
+		return "", nil, err
+	}
+	if slices.Contains(cfg.Features, "details") {
+		html, err = convertDetailsToExpand(html)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	return html, ghAlertsExtension.Attachments, nil
 }
 
 // CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
@@ -149,7 +154,16 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
 	confluenceExtension := NewConfluenceLegacyExtension(stdlib, path, cfg)
 	html, err := compileMarkdownWithExtension(markdown, confluenceExtension, "rendering markdown with legacy renderer:\n%s")
-	return html, confluenceExtension.Attachments, err
+	if err != nil {
+		return "", nil, err
+	}
+	if slices.Contains(cfg.Features, "details") {
+		html, err = convertDetailsToExpand(html)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	return html, confluenceExtension.Attachments, nil
 }
 
 // ConfluenceExtension is a goldmark extension for GitHub Alerts with Transformer approach
