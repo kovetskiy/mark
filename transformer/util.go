@@ -27,7 +27,7 @@ func putBuffer(buf *bytes.Buffer) {
 }
 
 func getNodeLineNumber(node ast.Node, source []byte) int {
-	var offset int = -1
+	offset := -1
 	switch t := node.(type) {
 	case *ast.HTMLBlock:
 		if t.Lines().Len() > 0 {
