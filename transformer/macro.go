@@ -49,7 +49,8 @@ func (t *MacroTransformer) Transform(doc *ast.Document, reader text.Reader, pc p
 
 		rawContent := extractNodeRawContent(node, reader.Source())
 
-		if len(rawContent) > 0 && bytes.Contains(rawContent, []byte("<!--")) && bytes.Contains(rawContent, []byte("Macro:")) {
+		dir, _ := macro.ParseMacroDirective(rawContent)
+		if dir != nil {
 			target := macroTarget{
 				startNode:      node,
 				nodesToRemove:  []ast.Node{node},

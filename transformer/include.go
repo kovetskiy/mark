@@ -49,8 +49,8 @@ func (t *IncludeTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 
 		rawContent := extractNodeRawContent(node, reader.Source())
 
-		// Only process Include directives, ignoring Macro definition blocks
-		if len(rawContent) > 0 && bytes.Contains(rawContent, []byte("<!--")) && bytes.Contains(rawContent, []byte("Include:")) && !bytes.Contains(rawContent, []byte("Macro:")) {
+		dir, _ := includes.ParseIncludeDirective(rawContent)
+		if dir != nil {
 			target := includeTarget{
 				startNode:      node,
 				nodesToRemove:  []ast.Node{node},
