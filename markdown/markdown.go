@@ -3,6 +3,7 @@ package mark
 import (
 	"bytes"
 	"slices"
+	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	cparser "github.com/kovetskiy/mark/v16/parser"
@@ -135,9 +136,11 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 // for superior processing of [!NOTE], [!TIP], [!WARNING], [!CAUTION], [!IMPORTANT] syntax.
 // Note: This is a breaking change from previous versions which rendered these markers literally.
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	// Use the enhanced GitHub Alerts extension for better processing
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
 	html, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
+		err = ghAlertsExtension.Pipeline.GetError()
+	}
 	return html, ghAlertsExtension.Attachments, err
 }
 
@@ -159,17 +162,27 @@ type ConfluenceExtension struct {
 	Path        string
 	MarkConfig  types.MarkConfig
 	Attachments []attachment.Attachment
+	Pipeline    *ctransformer.PipelineTransformer
 }
 
 // NewConfluenceExtension creates a new instance of the GitHub Alerts extension
 // This is the improved standalone version that doesn't depend on feature flags
 func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceExtension {
+	var tmpl *template.Template
+	if stdlib != nil {
+		tmpl = stdlib.Templates
+	}
+	pipeline := ctransformer.NewPipelineTransformer(
+		ctransformer.NewMacroTransformer(path, cfg.IncludePath, tmpl),
+		ctransformer.NewIncludeTransformer(path, cfg.IncludePath, tmpl),
+	)
 	return &ConfluenceExtension{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
 		MarkConfig:  cfg,
 		Attachments: []attachment.Attachment{},
+		Pipeline:    pipeline,
 	}
 }
 
@@ -202,8 +215,9 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 200),
 	))
 
-	// Add the GitHub Alerts AST transformer that preprocesses [!TYPE] syntax
+	// Add AST Transformers for Macros, Includes, and GitHub Alerts
 	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(c.Pipeline, 10),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
 	))
 

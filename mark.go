@@ -20,8 +20,6 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
-	"github.com/kovetskiy/mark/v16/includes"
-	"github.com/kovetskiy/mark/v16/macro"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/metadata"
@@ -164,6 +162,28 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}
 
+	if meta == nil || meta.Title == "" || meta.Space == "" {
+		stdForMeta, _ := stdlib.New(api)
+		cfgForMeta := types.MarkConfig{
+			IncludePath: config.IncludePath,
+		}
+		if htmlExpanded, _, compileErr := markmd.CompileMarkdown(markdown, stdForMeta, file, cfgForMeta); compileErr == nil {
+			if metaExpanded, _, metaErr := metadata.ExtractMeta(
+				[]byte(htmlExpanded),
+				config.Space,
+				config.TitleFromH1,
+				config.TitleFromFilename,
+				file,
+				config.Parents,
+				config.TitleAppendGeneratedHash,
+				config.ContentAppearance,
+				frontMatterEnabled,
+			); metaErr == nil && metaExpanded != nil {
+				meta = metaExpanded
+			}
+		}
+	}
+
 	if config.PageID != "" && meta != nil {
 		log.Warn().Msg(
 			`specified file contains metadata, ` +
@@ -196,41 +216,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	std, err := stdlib.New(api)
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
-	}
-
-	templates := std.Templates
-
-	var recurse bool
-	for {
-		templates, markdown, recurse, err = includes.ProcessIncludes(
-			filepath.Dir(file),
-			config.IncludePath,
-			markdown,
-			templates,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to process includes: %w", err)
-		}
-		if !recurse {
-			break
-		}
-	}
-
-	macros, markdown, err := macro.ExtractMacros(
-		filepath.Dir(file),
-		config.IncludePath,
-		markdown,
-		templates,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to extract macros: %w", err)
-	}
-
-	for _, m := range macros {
-		markdown, err = m.Apply(markdown)
-		if err != nil {
-			return nil, fmt.Errorf("unable to apply macro: %w", err)
-		}
 	}
 
 	links, err := page.ResolveRelativeLinks(
@@ -280,6 +265,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			StripNewlines: config.StripLinebreaks,
 			Features:      config.Features,
 			ImageAlign:    imageAlign,
+			IncludePath:   config.IncludePath,
 		}
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 		if err != nil {
@@ -378,6 +364,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		StripNewlines: config.StripLinebreaks,
 		Features:      config.Features,
 		ImageAlign:    imageAlign,
+		IncludePath:   config.IncludePath,
 	}
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
