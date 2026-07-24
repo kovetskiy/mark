@@ -5,25 +5,85 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"text/template"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/rs/zerolog/log"
+	"go.yaml.in/yaml/v3"
 )
 
-// <!-- Include: <template path>
-//
-//	(Delims: (none | "<left>","<right>"))?
-//	<optional yaml data> -->
-var reIncludeDirective = regexp.MustCompile(
-	`(?s)` +
-		`<!--\s*Include:\s*(?P<template>.+?)\s*` +
-		`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
-		`(?:\n(?P<config>.*?))?-->`,
-)
+// IncludeDirective contains parsed parameters from an <!-- Include: ... --> block.
+type IncludeDirective struct {
+	Template string
+	Left     string
+	Right    string
+	Data     map[string]any
+}
+
+// ParseIncludeDirective parses an <!-- Include: ... --> HTML comment block without regex.
+func ParseIncludeDirective(raw []byte) (*IncludeDirective, error) {
+	s := string(raw)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
+		return nil, nil
+	}
+	incIdx := strings.Index(s[startIdx:], "Include:")
+	if incIdx == -1 {
+		return nil, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return nil, nil
+	}
+	endIdx += startIdx + 3
+
+	comment := strings.TrimSpace(s[startIdx+4 : endIdx-3])
+	if !strings.HasPrefix(comment, "Include:") {
+		return nil, nil
+	}
+
+	lines := strings.Split(comment, "\n")
+	firstLine := strings.TrimSpace(lines[0])
+	templatePath := strings.TrimSpace(strings.TrimPrefix(firstLine, "Include:"))
+	if templatePath == "" {
+		return nil, nil
+	}
+
+	dir := &IncludeDirective{
+		Template: templatePath,
+		Data:     make(map[string]any),
+	}
+
+	var configLines []string
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Delims:") {
+			delimVal := strings.TrimSpace(strings.TrimPrefix(trimmed, "Delims:"))
+			if delimVal == "none" {
+				dir.Left = "\x00"
+				dir.Right = "\x01"
+			} else {
+				parts := strings.Split(delimVal, ",")
+				if len(parts) == 2 {
+					dir.Left = strings.Trim(strings.TrimSpace(parts[0]), `"`)
+					dir.Right = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+				}
+			}
+		} else if trimmed != "" {
+			configLines = append(configLines, line)
+		}
+	}
+
+	if len(configLines) > 0 {
+		configStr := strings.Join(configLines, "\n")
+		err := yaml.Unmarshal([]byte(configStr), &dir.Data)
+		if err != nil {
+			return nil, fmt.Errorf("unable to unmarshal template data config (path=%q, config=%q): %w", templatePath, configStr, err)
+		}
+	}
+
+	return dir, nil
+}
 
 func LoadTemplate(
 	base string,
@@ -51,7 +111,6 @@ func LoadTemplate(
 		if err != nil {
 			return nil, fmt.Errorf("unable to read template file %q: %w", path, err)
 		}
-
 	}
 
 	body = bytes.ReplaceAll(
@@ -74,74 +133,81 @@ func ProcessIncludes(
 	contents []byte,
 	templates *template.Template,
 ) (*template.Template, []byte, bool, error) {
-	formatVardump := func(
-		data map[string]any,
-	) string {
+	return ProcessIncludesWithStack(base, includePath, contents, templates, nil)
+}
+
+func ProcessIncludesWithStack(
+	base string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+	stack []string,
+) (*template.Template, []byte, bool, error) {
+	formatVardump := func(data map[string]any) string {
 		var parts []string
 		for key, value := range data {
 			parts = append(parts, fmt.Sprintf("%s=%v", key, value))
 		}
-
 		return strings.Join(parts, ", ")
 	}
 
-	var (
-		recurse bool
-		err     error
-	)
+	s := string(contents)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
+		return templates, contents, false, nil
+	}
+	incIdx := strings.Index(s[startIdx:], "Include:")
+	if incIdx == -1 {
+		return templates, contents, false, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return templates, contents, false, nil
+	}
+	endIdx += startIdx + 3
 
-	contents = reIncludeDirective.ReplaceAllFunc(
-		contents,
-		func(spec []byte) []byte {
-			if err != nil {
-				return spec
-			}
+	rawDirective := contents[startIdx:endIdx]
+	dir, err := ParseIncludeDirective(rawDirective)
+	if err != nil {
+		return templates, contents, false, err
+	}
+	if dir == nil {
+		return templates, contents, false, nil
+	}
 
-			groups := reIncludeDirective.FindSubmatch(spec)
+	// Detect circular include loops
+	cleanTmpl := filepath.Clean(dir.Template)
+	for _, item := range stack {
+		if filepath.Clean(item) == cleanTmpl {
+			return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", strings.Join(append(stack, dir.Template), " -> "), dir.Template)
+		}
+	}
 
-			var (
-				path       = string(groups[1])
-				delimsNone = string(groups[2])
-				left       = string(groups[3])
-				right      = string(groups[4])
-				config     = groups[5]
-				data       = map[string]any{}
-			)
+	log.Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
 
-			if delimsNone == "none" {
-				left = "\x00"
-				right = "\x01"
-			}
+	templates, err = LoadTemplate(base, includePath, dir.Template, dir.Left, dir.Right, templates)
+	if err != nil {
+		return templates, contents, false, fmt.Errorf("unable to load template %q: %w", dir.Template, err)
+	}
 
-			err = yaml.Unmarshal(config, &data)
-			if err != nil {
-				err = fmt.Errorf("unable to unmarshal template data config (path=%q, config=%q): %w", path, string(config), err)
+	var buffer bytes.Buffer
+	err = templates.Execute(&buffer, dir.Data)
+	if err != nil {
+		return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
+	}
 
-				return spec
-			}
+	// Recursively process nested includes with updated stack
+	newStack := append(stack, dir.Template)
+	subTemplates, subBytes, _, subErr := ProcessIncludesWithStack(base, includePath, buffer.Bytes(), templates, newStack)
+	if subErr != nil {
+		return templates, contents, false, subErr
+	}
+	templates = subTemplates
 
-			log.Trace().Interface("vardump", data).Msgf("including template %q", path)
+	var res bytes.Buffer
+	res.Write(contents[:startIdx])
+	res.Write(subBytes)
+	res.Write(contents[endIdx:])
 
-			templates, err = LoadTemplate(base, includePath, path, left, right, templates)
-			if err != nil {
-				err = fmt.Errorf("unable to load template %q: %w", path, err)
-				return spec
-			}
-
-			var buffer bytes.Buffer
-
-			err = templates.Execute(&buffer, data)
-			if err != nil {
-				err = fmt.Errorf("unable to execute template %q (vars: %s): %w", path, formatVardump(data), err)
-
-				return spec
-			}
-
-			recurse = true
-
-			return buffer.Bytes()
-		},
-	)
-
-	return templates, contents, recurse, err
+	return templates, res.Bytes(), true, nil
 }

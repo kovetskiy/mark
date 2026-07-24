@@ -12,21 +12,66 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-var reMacroDirective = regexp.MustCompile(
-	// <!-- Macro: <regexp>
-	//      Template: <template path>
-	//      <optional yaml data> -->
-
-	`(?s)` + // dot capture newlines
-		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
-		/*    */ `\s*Template:\s*(?P<template>.+?)\s*` +
-		/*   */ `(?P<config>\n.*?)?-->`,
-)
-
 type Macro struct {
 	Regexp   *regexp.Regexp
 	Template *template.Template
 	Config   string
+	Name     string
+}
+
+// MacroDirective contains parsed parameters from a <!-- Macro: ... --> block.
+type MacroDirective struct {
+	Expr     string
+	Template string
+	Config   string
+}
+
+// ParseMacroDirective parses a <!-- Macro: ... --> HTML comment block without directive regexes.
+func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
+	s := string(raw)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
+		return nil, nil
+	}
+	macroIdx := strings.Index(s[startIdx:], "Macro:")
+	if macroIdx == -1 {
+		return nil, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return nil, nil
+	}
+	endIdx += startIdx + 3
+
+	comment := strings.TrimSpace(s[startIdx+4 : endIdx-3])
+	if !strings.HasPrefix(comment, "Macro:") {
+		return nil, nil
+	}
+
+	lines := strings.Split(comment, "\n")
+	expr := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[0]), "Macro:"))
+
+	var tmplPath string
+	var configLines []string
+
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if tmplPath == "" && strings.HasPrefix(trimmed, "Template:") {
+			tmplPath = strings.TrimSpace(strings.TrimPrefix(trimmed, "Template:"))
+		} else {
+			configLines = append(configLines, line)
+		}
+	}
+
+	if expr == "" || tmplPath == "" {
+		return nil, nil
+	}
+
+	return &MacroDirective{
+		Expr:     expr,
+		Template: tmplPath,
+		Config:   strings.Join(configLines, "\n"),
+	}, nil
 }
 
 func (macro *Macro) Apply(
@@ -45,12 +90,23 @@ func (macro *Macro) Apply(
 				return match
 			}
 
-			var buffer bytes.Buffer
-
-			err = macro.Template.Execute(&buffer, macro.configure(
+			cfgData := macro.configure(
 				config,
 				macro.Regexp.FindSubmatch(match),
-			))
+			)
+
+			tmpl := macro.Template
+			if mData, ok := cfgData.(map[string]any); ok && macro.Name != "" {
+				if body, ok := mData[macro.Name].(string); ok {
+					if t, parseErr := template.New("inline").Parse(body); parseErr == nil {
+						tmpl = t
+					}
+				}
+			}
+
+			var buffer bytes.Buffer
+
+			err = tmpl.Execute(&buffer, cfgData)
 			if err != nil {
 				err = fmt.Errorf("unable to execute macros template: %w", err)
 				return match
@@ -104,84 +160,74 @@ func ExtractMacros(
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
-	var err error
+	s := string(contents)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
+		return nil, contents, nil
+	}
+	macroIdx := strings.Index(s[startIdx:], "Macro:")
+	if macroIdx == -1 {
+		return nil, contents, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return nil, contents, nil
+	}
+	endIdx += startIdx + 3
 
-	var macros []Macro
+	rawDirective := contents[startIdx:endIdx]
+	dir, err := ParseMacroDirective(rawDirective)
+	if err != nil {
+		return nil, contents, err
+	}
+	if dir == nil {
+		return nil, contents, nil
+	}
 
-	contents = reMacroDirective.ReplaceAllFunc(
-		contents,
-		func(spec []byte) []byte {
-			if err != nil {
-				return spec
-			}
+	var m Macro
+	if strings.HasPrefix(dir.Template, "#") {
+		m.Name = dir.Template[1:]
+		cfg := map[string]any{}
 
-			groups := reMacroDirective.FindStringSubmatch(string(spec))
+		err = yaml.Unmarshal([]byte(dir.Config), &cfg)
+		if err != nil {
+			return nil, contents, fmt.Errorf("unable to unmarshal macros config template: %w", err)
+		}
 
-			var (
-				expr     = groups[reMacroDirective.SubexpIndex("expr")]
-				template = groups[reMacroDirective.SubexpIndex("template")]
-				config   = groups[reMacroDirective.SubexpIndex("config")]
-			)
+		body, ok := cfg[m.Name].(string)
+		if !ok {
+			return nil, contents, fmt.Errorf("the template config doesn't have '%s' field", m.Name)
+		}
 
-			var macro Macro
+		m.Template, err = templates.New(dir.Template).Parse(body)
+		if err != nil {
+			return nil, contents, fmt.Errorf("unable to parse template: %w", err)
+		}
+	} else {
+		m.Template, err = includes.LoadTemplate(base, includePath, dir.Template, "{{", "}}", templates)
+		if err != nil {
+			return nil, contents, fmt.Errorf("unable to load template: %w", err)
+		}
+	}
 
-			if strings.HasPrefix(template, "#") {
-				cfg := map[string]any{}
+	m.Regexp, err = regexp.Compile(dir.Expr)
+	if err != nil {
+		return nil, contents, fmt.Errorf("unable to compile macros regexp (expr=%q, template=%q): %w", dir.Expr, dir.Template, err)
+	}
 
-				err = yaml.Unmarshal([]byte(config), &cfg)
-				if err != nil {
-					err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
+	m.Config = dir.Config
 
-					return nil
-				}
+	log.Trace().
+		Interface("vardump", map[string]any{
+			"expr":     dir.Expr,
+			"template": dir.Template,
+			"config":   m.Config,
+		}).
+		Msgf("loaded macro %q", dir.Expr)
 
-				body, ok := cfg[template[1:]].(string)
-				if !ok {
-					err = fmt.Errorf(
-						"the template config doesn't have '%s' field",
-						template[1:],
-					)
+	var remaining bytes.Buffer
+	remaining.Write(contents[:startIdx])
+	remaining.Write(contents[endIdx:])
 
-					return nil
-				}
-
-				macro.Template, err = templates.New(template).Parse(body)
-				if err != nil {
-					err = fmt.Errorf("unable to parse template: %w", err)
-
-					return nil
-				}
-			} else {
-				macro.Template, err = includes.LoadTemplate(base, includePath, template, "{{", "}}", templates)
-				if err != nil {
-					err = fmt.Errorf("unable to load template: %w", err)
-
-					return nil
-				}
-			}
-
-			macro.Regexp, err = regexp.Compile(expr)
-			if err != nil {
-				err = fmt.Errorf("unable to compile macros regexp (expr=%q, template=%q): %w", expr, template, err)
-
-				return nil
-			}
-
-			macro.Config = config
-
-			log.Trace().
-				Interface("vardump", map[string]any{
-					"expr":     expr,
-					"template": template,
-					"config":   macro.Config,
-				}).
-				Msgf("loaded macro %q", expr)
-
-			macros = append(macros, macro)
-
-			return []byte{}
-		},
-	)
-
-	return macros, contents, err
+	return []Macro{m}, remaining.Bytes(), nil
 }
