@@ -152,9 +152,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				meta.Layout = toString(v)
 			case "sidebar":
 				meta.Sidebar = toString(v)
-				if meta.Sidebar != "" {
-					meta.Layout = "article"
-				}
 			case "emoji":
 				meta.Emoji = toString(v)
 			case "attachments":
@@ -166,6 +163,11 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			case "imagealign":
 				meta.ImageAlign = strings.ToLower(toString(v))
 			}
+		}
+
+		// Presence of a non-empty sidebar forces the article layout, regardless of map key iteration order.
+		if meta.Sidebar != "" {
+			meta.Layout = "article"
 		}
 
 		var err error
