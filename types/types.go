@@ -7,4 +7,5 @@ type MarkConfig struct {
 	StripNewlines bool
 	Features      []string
 	ImageAlign    string
+	IncludePath   string
 }

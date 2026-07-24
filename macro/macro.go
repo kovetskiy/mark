@@ -13,20 +13,17 @@ import (
 )
 
 var reMacroDirective = regexp.MustCompile(
-	// <!-- Macro: <regexp>
-	//      Template: <template path>
-	//      <optional yaml data> -->
-
 	`(?s)` + // dot capture newlines
 		/**/ `<!--\s*Macro:\s*(?P<expr>[^\n]+)\n` +
-		/*    */ `\s*Template:\s*(?P<template>.+?)\s*` +
-		/*   */ `(?P<config>\n.*?)?-->`,
+		/*    */ `\s*Template:\s*(?P<template>[^\n]+)\s*` +
+		/*   */ `(?P<config>\n.*?)?-->\s*$`,
 )
 
 type Macro struct {
 	Regexp   *regexp.Regexp
 	Template *template.Template
 	Config   string
+	Name     string
 }
 
 func (macro *Macro) Apply(
@@ -45,12 +42,23 @@ func (macro *Macro) Apply(
 				return match
 			}
 
-			var buffer bytes.Buffer
-
-			err = macro.Template.Execute(&buffer, macro.configure(
+			cfgData := macro.configure(
 				config,
 				macro.Regexp.FindSubmatch(match),
-			))
+			)
+
+			tmpl := macro.Template
+			if mData, ok := cfgData.(map[string]any); ok && macro.Name != "" {
+				if body, ok := mData[macro.Name].(string); ok {
+					if t, parseErr := template.New("inline").Parse(body); parseErr == nil {
+						tmpl = t
+					}
+				}
+			}
+
+			var buffer bytes.Buffer
+
+			err = tmpl.Execute(&buffer, cfgData)
 			if err != nil {
 				err = fmt.Errorf("unable to execute macros template: %w", err)
 				return match
@@ -126,6 +134,7 @@ func ExtractMacros(
 			var macro Macro
 
 			if strings.HasPrefix(template, "#") {
+				macro.Name = template[1:]
 				cfg := map[string]any{}
 
 				err = yaml.Unmarshal([]byte(config), &cfg)

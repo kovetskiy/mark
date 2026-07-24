@@ -200,36 +200,38 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	templates := std.Templates
 
-	var recurse bool
-	for {
-		templates, markdown, recurse, err = includes.ProcessIncludes(
+	if !slices.Contains(config.Features, "ast-pipeline") {
+		var recurse bool
+		for {
+			templates, markdown, recurse, err = includes.ProcessIncludes(
+				filepath.Dir(file),
+				config.IncludePath,
+				markdown,
+				templates,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("unable to process includes: %w", err)
+			}
+			if !recurse {
+				break
+			}
+		}
+
+		macros, markdown, err := macro.ExtractMacros(
 			filepath.Dir(file),
 			config.IncludePath,
 			markdown,
 			templates,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unable to process includes: %w", err)
+			return nil, fmt.Errorf("unable to extract macros: %w", err)
 		}
-		if !recurse {
-			break
-		}
-	}
 
-	macros, markdown, err := macro.ExtractMacros(
-		filepath.Dir(file),
-		config.IncludePath,
-		markdown,
-		templates,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to extract macros: %w", err)
-	}
-
-	for _, m := range macros {
-		markdown, err = m.Apply(markdown)
-		if err != nil {
-			return nil, fmt.Errorf("unable to apply macro: %w", err)
+		for _, m := range macros {
+			markdown, err = m.Apply(markdown)
+			if err != nil {
+				return nil, fmt.Errorf("unable to apply macro: %w", err)
+			}
 		}
 	}
 
@@ -280,6 +282,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 			StripNewlines: config.StripLinebreaks,
 			Features:      config.Features,
 			ImageAlign:    imageAlign,
+			IncludePath:   config.IncludePath,
 		}
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 		if err != nil {
@@ -378,6 +381,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		StripNewlines: config.StripLinebreaks,
 		Features:      config.Features,
 		ImageAlign:    imageAlign,
+		IncludePath:   config.IncludePath,
 	}
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)

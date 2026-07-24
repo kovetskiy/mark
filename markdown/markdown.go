@@ -3,6 +3,7 @@ package mark
 import (
 	"bytes"
 	"slices"
+	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	cparser "github.com/kovetskiy/mark/v16/parser"
@@ -202,8 +203,15 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 200),
 	))
 
-	// Add the GitHub Alerts AST transformer that preprocesses [!TYPE] syntax
+	var tmpl *template.Template
+	if c.Stdlib != nil {
+		tmpl = c.Stdlib.Templates
+	}
+
+	// Add AST Transformers for Macros, Includes, and GitHub Alerts
 	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(ctransformer.NewMacroTransformer(c.Path, c.MarkConfig.IncludePath, tmpl), 10),
+		util.Prioritized(ctransformer.NewIncludeTransformer(c.Path, c.MarkConfig.IncludePath, tmpl), 20),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
 	))
 
