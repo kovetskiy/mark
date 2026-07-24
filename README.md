@@ -164,6 +164,8 @@ follows the `Include` and `Delims` tag, if present:
      <yaml-data> -->
 ```
 
+Includes can be nested inside other included templates. Furthermore, included files can define page metadata (such as `Title`, `Space`, `Parent`, etc.) or macro definitions. Circular inclusion loops are automatically detected and reported as an error.
+
 Mark also supports attachments. The standard way involves declaring an
 `Attachment` along with the other items in the header, then have any links
 with the same path:
@@ -228,6 +230,8 @@ The key's value must be a string which defines the template's content.
   content
   </tblbox>
 ```
+
+Macro templates can also output `<!-- Include: ... -->` directives, allowing macros to dynamically load external template files or include other documents.
 
 ## Automatic Page Title
 

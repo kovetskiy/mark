@@ -162,27 +162,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}
 
-	if meta == nil || meta.Title == "" || meta.Space == "" {
-		stdForMeta, _ := stdlib.New(api)
-		cfgForMeta := types.MarkConfig{
-			IncludePath: config.IncludePath,
-		}
-		if htmlExpanded, _, compileErr := markmd.CompileMarkdown(markdown, stdForMeta, file, cfgForMeta); compileErr == nil {
-			if metaExpanded, _, metaErr := metadata.ExtractMeta(
-				[]byte(htmlExpanded),
-				config.Space,
-				config.TitleFromH1,
-				config.TitleFromFilename,
-				file,
-				config.Parents,
-				config.TitleAppendGeneratedHash,
-				config.ContentAppearance,
-				frontMatterEnabled,
-			); metaErr == nil && metaExpanded != nil {
-				meta = metaExpanded
-			}
-		}
-	}
+
 
 	if config.PageID != "" && meta != nil {
 		log.Warn().Msg(
