@@ -20,7 +20,7 @@ import (
 //	<optional yaml data> -->
 var reIncludeDirective = regexp.MustCompile(
 	`(?s)` +
-		`<!--\s*Include:\s*(?P<template>.+?)\s*` +
+		`<!--\s*Include:\s*(?P<template>[^\n]+?)\s*` +
 		`(?:\n\s*Delims:\s*(?:(none|"(?P<left>.*?)"\s*,\s*"(?P<right>.*?)")))?\s*` +
 		`(?:\n(?P<config>.*?))?-->`,
 )
