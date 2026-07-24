@@ -23,7 +23,7 @@ func TestIncludeTransformer(t *testing.T) {
 
 	markdownInput := []byte("<!-- Include: header.md\nname: World -->\n\nMain content here.")
 
-	transformer := NewIncludeTransformer(tempDir, "", template.New("test"))
+	transformer := NewIncludeTransformer("test.md", tempDir, "", template.New("test"))
 
 	gm := goldmark.New(
 		goldmark.WithParserOptions(

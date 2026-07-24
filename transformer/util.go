@@ -26,6 +26,26 @@ func putBuffer(buf *bytes.Buffer) {
 	}
 }
 
+func getNodeLineNumber(node ast.Node, source []byte) int {
+	var offset int = -1
+	switch t := node.(type) {
+	case *ast.HTMLBlock:
+		if t.Lines().Len() > 0 {
+			offset = t.Lines().At(0).Start
+		}
+	case *ast.Text:
+		offset = t.Segment.Start
+	case *ast.RawHTML:
+		if t.Segments.Len() > 0 {
+			offset = t.Segments.At(0).Start
+		}
+	}
+	if offset < 0 || offset >= len(source) {
+		return 1
+	}
+	return bytes.Count(source[:offset], []byte("\n")) + 1
+}
+
 func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
 	lines := t.Lines()
 	if lines.Len() == 1 && !t.HasClosure() {

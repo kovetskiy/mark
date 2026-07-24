@@ -3,8 +3,8 @@ package transformer
 import (
 	"bytes"
 	"testing"
+	"text/template"
 
-	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark"
@@ -13,17 +13,14 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-func TestMacroTransformer(t *testing.T) {
-	std, err := stdlib.New(nil)
-	require.NoError(t, err)
+func TestMacroTransformerInline(t *testing.T) {
+	markdownInput := []byte(`<!-- Macro: :hello:(?P<name>\w+):
+Template: #inline
+inline: "Hello ${1}!" -->
 
-	markdownInput := []byte(`<!-- Macro: MYJIRA-\d+
-Template: ac:jira:ticket
-Ticket: ${0} -->
+:hello:World:`)
 
-See task MYJIRA-123.`)
-
-	transformer := NewMacroTransformer(".", "", std.Templates)
+	transformer := NewMacroTransformer("test.md", "", "", template.New("test"))
 
 	gm := goldmark.New(
 		goldmark.WithParserOptions(
@@ -37,11 +34,10 @@ See task MYJIRA-123.`)
 	)
 
 	var buf bytes.Buffer
-	err = gm.Convert(markdownInput, &buf)
+	err := gm.Convert(markdownInput, &buf)
 	require.NoError(t, err)
 
 	output := buf.String()
-	assert.Contains(t, output, `jira`)
-	assert.Contains(t, output, `MYJIRA-123`)
-	assert.NotContains(t, output, `Macro:`)
+	assert.Contains(t, output, "Hello World!")
+	assert.NotContains(t, output, "Macro:")
 }

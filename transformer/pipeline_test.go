@@ -36,8 +36,8 @@ Main body text.`)
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)
 
-	macroTransformer := NewMacroTransformer(tempDir, "", std.Templates)
-	includeTransformer := NewIncludeTransformer(tempDir, "", std.Templates)
+	macroTransformer := NewMacroTransformer("test.md", tempDir, "", std.Templates)
+	includeTransformer := NewIncludeTransformer("test.md", tempDir, "", std.Templates)
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
@@ -90,8 +90,8 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)
 
-	macroTransformer := NewMacroTransformer(tempDir, "", std.Templates)
-	includeTransformer := NewIncludeTransformer(tempDir, "", std.Templates)
+	macroTransformer := NewMacroTransformer("test.md", tempDir, "", std.Templates)
+	includeTransformer := NewIncludeTransformer("test.md", tempDir, "", std.Templates)
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
@@ -130,8 +130,8 @@ func TestCircularIncludeLoopErrorPipeline(t *testing.T) {
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)
 
-	macroTransformer := NewMacroTransformer(tempDir, "", std.Templates)
-	includeTransformer := NewIncludeTransformer(tempDir, "", std.Templates)
+	macroTransformer := NewMacroTransformer("test.md", tempDir, "", std.Templates)
+	includeTransformer := NewIncludeTransformer("test.md", tempDir, "", std.Templates)
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 

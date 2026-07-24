@@ -173,8 +173,8 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		tmpl = stdlib.Templates
 	}
 	pipeline := ctransformer.NewPipelineTransformer(
-		ctransformer.NewMacroTransformer(path, cfg.IncludePath, tmpl),
-		ctransformer.NewIncludeTransformer(path, cfg.IncludePath, tmpl),
+		ctransformer.NewMacroTransformer(path, path, cfg.IncludePath, tmpl),
+		ctransformer.NewIncludeTransformer(path, path, cfg.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
 		Config:      html.NewConfig(),

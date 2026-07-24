@@ -15,6 +15,7 @@ import (
 // MacroTransformer extracts macro directives from HTML comment blocks in the Goldmark AST,
 // removes the definition nodes, and expands matching document text nodes into sub-ASTs.
 type MacroTransformer struct {
+	FilePath    string
 	BaseDir     string
 	IncludePath string
 	Templates   *template.Template
@@ -22,11 +23,12 @@ type MacroTransformer struct {
 }
 
 // NewMacroTransformer creates a new MacroTransformer instance.
-func NewMacroTransformer(baseDir string, includePath string, tmpl *template.Template) *MacroTransformer {
+func NewMacroTransformer(filePath string, baseDir string, includePath string, tmpl *template.Template) *MacroTransformer {
 	if tmpl == nil {
 		tmpl = template.New("stdlib")
 	}
 	return &MacroTransformer{
+		FilePath:    filePath,
 		BaseDir:     baseDir,
 		IncludePath: includePath,
 		Templates:   tmpl,
@@ -49,6 +51,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 		startNode      ast.Node
 		nodesToRemove  []ast.Node
 		fullRawContent []byte
+		lineNum        int
 	}
 
 	var targets []macroTarget
@@ -67,6 +70,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				startNode:      node,
 				nodesToRemove:  []ast.Node{node},
 				fullRawContent: rawContent,
+				lineNum:        getNodeLineNumber(node, reader.Source()),
 			}
 			visited[node] = true
 
@@ -98,7 +102,11 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 		macros, _, err := macro.ExtractMacros(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
 		if err != nil {
 			t.Err = err
-			log.Error().Err(err).Msg("unable to extract macro")
+			log.Error().
+				Str("file", t.FilePath).
+				Int("line", target.lineNum).
+				Err(err).
+				Msg("unable to extract macro")
 			return false
 		}
 		if len(macros) == 0 {
@@ -117,8 +125,9 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 
 	for _, m := range extractedMacros {
 		var textNodesToReplace []struct {
-			node ast.Node
-			val  []byte
+			node    ast.Node
+			val     []byte
+			lineNum int
 		}
 
 		_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -135,9 +144,14 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			raw := extractNodeRawContent(node, reader.Source())
 			if len(raw) > 0 && m.Regexp.Match(raw) {
 				textNodesToReplace = append(textNodesToReplace, struct {
-					node ast.Node
-					val  []byte
-				}{node: node, val: raw})
+					node    ast.Node
+					val     []byte
+					lineNum int
+				}{
+					node:    node,
+					val:     raw,
+					lineNum: getNodeLineNumber(node, reader.Source()),
+				})
 			}
 			return ast.WalkContinue, nil
 		})
@@ -150,7 +164,11 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			expanded, err := m.Apply(item.val)
 			if err != nil {
 				t.Err = err
-				log.Error().Err(err).Msg("unable to apply macro")
+				log.Error().
+					Str("file", t.FilePath).
+					Int("line", item.lineNum).
+					Err(err).
+					Msg("unable to apply macro")
 				return false
 			}
 			if bytes.Equal(expanded, item.val) {

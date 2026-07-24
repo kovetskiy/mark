@@ -15,6 +15,7 @@ import (
 // IncludeTransformer transforms <!-- Include: ... --> directives in the Goldmark AST
 // by reading, expanding, and inserting the parsed AST nodes of included templates.
 type IncludeTransformer struct {
+	FilePath    string
 	BaseDir     string
 	IncludePath string
 	Templates   *template.Template
@@ -22,11 +23,12 @@ type IncludeTransformer struct {
 }
 
 // NewIncludeTransformer creates a new IncludeTransformer instance.
-func NewIncludeTransformer(baseDir string, includePath string, tmpl *template.Template) *IncludeTransformer {
+func NewIncludeTransformer(filePath string, baseDir string, includePath string, tmpl *template.Template) *IncludeTransformer {
 	if tmpl == nil {
 		tmpl = template.New("stdlib")
 	}
 	return &IncludeTransformer{
+		FilePath:    filePath,
 		BaseDir:     baseDir,
 		IncludePath: includePath,
 		Templates:   tmpl,
@@ -49,6 +51,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 		startNode      ast.Node
 		nodesToRemove  []ast.Node
 		fullRawContent []byte
+		lineNum        int
 	}
 
 	var targets []includeTarget
@@ -67,6 +70,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 				startNode:      node,
 				nodesToRemove:  []ast.Node{node},
 				fullRawContent: rawContent,
+				lineNum:        getNodeLineNumber(node, reader.Source()),
 			}
 			visited[node] = true
 
@@ -100,7 +104,11 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 		tmpl, expanded, _, err := includes.ProcessIncludes(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
 		if err != nil {
 			t.Err = err
-			log.Error().Err(err).Msg("unable to process include")
+			log.Error().
+				Str("file", t.FilePath).
+				Int("line", target.lineNum).
+				Err(err).
+				Msg("unable to process include")
 			return false
 		}
 		if bytes.Equal(expanded, target.fullRawContent) {
