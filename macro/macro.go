@@ -28,16 +28,27 @@ type MacroDirective struct {
 
 // ParseMacroDirective parses a <!-- Macro: ... --> HTML comment block without directive regexes.
 func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
-	s := strings.TrimSpace(string(raw))
-	if !strings.HasPrefix(s, "<!--") || !strings.HasSuffix(s, "-->") {
+	s := string(raw)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
 		return nil, nil
 	}
-	content := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(s, "<!--"), "-->"))
-	if !strings.HasPrefix(content, "Macro:") {
+	macroIdx := strings.Index(s[startIdx:], "Macro:")
+	if macroIdx == -1 {
+		return nil, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return nil, nil
+	}
+	endIdx += startIdx + 3
+
+	comment := strings.TrimSpace(s[startIdx+4 : endIdx-3])
+	if !strings.HasPrefix(comment, "Macro:") {
 		return nil, nil
 	}
 
-	lines := strings.Split(content, "\n")
+	lines := strings.Split(comment, "\n")
 	expr := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[0]), "Macro:"))
 
 	var tmplPath string
@@ -149,7 +160,23 @@ func ExtractMacros(
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
-	dir, err := ParseMacroDirective(contents)
+	s := string(contents)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
+		return nil, contents, nil
+	}
+	macroIdx := strings.Index(s[startIdx:], "Macro:")
+	if macroIdx == -1 {
+		return nil, contents, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return nil, contents, nil
+	}
+	endIdx += startIdx + 3
+
+	rawDirective := contents[startIdx:endIdx]
+	dir, err := ParseMacroDirective(rawDirective)
 	if err != nil {
 		return nil, contents, err
 	}
@@ -198,5 +225,9 @@ func ExtractMacros(
 		}).
 		Msgf("loaded macro %q", dir.Expr)
 
-	return []Macro{m}, []byte{}, nil
+	var remaining bytes.Buffer
+	remaining.Write(contents[:startIdx])
+	remaining.Write(contents[endIdx:])
+
+	return []Macro{m}, remaining.Bytes(), nil
 }

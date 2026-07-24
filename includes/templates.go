@@ -22,16 +22,27 @@ type IncludeDirective struct {
 
 // ParseIncludeDirective parses an <!-- Include: ... --> HTML comment block without regex.
 func ParseIncludeDirective(raw []byte) (*IncludeDirective, error) {
-	s := strings.TrimSpace(string(raw))
-	if !strings.HasPrefix(s, "<!--") || !strings.HasSuffix(s, "-->") {
+	s := string(raw)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
 		return nil, nil
 	}
-	content := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(s, "<!--"), "-->"))
-	if !strings.HasPrefix(content, "Include:") {
+	incIdx := strings.Index(s[startIdx:], "Include:")
+	if incIdx == -1 {
+		return nil, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return nil, nil
+	}
+	endIdx += startIdx + 3
+
+	comment := strings.TrimSpace(s[startIdx+4 : endIdx-3])
+	if !strings.HasPrefix(comment, "Include:") {
 		return nil, nil
 	}
 
-	lines := strings.Split(content, "\n")
+	lines := strings.Split(comment, "\n")
 	firstLine := strings.TrimSpace(lines[0])
 	templatePath := strings.TrimSpace(strings.TrimPrefix(firstLine, "Include:"))
 	if templatePath == "" {
@@ -130,7 +141,23 @@ func ProcessIncludes(
 		return strings.Join(parts, ", ")
 	}
 
-	dir, err := ParseIncludeDirective(contents)
+	s := string(contents)
+	startIdx := strings.Index(s, "<!--")
+	if startIdx == -1 {
+		return templates, contents, false, nil
+	}
+	incIdx := strings.Index(s[startIdx:], "Include:")
+	if incIdx == -1 {
+		return templates, contents, false, nil
+	}
+	endIdx := strings.LastIndex(s[startIdx:], "-->")
+	if endIdx == -1 {
+		return templates, contents, false, nil
+	}
+	endIdx += startIdx + 3
+
+	rawDirective := contents[startIdx:endIdx]
+	dir, err := ParseIncludeDirective(rawDirective)
 	if err != nil {
 		return templates, contents, false, err
 	}
@@ -151,5 +178,10 @@ func ProcessIncludes(
 		return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
 	}
 
-	return templates, buffer.Bytes(), true, nil
+	var res bytes.Buffer
+	res.Write(contents[:startIdx])
+	res.Write(buffer.Bytes())
+	res.Write(contents[endIdx:])
+
+	return templates, res.Bytes(), true, nil
 }
