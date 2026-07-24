@@ -93,9 +93,8 @@ func LoadTemplate(
 	right string,
 	templates *template.Template,
 ) (*template.Template, error) {
-	var (
-		name = strings.TrimSuffix(path, filepath.Ext(path))
-	)
+	cleanPath := filepath.ToSlash(filepath.Clean(path))
+	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
 
 	if template := templates.Lookup(name); template != nil {
 		return template, nil

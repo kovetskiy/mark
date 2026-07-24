@@ -1,6 +1,7 @@
 package includes
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,4 +43,34 @@ func TestProcessIncludesCircularLoop(t *testing.T) {
 	_, _, _, err := ProcessIncludes(tempDir, "", input, template.New("test"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular include detected")
+}
+
+func TestLoadTemplateScopedBySubdirectory(t *testing.T) {
+	tempDir := t.TempDir()
+
+	dirA := filepath.Join(tempDir, "dirA")
+	dirB := filepath.Join(tempDir, "dirB")
+	require.NoError(t, os.MkdirAll(dirA, 0755))
+	require.NoError(t, os.MkdirAll(dirB, 0755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dirA, "header.md"), []byte("Header A"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dirB, "header.md"), []byte("Header B"), 0644))
+
+	tmpl := template.New("stdlib")
+
+	tmpl, err := LoadTemplate(tempDir, "", "dirA/header.md", "", "", tmpl)
+	require.NoError(t, err)
+
+	tmpl, err = LoadTemplate(tempDir, "", "dirB/header.md", "", "", tmpl)
+	require.NoError(t, err)
+
+	assert.NotNil(t, tmpl.Lookup("dirA/header"))
+	assert.NotNil(t, tmpl.Lookup("dirB/header"))
+
+	var bufA, bufB bytes.Buffer
+	require.NoError(t, tmpl.Lookup("dirA/header").Execute(&bufA, nil))
+	require.NoError(t, tmpl.Lookup("dirB/header").Execute(&bufB, nil))
+
+	assert.Equal(t, "Header A", bufA.String())
+	assert.Equal(t, "Header B", bufB.String())
 }
