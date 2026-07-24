@@ -6,10 +6,22 @@ import (
 	"github.com/yuin/goldmark/ast"
 )
 
+func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
+	var buf bytes.Buffer
+	for i := 0; i < t.Lines().Len(); i++ {
+		seg := t.Lines().At(i)
+		buf.Write(seg.Value(source))
+	}
+	if t.HasClosure() {
+		buf.Write(t.ClosureLine.Value(source))
+	}
+	return buf.Bytes()
+}
+
 func extractNodeRawContent(node ast.Node, source []byte) []byte {
 	switch t := node.(type) {
 	case *ast.HTMLBlock:
-		return t.Text(source)
+		return extractHTMLBlockBytes(t, source)
 	case *ast.RawHTML:
 		var buf bytes.Buffer
 		for i := 0; i < t.Segments.Len(); i++ {
@@ -45,7 +57,7 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 				val  []byte
 			}{node: t, val: valCopy})
 		case *ast.HTMLBlock:
-			val := t.Text(source)
+			val := extractHTMLBlockBytes(t, source)
 			valCopy := make([]byte, len(val))
 			copy(valCopy, val)
 			nodesToReplace = append(nodesToReplace, struct {
