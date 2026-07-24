@@ -35,7 +35,6 @@ This is the main body text.`)
 
 	cfg := types.MarkConfig{
 		IncludePath: tempDir,
-		Features:    []string{"ast-pipeline"},
 	}
 
 	// Compile Markdown using Goldmark AST transformers pipeline
