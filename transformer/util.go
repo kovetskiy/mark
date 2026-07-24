@@ -2,20 +2,51 @@ package transformer
 
 import (
 	"bytes"
+	"sync"
 
 	"github.com/yuin/goldmark/ast"
 )
 
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
+func getBuffer() *bytes.Buffer {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	return buf
+}
+
+func putBuffer(buf *bytes.Buffer) {
+	if buf != nil {
+		buf.Reset()
+		bufferPool.Put(buf)
+	}
+}
+
 func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
-	var buf bytes.Buffer
-	for i := 0; i < t.Lines().Len(); i++ {
-		seg := t.Lines().At(i)
+	lines := t.Lines()
+	if lines.Len() == 1 && !t.HasClosure() {
+		seg := lines.At(0)
+		return seg.Value(source)
+	}
+
+	buf := getBuffer()
+	defer putBuffer(buf)
+
+	for i := 0; i < lines.Len(); i++ {
+		seg := lines.At(i)
 		buf.Write(seg.Value(source))
 	}
 	if t.HasClosure() {
 		buf.Write(t.ClosureLine.Value(source))
 	}
-	return buf.Bytes()
+
+	res := make([]byte, buf.Len())
+	copy(res, buf.Bytes())
+	return res
 }
 
 func extractNodeRawContent(node ast.Node, source []byte) []byte {
@@ -23,23 +54,33 @@ func extractNodeRawContent(node ast.Node, source []byte) []byte {
 	case *ast.HTMLBlock:
 		return extractHTMLBlockBytes(t, source)
 	case *ast.RawHTML:
-		var buf bytes.Buffer
+		if t.Segments.Len() == 1 {
+			seg := t.Segments.At(0)
+			return seg.Value(source)
+		}
+		buf := getBuffer()
+		defer putBuffer(buf)
 		for i := 0; i < t.Segments.Len(); i++ {
 			seg := t.Segments.At(i)
 			buf.Write(seg.Value(source))
 		}
-		return buf.Bytes()
+		res := make([]byte, buf.Len())
+		copy(res, buf.Bytes())
+		return res
 	case *ast.Text:
 		return t.Segment.Value(source)
 	case *ast.String:
 		return t.Value
 	default:
 		if node.HasChildren() {
-			var buf bytes.Buffer
+			buf := getBuffer()
+			defer putBuffer(buf)
 			for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 				buf.Write(extractNodeRawContent(child, source))
 			}
-			return buf.Bytes()
+			res := make([]byte, buf.Len())
+			copy(res, buf.Bytes())
+			return res
 		}
 	}
 	return nil
@@ -73,17 +114,29 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 				val  []byte
 			}{node: t, val: valCopy})
 		case *ast.RawHTML:
-			var buf bytes.Buffer
-			for i := 0; i < t.Segments.Len(); i++ {
-				seg := t.Segments.At(i)
-				buf.Write(seg.Value(source))
+			if t.Segments.Len() == 1 {
+				seg := t.Segments.At(0)
+				val := seg.Value(source)
+				valCopy := make([]byte, len(val))
+				copy(valCopy, val)
+				nodesToReplace = append(nodesToReplace, struct {
+					node ast.Node
+					val  []byte
+				}{node: t, val: valCopy})
+			} else {
+				buf := getBuffer()
+				for i := 0; i < t.Segments.Len(); i++ {
+					seg := t.Segments.At(i)
+					buf.Write(seg.Value(source))
+				}
+				valCopy := make([]byte, buf.Len())
+				copy(valCopy, buf.Bytes())
+				putBuffer(buf)
+				nodesToReplace = append(nodesToReplace, struct {
+					node ast.Node
+					val  []byte
+				}{node: t, val: valCopy})
 			}
-			valCopy := make([]byte, buf.Len())
-			copy(valCopy, buf.Bytes())
-			nodesToReplace = append(nodesToReplace, struct {
-				node ast.Node
-				val  []byte
-			}{node: t, val: valCopy})
 		}
 		return ast.WalkContinue, nil
 	})
