@@ -196,8 +196,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	_ = std.Templates
-
 	links, err := page.ResolveRelativeLinks(
 		api,
 		meta,
