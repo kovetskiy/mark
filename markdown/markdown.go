@@ -63,6 +63,12 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 	))
 
+	if slices.Contains(c.MarkConfig.Features, "details") {
+		m.Parser().AddOptions(parser.WithASTTransformers(
+			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+		))
+	}
+
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
 		m.Parser().AddOptions(
 			parser.WithBlockParsers(
@@ -159,12 +165,6 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	if err != nil {
 		return "", nil, err
 	}
-	if slices.Contains(cfg.Features, "details") {
-		html, err = convertDetailsToExpand(html)
-		if err != nil {
-			return "", nil, err
-		}
-	}
 	return html, ghAlertsExtension.Attachments, nil
 }
 
@@ -175,12 +175,6 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 	html, err := compileMarkdownWithExtension(markdown, confluenceExtension, "rendering markdown with legacy renderer:\n%s")
 	if err != nil {
 		return "", nil, err
-	}
-	if slices.Contains(cfg.Features, "details") {
-		html, err = convertDetailsToExpand(html)
-		if err != nil {
-			return "", nil, err
-		}
 	}
 	return html, confluenceExtension.Attachments, nil
 }
@@ -264,6 +258,13 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 
 		m.Renderer().AddOptions(renderer.WithNodeRenderers(
 			util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
+		))
+	}
+
+	// Add details transformer support if requested
+	if slices.Contains(c.MarkConfig.Features, "details") {
+		m.Parser().AddOptions(parser.WithASTTransformers(
+			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
 		))
 	}
 

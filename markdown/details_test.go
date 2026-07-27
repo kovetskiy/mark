@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,9 +58,15 @@ func TestConvertDetailsToExpand(t *testing.T) {
 		},
 	}
 
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{
+		Features: []string{"details"},
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual, err := convertDetailsToExpand(tt.input)
+			actual, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", cfg)
 			assert.NoError(t, err)
 
 			// Normalize spaces/newlines to make assertions robust
