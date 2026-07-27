@@ -20,6 +20,9 @@ func NewConfluenceIDs() *ConfluenceIDs {
 	}
 }
 func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
+	if s.Values == nil {
+		s.Values = make(map[string]bool)
+	}
 	value = util.TrimLeftSpace(value)
 	value = util.TrimRightSpace(value)
 	result := []byte{}
@@ -53,10 +56,12 @@ func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 			s.Values[newResult] = true
 			return []byte(newResult)
 		}
-
 	}
 }
 
 func (s *ConfluenceIDs) Put(value []byte) {
+	if s.Values == nil {
+		s.Values = make(map[string]bool)
+	}
 	s.Values[util.BytesToReadOnlyString(value)] = true
 }
