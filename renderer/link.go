@@ -64,29 +64,23 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 		}
 		return ast.WalkSkipChildren, nil
 	}
-	return r.goldmarkRenderLink(writer, source, node, entering)
-}
-
-// goldmarkRenderLink is the default renderLink implementation from https://github.com/yuin/goldmark/blob/9d6f314b99ca23037c93d76f248be7b37de6220a/renderer/html/html.go#L552
-func (r *ConfluenceLinkRenderer) goldmarkRenderLink(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	n := node.(*ast.Link)
 	if entering {
-		_, _ = w.WriteString("<a href=\"")
+		_, _ = writer.WriteString("<a href=\"")
 		if r.Unsafe || !html.IsDangerousURL(n.Destination) {
-			_, _ = w.Write(util.EscapeHTML(util.URLEscape(n.Destination, true)))
+			_, _ = writer.Write(util.EscapeHTML(util.URLEscape(n.Destination, true)))
 		}
-		_ = w.WriteByte('"')
+		_ = writer.WriteByte('"')
 		if n.Title != nil {
-			_, _ = w.WriteString(` title="`)
-			r.Writer.Write(w, n.Title)
-			_ = w.WriteByte('"')
+			_, _ = writer.WriteString(` title="`)
+			r.Writer.Write(writer, n.Title)
+			_ = writer.WriteByte('"')
 		}
 		if n.Attributes() != nil {
-			html.RenderAttributes(w, n, html.LinkAttributeFilter)
+			html.RenderAttributes(writer, n, html.LinkAttributeFilter)
 		}
-		_ = w.WriteByte('>')
+		_ = writer.WriteByte('>')
 	} else {
-		_, _ = w.WriteString("</a>")
+		_, _ = writer.WriteString("</a>")
 	}
 	return ast.WalkContinue, nil
 }

@@ -7,11 +7,18 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// ConfluenceIDs implements parser.IDs for Confluence-compatible header anchor IDs,
+// preserving '/', '_', '.', and '-' characters in heading IDs.
 type ConfluenceIDs struct {
 	Values map[string]bool
 }
 
-// https://github.com/yuin/goldmark/blob/d9c03f07f08c2d36f23afe52dda865f05320ac86/parser/parser.go#L75
+// NewConfluenceIDs creates a new ConfluenceIDs instance.
+func NewConfluenceIDs() *ConfluenceIDs {
+	return &ConfluenceIDs{
+		Values: make(map[string]bool),
+	}
+}
 func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 	value = util.TrimLeftSpace(value)
 	value = util.TrimRightSpace(value)
