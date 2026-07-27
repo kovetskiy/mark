@@ -75,6 +75,7 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 	select {
 	case res := <-ch:
 		if res.err != nil {
+			resetEngine()
 			return attachment.Attachment{}, res.err
 		}
 		pngBytes = res.pngBytes

@@ -120,6 +120,8 @@ func getChromeCtx(ctx context.Context) (context.Context, error) {
 			chromedp.NoFirstRun,
 			chromedp.NoDefaultBrowserCheck,
 			chromedp.Headless,
+			chromedp.Flag("disable-dev-shm-usage", true),
+			chromedp.Flag("disable-setuid-sandbox", true),
 		)
 	}
 
@@ -161,6 +163,7 @@ func convertSVGtoPNG(ctx context.Context, svg []byte, scale float64) (png []byte
 		chromedp.Dimensions(`document.querySelector("svg > svg")`, &model, chromedp.ByJSPath),
 	)
 	if err != nil {
+		Cleanup()
 		return nil, nil, err
 	}
 	return result, model, err
