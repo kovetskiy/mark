@@ -62,7 +62,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			return ast.WalkContinue, nil
 		}
 
-		rawContent := extractNodeRawContent(node, reader.Source())
+		rawContent := ExtractNodeRawContent(node, reader.Source())
 
 		dir, _ := macro.ParseMacroDirective(rawContent)
 		if dir != nil {
@@ -78,7 +78,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				var combined bytes.Buffer
 				combined.Write(rawContent)
 				for sibling := node.NextSibling(); sibling != nil; sibling = sibling.NextSibling() {
-					sibContent := extractNodeRawContent(sibling, reader.Source())
+					sibContent := ExtractNodeRawContent(sibling, reader.Source())
 					combined.Write(sibContent)
 					target.nodesToRemove = append(target.nodesToRemove, sibling)
 					visited[sibling] = true
@@ -141,7 +141,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				return ast.WalkContinue, nil
 			}
 
-			raw := extractNodeRawContent(node, reader.Source())
+			raw := ExtractNodeRawContent(node, reader.Source())
 			if len(raw) > 0 && m.Regexp.Match(raw) {
 				textNodesToReplace = append(textNodesToReplace, struct {
 					node    ast.Node

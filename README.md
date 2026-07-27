@@ -876,6 +876,34 @@ This is the hidden content.
 </details>
 ```
 
+### LaTeX & Math Formulas
+
+Optionally you can enable LaTeX / Math formula rendering via `--features="math"`.
+
+When enabled, mathematical formulas are rendered into HTML using server-side KaTeX rendering powered by [goldmark-katex](https://github.com/FurqanSoftware/goldmark-katex)—requiring no external browser process, no CGO, and no third-party Confluence plugins.
+
+**Inline Math:**
+
+```markdown
+Euler's identity is $e^{i\pi} + 1 = 0$ or \(e^{i\pi} + 1 = 0\).
+```
+
+**Display / Block Math:**
+
+```markdown
+$$
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+$$
+```
+
+Or using `\[ ... \]`:
+
+```markdown
+\[
+f(x) = \int_{-\infty}^\infty \hat{f}(\xi)\,e^{2\pi i \xi x}\,d\xi
+\]
+```
+
 ## Installation
 
 ### Homebrew
