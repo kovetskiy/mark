@@ -330,3 +330,26 @@ func TestHTMLImgTagFeature(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotContains(t, actualDisabled, `<ac:image`)
 }
+
+func TestDateFeature(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	markdown := []byte(`Release on @date(2026-07-27) or <time datetime="2026-12-31">Dec 31</time>.`)
+
+	// 1. With date feature enabled
+	cfgEnabled := types.MarkConfig{
+		Features: []string{"date"},
+	}
+	actualEnabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgEnabled)
+	assert.NoError(t, err)
+	assert.Contains(t, actualEnabled, `<time datetime="2026-07-27" />`)
+	assert.Contains(t, actualEnabled, `<time datetime="2026-12-31" />`)
+
+	// 2. Without date feature enabled
+	cfgDisabled := types.MarkConfig{
+		Features: []string{"mermaid", "mention"},
+	}
+	actualDisabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgDisabled)
+	assert.NoError(t, err)
+	assert.NotContains(t, actualDisabled, `<time datetime="2026-07-27" />`)
+}

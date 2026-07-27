@@ -75,6 +75,18 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
+	if slices.Contains(c.MarkConfig.Features, "date") {
+		m.Parser().AddOptions(
+			parser.WithInlineParsers(
+				util.Prioritized(cparser.NewDateParser(), 99),
+			),
+		)
+
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
+		))
+	}
+
 	if slices.Contains(c.MarkConfig.Features, "mention") {
 		m.Parser().AddOptions(
 			parser.WithInlineParsers(
@@ -241,6 +253,19 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(c.Pipeline, 10),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
 	))
+
+	// Add date widget support if requested
+	if slices.Contains(c.MarkConfig.Features, "date") {
+		m.Parser().AddOptions(
+			parser.WithInlineParsers(
+				util.Prioritized(cparser.NewDateParser(), 99),
+			),
+		)
+
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
+		))
+	}
 
 	// Add html-img-tag transformer support if requested
 	if slices.Contains(c.MarkConfig.Features, "html-img-tag") {
