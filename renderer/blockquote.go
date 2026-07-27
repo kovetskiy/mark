@@ -172,21 +172,16 @@ func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, s
 		}
 		return ast.WalkContinue, nil
 	}
-	return r.goldmarkRenderBlockquote(writer, source, node, entering)
-}
-
-// goldmarkRenderBlockquote is the default renderBlockquote implementation from https://github.com/yuin/goldmark/blob/9d6f314b99ca23037c93d76f248be7b37de6220a/renderer/html/html.go#L286
-func (r *ConfluenceBlockQuoteRenderer) goldmarkRenderBlockquote(w util.BufWriter, source []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
 	if entering {
-		if n.Attributes() != nil {
-			_, _ = w.WriteString("<blockquote")
-			html.RenderAttributes(w, n, html.BlockquoteAttributeFilter)
-			_ = w.WriteByte('>')
+		if node.Attributes() != nil {
+			_, _ = writer.WriteString("<blockquote")
+			html.RenderAttributes(writer, node, html.BlockquoteAttributeFilter)
+			_ = writer.WriteByte('>')
 		} else {
-			_, _ = w.WriteString("<blockquote>\n")
+			_, _ = writer.WriteString("<blockquote>\n")
 		}
 	} else {
-		_, _ = w.WriteString("</blockquote>\n")
+		_, _ = writer.WriteString("</blockquote>\n")
 	}
 	return ast.WalkContinue, nil
 }
