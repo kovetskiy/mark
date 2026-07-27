@@ -904,6 +904,29 @@ f(x) = \int_{-\infty}^\infty \hat{f}(\xi)\,e^{2\pi i \xi x}\,d\xi
 \]
 ```
 
+### Inline Link Cards
+
+Optionally you can render bare URLs as Confluence Cloud **inline smart cards** via `--features="inline-link-card"`.
+
+When enabled, auto-detected URLs in markdown (e.g. `<https://example.com>` or
+a bare URL on its own line) are rendered with the `data-card-appearance="inline"`
+attribute, which Confluence Cloud uses as a hint to display the link as an
+inline card preview (page title, Jira issue summary, GitHub repo card, etc.)
+instead of a plain blue hyperlink.
+
+```text
+See <https://your-instance.atlassian.net/wiki/spaces/DOCS/pages/12345/Page+Title>
+for context.
+```
+
+Only **auto-detected URLs** (bare URLs / `<...>` autolinks) are affected.
+Markdown-explicit links (`[label](https://...)`) keep their author-chosen
+display text and render as regular hyperlinks, unchanged.
+
+*Note: Inline Smart Cards (`data-card-appearance="inline"`) are a **Confluence Cloud** feature. On Confluence Data Center / Server, the attribute is safely ignored and the link displays as a standard hyperlink.*
+
+**Note**: `mark` will read configuration from your environment variables or the configuration file.
+
 ## Installation
 
 ### Homebrew
@@ -985,7 +1008,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, details, frontmatter, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, details, frontmatter, inline-link-card, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help

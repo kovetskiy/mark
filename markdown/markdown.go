@@ -87,6 +87,12 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
+	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			util.Prioritized(crenderer.NewConfluenceAutoLinkRenderer(), 100),
+		))
+	}
+
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
 		// the <ac:*/> tags.
@@ -267,6 +273,15 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		(&katex.Extender{}).Extend(m)
 	}
 
+	// Add inline-link-card support if requested · renders auto-detected bare
+	// URLs with the `data-card-appearance="inline"` hint, prompting Confluence
+	// Cloud to display them as inline smart cards (page mentions, Jira issues,
+	// GitHub references, etc.) instead of plain hyperlinks.
+	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			util.Prioritized(crenderer.NewConfluenceAutoLinkRenderer(), 100),
+		))
+	}
 	// Add confluence tag parser for <ac:*/> tags
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
