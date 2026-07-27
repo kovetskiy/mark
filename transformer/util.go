@@ -50,7 +50,10 @@ func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
 	lines := t.Lines()
 	if lines.Len() == 1 && !t.HasClosure() {
 		seg := lines.At(0)
-		return seg.Value(source)
+		if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
+			return seg.Value(source)
+		}
+		return nil
 	}
 
 	buf := getBuffer()
@@ -58,9 +61,11 @@ func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
 
 	for i := 0; i < lines.Len(); i++ {
 		seg := lines.At(i)
-		buf.Write(seg.Value(source))
+		if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
+			buf.Write(seg.Value(source))
+		}
 	}
-	if t.HasClosure() {
+	if t.HasClosure() && t.ClosureLine.Start >= 0 && t.ClosureLine.Stop <= len(source) {
 		buf.Write(t.ClosureLine.Value(source))
 	}
 
@@ -69,26 +74,34 @@ func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
 	return res
 }
 
-func extractNodeRawContent(node ast.Node, source []byte) []byte {
+func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	switch t := node.(type) {
 	case *ast.HTMLBlock:
 		return extractHTMLBlockBytes(t, source)
 	case *ast.RawHTML:
 		if t.Segments.Len() == 1 {
 			seg := t.Segments.At(0)
-			return seg.Value(source)
+			if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
+				return seg.Value(source)
+			}
+			return nil
 		}
 		buf := getBuffer()
 		defer putBuffer(buf)
 		for i := 0; i < t.Segments.Len(); i++ {
 			seg := t.Segments.At(i)
-			buf.Write(seg.Value(source))
+			if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
+				buf.Write(seg.Value(source))
+			}
 		}
 		res := make([]byte, buf.Len())
 		copy(res, buf.Bytes())
 		return res
 	case *ast.Text:
-		return t.Segment.Value(source)
+		if t.Segment.Start >= 0 && t.Segment.Stop <= len(source) && t.Segment.Start <= t.Segment.Stop {
+			return t.Segment.Value(source)
+		}
+		return nil
 	case *ast.String:
 		return t.Value
 	default:
@@ -96,7 +109,7 @@ func extractNodeRawContent(node ast.Node, source []byte) []byte {
 			buf := getBuffer()
 			defer putBuffer(buf)
 			for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-				buf.Write(extractNodeRawContent(child, source))
+				buf.Write(ExtractNodeRawContent(child, source))
 			}
 			res := make([]byte, buf.Len())
 			copy(res, buf.Bytes())
@@ -118,13 +131,15 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 		}
 		switch t := n.(type) {
 		case *ast.Text:
-			val := t.Segment.Value(source)
-			valCopy := make([]byte, len(val))
-			copy(valCopy, val)
-			nodesToReplace = append(nodesToReplace, struct {
-				node ast.Node
-				val  []byte
-			}{node: t, val: valCopy})
+			if t.Segment.Start >= 0 && t.Segment.Stop <= len(source) && t.Segment.Start <= t.Segment.Stop {
+				val := t.Segment.Value(source)
+				valCopy := make([]byte, len(val))
+				copy(valCopy, val)
+				nodesToReplace = append(nodesToReplace, struct {
+					node ast.Node
+					val  []byte
+				}{node: t, val: valCopy})
+			}
 		case *ast.HTMLBlock:
 			val := extractHTMLBlockBytes(t, source)
 			valCopy := make([]byte, len(val))
@@ -136,18 +151,22 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 		case *ast.RawHTML:
 			if t.Segments.Len() == 1 {
 				seg := t.Segments.At(0)
-				val := seg.Value(source)
-				valCopy := make([]byte, len(val))
-				copy(valCopy, val)
-				nodesToReplace = append(nodesToReplace, struct {
-					node ast.Node
-					val  []byte
-				}{node: t, val: valCopy})
+				if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
+					val := seg.Value(source)
+					valCopy := make([]byte, len(val))
+					copy(valCopy, val)
+					nodesToReplace = append(nodesToReplace, struct {
+						node ast.Node
+						val  []byte
+					}{node: t, val: valCopy})
+				}
 			} else {
 				buf := getBuffer()
 				for i := 0; i < t.Segments.Len(); i++ {
 					seg := t.Segments.At(i)
-					buf.Write(seg.Value(source))
+					if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
+						buf.Write(seg.Value(source))
+					}
 				}
 				valCopy := make([]byte, buf.Len())
 				copy(valCopy, buf.Bytes())

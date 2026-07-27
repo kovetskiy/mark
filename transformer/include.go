@@ -62,7 +62,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 			return ast.WalkContinue, nil
 		}
 
-		rawContent := extractNodeRawContent(node, reader.Source())
+		rawContent := ExtractNodeRawContent(node, reader.Source())
 
 		dir, _ := includes.ParseIncludeDirective(rawContent)
 		if dir != nil {
@@ -78,7 +78,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 				var combined bytes.Buffer
 				combined.Write(rawContent)
 				for sibling := node.NextSibling(); sibling != nil; sibling = sibling.NextSibling() {
-					sibContent := extractNodeRawContent(sibling, reader.Source())
+					sibContent := ExtractNodeRawContent(sibling, reader.Source())
 					combined.Write(sibContent)
 					target.nodesToRemove = append(target.nodesToRemove, sibling)
 					visited[sibling] = true

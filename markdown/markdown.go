@@ -5,6 +5,7 @@ import (
 	"slices"
 	"text/template"
 
+	katex "github.com/FurqanSoftware/goldmark-katex"
 	"github.com/kovetskiy/mark/v16/attachment"
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
@@ -259,6 +260,11 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		m.Renderer().AddOptions(renderer.WithNodeRenderers(
 			util.Prioritized(crenderer.NewConfluenceMentionRenderer(c.Stdlib), 100),
 		))
+	}
+
+	// Add math / latex formula support if requested via goldmark-katex
+	if slices.Contains(c.MarkConfig.Features, "math") {
+		(&katex.Extender{}).Extend(m)
 	}
 
 	// Add confluence tag parser for <ac:*/> tags
