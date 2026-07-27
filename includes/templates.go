@@ -20,29 +20,46 @@ type IncludeDirective struct {
 	Data     map[string]any
 }
 
+func findIncludeDirectiveBounds(s string) (startIdx int, endIdx int) {
+	searchFrom := 0
+	for {
+		start := strings.Index(s[searchFrom:], "<!--")
+		if start == -1 {
+			return -1, -1
+		}
+		startIdx = searchFrom + start
+
+		end := strings.Index(s[startIdx:], "-->")
+		if end == -1 {
+			return -1, -1
+		}
+		endIdx = startIdx + end + 3
+
+		comment := s[startIdx:endIdx]
+		trimmed := strings.TrimSpace(comment[4 : len(comment)-3])
+		if strings.HasPrefix(trimmed, "Include:") {
+			return startIdx, endIdx
+		}
+
+		searchFrom = endIdx
+	}
+}
+
 // ParseIncludeDirective parses an <!-- Include: ... --> HTML comment block without regex.
 func ParseIncludeDirective(raw []byte) (*IncludeDirective, error) {
 	s := string(raw)
-	startIdx := strings.Index(s, "<!--")
+	startIdx, endIdx := findIncludeDirectiveBounds(s)
 	if startIdx == -1 {
 		return nil, nil
 	}
-	incIdx := strings.Index(s[startIdx:], "Include:")
-	if incIdx == -1 {
-		return nil, nil
-	}
-	endIdx := strings.LastIndex(s[startIdx:], "-->")
-	if endIdx == -1 {
-		return nil, nil
-	}
-	endIdx += startIdx + 3
 
 	comment := strings.TrimSpace(s[startIdx+4 : endIdx-3])
 	if !strings.HasPrefix(comment, "Include:") {
 		return nil, nil
 	}
 
-	lines := strings.Split(comment, "\n")
+	normalizedComment := strings.ReplaceAll(comment, "\\n", "\n")
+	lines := strings.Split(normalizedComment, "\n")
 	firstLine := strings.TrimSpace(lines[0])
 	templatePath := strings.TrimSpace(strings.TrimPrefix(firstLine, "Include:"))
 	if templatePath == "" {
@@ -97,7 +114,7 @@ func LoadTemplate(
 	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
 
 	if template := templates.Lookup(name); template != nil {
-		return template, nil
+		return templates, nil
 	}
 
 	var body []byte
@@ -151,19 +168,10 @@ func ProcessIncludesWithStack(
 	}
 
 	s := string(contents)
-	startIdx := strings.Index(s, "<!--")
+	startIdx, endIdx := findIncludeDirectiveBounds(s)
 	if startIdx == -1 {
 		return templates, contents, false, nil
 	}
-	incIdx := strings.Index(s[startIdx:], "Include:")
-	if incIdx == -1 {
-		return templates, contents, false, nil
-	}
-	endIdx := strings.LastIndex(s[startIdx:], "-->")
-	if endIdx == -1 {
-		return templates, contents, false, nil
-	}
-	endIdx += startIdx + 3
 
 	rawDirective := contents[startIdx:endIdx]
 	dir, err := ParseIncludeDirective(rawDirective)
@@ -189,8 +197,11 @@ func ProcessIncludesWithStack(
 		return templates, contents, false, fmt.Errorf("unable to load template %q: %w", dir.Template, err)
 	}
 
+	cleanPath := filepath.ToSlash(filepath.Clean(dir.Template))
+	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
+
 	var buffer bytes.Buffer
-	err = templates.Execute(&buffer, dir.Data)
+	err = templates.ExecuteTemplate(&buffer, name, dir.Data)
 	if err != nil {
 		return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
 	}

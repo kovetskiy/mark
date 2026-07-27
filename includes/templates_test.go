@@ -74,3 +74,91 @@ func TestLoadTemplateScopedBySubdirectory(t *testing.T) {
 	assert.Equal(t, "Header A", bufA.String())
 	assert.Equal(t, "Header B", bufB.String())
 }
+
+func TestProcessIncludesInlineCodeTemplateVar(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		data    string
+	}{
+		{
+			name:    "simple_var",
+			content: "Inline: `{{ .var }}`",
+			data:    "var: hello",
+		},
+		{
+			name:    "nil_map_access",
+			content: "Inline: `{{ .data.key }}`",
+			data:    "",
+		},
+		{
+			name:    "nil_slice_range",
+			content: "Inline: `{{ range .items }}{{ . }}{{ end }}`",
+			data:    "",
+		},
+		{
+			name:    "nil_slice_index",
+			content: "Inline: `{{ index .items 0 }}`",
+			data:    "",
+		},
+		{
+			name:    "nil_func_call",
+			content: "Inline: `{{ len .items }}`",
+			data:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			templatePath := filepath.Join(tempDir, tt.name+".md")
+			err := os.WriteFile(templatePath, []byte(tt.content), 0644)
+			require.NoError(t, err)
+
+			input := []byte("<!-- Include: " + tt.name + ".md\n" + tt.data + " -->")
+
+			tmpl, output, recurse, err := ProcessIncludes(tempDir, "", input, template.New("test"))
+			_ = tmpl
+			_ = recurse
+			t.Logf("[%s] err: %v, output: %s", tt.name, err, string(output))
+		})
+	}
+}
+
+func TestMultipleIncludesExecute(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "t1.md"), []byte("Template One: {{ .v1 }}"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "t2.md"), []byte("Template Two: {{ .v2 }}"), 0644))
+
+	input := []byte("<!-- Include: t1.md\nv1: A -->\n<!-- Include: t2.md\nv2: B -->")
+
+	tmpl, output, recurse, err := ProcessIncludes(tempDir, "", input, template.New("test"))
+	require.NoError(t, err)
+	_ = tmpl
+	_ = recurse
+	t.Logf("output: %s", string(output))
+}
+
+func TestMultipleIncludesWithInlineCode(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "header.md"), []byte("# Header"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "footer.md"), []byte("# Footer"), 0644))
+
+	input := []byte("<!-- Include: header.md -->\n\nCode snippet: `{{ .unknown.field }}`\n\n<!-- Include: footer.md -->")
+
+	tmpl := template.New("test")
+	var recurse bool
+	var err error
+	for {
+		tmpl, input, recurse, err = ProcessIncludes(tempDir, "", input, tmpl)
+		require.NoError(t, err)
+		if !recurse {
+			break
+		}
+	}
+
+	output := string(input)
+	assert.Contains(t, output, "# Header")
+	assert.Contains(t, output, "`{{ .unknown.field }}`")
+	assert.Contains(t, output, "# Footer")
+}
