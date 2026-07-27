@@ -820,6 +820,16 @@ The width will be the commented html after the image (in this case 300px).
 
 Currently this is not compatible with the automated upload of inline images.
 
+### Use HTML img tags for sizing
+
+Standard HTML `<img>` tags (inline, block, single-line, or multi-line) can be converted into `<ac:image>` macros by enabling the `--features html-img-tag` flag. This allows you to specify sizing while keeping the document readable in standard Markdown renderers like GitHub:
+
+```markdown
+<img src="../images/example.png" width="300" alt="Example" title="An Example" />
+```
+
+Standard attributes (`width`, `alt`, and `title`) are supported and carried over directly. Local image files are uploaded as attachments, and remote image URLs are linked directly.
+
 ### Render Mermaid Diagram
 
 Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [GitHub does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
@@ -1008,7 +1018,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, details, frontmatter, inline-link-card, mermaid, mention, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, details, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help

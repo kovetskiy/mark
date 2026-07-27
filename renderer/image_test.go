@@ -92,3 +92,27 @@ func TestCalculateDisplayWidth(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveWidth(t *testing.T) {
+	tests := []struct {
+		name          string
+		explicitWidth string
+		originalWidth string
+		expectedWidth string
+	}{
+		{"Empty explicit width returns original width", "", "1000", "1000"},
+		{"Pixel width returned unchanged", "500", "1000", "500"},
+		{"50% width calculated relative to original width", "50%", "1000", "500"},
+		{"25% width calculated relative to original width", "25%", "800", "200"},
+		{"Percentage width without original width returned as-is", "50%", "", "50%"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := resolveWidth(tt.explicitWidth, tt.originalWidth)
+			if result != tt.expectedWidth {
+				t.Errorf("resolveWidth(%q, %q) = %q, want %q", tt.explicitWidth, tt.originalWidth, result, tt.expectedWidth)
+			}
+		})
+	}
+}
