@@ -2,11 +2,14 @@ package mark
 
 import (
 	"bytes"
+	"fmt"
+	"path/filepath"
 	"slices"
 	"text/template"
 
 	katex "github.com/FurqanSoftware/goldmark-katex"
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/includes"
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -157,26 +160,74 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 }
 
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+	var tmpl *template.Template
+	if stdlib != nil {
+		tmpl = stdlib.Templates
+	} else {
+		tmpl = template.New("stdlib")
+	}
+
+	var err error
+	var recurse bool
+	for {
+		tmpl, markdown, recurse, err = includes.ProcessIncludes(
+			filepath.Dir(path),
+			cfg.IncludePath,
+			markdown,
+			tmpl,
+		)
+		if err != nil {
+			return "", nil, fmt.Errorf("unable to process includes: %w", err)
+		}
+		if !recurse {
+			break
+		}
+	}
+
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
-	html, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
 		err = ghAlertsExtension.Pipeline.GetError()
 	}
 	if err != nil {
 		return "", nil, err
 	}
-	return html, ghAlertsExtension.Attachments, nil
+	return htmlOutput, ghAlertsExtension.Attachments, nil
 }
 
 // CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
 // This function is preserved for backward compatibility and testing purposes
 func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+	var tmpl *template.Template
+	if stdlib != nil {
+		tmpl = stdlib.Templates
+	} else {
+		tmpl = template.New("stdlib")
+	}
+
+	var err error
+	var recurse bool
+	for {
+		tmpl, markdown, recurse, err = includes.ProcessIncludes(
+			filepath.Dir(path),
+			cfg.IncludePath,
+			markdown,
+			tmpl,
+		)
+		if err != nil {
+			return "", nil, fmt.Errorf("unable to process includes: %w", err)
+		}
+		if !recurse {
+			break
+		}
+	}
+
 	confluenceExtension := NewConfluenceLegacyExtension(stdlib, path, cfg)
-	html, err := compileMarkdownWithExtension(markdown, confluenceExtension, "rendering markdown with legacy renderer:\n%s")
+	htmlOutput, err := compileMarkdownWithExtension(markdown, confluenceExtension, "rendering markdown with legacy renderer:\n%s")
 	if err != nil {
 		return "", nil, err
 	}
-	return html, confluenceExtension.Attachments, nil
+	return htmlOutput, confluenceExtension.Attachments, nil
 }
 
 // ConfluenceExtension is a goldmark extension for GitHub Alerts with Transformer approach

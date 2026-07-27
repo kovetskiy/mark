@@ -1,4 +1,4 @@
-package transformer
+package transformer_test
 
 import (
 	"bytes"
@@ -7,6 +7,9 @@ import (
 	"testing"
 	"text/template"
 
+	cmarkdown "github.com/kovetskiy/mark/v16/markdown"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark"
@@ -23,7 +26,7 @@ func TestIncludeTransformer(t *testing.T) {
 
 	markdownInput := []byte("<!-- Include: header.md\nname: World -->\n\nMain content here.")
 
-	transformer := NewIncludeTransformer("test.md", tempDir, "", template.New("test"))
+	transformer := ctransformer.NewIncludeTransformer("test.md", tempDir, "", template.New("test"))
 
 	gm := goldmark.New(
 		goldmark.WithParserOptions(
@@ -44,4 +47,21 @@ func TestIncludeTransformer(t *testing.T) {
 	assert.Contains(t, output, "Header from Include")
 	assert.Contains(t, output, "Hello World")
 	assert.Contains(t, output, "Main content here.")
+}
+
+func TestIncludeTransformerUnsafeHTML(t *testing.T) {
+	tempDir := t.TempDir()
+	templatePath := filepath.Join(tempDir, "raw_html.md")
+	err := os.WriteFile(templatePath, []byte("<div><ac:structured-macro ac:name=\"info\"><ac:rich-text-body><p>Unescaped content</p></ac:rich-text-body></ac:structured-macro></div>"), 0644)
+	require.NoError(t, err)
+
+	markdownInput := []byte("<!-- Include: raw_html.md -->")
+
+	output, _, err := cmarkdown.CompileMarkdown(markdownInput, nil, filepath.Join(tempDir, "test.md"), types.MarkConfig{
+		IncludePath: tempDir,
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "<ac:structured-macro ac:name=\"info\">")
+	assert.NotContains(t, output, "&lt;ac:structured-macro")
 }

@@ -5,11 +5,14 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/macro"
+	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // MacroTransformer extracts macro directives from HTML comment blocks in the Goldmark AST,
@@ -175,7 +178,16 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				continue
 			}
 
-			p := goldmark.DefaultParser()
+			p := goldmark.New(
+				goldmark.WithParserOptions(
+					parser.WithInlineParsers(
+						util.Prioritized(cparser.NewConfluenceTagParser(), 99),
+					),
+				),
+				goldmark.WithRendererOptions(
+					html.WithUnsafe(),
+				),
+			).Parser()
 			subDoc := p.Parse(text.NewReader(expanded))
 			convertSegmentsToStrings(subDoc, expanded)
 

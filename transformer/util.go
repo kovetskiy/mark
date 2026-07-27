@@ -120,10 +120,12 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 }
 
 func convertSegmentsToStrings(doc ast.Node, source []byte) {
-	var nodesToReplace []struct {
-		node ast.Node
-		val  []byte
+	type replaceItem struct {
+		node  ast.Node
+		val   []byte
+		isRaw bool
 	}
+	var nodesToReplace []replaceItem
 
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -135,19 +137,13 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 				val := t.Segment.Value(source)
 				valCopy := make([]byte, len(val))
 				copy(valCopy, val)
-				nodesToReplace = append(nodesToReplace, struct {
-					node ast.Node
-					val  []byte
-				}{node: t, val: valCopy})
+				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: false})
 			}
 		case *ast.HTMLBlock:
 			val := extractHTMLBlockBytes(t, source)
 			valCopy := make([]byte, len(val))
 			copy(valCopy, val)
-			nodesToReplace = append(nodesToReplace, struct {
-				node ast.Node
-				val  []byte
-			}{node: t, val: valCopy})
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: true})
 		case *ast.RawHTML:
 			if t.Segments.Len() == 1 {
 				seg := t.Segments.At(0)
@@ -155,10 +151,7 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 					val := seg.Value(source)
 					valCopy := make([]byte, len(val))
 					copy(valCopy, val)
-					nodesToReplace = append(nodesToReplace, struct {
-						node ast.Node
-						val  []byte
-					}{node: t, val: valCopy})
+					nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: true})
 				}
 			} else {
 				buf := getBuffer()
@@ -171,10 +164,7 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 				valCopy := make([]byte, buf.Len())
 				copy(valCopy, buf.Bytes())
 				putBuffer(buf)
-				nodesToReplace = append(nodesToReplace, struct {
-					node ast.Node
-					val  []byte
-				}{node: t, val: valCopy})
+				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: true})
 			}
 		}
 		return ast.WalkContinue, nil
@@ -184,6 +174,9 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 		parent := item.node.Parent()
 		if parent != nil {
 			strNode := ast.NewString(item.val)
+			if item.isRaw {
+				strNode.SetRaw(true)
+			}
 			parent.InsertBefore(parent, item.node, strNode)
 			parent.RemoveChild(parent, item.node)
 		}
