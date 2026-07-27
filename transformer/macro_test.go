@@ -41,3 +41,42 @@ inline: "Hello ${1}!" -->
 	assert.Contains(t, output, "Hello World!")
 	assert.NotContains(t, output, "Macro:")
 }
+
+func TestMultipleMacrosDefinition(t *testing.T) {
+	markdownInput := []byte(`<!-- Macro: :hello:(?P<name>\w+):
+Template: #inline
+inline: "Hello ${1}!" -->
+
+<!-- Macro: :status:(?P<status>\w+):
+Template: #inline
+inline: "Status is ${1}." -->
+
+<!-- Macro: :box:(?P<text>\w+):
+Template: #inline
+inline: "Box: ${1}." -->
+
+:hello:World:
+:status:active:`)
+
+	transformer := NewMacroTransformer("test.md", "", "", template.New("test"))
+
+	gm := goldmark.New(
+		goldmark.WithParserOptions(
+			parser.WithASTTransformers(
+				util.Prioritized(transformer, 100),
+			),
+		),
+		goldmark.WithRendererOptions(
+			html.WithUnsafe(),
+		),
+	)
+
+	var buf bytes.Buffer
+	err := gm.Convert(markdownInput, &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Hello World!")
+	assert.Contains(t, output, "Status is active.")
+	assert.NotContains(t, output, "Macro:")
+}
