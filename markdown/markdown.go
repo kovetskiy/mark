@@ -10,6 +10,7 @@ import (
 	katex "github.com/FurqanSoftware/goldmark-katex"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/includes"
+	"github.com/kovetskiy/mark/v16/macro"
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -184,6 +185,18 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 		}
 	}
 
+	var macros []macro.Macro
+	macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
+	if err != nil {
+		return "", nil, fmt.Errorf("unable to extract macros: %w", err)
+	}
+	for _, m := range macros {
+		markdown, err = m.Apply(markdown)
+		if err != nil {
+			return "", nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+		}
+	}
+
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
 	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
@@ -219,6 +232,18 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 		}
 		if !recurse {
 			break
+		}
+	}
+
+	var macros []macro.Macro
+	macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
+	if err != nil {
+		return "", nil, fmt.Errorf("unable to extract macros: %w", err)
+	}
+	for _, m := range macros {
+		markdown, err = m.Apply(markdown)
+		if err != nil {
+			return "", nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
 		}
 	}
 
