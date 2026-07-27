@@ -106,8 +106,8 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 	}
 
 	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceAutoLinkRenderer(), 100),
+		m.Parser().AddOptions(parser.WithASTTransformers(
+			util.Prioritized(ctransformer.NewAutoLinkTransformer(), 110),
 		))
 	}
 
@@ -312,8 +312,8 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	// Cloud to display them as inline smart cards (page mentions, Jira issues,
 	// GitHub references, etc.) instead of plain hyperlinks.
 	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceAutoLinkRenderer(), 100),
+		m.Parser().AddOptions(parser.WithASTTransformers(
+			util.Prioritized(ctransformer.NewAutoLinkTransformer(), 110),
 		))
 	}
 	// Add confluence tag parser for <ac:*/> tags
