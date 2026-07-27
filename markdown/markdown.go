@@ -55,7 +55,7 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig), 100),
-		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib), 100),
+		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
 		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.MarkConfig.DropFirstH1), 100),
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
@@ -221,7 +221,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(
 		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib, c.Path), 100),
 		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig), 100),
-		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib), 100),
+		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
 		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.MarkConfig.DropFirstH1), 100),
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
@@ -241,6 +241,13 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(c.Pipeline, 10),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
 	))
+
+	// Add html-img-tag transformer support if requested
+	if slices.Contains(c.MarkConfig.Features, "html-img-tag") {
+		m.Parser().AddOptions(parser.WithASTTransformers(
+			util.Prioritized(ctransformer.NewHTMLImgTransformer(), 110),
+		))
+	}
 
 	// Add mkdocsadmonitions support if requested
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {

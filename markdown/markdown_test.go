@@ -306,3 +306,27 @@ Some content
 	assert.NotContains(t, actualDisabled, `<ac:structured-macro ac:name="expand">`)
 	assert.Contains(t, actualDisabled, `<details>`)
 }
+
+func TestHTMLImgTagFeature(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	markdown := []byte(`<img src="https://example.com/image.png" width="300" alt="Test Image">`)
+
+	// 1. With html-img-tag feature enabled
+	cfgEnabled := types.MarkConfig{
+		Features: []string{"html-img-tag"},
+	}
+	actualEnabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgEnabled)
+	assert.NoError(t, err)
+	assert.Contains(t, actualEnabled, `<ac:image`)
+	assert.Contains(t, actualEnabled, `ri:value="https://example.com/image.png"`)
+	assert.Contains(t, actualEnabled, `ac:width="300"`)
+
+	// 2. Without html-img-tag feature enabled
+	cfgDisabled := types.MarkConfig{
+		Features: []string{"mermaid", "mention"},
+	}
+	actualDisabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgDisabled)
+	assert.NoError(t, err)
+	assert.NotContains(t, actualDisabled, `<ac:image`)
+}

@@ -3,6 +3,7 @@ package renderer
 import (
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 
 	"github.com/yuin/goldmark/ast"
@@ -13,13 +14,25 @@ import (
 
 type ConfluenceHTMLBlockRenderer struct {
 	html.Config
+	Stdlib      *stdlib.Lib
+	Attachments attachment.Attacher
+	Path        string
+	ImageAlign  string
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceHTMLBlockRenderer{
-		Config: html.NewConfig(),
+// NewConfluenceHTMLBlockRenderer creates a new instance of the ConfluenceHTMLBlockRenderer
+func NewConfluenceHTMLBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...html.Option) renderer.NodeRenderer {
+	r := &ConfluenceHTMLBlockRenderer{
+		Config:      html.NewConfig(),
+		Stdlib:      stdlib,
+		Attachments: attachments,
+		Path:        path,
+		ImageAlign:  imageAlign,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .
@@ -36,8 +49,9 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 	l := n.Lines().Len()
 	for i := 0; i < l; i++ {
 		line := n.Lines().At(i)
+		lineStr := strings.Trim(string(line.Value(source)), "\n")
 
-		switch strings.Trim(string(line.Value(source)), "\n") {
+		switch lineStr {
 		case "<!-- ac:layout -->":
 			_, _ = w.WriteString("<ac:layout>\n")
 			return ast.WalkContinue, nil
@@ -77,11 +91,10 @@ func (r *ConfluenceHTMLBlockRenderer) renderHTMLBlock(w util.BufWriter, source [
 		case "<!-- ac:placeholder end -->":
 			_, _ = w.WriteString("</ac:placeholder>\n")
 			return ast.WalkContinue, nil
-
 		}
 	}
-	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
 
+	return r.goldmarkRenderHTMLBlock(w, source, node, entering)
 }
 
 func (r *ConfluenceHTMLBlockRenderer) goldmarkRenderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {

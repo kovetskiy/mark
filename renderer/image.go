@@ -3,6 +3,7 @@ package renderer
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -76,6 +77,23 @@ func calculateDisplayWidth(originalWidth string, layout string) string {
 	return originalWidth
 }
 
+// resolveWidth calculates the effective pixel width if explicitWidth is a percentage (e.g. "50%")
+// and originalWidth is known. Otherwise returns explicitWidth or originalWidth.
+func resolveWidth(explicitWidth string, originalWidth string) string {
+	if explicitWidth == "" {
+		return originalWidth
+	}
+	if strings.HasSuffix(explicitWidth, "%") && originalWidth != "" {
+		percentStr := strings.TrimSuffix(explicitWidth, "%")
+		if percent, err := strconv.ParseFloat(percentStr, 64); err == nil {
+			if origWidth, err := strconv.ParseFloat(originalWidth, 64); err == nil {
+				return strconv.Itoa(int(math.Round((percent / 100.0) * origWidth)))
+			}
+		}
+	}
+	return explicitWidth
+}
+
 type ConfluenceImageRenderer struct {
 	html.Config
 	Stdlib      *stdlib.Lib
@@ -107,12 +125,42 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 	}
 	n := node.(*ast.Image)
 
+	if !r.Unsafe && html.IsDangerousURL(n.Destination) {
+		return ast.WalkContinue, nil
+	}
+
+	var explicitWidth, explicitHeight, explicitAlign string
+	if attr, ok := n.Attribute([]byte("width")); ok {
+		if b, ok := attr.([]byte); ok {
+			explicitWidth = string(b)
+		}
+	}
+	if attr, ok := n.Attribute([]byte("height")); ok {
+		if b, ok := attr.([]byte); ok {
+			explicitHeight = string(b)
+		}
+	}
+	if attr, ok := n.Attribute([]byte("align")); ok {
+		if b, ok := attr.([]byte); ok {
+			explicitAlign = string(b)
+		}
+	}
+
+	align := r.ImageAlign
+	if explicitAlign != "" {
+		align = explicitAlign
+	}
+
 	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{string(n.Destination)})
 
 	// We were unable to resolve it locally, treat as URL
 	if err != nil {
 		escapedURL := string(n.Destination)
 		escapedURL = strings.ReplaceAll(escapedURL, "&", "&amp;")
+
+		effectiveAlign := calculateAlign(align, explicitWidth)
+		effectiveLayout := calculateLayout(effectiveAlign, explicitWidth)
+		displayWidth := calculateDisplayWidth(explicitWidth, effectiveLayout)
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
@@ -129,12 +177,12 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				Attachment     string
 				Url            string
 			}{
-				r.ImageAlign,
-				calculateLayout(r.ImageAlign, ""),
+				effectiveAlign,
+				effectiveLayout,
 				"",
 				"",
-				"",
-				"",
+				displayWidth,
+				explicitHeight,
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
 				"",
@@ -149,9 +197,10 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 
 		r.Attachments.Attach(attachments[0])
 
-		effectiveAlign := calculateAlign(r.ImageAlign, attachments[0].Width)
-		effectiveLayout := calculateLayout(effectiveAlign, attachments[0].Width)
-		displayWidth := calculateDisplayWidth(attachments[0].Width, effectiveLayout)
+		effectiveWidth := resolveWidth(explicitWidth, attachments[0].Width)
+		effectiveAlign := calculateAlign(align, effectiveWidth)
+		effectiveLayout := calculateLayout(effectiveAlign, effectiveWidth)
+		displayWidth := calculateDisplayWidth(effectiveWidth, effectiveLayout)
 
 		err = r.Stdlib.Templates.ExecuteTemplate(
 			writer,
@@ -173,7 +222,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				attachments[0].Width,
 				attachments[0].Height,
 				displayWidth,
-				"",
+				explicitHeight,
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
 				attachments[0].Filename,
