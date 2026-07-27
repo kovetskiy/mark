@@ -242,9 +242,10 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 200),
 	))
 
-	// Add AST Transformers for Macros, Includes, and GitHub Alerts
+	// Add AST Transformers for Macros, Includes, Layouts, and GitHub Alerts
 	m.Parser().AddOptions(parser.WithASTTransformers(
 		util.Prioritized(c.Pipeline, 10),
+		util.Prioritized(ctransformer.NewLayoutTransformer(), 100),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
 	))
 
