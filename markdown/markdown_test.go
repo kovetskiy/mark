@@ -263,7 +263,15 @@ func TestContinueOnError(t *testing.T) {
 		Action:                util.RunMark,
 	}
 
-	filePath := filepath.Join("testdata", "batch-tests", "*.md")
+	// The fixtures live in the repo root's testdata, not this package's
+	// directory. Deriving the path from this file rather than the working
+	// directory keeps the test independent of whether another test in the
+	// package has already chdir'd: run on its own, a relative glob matched
+	// nothing and the command failed with "no files matched" instead of the
+	// partial-failure error being asserted.
+	_, thisFile, _, _ := runtime.Caller(0)
+	repoRoot := path.Join(path.Dir(thisFile), "..")
+	filePath := filepath.Join(repoRoot, "testdata", "batch-tests", "*.md")
 	argList := []string{
 		"",
 		"--log-level", "INFO",
