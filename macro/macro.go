@@ -26,15 +26,11 @@ type MacroDirective struct {
 	Config   string
 }
 
-// ParseMacroDirective parses a <!-- Macro: ... --> HTML comment block without directive regexes.
+// ParseMacroDirective parses a single <!-- Macro: ... --> HTML comment block without directive regexes.
 func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
 	s := string(raw)
 	startIdx := strings.Index(s, "<!--")
 	if startIdx == -1 {
-		return nil, nil
-	}
-	macroIdx := strings.Index(s[startIdx:], "Macro:")
-	if macroIdx == -1 {
 		return nil, nil
 	}
 	endIdx := strings.LastIndex(s[startIdx:], "-->")
@@ -43,7 +39,13 @@ func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
 	}
 	endIdx += startIdx + 3
 
-	comment := strings.TrimSpace(s[startIdx+4 : endIdx-3])
+	commentBlock := s[startIdx:endIdx]
+	macroIdx := strings.Index(commentBlock, "Macro:")
+	if macroIdx == -1 {
+		return nil, nil
+	}
+
+	comment := strings.TrimSpace(commentBlock[4 : len(commentBlock)-3])
 	if !strings.HasPrefix(comment, "Macro:") {
 		return nil, nil
 	}
@@ -84,10 +86,12 @@ func (macro *Macro) Apply(
 		func(match []byte) []byte {
 			config := map[string]any{}
 
-			err = yaml.Unmarshal([]byte(macro.Config), &config)
-			if err != nil {
-				err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
-				return match
+			if strings.TrimSpace(macro.Config) != "" {
+				err = yaml.Unmarshal([]byte(macro.Config), &config)
+				if err != nil {
+					err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
+					return match
+				}
 			}
 
 			cfgData := macro.configure(
@@ -98,21 +102,24 @@ func (macro *Macro) Apply(
 			tmpl := macro.Template
 			if mData, ok := cfgData.(map[string]any); ok && macro.Name != "" {
 				if body, ok := mData[macro.Name].(string); ok {
-					if t, parseErr := template.New("inline").Parse(body); parseErr == nil {
-						tmpl = t
+					var errTmpl error
+					tmpl, errTmpl = template.New(macro.Name).Parse(body)
+					if errTmpl != nil {
+						err = fmt.Errorf("unable to parse inline template: %w", errTmpl)
+						return match
 					}
 				}
 			}
 
-			var buffer bytes.Buffer
+			var buf bytes.Buffer
 
-			err = tmpl.Execute(&buffer, cfgData)
+			err = tmpl.Execute(&buf, cfgData)
 			if err != nil {
-				err = fmt.Errorf("unable to execute macros template: %w", err)
+				err = fmt.Errorf("unable to execute template: %w", err)
 				return match
 			}
 
-			return buffer.Bytes()
+			return buf.Bytes()
 		},
 	)
 
@@ -154,80 +161,122 @@ func (macro *Macro) configure(node any, groups [][]byte) any {
 	return node
 }
 
+func findNextMacroStart(s string) int {
+	offset := 0
+	for {
+		idx := strings.Index(s[offset:], "<!--")
+		if idx == -1 {
+			return -1
+		}
+		commentStart := offset + idx
+		after := s[commentStart+4:]
+		trimmed := strings.TrimLeft(after, " \t\r\n")
+		if strings.HasPrefix(trimmed, "Macro:") {
+			return commentStart
+		}
+		offset = commentStart + 4
+	}
+}
+
 func ExtractMacros(
 	base string,
 	includePath string,
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
-	s := string(contents)
-	startIdx := strings.Index(s, "<!--")
-	if startIdx == -1 {
-		return nil, contents, nil
-	}
-	macroIdx := strings.Index(s[startIdx:], "Macro:")
-	if macroIdx == -1 {
-		return nil, contents, nil
-	}
-	endIdx := strings.LastIndex(s[startIdx:], "-->")
-	if endIdx == -1 {
-		return nil, contents, nil
-	}
-	endIdx += startIdx + 3
+	var extracted []Macro
+	remaining := contents
 
-	rawDirective := contents[startIdx:endIdx]
-	dir, err := ParseMacroDirective(rawDirective)
-	if err != nil {
-		return nil, contents, err
-	}
-	if dir == nil {
-		return nil, contents, nil
-	}
+	searchOffset := 0
+	for searchOffset < len(remaining) {
+		relStart := bytes.Index(remaining[searchOffset:], []byte("<!--"))
+		if relStart == -1 {
+			break
+		}
+		startIdx := searchOffset + relStart
 
-	var m Macro
-	if strings.HasPrefix(dir.Template, "#") {
-		m.Name = dir.Template[1:]
-		cfg := map[string]any{}
+		// Check if this comment block is a macro directive
+		s := string(remaining[startIdx:])
+		macroIdx := strings.Index(s, "Macro:")
+		firstEndIdx := strings.Index(s, "-->")
+		if macroIdx == -1 || firstEndIdx == -1 || macroIdx > firstEndIdx {
+			// Not a macro directive comment, move past this comment
+			searchOffset = startIdx + firstEndIdx + 3
+			continue
+		}
 
-		err = yaml.Unmarshal([]byte(dir.Config), &cfg)
+		// Find where this macro directive ends.
+		// If there is a subsequent macro directive, limit search before it.
+		limit := len(s)
+		nextMacroRel := findNextMacroStart(s[4:])
+		if nextMacroRel != -1 {
+			limit = 4 + nextMacroRel
+		}
+
+		relEnd := strings.LastIndex(s[:limit], "-->")
+		if relEnd == -1 {
+			relEnd = firstEndIdx
+		}
+		endIdx := startIdx + relEnd + 3
+
+		rawDirective := remaining[startIdx:endIdx]
+		dir, err := ParseMacroDirective(rawDirective)
 		if err != nil {
-			return nil, contents, fmt.Errorf("unable to unmarshal macros config template: %w", err)
+			return nil, contents, err
+		}
+		if dir == nil {
+			searchOffset = startIdx + 4
+			continue
 		}
 
-		body, ok := cfg[m.Name].(string)
-		if !ok {
-			return nil, contents, fmt.Errorf("the template config doesn't have '%s' field", m.Name)
+		var m Macro
+		if strings.HasPrefix(dir.Template, "#") {
+			m.Name = dir.Template[1:]
+			cfg := map[string]any{}
+
+			if strings.TrimSpace(dir.Config) != "" {
+				err = yaml.Unmarshal([]byte(dir.Config), &cfg)
+				if err != nil {
+					return nil, contents, fmt.Errorf("unable to unmarshal macros config template: %w", err)
+				}
+			}
+
+			body, ok := cfg[m.Name].(string)
+			if !ok {
+				return nil, contents, fmt.Errorf("the template config doesn't have '%s' field", m.Name)
+			}
+
+			m.Template, err = templates.New(dir.Template).Parse(body)
+			if err != nil {
+				return nil, contents, fmt.Errorf("unable to parse template: %w", err)
+			}
+		} else {
+			m.Template, err = includes.LoadTemplate(base, includePath, dir.Template, "{{", "}}", templates)
+			if err != nil {
+				return nil, contents, fmt.Errorf("unable to load template: %w", err)
+			}
 		}
 
-		m.Template, err = templates.New(dir.Template).Parse(body)
+		m.Regexp, err = regexp.Compile(dir.Expr)
 		if err != nil {
-			return nil, contents, fmt.Errorf("unable to parse template: %w", err)
+			return nil, contents, fmt.Errorf("unable to compile macros regexp (expr=%q, template=%q): %w", dir.Expr, dir.Template, err)
 		}
-	} else {
-		m.Template, err = includes.LoadTemplate(base, includePath, dir.Template, "{{", "}}", templates)
-		if err != nil {
-			return nil, contents, fmt.Errorf("unable to load template: %w", err)
-		}
+
+		m.Config = dir.Config
+
+		log.Trace().
+			Interface("vardump", map[string]any{
+				"expr":     dir.Expr,
+				"template": dir.Template,
+				"config":   m.Config,
+			}).
+			Msgf("loaded macro %q", dir.Expr)
+
+		extracted = append(extracted, m)
+
+		remaining = append(remaining[:startIdx], remaining[endIdx:]...)
+		searchOffset = startIdx
 	}
 
-	m.Regexp, err = regexp.Compile(dir.Expr)
-	if err != nil {
-		return nil, contents, fmt.Errorf("unable to compile macros regexp (expr=%q, template=%q): %w", dir.Expr, dir.Template, err)
-	}
-
-	m.Config = dir.Config
-
-	log.Trace().
-		Interface("vardump", map[string]any{
-			"expr":     dir.Expr,
-			"template": dir.Template,
-			"config":   m.Config,
-		}).
-		Msgf("loaded macro %q", dir.Expr)
-
-	var remaining bytes.Buffer
-	remaining.Write(contents[:startIdx])
-	remaining.Write(contents[endIdx:])
-
-	return []Macro{m}, remaining.Bytes(), nil
+	return extracted, remaining, nil
 }
