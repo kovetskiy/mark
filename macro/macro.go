@@ -161,6 +161,33 @@ func (macro *Macro) configure(node any, groups [][]byte) any {
 	return node
 }
 
+// findDirectiveEnd returns the index of the "-->" that closes the macro
+// directive comment starting at s[0], accounting for "<!--" markers nested
+// inside the directive's own pattern, or -1 when the comment is unterminated.
+//
+// The nesting counter is what distinguishes a nested pattern marker from the
+// directive's real terminator: "<!-- Macro: <!-- ac:details -->" opens two
+// comments and so needs two "-->" before the directive is closed.
+func findDirectiveEnd(s string) int {
+	depth := 0
+	for i := 0; i+1 < len(s); {
+		switch {
+		case strings.HasPrefix(s[i:], "<!--"):
+			depth++
+			i += 4
+		case strings.HasPrefix(s[i:], "-->"):
+			depth--
+			if depth <= 0 {
+				return i
+			}
+			i += 3
+		default:
+			i++
+		}
+	}
+	return -1
+}
+
 func findNextMacroStart(s string) int {
 	offset := 0
 	for {
@@ -213,7 +240,16 @@ func ExtractMacros(
 			limit = 4 + nextMacroRel
 		}
 
-		relEnd := strings.LastIndex(s[:limit], "-->")
+		// A macro whose pattern contains nested comment markers (for example
+		// "<!-- Macro: <!-- ac:details -->(...)<!-- ac:details end -->") has more
+		// than one "-->" inside the directive itself, so the terminator is found
+		// by matching nesting depth. Taking the last "-->" before the limit would
+		// swallow the document text the macro is meant to transform, since with a
+		// single macro the limit is the rest of the file.
+		relEnd := findDirectiveEnd(s[:limit])
+		if relEnd == -1 {
+			relEnd = strings.LastIndex(s[:limit], "-->")
+		}
 		if relEnd == -1 {
 			relEnd = firstEndIdx
 		}
