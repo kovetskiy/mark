@@ -169,7 +169,7 @@ func (t *DetailsTransformer) transformDetails(rawContent []byte) ([]byte, bool) 
 
 	if body != nil {
 		for c := body.FirstChild; c != nil; c = c.NextSibling {
-			_ = html.Render(&buf, c)
+			renderHTMLNodeTree(&buf, c)
 		}
 		if buf.Len() > 0 {
 			return buf.Bytes(), true
@@ -177,6 +177,57 @@ func (t *DetailsTransformer) transformDetails(rawContent []byte) ([]byte, bool) 
 	}
 
 	return rawContent, false
+}
+
+func renderHTMLNodeTree(buf *bytes.Buffer, n *html.Node) {
+	if n.Type == html.CommentNode && strings.HasPrefix(n.Data, "[CDATA[") {
+		buf.WriteString("<!")
+		buf.WriteString(n.Data)
+		buf.WriteString(">")
+		return
+	}
+
+	if n.Type == html.ElementNode {
+		buf.WriteString("<")
+		buf.WriteString(n.Data)
+		for _, a := range n.Attr {
+			buf.WriteString(" ")
+			if a.Namespace != "" {
+				buf.WriteString(a.Namespace)
+				buf.WriteString(":")
+			}
+			buf.WriteString(a.Key)
+			buf.WriteString(`="`)
+			buf.WriteString(html.EscapeString(a.Val))
+			buf.WriteString(`"`)
+		}
+
+		if n.FirstChild == nil && isVoidElement(n.Data) {
+			buf.WriteString(" />")
+			return
+		}
+		buf.WriteString(">")
+
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			renderHTMLNodeTree(buf, c)
+		}
+
+		buf.WriteString("</")
+		buf.WriteString(n.Data)
+		buf.WriteString(">")
+		return
+	}
+
+	_ = html.Render(buf, n)
+}
+
+func isVoidElement(name string) bool {
+	switch name {
+	case "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr":
+		return true
+	default:
+		return false
+	}
 }
 
 func extractTextFromHTMLNode(n *html.Node) string {

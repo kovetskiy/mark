@@ -76,3 +76,18 @@ func TestConvertDetailsToExpand(t *testing.T) {
 		})
 	}
 }
+
+func TestDetailsWithFencedCodeBlock(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{
+		Features: []string{"details"},
+	}
+
+	markdown := []byte("```xml\n<![CDATA[hello world]]>\n```\n\n<details>\n<summary>Details</summary>\n<p>Some content</p>\n</details>")
+
+	actual, _, err := CompileMarkdown(markdown, lib, "testdata/test.md", cfg)
+	assert.NoError(t, err)
+	assert.Contains(t, actual, "<![CDATA[hello world]]>")
+	assert.NotContains(t, actual, "<!--[CDATA[")
+}
