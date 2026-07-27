@@ -355,9 +355,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		/* https://confluence.atlassian.com/conf59/page-properties-macro-792499154.html */
 
+		// The body is separated from the wrapper tags by blank lines. A body
+		// ending in a table would otherwise put </ac:rich-text-body> on the line
+		// straight after the final row, where GFM reads it as one more row and
+		// absorbs the closing tags into a table cell.
 		`ac:details`: text(
 			`<ac:structured-macro ac:name="details" ac:schema-version="1">`,
-			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
+			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 
