@@ -162,3 +162,26 @@ func TestMultipleIncludesWithInlineCode(t *testing.T) {
 	assert.Contains(t, output, "`{{ .unknown.field }}`")
 	assert.Contains(t, output, "# Footer")
 }
+
+// LoadTemplate returned the whole template set from its cache-hit path, so a
+// caller doing tmpl.Execute (as macro.Apply does) rendered an arbitrary member
+// of the set instead of the requested template. Which one it picked depended on
+// map iteration order, making the failure intermittent.
+func TestLoadTemplateReturnsRequestedTemplateOnCacheHit(t *testing.T) {
+	templates := template.New("test")
+	_, err := templates.New("tpl/wanted").Parse(`WANTED`)
+	require.NoError(t, err)
+	_, err = templates.New("tpl/other").Parse(`OTHER`)
+	require.NoError(t, err)
+
+	// Second call hits the Lookup path, which is the one that regressed.
+	for range 2 {
+		loaded, err := LoadTemplate("", "", "tpl/wanted.md", "{{", "}}", templates)
+		require.NoError(t, err)
+
+		var buf bytes.Buffer
+		require.NoError(t, loaded.Execute(&buf, nil))
+		assert.Equal(t, "WANTED", buf.String(),
+			"Execute on the returned template must render the requested one")
+	}
+}

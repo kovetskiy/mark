@@ -114,7 +114,7 @@ func LoadTemplate(
 	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
 
 	if template := templates.Lookup(name); template != nil {
-		return templates, nil
+		return template, nil
 	}
 
 	var body []byte
