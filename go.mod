@@ -16,7 +16,7 @@ require (
 	github.com/yuin/goldmark v1.8.4
 	go.abhg.dev/goldmark/frontmatter v0.3.0
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/net v0.55.0
+	golang.org/x/net v0.57.0
 	golang.org/x/text v0.40.0
 	oss.terrastruct.com/d2 v0.7.1
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
