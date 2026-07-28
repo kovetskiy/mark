@@ -67,7 +67,10 @@ func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte,
 		return r.goldmarkRenderList(w, source, node, entering)
 	}
 	if entering {
-		r.taskID = 0
+		// The counter is deliberately not reset here. It is per document, not per
+		// list: resetting on entering every task list made a second list restart
+		// at 1, and a nested list collide with its own parent, so one page carried
+		// several tasks with the same ac:task-id.
 		_, _ = w.WriteString("<ac:task-list>\n")
 	} else {
 		_, _ = w.WriteString("</ac:task-list>\n")
