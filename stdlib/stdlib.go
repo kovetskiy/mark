@@ -157,11 +157,14 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		/* https://confluence.atlassian.com/conf59/info-tip-note-and-warning-macros-792499127.html */
 
+		// The body is separated from the wrapper tags by blank lines; see
+		// ac:details. A body ending in a list or table would otherwise absorb
+		// the closing tags as content.
 		`ac:box`: text(
 			`<ac:structured-macro ac:name="{{ .Name }}">`,
 			`<ac:parameter ac:name="icon">{{ or .Icon "false" }}</ac:parameter>`,
 			`{{ if .Title }}<ac:parameter ac:name="title">{{ .Title | xmlesc }}</ac:parameter>{{ end }}`,
-			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
+			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 
@@ -311,10 +314,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		/* https://confluence.atlassian.com/conf59/expand-macro-792499106.html */
 
+		// The body is separated from the wrapper tags by blank lines; see
+		// ac:details. A body ending in a list or table would otherwise absorb
+		// the closing tags as content.
 		`ac:expand`: text(
 			`<ac:structured-macro ac:name="expand">`,
 			`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>`,
-			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
+			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 
@@ -393,6 +399,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		/* https://confluence.atlassian.com/conf59/panel-macro-792499179.html */
 
+		// The body is separated from the wrapper tags by blank lines; see
+		// ac:details. A body ending in a list or table would otherwise absorb
+		// the closing tags as content.
 		`ac:panel`: text(
 			`<ac:structured-macro ac:name="panel">`,
 			`<ac:parameter ac:name="bgColor">{{ or .BGColor "" }}</ac:parameter>`,
@@ -401,7 +410,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="borderStyle">{{ or .BorderStyle "" }}</ac:parameter>`,
 			`<ac:parameter ac:name="borderColor">{{ or .BorderColor "" }}</ac:parameter>`,
 			`<ac:parameter ac:name="titleColor">{{ or .TitleColor "" }}</ac:parameter>`,
-			`<ac:rich-text-body>{{ .Body }}</ac:rich-text-body>`,
+			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 
@@ -418,10 +427,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 		/* https://confluence.atlassian.com/conf59/column-macro-792499085.html */
+		// The body is separated from the wrapper tags by blank lines; see
+		// ac:details. A body ending in a list or table would otherwise absorb
+		// the closing tags as content.
 		`ac:column`: text(
 			`<ac:structured-macro ac:name="column">`,
 			`<ac:parameter ac:name="width">{{ or .Width "" }}</ac:parameter>`,
-			`<ac:rich-text-body>{{ or .Body "" }}</ac:rich-text-body>`,
+			"<ac:rich-text-body>\n\n{{ or .Body \"\" }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 		/* https://confluence.atlassian.com/conf59/multimedia-macro-792499140.html */
