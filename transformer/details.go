@@ -29,6 +29,11 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 
 	source := reader.Source()
 
+	// Running <details> nesting depth across the whole document. Fragments are
+	// visited in source order, so this lets an unbalanced fragment know whether
+	// a closing tag it contains actually belongs to an element opened earlier.
+	depth := 0
+
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -47,7 +52,7 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 				return ast.WalkContinue, nil
 			}
 
-			newRaw, transformed := t.transformDetails(raw)
+			newRaw, transformed := t.transformDetailsAt(raw, &depth)
 			if transformed {
 				nodesToReplace = append(nodesToReplace, struct {
 					node ast.Node
@@ -58,6 +63,14 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 
 		return ast.WalkContinue, nil
 	})
+
+	// Unclosed <details> in the source. Close the macros we opened rather than
+	// emit unbalanced markup, which Confluence would reject outright.
+	if depth > 0 && len(nodesToReplace) > 0 {
+		last := &nodesToReplace[len(nodesToReplace)-1]
+		last.newB = append(last.newB, bytes.Repeat(
+			[]byte(`</ac:rich-text-body></ac:structured-macro>`), depth)...)
+	}
 
 	for _, item := range nodesToReplace {
 		parent := item.node.Parent()
@@ -70,8 +83,45 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 	}
 }
 
+// transformDetails converts a self-contained <details> tree. Kept for the
+// existing callers and tests; document-order callers should use
+// transformDetailsAt so nesting depth is tracked across fragments.
 func (t *DetailsTransformer) transformDetails(rawContent []byte) ([]byte, bool) {
-	if !bytes.Contains(bytes.ToLower(rawContent), []byte("<details")) {
+	depth := 0
+	return t.transformDetailsAt(rawContent, &depth)
+}
+
+// transformDetailsAt converts the <details> tags in one AST node's raw content,
+// advancing *depth by the fragment's net nesting change.
+func (t *DetailsTransformer) transformDetailsAt(rawContent []byte, depth *int) ([]byte, bool) {
+	lower := bytes.ToLower(rawContent)
+	hasOpen := bytes.Contains(lower, []byte("<details"))
+	hasClose := bytes.Contains(lower, []byte("</details"))
+	if !hasOpen && !hasClose {
+		return rawContent, false
+	}
+
+	balance := detailsBalance(rawContent)
+
+	// A fragment with unmatched <details> tags cannot survive html.Parse, which
+	// would auto-close the dangling element and strand the body outside the
+	// macro. This happens whenever the body contains a blank line, since that
+	// ends the HTML block and splits the element across sibling AST nodes.
+	// Rewrite those fragments token-by-token instead.
+	if balance != 0 {
+		// A closing tag with nothing open is stray markup, not part of a split
+		// element. Leave it untouched so we never invent an unmatched macro end.
+		if balance < 0 && *depth+balance < 0 {
+			return rawContent, false
+		}
+		out, changed := rewriteUnbalancedDetails(rawContent)
+		if changed {
+			*depth += balance
+		}
+		return out, changed
+	}
+
+	if !hasOpen {
 		return rawContent, false
 	}
 
