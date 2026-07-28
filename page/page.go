@@ -107,7 +107,10 @@ func ResolvePage(
 				log.Warn().
 					Msgf(
 						"page %q is not found ",
-						meta.Parents[len(ancestry)-1],
+						// Index ancestry, not meta.Parents: the home title is
+						// appended to ancestry above, so len(ancestry)-1 is out of
+						// range for meta.Parents whenever that append happened.
+						ancestry[len(ancestry)-1],
 					)
 			}
 
