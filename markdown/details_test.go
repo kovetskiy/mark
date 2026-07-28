@@ -91,3 +91,26 @@ func TestDetailsWithFencedCodeBlock(t *testing.T) {
 	assert.Contains(t, actual, "<![CDATA[hello world]]>")
 	assert.NotContains(t, actual, "<!--[CDATA[")
 }
+
+// TestDetailsInCodeSpanIsNotConverted covers documentation that mentions the
+// tag literally. `<details>` inside backticks is content, not markup; the
+// transformer used to consume it and silently emit an empty <code></code>.
+func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{Features: []string{"details"}}
+
+	tests := []string{
+		"`<details>` maps to the native expand macro.\n",
+		"| `details` | `<details>` / `<summary>` |\n|---|---|\n| a | b |\n",
+		"Use `<details>` and `</details>` to wrap it.\n",
+	}
+
+	for _, input := range tests {
+		actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", cfg)
+		assert.NoError(t, err)
+		assert.Contains(t, actual, "&lt;details&gt;", "literal tag should survive inside a code span")
+		assert.NotContains(t, actual, "<code></code>", "code span content was swallowed")
+		assert.NotContains(t, actual, `ac:name="expand"`, "code span must not produce a macro")
+	}
+}
