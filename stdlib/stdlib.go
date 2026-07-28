@@ -56,11 +56,17 @@ func templates(api *confluence.API) (*template.Template, error) {
 					"]]><![CDATA[]]]]><![CDATA[>",
 				)
 			},
+			// The result is always interpolated into an ri:filename attribute, so
+			// it has to be escaped as well as slash-flattened: a quote in a
+			// diagram title (```d2 title My "x" Diagram) otherwise closed the
+			// attribute early and produced malformed XML.
 			"convertAttachment": func(data string) string {
-				return strings.ReplaceAll(
-					data,
-					"/",
-					"_",
+				return html.EscapeString(
+					strings.ReplaceAll(
+						data,
+						"/",
+						"_",
+					),
 				)
 			},
 			"xmlesc": func(s string) string {
