@@ -35,6 +35,15 @@ func (t *LayoutTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 
 		switch n := node.(type) {
 		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *ast.String:
+			// Text inside an inline code span is literal: `<!-- ac:layout -->` in
+			// prose documents the directive, it does not open a layout. Rewriting
+			// it also destroyed the text outright, because the replacement Text
+			// node carries its content in an attribute and goldmark's code-span
+			// renderer reads only the segment, which is empty.
+			if parent := node.Parent(); parent != nil && parent.Kind() == ast.KindCodeSpan {
+				return ast.WalkContinue, nil
+			}
+
 			raw := ExtractNodeRawContent(n, source)
 			if len(raw) == 0 {
 				return ast.WalkContinue, nil
