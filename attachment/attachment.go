@@ -250,32 +250,26 @@ func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
 	for _, replace := range replaces {
 		to := links[replace]
 
+		// Anchor on the link/image target so only a real destination is
+		// rewritten. A bare bytes.ReplaceAll over the whole document also hit
+		// prose and code spans -- "see `diagram.png`" became a download URL --
+		// and, because the legacy branch below is a separate if rather than an
+		// else, it rewrote its own output a second time, producing a doubled
+		// path with two query strings.
+		legacy := []byte("](attachment://" + replace + ")")
+		plain := []byte("](" + replace + ")")
+		target := []byte("](" + to + ")")
+
 		found := false
-		if bytes.Contains(markdown, []byte("attachment://"+replace)) {
-			from := "attachment://" + replace
-
-			log.Debug().Msgf("replacing legacy link: %q -> %q", from, to)
-
-			markdown = bytes.ReplaceAll(
-				markdown,
-				[]byte(from),
-				[]byte(to),
-			)
-
+		if bytes.Contains(markdown, legacy) {
+			log.Debug().Msgf("replacing legacy link: %q -> %q", "attachment://"+replace, to)
+			markdown = bytes.ReplaceAll(markdown, legacy, target)
 			found = true
 		}
 
-		if bytes.Contains(markdown, []byte(replace)) {
-			from := replace
-
-			log.Debug().Msgf("replacing link: %q -> %q", from, to)
-
-			markdown = bytes.ReplaceAll(
-				markdown,
-				[]byte(from),
-				[]byte(to),
-			)
-
+		if bytes.Contains(markdown, plain) {
+			log.Debug().Msgf("replacing link: %q -> %q", replace, to)
+			markdown = bytes.ReplaceAll(markdown, plain, target)
 			found = true
 		}
 

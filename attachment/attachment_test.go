@@ -124,3 +124,42 @@ func TestParseAttachmentLink(t *testing.T) {
 		})
 	}
 }
+
+// CompileAttachmentLinks replaced attachment names with a bare ReplaceAll over
+// the whole document, which caused three distinct corruptions.
+func TestCompileAttachmentLinksAnchorsOnLinkTarget(t *testing.T) {
+	single := []Attachment{{
+		Name: "a.png", Filename: "a.png", Replace: "a.png",
+		Link: "/download/attachments/12345/a.png?version=1",
+	}}
+
+	t.Run("legacy form is substituted once", func(t *testing.T) {
+		// The legacy branch was an if rather than an else if, so the plain branch
+		// then matched "a.png" inside the URL the legacy branch had just written,
+		// yielding a doubled path with two query strings.
+		got := string(CompileAttachmentLinks([]byte("![x](attachment://a.png)"), single))
+		assert.Equal(t, "![x](/download/attachments/12345/a.png?version=1)", got)
+	})
+
+	t.Run("plain form is substituted", func(t *testing.T) {
+		got := string(CompileAttachmentLinks([]byte("![x](a.png)"), single))
+		assert.Equal(t, "![x](/download/attachments/12345/a.png?version=1)", got)
+	})
+
+	t.Run("prose and code spans are untouched", func(t *testing.T) {
+		in := "See the file `a.png` in the repo."
+		got := string(CompileAttachmentLinks([]byte(in), single))
+		assert.Equal(t, in, got, "only a link target may be rewritten")
+	})
+
+	t.Run("one name being a substring of another", func(t *testing.T) {
+		// The length-descending sort only protects suffix collisions; "logo.png"
+		// also occurs inside the already-substituted URL for "sub/logo.png".
+		two := []Attachment{
+			{Replace: "sub/logo.png", Link: "/dl/1/sub_logo.png?v=1"},
+			{Replace: "logo.png", Link: "/dl/1/logo.png?v=1"},
+		}
+		got := string(CompileAttachmentLinks([]byte("![a](logo.png) ![b](sub/logo.png)"), two))
+		assert.Equal(t, "![a](/dl/1/logo.png?v=1) ![b](/dl/1/sub_logo.png?v=1)", got)
+	})
+}
