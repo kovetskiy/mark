@@ -24,6 +24,14 @@ func NewHTMLImgTransformer() *HTMLImgTransformer {
 
 // Transform implements the parser.ASTTransformer interface.
 func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
+	// Collect first, mutate after. Replacing a node mid-walk clears its
+	// NextSibling, and ast.Walk is iterating over exactly that pointer, so it
+	// would abandon every remaining sibling under the same parent: only the first
+	// <img> per paragraph was converted and the rest were left as raw <img>,
+	// which Confluence storage format has no element for.
+	var blocks []*ast.HTMLBlock
+	var inlines []*ast.RawHTML
+
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -31,13 +39,20 @@ func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 
 		switch n := node.(type) {
 		case *ast.HTMLBlock:
-			t.transformHTMLBlock(n, reader)
+			blocks = append(blocks, n)
 		case *ast.RawHTML:
-			t.transformRawHTML(n, reader)
+			inlines = append(inlines, n)
 		}
 
 		return ast.WalkContinue, nil
 	})
+
+	for _, n := range blocks {
+		t.transformHTMLBlock(n, reader)
+	}
+	for _, n := range inlines {
+		t.transformRawHTML(n, reader)
+	}
 }
 
 func (t *HTMLImgTransformer) transformHTMLBlock(n *ast.HTMLBlock, reader text.Reader) {
@@ -54,9 +69,20 @@ func (t *HTMLImgTransformer) transformHTMLBlock(n *ast.HTMLBlock, reader text.Re
 		return
 	}
 
-	// If the HTML block contains only <img> tags (or single <img> tag), replace HTMLBlock node
 	parent := n.Parent()
 	if parent == nil {
+		return
+	}
+
+	// Replacing the block with only its images discards everything else it
+	// contained. The common "centered image with caption" idiom
+	//
+	//	<div align="center"><img src="..."><b>caption</b></div>
+	//
+	// lost the div and the caption entirely, with no warning. Only take over the
+	// block when the images are all it holds; otherwise leave it to the raw-HTML
+	// path, which preserves the surrounding markup.
+	if !onlyImages(rawBytes) {
 		return
 	}
 
@@ -66,6 +92,34 @@ func (t *HTMLImgTransformer) transformHTMLBlock(n *ast.HTMLBlock, reader text.Re
 	}
 
 	parent.ReplaceChild(parent, n, p)
+}
+
+// onlyImages reports whether raw consists of nothing but <img> tags and
+// whitespace, i.e. whether replacing it with just its images is lossless.
+func onlyImages(raw []byte) bool {
+	z := html.NewTokenizer(bytes.NewReader(raw))
+	for {
+		switch z.Next() {
+		case html.ErrorToken:
+			return true
+		case html.TextToken:
+			if len(bytes.TrimSpace(z.Text())) != 0 {
+				return false
+			}
+		case html.StartTagToken, html.SelfClosingTagToken:
+			if name, _ := z.TagName(); !bytes.Equal(name, []byte("img")) {
+				return false
+			}
+		case html.EndTagToken:
+			// A stray </img> is harmless; any other closing tag means the block
+			// wraps content we would drop.
+			if name, _ := z.TagName(); !bytes.Equal(name, []byte("img")) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
 }
 
 func (t *HTMLImgTransformer) transformRawHTML(n *ast.RawHTML, reader text.Reader) {
