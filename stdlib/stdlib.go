@@ -220,7 +220,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ if .Width }} ac:custom-width="true"{{ end }}`,
 			`{{ if .Width }} ac:width="{{ .Width }}"{{ end }}`,
 			`{{ if .Height }} ac:height="{{ .Height }}"{{ end }}`,
-			`{{ if .Title }} ac:title="{{ .Title }}"{{ end }}`,
+			`{{ if .Title }} ac:title="{{ .Title | xmlesc }}"{{ end }}`,
 			`{{ if .Alt }} ac:alt="{{ .Alt }}"{{ end }}>`,
 			`{{ if .Attachment }}<ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/>{{ end }}`,
 			`{{ if .Url }}<ri:url ri:value="{{ .Url }}"/>{{ end }}`,

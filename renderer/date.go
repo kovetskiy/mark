@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	"html"
 
 	"github.com/kovetskiy/mark/v16/parser"
 	"github.com/yuin/goldmark/ast"
@@ -25,6 +26,9 @@ func (r *ConfluenceDateRenderer) renderDate(w util.BufWriter, source []byte, nod
 	}
 
 	n := node.(*parser.DateNode)
-	_, _ = fmt.Fprintf(w, `<time datetime="%s" />`, string(n.Value))
+	// The value comes from the document, so it has to be escaped before landing
+	// in an attribute: a quote in it would otherwise close datetime early and let
+	// the rest be read as further attributes.
+	_, _ = fmt.Fprintf(w, `<time datetime="%s" />`, html.EscapeString(string(n.Value)))
 	return ast.WalkContinue, nil
 }
