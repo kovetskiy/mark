@@ -52,7 +52,11 @@ var attributePattern = `(?:[\r\n \t]+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:[\r\n \t]*=[\r
 
 // Only match <ac:*/> and <ri:*/> tags
 var openTagRegexp = regexp.MustCompile("^<(ac|ri):" + tagnamePattern + attributePattern + `*` + spaceOrOneNewline + `*/?>`)
-var closeTagRegexp = regexp.MustCompile("^</ac:" + tagnamePattern + spaceOrOneNewline + `*>`)
+
+// Both prefixes, matching openTagRegexp above: covering only ac: meant a
+// separate </ri:page> closing tag fell through to the text renderer and was
+// entity-escaped, breaking the element it was meant to close.
+var closeTagRegexp = regexp.MustCompile("^</(ac|ri):" + tagnamePattern + spaceOrOneNewline + `*>`)
 
 var openCDATA = []byte("<![CDATA[")
 var closeCDATA = []byte("]]>")
