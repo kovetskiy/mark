@@ -116,7 +116,23 @@ func LoadTemplate(
 	cleanPath := filepath.ToSlash(filepath.Clean(path))
 	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
 
+	// A stdlib template (ac:box, ac:status, ...) is pre-registered under its plain
+	// name and has no delimiters of its own, so it must always be found by that
+	// name.
 	if template := templates.Lookup(name); template != nil {
+		return template, nil
+	}
+
+	// For file-backed templates the delimiters are part of what makes the parse,
+	// so they belong in the cache key. Keying on the path alone meant a file
+	// included twice with different Delims: reused the first parse and silently
+	// discarded the second set, rendering the wrong output with no error.
+	cacheName := name
+	if left != "" || right != "" {
+		cacheName = name + "\x00" + left + "\x00" + right
+	}
+
+	if template := templates.Lookup(cacheName); template != nil {
 		return template, nil
 	}
 
@@ -138,7 +154,7 @@ func LoadTemplate(
 		[]byte("\n"),
 	)
 
-	templates, err = templates.New(name).Delims(left, right).Parse(string(body))
+	templates, err = templates.New(cacheName).Delims(left, right).Parse(string(body))
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse template %q: %w", name, err)
 	}
@@ -195,16 +211,18 @@ func ProcessIncludesWithStack(
 
 	log.Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
 
-	templates, err = LoadTemplate(base, includePath, dir.Template, dir.Left, dir.Right, templates)
+	// LoadTemplate returns the specific template it loaded, whose name encodes the
+	// delimiters. Execute it directly rather than looking it up by path again,
+	// which would find the wrong parse when the same file is included twice with
+	// different Delims:.
+	loaded, err := LoadTemplate(base, includePath, dir.Template, dir.Left, dir.Right, templates)
 	if err != nil {
 		return templates, contents, false, fmt.Errorf("unable to load template %q: %w", dir.Template, err)
 	}
-
-	cleanPath := filepath.ToSlash(filepath.Clean(dir.Template))
-	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
+	templates = loaded
 
 	var buffer bytes.Buffer
-	err = templates.ExecuteTemplate(&buffer, name, dir.Data)
+	err = loaded.Execute(&buffer, dir.Data)
 	if err != nil {
 		return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
 	}
