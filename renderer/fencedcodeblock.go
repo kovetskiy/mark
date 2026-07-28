@@ -27,8 +27,15 @@ type ConfluenceFencedCodeBlockRenderer struct {
 
 var reBlockDetails = regexp.MustCompile(
 	// (<Lang>|-) (collapse|<theme>|\d)* (title <title>)?
-
-	`^(?:(\w*)|-)\s*\b(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
+	//
+	// The language class is [\w#+./-] rather than \w: real language names carry
+	// non-word characters (c#, c++, objective-c, html/xml, .NET), and \w stopped
+	// at the first of them. The remainder was not rejected -- it fell through to
+	// the options group and then into the theme catch-all, so "```c#" compiled to
+	// language "c" plus a bogus theme "#". The \b after the options group is
+	// dropped too: it required a word character to follow, so it split "c#" even
+	// once the class accepted "#".
+	`^(?:([\w#+./-]*)|-)\s*(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
 )
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
