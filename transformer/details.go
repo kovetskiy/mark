@@ -34,6 +34,10 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 	// a closing tag it contains actually belongs to an element opened earlier.
 	depth := 0
 
+	// Fragments folded into a preceding sibling, so they are not transformed
+	// again in their own right.
+	absorbed := map[ast.Node]bool{}
+
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -47,9 +51,25 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 				return ast.WalkContinue, nil
 			}
 
+			// Already folded into an earlier sibling's fragment.
+			if absorbed[node] {
+				return ast.WalkContinue, nil
+			}
+
 			raw := ExtractNodeRawContent(n, source)
 			if len(raw) == 0 {
 				return ast.WalkContinue, nil
+			}
+
+			// Inline HTML arrives one AST node per tag, so "<details>" and its
+			// "<summary>s</summary>" land in separate fragments and the title is
+			// invisible to the fragment that opens the macro. Fold the following
+			// inline siblings in so the element is seen whole, exactly as a block
+			// context already sees it.
+			var folded []ast.Node
+			raw, folded = coalesceInlineDetails(n, raw, source)
+			for _, f := range folded {
+				absorbed[f] = true
 			}
 
 			newRaw, transformed := t.transformDetailsAt(raw, &depth)
@@ -58,6 +78,14 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 					node ast.Node
 					newB []byte
 				}{node: n, newB: newRaw})
+				// The folded siblings' bytes are now part of newB; drop the
+				// originals so their content is not emitted twice.
+				for _, f := range folded {
+					nodesToReplace = append(nodesToReplace, struct {
+						node ast.Node
+						newB []byte
+					}{node: f, newB: nil})
+				}
 			}
 		}
 
@@ -65,30 +93,35 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 	})
 
 	// Unclosed <details> in the source. Close the macros we opened rather than
-	// emit unbalanced markup, which Confluence would reject outright.
-	if depth > 0 && len(nodesToReplace) > 0 {
-		last := &nodesToReplace[len(nodesToReplace)-1]
-		last.newB = append(last.newB, bytes.Repeat(
-			[]byte(`</ac:rich-text-body></ac:structured-macro>`), depth)...)
+	// emit unbalanced markup, which Confluence would reject outright. Folded
+	// siblings carry no content, so skip back past them to the fragment that
+	// actually holds the rewritten markup.
+	if depth > 0 {
+		for i := len(nodesToReplace) - 1; i >= 0; i-- {
+			if nodesToReplace[i].newB == nil {
+				continue
+			}
+			nodesToReplace[i].newB = append(nodesToReplace[i].newB, bytes.Repeat(
+				[]byte(`</ac:rich-text-body></ac:structured-macro>`), depth)...)
+			break
+		}
 	}
 
 	for _, item := range nodesToReplace {
 		parent := item.node.Parent()
 		if parent != nil {
+			// A folded sibling's bytes moved into the fragment that opened the
+			// macro; remove it outright so nothing is emitted twice.
+			if item.newB == nil {
+				parent.RemoveChild(parent, item.node)
+				continue
+			}
 			textNode := ast.NewText()
 			textNode.SetAttribute([]byte("replacement-content"), item.newB)
 			parent.InsertBefore(parent, item.node, textNode)
 			parent.RemoveChild(parent, item.node)
 		}
 	}
-}
-
-// transformDetails converts a self-contained <details> tree. Kept for the
-// existing callers and tests; document-order callers should use
-// transformDetailsAt so nesting depth is tracked across fragments.
-func (t *DetailsTransformer) transformDetails(rawContent []byte) ([]byte, bool) {
-	depth := 0
-	return t.transformDetailsAt(rawContent, &depth)
 }
 
 // transformDetailsAt converts the <details> tags in one AST node's raw content,

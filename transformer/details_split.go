@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 
+	"github.com/yuin/goldmark/ast"
 	"golang.org/x/net/html"
 )
 
@@ -79,9 +80,10 @@ func tokenizeFragment(raw []byte) []detailsToken {
 // unbalanced fragment into the corresponding Confluence expand markup, passing
 // every other token through verbatim.
 //
-// Unlike transformDetails this never builds a DOM, so it does not require the
-// fragment to be well-formed -- which is the point: the fragments produced by a
-// blank-line split are well-formed only once concatenated.
+// Unlike transformDetailsAt's balanced path this never builds a DOM, so it does
+// not require the fragment to be well-formed -- which is the point: the
+// fragments produced by a blank-line split are well-formed only once
+// concatenated.
 func rewriteUnbalancedDetails(raw []byte) ([]byte, bool) {
 	toks := tokenizeFragment(raw)
 
@@ -96,9 +98,9 @@ func rewriteUnbalancedDetails(raw []byte) ([]byte, bool) {
 			buf.WriteString(`<ac:structured-macro ac:name="expand">`)
 
 			// Emit the title before opening the body, so element order matches
-			// what transformDetails produces for the balanced case. The <summary>
-			// normally sits in the same fragment as its <details>; if it does not,
-			// the expand simply renders without a title.
+			// what the balanced DOM path produces. The <summary> normally sits in
+			// the same fragment as its <details>; if it does not, the expand
+			// simply renders without a title.
 			if title, end, ok := summaryAt(toks, i+1); ok {
 				if title != "" {
 					buf.WriteString(`<ac:parameter ac:name="title">`)
@@ -153,4 +155,52 @@ func summaryAt(toks []detailsToken, from int) (title string, end int, ok bool) {
 		}
 	}
 	return "", 0, false
+}
+
+// coalesceInlineDetails folds the inline siblings that follow node into its raw
+// fragment, up to and including the "</summary>" belonging to a "<details>" that
+// node opens. It returns the combined bytes and the siblings consumed.
+//
+// Goldmark emits inline HTML one AST node per tag, so
+// "<details><summary>s</summary>" becomes three RawHTML nodes plus text. The
+// fragment that opens the macro therefore cannot see its own title, and the
+// summary would be rendered as body content instead. A block context already
+// arrives as a single HTMLBlock, so nothing is folded there.
+func coalesceInlineDetails(node ast.Node, raw []byte, source []byte) ([]byte, []ast.Node) {
+	if _, ok := node.(*ast.RawHTML); !ok {
+		return raw, nil
+	}
+	lower := bytes.ToLower(raw)
+	// Only worth folding when this fragment opens a details without closing its
+	// summary; anything else is already self-contained.
+	if !bytes.Contains(lower, []byte("<details")) || bytes.Contains(lower, []byte("</summary")) {
+		return raw, nil
+	}
+
+	combined := append([]byte(nil), raw...)
+	var folded []ast.Node
+	for sib := node.NextSibling(); sib != nil; sib = sib.NextSibling() {
+		switch sib.(type) {
+		case *ast.RawHTML, *ast.Text, *ast.String:
+		default:
+			return raw, nil
+		}
+		if parent := sib.Parent(); parent != nil && parent.Kind() == ast.KindCodeSpan {
+			return raw, nil
+		}
+
+		sibRaw := ExtractNodeRawContent(sib, source)
+		combined = append(combined, sibRaw...)
+		folded = append(folded, sib)
+
+		if bytes.Contains(bytes.ToLower(sibRaw), []byte("</summary")) {
+			return combined, folded
+		}
+		// A summary is a short leading element; give up rather than swallow the
+		// rest of the paragraph looking for one that is not there.
+		if len(folded) >= 4 {
+			return raw, nil
+		}
+	}
+	return raw, nil
 }
