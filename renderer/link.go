@@ -1,6 +1,9 @@
 package renderer
 
 import (
+	stdhtml "html"
+	"strings"
+
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
@@ -33,14 +36,17 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 				return ast.WalkStop, err
 			}
 
+			// The page title lands in an XML attribute, so it has to be escaped:
+			// an unescaped "&" makes the body malformed and a quote closes the
+			// attribute early, letting document content inject further attributes.
 			if len(string(n.Destination)) < 4 {
 				//nolint:staticcheck
-				_, err := writer.Write(node.Text(source))
+				_, err := writer.WriteString(xmlAttrEscape(string(node.Text(source))))
 				if err != nil {
 					return ast.WalkStop, err
 				}
 			} else {
-				_, err := writer.Write(n.Destination[3:])
+				_, err := writer.WriteString(xmlAttrEscape(string(n.Destination[3:])))
 				if err != nil {
 					return ast.WalkStop, err
 				}
@@ -51,8 +57,10 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 				return ast.WalkStop, err
 			}
 
+			// A "]]>" in the link text would terminate the CDATA section early;
+			// splitting it across two sections is the only way to escape it.
 			//nolint:staticcheck
-			_, err = writer.Write(node.Text(source))
+			_, err = writer.WriteString(cdataEscape(string(node.Text(source))))
 			if err != nil {
 				return ast.WalkStop, err
 			}
@@ -89,4 +97,17 @@ func (r *ConfluenceLinkRenderer) goldmarkRenderLink(w util.BufWriter, source []b
 		_, _ = w.WriteString("</a>")
 	}
 	return ast.WalkContinue, nil
+}
+
+// xmlAttrEscape makes a document-derived string safe to interpolate into an XML
+// attribute value.
+func xmlAttrEscape(s string) string {
+	return stdhtml.EscapeString(s)
+}
+
+// cdataEscape splits any "]]>" in s across two CDATA sections, which is the only
+// way to represent that sequence inside one. Mirrors the stdlib "cdata" template
+// function used by the ac:code and ac:plantuml macros.
+func cdataEscape(s string) string {
+	return strings.ReplaceAll(s, "]]>", "]]><![CDATA[]]]]><![CDATA[>")
 }
