@@ -114,3 +114,116 @@ func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 		assert.NotContains(t, actual, `ac:name="expand"`, "code span must not produce a macro")
 	}
 }
+
+// TestDetailsWithBlankLines covers <details> bodies containing blank lines. A
+// blank line ends the HTML block, so the element is split across sibling AST
+// nodes and each fragment alone is unbalanced. html.Parse used to auto-close
+// the dangling tag, which stranded the body outside the macro and emitted a
+// literal </details> that Confluence rejects with
+// "Error parsing xhtml: Unexpected close tag </details>".
+func TestDetailsWithBlankLines(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{Features: []string{"details"}}
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "blank lines around body",
+			input: "<details>\n<summary>Click to expand</summary>\n\nSome body text.\n\n</details>\n",
+		},
+		{
+			name:  "nested details with blank lines",
+			input: "<details>\n<summary>Outer</summary>\n\nOuter body.\n\n<details>\n<summary>Inner</summary>\n\nInner body.\n\n</details>\n</details>\n",
+		},
+		{
+			name:  "blank line separated body inside a layout cell",
+			input: "<!-- ac:layout-cell -->\n\n<details>\n<summary>S</summary>\n\nBody.\n\n</details>\n\n<!-- ac:layout-cell end -->\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", cfg)
+			assert.NoError(t, err)
+
+			assert.NotContains(t, actual, "<details", "raw <details> tag leaked into output")
+			assert.NotContains(t, actual, "</details>", "stray closing tag would break Confluence xhtml parsing")
+			assert.NotContains(t, actual, "<summary", "raw <summary> tag leaked into output")
+			assert.Contains(t, actual, `<ac:structured-macro ac:name="expand">`)
+
+			assert.Equal(t,
+				strings.Count(actual, "<ac:rich-text-body>"),
+				strings.Count(actual, "</ac:rich-text-body>"),
+				"unbalanced ac:rich-text-body")
+		})
+	}
+}
+
+// TestDetailsBodyMarkdownIsRendered asserts the blank-line form keeps its
+// Markdown semantics: the body stays a separate AST node, so inline markup in
+// it must still be converted rather than passed through literally.
+func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{Features: []string{"details"}}
+
+	markdown := []byte("<details>\n<summary>S</summary>\n\nBody with **bold** text.\n\n</details>\n")
+
+	actual, _, err := CompileMarkdown(markdown, lib, "testdata/test.md", cfg)
+	assert.NoError(t, err)
+	assert.Contains(t, actual, "<strong>bold</strong>")
+	assert.NotContains(t, actual, "**bold**")
+}
+
+// TestDetailsMalformedStaysBalanced guards the fallback paths. Whatever the
+// input, the emitted expand macros must be balanced -- Confluence rejects the
+// whole page otherwise -- and a closing tag with nothing open must not be
+// turned into a macro end.
+func TestDetailsMalformedStaysBalanced(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{Features: []string{"details"}}
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"unclosed details", "<details>\n<summary>S</summary>\n\nbody\n"},
+		{"unclosed nested details", "<details>\n<summary>O</summary>\n\n<details>\n<summary>I</summary>\n\nbody\n"},
+		{"stray closing tag only", "text\n\n</details>\n"},
+		{"two sequential details", "<details>\n<summary>A</summary>\n\na\n\n</details>\n\n<details>\n<summary>B</summary>\n\nb\n\n</details>\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", cfg)
+			assert.NoError(t, err)
+			assert.Equal(t,
+				strings.Count(actual, "<ac:rich-text-body>"),
+				strings.Count(actual, "</ac:rich-text-body>"),
+				"unbalanced ac:rich-text-body in %q", actual)
+			assert.Equal(t,
+				strings.Count(actual, "<ac:structured-macro"),
+				strings.Count(actual, "</ac:structured-macro>"),
+				"unbalanced ac:structured-macro in %q", actual)
+		})
+	}
+}
+
+// TestDetailsInFencedCodeBlockIsLiteral ensures a documented example inside a
+// fenced code block is never converted into a macro.
+func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+	cfg := types.MarkConfig{Features: []string{"details"}}
+
+	markdown := []byte("```html\n<details>\n<summary>S</summary>\n</details>\n```\n")
+
+	actual, _, err := CompileMarkdown(markdown, lib, "testdata/test.md", cfg)
+	assert.NoError(t, err)
+	assert.Contains(t, actual, "<details>")
+	assert.NotContains(t, actual, `ac:name="expand"`)
+}
