@@ -164,7 +164,12 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				attachment.Height,
 				displayWidth,
 				"",
-				attachment.Name,
+				// The display title, not the attachment name: when the author gave
+				// no "title" in the info string, ProcessD2/ProcessMermaid fall back
+				// to the content checksum for the filename, and passing that here
+				// made Confluence render a 64-character hash as a caption under the
+				// diagram. The attachment keeps its checksum-derived name.
+				title,
 				"",
 				attachment.Filename,
 				"",
@@ -208,7 +213,12 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				attachment.Height,
 				displayWidth,
 				"",
-				attachment.Name,
+				// The display title, not the attachment name: when the author gave
+				// no "title" in the info string, ProcessD2/ProcessMermaid fall back
+				// to the content checksum for the filename, and passing that here
+				// made Confluence render a 64-character hash as a caption under the
+				// diagram. The attachment keeps its checksum-derived name.
+				title,
 				"",
 				attachment.Filename,
 				"",
