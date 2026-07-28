@@ -29,11 +29,14 @@ func findIncludeDirectiveBounds(s string) (startIdx int, endIdx int) {
 		}
 		startIdx = searchFrom + start
 
-		end := strings.Index(s[startIdx:], "-->")
+		// Search past the opener: starting at startIdx lets the closer overlap it,
+		// so "<!-->" matches a "-->" at offset 2 and yields a 5-byte comment whose
+		// body slice comment[4:2] panics.
+		end := strings.Index(s[startIdx+4:], "-->")
 		if end == -1 {
 			return -1, -1
 		}
-		endIdx = startIdx + end + 3
+		endIdx = startIdx + 4 + end + 3
 
 		comment := s[startIdx:endIdx]
 		trimmed := strings.TrimSpace(comment[4 : len(comment)-3])

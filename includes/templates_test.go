@@ -185,3 +185,25 @@ func TestLoadTemplateReturnsRequestedTemplateOnCacheHit(t *testing.T) {
 			"Execute on the returned template must render the requested one")
 	}
 }
+
+// findIncludeDirectiveBounds searched for "-->" from the start of the opener, so
+// the two markers could overlap: "<!-->" matched a closer at offset 2, produced a
+// five-byte comment, and panicked slicing comment[4:len-3] as [4:2]. Any document
+// containing "<!-->" crashed the CLI.
+func TestParseIncludeDirectiveDegenerateComments(t *testing.T) {
+	for _, in := range []string{
+		"<!-->",
+		"<!--->",
+		"<!---->",
+		"<!--",
+		"<!-- -->",
+		"text <!--> more",
+	} {
+		t.Run(in, func(t *testing.T) {
+			// Must not panic; a non-Include comment simply yields no directive.
+			dir, err := ParseIncludeDirective([]byte(in))
+			assert.NoError(t, err)
+			assert.Nil(t, dir)
+		})
+	}
+}
