@@ -207,3 +207,28 @@ func TestParseIncludeDirectiveDegenerateComments(t *testing.T) {
 		})
 	}
 }
+
+// LoadTemplate cached parsed templates by path alone, so the same file included
+// twice with different Delims: reused the first parse and silently discarded the
+// second set of delimiters -- wrong output, no error.
+func TestLoadTemplateDistinguishesDelims(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "t.md"), []byte(`VAL={{ .Var }}`), 0o600))
+
+	templates := template.New("test")
+
+	// "none" is how ParseIncludeDirective spells "leave the body literal".
+	literal, err := LoadTemplate(dir, "", "t.md", "\x00", "\x01", templates)
+	require.NoError(t, err)
+	var lb bytes.Buffer
+	require.NoError(t, literal.Execute(&lb, map[string]any{"Var": "first"}))
+	assert.Equal(t, `VAL={{ .Var }}`, lb.String(), "Delims: none must leave the body literal")
+
+	// Same path, default delimiters: must be parsed separately, not served from
+	// the first entry.
+	rendered, err := LoadTemplate(dir, "", "t.md", "", "", templates)
+	require.NoError(t, err)
+	var rb bytes.Buffer
+	require.NoError(t, rendered.Execute(&rb, map[string]any{"Var": "second"}))
+	assert.Equal(t, `VAL=second`, rb.String(), "the second Delims set must take effect")
+}
