@@ -3,7 +3,7 @@ module github.com/kovetskiy/mark/v16
 go 1.26
 
 require (
-	github.com/FurqanSoftware/goldmark-katex v0.0.0-20260328091149-1897eb7a41e4
+	github.com/FurqanSoftware/goldmark-katex v0.0.0-20260802114817-44def238656c
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
@@ -60,9 +60,9 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.67.1 // indirect
-	modernc.org/libquickjs v0.12.3 // indirect
+	modernc.org/libc v1.74.3 // indirect
+	modernc.org/libquickjs v0.12.10 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/quickjs v0.17.1 // indirect
+	modernc.org/quickjs v0.22.0 // indirect
 )
