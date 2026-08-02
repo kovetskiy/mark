@@ -3,6 +3,7 @@ module github.com/kovetskiy/mark/v16
 go 1.26
 
 require (
+	github.com/FurqanSoftware/goldmark-katex v0.0.0-20260328091149-1897eb7a41e4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
@@ -13,7 +14,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.10.1
-	github.com/yuin/goldmark v1.8.4
+	github.com/yuin/goldmark v1.8.5
 	go.abhg.dev/goldmark/frontmatter v0.3.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/net v0.57.0
@@ -24,7 +25,6 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
-	github.com/FurqanSoftware/goldmark-katex v0.0.0-20260328091149-1897eb7a41e4 // indirect
 	github.com/PuerkitoBio/goquery v1.10.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.14.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
