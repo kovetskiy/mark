@@ -141,7 +141,7 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 			html.WithXHTML(),
 		))
 
-	ctx := parser.NewContext(parser.WithIDs(&cparser.ConfluenceIDs{Values: map[string]bool{}}))
+	ctx := parser.NewContext(parser.WithIDs(cparser.NewConfluenceIDs()))
 
 	var buf bytes.Buffer
 	err := converter.Convert(markdown, &buf, parser.WithContext(ctx))
