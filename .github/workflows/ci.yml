@@ -13,6 +13,11 @@ on:
 env:
   GO_VERSION: "1.26.1"
 
+# Least privilege by default. No job in this workflow writes to the repository;
+# the Docker Hub push authenticates with its own secrets, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   # Runs Golangci-lint on the source code
   ci-go-lint:

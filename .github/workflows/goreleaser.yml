@@ -5,9 +5,15 @@ on:
     tags:
     - '*'
 
+permissions:
+  contents: read
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    # GoReleaser publishes the GitHub release for the pushed tag.
+    permissions:
+      contents: write
     steps:
     - name: Checkout
       uses: actions/checkout@v7
