@@ -266,7 +266,10 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		httpClient = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
+					// Reached only when the user opts in with
+					// --insecure-skip-tls-verify, for self-signed Confluence
+					// Server instances.
+					InsecureSkipVerify: true, //nolint:gosec // G402: explicitly requested by the operator
 				},
 			},
 		}

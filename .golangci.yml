@@ -1,0 +1,47 @@
+version: "2"
+
+linters:
+  # "standard" is errcheck, govet, ineffassign, staticcheck and unused -- the
+  # set golangci-lint ran with before this file existed. Everything below is
+  # additive, so enabling the config cannot silently drop a check.
+  default: standard
+  enable:
+    - bodyclose      # HTTP response bodies must be closed; mark makes ~30 Confluence calls
+    - copyloopvar    # detects now-redundant loop variable copies (Go >= 1.22)
+    - errorlint      # %v on errors, type assertions instead of errors.As/Is
+    - gosec          # security-focused checks
+    - misspell
+    - nilerr         # "return nil" on a non-nil error
+    - unconvert      # redundant type conversions
+    - usestdlibvars  # http.StatusOK over 200, http.MethodGet over "GET"
+    - wastedassign
+
+  settings:
+    gosec:
+      excludes:
+        # G104 duplicates errcheck, which is already part of the standard set.
+        - G104
+    misspell:
+      # Deliberately no locale: the Confluence storage format spells attributes
+      # in British English (ac:parameter ac:name="colour"), so enforcing US
+      # spelling would flag correct markup in stdlib templates.
+      ignore-rules:
+        - colour
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests read fixture paths built from testdata/ and shell out to nothing;
+      # file inclusion and weak-random findings there are noise.
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

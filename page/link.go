@@ -95,7 +95,10 @@ func resolveLink(
 		log.Trace().Msgf("filepath: %s", filepath)
 		stat, err := os.Stat(filepath)
 		if err != nil {
-			return "", nil
+			// Not a link to a file on disk (or unreadable): leave the link
+			// untouched rather than failing the run. Swallowing err is
+			// deliberate here.
+			return "", nil //nolint:nilerr
 		}
 
 		if stat.IsDir() {

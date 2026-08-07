@@ -142,7 +142,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		attachment, err := d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
-			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %v", line, col, err)
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %w", line, col, err)
 		}
 		r.Attachments.Attach(attachment)
 
@@ -191,7 +191,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		attachment, err := mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
-			return ast.WalkStop, fmt.Errorf("line %d, col %d: mermaid rendering failed: %v", line, col, err)
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: mermaid rendering failed: %w", line, col, err)
 		}
 		r.Attachments.Attach(attachment)
 

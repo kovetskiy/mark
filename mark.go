@@ -2,7 +2,11 @@ package mark
 
 import (
 	"bytes"
-	"crypto/sha1"
+	// SHA-1 is used only as a content fingerprint for --changes-only, never as
+	// a security primitive. The digest is embedded in the page version message
+	// and matched back with a 40-hex-character regex, so widening it would stop
+	// mark from recognising pages published by earlier versions.
+	"crypto/sha1" //nolint:gosec // G505: non-cryptographic content fingerprint
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -161,8 +165,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	if err != nil {
 		return nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}
-
-
 
 	if config.PageID != "" && meta != nil {
 		log.Warn().Msg(
@@ -543,7 +545,7 @@ func getImageAlign(align string, meta *metadata.Meta) (string, error) {
 }
 
 func sha1Hash(input string) string {
-	h := sha1.New()
+	h := sha1.New() //nolint:gosec // G401: see the crypto/sha1 import comment
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
 }

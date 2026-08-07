@@ -12,12 +12,15 @@ import (
 
 type ConfluenceTextRenderer struct {
 	html.Config
-	softBreak rune
+	// softBreak is written verbatim with WriteByte and is only ever '\n' or
+	// ' ', so it is a byte rather than a rune -- a rune would imply multi-byte
+	// values that the write path cannot represent.
+	softBreak byte
 }
 
 // NewConfluenceTextRenderer creates a new instance of the renderer with GitHub Alerts support
 func NewConfluenceTextRenderer(stripNewlines bool, opts ...html.Option) renderer.NodeRenderer {
-	sb := '\n'
+	sb := byte('\n')
 	if stripNewlines {
 		sb = ' '
 	}
@@ -88,12 +91,12 @@ func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, nod
 						}
 
 						if writeLineBreak {
-							_ = w.WriteByte(byte(r.softBreak))
+							_ = w.WriteByte(r.softBreak)
 						}
 					}
 				}
 			} else {
-				_ = w.WriteByte(byte(r.softBreak))
+				_ = w.WriteByte(r.softBreak)
 			}
 		}
 	}
