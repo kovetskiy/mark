@@ -312,7 +312,6 @@ Image-Align: center
 	assert.Equal(t, "# Content\n", string(body))
 }
 
-
 func TestExtractMetaYAMLFrontMatterWithoutTrailingNewline(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test Page\n---"
 

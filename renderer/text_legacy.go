@@ -19,12 +19,15 @@ import (
 // See also https://sembr.org/ for partial motivation.
 type ConfluenceTextLegacyRenderer struct {
 	html.Config
-	softBreak rune
+	// softBreak is written verbatim with WriteByte and is only ever '\n' or
+	// ' ', so it is a byte rather than a rune -- a rune would imply multi-byte
+	// values that the write path cannot represent.
+	softBreak byte
 }
 
 // NewConfluenceTextLegacyRenderer creates a new instance of the ConfluenceTextRenderer (legacy version)
 func NewConfluenceTextLegacyRenderer(stripNL bool, opts ...html.Option) renderer.NodeRenderer {
-	sb := '\n'
+	sb := byte('\n')
 	if stripNL {
 		sb = ' '
 	}
@@ -77,12 +80,12 @@ func (r *ConfluenceTextLegacyRenderer) renderText(w util.BufWriter, source []byt
 						}
 
 						if writeLineBreak {
-							_ = w.WriteByte(byte(r.softBreak))
+							_ = w.WriteByte(r.softBreak)
 						}
 					}
 				}
 			} else {
-				_ = w.WriteByte(byte(r.softBreak))
+				_ = w.WriteByte(r.softBreak)
 			}
 		}
 	}
