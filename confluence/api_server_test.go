@@ -2,7 +2,9 @@ package confluence_test
 
 import (
 	"bytes"
+	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -357,4 +359,95 @@ func TestGetSpaceID(t *testing.T) {
 		"the v1 lookup is attempted")
 	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"),
 		"but its response cannot be decoded, so v2 is always used")
+}
+
+// TestRetriesThroughTheRealClientStack drives a retry end to end: real
+// confluence.API, real gopencils, real HTTP, with the fake returning 503 for
+// the first two GETs. Before the retry transport existed this returned an
+// error on the first 503, because gopencils only retried transport-level
+// failures and a 503 arrives with a nil error.
+func TestRetriesThroughTheRealClientStack(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Flaky", "page", "")
+
+	var seen int
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/content") {
+			return 0, "", false
+		}
+		seen++
+		if seen <= 2 {
+			return http.StatusServiceUnavailable, `{"message":"overloaded"}`, true
+		}
+		return 0, "", false
+	})
+
+	page, err := api.FindPage("DOCS", "Flaky", "page")
+	require.NoError(t, err, "two 503s should be retried, not surfaced")
+	require.NotNil(t, page)
+	assert.Equal(t, "Flaky", page.Title)
+	assert.Equal(t, 3, server.CountRequests("GET", "/rest/api/content"))
+}
+
+// TestRateLimitIsRetried covers the 429 path, which is what a throttled
+// Confluence Cloud tenant actually returns.
+func TestRateLimitIsRetried(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Throttled", "page", "")
+
+	var seen int
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/content") {
+			return 0, "", false
+		}
+		seen++
+		if seen == 1 {
+			return http.StatusTooManyRequests, `{"message":"rate limited"}`, true
+		}
+		return 0, "", false
+	})
+
+	page, err := api.FindPage("DOCS", "Throttled", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+	assert.Equal(t, 2, server.CountRequests("GET", "/rest/api/content"))
+}
+
+// TestPersistent5xxStillFails confirms retries are bounded and the eventual
+// error still reaches the caller.
+func TestPersistent5xxStillFails(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Broken", "page", "")
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/content") {
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.FindPage("DOCS", "Broken", "page")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "503")
+	assert.Equal(t, 4, server.CountRequests("GET", "/rest/api/content"),
+		"bounded at maxAttempts")
+}
+
+// TestCreatePageIsNotRetriedOn5xx is the safety property: replaying a failed
+// create could leave two pages behind.
+func TestCreatePageIsNotRetriedOn5xx(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPost {
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.CreatePage("DOCS", "page", nil, "Once Only", "")
+	require.Error(t, err)
+	assert.Equal(t, 1, server.CountRequests("POST", "/rest/api/content"),
+		"a create must be attempted exactly once")
 }
