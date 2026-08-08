@@ -43,11 +43,38 @@ type Attacher interface {
 	Attach(Attachment)
 }
 
+// ResolveAttachments uploads the given attachments to the page, skipping any
+// whose checksum already matches what is stored remotely.
+//
+// It fetches the page's current attachment list itself. Callers that resolve
+// attachments more than once for the same page -- as mark does, first for
+// declared attachments and then for diagrams discovered while rendering --
+// should use ResolveAttachmentsWithRemotes to avoid re-fetching a list they
+// already hold.
 func ResolveAttachments(
 	api *confluence.API,
 	page *confluence.PageInfo,
 	attachments []Attachment,
 ) ([]Attachment, error) {
+	remotes, err := api.GetAttachments(page.ID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get attachments for page %s: %w", page.ID, err)
+	}
+
+	resolved, _, err := ResolveAttachmentsWithRemotes(api, page, attachments, remotes)
+	return resolved, err
+}
+
+// ResolveAttachmentsWithRemotes is ResolveAttachments against an
+// already-fetched remote attachment list. It returns the resolved attachments
+// and an updated remote list that includes anything created or updated by this
+// call, so a subsequent call can be made without another round-trip.
+func ResolveAttachmentsWithRemotes(
+	api *confluence.API,
+	page *confluence.PageInfo,
+	attachments []Attachment,
+	remotes []confluence.AttachmentInfo,
+) ([]Attachment, []confluence.AttachmentInfo, error) {
 	for i := range attachments {
 		// Skip checksum computation if already set (e.g. by mermaid/d2 renderers
 		// which use the source content as the stable checksum rather than the
@@ -58,15 +85,10 @@ func ResolveAttachments(
 
 		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
-			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
+			return nil, nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
 		}
 
 		attachments[i].Checksum = checksum
-	}
-
-	remotes, err := api.GetAttachments(page.ID)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get attachments for page %s: %w", page.ID, err)
 	}
 
 	existing := []Attachment{}
@@ -115,7 +137,7 @@ func ResolveAttachments(
 			bytes.NewReader(attachment.FileBytes),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create attachment %q: %w", attachment.Name, err)
+			return nil, nil, fmt.Errorf("unable to create attachment %q: %w", attachment.Name, err)
 		}
 
 		attachment.ID = info.ID
@@ -125,6 +147,7 @@ func ResolveAttachments(
 		)
 
 		creating[i] = attachment
+		remotes = append(remotes, info)
 	}
 
 	for i, attachment := range updating {
@@ -138,7 +161,7 @@ func ResolveAttachments(
 			bytes.NewReader(attachment.FileBytes),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unable to update attachment %q: %w", attachment.Name, err)
+			return nil, nil, fmt.Errorf("unable to update attachment %q: %w", attachment.Name, err)
 		}
 
 		attachment.Link = path.Join(
@@ -147,6 +170,15 @@ func ResolveAttachments(
 		)
 
 		updating[i] = attachment
+
+		// Reflect the new checksum so a later call against this same list sees
+		// the attachment as current rather than re-uploading it.
+		for j := range remotes {
+			if remotes[j].Filename == attachment.Filename {
+				remotes[j].Metadata.Comment = AttachmentChecksumPrefix + attachment.Checksum
+				break
+			}
+		}
 	}
 
 	for i := range existing {
@@ -158,7 +190,7 @@ func ResolveAttachments(
 	attachments = append(attachments, creating...)
 	attachments = append(attachments, updating...)
 
-	return attachments, nil
+	return attachments, remotes, nil
 }
 
 func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {

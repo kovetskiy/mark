@@ -339,7 +339,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	attaches, err := attachment.ResolveAttachments(api, target, localAttachments)
+	// The page's remote attachment list is fetched once and threaded through
+	// both resolve passes. Attachments are resolved twice per page -- declared
+	// attachments here, then diagrams discovered while rendering -- and each
+	// pass previously issued its own paginated fetch of the same list.
+	remoteAttachments, err := api.GetAttachments(target.ID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+	}
+
+	attaches, remoteAttachments, err := attachment.ResolveAttachmentsWithRemotes(
+		api, target, localAttachments, remoteAttachments,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
@@ -370,7 +381,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
-	if _, err = attachment.ResolveAttachments(api, target, inlineAttachments); err != nil {
+	if _, _, err = attachment.ResolveAttachmentsWithRemotes(
+		api, target, inlineAttachments, remoteAttachments,
+	); err != nil {
 		return nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
