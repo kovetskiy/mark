@@ -2,7 +2,6 @@ package confluence
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -261,21 +260,13 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	var httpClient *http.Client
-	if insecureSkipVerify {
-		httpClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					// Reached only when the user opts in with
-					// --insecure-skip-tls-verify, for self-signed Confluence
-					// Server instances.
-					InsecureSkipVerify: true, //nolint:gosec // G402: explicitly requested by the operator
-				},
-			},
-		}
-	}
+	httpClient := newHTTPClient(insecureSkipVerify)
 
-	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 3) // set option for 3 retries on failure
+	// gopencils is given 0 retries: its own retry loop only runs when the very
+	// first Client.Do returns a transport error, so a 429 or 503 -- which come
+	// back with a nil error -- was never retried at all. retryTransport in the
+	// client handles both cases, and is the single place retries happen.
+	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 0)
 	if username == "" {
 		if rest.Headers == nil {
 			rest.Headers = http.Header{}
@@ -283,7 +274,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
 	}
 
-	restV2 := gopencils.Api(baseURL+"/api/v2", auth, httpClient, 3) // v2 API for folders and new features
+	restV2 := gopencils.Api(baseURL+"/api/v2", auth, httpClient, 0) // v2 API for folders and new features
 	if username == "" {
 		if restV2.Headers == nil {
 			restV2.Headers = http.Header{}
