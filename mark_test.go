@@ -1,9 +1,14 @@
 package mark
 
 import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -365,4 +370,48 @@ func TestMergeComments_CDATASelection(t *testing.T) {
 	assert.NoError(t, err)
 	// The raw selection "<nil>" should be found and wrapped with a marker.
 	assert.Equal(t, `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <ac:inline-comment-marker ac:ref="uuid-cdata"><nil></ac:inline-comment-marker> }]]></ac:plain-text-body></ac:structured-macro>`, result)
+}
+
+// BenchmarkRunCompileOnly exercises the whole per-file loop in compile-only
+// mode, which never reaches the network, so it measures the fixed per-file
+// overhead that Run pays regardless of Confluence latency.
+func BenchmarkRunCompileOnly(b *testing.B) {
+	// Other tests in this package raise the global level; log formatting would
+	// otherwise dominate the measurement.
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.Disabled)
+	b.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	for _, fileCount := range []int{1, 50} {
+		b.Run(fmt.Sprintf("files=%d", fileCount), func(b *testing.B) {
+			dir := b.TempDir()
+			for i := range fileCount {
+				body := fmt.Sprintf(
+					"<!-- Space: TEST -->\n<!-- Title: Page %d -->\n\n"+
+						"# Page %d\n\nSome **text** with a [link](https://example.com).\n\n"+
+						"| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```go\nfunc main() {}\n```\n",
+					i, i,
+				)
+				path := filepath.Join(dir, fmt.Sprintf("page-%03d.md", i))
+				if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			config := Config{
+				BaseURL:     "http://127.0.0.1:1",
+				Files:       filepath.Join(dir, "*.md"),
+				CompileOnly: true,
+				Features:    []string{"mention"},
+				Output:      io.Discard,
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := Run(config); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
