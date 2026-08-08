@@ -12,6 +12,7 @@ import (
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,7 +30,11 @@ func getMermaidEngine() (*mermaid.RenderEngine, error) {
 	}
 
 	log.Debug().Msg("Setting up global Mermaid renderer")
-	engine, err := mermaid.NewRenderEngine(context.Background(), nil)
+	// NewRenderEngine prepends chromedp.DefaultExecAllocatorOptions itself, so
+	// only the additional options are passed here. Without them Chrome fails to
+	// start wherever the sandbox is unavailable -- the same failure the d2
+	// renderer hits, since both drive Chrome through chromedp.
+	engine, err := mermaid.NewRenderEngine(context.Background(), nil, chrome.AllocatorOptions()...)
 	if err != nil {
 		return nil, err
 	}
