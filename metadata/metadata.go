@@ -353,15 +353,29 @@ func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 	return h1Text
 }
 
+const (
+	commentOpen  = "<!--"
+	commentClose = "-->"
+)
+
 // parseHeaderComment checks if a line is a valid metadata header comment of the form "<!-- key: value -->".
 func parseHeaderComment(line string) (string, string, bool) {
 	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "<!--") || !strings.HasSuffix(line, "-->") {
+	if !strings.HasPrefix(line, commentOpen) || !strings.HasSuffix(line, commentClose) {
+		return "", "", false
+	}
+
+	// The prefix and suffix can overlap: in "<!-->" both match, because the
+	// "-->" is found starting at index 2, inside the "<!--". Slicing then asks
+	// for line[4:2] and panics. Requiring room for both delimiters separately
+	// is what makes the slice below safe -- this is the same class of crash as
+	// issue #686.
+	if len(line) < len(commentOpen)+len(commentClose) {
 		return "", "", false
 	}
 
 	// Strip "<!--" and "-->"
-	content := line[4 : len(line)-3]
+	content := line[len(commentOpen) : len(line)-len(commentClose)]
 	content = strings.TrimSpace(content)
 
 	colonIdx := strings.Index(content, ":")
