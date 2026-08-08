@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/rs/zerolog/log"
 
 	"oss.terrastruct.com/d2/d2graph"
@@ -112,18 +112,7 @@ func getChromeCtx(ctx context.Context) (context.Context, error) {
 		return chromeCtx, nil
 	}
 
-	opts := chromedp.DefaultExecAllocatorOptions[:]
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		opts = append(opts,
-			chromedp.DisableGPU,
-			chromedp.NoSandbox,
-			chromedp.NoFirstRun,
-			chromedp.NoDefaultBrowserCheck,
-			chromedp.Headless,
-			chromedp.Flag("disable-dev-shm-usage", true),
-			chromedp.Flag("disable-setuid-sandbox", true),
-		)
-	}
+	opts := append(chromedp.DefaultExecAllocatorOptions[:], chrome.AllocatorOptions()...)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	cCtx, cCancel := chromedp.NewContext(allocCtx)
