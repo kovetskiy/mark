@@ -107,11 +107,20 @@ func Run(config Config) error {
 		}
 	}
 
+	// The standard library is a fixed set of templates that does not depend on
+	// the file being processed, so it is built once for the whole run rather
+	// than once per file. Building it cannot reach the network -- the "user"
+	// template func captures the API but is only invoked during rendering.
+	std, err := stdlib.New(api)
+	if err != nil {
+		return fmt.Errorf("unable to retrieve standard library: %w", err)
+	}
+
 	var hasErrors bool
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, err := ProcessFile(file, api, config)
+		target, err := processFile(file, api, config, std)
 		if err != nil {
 			if config.ContinueOnError {
 				log.Error().Err(err).Msgf("processing %s", file)
@@ -138,7 +147,19 @@ func Run(config Config) error {
 
 // ProcessFile processes a single markdown file and publishes it to Confluence.
 // Returns nil for the page info when compile-only or dry-run mode is active.
+//
+// Callers processing several files should prefer Run, which builds the standard
+// library once instead of once per file.
 func ProcessFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	std, err := stdlib.New(api)
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
+	}
+
+	return processFile(file, api, config, std)
+}
+
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib) (*confluence.PageInfo, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -191,11 +212,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 					"or the --title-from-h1 / --title-from-filename flags",
 			)
 		}
-	}
-
-	std, err := stdlib.New(api)
-	if err != nil {
-		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
 	links, err := page.ResolveRelativeLinks(
