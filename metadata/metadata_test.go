@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/text"
 )
@@ -448,4 +449,55 @@ func TestExtractMeta_FolderHeadersWithCliParents(t *testing.T) {
 	// CLI parents should be prepended to any parents in the markdown, not folders
 	assert.Equal(t, cliParents, meta.Parents)
 	assert.Equal(t, []string{"API"}, meta.Folders)
+}
+
+// TestParseHeaderCommentOverlappingDelimiters covers the crash found by
+// FuzzExtractMeta: in "<!-->" the opening and closing delimiters overlap, so
+// both HasPrefix and HasSuffix match a five-character string and the slice
+// that strips them runs backwards.
+func TestParseHeaderCommentOverlappingDelimiters(t *testing.T) {
+	for _, line := range []string{
+		"<!-->",
+		"<!--->",
+		" <!--> ",
+		"<!--",
+		"-->",
+		"<!---->",
+	} {
+		t.Run(line, func(t *testing.T) {
+			key, value, ok := parseHeaderComment(line)
+			assert.False(t, ok, "no key/value can be parsed from %q", line)
+			assert.Empty(t, key)
+			assert.Empty(t, value)
+		})
+	}
+}
+
+// TestExtractMetaOverlappingCommentDoesNotPanic is the end-to-end version:
+// a document whose first line is "<!-->" previously crashed mark before it
+// reached Confluence at all.
+func TestExtractMetaOverlappingCommentDoesNotPanic(t *testing.T) {
+	meta, body, err := ExtractMeta(
+		[]byte("<!-->\n\n# Title\n\nbody\n"),
+		"TEST", true, false, "doc.md", nil, false, "", false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	assert.Equal(t, "Title", meta.Title)
+	assert.Contains(t, string(body), "# Title")
+}
+
+// TestParseHeaderCommentStillParsesValidHeaders guards against the length
+// check above rejecting real headers.
+func TestParseHeaderCommentStillParsesValidHeaders(t *testing.T) {
+	key, value, ok := parseHeaderComment("<!-- Space: DOCS -->")
+	require.True(t, ok)
+	assert.Equal(t, "Space", key)
+	assert.Equal(t, "DOCS", value)
+
+	// The shortest well-formed comment that still carries a key.
+	key, value, ok = parseHeaderComment("<!--a:-->")
+	require.True(t, ok)
+	assert.Equal(t, "a", key)
+	assert.Empty(t, value)
 }
