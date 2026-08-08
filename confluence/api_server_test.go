@@ -451,3 +451,62 @@ func TestCreatePageIsNotRetriedOn5xx(t *testing.T) {
 	assert.Equal(t, 1, server.CountRequests("POST", "/rest/api/content"),
 		"a create must be attempted exactly once")
 }
+
+// TestGetUserByNameIsCached pins the fix for the @mention N+1: every mention in
+// a document renders through the "user" stdlib template func, so an uncached
+// lookup meant one CQL search per occurrence.
+func TestGetUserByNameIsCached(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddUser(confluencetest.User{
+		AccountID: "acct-1",
+		Username:  "jdoe",
+		FullName:  "Jane Doe",
+	})
+
+	for range 20 {
+		user, err := api.GetUserByName("Jane Doe")
+		require.NoError(t, err)
+		require.NotNil(t, user)
+		assert.Equal(t, "acct-1", user.AccountID)
+	}
+
+	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/search"),
+		"twenty mentions of the same person should cost one search")
+}
+
+// TestGetUserByNameCachesMisses covers the case the cache can least afford to
+// skip: an unknown name renders nothing, so nothing stops the document from
+// asking again for every occurrence.
+func TestGetUserByNameCachesMisses(t *testing.T) {
+	api, server := newAPI(t)
+
+	for range 5 {
+		_, err := api.GetUserByName("Nobody At All")
+		require.Error(t, err)
+	}
+
+	// A miss costs two requests, not one: GetUserByName tries /search/user and
+	// then falls back to the legacy /search path when that yields no results.
+	// The point of the assertion is that five lookups cost the same as one.
+	assert.Equal(t, 2, server.CountRequests("GET", "/rest/api/search"),
+		"a failed lookup should be remembered too")
+}
+
+func TestGetUserByNameCachesPerName(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddUser(confluencetest.User{AccountID: "a", FullName: "Ann"})
+	server.AddUser(confluencetest.User{AccountID: "b", FullName: "Bob"})
+
+	for range 3 {
+		ann, err := api.GetUserByName("Ann")
+		require.NoError(t, err)
+		assert.Equal(t, "a", ann.AccountID)
+
+		bob, err := api.GetUserByName("Bob")
+		require.NoError(t, err)
+		assert.Equal(t, "b", bob.AccountID)
+	}
+
+	assert.Equal(t, 2, server.CountRequests("GET", "/rest/api/search"),
+		"one search per distinct name")
+}

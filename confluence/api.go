@@ -35,6 +35,17 @@ type API struct {
 	pageCache      map[string]*PageInfo
 	pageCacheByID  map[string]*PageInfo
 	pageCacheMutex sync.RWMutex
+
+	userCache      map[string]userCacheEntry
+	userCacheMutex sync.RWMutex
+}
+
+// userCacheEntry records the outcome of a user lookup, including a failed one:
+// a document that mentions an unknown name would otherwise re-query for every
+// occurrence, which is the case the cache is least able to afford.
+type userCacheEntry struct {
+	user *User
+	err  error
 }
 
 func pageCacheKey(space, title, pageType string) string {
@@ -969,7 +980,39 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 	return &LabelInfo{Labels: all, Size: len(all)}, nil
 }
 
+// GetUserByName resolves a display name to a Confluence user.
+//
+// Results are cached for the lifetime of the API value. Every @mention in a
+// document renders through the "user" stdlib template func, so an uncached
+// lookup meant one CQL search per occurrence -- a document naming the same
+// person twenty times issued twenty searches, multiplied by every file in the
+// run. Names do not change mid-run, so the lookup is memoised, failures
+// included.
 func (api *API) GetUserByName(name string) (*User, error) {
+	if entry, ok := api.cachedUser(name); ok {
+		return entry.user, entry.err
+	}
+
+	user, err := api.fetchUserByName(name)
+
+	api.userCacheMutex.Lock()
+	if api.userCache == nil {
+		api.userCache = make(map[string]userCacheEntry)
+	}
+	api.userCache[name] = userCacheEntry{user: user, err: err}
+	api.userCacheMutex.Unlock()
+
+	return user, err
+}
+
+func (api *API) cachedUser(name string) (userCacheEntry, bool) {
+	api.userCacheMutex.RLock()
+	defer api.userCacheMutex.RUnlock()
+	entry, ok := api.userCache[name]
+	return entry, ok
+}
+
+func (api *API) fetchUserByName(name string) (*User, error) {
 	var response struct {
 		Results []struct {
 			User User
