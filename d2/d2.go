@@ -18,14 +18,14 @@ import (
 	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/rs/zerolog/log"
 
-	"oss.terrastruct.com/d2/d2graph"
-	"oss.terrastruct.com/d2/d2layouts/d2dagrelayout"
-	"oss.terrastruct.com/d2/d2lib"
-	"oss.terrastruct.com/d2/d2renderers/d2svg"
-	"oss.terrastruct.com/d2/d2themes/d2themescatalog"
-	d2log "oss.terrastruct.com/d2/lib/log"
-	"oss.terrastruct.com/d2/lib/textmeasure"
-	"oss.terrastruct.com/util-go/go2"
+	"github.com/d2lang/d2/d2graph"
+	"github.com/d2lang/d2/d2layouts/d2dagrelayout"
+	"github.com/d2lang/d2/d2lib"
+	"github.com/d2lang/d2/d2renderers/d2svg"
+	"github.com/d2lang/d2/d2themes/d2themescatalog"
+	d2log "github.com/d2lang/d2/lib/log"
+	"github.com/d2lang/d2/lib/textmeasure"
+	"github.com/d2lang/util-go/go2"
 )
 
 var renderTimeout = 120 * time.Second
