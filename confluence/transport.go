@@ -43,9 +43,9 @@ const (
 //
 // A cookie jar is always installed. Confluence Server hands out a session
 // cookie on the first authenticated call and expects it back; previously the
-// jar was only present in the default case, because gopencils creates one only
-// when it is not given a client, so --insecure-skip-tls-verify silently
-// dropped session affinity.
+// jar was only present in the default case, because the previous HTTP layer
+// created one only when it was not given a client, so
+// --insecure-skip-tls-verify silently dropped session affinity.
 func newHTTPClient(insecureSkipVerify bool) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -84,8 +84,9 @@ func newHTTPClient(insecureSkipVerify bool) *http.Client {
 }
 
 // retryTransport retries requests that Confluence rejected without acting on
-// them. It sits below gopencils, which is configured not to retry, so this is
-// the only place retries happen.
+// them. It sits below resty, whose own retry is left disabled, so this is the
+// only place retries happen -- and unlike resty's default conditions it is
+// method-aware, so a failed POST is never replayed.
 type retryTransport struct {
 	base  http.RoundTripper
 	sleep func(time.Duration)
@@ -174,7 +175,7 @@ func backoffFor(attempt int, retryAfter string, now time.Time) time.Duration {
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// A request whose body cannot be rewound must not be replayed. net/http
-	// populates GetBody for the in-memory body types gopencils uses.
+	// populates GetBody for the in-memory body types resty uses.
 	canReplay := req.Body == nil || req.GetBody != nil
 
 	var lastResp *http.Response
