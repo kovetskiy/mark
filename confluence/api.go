@@ -29,8 +29,8 @@ type API struct {
 	restV2  *gopencils.Resource
 	BaseURL string
 
-	isCloudFlag    bool
-	isCloudChecked bool
+	isCloudFlag bool
+	isCloudOnce sync.Once
 
 	pageCache      map[string]*PageInfo
 	pageCacheByID  map[string]*PageInfo
@@ -1071,31 +1071,32 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
+// IsCloud reports whether the target is Confluence Cloud, probing at most once
+// per API value.
+//
+// The result is memoised through sync.Once rather than a plain bool pair: the
+// slow path issues an HTTP request, so two callers racing here would both probe
+// and would also write isCloudFlag concurrently. Once also guarantees that a
+// caller arriving while the probe is in flight waits for the answer instead of
+// reading a half-written one.
 func (api *API) IsCloud() bool {
-	if api.isCloudChecked {
-		return api.isCloudFlag
-	}
+	api.isCloudOnce.Do(func() {
+		// 1. Fast path: check default domain suffix
+		host := api.rest.Api.BaseUrl.Hostname()
+		if strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net") {
+			api.isCloudFlag = true
+			return
+		}
 
-	// 1. Fast path: check default domain suffix
-	host := api.rest.Api.BaseUrl.Hostname()
-	if strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net") {
-		api.isCloudFlag = true
-		api.isCloudChecked = true
-		return api.isCloudFlag
-	}
-
-	// 2. Slow path: probe Cloud-only v2 API endpoint
-	var result any
-	request, err := api.restV2.Res("spaces", &result).Get(map[string]string{
-		"limit": "1",
+		// 2. Slow path: probe Cloud-only v2 API endpoint
+		var result any
+		request, err := api.restV2.Res("spaces", &result).Get(map[string]string{
+			"limit": "1",
+		})
+		api.isCloudFlag = err == nil &&
+			(request.Raw.StatusCode == http.StatusOK || request.Raw.StatusCode == http.StatusForbidden)
 	})
-	if err == nil && (request.Raw.StatusCode == http.StatusOK || request.Raw.StatusCode == http.StatusForbidden) {
-		api.isCloudFlag = true
-	} else {
-		api.isCloudFlag = false
-	}
 
-	api.isCloudChecked = true
 	return api.isCloudFlag
 }
 

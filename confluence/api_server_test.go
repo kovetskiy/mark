@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -509,4 +510,55 @@ func TestGetUserByNameCachesPerName(t *testing.T) {
 
 	assert.Equal(t, 2, server.CountRequests("GET", "/rest/api/search"),
 		"one search per distinct name")
+}
+
+// TestIsCloudConcurrentCallsProbeOnce covers the memoisation and its safety
+// together: many goroutines calling IsCloud must agree on the answer, and the
+// Cloud-only probe must be issued at most once. Before sync.Once the flag was
+// read and written without synchronisation, so concurrent callers raced on it
+// and each could issue its own probe.
+func TestIsCloudConcurrentCallsProbeOnce(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+
+	const goroutines = 24
+
+	results := make([]bool, goroutines)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	for i := range goroutines {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // release them together to maximise contention
+			results[i] = api.IsCloud()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, got := range results {
+		assert.Equal(t, results[0], got, "goroutine %d disagreed about IsCloud", i)
+	}
+
+	assert.LessOrEqual(t, server.CountRequests("GET", "/api/v2/spaces"), 1,
+		"the Cloud probe should be issued at most once regardless of caller count")
+}
+
+// TestIsCloudCachesAcrossSequentialCalls is the plain-path counterpart: the
+// answer is memoised, so a second call does not re-probe.
+func TestIsCloudCachesAcrossSequentialCalls(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+
+	first := api.IsCloud()
+	before := server.CountRequests("GET", "/api/v2/spaces")
+
+	for range 5 {
+		assert.Equal(t, first, api.IsCloud())
+	}
+
+	assert.Equal(t, before, server.CountRequests("GET", "/api/v2/spaces"),
+		"repeat calls must not re-probe")
 }
