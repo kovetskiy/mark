@@ -1,7 +1,7 @@
 github.com/BurntSushi/toml v1.5.0 h1:W5quZX/G/csjUnuI8SUYlsHs9M38FC7znL0lIO+DvMg=
 github.com/BurntSushi/toml v1.5.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
-github.com/FurqanSoftware/goldmark-katex v0.0.0-20260802114817-44def238656c h1:Ronz4g11h1iR8tysgX/jLnMPe42OEZJ4+iQBe7T7VPQ=
-github.com/FurqanSoftware/goldmark-katex v0.0.0-20260802114817-44def238656c/go.mod h1:lp/AixdhozkspNZDBD+bshxnQ3Kd9GKUkvi7zeaH0EQ=
+github.com/FurqanSoftware/goldmark-katex v0.0.0-20260803101007-c52a8e1564b2 h1:8X7YkNKOOIwYgGcmXkcj8/HPpY7JI5QnRUW32pu1Sgg=
+github.com/FurqanSoftware/goldmark-katex v0.0.0-20260803101007-c52a8e1564b2/go.mod h1:lp/AixdhozkspNZDBD+bshxnQ3Kd9GKUkvi7zeaH0EQ=
 github.com/Masterminds/semver/v3 v3.2.1 h1:RN9w6+7QoMeJVGyfmbcgs28Br8cvmnucEXnY0rYXWg0=
 github.com/Masterminds/semver/v3 v3.2.1/go.mod h1:qvl/7zhW3nngYb5+80sSMF+FG2BjYrf8m9wsX0PNOMQ=
 github.com/PuerkitoBio/goquery v1.10.0 h1:6fiXdLuUvYs2OJSvNRqlNPoBm6YABE226xrbavY5Wv4=

@@ -3,7 +3,7 @@ module github.com/kovetskiy/mark/v16
 go 1.26
 
 require (
-	github.com/FurqanSoftware/goldmark-katex v0.0.0-20260802114817-44def238656c
+	github.com/FurqanSoftware/goldmark-katex v0.0.0-20260803101007-c52a8e1564b2
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
