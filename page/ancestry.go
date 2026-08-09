@@ -3,6 +3,7 @@ package page
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
@@ -15,18 +16,32 @@ type ParentInfo struct {
 	Type  string // "page" or "folder"
 }
 
-// ponytail: process-wide folder cache; mark syncs files sequentially so no lock needed.
-var createdFolderCache = map[string]string{}
+// Process-wide cache of folders created or found during a run, so that files
+// sharing a folder ancestry do not each re-resolve it.
+//
+// The mutex is not optional even though mark currently syncs files
+// sequentially: the map is package state, so a caller using the library from
+// more than one goroutine -- or any future move to parallel file processing --
+// would otherwise corrupt it, and an unsynchronised map write is a hard
+// runtime throw rather than a subtle wrong answer.
+var (
+	createdFolderCache = map[string]string{}
+	createdFolderMutex sync.RWMutex
+)
 
 func folderCacheKey(space, contextID, title string) string {
 	return space + "\x00" + contextID + "\x00" + title
 }
 
 func cacheFolder(space, contextID, title, id string) {
+	createdFolderMutex.Lock()
+	defer createdFolderMutex.Unlock()
 	createdFolderCache[folderCacheKey(space, contextID, title)] = id
 }
 
 func cachedFolderID(space, contextID, title string) (string, bool) {
+	createdFolderMutex.RLock()
+	defer createdFolderMutex.RUnlock()
 	id, ok := createdFolderCache[folderCacheKey(space, contextID, title)]
 	return id, ok
 }
