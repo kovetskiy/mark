@@ -251,6 +251,66 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
+
+// TestCompileMarkdownMath covers the math feature, which renders LaTeX to
+// KaTeX markup at compile time. testdata/math.md is also picked up by the
+// feature-off tests above, which assert the formulas pass through as plain
+// text; this one pins what KaTeX actually emits.
+//
+// The fixture matters because the emitted markup is tied to the bundled KaTeX
+// version: the v0.18 upgrade renamed presentational classes (base ->
+// katex-base, strut -> katex-strut, sizing -> katex-sizing) and, with no
+// fixture, the suite stayed green through the change.
+func TestCompileMarkdownMath(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	const fixture = "testdata/math.md"
+	markdown, htmlname, html := loadData(t, fixture, "-katex")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"mkdocsadmonitions", "mention", "math"},
+	}
+
+	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
+}
+
+// TestCompileMarkdownMathPreservesEscapes guards a property the golden file
+// alone would not make obvious: the math parser has to claim the formula
+// before Goldmark processes backslash escapes. Without that ordering "\\"
+// collapses to "\" and a pmatrix loses its row separator, which is exactly
+// what testdata/math.html records happening when the feature is off.
+func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	assert.NoError(t, err)
+
+	markdown := []byte(`$$\begin{pmatrix} a & b \\ c & d \end{pmatrix}$$`)
+
+	cfg := types.MarkConfig{Features: []string{"math"}}
+	actual, _, err := mark.CompileMarkdown(markdown, lib, "testdata/math.md", cfg)
+	assert.NoError(t, err)
+
+	assert.Contains(t, actual, `\\`, "the row separator must reach KaTeX unescaped")
+	assert.Equal(t, 2, strings.Count(actual, "<mtr>"), "the matrix should render two rows")
+	assert.NotContains(t, actual, "katex-error", "the formula should parse cleanly")
+}
+
 func TestContinueOnError(t *testing.T) {
 	cmd := &cli.Command{
 		Name:                  "temp-mark",
