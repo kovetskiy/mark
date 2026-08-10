@@ -44,7 +44,7 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v7
     - name: markdownlint-cli2-action
-      uses: DavidAnson/markdownlint-cli2-action@v24.1.0
+      uses: DavidAnson/markdownlint-cli2-action@v24.2.0
 
   # Executes Unit Tests
   ci-unit-tests:
