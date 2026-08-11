@@ -79,3 +79,38 @@ func TestFindDirectiveEnd(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractMacros_InlineTemplateUsesDefaultDelims pins the fix for #362.
+//
+// text/template's New copies the receiver's delimiters onto the new template,
+// and ProcessIncludes returns a set whose most recent member was parsed with
+// whatever an include declared via `Delims:`. Handing that set to ExtractMacros
+// meant an inline macro body was parsed with the include's delimiters, so its
+// own {{ }} actions were left as literal text -- silently, since a template
+// with no recognised actions parses perfectly well.
+//
+// The file-backed branch already pinned "{{" and "}}" explicitly when calling
+// LoadTemplate; only the inline branch inherited.
+func TestExtractMacros_InlineTemplateUsesDefaultDelims(t *testing.T) {
+	// A template set as it looks after an include declaring `Delims: << >>`.
+	poisoned, err := template.New("root").Delims("<<", ">>").Parse("ignored")
+	require.NoError(t, err)
+
+	contents := []byte(`<!-- Macro: ::greet::
+     Template: #inline
+     inline: "Hello {{ .Var }}"
+-->
+
+::greet::
+`)
+
+	macros, _, err := ExtractMacros("", "", contents, poisoned)
+	require.NoError(t, err)
+	require.Len(t, macros, 1)
+
+	var out strings.Builder
+	require.NoError(t, macros[0].Template.Execute(&out, map[string]any{"Var": "world"}))
+
+	assert.Equal(t, "Hello world", out.String(),
+		"an inline macro must use {{ }} regardless of any Delims: an include declared")
+}
