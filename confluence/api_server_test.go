@@ -656,3 +656,31 @@ func TestFindHomePageSpaceWithoutHomepage(t *testing.T) {
 	assert.Contains(t, err.Error(), "has no home page")
 	assert.NotContains(t, err.Error(), "not found")
 }
+
+// TestFindHomePageReportsV1ErrorWhenV2Unavailable guards the diagnosability of
+// the most common first failure mark can hit: FindHomePage is the first call
+// made for any page, so wrong credentials surface here.
+//
+// Server/DC has no /api/v2, so the fallback always ends in a 404 from a path
+// that never existed. Reporting that instead of v1's answer would tell a Server
+// user with a bad token "404 (Not Found)" when the truth is 401.
+func TestFindHomePageReportsV1ErrorWhenV2Unavailable(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.HasPrefix(r.URL.Path, "/rest/api/space/") {
+			return http.StatusUnauthorized, `{"message":"bad credentials"}`, true
+		}
+		// Confluence Server has no v2 API; every path under it is absent.
+		if strings.HasPrefix(r.URL.Path, "/api/v2") {
+			return http.StatusNotFound, `<html>404</html>`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.FindHomePage("DOCS")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401",
+		"the v1 status is the one that explains the failure")
+	assert.Contains(t, err.Error(), "Unauthorized")
+}
