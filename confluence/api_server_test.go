@@ -338,16 +338,14 @@ func TestCreateAttachment(t *testing.T) {
 	assert.Equal(t, "mark:checksum: abc", stored[0].Comment)
 }
 
-// TestGetSpaceID documents current behaviour, which is not the intended
-// behaviour. GetSpaceID says it tries v1 "first (more reliable for space lookup
-// by key)" and falls back to v2, but its v1 struct decodes `id` as a string
-// while Confluence v1 returns a JSON number. The decode fails, gopencils
-// returns the error, and the v1 branch is skipped on every call -- so the
-// fallback is in fact the only path that ever succeeds.
+// TestGetSpaceID pins the v1-first behaviour GetSpaceID has always claimed.
 //
-// The assertion below is deliberately written against what happens today. When
-// the v1 decode is fixed, this test should start failing and be updated to
-// assert that no v2 request is made.
+// The v1 struct used to decode `id` as a string while Confluence v1 returns a
+// JSON number, so the decode failed on every call and the v2 "fallback" was the
+// only path that ever ran. The second assertion is the one that matters: it
+// fails if v1 silently stops working again, which is exactly how the bug hid --
+// the function still returned the right answer, just never by the route it said
+// it took.
 func TestGetSpaceID(t *testing.T) {
 	api, server := newAPI(t)
 	space := server.AddSpace("DOCS")
@@ -357,9 +355,36 @@ func TestGetSpaceID(t *testing.T) {
 	assert.Equal(t, space.ID, id)
 
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/space/DOCS"),
-		"the v1 lookup is attempted")
+		"the v1 lookup answers")
+	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/spaces"),
+		"so v2 must not be consulted at all")
+}
+
+// TestGetSpaceIDFallsBackToV2 keeps the fallback covered now that it is no
+// longer reached on every call: a scoped API token gets 404 from the v1 space
+// endpoint, the same shape FindHomePage handles.
+func TestGetSpaceIDFallsBackToV2(t *testing.T) {
+	api, server := newAPI(t)
+	space := server.AddSpace("DOCS")
+	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
+
+	id, err := api.GetSpaceID("DOCS")
+	require.NoError(t, err)
+	assert.Equal(t, space.ID, id)
+
 	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"),
-		"but its response cannot be decoded, so v2 is always used")
+		"v2 answers once v1 refuses")
+}
+
+// TestGetSpaceIDMissingSpace: neither API knows the space, and the error names
+// the key rather than surfacing a bare status.
+func TestGetSpaceIDMissingSpace(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+
+	_, err := api.GetSpaceID("NOPE")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NOPE")
 }
 
 // TestRetriesThroughTheRealClientStack drives a retry end to end: real

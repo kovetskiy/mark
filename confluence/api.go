@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -1335,15 +1336,24 @@ func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
 }
 
 func (api *API) GetSpaceID(spaceKey string) (string, error) {
-	// Try v1 API first (more reliable for space lookup by key)
-	v1Result := struct {
-		ID  string `json:"id"`
-		Key string `json:"key"`
-	}{}
+	// Try v1 first: it looks a space up by key directly, where v2 has to be
+	// asked for a filtered collection.
+	//
+	// The response is decoded into SpaceInfo rather than a struct declared
+	// here. The local one typed `id` as a string, but v1 returns it as a JSON
+	// *number*, so the decode failed on every single call, gopencils returned
+	// the error, and this branch was skipped every time -- making the v2
+	// "fallback" below the only path that had ever run. SpaceInfo already types
+	// the field correctly and is exercised against real Confluence by
+	// FindHomePage, so there is no reason for a second, divergent shape.
+	//
+	// v2 keeps its own string-typed struct: the two APIs genuinely disagree
+	// about this field, which is what made the mismatch easy to miss.
+	var v1Result SpaceInfo
 
 	request, err := api.rest.Res("space/"+spaceKey, &v1Result).Get()
-	if err == nil && request.Raw.StatusCode == http.StatusOK {
-		return v1Result.ID, nil
+	if err == nil && request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
+		return strconv.Itoa(v1Result.ID), nil
 	}
 
 	// Fallback to v2 API with query parameter
