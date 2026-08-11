@@ -335,11 +335,11 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		"expand": "homepage",
 	}
 
-	request, err := api.rest.Res(
+	v1Request, v1Err := api.rest.Res(
 		"space/"+space, &SpaceInfo{},
 	).Get(payload)
-	if err == nil && request.Raw.StatusCode == http.StatusOK {
-		return &request.Response.(*SpaceInfo).Homepage, nil
+	if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK {
+		return &v1Request.Response.(*SpaceInfo).Homepage, nil
 	}
 
 	// Any non-OK v1 answer falls through to v2, mirroring GetSpaceID. The case
@@ -355,15 +355,23 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		} `json:"results"`
 	}{}
 
-	request, err = api.restV2.Res(
+	v2Request, v2Err := api.restV2.Res(
 		"spaces", &v2Result,
 	).Get(map[string]string{"keys": space})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get space %s (tried both v1 and v2 APIs): %w", space, err)
+	if v2Err == nil && v2Request.Raw.StatusCode != http.StatusOK {
+		v2Err = newErrorStatusNotOK(v2Request)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	// When v2 cannot answer either, report why v1 refused rather than why v2
+	// did. Server/DC has no /api/v2 at all, so every fallback there ends in a
+	// 404 from a path that was never going to exist, and surfacing that instead
+	// of v1's answer turns a clear "401 (Unauthorized)" -- the error a Server
+	// user with bad credentials should see -- into a misleading "404".
+	if v2Err != nil {
+		if v1Err == nil {
+			v1Err = newErrorStatusNotOK(v1Request)
+		}
+		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %w)", v1Err, v2Err)
 	}
 
 	if len(v2Result.Results) == 0 {
