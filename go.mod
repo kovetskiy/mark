@@ -10,7 +10,6 @@ require (
 	github.com/d2lang/d2 v0.8.1
 	github.com/d2lang/util-go v0.2.0
 	github.com/dreampuf/mermaid.go v0.2.3
-	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.1
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.11.1
@@ -21,6 +20,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/net v0.57.0
 	golang.org/x/text v0.40.0
+	resty.dev/v3 v3.0.0-rc.3
 )
 
 require (
