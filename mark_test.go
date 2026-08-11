@@ -11,7 +11,6 @@ import (
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -420,7 +419,7 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 
 // TestFormatVersionMessage covers the round trip --changes-only depends on:
 // whatever formatVersionMessage writes must be readable by
-// contentHashPattern on the next run, or the page updates every time.
+// readContentHash on the next run, or the page updates every time.
 func TestFormatVersionMessage(t *testing.T) {
 	const hash = "0123456789abcdef0123456789abcdef01234567"
 
@@ -439,9 +438,8 @@ func TestFormatVersionMessage(t *testing.T) {
 			if len(truncated) > limit {
 				truncated = truncated[:limit]
 			}
-			matches := contentHashPattern.FindStringSubmatch(truncated)
-			require.Len(t, matches, 2, "hash must survive truncation at %d", limit)
-			assert.Equal(t, hash, matches[1])
+			matches := readContentHash(truncated)
+			assert.Equal(t, hash, matches, "hash must survive truncation at %d", limit)
 		}
 	})
 
@@ -456,9 +454,8 @@ func TestFormatVersionMessage(t *testing.T) {
 
 	t.Run("round trips through the reader", func(t *testing.T) {
 		for _, msg := range []string{"", "published by CI", "[brackets] and (parens)"} {
-			matches := contentHashPattern.FindStringSubmatch(formatVersionMessage(msg, hash))
-			require.Len(t, matches, 2, "message %q must round trip", msg)
-			assert.Equal(t, hash, matches[1])
+			assert.Equal(t, hash, readContentHash(formatVersionMessage(msg, hash)),
+				"message %q must round trip", msg)
 		}
 	})
 }
@@ -471,9 +468,8 @@ func TestContentHashPatternReadsLegacyTrailingTag(t *testing.T) {
 	const hash = "89abcdef0123456789abcdef0123456789abcdef"
 
 	legacy := fmt.Sprintf("%s [v%s]", "published by CI", hash)
-	matches := contentHashPattern.FindStringSubmatch(legacy)
-	require.Len(t, matches, 2, "the old trailing format must still be recognised")
-	assert.Equal(t, hash, matches[1])
+	assert.Equal(t, hash, readContentHash(legacy),
+		"the old trailing format must still be recognised")
 }
 
 // TestContentHashPatternIgnoresNonHashes guards against a version message that
@@ -485,7 +481,35 @@ func TestContentHashPatternIgnoresNonHashes(t *testing.T) {
 		"[v0123456789abcdef0123456789abcdef0123456]",  // 39 chars
 		"no tag at all",
 	} {
-		assert.Nil(t, contentHashPattern.FindStringSubmatch(msg),
+		assert.Empty(t, readContentHash(msg),
 			"%q must not be read as a fingerprint", msg)
 	}
+}
+
+// TestReadContentHashIgnoresTagsInsideTheMessage pins the reason both patterns
+// are anchored.
+//
+// An operator's --version-message can itself contain something tag-shaped --
+// someone quoting a previous version message, most plausibly. An unanchored
+// search would find that copy first and prefer it over the real fingerprint at
+// the end. The result is only an update that was not needed, never a change
+// that was missed, but position is free information and discarding it makes
+// the wrong answer reachable for no benefit.
+func TestReadContentHashIgnoresTagsInsideTheMessage(t *testing.T) {
+	const real = "0123456789abcdef0123456789abcdef01234567"
+	const quoted = "89abcdef0123456789abcdef0123456789abcdef"
+
+	// A page still carrying the legacy trailing layout, whose operator message
+	// quotes an older tag.
+	legacy := fmt.Sprintf("re-publish of [v%s] [v%s]", quoted, real)
+	assert.Equal(t, real, readContentHash(legacy),
+		"the trailing fingerprint is the real one, not the quoted copy")
+
+	// The layout mark writes now: its own tag leads, so it wins outright.
+	current := fmt.Sprintf("[v%s] re-publish of [v%s]", real, quoted)
+	assert.Equal(t, real, readContentHash(current))
+
+	// A tag that is neither leading nor trailing is not a fingerprint at all.
+	buried := fmt.Sprintf("see [v%s] for context", quoted)
+	assert.Empty(t, readContentHash(buried))
 }
