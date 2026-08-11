@@ -170,3 +170,38 @@ func TestPageCacheZeroValueAPI(t *testing.T) {
 	api2.setCacheEntry("key", &PageInfo{ID: "123"})
 	api2.pageCacheMutex.Unlock()
 }
+
+// TestIsCloudHost pins the host classification the IsCloud fast path relies on.
+// The gateway host matters because scoped API tokens can only be used against
+// it, and the dot-boundary cases matter because a bare suffix check accepted
+// hosts like "notatlassian.net" and sent self-hosted instances down the Cloud
+// code paths.
+func TestIsCloudHost(t *testing.T) {
+	cloud := []string{
+		"example.atlassian.net",
+		"example.jira.com",
+		"atlassian.net",
+		"jira.com",
+		"api.atlassian.com",
+		"API.Atlassian.Com",         // hosts are case-insensitive
+		"example.ATLASSIAN.net",     // ... in the suffix match too
+		"example.atlassian.net.",    // fully qualified, trailing root label
+		"deep.nested.atlassian.net", // more than one label deep
+	}
+	for _, host := range cloud {
+		assert.True(t, isCloudHost(host), "%q should be recognised as Cloud", host)
+	}
+
+	notCloud := []string{
+		"confluence.example.com",
+		"notatlassian.net",
+		"eviljira.com",
+		"atlassian.net.example.com", // the domain appears, but not as a suffix
+		"api.atlassian.com.evil.io",
+		"myapi.atlassian.com", // only the exact gateway host is the gateway
+		"",
+	}
+	for _, host := range notCloud {
+		assert.False(t, isCloudHost(host), "%q should not be recognised as Cloud", host)
+	}
+}

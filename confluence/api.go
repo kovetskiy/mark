@@ -342,8 +342,12 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return &request.Response.(*SpaceInfo).Homepage, nil
 	}
 
-	// Confluence Cloud answers 404 on the v1 space endpoint for tokens
-	// without classic scopes; fall back to the v2 spaces API.
+	// Any non-OK v1 answer falls through to v2, mirroring GetSpaceID. The case
+	// that motivated the fallback is a scoped API token going through the
+	// api.atlassian.com gateway: those tokens lack the classic scopes, so the
+	// v1 space endpoint answers 404 and every run aborted here. The fallback is
+	// deliberately not narrowed to 404: a token with partial scopes can also
+	// draw 401/403 from v1 while v2 still answers.
 	v2Result := struct {
 		Results []struct {
 			ID         string `json:"id"`
@@ -362,8 +366,15 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	if len(v2Result.Results) == 0 || v2Result.Results[0].HomepageID == "" {
+	if len(v2Result.Results) == 0 {
 		return nil, fmt.Errorf("space with key %s not found", space)
+	}
+
+	// A space that exists but has no homepage is a different failure from a
+	// space that does not exist, and reporting it as "not found" sends people
+	// looking for a typo in a space key that is perfectly correct.
+	if v2Result.Results[0].HomepageID == "" {
+		return nil, fmt.Errorf("space %s has no home page", space)
 	}
 
 	return api.GetPageByID(v2Result.Results[0].HomepageID)
@@ -1091,6 +1102,33 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
+// isCloudHost reports whether a host is a known Confluence Cloud host, without
+// issuing a request.
+//
+// Matching is on a dot boundary rather than a bare suffix: strings.HasSuffix on
+// "atlassian.net" also accepts "notatlassian.net", which would send a
+// self-hosted instance down the Cloud code paths.
+//
+// api.atlassian.com is the gateway that scoped API tokens must go through
+// (https://api.atlassian.com/ex/confluence/<cloudId>/wiki). It always fronts
+// Cloud, and matching it here means the common scoped-token setup answers from
+// the fast path instead of paying for a probe.
+func isCloudHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+
+	if host == "api.atlassian.com" {
+		return true
+	}
+
+	for _, domain := range []string{"jira.com", "atlassian.net"} {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // IsCloud reports whether the target is Confluence Cloud, probing at most once
 // per API value.
 //
@@ -1101,9 +1139,8 @@ func (api *API) GetCurrentUser() (*User, error) {
 // reading a half-written one.
 func (api *API) IsCloud() bool {
 	api.isCloudOnce.Do(func() {
-		// 1. Fast path: check default domain suffix
-		host := api.rest.Api.BaseUrl.Hostname()
-		if strings.HasSuffix(host, "jira.com") || strings.HasSuffix(host, "atlassian.net") {
+		// 1. Fast path: check for a known Cloud host
+		if isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
