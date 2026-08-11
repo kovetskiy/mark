@@ -427,8 +427,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		contentHash := sha1Hash(html)
 		log.Debug().Msgf("content hash: %s", contentHash)
 
-		re := regexp.MustCompile(`\[v([a-f0-9]{40})]$`)
-		if matches := re.FindStringSubmatch(target.Version.Message); len(matches) > 1 {
+		if matches := contentHashPattern.FindStringSubmatch(target.Version.Message); len(matches) > 1 {
 			log.Debug().Msgf("previous content hash: %s", matches[1])
 			if matches[1] == contentHash {
 				log.Info().Msgf("page %q is already up to date", target.Title)
@@ -436,7 +435,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			}
 		}
 
-		finalVersionMessage = fmt.Sprintf("%s [v%s]", config.VersionMessage, contentHash)
+		finalVersionMessage = formatVersionMessage(config.VersionMessage, contentHash)
 	} else {
 		finalVersionMessage = config.VersionMessage
 	}
@@ -577,6 +576,33 @@ func sha1Hash(input string) string {
 	h := sha1.New() //nolint:gosec // G401: see the crypto/sha1 import comment
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// contentHashPattern finds the --changes-only fingerprint in a version message.
+//
+// Deliberately unanchored. It used to require the tag at the very end, which
+// only held while the tag was written last; messages carrying it at the front
+// are still recognised, so pages stamped by an older mark keep matching and do
+// not all take one spurious update on the first run after upgrading.
+var contentHashPattern = regexp.MustCompile(`\[v([a-f0-9]{40})]`)
+
+// formatVersionMessage puts the content fingerprint in front of the operator's
+// message.
+//
+// Confluence bounds the version message, and it used to be appended -- so a
+// long --version-message (a commit subject, say) could push the tag past the
+// limit and have it truncated away. Nothing failed loudly: the tag simply never
+// matched on the next run, and --changes-only quietly degraded to updating
+// every page every time, which is precisely the failure nobody notices.
+//
+// Leading with the tag means truncation eats the operator's prose, which is
+// recoverable and visible, instead of the machinery that has to round-trip.
+func formatVersionMessage(message, contentHash string) string {
+	tag := fmt.Sprintf("[v%s]", contentHash)
+	if message == "" {
+		return tag
+	}
+	return tag + " " + message
 }
 
 // htmlEscapeText escapes only the characters that Confluence storage HTML

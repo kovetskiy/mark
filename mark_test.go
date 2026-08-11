@@ -5,11 +5,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -413,5 +415,77 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// TestFormatVersionMessage covers the round trip --changes-only depends on:
+// whatever formatVersionMessage writes must be readable by
+// contentHashPattern on the next run, or the page updates every time.
+func TestFormatVersionMessage(t *testing.T) {
+	const hash = "0123456789abcdef0123456789abcdef01234567"
+
+	t.Run("hash leads so truncation cannot eat it", func(t *testing.T) {
+		// Confluence bounds the version message. With the tag appended, a long
+		// operator message pushed it past the limit and silently disabled
+		// change detection; leading with the tag costs the prose instead.
+		long := strings.Repeat("a very long commit subject ", 40)
+		got := formatVersionMessage(long, hash)
+
+		assert.True(t, strings.HasPrefix(got, "[v"+hash+"]"),
+			"the fingerprint must come first")
+
+		for _, limit := range []int{255, 128, 64, 43} {
+			truncated := got
+			if len(truncated) > limit {
+				truncated = truncated[:limit]
+			}
+			matches := contentHashPattern.FindStringSubmatch(truncated)
+			require.Len(t, matches, 2, "hash must survive truncation at %d", limit)
+			assert.Equal(t, hash, matches[1])
+		}
+	})
+
+	t.Run("empty operator message leaves no stray separator", func(t *testing.T) {
+		assert.Equal(t, "[v"+hash+"]", formatVersionMessage("", hash))
+	})
+
+	t.Run("operator message is preserved", func(t *testing.T) {
+		got := formatVersionMessage("published by CI", hash)
+		assert.Equal(t, "[v"+hash+"] published by CI", got)
+	})
+
+	t.Run("round trips through the reader", func(t *testing.T) {
+		for _, msg := range []string{"", "published by CI", "[brackets] and (parens)"} {
+			matches := contentHashPattern.FindStringSubmatch(formatVersionMessage(msg, hash))
+			require.Len(t, matches, 2, "message %q must round trip", msg)
+			assert.Equal(t, hash, matches[1])
+		}
+	})
+}
+
+// TestContentHashPatternReadsLegacyTrailingTag pins backward compatibility:
+// pages stamped by an older mark carry the tag at the end. If those stopped
+// matching, every page in every space would take one spurious update on the
+// first run after upgrading.
+func TestContentHashPatternReadsLegacyTrailingTag(t *testing.T) {
+	const hash = "89abcdef0123456789abcdef0123456789abcdef"
+
+	legacy := fmt.Sprintf("%s [v%s]", "published by CI", hash)
+	matches := contentHashPattern.FindStringSubmatch(legacy)
+	require.Len(t, matches, 2, "the old trailing format must still be recognised")
+	assert.Equal(t, hash, matches[1])
+}
+
+// TestContentHashPatternIgnoresNonHashes guards against a version message that
+// merely looks tag-shaped being read as a fingerprint.
+func TestContentHashPatternIgnoresNonHashes(t *testing.T) {
+	for _, msg := range []string{
+		"[v123]", // too short
+		"[vZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ]", // not hex
+		"[v0123456789abcdef0123456789abcdef0123456]",  // 39 chars
+		"no tag at all",
+	} {
+		assert.Nil(t, contentHashPattern.FindStringSubmatch(msg),
+			"%q must not be read as a fingerprint", msg)
 	}
 }
