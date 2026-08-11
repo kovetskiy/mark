@@ -427,9 +427,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		contentHash := sha1Hash(html)
 		log.Debug().Msgf("content hash: %s", contentHash)
 
-		if matches := contentHashPattern.FindStringSubmatch(target.Version.Message); len(matches) > 1 {
-			log.Debug().Msgf("previous content hash: %s", matches[1])
-			if matches[1] == contentHash {
+		if previous := readContentHash(target.Version.Message); previous != "" {
+			log.Debug().Msgf("previous content hash: %s", previous)
+			if previous == contentHash {
 				log.Info().Msgf("page %q is already up to date", target.Title)
 				shouldUpdatePage = false
 			}
@@ -578,13 +578,36 @@ func sha1Hash(input string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// contentHashPattern finds the --changes-only fingerprint in a version message.
+var (
+	contentHashLeading  = regexp.MustCompile(`^\[v([a-f0-9]{40})]`)
+	contentHashTrailing = regexp.MustCompile(`\[v([a-f0-9]{40})]$`)
+)
+
+// readContentHash recovers the fingerprint formatVersionMessage wrote, or "" if
+// the message carries none.
 //
-// Deliberately unanchored. It used to require the tag at the very end, which
-// only held while the tag was written last; messages carrying it at the front
-// are still recognised, so pages stamped by an older mark keep matching and do
-// not all take one spurious update on the first run after upgrading.
-var contentHashPattern = regexp.MustCompile(`\[v([a-f0-9]{40})]`)
+// Both layouts have to be read: mark writes the tag first, but pages stamped
+// before that change carry it last, and if those stopped matching then the
+// first run after upgrading would rewrite every page in every space once --
+// exactly what --changes-only exists to prevent.
+//
+// Both are anchored. Matching the tag anywhere would also read one the operator
+// happened to put in --version-message -- someone quoting a previous message,
+// say -- and prefer it over the real one. The consequence is mild, an update
+// that was not needed rather than a change that was missed, but the position is
+// free information and there is no reason to discard it.
+//
+// Leading wins, because that is what mark writes now; trailing is only
+// consulted for pages it has not yet restamped.
+func readContentHash(message string) string {
+	if m := contentHashLeading.FindStringSubmatch(message); m != nil {
+		return m[1]
+	}
+	if m := contentHashTrailing.FindStringSubmatch(message); m != nil {
+		return m[1]
+	}
+	return ""
+}
 
 // formatVersionMessage puts the content fingerprint in front of the operator's
 // message.
