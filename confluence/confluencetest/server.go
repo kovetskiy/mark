@@ -417,7 +417,15 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		results := []map[string]any{}
 		for _, sp := range s.spaces {
 			if key == "" || sp.Key == key {
-				results = append(results, map[string]any{"id": sp.ID, "key": sp.Key})
+				// v2 reports the homepage as an id, unlike v1 which expands the
+				// whole page object. FindHomePage's v2 fallback resolves it with
+				// a second call, so the field has to be here for that path to be
+				// exercised.
+				results = append(results, map[string]any{
+					"id":         sp.ID,
+					"key":        sp.Key,
+					"homepageId": sp.HomepageID,
+				})
 			}
 		}
 		sort.Slice(results, func(i, j int) bool {

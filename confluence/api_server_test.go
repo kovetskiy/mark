@@ -562,3 +562,97 @@ func TestIsCloudCachesAcrossSequentialCalls(t *testing.T) {
 	assert.Equal(t, before, server.CountRequests("GET", "/api/v2/spaces"),
 		"repeat calls must not re-probe")
 }
+
+// scopedTokenV1Gone makes the v1 space endpoint answer as it does for an
+// Atlassian scoped API token: those tokens lack the classic scopes, so v1
+// reports the space as absent even though it exists and v2 can see it.
+func scopedTokenV1Gone(status int) confluencetest.FailFunc {
+	return func(r *http.Request) (int, string, bool) {
+		if strings.HasPrefix(r.URL.Path, "/rest/api/space/") {
+			return status, `{"message":"no permission"}`, true
+		}
+		return 0, "", false
+	}
+}
+
+// TestFindHomePageFallsBackToV2 is the case from issue #341: with a scoped
+// token the v1 space endpoint 404s and mark aborted with "can't obtain home
+// page from space" before ever reaching a working v2 endpoint.
+func TestFindHomePageFallsBackToV2(t *testing.T) {
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
+
+	page, err := api.FindHomePage("DOCS")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+	assert.Equal(t, "Home", page.Title)
+	assert.Equal(t, home.ID, page.ID)
+
+	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/space/DOCS"),
+		"v1 is still tried first")
+	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"),
+		"and v2 resolves the space once v1 refuses")
+}
+
+// TestFindHomePageFallsBackOnAnyNonOK covers the widening the fallback is
+// deliberately written for: a token with partial scopes draws 401/403 from v1
+// rather than 404, and those must fall through too.
+func TestFindHomePageFallsBackOnAnyNonOK(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			api, server := newAPI(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+			server.SetFail(scopedTokenV1Gone(status))
+
+			page, err := api.FindHomePage("DOCS")
+			require.NoError(t, err)
+			require.NotNil(t, page)
+			assert.Equal(t, "Home", page.Title)
+		})
+	}
+}
+
+// TestFindHomePagePrefersV1 pins that the fallback is a fallback: a classic
+// token still gets its answer from v1, with no extra v2 round trip.
+func TestFindHomePagePrefersV1(t *testing.T) {
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	page, err := api.FindHomePage("DOCS")
+	require.NoError(t, err)
+	assert.Equal(t, "Home", page.Title)
+
+	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/spaces"),
+		"v1 answered, so v2 must not be consulted")
+}
+
+// TestFindHomePageMissingSpace: when neither API knows the space, the error
+// must name the space rather than surfacing a bare 404.
+func TestFindHomePageMissingSpace(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
+
+	_, err := api.FindHomePage("NOPE")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NOPE")
+	assert.Contains(t, err.Error(), "not found")
+}
+
+// TestFindHomePageSpaceWithoutHomepage separates "no such space" from "space
+// has no homepage" -- reporting the latter as not-found sends people hunting
+// for a typo in a space key that is correct.
+func TestFindHomePageSpaceWithoutHomepage(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
+
+	_, err := api.FindHomePage("DOCS")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has no home page")
+	assert.NotContains(t, err.Error(), "not found")
+}
