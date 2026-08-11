@@ -282,7 +282,15 @@ func ExtractMacros(
 				return nil, contents, fmt.Errorf("the template config doesn't have '%s' field", m.Name)
 			}
 
-			m.Template, err = templates.New(dir.Template).Parse(body)
+			// Delims must be set explicitly, exactly as the file-backed branch
+			// below does when it calls LoadTemplate. text/template's New copies
+			// the receiver's delimiters, and the set arriving here came from
+			// ProcessIncludes, whose most recent member carries whatever an
+			// include declared via `Delims:`. Without this the macro body would
+			// be parsed with those delimiters and its own {{ }} left as literal
+			// text -- with no error, since a template containing no recognised
+			// actions parses fine.
+			m.Template, err = templates.New(dir.Template).Delims("{{", "}}").Parse(body)
 			if err != nil {
 				return nil, contents, fmt.Errorf("unable to parse template: %w", err)
 			}
