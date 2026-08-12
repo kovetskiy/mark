@@ -925,7 +925,40 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 
 	page.Version.Number = nextPageVersion
 	api.updateCachedPageVersion(page.ID, nextPageVersion)
+
+	// An update can carry a new title, and the cache is keyed by title. A
+	// lookup of the new title earlier in the same run -- before the page wore
+	// it -- cached a miss, and that miss now outlives the fact that produced
+	// it: the next caller is told the page does not exist and tries to create
+	// one, which Confluence rejects as a duplicate title. Dropping the entry
+	// costs one lookup and keeps the cache from asserting something untrue.
+	api.forgetMissesForTitle(page.Title, page.Type)
 	return nil
+}
+
+// forgetMissesForTitle drops cached "no such page" answers for a title.
+//
+// The cache is keyed by title, and a lookup of a title before any page wore it
+// records a miss. An update that moves a page onto that title outlives the fact
+// the miss was recorded from: the next caller is told the page does not exist,
+// tries to create one, and Confluence rejects the duplicate title.
+//
+// Only misses are dropped. A cached page filed under a title it no longer
+// carries is a different and older question, and one this is not the place to
+// answer. The space is not part of the match because PageInfo does not carry
+// one; over-invalidating costs a lookup, and under-invalidating costs a failed
+// publish.
+func (api *API) forgetMissesForTitle(title, pageType string) {
+	api.lazyInit()
+	api.pageCacheMutex.Lock()
+	defer api.pageCacheMutex.Unlock()
+
+	suffix := "\x00" + title + "\x00" + pageType
+	for key, entry := range api.pageCache {
+		if entry == nil && strings.HasSuffix(key, suffix) {
+			delete(api.pageCache, key)
+		}
+	}
 }
 
 func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, error) {
@@ -1462,6 +1495,11 @@ func (api *API) MoveContentAppend(contentID, targetID string) error {
 	}
 }
 
+// ErrNotFound reports that Confluence answered 404. It is a sentinel so a
+// caller can distinguish "the thing is not there" -- which is often an ordinary
+// state rather than a failure -- from every other way a request can go wrong.
+var ErrNotFound = errors.New("404 (Not Found)")
+
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	defer func() {
 		_ = request.Raw.Body.Close()
@@ -1474,8 +1512,11 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	}
 
 	if request.Raw.StatusCode == http.StatusNotFound {
-		return errors.New(
-			"the Confluence API returned unexpected status: 404 (Not Found)",
+		// Wrapped rather than a bare string so callers that need to act on
+		// "this is gone" specifically can ask with errors.Is instead of
+		// matching on the message. The rendered text is unchanged.
+		return fmt.Errorf(
+			"the Confluence API returned unexpected status: %w", ErrNotFound,
 		)
 	}
 
