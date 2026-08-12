@@ -51,6 +51,16 @@ type InlineComment struct {
 	Selection string
 }
 
+// Folder is a Confluence folder. Folders are a Cloud-only, v2-only concept.
+type Folder struct {
+	ID         string
+	Title      string
+	SpaceID    string
+	SpaceKey   string
+	ParentID   string
+	ParentType string
+}
+
 // Space is a Confluence space. HomepageID may be empty.
 type Space struct {
 	ID         string
@@ -86,6 +96,8 @@ type Server struct {
 	pages       map[string]*Page
 	spaces      map[string]*Space
 	attachments []*Attachment
+	properties  []*SpaceProperty
+	folders     []*Folder
 	comments    map[string][]InlineComment
 	users       []User
 	currentUser User
@@ -184,6 +196,69 @@ func (s *Server) AddPage(spaceKey, title, pageType, parentID string) *Page {
 	}
 	s.pages[p.ID] = p
 	return p
+}
+
+// AddFolder registers a folder and returns it. Pass an empty parentID for one
+// hanging directly off a page anchor.
+func (s *Server) AddFolder(spaceKey, title, parentID, parentType string) *Folder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.spaces[spaceKey]; !ok {
+		s.spaces[spaceKey] = &Space{ID: s.newID(), Key: spaceKey}
+	}
+	f := &Folder{
+		ID:         s.newID(),
+		Title:      title,
+		SpaceID:    s.spaces[spaceKey].ID,
+		SpaceKey:   spaceKey,
+		ParentID:   parentID,
+		ParentType: parentType,
+	}
+	s.folders = append(s.folders, f)
+	return f
+}
+
+// Folder returns the stored folder with the given ID, or nil.
+func (s *Server) Folder(id string) *Folder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, f := range s.folders {
+		if f.ID == id {
+			cp := *f
+			return &cp
+		}
+	}
+	return nil
+}
+
+// RenameFolder retitles a folder, as somebody doing it in the Confluence UI
+// would -- which is the case mark cannot see coming.
+func (s *Server) RenameFolder(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, f := range s.folders {
+		if f.ID == id {
+			f.Title = title
+		}
+	}
+}
+
+// Folders returns every stored folder.
+func (s *Server) Folders() []Folder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Folder, 0, len(s.folders))
+	for _, f := range s.folders {
+		out = append(out, *f)
+	}
+	return out
+}
+
+// DeletePage removes a page, as someone deleting it in the Confluence UI would.
+func (s *Server) DeletePage(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pages, id)
 }
 
 // SetHomepage marks a page as the space homepage.
@@ -377,6 +452,12 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		})
 
 	case path == "/search/user" || path == "/search":
+		// The same endpoint serves user lookup and the CQL folder search; the
+		// query says which.
+		if strings.Contains(r.URL.Query().Get("cql"), "type=folder") {
+			s.searchFolder(w, r)
+			return
+		}
 		s.searchUser(w, r)
 
 	case strings.HasPrefix(path, "/space/"):
@@ -395,8 +476,15 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			s.updateAttachment(w, r, id)
 		case sub == "child/comment":
 			s.childComment(w, r, id)
+		case strings.HasPrefix(sub, "move/append/"):
+			s.moveContent(w, r, id, strings.TrimPrefix(sub, "move/append/"))
 		case sub == "label":
 			s.label(w, r, id)
+		case sub == "property":
+			// v1 content properties: POST creates, GET without a key lists.
+			s.contentProperties(w, r, id, "")
+		case strings.HasPrefix(sub, "property/"):
+			s.contentProperties(w, r, id, strings.TrimPrefix(sub, "property/"))
 		case sub == "restriction" || strings.HasPrefix(sub, "restriction"):
 			writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
 		default:
@@ -432,8 +520,287 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 			return results[i]["key"].(string) < results[j]["key"].(string)
 		})
 		writeJSON(w, http.StatusOK, map[string]any{"results": results})
+	case "/folders":
+		s.createFolder(w, r)
+
+	case "/pages":
+		s.createPageV2(w, r)
+
 	default:
+		if folderID, ok := strings.CutPrefix(path, "/folders/"); ok && r.Method == http.MethodGet {
+			s.getFolder(w, folderID)
+			return
+		}
+		// /spaces/{id}/properties and /spaces/{id}/properties/{propertyID}
+		if rest, ok := strings.CutPrefix(path, "/spaces/"); ok {
+			spaceID, sub, _ := strings.Cut(rest, "/")
+			if propertyID, ok := strings.CutPrefix(sub, "properties"); ok {
+				s.spaceProperties(w, r, spaceID, strings.TrimPrefix(propertyID, "/"))
+				return
+			}
+		}
 		http.NotFound(w, r)
+	}
+}
+
+// SpaceProperty is a key/value pair held against a space (v2) or a page (v1).
+// OwnerID is the space id or the content id accordingly; the fake stores both
+// kinds in one list because nothing distinguishes them but the route.
+type SpaceProperty struct {
+	ID      string
+	OwnerID string
+	Key     string
+	Value   json.RawMessage
+	Version int
+}
+
+// SpaceProperty returns the property stored for a space under key, or nil.
+func (s *Server) SpaceProperty(ownerID, key string) *SpaceProperty {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range s.properties {
+		if p.OwnerID == ownerID && p.Key == key {
+			cp := *p
+			return &cp
+		}
+	}
+	return nil
+}
+
+// SetSpaceProperty seeds a property without going through HTTP.
+func (s *Server) SetSpaceProperty(ownerID, key string, value []byte) *SpaceProperty {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range s.properties {
+		if p.OwnerID == ownerID && p.Key == key {
+			p.Value = append(json.RawMessage(nil), value...)
+			p.Version++
+			cp := *p
+			return &cp
+		}
+	}
+	p := &SpaceProperty{
+		ID:      s.newID(),
+		OwnerID: ownerID,
+		Key:     key,
+		Value:   append(json.RawMessage(nil), value...),
+		Version: 1,
+	}
+	s.properties = append(s.properties, p)
+	cp := *p
+	return &cp
+}
+
+// contentProperties serves the v1 content property API, which differs from the
+// v2 space one in two ways that matter: a read of a single key returns the
+// property object directly rather than a collection, and an update addresses it
+// by key rather than by property id.
+// moveContent reparents a page, which is how mark puts an existing page inside
+// a folder.
+func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, targetID string) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[contentID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such content"})
+		return
+	}
+
+	// The target may be a folder or another page; the fake only has to record
+	// that the move happened.
+	p.ParentID = targetID
+	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID})
+}
+
+func (s *Server) contentProperties(w http.ResponseWriter, r *http.Request, contentID, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	propertyJSON := func(p *SpaceProperty) map[string]any {
+		return map[string]any{
+			"id":      p.ID,
+			"key":     p.Key,
+			"value":   p.Value,
+			"version": map[string]any{"number": p.Version},
+		}
+	}
+
+	find := func(k string) *SpaceProperty {
+		for _, p := range s.properties {
+			if p.OwnerID == contentID && p.Key == k {
+				return p
+			}
+		}
+		return nil
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		if key == "" {
+			results := []map[string]any{}
+			for _, p := range s.properties {
+				if p.OwnerID == contentID {
+					results = append(results, propertyJSON(p))
+				}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"results": results})
+			return
+		}
+		p := find(key)
+		if p == nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such property"})
+			return
+		}
+		writeJSON(w, http.StatusOK, propertyJSON(p))
+
+	case http.MethodPost:
+		var payload struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+			return
+		}
+		if find(payload.Key) != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{"message": "property already exists"})
+			return
+		}
+		p := &SpaceProperty{
+			ID:      s.newID(),
+			OwnerID: contentID,
+			Key:     payload.Key,
+			Value:   payload.Value,
+			Version: 1,
+		}
+		s.properties = append(s.properties, p)
+		writeJSON(w, http.StatusOK, propertyJSON(p))
+
+	case http.MethodPut:
+		var payload struct {
+			ID      string          `json:"id"`
+			Key     string          `json:"key"`
+			Value   json.RawMessage `json:"value"`
+			Version struct {
+				Number int `json:"number"`
+			} `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+			return
+		}
+		// Atlassian documents the property id as required on this endpoint, so
+		// the fake insists on it. A fake that is more forgiving than the real
+		// thing is worse than no fake: it certifies code that cannot work.
+		if payload.ID == "" {
+			writeJSON(w, http.StatusBadRequest,
+				map[string]any{"message": "id is required when updating a content property"})
+			return
+		}
+		p := find(key)
+		if p == nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such property"})
+			return
+		}
+		if payload.Version.Number != p.Version+1 {
+			writeJSON(w, http.StatusConflict, map[string]any{"message": "version conflict"})
+			return
+		}
+		p.Value = payload.Value
+		p.Version = payload.Version.Number
+		writeJSON(w, http.StatusOK, propertyJSON(p))
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) spaceProperties(w http.ResponseWriter, r *http.Request, ownerID, propertyID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	propertyJSON := func(p *SpaceProperty) map[string]any {
+		return map[string]any{
+			"id":      p.ID,
+			"key":     p.Key,
+			"value":   p.Value,
+			"version": map[string]any{"number": p.Version},
+		}
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		key := r.URL.Query().Get("key")
+		results := []map[string]any{}
+		for _, p := range s.properties {
+			if p.OwnerID == ownerID && (key == "" || p.Key == key) {
+				results = append(results, propertyJSON(p))
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"results": results})
+
+	case http.MethodPost:
+		var payload struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+			return
+		}
+		for _, p := range s.properties {
+			if p.OwnerID == ownerID && p.Key == payload.Key {
+				writeJSON(w, http.StatusConflict, map[string]any{"message": "property already exists"})
+				return
+			}
+		}
+		p := &SpaceProperty{
+			ID:      s.newID(),
+			OwnerID: ownerID,
+			Key:     payload.Key,
+			Value:   payload.Value,
+			Version: 1,
+		}
+		s.properties = append(s.properties, p)
+		writeJSON(w, http.StatusCreated, propertyJSON(p))
+
+	case http.MethodPut:
+		var payload struct {
+			Key     string          `json:"key"`
+			Value   json.RawMessage `json:"value"`
+			Version struct {
+				Number int `json:"number"`
+			} `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+			return
+		}
+		for _, p := range s.properties {
+			if p.ID != propertyID || p.OwnerID != ownerID {
+				continue
+			}
+			// Confluence versions properties: an update has to name the version
+			// it supersedes, and a stale one loses.
+			if payload.Version.Number != p.Version+1 {
+				writeJSON(w, http.StatusConflict, map[string]any{"message": "version conflict"})
+				return
+			}
+			p.Value = payload.Value
+			p.Version = payload.Version.Number
+			writeJSON(w, http.StatusOK, propertyJSON(p))
+			return
+		}
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such property"})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -782,6 +1149,174 @@ func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {
 		"results": page,
 		"number":  len(page),
 		"_links":  linksWithNext(hasNext),
+	})
+}
+
+// cqlValue pulls a quoted or bare value for a field out of a CQL string. The
+// fake only needs to understand the handful of clauses mark actually sends.
+func cqlValue(cql, field string) string {
+	rest, ok := strings.CutPrefix(cql[max(strings.Index(cql, field+"="), 0):], field+"=")
+	if !ok || !strings.Contains(cql, field+"=") {
+		return ""
+	}
+	if quoted, ok := strings.CutPrefix(rest, `"`); ok {
+		if end := strings.Index(quoted, `"`); end >= 0 {
+			return strings.ReplaceAll(quoted[:end], `\"`, `"`)
+		}
+		return ""
+	}
+	if end := strings.IndexAny(rest, " )"); end >= 0 {
+		return rest[:end]
+	}
+	return rest
+}
+
+func (s *Server) searchFolder(w http.ResponseWriter, r *http.Request) {
+	cql := r.URL.Query().Get("cql")
+	title := cqlValue(cql, "title")
+	spaceKey := cqlValue(cql, "space")
+	ancestor := cqlValue(cql, "ancestor")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	results := []map[string]any{}
+	for _, f := range s.folders {
+		if f.Title != title || (spaceKey != "" && f.SpaceKey != spaceKey) {
+			continue
+		}
+		if ancestor != "" && f.ParentID != ancestor {
+			continue
+		}
+		results = append(results, map[string]any{
+			"content": map[string]any{"id": f.ID, "type": "folder", "title": f.Title},
+		})
+		break
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+func (s *Server) folderJSON(f *Folder) map[string]any {
+	return map[string]any{
+		"id":         f.ID,
+		"type":       "folder",
+		"status":     "current",
+		"title":      f.Title,
+		"spaceId":    f.SpaceID,
+		"parentId":   f.ParentID,
+		"parentType": f.ParentType,
+	}
+}
+
+func (s *Server) getFolder(w http.ResponseWriter, folderID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, f := range s.folders {
+		if f.ID == folderID {
+			writeJSON(w, http.StatusOK, s.folderJSON(f))
+			return
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such folder"})
+}
+
+func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		SpaceID    string `json:"spaceId"`
+		Title      string `json:"title"`
+		ParentID   string `json:"parentId"`
+		ParentType string `json:"parentType"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	spaceKey := ""
+	for _, sp := range s.spaces {
+		if sp.ID == payload.SpaceID {
+			spaceKey = sp.Key
+		}
+	}
+
+	// Confluence rejects a second folder with the same title under one parent,
+	// which is what makes a stranded reference visible rather than silent.
+	for _, f := range s.folders {
+		if f.Title == payload.Title && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
+			writeJSON(w, http.StatusBadRequest,
+				map[string]any{"message": "A folder exists with the same title"})
+			return
+		}
+	}
+
+	f := &Folder{
+		ID:         s.newID(),
+		Title:      payload.Title,
+		SpaceID:    payload.SpaceID,
+		SpaceKey:   spaceKey,
+		ParentID:   payload.ParentID,
+		ParentType: payload.ParentType,
+	}
+	s.folders = append(s.folders, f)
+	writeJSON(w, http.StatusOK, s.folderJSON(f))
+}
+
+// createPageV2 serves the v2 page create mark uses when the parent is a folder.
+func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		SpaceID  string `json:"spaceId"`
+		Title    string `json:"title"`
+		ParentID string `json:"parentId"`
+		Body     struct {
+			Storage struct {
+				Value string `json:"value"`
+			} `json:"storage"`
+		} `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	spaceKey := ""
+	for _, sp := range s.spaces {
+		if sp.ID == payload.SpaceID {
+			spaceKey = sp.Key
+		}
+	}
+
+	p := &Page{
+		ID:       s.newID(),
+		Title:    payload.Title,
+		Type:     "page",
+		SpaceKey: spaceKey,
+		ParentID: payload.ParentID,
+		Version:  1,
+		Body:     payload.Body.Storage.Value,
+	}
+	s.pages[p.ID] = p
+	// The version has to come back. Without it the caller computes the version
+	// it is superseding from zero, and its first update is rejected as stale.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":      p.ID,
+		"title":   p.Title,
+		"type":    "page",
+		"version": map[string]any{"number": p.Version},
+		"_links":  map[string]any{"webui": "/display/" + spaceKey + "/" + p.ID},
 	})
 }
 
