@@ -24,6 +24,7 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/metadata"
@@ -68,6 +69,7 @@ type Config struct {
 	EditLock         bool
 	ChangesOnly      bool
 	PreserveComments bool
+	TrackPages       bool
 
 	// Rendering
 	DropH1          bool
@@ -97,6 +99,11 @@ func (c Config) output() io.Writer {
 func Run(config Config) error {
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
 
+	// Folder resolutions are cached in a package-level map that outlives this
+	// call, so a second run in the same process -- against another instance,
+	// even -- would otherwise start with the first run's answers.
+	page.ResetFolderCache()
+
 	files, err := doublestar.FilepathGlob(config.Files)
 	if err != nil {
 		return err
@@ -120,11 +127,48 @@ func Run(config Config) error {
 		return fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
+	// The manifest is only consulted when asked for. It changes how an existing
+	// page is found, which is not something to switch on under anyone without
+	// their say-so.
+	var tracker *manifest.Store
+	if config.TrackPages {
+		// A dry run resolves exactly as a real one does -- otherwise its preview
+		// is fiction -- and resolving records what it finds. The store it gets
+		// cannot write, which is a guard that holds however it is used.
+		if config.DryRun {
+			tracker = manifest.NewReadOnlyStore(api)
+		} else {
+			tracker = manifest.NewStore(api)
+		}
+		if config.PageID != "" {
+			// The mapping is keyed on a source path within a space, and neither
+			// is known when publishing straight to a page id. Better said once
+			// than discovered later as a manifest with holes in it.
+			log.Warn().Msg(
+				"--track-pages has no effect together with a page id: " +
+					"the mapping is per space and per file, and neither applies here",
+			)
+			tracker = nil
+		}
+	}
+
+	// A nil *manifest.Store put into a non-nil interface is still a non-nil
+	// interface, so page would see tracking as enabled and call through a nil
+	// receiver. Build the interface value only when there is a store behind it.
+	var folders page.FolderTracker
+	if tracker != nil {
+		folders = tracker
+		// The whole file set is known before any of it is processed, which is
+		// what lets a recorded path missing from the run be read as a rename
+		// rather than a guess made one document at a time.
+		tracker.SetRunFiles(config.Files, files)
+	}
+
 	var hasErrors bool
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, err := processFile(file, api, config, std)
+		target, err := processFile(file, api, config, std, tracker, folders)
 		if err != nil {
 			if config.ContinueOnError {
 				log.Error().Err(err).Msgf("processing %s", file)
@@ -142,11 +186,61 @@ func Run(config Config) error {
 		}
 	}
 
+	// The manifest is saved before the run's own outcome is decided. Returning
+	// early on hasErrors used to skip it entirely, so a single bad file threw
+	// away the mapping for every page that had published perfectly well --
+	// worst under --continue-on-error, which exists precisely to keep going.
+	// What was recorded actually happened, and is worth keeping either way.
+	var saveErr error
+	if tracker != nil {
+		reportOrphans(tracker, hasErrors)
+		pruneOrphans(tracker, hasErrors, config.DryRun)
+		if saveErr = tracker.Save(); saveErr != nil {
+			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)
+		}
+	}
+
 	if hasErrors {
+		// The files are the more useful complaint; a failed manifest write is
+		// secondary and must not displace it.
+		if saveErr != nil {
+			log.Error().Err(saveErr).Msg("page manifest was not saved")
+		}
 		return fmt.Errorf("one or more files failed to process")
 	}
 
-	return nil
+	return saveErr
+}
+
+// reportOrphans logs pages the manifest knows about that this run did not
+// publish to. It only reports; nothing here deletes anything.
+//
+// A path can be missing for two very different reasons -- the file was deleted,
+// or this run simply did not cover it -- and mark cannot tell them apart. A run
+// narrowed by --files leaves everything outside the glob unseen, and those files
+// are present and fine. The wording says candidates for that reason, and acting
+// on them is left to a human until there is a mechanism that can distinguish the
+// two cases.
+func reportOrphans(tracker *manifest.Store, hadErrors bool) {
+	for _, space := range tracker.Spaces() {
+		orphans := tracker.Orphans(space)
+		if len(orphans) == 0 {
+			continue
+		}
+		if hadErrors {
+			// Some files did not process, which is indistinguishable from those
+			// files being gone. Reporting them now would be actively misleading.
+			log.Debug().Msgf(
+				"space %q has %d unpublished tracked pages, not reported because this run had errors",
+				space, len(orphans),
+			)
+			continue
+		}
+		log.Info().Msgf(
+			"space %q: %d tracked page(s) had no matching source file in this run: %s",
+			space, len(orphans), strings.Join(orphans, ", "),
+		)
+	}
 }
 
 // ProcessFile processes a single markdown file and publishes it to Confluence.
@@ -160,16 +254,23 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	return processFile(file, api, config, std)
+	return processFile(file, api, config, std, nil, nil)
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib) (*confluence.PageInfo, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker) (*confluence.PageInfo, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
+
+	// Fingerprint the source as read, before metadata is stripped and links are
+	// substituted. Both of those depend on state outside the file -- what is
+	// already published, what other files resolve to -- and a fingerprint that
+	// moves with the remote would not survive the round trip it exists for.
+	sourceHash := sha1Hash(string(markdown))
+
 	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
 
 	meta, markdown, err := metadata.ExtractMeta(
@@ -236,8 +337,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	if config.DryRun {
 		if meta != nil {
-			if _, _, err := page.ResolvePage(true, api, meta); err != nil {
+			if _, pg, err := page.ResolvePage(true, api, meta, folders); err != nil {
 				return nil, fmt.Errorf("unable to resolve page location: %w", err)
+			} else if pg == nil {
+				// The title found nothing, which is where a real run consults
+				// the manifest. Saying so is the whole point of a dry run:
+				// otherwise it reports a new page for every rename and retitle
+				// the run would actually have handled in place.
+				previewTrackedResolution(tracker, api, meta, file, sourceHash)
 			}
 		} else if config.PageID != "" {
 			if _, err := api.GetPageByID(config.PageID); err != nil {
@@ -277,11 +384,45 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	var target *confluence.PageInfo
 	var pageCreated bool
+	// A page whose title changed has to be written even when its content did
+	// not, or --changes-only would leave it under the old title forever.
+	var titleChanged bool
 
 	if meta != nil {
-		parent, pg, err := page.ResolvePage(false, api, meta)
+		// Parents are named by title, so a parent that has itself been renamed
+		// leaves this document pointing at a name nothing carries any more.
+		// Do this before resolution, so ancestry is walked against titles that
+		// exist rather than creating an empty page under the old one.
+		if err := refreshStaleParents(tracker, api, meta); err != nil {
+			return nil, err
+		}
+
+		parent, pg, err := page.ResolvePage(false, api, meta, folders)
 		if err != nil {
 			return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
+		}
+
+		// The title lookup found nothing, which is how both "this page is new"
+		// and "this page was renamed" look. Ask the manifest which of the two
+		// this is before creating a second page beside the first.
+		if pg == nil {
+			pg, err = resolveTrackedPage(tracker, api, meta, file)
+			if err != nil {
+				return nil, err
+			}
+			if pg == nil {
+				// Not published under this path before. It may have been
+				// published under another: a renamed file is a new key holding
+				// an old document.
+				pg, err = resolveRenamedFile(tracker, api, meta, file, sourceHash)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if pg != nil && pg.Title != meta.Title {
+				pg.Title = meta.Title
+				titleChanged = true
+			}
 		}
 
 		if pg == nil {
@@ -430,8 +571,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if previous := readContentHash(target.Version.Message); previous != "" {
 			log.Debug().Msgf("previous content hash: %s", previous)
 			if previous == contentHash {
-				log.Info().Msgf("page %q is already up to date", target.Title)
-				shouldUpdatePage = false
+				if titleChanged {
+					log.Info().Msgf("page %q is unchanged but is being retitled", target.Title)
+				} else {
+					log.Info().Msgf("page %q is already up to date", target.Title)
+					shouldUpdatePage = false
+				}
 			}
 		}
 
@@ -458,6 +603,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		html, err = mergeComments(html, target.Body.Storage.Value, comments)
 		if err != nil {
 			return nil, fmt.Errorf("unable to merge inline comments: %w", err)
+		}
+	}
+
+	if tracker != nil && meta != nil {
+		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
+			return nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 	}
 
@@ -493,6 +644,230 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	return target, nil
+}
+
+// pruneOrphans forgets the entries reportOrphans just named.
+//
+// Left in place the mapping only ever grows, and a file deleted once is
+// reported as missing on every run from then on -- which teaches people to
+// ignore the one message worth reading. Reported once, then forgotten.
+//
+// Nothing is forgotten on a run that had errors, where a file that failed to
+// process is indistinguishable from one that is gone, nor on a dry run, which
+// does not get to change what the next run believes.
+func pruneOrphans(tracker *manifest.Store, hadErrors, dryRun bool) {
+	if hadErrors || dryRun {
+		return
+	}
+
+	for _, space := range tracker.Spaces() {
+		if pruned := tracker.PruneOrphans(space); len(pruned) > 0 {
+			log.Debug().Msgf(
+				"space %q: stopped tracking %d page(s) whose source files are gone",
+				space, len(pruned),
+			)
+		}
+	}
+}
+
+// previewTrackedResolution says what a real run would have done with a document
+// the title lookup could not place.
+//
+// A dry run that reports a new page for every rename and retitle the real run
+// would have handled in place is worse than no dry run, because it is confidently
+// wrong about the one thing somebody is checking.
+func previewTrackedResolution(
+	tracker *manifest.Store,
+	api *confluence.API,
+	meta *metadata.Meta,
+	file string,
+	sourceHash string,
+) {
+	if tracker == nil || meta == nil {
+		return
+	}
+
+	if pg, err := resolveTrackedPage(tracker, api, meta, file); err == nil && pg != nil {
+		log.Info().Msgf(
+			"%s would be published to the existing page %s, retitled from %q to %q",
+			file, pg.ID, pg.Title, meta.Title,
+		)
+		return
+	}
+
+	if pg, err := resolveRenamedFile(tracker, api, meta, file, sourceHash); err == nil && pg != nil {
+		log.Info().Msgf(
+			"%s would be treated as a rename of an already published document, updating page %s",
+			file, pg.ID,
+		)
+		return
+	}
+
+	log.Info().Msgf("%s would be published as a new page %q", file, meta.Title)
+}
+
+// resolveTrackedPage returns the page this file published to on a previous run,
+// for the case where looking the page up by title found nothing.
+//
+// That lookup failing is ambiguous: the page may be new, or it may be the same
+// page under a title that has since changed -- through the Title header, the
+// leading H1, or a rename feeding --title-from-filename. Without the manifest
+// the two are indistinguishable and mark publishes a duplicate.
+//
+// Returning (nil, nil) means "no answer, carry on and create", which covers both
+// a file that has genuinely never been published and one whose recorded page has
+// since been deleted in Confluence. Neither is a failure worth stopping for.
+func resolveTrackedPage(
+	tracker *manifest.Store,
+	api *confluence.API,
+	meta *metadata.Meta,
+	file string,
+) (*confluence.PageInfo, error) {
+	if tracker == nil || meta == nil {
+		return nil, nil
+	}
+
+	entry, ok, err := tracker.Lookup(meta.Space, file)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read page mapping for %q: %w", file, err)
+	}
+	if !ok {
+		return nil, nil
+	}
+
+	pg, err := api.GetPageByID(entry.PageID)
+	if err != nil {
+		// Only a page that is genuinely gone may fall through to being created
+		// again. Treating every failure that way would mean a network blip
+		// publishes a duplicate -- precisely the outcome this exists to prevent
+		// -- so anything else stops the run and is reported.
+		if !errors.Is(err, confluence.ErrNotFound) {
+			return nil, fmt.Errorf(
+				"unable to load page %s recorded for %q: %w", entry.PageID, file, err,
+			)
+		}
+		log.Warn().Msgf(
+			"%s was published to page %s, which no longer exists; a new page will be created",
+			file, entry.PageID,
+		)
+		return nil, nil
+	}
+
+	if pg.Title != meta.Title {
+		log.Info().Msgf(
+			"%s was published as %q and is now %q; retitling page %s rather than creating a second one",
+			file, pg.Title, meta.Title, pg.ID,
+		)
+	}
+
+	return pg, nil
+}
+
+// refreshStaleParents rewrites parent titles that no longer resolve to the
+// titles those pages carry now.
+//
+// mark names a parent by title and creates it when the title is not found, so
+// renaming a page that others declare as their parent strands them: an empty
+// page appears under the old title and the real one's children are moved
+// beneath it. Tracking makes that more likely rather than less, because the
+// parent is now renamed in place instead of being duplicated somewhere visible.
+//
+// Only titles mark itself published are followed, and only when exactly one
+// page was published under the title. Anything ambiguous, or any title mark has
+// never seen, is left exactly as written -- a parent that is genuinely meant to
+// be created still is.
+func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *metadata.Meta) error {
+	if tracker == nil {
+		return nil
+	}
+
+	for i, title := range meta.Parents {
+		// FindPage is memoised, and ancestry resolution is about to ask the
+		// same question, so this costs nothing on the common path where the
+		// parent is exactly where it says it is.
+		existing, err := api.FindPage(meta.Space, title, "page")
+		if err != nil || existing != nil {
+			continue
+		}
+
+		pageID, ok, err := tracker.ResolveStaleTitle(meta.Space, title)
+		if err != nil {
+			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
+		}
+		if !ok {
+			continue
+		}
+
+		renamed, err := api.GetPageByID(pageID)
+		if err != nil || renamed == nil || renamed.Title == title {
+			continue
+		}
+
+		log.Info().Msgf(
+			"parent %q was renamed to %q; using it rather than creating a page under the old title",
+			title, renamed.Title,
+		)
+		meta.Parents[i] = renamed.Title
+	}
+
+	return nil
+}
+
+// resolveRenamedFile returns the page a document published to under a previous
+// path, for a document whose own path is not recorded.
+//
+// A rename is not visible as an event. It shows up as one path that has stopped
+// appearing and another that has started, and the only thing tying them
+// together is what the file contains -- which is how git recovers renames too,
+// after the fact and by similarity rather than by being told.
+//
+// Returning (nil, nil) means no confident answer, and a new page is created.
+// That is the right way to be wrong here: a duplicate is a nuisance, where
+// rebinding onto the wrong page overwrites a document nobody asked to change.
+func resolveRenamedFile(
+	tracker *manifest.Store,
+	api *confluence.API,
+	meta *metadata.Meta,
+	file string,
+	sourceHash string,
+) (*confluence.PageInfo, error) {
+	if tracker == nil || meta == nil {
+		return nil, nil
+	}
+
+	previous, entry, ok, err := tracker.ResolveRenamed(meta.Space, sourceHash)
+	if err != nil {
+		return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
+	}
+	if !ok {
+		return nil, nil
+	}
+
+	pg, err := api.GetPageByID(entry.PageID)
+	if err != nil {
+		if !errors.Is(err, confluence.ErrNotFound) {
+			return nil, fmt.Errorf(
+				"unable to load page %s recorded for %q: %w", entry.PageID, previous, err,
+			)
+		}
+		// Recorded but gone, so there is nothing to rename. Drop the entry so it
+		// stops being offered, and let the document be published afresh.
+		log.Warn().Msgf("%s was published to page %s, which no longer exists", previous, entry.PageID)
+		return nil, tracker.Forget(meta.Space, previous)
+	}
+
+	log.Info().Msgf(
+		"%s has the content %s published as page %s; treating it as a rename rather than a new page",
+		file, previous, pg.ID,
+	)
+
+	// The old path is gone. Left in place it would be reported as a deleted
+	// file on every run from here on.
+	if err := tracker.Forget(meta.Space, previous); err != nil {
+		return nil, err
+	}
+
+	return pg, nil
 }
 
 func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels []string) error {
