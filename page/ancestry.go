@@ -1,6 +1,7 @@
 package page
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -446,6 +447,16 @@ func EnsureAncestry(
 	return parent, nil
 }
 
+// ErrAncestryMismatch reports that a page exists but does not sit where its
+// headers say it should.
+//
+// Distinguished from every other way ancestry resolution can fail because it is
+// the one that is recoverable: the document has declared a different parent, and
+// moving the page there is what it asked for. Everything else -- a page with no
+// parents that is not the homepage, a chain that cannot be resolved -- is a
+// genuine impasse.
+var ErrAncestryMismatch = errors.New("page is not under the declared parents")
+
 func ValidateAncestry(
 	api *confluence.API,
 	space string,
@@ -500,8 +511,9 @@ func ValidateAncestry(
 		}
 
 		if !valid {
-			return nil, fmt.Errorf(
-				"the page has fewer parents than expected: title=%q, actual=[%s], expected=[%s]",
+			return page, fmt.Errorf(
+				"%w: title=%q, actual=[%s], expected=[%s]",
+				ErrAncestryMismatch,
 				page.Title, strings.Join(actual, " > "), strings.Join(ancestry, " > "),
 			)
 		}
@@ -525,8 +537,9 @@ func ValidateAncestry(
 				list = append(list, ancestor.Title)
 			}
 
-			return nil, fmt.Errorf(
-				"unexpected ancestry tree, did not find expected parent page %q in the tree: actual=[%s]",
+			return page, fmt.Errorf(
+				"%w: expected parent %q, actual=[%s]",
+				ErrAncestryMismatch,
 				parent, strings.Join(list, "; "),
 			)
 		}

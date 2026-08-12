@@ -886,3 +886,160 @@ func TestDryRunStillWritesNothingWithTracking(t *testing.T) {
 			"a dry run must issue no writes, saw %s %s", r.Method, r.Path)
 	}
 }
+
+// markdownUnderParent declares a single named parent.
+func markdownUnderParent(parent, title string) string {
+	return `<!-- Space: DOCS -->
+<!-- Parent: ` + parent + ` -->
+<!-- Title: ` + title + ` -->
+
+Body.
+`
+}
+
+// TestChangingTheParentHeaderMovesThePage is issue #430. Changing a Parent
+// header used to fail the run with an ancestry error, leaving the declared
+// hierarchy and the real one disagreeing and doing nothing about either. The
+// reporter said plainly that they expected the page to be moved.
+func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+	other := server.AddPage("DOCS", "Other", "page", home.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	published, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, published)
+
+	// The document now declares a different parent.
+	writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc"))
+	require.NoError(t, Run(config), "a changed parent should move the page, not fail the run")
+
+	assert.Equal(t, other.ID, server.Page(published.ID).ParentID,
+		"the page should now sit under the parent its headers name")
+}
+
+// TestDeeperNestingThanDeclaredIsLeftAlone is the guard on the above. A page
+// nested below its declared parent passes validation today -- every declared
+// parent is somewhere in its ancestry -- and moving those would tear up
+// hierarchies nobody asked to change.
+func TestDeeperNestingThanDeclaredIsLeftAlone(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	parent := server.AddPage("DOCS", "Parent", "page", home.ID)
+	extra := server.AddPage("DOCS", "Extra", "page", parent.ID)
+	deep := server.AddPage("DOCS", "Doc", "page", extra.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	assert.Equal(t, extra.ID, server.Page(deep.ID).ParentID,
+		"a page nested deeper than declared must stay where it is")
+	_ = api
+}
+
+// TestDryRunDoesNotMoveThePage: a dry run reports, it does not rearrange.
+func TestDryRunDoesNotMoveThePage(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	parent := server.AddPage("DOCS", "Parent", "page", home.ID)
+	server.AddPage("DOCS", "Other", "page", home.ID)
+	existing := server.AddPage("DOCS", "Doc", "page", parent.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc"))
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, DryRun: true, Output: io.Discard,
+	}))
+
+	assert.Equal(t, parent.ID, server.Page(existing.ID).ParentID,
+		"a dry run must leave the hierarchy exactly as it found it")
+	_ = api
+}
+
+// TestTitleAndParentChangingTogetherMovesThePage covers the seam between
+// tracking and relocation. A page resolved through the manifest never passed
+// the ancestry check -- that check starts from a title lookup which, the title
+// having changed, just missed -- so an edit changing both would retitle the page
+// and quietly leave it where it was.
+func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+	other := server.AddPage("DOCS", "Other", "page", home.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	published, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, published)
+
+	// One edit, both changes.
+	writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc Renamed"))
+	require.NoError(t, Run(config))
+
+	after := server.Page(published.ID)
+	require.NotNil(t, after)
+	assert.Equal(t, "Doc Renamed", after.Title, "the page should have been retitled")
+	assert.Equal(t, other.ID, after.ParentID, "and moved to the parent its headers name")
+}
+
+// TestTrackedPageDeeperThanDeclaredIsLeftAlone is the same guard as for the
+// title-lookup path, on the manifest path: nesting below the declared parent
+// contradicts nothing and must not be rearranged.
+func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	parent := server.AddPage("DOCS", "Parent", "page", home.ID)
+	extra := server.AddPage("DOCS", "Extra", "page", parent.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	published, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, published)
+
+	// Somebody nests it one level deeper, which the headers do not contradict.
+	require.NoError(t, api.MoveContentAppend(published.ID, extra.ID))
+
+	writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc Renamed"))
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, extra.ID, server.Page(published.ID).ParentID,
+		"a tracked page nested deeper than declared must stay where it is")
+}

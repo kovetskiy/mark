@@ -443,6 +443,22 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			if err := page.EnsurePageUnderFolderParent(api, pg, parent.ID); err != nil {
 				return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
 			}
+		} else if parent != nil && !page.UnderDeclaredParents(pg, meta.Parents) {
+			// A page resolved through the manifest rather than by title never
+			// passed the ancestry check, because that check starts from a title
+			// lookup that just missed. So an edit changing the title and the
+			// parent together would retitle the page and leave it where it was.
+			if err := page.EnsurePageUnderParent(api, pg, parent.ID); err != nil {
+				return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
+			}
+		}
+
+		// Relocating refreshes the page from Confluence, which still carries the
+		// old title -- the retitle above is staged and not published until the
+		// update below. Without this it is overwritten by the move and the page
+		// keeps its old name, silently and only when both changed at once.
+		if titleChanged && pg != nil {
+			pg.Title = meta.Title
 		}
 
 		target = pg

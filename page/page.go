@@ -1,6 +1,7 @@
 package page
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -90,22 +91,35 @@ func ResolvePage(
 		}
 	} else {
 		// Traditional page-only ancestry
+		misplaced := false
 		ancestry := meta.Parents
 		if page != nil && !skipHomeAncestry {
 			ancestry = append(ancestry, page.Title)
 		}
 
 		if len(ancestry) > 0 {
-			page, err := ValidateAncestry(
+			existing, err := ValidateAncestry(
 				api,
 				meta.Space,
 				ancestry,
 			)
 			if err != nil {
-				return nil, nil, err
+				if !errors.Is(err, ErrAncestryMismatch) {
+					return nil, nil, err
+				}
+
+				// The document has declared a different parent than the one the
+				// page currently sits under. Refusing the publish leaves the two
+				// disagreeing and does nothing about it, so the page is moved
+				// where the headers ask once the new parent is resolved.
+				log.Info().Msgf(
+					"page %q is not where its headers say; it will be moved: %s",
+					meta.Title, err,
+				)
+				misplaced = true
 			}
 
-			if page == nil {
+			if existing == nil {
 				log.Warn().
 					Msgf(
 						"page %q is not found ",
@@ -134,6 +148,16 @@ func ResolvePage(
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("can't create ancestry tree %q: %w", strings.Join(meta.Parents, ` > `), err)
+		}
+
+		// Only a page that failed validation is moved. A page nested deeper
+		// than its headers declare passes validation today -- every declared
+		// parent is somewhere in its ancestry -- and moving those would tear up
+		// hierarchies nobody asked to change.
+		if misplaced && !dryRun && page != nil && parent != nil {
+			if err := EnsurePageUnderParent(api, page, parent.ID); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 

@@ -15,6 +15,17 @@ func ImmediateParentID(pg *confluence.PageInfo) string {
 	return pg.Ancestors[len(pg.Ancestors)-1].ID
 }
 
+// UnderDeclaredParents reports whether a page sits under the parents its
+// headers declare.
+//
+// Loose on purpose, and loose in the same way ValidateAncestry is: a page nested
+// below its declared parent still counts, because every parent the headers name
+// is in its ancestry and nothing has been contradicted. Tightening this would
+// move pages whose placement nobody complained about.
+func UnderDeclaredParents(pg *confluence.PageInfo, parents []string) bool {
+	return pageUnderParents(pg, parents)
+}
+
 // pageUnderParents reports whether any ancestor title matches one of the MARK_PARENTS chain.
 func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 	if pg == nil || len(parents) == 0 {
@@ -32,31 +43,43 @@ func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 	return false
 }
 
-// EnsurePageUnderFolderParent moves an existing page under folderID when its direct parent differs.
+// EnsurePageUnderFolderParent moves an existing page under folderID when its
+// direct parent differs.
 func EnsurePageUnderFolderParent(
 	api *confluence.API,
 	pg *confluence.PageInfo,
 	folderID string,
 ) error {
-	if pg == nil || folderID == "" {
+	return EnsurePageUnderParent(api, pg, folderID)
+}
+
+// EnsurePageUnderParent moves an existing page under parentID when its direct
+// parent differs. The parent may be a page or a folder; Confluence moves
+// content the same way either way.
+func EnsurePageUnderParent(
+	api *confluence.API,
+	pg *confluence.PageInfo,
+	parentID string,
+) error {
+	if pg == nil || parentID == "" {
 		return nil
 	}
 
 	currentParent := ImmediateParentID(pg)
-	if currentParent == folderID {
+	if currentParent == parentID {
 		return nil
 	}
 
 	log.Info().Msgf(
-		"moving page %q (%s) from parent %s under folder %s",
+		"moving page %q (%s) from parent %s to %s",
 		pg.Title,
 		pg.ID,
 		currentParent,
-		folderID,
+		parentID,
 	)
 
-	if err := api.MoveContentAppend(pg.ID, folderID); err != nil {
-		return fmt.Errorf("move page %q under folder: %w", pg.Title, err)
+	if err := api.MoveContentAppend(pg.ID, parentID); err != nil {
+		return fmt.Errorf("move page %q under new parent: %w", pg.Title, err)
 	}
 
 	refreshed, err := api.GetPageByID(pg.ID)
