@@ -1151,109 +1151,115 @@ MARK_PRESERVE_COMMENTS=true mark -f docs/page.md
 
 ### Tracking Pages Across Renames
 
-Mark finds an existing page by its title. That title comes from three
-independently changeable places -- the `Title` header, the leading H1, and the
-filename when `--title-from-filename` is set -- so editing any of them makes the
-existing page unfindable, and Mark publishes a second page beside the first.
+Mark finds an existing page by its title, and that title comes from three
+independently changeable places: the `Title` header, the leading H1, and the
+filename when `--title-from-filename` is set. Edit any of them and the existing
+page can no longer be found, so Mark publishes a second page beside the first
+and leaves the original stranded under its old name.
 
 `--track-pages` records which page each source file published to, keyed on the
-file path, and consults that record when the title lookup finds nothing:
+file path, and consults that record at the one moment the title lookup comes up
+empty -- which is where "this page is new" and "this page was renamed" are
+otherwise indistinguishable:
 
 ```bash
 mark --track-pages --files "docs/**/*.md"
 ```
 
-Retitle a document and the existing page is renamed in place rather than
-duplicated. This holds even under `--changes-only`: a page whose content is
-unchanged is still written when its title needs to move.
+Nothing is written back to your repository: no page IDs in the Markdown, no lock
+file, no commit. The record lives in Confluence.
 
-The mapping is stored in Confluence, never in the repository -- no page IDs in
-your Markdown, no lock file, no commit. Where exactly depends on the instance:
+#### What it handles
 
-| | storage |
+| you change | what happens |
 | --- | --- |
-| Cloud | space properties named `mark.manifest.0` … `mark.manifest.15` |
-| Server / Data Center | content properties of the same names on the space homepage |
+| the `Title` header | the existing page is retitled in place |
+| the leading H1 | the same |
+| the **filename** | the page is matched by content and retitled |
+| a **parent page's** title | documents naming it as their parent follow it |
+| a **folder's** title, in Confluence | the folder is reused rather than duplicated |
 
-The mapping is split over sixteen properties rather than held in one, because
-Confluence bounds how large a single property value may be and a single blob
-would put a ceiling on how many files a repository may have. Each path is
-assigned to one of them by a hash of the path, all sixteen are read in a single
-request, and only the ones that changed are written back.
+A retitle is written even under `--changes-only`. The content fingerprint would
+otherwise match, the update would be skipped, and the page would keep its old
+title indefinitely.
 
-Server and Data Center have no space properties -- those exist only in the v2
-API -- so the manifest is anchored to the space homepage instead. Cloud keeps
-the space property rather than using the homepage for both, because content
-properties are a v1 endpoint and v1 is what a scoped API token cannot reach.
+Renaming a file is the awkward case: the path is the key, so a rename is a miss,
+and when the title comes from the filename the title lookup misses too. What
+connects the old page to the new file is the file's own content. Mark knows the
+whole file set before it publishes any of it, so a path that has stopped
+appearing and a new file carrying its content are matched to each other -- much
+as `git log --follow` recovers a rename after the fact rather than being told
+about it.
 
-One caveat on Server and Data Center: changing a space's homepage orphans its
-manifest, and tracking starts over on the next run. That costs the rename
-protection until it is rebuilt, and nothing else -- no page is modified by it.
+That match must be unambiguous. If two unpublished documents share the content,
+or the page is already claimed by another file in the same run, Mark creates a
+new page rather than guessing: a duplicate is a nuisance, where rebinding onto
+the wrong page would overwrite something nobody asked to change. A file renamed
+*and* substantially rewritten in one commit therefore reads as a deletion plus a
+new page -- the same limit Git has.
 
-Mark also reports pages it has published to that no source file accounts for any
-more:
+Folders are tracked for a different reason. Mark never renames a folder itself,
+but somebody renaming one in Confluence would stop it matching the
+`<!-- Folder: -->` header that declares it, and Mark would build a second folder
+beside the first and split the hierarchy in two.
+
+#### What it never does
+
+Mark does not delete pages, and tracking does not change that. It reports source
+files it can no longer account for:
 
 ```text
 space "DOCS": 2 tracked page(s) had no matching source file in this run: docs/old.md, docs/removed.md
 ```
 
-This is a report, not a deletion -- Mark never removes a page. Only files
-published by the same `--files` pattern are considered, so a run narrowed to one
-directory says nothing about any other. The report is suppressed on runs that
-had errors, because a file that failed to process is indistinguishable from one
-that is gone.
+Only files published by the same `--files` pattern are considered, so a run
+narrowed to one directory says nothing about any other. The report is suppressed
+on runs that had errors, where a file that failed to process is
+indistinguishable from one that is gone. Each deletion is reported once: having
+said it, Mark stops tracking that path, so the message does not repeat forever
+and the mapping does not accumulate files that no longer exist. What becomes of
+the page itself is your call.
 
-Each deletion is reported once. Having said it, Mark stops tracking that path,
-so the message does not repeat on every run afterwards -- and the mapping does
-not grow forever with files that no longer exist. The Confluence page is left
-exactly where it is; what becomes of it is your call.
+Two more things are reported rather than acted on: two files that resolve to the
+same page, and a document that changes its `Space`, leaving its old page behind.
 
-A dry run resolves the same way a real one does and says what it would have
-done, including which existing page a retitle or a rename would have updated. It
-writes nothing at all, to Confluence or to the mapping.
+A dry run resolves exactly as a real one does and says what it would have done,
+including which existing page a retitle or a rename would have updated. It
+writes nothing at all -- neither to Confluence nor to the mapping.
 
-References to a renamed page are followed as well. Mark names a parent page by
-title and creates it when the title is not found, so renaming a page that other
-documents declare as their parent would otherwise strand them under a fresh
-empty page carrying the old name. A parent title Mark itself published is
-followed to the page that holds it now; a title Mark has never seen is still
-created as before.
+#### Where the mapping is stored
 
-Folders are tracked too, for a different reason. Mark never renames a folder,
-but somebody renaming one in Confluence would otherwise stop it matching the
-`<!-- Folder: -->` header that declares it, and Mark would build a second folder
-beside the first and split the hierarchy in two.
+| | storage |
+| --- | --- |
+| Cloud | space properties `mark.manifest.0` … `mark.manifest.15`, and `mark.manifest.folders` |
+| Server / Data Center | content properties of the same names, on the space homepage |
 
-Two more things get reported rather than guessed at: two files that resolve to
-the same page, and a document that changes its `Space`, leaving its old page
-behind.
+Space properties exist only in the v2 API, so Server and Data Center anchor to
+the space homepage instead. Cloud keeps the space property rather than using the
+homepage for both, because content properties are a v1 endpoint and v1 is what a
+scoped API token cannot reach.
 
-Renaming a **file** is handled too, and it is the awkward case: the path is the
-key, so a rename is a miss, and when the title comes from the filename the title
-lookup misses as well. What connects the old page to the new file is the file's
-own content. Mark knows the whole file set before it publishes any of it, so a
-recorded path that has stopped appearing and a new file with the same content
-are matched to each other -- the same way `git log --follow` recovers a rename
-after the fact rather than being told about it.
+It is split over sixteen properties rather than held in one because Confluence
+bounds how large a single property value may be, and one blob would cap how many
+files a repository may have. Each path is assigned a shard by hash; all of them
+are read in a single request and only the ones that changed are written back.
 
-The match has to be unambiguous. If two unpublished documents share a
-document's content, or the page is already claimed by another file in the same
-run, Mark creates a new page rather than guessing: a duplicate is a nuisance,
-where rebinding onto the wrong page would overwrite something nobody asked to
-change. A file renamed *and* substantially rewritten in one commit therefore
-reads as a deletion plus a new page, which is the same limit Git has.
+#### Worth knowing
 
-Two things worth knowing. Paths are keyed relative to the directory Mark runs
-in, so `--files "$PWD/docs/*.md"` and `--files "docs/*.md"` share one mapping as
-long as they are run from the same place; a file outside that directory has no
-better anchor and is keyed by its absolute path. And `--track-pages` has no
-effect when publishing straight to a page id, since the mapping is per space and
-per file and a page id is neither.
-
-Turning tracking on for an already-published space costs one run. Nothing is
-recorded until a file is published with the flag set, so the first run adopts
-the existing pages and everything from the second run onwards is protected --
-a rename made in that very first run is not.
+* Turning tracking on for an already-published space costs one run. Nothing is
+  recorded until a file is published with the flag set, so the first run adopts
+  the existing pages and everything from the second run onward is protected. A
+  rename made in that very first run is not.
+* Paths are keyed relative to the directory Mark runs in and with forward
+  slashes, so `--files "$PWD/docs/*.md"` and `--files "docs/*.md"` share one
+  mapping when run from the same place, as do a Windows workstation and Linux
+  CI. A file outside that directory has no better anchor and is keyed by its
+  absolute path.
+* `--track-pages` has no effect when publishing straight to a page ID, since the
+  mapping is per space and per file and a page ID is neither.
+* On Server and Data Center, changing a space's homepage orphans its mapping and
+  tracking starts over on the next run. That costs the rename protection until
+  it is rebuilt, and nothing else -- no page is modified by it.
 
 ## Issues, Bugs & Contributions
 
