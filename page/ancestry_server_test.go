@@ -126,12 +126,14 @@ func TestValidateAncestryWrongParentIsRejected(t *testing.T) {
 	other := server.AddPage("DOCS", "Other", "page", root.ID)
 	server.AddPage("DOCS", "Guides", "page", other.ID)
 
-	_, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
+	found, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
 	require.Error(t, err)
 	// Guides sits two levels deep but three were expected, so the depth check
 	// rejects it before the per-parent comparison runs.
-	assert.Contains(t, err.Error(), "fewer parents than expected")
+	assert.ErrorIs(t, err, page.ErrAncestryMismatch)
 	assert.Contains(t, err.Error(), "actual=[Root > Other]")
+	assert.NotNil(t, found,
+		"the page is returned alongside the error, so the caller can move it")
 }
 
 // TestValidateAncestryWrongParentAtCorrectDepth reaches the per-parent
@@ -144,9 +146,11 @@ func TestValidateAncestryWrongParentAtCorrectDepth(t *testing.T) {
 	extra := server.AddPage("DOCS", "Extra", "page", other.ID)
 	server.AddPage("DOCS", "Guides", "page", extra.ID)
 
-	_, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
+	found, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "did not find expected parent page")
+	assert.ErrorIs(t, err, page.ErrAncestryMismatch)
+	assert.Contains(t, err.Error(), `expected parent "Team"`)
+	assert.NotNil(t, found)
 }
 
 // TestValidateAncestryHomepageWithoutAncestors covers the special case where a

@@ -75,6 +75,13 @@ appended to the values from front matter.
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
 
+Changing a `Parent` header on a page that has already been published moves that
+page to the new parent. Mark treats your repository as the source of truth for
+where a page lives, as it already does for the page's title and content, so a
+page somebody has moved by hand in Confluence is moved back on the next run. A
+page nested *below* its declared parent is left where it is: every parent the
+headers name is still in its ancestry, so nothing is contradicted.
+
 The `Folder` header allows organizing pages within Confluence folders. Like `Parent` headers,
 if Mark can't find the specified folder by title, it creates it. Folders and parents can be
 mixed in the same document to create complex hierarchies.
