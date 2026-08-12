@@ -13,6 +13,7 @@ func ResolvePage(
 	dryRun bool,
 	api *confluence.API,
 	meta *metadata.Meta,
+	tracker FolderTracker,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
 	if meta == nil {
 		return nil, nil, fmt.Errorf("metadata is empty")
@@ -75,6 +76,7 @@ func ResolvePage(
 		parent, err = EnsureMixedAncestry(
 			dryRun,
 			api,
+			tracker,
 			meta.Space,
 			meta.Folders,
 			meta.Parents,

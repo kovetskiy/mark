@@ -29,6 +29,22 @@ var (
 	createdFolderMutex sync.RWMutex
 )
 
+// ResetFolderCache empties the folder cache.
+//
+// The cache is package-level and keyed only by space, parent and title, with no
+// notion of which Confluence it came from. That is fine within one run and
+// wrong across two: Run is a public entry point, so a process can publish twice
+// -- to different instances, even -- and the second would resolve folders to
+// ids the first saw. It also means a folder renamed or deleted between runs is
+// never looked up again.
+//
+// Run calls this before it starts, so a run never inherits another's answers.
+func ResetFolderCache() {
+	createdFolderMutex.Lock()
+	defer createdFolderMutex.Unlock()
+	clear(createdFolderCache)
+}
+
 func folderCacheKey(space, contextID, title string) string {
 	return space + "\x00" + contextID + "\x00" + title
 }
@@ -91,12 +107,41 @@ func resolveFolder(
 
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
+// FolderTracker remembers which Confluence folder a declared folder path
+// resolved to.
+//
+// Folders are found by title, and mark creates one when the title is not found.
+// A folder renamed in Confluence therefore stops matching the header that
+// declares it, and mark builds a second folder beside the first and moves pages
+// into it, splitting the hierarchy. Remembering the folder makes the rename
+// survivable.
+//
+// An interface rather than the concrete store so this package keeps knowing
+// nothing about where the mapping is kept. A nil tracker disables the whole
+// mechanism, which is what every caller that does not opt in passes.
+type FolderTracker interface {
+	RecordFolder(space, folderPath, folderID string) error
+	LookupFolder(space, folderPath string) (string, bool, error)
+}
+
+// folderPathKey names a folder by the chain of titles leading to it, under the
+// anchor it hangs from. The anchor is part of the key because the same chain of
+// titles under a different anchor is a different folder.
+func folderPathKey(anchorPageID *string, folders []string, upto int) string {
+	anchor := ""
+	if anchorPageID != nil {
+		anchor = *anchorPageID
+	}
+	return anchor + "\x00" + strings.Join(folders[:upto+1], "\x00")
+}
+
 func EnsureFolderAncestry(
 	dryRun bool,
 	api *confluence.API,
 	space string,
 	folders []string,
 	anchorPageID *string,
+	tracker FolderTracker,
 ) (*ParentInfo, error) {
 	if len(folders) == 0 {
 		return nil, nil
@@ -132,8 +177,39 @@ func EnsureFolderAncestry(
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
 		}
 
+		if folder == nil && tracker != nil {
+			// No folder carries this title. It may have been renamed in
+			// Confluence since the last run, in which case the folder recorded
+			// for this position is still the right one and creating another
+			// would split the hierarchy in two.
+			key := folderPathKey(anchorPageID, folders, i)
+			id, ok, lookupErr := tracker.LookupFolder(space, key)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("unable to check whether folder %q was renamed: %w", title, lookupErr)
+			}
+			if ok {
+				folder, err = api.GetFolderByID(id)
+				if err != nil {
+					// Recorded but gone. Fall through and create it again.
+					log.Warn().Msgf("folder %q was recorded as %s, which no longer exists", title, id)
+					folder = nil
+				} else if folder != nil {
+					log.Info().Msgf(
+						"folder %q was renamed to %q; using it rather than creating another",
+						title, folder.Title,
+					)
+				}
+			}
+		}
+
 		if folder == nil {
 			break
+		}
+
+		if tracker != nil {
+			if err := tracker.RecordFolder(space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
+				return nil, err
+			}
 		}
 
 		cacheFolder(space, underID, title, folder.ID)
@@ -161,7 +237,10 @@ func EnsureFolderAncestry(
 	)
 
 	if !dryRun {
-		for _, title := range rest {
+		// rest is the tail of folders that does not exist yet, so its offset
+		// within folders is what makes a recorded key match on the next run.
+		firstNew := len(folders) - len(rest)
+		for offset, title := range rest {
 			var folder *confluence.FolderInfo
 			var err error
 
@@ -216,6 +295,13 @@ func EnsureFolderAncestry(
 			}
 			cacheFolder(space, underID, title, folder.ID)
 
+			if tracker != nil {
+				key := folderPathKey(anchorPageID, folders, firstNew+offset)
+				if err := tracker.RecordFolder(space, key, folder.ID); err != nil {
+					return nil, err
+				}
+			}
+
 			parent = &ParentInfo{
 				ID:    folder.ID,
 				Title: folder.Title,
@@ -247,6 +333,7 @@ func EnsureFolderAncestry(
 func EnsureMixedAncestry(
 	dryRun bool,
 	api *confluence.API,
+	tracker FolderTracker,
 	space string,
 	folders []string,
 	pages []string,
@@ -271,7 +358,7 @@ func EnsureMixedAncestry(
 		return EnsureAncestry(dryRun, api, space, pages)
 	}
 
-	folderParent, err := EnsureFolderAncestry(dryRun, api, space, folders, anchorPageID)
+	folderParent, err := EnsureFolderAncestry(dryRun, api, space, folders, anchorPageID, tracker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder hierarchy: %w", err)
 	}
