@@ -872,8 +872,12 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		"content-appearance-published": map[string]any{
 			"value": appearance,
 		},
-		// content-appearance-draft should not be set as this is impacted by
-		// the user editor default configurations - which caused the sporadic published widths.
+		// content-appearance-draft is set alongside published so that opening
+		// the page in the editor doesn't reintroduce the previous width. The
+		// Confluence editor writes both keys with the same value.
+		"content-appearance-draft": map[string]any{
+			"value": appearance,
+		},
 	}
 
 	if emojiString != "" {

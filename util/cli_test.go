@@ -69,6 +69,13 @@ func TestContentAppearanceFlagValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("max is accepted", func(t *testing.T) {
+		err := runWithArgs([]string{"cmd", "--content-appearance", "max"})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
 	t.Run("invalid value is rejected", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--content-appearance", "nope"})
 		if err == nil {

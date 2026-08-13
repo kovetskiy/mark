@@ -111,6 +111,24 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 		assert.NotNil(t, meta)
 		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
 	})
+
+	t.Run("max appearance via cli flag", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, MaxContentAppearance, false)
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, MaxContentAppearance, meta.ContentAppearance)
+	})
+
+	t.Run("max appearance via header", func(t *testing.T) {
+		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: max -->\n\nbody\n")
+
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, "", false)
+		assert.NoError(t, err)
+		assert.NotNil(t, meta)
+		assert.Equal(t, MaxContentAppearance, meta.ContentAppearance)
+	})
 }
 
 func TestExtractMetaYAMLFrontMatterDisabled(t *testing.T) {
