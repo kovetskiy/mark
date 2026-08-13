@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -234,7 +238,52 @@ var Flags = []cli.Flag{
 }
 
 // CheckFlags validates combinations and values of global flags.
+// CheckConfigFile reports a configuration file that cannot be used.
+//
+// Settings are read from the file lazily, one flag at a time, and a file that
+// cannot be parsed simply yields nothing. A stray syntax error therefore
+// removes every setting at once and says nothing, and the first sign of trouble
+// is whichever required value went missing with it -- so "confluence password
+// should be specified" is what an unquoted list three lines further down looks
+// like, which is a long way from where the problem is.
+func CheckConfigFile(command *cli.Command) error {
+	path := command.String("config")
+	if path == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Nothing at the default location is the ordinary case: most
+			// people pass flags. A path somebody named themselves is
+			// different, because there silence makes a typo indistinguishable
+			// from a setting they forgot.
+			//
+			// Compared against the default rather than asked of IsSet, which
+			// answers true for a flag carrying a default value and would
+			// therefore fail every run that has no configuration file at all.
+			if path != ConfigFilePath() {
+				return fmt.Errorf("configuration file %q does not exist", path)
+			}
+			return nil
+		}
+		return fmt.Errorf("unable to read configuration file %q: %w", path, err)
+	}
+
+	var parsed map[string]any
+	if err := toml.Unmarshal(data, &parsed); err != nil {
+		return fmt.Errorf("unable to parse configuration file %q: %w", path, err)
+	}
+
+	return nil
+}
+
 func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
+	if err := CheckConfigFile(command); err != nil {
+		return context, err
+	}
+
 	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
