@@ -482,7 +482,19 @@ func ValidateAncestry(
 			log.Debug().Msgf("page is homepage for space %q", space)
 			isHomepage = true
 		} else {
-			return nil, fmt.Errorf(`page %q has no parents`, page.Title)
+			// The page sits at the root of its space and is not the homepage,
+			// while a document that declares no parents is placed under the
+			// space root page. So the two disagree about where it belongs --
+			// which is a misplacement like any other, and is reported as one so
+			// the caller can move it rather than refuse.
+			//
+			// It used to be a flat refusal, which left the page unpublishable
+			// by mark at all: nothing mark could be told would move it, because
+			// declaring the parent it ought to have is precisely what produces
+			// this state.
+			return page, fmt.Errorf(
+				"%w: %q sits at the root of the space", ErrAncestryMismatch, page.Title,
+			)
 		}
 	}
 
