@@ -581,15 +581,26 @@ func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
 // path, for a document whose own path is not recorded.
 //
 // A rename changes the key, so the entry cannot be found by where it was; the
-// only thing connecting the two is what the document contains. Candidates are
-// restricted to recorded paths this run is not publishing -- a path that is
-// still in the run belongs to a file that still exists, and matching against it
-// would rebind two documents onto one page.
+// only thing connecting the two is what the document contains.
 //
-// Deliberately unforgiving. A match must be unique, and the page must not
-// already be claimed by another document this run. Anything else returns
-// nothing and a new page is created: a duplicate is a nuisance, where rebinding
-// onto the wrong page overwrites a document nobody asked to change.
+// Candidates are restricted to what this run's own --files pattern published,
+// and to paths it is not publishing now. Both restrictions matter, and the
+// second alone is not enough: several mark invocations commonly publish
+// different folders into one space, and every path belonging to another
+// invocation is missing from this one. Without the pattern check they all look
+// like deleted files this document might be a rename of, so a new file that
+// happens to share content with another invocation's document takes over its
+// page -- retitling it and dropping its entry, which leaves that document with
+// no page at all and publishing a duplicate on its next run.
+//
+// The cost is that a file moved from one pattern to another reads as a deletion
+// in the first and a new page in the second. That is already how deletion
+// reporting behaves, and it is the safe direction: a duplicate is a nuisance,
+// where rebinding onto the wrong page overwrites a document nobody asked to
+// change.
+//
+// Deliberately unforgiving beyond that. A match must be unique, and the page
+// must not already be claimed by another document this run.
 func (s *Store) ResolveRenamed(spaceKey, hash string) (string, Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -610,7 +621,8 @@ func (s *Store) ResolveRenamed(spaceKey, hash string) (string, Entry, bool, erro
 	)
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if entry.Hash != hash || s.runFiles[path] || state.claimed[entry.PageID] {
+			if entry.Hash != hash || entry.Glob != s.runGlob ||
+				s.runFiles[path] || state.claimed[entry.PageID] {
 				continue
 			}
 			foundPath, foundEntry = path, entry
