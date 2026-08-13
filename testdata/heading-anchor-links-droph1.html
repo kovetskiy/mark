@@ -1,0 +1,15 @@
+<p>Headings become ids that keep their capitals and punctuation, while the links
+authors write use the lowercase-and-hyphens slug every other Markdown tool
+produces. Both ends have to end up naming the same thing.</p>
+<h2 id="My-Heading">My Heading</h2>
+<p><a href="#My-Heading">slug style</a> and <a href="#My-Heading">exact style</a>.</p>
+<h2 id="API/v2-Guide">API/v2 Guide</h2>
+<p>The conventions disagree about which characters survive at all, so matching is
+on the letters and digits: <a href="#API/v2-Guide">dropped punctuation</a>.</p>
+<h2 id="Release-Notes">Release Notes</h2>
+<h2 id="Release.Notes">Release.Notes</h2>
+<p>Two headings whose ids differ only in punctuation that matching drops are one
+key, so <a href="#release-notes">this</a> is left exactly as written rather than guessed
+at.</p>
+<p><a href="https://example.com/#fragment">not an anchor</a> is untouched, and so is
+<a href="#nothing-here">an unknown target</a>.</p>
