@@ -1124,6 +1124,28 @@ You can also use `**` to get all files recursively.
 mark -f "**/docs/*.md"
 ```
 
+### Links to Headings on the Same Page
+
+Mark generates Confluence-compatible heading anchors, which keep their capitals
+and punctuation: `## My Heading` becomes `id="My-Heading"`. A link written the
+way every other Markdown tool expects -- `[jump](#my-heading)` -- would not name
+that anchor, and would quietly go nowhere.
+
+Mark now points such links at the anchor it actually generated, so both spellings
+work:
+
+```markdown
+## My Heading
+
+[slug style](#my-heading) and [exact style](#My-Heading) both resolve.
+```
+
+Matching is on the letters and digits only, because the two conventions disagree
+about which punctuation survives: a heading `API/v2 Guide` becomes
+`API/v2-Guide`, while a slug of it is `apiv2-guide`. If two headings differ only
+in punctuation that matching drops, the link is left exactly as written rather
+than guessed at.
+
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.

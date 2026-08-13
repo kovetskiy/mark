@@ -323,6 +323,10 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(c.Pipeline, 10),
 		util.Prioritized(ctransformer.NewLayoutTransformer(), 100),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
+		// Last, so that it sees the headings includes and macros brought in as
+		// well as the ones written in the file, and so that heading ids have
+		// already been assigned.
+		util.Prioritized(ctransformer.NewAnchorTransformer(), 900),
 	))
 
 	// Add date widget support if requested

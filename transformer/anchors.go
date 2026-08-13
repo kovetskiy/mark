@@ -1,0 +1,133 @@
+package transformer
+
+import (
+	"strings"
+
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+)
+
+// AnchorTransformer points same-page links at the heading ids mark actually
+// generates.
+//
+// The two ends of a link are produced by different conventions and never met.
+// A heading becomes an id that keeps its capitals and its punctuation --
+// "## My Heading" is "My-Heading" -- while an author writing the link uses the
+// lowercase-and-hyphens slug every other Markdown tool would have made, and
+// writes "#my-heading". Confluence then has a heading with one id and a link
+// pointing at another, so the link silently goes nowhere.
+//
+// Nothing announces this. The page renders, the link is clickable, and it does
+// nothing when clicked, which is the sort of fault nobody reports twice -- they
+// stop linking to headings instead.
+type AnchorTransformer struct{}
+
+// NewAnchorTransformer creates a new AnchorTransformer instance.
+func NewAnchorTransformer() *AnchorTransformer {
+	return &AnchorTransformer{}
+}
+
+// anchorKey reduces an id or a link target to what the two conventions agree
+// on: the letters and digits, in order, folded to lower case.
+//
+// Everything else is discarded rather than mapped, because the conventions do
+// not merely punctuate differently -- they disagree about which characters
+// survive at all. mark keeps "/" and "." in an id where a slug drops them, so
+// "API/v2 Guide" becomes "API/v2-Guide" one way and "apiv2-guide" the other.
+// Comparing only the alphanumerics is what makes those the same heading.
+func anchorKey(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// Transform implements the parser.ASTTransformer interface.
+func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
+	headings := map[string]string{}
+	ambiguous := map[string]bool{}
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || node.Kind() != ast.KindHeading {
+			return ast.WalkContinue, nil
+		}
+
+		id, ok := node.AttributeString("id")
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+
+		value := attributeString(id)
+		key := anchorKey(value)
+		if key == "" {
+			return ast.WalkContinue, nil
+		}
+
+		// Two headings that differ only in punctuation collapse to one key.
+		// Rewriting either would be a guess, so both are left alone -- an
+		// anchor that does not work is better than one that silently goes to
+		// the wrong section.
+		if existing, seen := headings[key]; seen && existing != value {
+			ambiguous[key] = true
+		}
+		headings[key] = value
+
+		return ast.WalkContinue, nil
+	})
+
+	if len(headings) == 0 {
+		return
+	}
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		link, ok := node.(*ast.Link)
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+
+		target, found := strings.CutPrefix(string(link.Destination), "#")
+		if !found || target == "" {
+			return ast.WalkContinue, nil
+		}
+
+		// An id written out exactly -- including one the author set with
+		// {#custom-id} -- is already correct and must not be touched.
+		for _, id := range headings {
+			if id == target {
+				return ast.WalkContinue, nil
+			}
+		}
+
+		key := anchorKey(target)
+		if ambiguous[key] {
+			return ast.WalkContinue, nil
+		}
+
+		if id, ok := headings[key]; ok {
+			link.Destination = []byte("#" + id)
+		}
+
+		return ast.WalkContinue, nil
+	})
+}
+
+// attributeString renders a node attribute value, which goldmark hands back as
+// either bytes or a string depending on how it was set.
+func attributeString(value any) string {
+	switch v := value.(type) {
+	case []byte:
+		return string(v)
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
