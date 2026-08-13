@@ -198,9 +198,13 @@ type Meta struct {
 }
 
 const (
+	// Confluence Cloud's editor shows three widths: Narrow, Wide and Max.
+	// They are stored as "default", "full-width" and "max" respectively.
+	// "fixed" is the legacy value for a narrow page.
 	FullWidthContentAppearance = "full-width"
 	FixedContentAppearance     = "fixed"
 	DefaultContentAppearance   = "default"
+	MaxContentAppearance       = "max"
 )
 
 // toStringSlice reads a front matter key that holds a list of strings.
@@ -339,6 +343,8 @@ func NormalizeContentAppearance(value string) string {
 		return FixedContentAppearance
 	case DefaultContentAppearance:
 		return DefaultContentAppearance
+	case MaxContentAppearance:
+		return MaxContentAppearance
 	default:
 		return FullWidthContentAppearance
 	}
