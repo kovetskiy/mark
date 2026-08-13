@@ -1207,7 +1207,7 @@ recovers a rename after the fact rather than being told about it.
 | a file renamed *and* rewritten in one commit | the fingerprint is exact, so any content change breaks the match. Reads as a deletion plus a new page -- Git's limit too, without an `-M50%` to loosen it |
 | an ambiguous rename | two unpublished documents sharing content, or a target page another file already claimed this run. A duplicate is a nuisance; a wrong rebind overwrites someone's page |
 | anything in the first run | nothing is recorded until a file publishes with the flag set, so the first run only adopts |
-| a rename across two `--files` patterns | matching and reporting are both scoped to the pattern that recorded the entry, so the file is a deletion in one and a new page in the other |
+| a rename across two `--files` patterns | matching and reporting are both scoped to the pattern that recorded the entry, so the file is a deletion in one and a new page in the other. That scoping is what lets several Mark invocations publish different folders into one space without reaching into each other's pages |
 | whether a deletion was intended | it reports; it never deletes |
 | a `Parent:` header change | still fails the run with an ancestry error rather than moving the page |
 | a moved space homepage (Server/DC) | the mapping is anchored to it, so tracking starts over |

@@ -1043,3 +1043,90 @@ func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 	assert.Equal(t, extra.ID, server.Page(published.ID).ParentID,
 		"a tracked page nested deeper than declared must stay where it is")
 }
+
+// multiGlobConfig is one of several mark invocations publishing different
+// folders into a single space, which is a common way to run it.
+func multiGlobConfig(server *confluencetest.Server, glob string) Config {
+	return Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: glob, Features: []string{"mention"},
+		TrackPages: true, TitleFromFilename: true, Output: io.Discard,
+	}
+}
+
+// TestRenameDoesNotReachAcrossGlobs is the failure that scoping rename
+// candidates prevents. Every path belonging to another invocation is missing
+// from this one, so without the check they all look like deleted files this
+// document might be a rename of -- and a new file sharing content with another
+// invocation's document takes over its page, retitling it and dropping its
+// entry, which leaves that document with no page and a duplicate on its next
+// run.
+func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "b"), 0o750))
+	globA := filepath.Join(dir, "a", "*.md")
+	globB := filepath.Join(dir, "b", "*.md")
+
+	// Identical content, which is all it takes: shared boilerplate or a copied
+	// stub is enough.
+	body := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nShared body text.\n"
+
+	writeFile(t, dir, "a/one.md", body)
+	require.NoError(t, Run(multiGlobConfig(server, globA)))
+
+	pageA, err := api.FindPage("DOCS", "One", "page")
+	require.NoError(t, err)
+	require.NotNil(t, pageA)
+
+	// A second invocation adds a brand-new file that happens to match.
+	writeFile(t, dir, "b/two.md", body)
+	require.NoError(t, Run(multiGlobConfig(server, globB)))
+
+	assert.Equal(t, "One", server.Page(pageA.ID).Title,
+		"the other invocation's page must be left alone")
+	assert.Equal(t, 1, countPagesTitled(t, server, "Two"),
+		"the new file should have got its own page")
+
+	// And the first invocation still owns its document: re-running it must not
+	// republish, which is what would happen if its entry had been taken.
+	require.NoError(t, Run(multiGlobConfig(server, globA)))
+	assert.Equal(t, "One", server.Page(pageA.ID).Title)
+	assert.Equal(t, 1, countPagesTitled(t, server, "One"),
+		"no duplicate should have appeared for the first invocation")
+}
+
+// TestRenameStillWorksWithinOneGlob is the control: scoping must not cost the
+// feature its point.
+func TestRenameStillWorksWithinOneGlob(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o750))
+	glob := filepath.Join(dir, "a", "*.md")
+	body := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nBody.\n"
+
+	writeFile(t, dir, "a/old-name.md", body)
+	require.NoError(t, Run(multiGlobConfig(server, glob)))
+
+	published, err := api.FindPage("DOCS", "Old Name", "page")
+	require.NoError(t, err)
+	require.NotNil(t, published)
+
+	require.NoError(t, os.Rename(
+		filepath.Join(dir, "a", "old-name.md"), filepath.Join(dir, "a", "new-name.md")))
+	require.NoError(t, Run(multiGlobConfig(server, glob)))
+
+	assert.Equal(t, "New Name", server.Page(published.ID).Title,
+		"a rename within one pattern must still be followed")
+}
