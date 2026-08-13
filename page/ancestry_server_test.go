@@ -166,15 +166,24 @@ func TestValidateAncestryHomepageWithoutAncestors(t *testing.T) {
 	assert.Equal(t, "Home", found.Title)
 }
 
-// TestValidateAncestryOrphanIsRejected is the same shape as the homepage case
-// but for a page that is not the homepage, which must be an error.
-func TestValidateAncestryOrphanIsRejected(t *testing.T) {
+// TestValidateAncestryRootLevelPageIsMisplaced is the same shape as the
+// homepage case but for a page that is not the homepage. A document declaring
+// no parents is placed under the space root page, so a page sitting at the root
+// instead disagrees with that -- a misplacement, reported as one so the caller
+// can move it.
+//
+// It used to be a flat refusal, which made such a page unpublishable by mark at
+// all: declaring the parent it ought to have is exactly what produces this
+// state, so no header could get past it.
+func TestValidateAncestryRootLevelPageIsMisplaced(t *testing.T) {
 	api, server := newAPI(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
-	server.AddPage("DOCS", "Orphan", "page", "")
+	orphan := server.AddPage("DOCS", "Orphan", "page", "")
 
-	_, err := page.ValidateAncestry(api, "DOCS", []string{"Orphan"})
+	found, err := page.ValidateAncestry(api, "DOCS", []string{"Orphan"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "has no parents")
+	assert.ErrorIs(t, err, page.ErrAncestryMismatch)
+	require.NotNil(t, found, "the page comes back with the error, so it can be moved")
+	assert.Equal(t, orphan.ID, found.ID)
 }

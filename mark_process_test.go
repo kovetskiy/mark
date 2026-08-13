@@ -1130,3 +1130,60 @@ func TestRenameStillWorksWithinOneGlob(t *testing.T) {
 	assert.Equal(t, "New Name", server.Page(published.ID).Title,
 		"a rename within one pattern must still be followed")
 }
+
+// TestRootLevelPageIsAdoptedRatherThanRefused is issue #88's neighbourhood.
+// Publishing to the space homepage works, and always has since the homepage is
+// recognised. A page sitting beside it at the root did not: mark placed a
+// document with no declared parents under the space root page, saw the existing
+// page was not there, and refused.
+//
+// That left such a page unpublishable by any means, because declaring the
+// parent it ought to have is exactly what produces the state being refused.
+func TestRootLevelPageIsAdoptedRatherThanRefused(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	// Somebody created this at the space root, outside mark.
+	orphan := server.AddPage("DOCS", "Standalone", "page", "")
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Standalone -->\n\nAdopted body.\n")
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}), "a page at the space root must be publishable")
+
+	after := server.Page(orphan.ID)
+	require.NotNil(t, after)
+	assert.Contains(t, after.Body, "Adopted body.",
+		"the existing page should have been updated, not passed over")
+	assert.Equal(t, home.ID, after.ParentID,
+		"and moved under the root page, which is where a document with no declared parents belongs")
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "Standalone"),
+		"no second page should have appeared")
+	_ = api
+}
+
+// TestHomepageItselfIsStillPublishable guards the case that already worked:
+// the homepage has no ancestors either, and must not be mistaken for a page
+// that needs moving under itself.
+func TestHomepageItselfIsStillPublishable(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Team Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "home.md", "<!-- Space: DOCS -->\n<!-- Title: Team Home -->\n\nWelcome!\n")
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	after := server.Page(home.ID)
+	require.NotNil(t, after)
+	assert.Contains(t, after.Body, "Welcome!")
+	assert.Empty(t, after.ParentID, "the homepage must stay at the root")
+}
