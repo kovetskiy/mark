@@ -115,6 +115,31 @@ Also, optional following headers are supported:
 * default: sets the Confluence property value to `"default"`, which is the narrow layout as set by the Confluence UI. Note: `fixed` maps to a different Confluence property value and can cause misaligned page title and body content — use `default` instead for the narrow layout.
 
 ```markdown
+<!-- ac:ignore -->
+content that stays out of Confluence
+<!-- ac:ignore end -->
+```
+
+Everything between the two markers is left out of the published page, along with
+the markers themselves. It is for content that reads well in one place and badly
+in the other -- a table of contents that Confluence builds for itself, or a
+plain-text stand-in for a macro:
+
+```markdown
+<!-- Include: ac:profile
+     Name: Doe, John -->
+<!-- ac:ignore -->
+John Doe's profile
+<!-- ac:ignore end -->
+```
+
+Read on GitHub the file shows the name; published to Confluence it shows the
+profile macro. Attachments referenced only inside an ignored region are not
+uploaded, since nothing on the page would point at them. A marker without its
+pair is an error rather than a guess -- quietly publishing half a page is worse
+than refusing.
+
+```markdown
 <!-- Order: <number> -->
 ```
 
