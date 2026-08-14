@@ -97,6 +97,7 @@ type Server struct {
 	spaces      map[string]*Space
 	attachments []*Attachment
 	properties  []*SpaceProperty
+	childOrder  map[string][]string
 	folders     []*Folder
 	comments    map[string][]InlineComment
 	users       []User
@@ -195,6 +196,7 @@ func (s *Server) AddPage(spaceKey, title, pageType, parentID string) *Page {
 		Version:  1,
 	}
 	s.pages[p.ID] = p
+	s.placeChild(p.ParentID, p.ID, "")
 	return p
 }
 
@@ -474,10 +476,14 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		case strings.HasPrefix(sub, "child/attachment/"):
 			// .../child/attachment/{attachID}/data -- attachment update
 			s.updateAttachment(w, r, id)
+		case sub == "child/page":
+			s.childPages(w, r, id)
 		case sub == "child/comment":
 			s.childComment(w, r, id)
-		case strings.HasPrefix(sub, "move/append/"):
-			s.moveContent(w, r, id, strings.TrimPrefix(sub, "move/append/"))
+		case strings.HasPrefix(sub, "move/"):
+			rest := strings.TrimPrefix(sub, "move/")
+			position, target, _ := strings.Cut(rest, "/")
+			s.moveContent(w, r, id, position, target)
 		case sub == "label":
 			s.label(w, r, id)
 		case sub == "property":
@@ -597,7 +603,7 @@ func (s *Server) SetSpaceProperty(ownerID, key string, value []byte) *SpacePrope
 // by key rather than by property id.
 // moveContent reparents a page, which is how mark puts an existing page inside
 // a folder.
-func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, targetID string) {
+func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, position, targetID string) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -614,7 +620,29 @@ func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, 
 
 	// The target may be a folder or another page; the fake only has to record
 	// that the move happened.
-	p.ParentID = targetID
+	switch position {
+	case "append":
+		p.ParentID = targetID
+		s.placeChild(targetID, p.ID, "")
+	case "before", "after":
+		sibling, ok := s.pages[targetID]
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such sibling"})
+			return
+		}
+		// The target is a sibling here, not the new parent, so the page joins
+		// whatever parent the sibling has.
+		p.ParentID = sibling.ParentID
+		if position == "after" {
+			s.placeChild(sibling.ParentID, p.ID, targetID)
+		} else {
+			s.placeBefore(sibling.ParentID, p.ID, targetID)
+		}
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "unknown position " + position})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID})
 }
 
@@ -888,6 +916,7 @@ func (s *Server) createContent(w http.ResponseWriter, r *http.Request) {
 		Body:     payload.Body.Storage.Value,
 	}
 	s.pages[p.ID] = p
+	s.placeChild(p.ParentID, p.ID, "")
 	writeJSON(w, http.StatusOK, s.pageJSON(p))
 }
 
@@ -1069,6 +1098,98 @@ func parseMultipartAttachment(r *http.Request) (filename, comment string) {
 		}
 	}
 	return filename, comment
+}
+
+// childPages lists a page's children in the order the tree shows them, which
+// for the fake is simply the order they were created or last moved into.
+func (s *Server) childPages(w http.ResponseWriter, r *http.Request, parentID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	results := []map[string]any{}
+	for _, id := range s.childOrder[parentID] {
+		if p, ok := s.pages[id]; ok && p.ParentID == parentID {
+			results = append(results, s.pageJSON(p))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// ChildOrder returns the ids of a page's children, in order.
+func (s *Server) ChildOrder(parentID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []string{}
+	for _, id := range s.childOrder[parentID] {
+		if p, ok := s.pages[id]; ok && p.ParentID == parentID {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// placeBefore inserts a child directly before a sibling. Callers must hold the
+// lock.
+func (s *Server) placeBefore(parentID, childID, before string) {
+	s.placeChild(parentID, childID, "")
+	ids := s.childOrder[parentID]
+	// Lift it back out and reinsert ahead of the sibling.
+	for i, id := range ids {
+		if id == childID {
+			ids = append(ids[:i:i], ids[i+1:]...)
+			break
+		}
+	}
+	for i, id := range ids {
+		if id == before {
+			rest := append([]string{childID}, ids[i:]...)
+			s.childOrder[parentID] = append(ids[:i:i], rest...)
+			return
+		}
+	}
+	s.childOrder[parentID] = append(ids, childID)
+}
+
+// placeChild records a child's position under a parent. Callers must hold the
+// lock. Appends when after is empty, otherwise inserts directly after it.
+func (s *Server) placeChild(parentID, childID, after string) {
+	if s.childOrder == nil {
+		s.childOrder = map[string][]string{}
+	}
+
+	// Remove it from wherever it currently sits, including another parent.
+	for parent, ids := range s.childOrder {
+		for i, id := range ids {
+			if id == childID {
+				s.childOrder[parent] = append(ids[:i:i], ids[i+1:]...)
+				break
+			}
+		}
+	}
+
+	if parentID == "" {
+		return
+	}
+
+	if after == "" {
+		s.childOrder[parentID] = append(s.childOrder[parentID], childID)
+		return
+	}
+
+	for i, id := range s.childOrder[parentID] {
+		if id == after {
+			rest := append([]string{childID}, s.childOrder[parentID][i+1:]...)
+			s.childOrder[parentID] = append(s.childOrder[parentID][:i+1:i+1], rest...)
+			return
+		}
+	}
+
+	s.childOrder[parentID] = append(s.childOrder[parentID], childID)
 }
 
 func (s *Server) childComment(w http.ResponseWriter, r *http.Request, pageID string) {
@@ -1309,6 +1430,7 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request) {
 		Body:     payload.Body.Storage.Value,
 	}
 	s.pages[p.ID] = p
+	s.placeChild(p.ParentID, p.ID, "")
 	// The version has to come back. Without it the caller computes the version
 	// it is superseding from zero, and its first update is rejected as stale.
 	writeJSON(w, http.StatusOK, map[string]any{

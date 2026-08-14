@@ -1187,3 +1187,166 @@ func TestHomepageItselfIsStillPublishable(t *testing.T) {
 	assert.Contains(t, after.Body, "Welcome!")
 	assert.Empty(t, after.ParentID, "the homepage must stay at the root")
 }
+
+// orderedDoc is a document asking for a position among its siblings.
+func orderedDoc(title string, order int) string {
+	return fmt.Sprintf(`<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: %s -->
+<!-- Order: %d -->
+
+Body.
+`, title, order)
+}
+
+// orderSpace builds a space and returns the parent the documents hang from.
+func orderSpace(t *testing.T) (*confluencetest.Server, *confluencetest.Page) {
+	t.Helper()
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	return server, server.AddPage("DOCS", "Parent", "page", home.ID)
+}
+
+func titlesOf(t *testing.T, server *confluencetest.Server, parentID string) []string {
+	t.Helper()
+	var titles []string
+	for _, id := range server.ChildOrder(parentID) {
+		titles = append(titles, server.Page(id).Title)
+	}
+	return titles
+}
+
+// TestOrderHeaderArrangesSiblings is the feature: documents are published in
+// whatever order the glob produced them, and end up in the order they asked
+// for.
+func TestOrderHeaderArrangesSiblings(t *testing.T) {
+	server, parent := orderSpace(t)
+	dir := t.TempDir()
+
+	// Written so the filenames sort opposite to the requested order, which is
+	// what shows the ordering is doing the work.
+	writeFile(t, dir, "a.md", orderedDoc("Third", 30))
+	writeFile(t, dir, "b.md", orderedDoc("First", 10))
+	writeFile(t, dir, "c.md", orderedDoc("Second", 20))
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	assert.Equal(t, []string{"First", "Second", "Third"}, titlesOf(t, server, parent.ID))
+}
+
+// TestOrderIsIdempotent is what decides whether this can run in CI. Ordering
+// happens on every publish, so a run that changes nothing must move nothing --
+// otherwise every run fills page histories with churn.
+func TestOrderIsIdempotent(t *testing.T) {
+	server, parent := orderSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", orderedDoc("Third", 30))
+	writeFile(t, dir, "b.md", orderedDoc("First", 10))
+	writeFile(t, dir, "c.md", orderedDoc("Second", 20))
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+	require.Equal(t, []string{"First", "Second", "Third"}, titlesOf(t, server, parent.ID))
+
+	server.ResetRequests()
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, 0, countMoves(server), "a second run must not move anything")
+	assert.Equal(t, []string{"First", "Second", "Third"}, titlesOf(t, server, parent.ID))
+}
+
+func countMoves(server *confluencetest.Server) int {
+	n := 0
+	for _, r := range server.Requests() {
+		if strings.Contains(r.Path, "/move/") {
+			n++
+		}
+	}
+	return n
+}
+
+// TestOrderMovesOnlyWhatMustMove: one page changing position must not
+// reshuffle the rest.
+func TestOrderMovesOnlyWhatMustMove(t *testing.T) {
+	server, parent := orderSpace(t)
+	dir := t.TempDir()
+
+	for i, title := range []string{"One", "Two", "Three", "Four"} {
+		writeFile(t, dir, fmt.Sprintf("%d.md", i), orderedDoc(title, (i+1)*10))
+	}
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+	require.Equal(t, []string{"One", "Two", "Three", "Four"}, titlesOf(t, server, parent.ID))
+
+	// "Four" is asked to lead. Everything else keeps its relative order, so
+	// only one page needs to move.
+	writeFile(t, dir, "3.md", orderedDoc("Four", 5))
+	server.ResetRequests()
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, []string{"Four", "One", "Two", "Three"}, titlesOf(t, server, parent.ID))
+	assert.Equal(t, 1, countMoves(server), "only the page that changed position should move")
+}
+
+// TestOrderLeavesUnorderedPagesAlone: a document that says nothing about order
+// must not be dragged about by the ones that do.
+func TestOrderLeavesUnorderedPagesAlone(t *testing.T) {
+	server, parent := orderSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "plain.md", markdownWithTitle("Plain"))
+	writeFile(t, dir, "a.md", orderedDoc("Second", 20))
+	writeFile(t, dir, "b.md", orderedDoc("First", 10))
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	order := titlesOf(t, server, parent.ID)
+	assert.Contains(t, order, "Plain")
+	first, second := indexOf(order, "First"), indexOf(order, "Second")
+	assert.Less(t, first, second, "the ordered pages should be in the order they asked for")
+}
+
+func indexOf(values []string, want string) int {
+	for i, v := range values {
+		if v == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestOrderIsNotAppliedOnDryRun: a dry run reports and rearranges nothing.
+func TestOrderIsNotAppliedOnDryRun(t *testing.T) {
+	server, parent := orderSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", orderedDoc("Third", 30))
+	writeFile(t, dir, "b.md", orderedDoc("First", 10))
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	// Flip the requested order, then dry run.
+	writeFile(t, dir, "a.md", orderedDoc("Third", 5))
+	before := titlesOf(t, server, parent.ID)
+	config.DryRun = true
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, before, titlesOf(t, server, parent.ID),
+		"a dry run must leave the order exactly as it found it")
+}

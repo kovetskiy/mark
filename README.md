@@ -115,6 +115,24 @@ Also, optional following headers are supported:
 * default: sets the Confluence property value to `"default"`, which is the narrow layout as set by the Confluence UI. Note: `fixed` maps to a different Confluence property value and can cause misaligned page title and body content — use `default` instead for the narrow layout.
 
 ```markdown
+<!-- Order: <number> -->
+```
+
+Positions the page among its siblings, smaller numbers first. Pages that do not
+declare an order are left exactly where Confluence has them, so annotating one
+page does not disturb the rest.
+
+Only pages published in the same run are arranged, and only relative to each
+other -- a run narrowed with `--files` knows nothing about the other children of
+those parents and will not rearrange them. Nothing is moved that is already in
+the right relative order, so a run that changes nothing performs no moves at
+all.
+
+Note that giving Confluence explicit positions takes that branch of the tree out
+of its default alphabetical ordering, which is inherent to asking for a
+particular order.
+
+```markdown
 <!-- Sidebar: <h2>Test</h2> -->
 ```
 

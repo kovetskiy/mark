@@ -1479,12 +1479,74 @@ func (api *API) CreatePageWithFolderParent(
 }
 
 // MoveContentAppend relocates any content (page, folder, etc.) under targetID using the v1 move API.
+// GetChildPages returns a page's children in the order Confluence shows them.
+//
+// The order of this response is the order of the tree in the UI, which is what
+// makes it usable for working out which pages are already where they should be.
+// Position is not requested explicitly: it exists as an extension field but is
+// absent whenever a branch has never been ordered by hand, and the sequence is
+// the part that matters here.
+func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
+	const pageSize = 100
+
+	var all []PageInfo
+	start := 0
+
+	for {
+		result := struct {
+			Results []PageInfo `json:"results"`
+		}{}
+
+		request, err := api.rest.Res(
+			"content/"+parentID+"/child/page", &result,
+		).Get(map[string]string{
+			"limit": fmt.Sprintf("%d", pageSize),
+			"start": fmt.Sprintf("%d", start),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("unable to list children of %s: %w", parentID, err)
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Results...)
+		if len(result.Results) < pageSize {
+			break
+		}
+		start += len(result.Results)
+	}
+
+	return all, nil
+}
+
+// MoveContentAfter places a page immediately after one of its siblings.
+//
+// Unlike the append form, the target here is a sibling rather than the new
+// parent. Atlassian warn against using it when the target is a top-level page,
+// where it can move content to the root of the space; callers are expected not
+// to.
+func (api *API) MoveContentAfter(contentID, siblingID string) error {
+	return api.moveContent(contentID, "after", siblingID)
+}
+
+// MoveContentBefore places a page immediately before one of its siblings. The
+// same caution about top-level targets applies as for MoveContentAfter.
+func (api *API) MoveContentBefore(contentID, siblingID string) error {
+	return api.moveContent(contentID, "before", siblingID)
+}
+
 func (api *API) MoveContentAppend(contentID, targetID string) error {
-	path := fmt.Sprintf("content/%s/move/append/%s", contentID, targetID)
+	return api.moveContent(contentID, "append", targetID)
+}
+
+func (api *API) moveContent(contentID, position, targetID string) error {
+	path := fmt.Sprintf("content/%s/move/%s/%s", contentID, position, targetID)
 	var result map[string]any
 	request, err := api.rest.Res(path, &result).Put(map[string]interface{}{})
 	if err != nil {
-		return fmt.Errorf("failed to move content %s under %s: %w", contentID, targetID, err)
+		return fmt.Errorf("failed to move content %s %s %s: %w", contentID, position, targetID, err)
 	}
 
 	switch request.Raw.StatusCode {

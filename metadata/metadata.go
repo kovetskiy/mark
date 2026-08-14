@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -27,6 +28,7 @@ const (
 	HeaderEmoji       = `Emoji`
 	HeaderAttachment  = `Attachment`
 	HeaderLabel       = `Label`
+	HeaderOrder       = `Order`
 	HeaderInclude     = `Include`
 	HeaderSidebar     = `Sidebar`
 	ContentAppearance = `Content-Appearance`
@@ -45,7 +47,13 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
-	ImageAlign        string
+
+	// Order positions this page among its siblings, smaller first. Nil means
+	// the document said nothing about order, which is not the same as zero:
+	// mark leaves such pages exactly where Confluence has them rather than
+	// sorting them to the front.
+	Order      *int
+	ImageAlign string
 }
 
 const (
@@ -231,6 +239,15 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				case HeaderEmoji:
 					meta.Emoji = strings.TrimSpace(value)
+
+				case HeaderOrder:
+					order, err := strconv.Atoi(strings.TrimSpace(value))
+					if err != nil {
+						return nil, nil, fmt.Errorf(
+							"%s header must be a whole number, got %q", HeaderOrder, value,
+						)
+					}
+					meta.Order = &order
 
 				case HeaderAttachment:
 					meta.Attachments = append(meta.Attachments, value)

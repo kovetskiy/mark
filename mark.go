@@ -164,11 +164,19 @@ func Run(config Config) error {
 		tracker.SetRunFiles(config.Files, files)
 	}
 
+	// Pages that asked for a position among their siblings, collected as they
+	// publish and applied once at the end -- the order of one page only means
+	// anything alongside the others.
+	var ordered []page.Ordered
+
 	var hasErrors bool
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, err := processFile(file, api, config, std, tracker, folders)
+		target, placement, err := processFile(file, api, config, std, tracker, folders)
+		if placement != nil {
+			ordered = append(ordered, *placement)
+		}
 		if err != nil {
 			if config.ContinueOnError {
 				log.Error().Err(err).Msgf("processing %s", file)
@@ -191,6 +199,15 @@ func Run(config Config) error {
 	// away the mapping for every page that had published perfectly well --
 	// worst under --continue-on-error, which exists precisely to keep going.
 	// What was recorded actually happened, and is worth keeping either way.
+	if !hasErrors && len(ordered) > 0 {
+		// Not attempted when a file failed: the pages that did not publish are
+		// missing from the sequence, and ordering the rest against each other
+		// would arrange them as though the absent ones were gone for good.
+		if err := page.OrderChildren(api, config.DryRun, ordered); err != nil {
+			return fmt.Errorf("unable to order pages: %w", err)
+		}
+	}
+
 	var saveErr error
 	if tracker != nil {
 		reportOrphans(tracker, hasErrors)
@@ -254,13 +271,14 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	return processFile(file, api, config, std, nil, nil)
+	target, _, err := processFile(file, api, config, std, nil, nil)
+	return target, err
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker) (*confluence.PageInfo, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read file %q: %w", file, err)
+		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
@@ -285,7 +303,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		frontMatterEnabled,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
+		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}
 
 	if config.PageID != "" && meta != nil {
@@ -297,7 +315,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if config.PageID == "" && meta == nil {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"specified file doesn't contain metadata and URL is not specified " +
 				"via command line or doesn't contain pageId GET-parameter",
 		)
@@ -305,12 +323,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	if meta != nil {
 		if meta.Space == "" {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"space is not set ('Space' header is not set and '--space' option is not set)",
 			)
 		}
 		if meta.Title == "" {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"page title is not set: use the 'Title' header, " +
 					"or the --title-from-h1 / --title-from-filename flags",
 			)
@@ -330,7 +348,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		frontMatterEnabled,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to resolve relative links: %w", err)
+		return nil, nil, fmt.Errorf("unable to resolve relative links: %w", err)
 	}
 
 	markdown = page.SubstituteLinks(markdown, links)
@@ -338,7 +356,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if config.DryRun {
 		if meta != nil {
 			if _, pg, err := page.ResolvePage(true, api, meta, folders); err != nil {
-				return nil, fmt.Errorf("unable to resolve page location: %w", err)
+				return nil, nil, fmt.Errorf("unable to resolve page location: %w", err)
 			} else if pg == nil {
 				// The title found nothing, which is where a real run consults
 				// the manifest. Saying so is the whole point of a dry run:
@@ -348,7 +366,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			}
 		} else if config.PageID != "" {
 			if _, err := api.GetPageByID(config.PageID); err != nil {
-				return nil, fmt.Errorf("unable to resolve page by ID: %w", err)
+				return nil, nil, fmt.Errorf("unable to resolve page by ID: %w", err)
 			}
 		}
 	}
@@ -360,7 +378,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 		imageAlign, err := getImageAlign(config.ImageAlign, meta)
 		if err != nil {
-			return nil, fmt.Errorf("unable to determine image-align: %w", err)
+			return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
 		}
 
 		cfg := types.MarkConfig{
@@ -374,12 +392,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("unable to compile markdown: %w", err)
+			return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 		}
 		if _, err := fmt.Fprintln(config.output(), html); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var target *confluence.PageInfo
@@ -394,12 +412,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// Do this before resolution, so ancestry is walked against titles that
 		// exist rather than creating an empty page under the old one.
 		if err := refreshStaleParents(tracker, api, meta); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		parent, pg, err := page.ResolvePage(false, api, meta, folders)
 		if err != nil {
-			return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
+			return nil, nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 		}
 
 		// The title lookup found nothing, which is how both "this page is new"
@@ -408,7 +426,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if pg == nil {
 			pg, err = resolveTrackedPage(tracker, api, meta, file)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if pg == nil {
 				// Not published under this path before. It may have been
@@ -416,7 +434,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				// an old document.
 				pg, err = resolveRenamedFile(tracker, api, meta, file, sourceHash)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			if pg != nil && pg.Title != meta.Title {
@@ -432,7 +450,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				pg, err = api.CreatePage(meta.Space, meta.Type, parent, meta.Title, ``)
 			}
 			if err != nil {
-				return nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
+				return nil, nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
 			}
 			// A delay between the create and update call helps mitigate a 409
 			// conflict that can occur when attempting to update a page just
@@ -441,7 +459,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			pageCreated = true
 		} else if parent != nil && parent.Type == "folder-parent" {
 			if err := page.EnsurePageUnderFolderParent(api, pg, parent.ID); err != nil {
-				return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
+				return nil, nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
 			}
 		} else if parent != nil && !page.UnderDeclaredParents(pg, meta.Parents) {
 			// A page resolved through the manifest rather than by title never
@@ -449,7 +467,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			// lookup that just missed. So an edit changing the title and the
 			// parent together would retitle the page and leave it where it was.
 			if err := page.EnsurePageUnderParent(api, pg, parent.ID); err != nil {
-				return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
+				return nil, nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
 			}
 		}
 
@@ -465,10 +483,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	} else {
 		pg, err := api.GetPageByID(config.PageID)
 		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve page by id: %w", err)
+			return nil, nil, fmt.Errorf("unable to retrieve page by id: %w", err)
 		}
 		if pg == nil {
-			return nil, fmt.Errorf("page with id %q not found", config.PageID)
+			return nil, nil, fmt.Errorf("page with id %q not found", config.PageID)
 		}
 		target = pg
 	}
@@ -493,7 +511,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		declaredAttachments,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to locate attachments: %w", err)
+		return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
 	// The page's remote attachment list is fetched once and threaded through
@@ -502,14 +520,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// pass previously issued its own paginated fetch of the same list.
 	remoteAttachments, err := api.GetAttachments(target.ID)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+		return nil, nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}
 
 	attaches, remoteAttachments, err := attachment.ResolveAttachmentsWithRemotes(
 		api, target, localAttachments, remoteAttachments,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create/update attachments: %w", err)
+		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
 	markdown = attachment.CompileAttachmentLinks(markdown, attaches)
@@ -520,7 +538,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	imageAlign, err := getImageAlign(config.ImageAlign, meta)
 	if err != nil {
-		return nil, fmt.Errorf("unable to determine image-align: %w", err)
+		return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
 	}
 
 	cfg := types.MarkConfig{
@@ -535,13 +553,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to compile markdown: %w", err)
+		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
 	if _, _, err = attachment.ResolveAttachmentsWithRemotes(
 		api, target, inlineAttachments, remoteAttachments,
 	); err != nil {
-		return nil, fmt.Errorf("unable to create/update attachments: %w", err)
+		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
 	var layout, sidebar string
@@ -572,7 +590,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unable to execute layout template: %w", err)
+			return nil, nil, fmt.Errorf("unable to execute layout template: %w", err)
 		}
 		html = buffer.String()
 	}
@@ -607,24 +625,24 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if shouldUpdatePage && config.PreserveComments && !pageCreated {
 		pg, err := api.GetPageByIDExpanded(target.ID, "ancestors,version,body.storage")
 		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
+			return nil, nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
 		}
 		target = pg
 
 		comments, err := api.GetInlineComments(target.ID)
 		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
+			return nil, nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
 		}
 
 		html, err = mergeComments(html, target.Body.Storage.Value, comments)
 		if err != nil {
-			return nil, fmt.Errorf("unable to merge inline comments: %w", err)
+			return nil, nil, fmt.Errorf("unable to merge inline comments: %w", err)
 		}
 	}
 
 	if tracker != nil && meta != nil {
 		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
-			return nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 	}
 
@@ -638,13 +656,25 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			emoji,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unable to update page: %w", err)
+			return nil, nil, fmt.Errorf("unable to update page: %w", err)
 		}
 	}
 
 	if meta != nil {
 		if err := updateLabels(api, target, labels); err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+	}
+
+	// Where this page asked to sit among its siblings. Applied once the whole
+	// run is known, since a position only means something next to the others.
+	var placement *page.Ordered
+	if meta != nil && meta.Order != nil {
+		placement = &page.Ordered{
+			PageID:   target.ID,
+			ParentID: page.ImmediateParentID(target),
+			Title:    target.Title,
+			Order:    *meta.Order,
 		}
 	}
 
@@ -655,11 +685,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			config.Username,
 		)
 		if err := api.RestrictPageUpdates(target, config.Username); err != nil {
-			return nil, fmt.Errorf("unable to restrict page updates: %w", err)
+			return nil, nil, fmt.Errorf("unable to restrict page updates: %w", err)
 		}
 	}
 
-	return target, nil
+	return target, placement, nil
 }
 
 // pruneOrphans forgets the entries reportOrphans just named.
