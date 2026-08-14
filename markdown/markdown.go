@@ -139,6 +139,18 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
+			// Lets an author name a heading's anchor themselves, with the
+			// {#custom-id} syntax every other Markdown tool understands.
+			// Without it the braces are not ignored but taken as heading text:
+			// they render visibly in the title and are folded into the
+			// generated id, so "## Title {#custom-id}" becomes a heading called
+			// "Title {#custom-id}" with the id "Title-custom-id".
+			//
+			// goldmark parses attributes on every block element, but each
+			// renderer emits them through its own filter -- HeadingAttributeFilter,
+			// ParagraphAttributeFilter and so on -- so nothing but headings is
+			// affected in practice.
+			parser.WithAttribute(),
 		),
 		goldmark.WithRendererOptions(
 			html.WithUnsafe(),
