@@ -1124,6 +1124,28 @@ You can also use `**` to get all files recursively.
 mark -f "**/docs/*.md"
 ```
 
+### Naming a Heading's Anchor
+
+By default a heading's anchor is derived from its text. To name it yourself, use
+the `{#custom-id}` syntax:
+
+```markdown
+## Release Notes {#rel}
+
+[link to it](#rel)
+```
+
+```html
+<h2 id="rel">Release Notes</h2>
+```
+
+The braces are consumed rather than rendered, so the heading reads as written.
+
+A custom id replaces the derived one rather than adding to it, so the slug of
+the heading text no longer resolves -- `[link](#release-notes)` above would be
+left exactly as written. That is what other Markdown tools do too: a custom id
+is the id, not an alias.
+
 ### Links to Headings on the Same Page
 
 Mark generates Confluence-compatible heading anchors, which keep their capitals
