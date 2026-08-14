@@ -1350,3 +1350,89 @@ func TestOrderIsNotAppliedOnDryRun(t *testing.T) {
 	assert.Equal(t, before, titlesOf(t, server, parent.ID),
 		"a dry run must leave the order exactly as it found it")
 }
+
+// TestIgnoredRegionIsNotPublished is the point of issue #317: a document that
+// reads well in both places. Something that renders badly in Confluence -- a
+// GitHub table of contents, a plain-text stand-in for a macro -- stays in the
+// file and out of the page.
+func TestIgnoredRegionIsNotPublished(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Doc -->
+
+Published body.
+
+<!-- ac:ignore -->
+## Contents
+
+- [One](#one)
+- [Two](#two)
+<!-- ac:ignore end -->
+
+Also published.
+`)
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	page, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	body := server.Page(page.ID).Body
+	assert.Contains(t, body, "Published body.")
+	assert.Contains(t, body, "Also published.")
+	assert.NotContains(t, body, "Contents", "the ignored region must not reach Confluence")
+	assert.NotContains(t, body, "ac:ignore", "and neither must the markers")
+}
+
+// TestIgnoredRegionTakesItsAttachmentsWithIt: an image only referenced inside
+// an ignored region must not be uploaded. Nothing on the page would point at
+// it, so it would sit there as an orphan.
+func TestIgnoredRegionTakesItsAttachmentsWithIt(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	png := []byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89,
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hidden.png"), png, 0o600))
+
+	file := writeFile(t, dir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Doc -->
+
+Body.
+
+<!-- ac:ignore -->
+![hidden](hidden.png)
+<!-- ac:ignore end -->
+`)
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	page, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	assert.Empty(t, server.Attachments(page.ID),
+		"an image only referenced inside an ignored region should not be uploaded")
+}

@@ -291,6 +291,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
 
+	// Before the headers are read, so that the line numbers in any complaint
+	// are the ones in the file the author is looking at rather than offsets
+	// into what is left after the header block is taken off. It also means an
+	// ignored region is ignored entirely, headers and all, which is what the
+	// markers say on the tin.
+	markdown, err = metadata.StripIgnoredBlocks(markdown)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to process %q: %w", file, err)
+	}
+
 	meta, markdown, err := metadata.ExtractMeta(
 		markdown,
 		config.Space,
