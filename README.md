@@ -107,12 +107,16 @@ Also, optional following headers are supported:
 * blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s)
 
 ```markdown
-<!-- Content-Appearance: (full-width|fixed|default) -->
+<!-- Content-Appearance: (full-width|fixed|default|max) -->
 ```
 
-* (default) full-width: content will fill the full page width
+The Confluence Cloud editor offers three widths — Narrow, Wide and Max — which
+map onto these values as `default`, `full-width` and `max`.
+
+* (default) full-width: content will fill the full page width. This is the Confluence UI's **Wide**.
 * fixed: content will be rendered in a fixed narrow view
-* default: sets the Confluence property value to `"default"`, which is the narrow layout as set by the Confluence UI. Note: `fixed` maps to a different Confluence property value and can cause misaligned page title and body content — use `default` instead for the narrow layout.
+* default: sets the Confluence property value to `"default"`, which is the Confluence UI's **Narrow** layout. Note: `fixed` maps to a different Confluence property value and can cause misaligned page title and body content — use `default` instead for the narrow layout.
+* max: the Confluence UI's **Max** layout, which is wider than `full-width`.
 
 ```markdown
 <!-- ac:ignore -->
@@ -1093,7 +1097,7 @@ GLOBAL OPTIONS:
    --space string                           use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                         A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string               The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
-   --content-appearance string              default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default. [$MARK_CONTENT_APPEARANCE]
+   --content-appearance string              default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), fixed, default (Narrow), max (Max). [$MARK_CONTENT_APPEARANCE]
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]

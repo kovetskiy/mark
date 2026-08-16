@@ -131,6 +131,47 @@ func TestUpdatePageIncrementsVersion(t *testing.T) {
 	assert.Equal(t, "<p>new</p>", after.Body)
 }
 
+// TestUpdatePageWritesBothAppearanceProperties pins that the page width is
+// written to the draft property as well as the published one. Published alone
+// leaves the two disagreeing, and the editor takes the draft value, so the
+// width reverts as soon as anyone opens the page.
+func TestUpdatePageWritesBothAppearanceProperties(t *testing.T) {
+	api, server := newAPI(t)
+	stored := server.AddPage("DOCS", "Target", "page", "")
+
+	page, err := api.FindPage("DOCS", "Target", "page")
+	require.NoError(t, err)
+
+	require.NoError(t, api.UpdatePage(page, "<p>new</p>", false, "", "max", ""))
+
+	for _, key := range []string{"content-appearance-published", "content-appearance-draft"} {
+		prop := server.ContentProperty(stored.ID, key)
+		require.NotNil(t, prop, "%s was not written", key)
+		assert.JSONEq(t, `"max"`, string(prop.Value))
+	}
+}
+
+// TestUpdatePageWithoutAppearanceLeavesThePropertiesAlone covers editing a
+// page by id with a file that carries no metadata: there is no width to
+// publish, and writing an empty one would reset whatever the page already had.
+func TestUpdatePageWithoutAppearanceLeavesThePropertiesAlone(t *testing.T) {
+	api, server := newAPI(t)
+	stored := server.AddPage("DOCS", "Target", "page", "")
+	server.SetSpaceProperty(stored.ID, "content-appearance-published", []byte(`"max"`))
+	server.SetSpaceProperty(stored.ID, "content-appearance-draft", []byte(`"max"`))
+
+	page, err := api.FindPage("DOCS", "Target", "page")
+	require.NoError(t, err)
+
+	require.NoError(t, api.UpdatePage(page, "<p>new</p>", false, "", "", ""))
+
+	for _, key := range []string{"content-appearance-published", "content-appearance-draft"} {
+		prop := server.ContentProperty(stored.ID, key)
+		require.NotNil(t, prop, "%s went missing", key)
+		assert.JSONEq(t, `"max"`, string(prop.Value), "%s was overwritten", key)
+	}
+}
+
 // TestUpdatePageKeepsVersionInSync pins the write-back at the end of
 // UpdatePage: the caller's PageInfo is advanced to the version just published,
 // so consecutive updates through the same value keep working.
