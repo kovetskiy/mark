@@ -840,6 +840,28 @@ And this is how to link when the linktext is the same as the [Pagetitle](ac:)
 Link to a [page title containing spaces](<ac:With Multiple Words>)
 ```
 
+### Link to another page in the same repository
+
+A relative link to another Markdown file is replaced with a link to the
+Confluence page that file publishes:
+
+```markdown
+See [the other page](./other.md) and [a heading in it](./other.md#setup).
+```
+
+The target file is read to find its `Space` and `Title`, and the page is looked
+up by those. Links are rewritten to Confluence [tiny
+links](https://support.atlassian.com/confluence/kb/how-to-programmatically-generate-the-tiny-link-of-a-confluence-page)
+(`/x/AbCdEf`), which survive page renames and moves.
+
+A link is left exactly as written when it has a scheme (`https:`, `mailto:`),
+is a bare `#fragment`, points at a directory or a non-text file, or names a
+file that has no mark metadata and so is never published. Links are resolved on
+the parsed document, so a link that appears inside a code span or a fenced or
+indented code block is left alone -- a page documenting Markdown gets to show
+its examples unchanged. Files pulled in with `Include` are resolved along with
+the document that includes them.
+
 ### Upload and included inline images
 
 ```markdown
