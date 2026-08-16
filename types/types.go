@@ -18,4 +18,9 @@ type MarkConfig struct {
 	// renderer needing to know what Confluence is. Nil disables the rewriting
 	// entirely, which is what compiling without a server does.
 	ResolveLink func(target string) (string, error)
+
+	// ResolveAttachment turns a link or image destination into the URL of the
+	// attachment uploaded for it, or "" to leave it as written. Nil disables
+	// the rewriting.
+	ResolveAttachment func(target string) string
 }

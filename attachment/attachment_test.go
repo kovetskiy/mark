@@ -125,41 +125,70 @@ func TestParseAttachmentLink(t *testing.T) {
 	}
 }
 
-// CompileAttachmentLinks replaced attachment names with a bare ReplaceAll over
-// the whole document, which caused three distinct corruptions.
-func TestCompileAttachmentLinksAnchorsOnLinkTarget(t *testing.T) {
+// Attachment destinations used to be substituted with a bare ReplaceAll over
+// the whole document, which caused several distinct corruptions. Resolving a
+// destination at a time makes each of them unrepresentable; these pin that.
+func TestResolver(t *testing.T) {
 	single := []Attachment{{
 		Name: "a.png", Filename: "a.png", Replace: "a.png",
 		Link: "/download/attachments/12345/a.png?version=1",
 	}}
 
+	t.Run("plain form", func(t *testing.T) {
+		assert.Equal(t,
+			"/download/attachments/12345/a.png?version=1",
+			NewResolver(single).Resolve("a.png"),
+		)
+	})
+
 	t.Run("legacy form is substituted once", func(t *testing.T) {
 		// The legacy branch was an if rather than an else if, so the plain branch
 		// then matched "a.png" inside the URL the legacy branch had just written,
 		// yielding a doubled path with two query strings.
-		got := string(CompileAttachmentLinks([]byte("![x](attachment://a.png)"), single))
-		assert.Equal(t, "![x](/download/attachments/12345/a.png?version=1)", got)
+		assert.Equal(t,
+			"/download/attachments/12345/a.png?version=1",
+			NewResolver(single).Resolve("attachment://a.png"),
+		)
 	})
 
-	t.Run("plain form is substituted", func(t *testing.T) {
-		got := string(CompileAttachmentLinks([]byte("![x](a.png)"), single))
-		assert.Equal(t, "![x](/download/attachments/12345/a.png?version=1)", got)
-	})
-
-	t.Run("prose and code spans are untouched", func(t *testing.T) {
-		in := "See the file `a.png` in the repo."
-		got := string(CompileAttachmentLinks([]byte(in), single))
-		assert.Equal(t, in, got, "only a link target may be rewritten")
+	t.Run("text that is not a destination", func(t *testing.T) {
+		// "See the file `a.png`" used to become a download URL.
+		assert.Empty(t, NewResolver(single).Resolve("See the file a.png in the repo."))
+		assert.Empty(t, NewResolver(single).Resolve("b.png"))
+		assert.Empty(t, NewResolver(single).Resolve(""))
 	})
 
 	t.Run("one name being a substring of another", func(t *testing.T) {
-		// The length-descending sort only protects suffix collisions; "logo.png"
-		// also occurs inside the already-substituted URL for "sub/logo.png".
+		// The length-descending sort only protected suffix collisions;
+		// "logo.png" also occurs inside the URL written for "sub/logo.png".
 		two := []Attachment{
 			{Replace: "sub/logo.png", Link: "/dl/1/sub_logo.png?v=1"},
 			{Replace: "logo.png", Link: "/dl/1/logo.png?v=1"},
 		}
-		got := string(CompileAttachmentLinks([]byte("![a](logo.png) ![b](sub/logo.png)"), two))
-		assert.Equal(t, "![a](/dl/1/logo.png?v=1) ![b](/dl/1/sub_logo.png?v=1)", got)
+		resolver := NewResolver(two)
+		assert.Equal(t, "/dl/1/logo.png?v=1", resolver.Resolve("logo.png"))
+		assert.Equal(t, "/dl/1/sub_logo.png?v=1", resolver.Resolve("sub/logo.png"))
 	})
+}
+
+func TestResolverUnused(t *testing.T) {
+	attachments := []Attachment{
+		{Replace: "used.png", Link: "/dl/1/used.png"},
+		{Replace: "legacy.png", Link: "/dl/1/legacy.png"},
+		{Replace: "never.png", Link: "/dl/1/never.png"},
+	}
+
+	resolver := NewResolver(attachments)
+	resolver.Resolve("used.png")
+	// Referring to an attachment by its legacy spelling still counts as using
+	// it; reporting it unused would send someone looking for a second link.
+	resolver.Resolve("attachment://legacy.png")
+
+	assert.Equal(t, []string{"never.png"}, resolver.Unused(attachments))
+}
+
+func TestResolverNil(t *testing.T) {
+	var resolver *Resolver
+	assert.Empty(t, resolver.Resolve("a.png"))
+	assert.Nil(t, resolver.Unused([]Attachment{{Replace: "a.png"}}))
 }
