@@ -2,7 +2,6 @@ package attachment
 
 import (
 	"bytes"
-	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -261,56 +259,63 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 	return attachment, nil
 }
 
-func CompileAttachmentLinks(markdown []byte, attachments []Attachment) []byte {
-	links := map[string]string{}
-	replaces := []string{}
+// Resolver maps the path a document wrote onto the attachment uploaded for it.
+type Resolver struct {
+	links map[string]string
+	used  map[string]bool
+}
 
+// NewResolver builds a resolver for the given attachments.
+//
+// Both spellings a document may use are accepted: the plain path, and the
+// legacy "attachment://" form. They map to the same upload, and the legacy one
+// is listed first so that Unused reports the pair once rather than twice.
+func NewResolver(attachments []Attachment) *Resolver {
+	links := make(map[string]string, len(attachments)*2)
 	for _, attachment := range attachments {
-		links[attachment.Replace] = parseAttachmentLink(attachment.Link)
-		replaces = append(replaces, attachment.Replace)
+		link := parseAttachmentLink(attachment.Link)
+		links[attachment.Replace] = link
+		links["attachment://"+attachment.Replace] = link
 	}
 
-	// sort by length so first items will have bigger length
-	// it's helpful for replacing in case of following names
-	// attachments/a.jpg
-	// attachments/a.jpg.jpg
-	// so we replace longer and then shorter
-	slices.SortStableFunc(replaces, func(a, b string) int {
-		return cmp.Compare(len(b), len(a))
-	})
+	return &Resolver{links: links, used: map[string]bool{}}
+}
 
-	for _, replace := range replaces {
-		to := links[replace]
+// Resolve reports the URL for a link or image destination, or "" to leave it
+// as the document wrote it.
+func (r *Resolver) Resolve(target string) string {
+	if r == nil {
+		return ""
+	}
 
-		// Anchor on the link/image target so only a real destination is
-		// rewritten. A bare bytes.ReplaceAll over the whole document also hit
-		// prose and code spans -- "see `diagram.png`" became a download URL --
-		// and, because the legacy branch below is a separate if rather than an
-		// else, it rewrote its own output a second time, producing a doubled
-		// path with two query strings.
-		legacy := []byte("](attachment://" + replace + ")")
-		plain := []byte("](" + replace + ")")
-		target := []byte("](" + to + ")")
+	link, ok := r.links[target]
+	if !ok {
+		return ""
+	}
 
-		found := false
-		if bytes.Contains(markdown, legacy) {
-			log.Debug().Msgf("replacing legacy link: %q -> %q", "attachment://"+replace, to)
-			markdown = bytes.ReplaceAll(markdown, legacy, target)
-			found = true
-		}
+	r.used[strings.TrimPrefix(target, "attachment://")] = true
+	log.Debug().Msgf("replacing link: %q -> %q", target, link)
 
-		if bytes.Contains(markdown, plain) {
-			log.Debug().Msgf("replacing link: %q -> %q", replace, to)
-			markdown = bytes.ReplaceAll(markdown, plain, target)
-			found = true
-		}
+	return link
+}
 
-		if !found {
-			log.Warn().Msgf("unused attachment: %s", replace)
+// Unused reports the attachments that were uploaded but never referred to.
+//
+// This is only known once the whole document has been walked, which is why it
+// is reported here rather than as each attachment is resolved.
+func (r *Resolver) Unused(attachments []Attachment) []string {
+	if r == nil {
+		return nil
+	}
+
+	var unused []string
+	for _, attachment := range attachments {
+		if !r.used[attachment.Replace] {
+			unused = append(unused, attachment.Replace)
 		}
 	}
 
-	return markdown
+	return unused
 }
 
 func GetChecksum(reader io.Reader) (string, error) {

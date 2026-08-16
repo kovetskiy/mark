@@ -278,12 +278,13 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 // This is now the primary/default extension.
 type ConfluenceExtension struct {
 	html.Config
-	Stdlib      *stdlib.Lib
-	Path        string
-	MarkConfig  types.MarkConfig
-	Attachments []attachment.Attachment
-	Pipeline    *ctransformer.PipelineTransformer
-	Links       *ctransformer.LinkTransformer
+	Stdlib          *stdlib.Lib
+	Path            string
+	MarkConfig      types.MarkConfig
+	Attachments     []attachment.Attachment
+	Pipeline        *ctransformer.PipelineTransformer
+	Links           *ctransformer.LinkTransformer
+	AttachmentLinks *ctransformer.AttachmentTransformer
 }
 
 // NewConfluenceExtension creates a new instance of the GitHub Alerts extension
@@ -298,13 +299,14 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		ctransformer.NewIncludeTransformer(path, path, cfg.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
-		Config:      html.NewConfig(),
-		Stdlib:      stdlib,
-		Path:        path,
-		MarkConfig:  cfg,
-		Attachments: []attachment.Attachment{},
-		Pipeline:    pipeline,
-		Links:       ctransformer.NewLinkTransformer(cfg.ResolveLink),
+		Config:          html.NewConfig(),
+		Stdlib:          stdlib,
+		Path:            path,
+		MarkConfig:      cfg,
+		Attachments:     []attachment.Attachment{},
+		Pipeline:        pipeline,
+		Links:           ctransformer.NewLinkTransformer(cfg.ResolveLink),
+		AttachmentLinks: ctransformer.NewAttachmentTransformer(cfg.ResolveAttachment),
 	}
 }
 
@@ -348,6 +350,9 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(ctransformer.NewAnchorTransformer(), 900),
 		// After includes and macros have brought their content in, so links
 		// inside an included fragment are resolved too.
+		// Before link resolution, so that a path a document declared as an
+		// attachment is taken as one rather than looked up as a page.
+		util.Prioritized(c.AttachmentLinks, 905),
 		util.Prioritized(c.Links, 910),
 	))
 

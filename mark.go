@@ -538,7 +538,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
-	markdown = attachment.CompileAttachmentLinks(markdown, attaches)
+	attachmentLinks := attachment.NewResolver(attaches)
 
 	if config.DropH1 {
 		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
@@ -558,11 +558,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		ImageAlign:    imageAlign,
 		IncludePath:   config.IncludePath,
 		ResolveLink:   resolveLink,
+
+		ResolveAttachment: attachmentLinks.Resolve,
 	}
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+	}
+
+	// Only knowable once the document has been walked.
+	for _, unused := range attachmentLinks.Unused(attaches) {
+		log.Warn().Msgf("unused attachment: %s", unused)
 	}
 
 	if _, _, err = attachment.ResolveAttachmentsWithRemotes(

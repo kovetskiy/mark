@@ -1549,3 +1549,57 @@ func TestLinkInsideCodeSpanIsLeftAlone(t *testing.T) {
 	span := body[i:]
 	assert.Contains(t, span, "./a-other.md", "a code span must survive as written")
 }
+
+// TestAttachmentLinkInsideCodeBlockIsLeftAlone is the second half of the
+// corruption fixed for relative links. Attachment destinations were substituted
+// with a ReplaceAll over the whole document, so a page documenting how to refer
+// to an attachment had its own example turned into a download URL.
+func TestAttachmentLinkInsideCodeBlockIsLeftAlone(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	png := []byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89,
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), png, 0o600))
+
+	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n"+
+		"<!-- Parent: Parent -->\n"+
+		"<!-- Title: Attachment Doc -->\n"+
+		"<!-- Attachment: logo.png -->\n\n"+
+		"Refer to an attachment like this:\n\n"+
+		"```markdown\n![logo](logo.png)\n```\n\n"+
+		"And here it is for real: ![logo](logo.png)\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}
+
+	target, err := ProcessFile(file, api, config)
+	require.NoError(t, err)
+	require.NotNil(t, target)
+
+	body := server.Page(target.ID).Body
+
+	code := body[strings.Index(body, "<![CDATA["):strings.Index(body, "]]>")]
+	assert.Contains(t, code, "![logo](logo.png)",
+		"the code sample must survive exactly as written")
+	assert.NotContains(t, code, "/download/",
+		"an attachment link inside a code block must not be rewritten")
+
+	// ...while the real image still points at the upload. A declared
+	// attachment renders as a URL reference rather than ri:filename, because
+	// its destination is rewritten before the image renderer sees it.
+	assert.Contains(t, body, "download/attachments/",
+		"the real image should still resolve to the attachment")
+}
