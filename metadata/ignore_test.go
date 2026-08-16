@@ -92,3 +92,51 @@ func TestStripIgnoredBlocksDoesNotPanicOnShortComments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "<!-->\nA\n", strings.TrimSuffix(string(out), "\n")+"\n")
 }
+
+// TestStripIgnoredBlocksSkipsCode covers markers that are code samples rather
+// than instructions. The scan used to be purely line-based, so a page
+// documenting the feature had the example stripped out of it -- the one thing
+// the block existed to show.
+func TestStripIgnoredBlocksSkipsCode(t *testing.T) {
+	t.Run("fenced block", func(t *testing.T) {
+		in := "Docs:\n\n```markdown\n<!-- ac:ignore -->\nSAMPLE\n<!-- ac:ignore end -->\n```\n"
+		out, err := StripIgnoredBlocks([]byte(in))
+		require.NoError(t, err)
+		assert.Equal(t, in, string(out))
+	})
+
+	t.Run("tilde fence", func(t *testing.T) {
+		in := "~~~\n<!-- ac:ignore -->\nSAMPLE\n<!-- ac:ignore end -->\n~~~\n"
+		out, err := StripIgnoredBlocks([]byte(in))
+		require.NoError(t, err)
+		assert.Equal(t, in, string(out))
+	})
+
+	t.Run("indented block", func(t *testing.T) {
+		in := "Docs:\n\n    <!-- ac:ignore -->\n    SAMPLE\n    <!-- ac:ignore end -->\n"
+		out, err := StripIgnoredBlocks([]byte(in))
+		require.NoError(t, err)
+		assert.Equal(t, in, string(out))
+	})
+
+	t.Run("an unclosed marker in code is not an error", func(t *testing.T) {
+		// Documenting the opening marker on its own must not fail the run with
+		// "is never closed".
+		in := "```\n<!-- ac:ignore -->\n```\n"
+		out, err := StripIgnoredBlocks([]byte(in))
+		require.NoError(t, err)
+		assert.Equal(t, in, string(out))
+	})
+
+	t.Run("a real region still works alongside a documented one", func(t *testing.T) {
+		out, err := StripIgnoredBlocks([]byte(
+			"```\n<!-- ac:ignore -->\nSAMPLE\n<!-- ac:ignore end -->\n```\n" +
+				"<!-- ac:ignore -->\nGONE\n<!-- ac:ignore end -->\n" +
+				"KEPT\n",
+		))
+		require.NoError(t, err)
+		assert.Contains(t, string(out), "SAMPLE")
+		assert.Contains(t, string(out), "KEPT")
+		assert.NotContains(t, string(out), "GONE")
+	})
+}
