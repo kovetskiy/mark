@@ -1436,3 +1436,45 @@ Body.
 	assert.Empty(t, server.Attachments(page.ID),
 		"an image only referenced inside an ignored region should not be uploaded")
 }
+
+// TestIgnoredRegionInsideAnIncludeIsNotPublished: a fragment can mark regions
+// as not for Confluence just as the document including it can. Without this the
+// region and its markers both reached the page, which is the more surprising
+// half -- the feature appeared to work until somebody moved the content into an
+// include.
+func TestIgnoredRegionInsideAnIncludeIsNotPublished(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "part.md", `Included body.
+
+<!-- ac:ignore -->
+HIDDEN FROM CONFLUENCE
+<!-- ac:ignore end -->
+`)
+	file := writeFile(t, dir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Doc -->
+
+Top.
+
+<!-- Include: part.md -->
+`)
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	page, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	body := server.Page(page.ID).Body
+	assert.Contains(t, body, "Included body.")
+	assert.NotContains(t, body, "HIDDEN FROM CONFLUENCE")
+	assert.NotContains(t, body, "ac:ignore")
+}

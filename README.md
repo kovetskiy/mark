@@ -134,8 +134,9 @@ John Doe's profile
 ```
 
 Read on GitHub the file shows the name; published to Confluence it shows the
-profile macro. Attachments referenced only inside an ignored region are not
-uploaded, since nothing on the page would point at them. A marker without its
+profile macro. Included files may mark regions of their own, which is stripped
+as each file is read. Attachments referenced only inside an ignored region are
+not uploaded, since nothing on the page would point at them. A marker without its
 pair is an error rather than a guess -- quietly publishing half a page is worse
 than refusing.
 

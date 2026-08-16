@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
@@ -153,6 +154,17 @@ func LoadTemplate(
 		[]byte("\r\n"),
 		[]byte("\n"),
 	)
+
+	// An included file may mark regions as not for Confluence just as the
+	// document that includes it can. Stripping happens per file as each is
+	// read, rather than once over the finished document, because by the time
+	// the pieces are assembled the markers have already been through template
+	// expansion -- and because the whole point of the feature is that the file
+	// reads well on its own, which is as true of a fragment as of a page.
+	body, err = metadata.StripIgnoredBlocks(body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to process template file %q: %w", path, err)
+	}
 
 	templates, err = templates.New(cacheName).Delims(left, right).Parse(string(body))
 	if err != nil {
