@@ -173,41 +173,7 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 }
 
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	var tmpl *template.Template
-	if stdlib != nil {
-		tmpl = stdlib.Templates
-	} else {
-		tmpl = template.New("stdlib")
-	}
-
 	var err error
-	var recurse bool
-	for {
-		tmpl, markdown, recurse, err = includes.ProcessIncludes(
-			filepath.Dir(path),
-			cfg.IncludePath,
-			markdown,
-			tmpl,
-		)
-		if err != nil {
-			return "", nil, fmt.Errorf("unable to process includes: %w", err)
-		}
-		if !recurse {
-			break
-		}
-	}
-
-	var macros []macro.Macro
-	macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
-	if err != nil {
-		return "", nil, fmt.Errorf("unable to extract macros: %w", err)
-	}
-	for _, m := range macros {
-		markdown, err = m.Apply(markdown)
-		if err != nil {
-			return "", nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
-		}
-	}
 
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
 	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
@@ -295,8 +261,10 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		tmpl = stdlib.Templates
 	}
 	pipeline := ctransformer.NewPipelineTransformer(
-		ctransformer.NewMacroTransformer(path, path, cfg.IncludePath, tmpl),
-		ctransformer.NewIncludeTransformer(path, path, cfg.IncludePath, tmpl),
+		// The base directory is the file's directory, not the file: a relative
+		// include is written relative to the document that asks for it.
+		ctransformer.NewMacroTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
+		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
 		Config:          html.NewConfig(),
