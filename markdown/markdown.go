@@ -211,8 +211,13 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
 	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	// A transformer cannot return an error from Transform, so each one that can
+	// fail keeps its failure for collection here.
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
 		err = ghAlertsExtension.Pipeline.GetError()
+	}
+	if err == nil && ghAlertsExtension.Links != nil && ghAlertsExtension.Links.GetError() != nil {
+		err = ghAlertsExtension.Links.GetError()
 	}
 	if err != nil {
 		return "", nil, err
@@ -278,6 +283,7 @@ type ConfluenceExtension struct {
 	MarkConfig  types.MarkConfig
 	Attachments []attachment.Attachment
 	Pipeline    *ctransformer.PipelineTransformer
+	Links       *ctransformer.LinkTransformer
 }
 
 // NewConfluenceExtension creates a new instance of the GitHub Alerts extension
@@ -298,6 +304,7 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		MarkConfig:  cfg,
 		Attachments: []attachment.Attachment{},
 		Pipeline:    pipeline,
+		Links:       ctransformer.NewLinkTransformer(cfg.ResolveLink),
 	}
 }
 
@@ -339,6 +346,9 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		// well as the ones written in the file, and so that heading ids have
 		// already been assigned.
 		util.Prioritized(ctransformer.NewAnchorTransformer(), 900),
+		// After includes and macros have brought their content in, so links
+		// inside an included fragment are resolved too.
+		util.Prioritized(c.Links, 910),
 	))
 
 	// Add date widget support if requested

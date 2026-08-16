@@ -345,10 +345,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
-	links, err := page.ResolveRelativeLinks(
+	// Links are rewritten while the document is being rendered, by walking the
+	// parsed tree. Doing it here, over the text, meant a fenced block showing
+	// Markdown syntax had its example links turned into Confluence URLs.
+	resolveLink := page.NewLinkResolver(
 		api,
 		meta,
-		markdown,
 		filepath.Dir(file),
 		config.Space,
 		config.TitleFromH1,
@@ -356,12 +358,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		config.Parents,
 		config.TitleAppendGeneratedHash,
 		frontMatterEnabled,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to resolve relative links: %w", err)
-	}
-
-	markdown = page.SubstituteLinks(markdown, links)
+	).Resolve
 
 	if config.DryRun {
 		if meta != nil {
@@ -399,6 +396,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			Features:      config.Features,
 			ImageAlign:    imageAlign,
 			IncludePath:   config.IncludePath,
+			ResolveLink:   resolveLink,
 		}
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 		if err != nil {
@@ -559,6 +557,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		Features:      config.Features,
 		ImageAlign:    imageAlign,
 		IncludePath:   config.IncludePath,
+		ResolveLink:   resolveLink,
 	}
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)

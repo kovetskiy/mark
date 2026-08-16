@@ -8,4 +8,14 @@ type MarkConfig struct {
 	Features      []string
 	ImageAlign    string
 	IncludePath   string
+
+	// ResolveLink turns a link target written in the document -- a relative
+	// path, optionally with a #fragment -- into the Confluence link it should
+	// become, or "" to leave it as written.
+	//
+	// Supplied as a function so that rewriting links stays a property of the
+	// document tree rather than of the bytes it was parsed from, without the
+	// renderer needing to know what Confluence is. Nil disables the rewriting
+	// entirely, which is what compiling without a server does.
+	ResolveLink func(target string) (string, error)
 }
