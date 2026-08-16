@@ -5,14 +5,10 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/includes"
-	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/rs/zerolog/log"
-	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
 )
 
 // IncludeTransformer transforms <!-- Include: ... --> directives in the Goldmark AST
@@ -119,16 +115,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 		}
 		t.Templates = tmpl
 
-		p := goldmark.New(
-			goldmark.WithParserOptions(
-				parser.WithInlineParsers(
-					util.Prioritized(cparser.NewConfluenceTagParser(), 99),
-				),
-			),
-			goldmark.WithRendererOptions(
-				html.WithUnsafe(),
-			),
-		).Parser()
+		p := newSubParser()
 		subDoc := p.Parse(text.NewReader(expanded))
 		convertSegmentsToStrings(subDoc, expanded)
 
