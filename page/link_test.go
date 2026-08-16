@@ -3,56 +3,88 @@ package page
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestParseLinks(t *testing.T) {
-	markdown := `
-	[example1](../path/to/example.md#second-heading)
-	[example2](../path/to/example.md)
-	[example3](#heading-in-document)
-	[Text link that should be put as attachment](../path/to/example.txt)
-	[Image link that should be put as attachment](../path/to/example.png)
-	[relative link without dots](relative-link-without-dots.md)
-	[relative link without dots but with hash](relative-link-without-dots-but-with-hash.md#hash)
-	[example [example]](example.md)
-	`
+func TestLinkResolverLeavesNonRepositoryTargetsAlone(t *testing.T) {
+	// A resolver with an API set but nothing on disk to point at: every target
+	// here has to come back empty, meaning "leave the link as written".
+	resolver := &LinkResolver{API: &confluence.API{}, Base: t.TempDir()}
 
-	links := parseLinks(markdown)
+	for _, target := range []string{
+		"https://example.com/page",
+		"http://example.com/page",
+		"ftp://example.com/file.txt",
+		"mailto:someone@example.com",
+		"#heading-in-document",
+		"",
+		"no-such-file.md",
+		"no-such-file.md#hash",
+		"../outside/missing.md",
+	} {
+		resolved, err := resolver.Resolve(target)
+		assert.NoError(t, err, "target %q", target)
+		assert.Empty(t, resolved, "target %q should have been left alone", target)
+	}
+}
 
-	assert.Equal(t, "../path/to/example.md#second-heading", links[0].full)
-	assert.Equal(t, "../path/to/example.md", links[0].filename)
-	assert.Equal(t, "second-heading", links[0].hash)
+func TestLinkResolverIgnoresDirectories(t *testing.T) {
+	base := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(base, "docs"), 0o755))
 
-	assert.Equal(t, "../path/to/example.md", links[1].full)
-	assert.Equal(t, "../path/to/example.md", links[1].filename)
-	assert.Equal(t, "", links[1].hash)
+	resolver := &LinkResolver{API: &confluence.API{}, Base: base}
 
-	assert.Equal(t, "#heading-in-document", links[2].full)
-	assert.Equal(t, "", links[2].filename)
-	assert.Equal(t, "heading-in-document", links[2].hash)
+	resolved, err := resolver.Resolve("docs")
+	assert.NoError(t, err)
+	assert.Empty(t, resolved)
+}
 
-	assert.Equal(t, "../path/to/example.txt", links[3].full)
-	assert.Equal(t, "../path/to/example.txt", links[3].filename)
-	assert.Equal(t, "", links[3].hash)
+func TestLinkResolverIgnoresNonTextFiles(t *testing.T) {
+	base := t.TempDir()
+	// A PNG header is enough for http.DetectContentType.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(base, "image.png"),
+		[]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"),
+		0o644,
+	))
 
-	assert.Equal(t, "../path/to/example.png", links[4].full)
-	assert.Equal(t, "../path/to/example.png", links[4].filename)
-	assert.Equal(t, "", links[4].hash)
+	resolver := &LinkResolver{API: &confluence.API{}, Base: base}
 
-	assert.Equal(t, "relative-link-without-dots.md", links[5].full)
-	assert.Equal(t, "relative-link-without-dots.md", links[5].filename)
-	assert.Equal(t, "", links[5].hash)
+	resolved, err := resolver.Resolve("image.png")
+	assert.NoError(t, err)
+	assert.Empty(t, resolved)
+}
 
-	assert.Equal(t, "relative-link-without-dots-but-with-hash.md#hash", links[6].full)
-	assert.Equal(t, "relative-link-without-dots-but-with-hash.md", links[6].filename)
-	assert.Equal(t, "hash", links[6].hash)
+func TestLinkResolverIgnoresFilesWithoutMetadata(t *testing.T) {
+	base := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(base, "plain.md"),
+		[]byte("# Just a heading\n\nNo mark metadata here.\n"),
+		0o644,
+	))
 
-	assert.Equal(t, "example.md", links[7].full)
-	assert.Equal(t, len(links), 8)
+	resolver := &LinkResolver{API: &confluence.API{}, Base: base}
+
+	// Without metadata there is no space or title to look a page up by, so the
+	// link stays as it is rather than the run failing.
+	resolved, err := resolver.Resolve("plain.md")
+	assert.NoError(t, err)
+	assert.Empty(t, resolved)
+}
+
+func TestLinkResolverWithoutAPIDoesNothing(t *testing.T) {
+	var resolver *LinkResolver
+
+	resolved, err := resolver.Resolve("anything.md")
+	assert.NoError(t, err)
+	assert.Empty(t, resolved)
 }
 
 func TestEncodeTinyLinkID(t *testing.T) {

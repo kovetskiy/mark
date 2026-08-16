@@ -1478,3 +1478,74 @@ Top.
 	assert.NotContains(t, body, "HIDDEN FROM CONFLUENCE")
 	assert.NotContains(t, body, "ac:ignore")
 }
+
+// linkedPair publishes two documents where one links to the other, and returns
+// the body of the linking page.
+func linkedPair(t *testing.T, body string) (string, *confluencetest.Server) {
+	t.Helper()
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "a-other.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Other -->\n\nOther.\n")
+	writeFile(t, dir, "b-doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+body)
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
+	}
+	// Twice, so the target exists by the time the link is resolved.
+	require.NoError(t, Run(config))
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	doc, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+	return server.Page(doc.ID).Body, server
+}
+
+// TestLinkInsideCodeBlockIsLeftAlone is the corruption this fixes. Resolution
+// used to scan the text and substitute across the whole file, so a fenced block
+// documenting Markdown syntax had its example links rewritten into Confluence
+// URLs -- and any code sample sharing text with a real link elsewhere went with
+// them.
+func TestLinkInsideCodeBlockIsLeftAlone(t *testing.T) {
+	body, _ := linkedPair(t, "Real link: [example](./a-other.md)\n\n"+
+		"```markdown\n[in a code block](./a-other.md)\n```\n")
+
+	i := strings.Index(body, "CDATA")
+	require.GreaterOrEqual(t, i, 0, "expected a code macro in %s", body)
+	code := body[i:]
+
+	assert.Contains(t, code, "./a-other.md",
+		"the code sample must survive exactly as written")
+	assert.NotContains(t, code, "/wiki/",
+		"a link inside a code block must not be rewritten")
+}
+
+// TestRealLinkIsStillResolved is the control: the fix must not simply stop
+// rewriting links.
+func TestRealLinkIsStillResolved(t *testing.T) {
+	body, _ := linkedPair(t, "Real link: [example](./a-other.md)\n")
+
+	assert.NotContains(t, body, "./a-other.md",
+		"a genuine relative link should have been rewritten")
+	assert.Contains(t, body, "/wiki/",
+		"and should point at the Confluence page")
+}
+
+// TestLinkInsideCodeSpanIsLeftAlone: the same for inline code.
+func TestLinkInsideCodeSpanIsLeftAlone(t *testing.T) {
+	body, _ := linkedPair(t, "Real link: [example](./a-other.md)\n\n"+
+		"Inline: `[sample](./a-other.md)`\n")
+
+	i := strings.Index(body, "<code>")
+	require.GreaterOrEqual(t, i, 0, "expected a code span in %s", body)
+	span := body[i:]
+	assert.Contains(t, span, "./a-other.md", "a code span must survive as written")
+}

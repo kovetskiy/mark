@@ -421,3 +421,66 @@ func TestDateFeature(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotContains(t, actualDisabled, `<time datetime="2026-07-27" />`)
 }
+
+// TestCompileMarkdownResolveLinkError checks that a failure while resolving a
+// link stops the run.
+//
+// An AST transformer cannot return an error, so this one is stashed and picked
+// up after rendering. Without that collection step the failure would be
+// dropped and the page published with the link left as written -- which is
+// exactly what a broken link target looks like, so nobody would notice.
+func TestCompileMarkdownResolveLinkError(t *testing.T) {
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	cfg := types.MarkConfig{
+		MermaidScale: 1.0,
+		D2Scale:      1.0,
+		ResolveLink: func(target string) (string, error) {
+			return "", fmt.Errorf("resolve link %q: nope", target)
+		},
+	}
+
+	_, _, err = mark.CompileMarkdown(
+		[]byte("[a link](./other.md)\n"), lib, "testdata/x.md", cfg,
+	)
+	test.Error(err)
+	test.Contains(err.Error(), "./other.md")
+}
+
+// TestCompileMarkdownResolveLinkSkipsCode is the unit-level counterpart to the
+// end-to-end tests in mark_process_test.go: the resolver must never be asked
+// about text that only looks like a link.
+func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	var asked []string
+	cfg := types.MarkConfig{
+		MermaidScale: 1.0,
+		D2Scale:      1.0,
+		ResolveLink: func(target string) (string, error) {
+			asked = append(asked, target)
+			return "", nil
+		},
+	}
+
+	markdown := []byte("" +
+		"[real](./real.md)\n\n" +
+		"`[code span](./span.md)`\n\n" +
+		"```\n[fenced](./fenced.md)\n```\n\n" +
+		"    [indented](./indented.md)\n",
+	)
+
+	_, _, err = mark.CompileMarkdown(markdown, lib, "testdata/x.md", cfg)
+	test.NoError(err)
+	test.Equal([]string{"./real.md"}, asked)
+}

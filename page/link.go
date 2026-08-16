@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -17,21 +16,32 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type LinkSubstitution struct {
-	From string
-	To   string
-}
-
 type markdownLink struct {
 	full     string
 	filename string
 	hash     string
 }
 
-func ResolveRelativeLinks(
+// LinkResolver resolves one link target at a time, for a caller walking a
+// parsed document rather than scanning its text.
+type LinkResolver struct {
+	API                      *confluence.API
+	Base                     string
+	SpaceForLinks            string
+	TitleFromH1              bool
+	TitleFromFilename        bool
+	Parents                  []string
+	TitleAppendGeneratedHash bool
+	FrontMatterEnabled       bool
+}
+
+// NewLinkResolver builds a resolver for the document at base.
+//
+// A link with no space of its own is resolved in the document's own space,
+// which is what a relative link between two files in one repository means.
+func NewLinkResolver(
 	api *confluence.API,
 	meta *metadata.Meta,
-	markdown []byte,
 	base string,
 	spaceFromCli string,
 	titleFromH1 bool,
@@ -39,41 +49,53 @@ func ResolveRelativeLinks(
 	parents []string,
 	titleAppendGeneratedHash bool,
 	frontMatterEnabled bool,
-) ([]LinkSubstitution, error) {
-	matches := parseLinks(string(markdown))
-
-	// If the user didn't provide --space, inherit the current document's space so
-	// relative links can be resolved within the same space.
+) *LinkResolver {
 	spaceForLinks := spaceFromCli
 	if spaceForLinks == "" && meta != nil {
 		spaceForLinks = meta.Space
 	}
 
-	links := []LinkSubstitution{}
-	for _, match := range matches {
-		log.Trace().
-			Msgf(
-				"found a relative link: full=%s filename=%s hash=%s",
-				match.full,
-				match.filename,
-				match.hash,
-			)
-		resolved, err := resolveLink(api, base, match, spaceForLinks, titleFromH1, titleFromFilename, parents, titleAppendGeneratedHash, frontMatterEnabled)
-		if err != nil {
-			return nil, fmt.Errorf("resolve link %q: %w", match.full, err)
-		}
+	return &LinkResolver{
+		API:                      api,
+		Base:                     base,
+		SpaceForLinks:            spaceForLinks,
+		TitleFromH1:              titleFromH1,
+		TitleFromFilename:        titleFromFilename,
+		Parents:                  parents,
+		TitleAppendGeneratedHash: titleAppendGeneratedHash,
+		FrontMatterEnabled:       frontMatterEnabled,
+	}
+}
 
-		if resolved == "" {
-			continue
-		}
-
-		links = append(links, LinkSubstitution{
-			From: match.full,
-			To:   resolved,
-		})
+// Resolve reports what a link target should become, or "" to leave it alone.
+//
+// The target arrives as the document wrote it -- a path with an optional
+// #fragment -- which is the same shape the old scanner extracted by hand.
+func (r *LinkResolver) Resolve(target string) (string, error) {
+	if r == nil || r.API == nil || target == "" {
+		return "", nil
 	}
 
-	return links, nil
+	// Anything with a scheme, or a bare fragment, is not a link to a file in
+	// this repository and is left as written.
+	if strings.Contains(target, "://") || strings.HasPrefix(target, "#") ||
+		strings.HasPrefix(target, "mailto:") {
+		return "", nil
+	}
+
+	filename, hash, _ := strings.Cut(target, "#")
+
+	resolved, err := resolveLink(
+		r.API, r.Base,
+		markdownLink{full: target, filename: filename, hash: hash},
+		r.SpaceForLinks, r.TitleFromH1, r.TitleFromFilename,
+		r.Parents, r.TitleAppendGeneratedHash, r.FrontMatterEnabled,
+	)
+	if err != nil {
+		return "", fmt.Errorf("resolve link %q: %w", target, err)
+	}
+
+	return resolved, nil
 }
 
 func resolveLink(
@@ -163,46 +185,6 @@ func resolveLink(
 	}
 
 	return result, nil
-}
-
-func SubstituteLinks(markdown []byte, links []LinkSubstitution) []byte {
-	for _, link := range links {
-		if link.From == link.To {
-			continue
-		}
-
-		log.Trace().Msgf("substitute link: %q -> %q", link.From, link.To)
-
-		markdown = bytes.ReplaceAll(
-			markdown,
-			[]byte(fmt.Sprintf("](%s)", link.From)),
-			[]byte(fmt.Sprintf("](%s)", link.To)),
-		)
-	}
-
-	return markdown
-}
-
-func parseLinks(markdown string) []markdownLink {
-	// Matches markdown links but not inline images (![ ... ]).
-	// Group 1: full link target (path + optional hash)
-	// Group 2: file path portion
-	// Group 3: hash portion
-	// The leading (?:^|[^!]) anchor prevents matching image syntax without
-	// consuming a character that belongs to a preceding link or word.
-	re := regexp.MustCompile(`(?:^|[^!])\[.+\]\((([^\)#]+)?#?([^\)]+)?)\)`)
-	matches := re.FindAllStringSubmatch(markdown, -1)
-
-	links := make([]markdownLink, len(matches))
-	for i, match := range matches {
-		links[i] = markdownLink{
-			full:     match[1],
-			filename: match[2],
-			hash:     match[3],
-		}
-	}
-
-	return links
 }
 
 // getConfluenceLink builds a stable Confluence tiny link for the given page or blog post.
