@@ -76,13 +76,16 @@ func NewLinkResolver(
 //
 // The target arrives as the document wrote it -- a path with an optional
 // #fragment -- which is the same shape the old scanner extracted by hand.
-func (r *LinkResolver) Resolve(target string) (string, error) {
+// The text is the words between the brackets, which an ac: link with nothing
+// after the colon uses as the page title -- the [Some Page](ac:) form. It is
+// wanted for that alone; nothing else looks at it.
+func (r *LinkResolver) Resolve(target, text string) (string, error) {
 	if r == nil || r.API == nil || target == "" {
 		return "", nil
 	}
 
-	// A link somewhere else entirely. It is left as written either way; with
-	// --check-links=all it is also asked whether it answers.
+	// A link somewhere else entirely. It is left as written either way; asked
+	// whether it answers only when external links are being checked.
 	if strings.Contains(target, "://") {
 		if err := r.Checker.CheckExternal(target); err != nil {
 			return "", fmt.Errorf("%s: %w", target, err)
@@ -91,11 +94,17 @@ func (r *LinkResolver) Resolve(target string) (string, error) {
 		return "", nil
 	}
 
-	// None of these name a file in this repository. "ac:" is a link to a
-	// Confluence page by title, which the renderer turns into an ac:link, and a
-	// rooted path is either site-absolute or one an attachment already claimed.
+	// A link to a Confluence page by title rather than by path. The renderer
+	// turns it into an ac:link; all that can be checked is that there is a page
+	// of that name to arrive at.
+	if strings.HasPrefix(target, confluenceLinkPrefix) {
+		return "", r.checkConfluenceLink(target, text)
+	}
+
+	// Neither of these names a file in this repository, and a rooted path is
+	// either site-absolute or one an attachment already claimed.
 	if strings.HasPrefix(target, "#") || strings.HasPrefix(target, "mailto:") ||
-		strings.HasPrefix(target, "ac:") || strings.HasPrefix(target, "/") {
+		strings.HasPrefix(target, "/") {
 		return "", nil
 	}
 
@@ -123,7 +132,46 @@ func (r *LinkResolver) Resolve(target string) (string, error) {
 }
 
 func (r *LinkResolver) checking() bool {
-	return r.Checker != nil && r.Checker.Mode != LinkCheckNone
+	return r.Checker != nil && r.Checker.Checks.Internal
+}
+
+// confluenceLinkPrefix introduces a link to a page by title.
+const confluenceLinkPrefix = "ac:"
+
+// checkConfluenceLink reports whether an ac: link has a page to arrive at.
+//
+// The title is read the same way the renderer reads it, since a disagreement
+// between the two would mean checking one link and publishing another: what
+// follows the colon, or the link text when nothing does.
+func (r *LinkResolver) checkConfluenceLink(target, text string) error {
+	if r.Checker == nil || !r.Checker.Checks.Confluence {
+		return nil
+	}
+
+	title := strings.TrimSpace(strings.TrimPrefix(target, confluenceLinkPrefix))
+	if title == "" {
+		title = strings.TrimSpace(text)
+	}
+
+	if title == "" {
+		return fmt.Errorf("link %q does not resolve: it names no page", target)
+	}
+
+	// Same space as the document doing the linking, which is what an ac:link
+	// with only a title resolves against.
+	found, err := r.API.FindPage(r.SpaceForLinks, title, "page")
+	if err != nil {
+		return fmt.Errorf("find confluence page %q: %w", title, err)
+	}
+
+	if found == nil {
+		return fmt.Errorf(
+			"link %q does not resolve: there is no page %q in space %q",
+			target, title, r.SpaceForLinks,
+		)
+	}
+
+	return nil
 }
 
 // unresolved says why a link produced no Confluence link.

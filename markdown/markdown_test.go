@@ -440,7 +440,7 @@ func TestCompileMarkdownResolveLinkError(t *testing.T) {
 	cfg := types.MarkConfig{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
-		ResolveLink: func(target string) (string, error) {
+		ResolveLink: func(target, text string) (string, error) {
 			return "", fmt.Errorf("resolve link %q: nope", target)
 		},
 	}
@@ -467,7 +467,7 @@ func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 	cfg := types.MarkConfig{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
-		ResolveLink: func(target string) (string, error) {
+		ResolveLink: func(target, text string) (string, error) {
 			asked = append(asked, target)
 			return "", nil
 		},
