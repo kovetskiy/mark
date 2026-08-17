@@ -196,6 +196,12 @@ type Entry struct {
 	// only means the file is gone if the run was looking where the file would
 	// have been; a run narrowed to one directory says nothing about any other.
 	Glob string `json:"glob,omitempty"`
+
+	// Version is the page version mark last wrote. A page whose version has
+	// moved on since is one somebody else has edited, which is the whole basis
+	// of --no-overwrite. Zero means mark has never recorded one -- an entry
+	// written before this was tracked -- and nothing can be concluded from it.
+	Version int64 `json:"version,omitempty"`
 }
 
 // folderDocument is the folder mapping as stored.
@@ -702,6 +708,35 @@ func (s *Store) ResolveStaleTitle(spaceKey, title string) (string, bool, error) 
 
 	pageID, ok := state.titles[title]
 	return pageID, ok && pageID != "", nil
+}
+
+// RecordVersion notes the page version mark has just written.
+//
+// Separate from Record because the number is only known afterwards: Record runs
+// before the update so that a mapping survives a failed one, and the version
+// that update produces does not exist until it succeeds.
+func (s *Store) RecordVersion(spaceKey, path string, version int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path = Key(path)
+
+	state, err := s.load(spaceKey)
+	if err != nil {
+		return err
+	}
+
+	sh := &state.shards[shardFor(path)]
+	entry, ok := sh.pages[path]
+	if !ok || entry.Version == version {
+		return nil
+	}
+
+	entry.Version = version
+	sh.pages[path] = entry
+	sh.dirty = true
+
+	return nil
 }
 
 // RecordFolder notes which Confluence folder a declared folder path resolved

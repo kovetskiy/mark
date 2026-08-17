@@ -1097,6 +1097,7 @@ GLOBAL OPTIONS:
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
+   --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
@@ -1372,6 +1373,46 @@ are read in a single request and only the ones that changed are written back.
   absolute path.
 * `--track-pages` has no effect when publishing straight to a page ID, since the
   mapping is per space and per file and a page ID is neither.
+
+### Leaving hand-edited pages alone
+
+By default Mark overwrites whatever a page currently holds. `--no-overwrite`
+makes it skip any page that has been edited in Confluence since Mark last
+published it:
+
+```bash
+mark --track-pages --no-overwrite --files "docs/**/*.md"
+```
+
+```text
+WRN page "Runbook" was edited in Confluence since mark published it
+    (version 9, mark wrote 7); leaving it alone
+```
+
+It needs `--track-pages`, because the version Mark last wrote is remembered in
+the same manifest, and Mark refuses to run without it rather than appear to
+guard pages it is not guarding.
+
+A skipped page still counts as published: it is not reported as an orphan and
+not pruned. Nothing else about it is touched either -- no labels, no ordering,
+and its attachments are not re-uploaded.
+
+The warning repeats on every run until the difference is resolved, which is
+deliberate: a page drifting from its source is a standing problem, not a one-off
+event. To resolve it, either bring the edit back into the Markdown, or publish
+once without `--no-overwrite` to let Mark reclaim the page.
+
+Comparison is by version number, not by content. Confluence rewrites storage
+markup on save often enough that comparing bodies would report a difference on
+pages nobody had touched.
+
+#### Worth knowing about --no-overwrite
+
+* A page Mark has no recorded version for -- first run, or one published before
+  the version was tracked -- is published normally and recorded, rather than
+  frozen on the suspicion that it might have changed.
+* Anything that creates a version counts as an edit, including a comment added
+  in the web UI.
 
 ## Issues, Bugs & Contributions
 
