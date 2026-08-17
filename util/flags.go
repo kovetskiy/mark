@@ -204,6 +204,13 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS"),
 			altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:      "global-properties",
+		Value:     "",
+		Usage:     "path to a YAML or JSON file of Confluence content properties to set on every page. A Property header or properties front matter in a document wins over the file for that page.",
+		TakesFile: true,
+		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_GLOBAL_PROPERTIES"), altsrctoml.TOML("global-properties", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.BoolFlag{
 		Name:    "append-labels",
 		Value:   false,

@@ -67,6 +67,7 @@ appended to the values from front matter.
 <!-- Attachment: <local path> -->
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
+<!-- Property: <key>=<value> -->
 <!-- Image-Align: <left|center|right> -->
 
 <page contents>
@@ -862,6 +863,47 @@ indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with
 the document that includes them.
 
+### Confluence content properties
+
+A page can carry arbitrary key/value data that macros, reports and scripts read
+back through the API. One `Property` header sets one of them, as many times as
+you like:
+
+```markdown
+<!-- Property: owner=platform-team -->
+<!-- Property: reviewed=2026-08 -->
+```
+
+In YAML front matter the same thing is a mapping under the plural key, the way
+`Parent` headers become a `parents` list:
+
+```yaml
+---
+title: Runbook
+properties:
+  owner: platform-team
+  reviewers: 3
+  tags:
+    - runbook
+    - on-call
+---
+```
+
+A content property holds JSON, so front matter can give a number, a list or a
+mapping as the value. A `Property` header can only say a string, which is the
+one difference between the two forms.
+
+`--global-properties` points at a YAML or JSON file of properties to set on
+every page:
+
+```bash
+mark --global-properties confluence-properties.yaml --files "docs/**/*.md"
+```
+
+A document naming a property the file also names wins for its own page. A
+property whose value has not changed is not written again, because Confluence
+versions each one and rewriting it fills its history for nothing.
+
 ### Labels applied in Confluence
 
 A page ends up with exactly the labels its `Label` headers name: one added in
@@ -1185,6 +1227,7 @@ GLOBAL OPTIONS:
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --check-links string [ --check-links string ]  fail on links that do not resolve. Repeat or comma-separate any of: "internal" (relative links to other files in the repository), "confluence" (ac: links naming a page by title), "external" (requests each URL to see whether it answers), or "all". [$MARK_CHECK_LINKS]
+   --global-properties string               path to a YAML or JSON file of Confluence content properties to set on every page. A Property header or properties front matter in a document wins over the file for that page. [$MARK_GLOBAL_PROPERTIES]
    --append-labels                          add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name. [$MARK_APPEND_LABELS]
    --check-links-warn-only                  report links that do not resolve without failing the run. Only meaningful together with --check-links. [$MARK_CHECK_LINKS_WARN_ONLY]
    --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
