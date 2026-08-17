@@ -862,6 +862,25 @@ indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with
 the document that includes them.
 
+### Labels applied in Confluence
+
+A page ends up with exactly the labels its `Label` headers name: one added in
+the Confluence UI is removed on the next publish, because the document is taken
+as the whole truth about its labels.
+
+That is often not what a team wants. Labels drive macros, searches and reports,
+and are frequently applied by people who are not editing the Markdown.
+`--append-labels` adds what a document asks for without removing anything else:
+
+```bash
+mark --append-labels --files "docs/**/*.md"
+```
+
+The cost is that a label outlives the header that introduced it -- appending
+cannot tell a `Label` header somebody deleted from a label somebody added in
+Confluence. That is visible on the page and can be undone by hand, which the
+deletion it prevents is not.
+
 ### Checking that links go somewhere
 
 By default a link that cannot be resolved is left exactly as written, which in
@@ -1166,6 +1185,7 @@ GLOBAL OPTIONS:
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --check-links string [ --check-links string ]  fail on links that do not resolve. Repeat or comma-separate any of: "internal" (relative links to other files in the repository), "confluence" (ac: links naming a page by title), "external" (requests each URL to see whether it answers), or "all". [$MARK_CHECK_LINKS]
+   --append-labels                          add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name. [$MARK_APPEND_LABELS]
    --check-links-warn-only                  report links that do not resolve without failing the run. Only meaningful together with --check-links. [$MARK_CHECK_LINKS_WARN_ONLY]
    --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]

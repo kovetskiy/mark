@@ -73,6 +73,7 @@ type Config struct {
 	NoOverwrite        bool
 	CheckLinks         []string
 	CheckLinksWarnOnly bool
+	AppendLabels       bool
 
 	// Rendering
 	DropH1          bool
@@ -752,7 +753,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if meta != nil {
-		if err := updateLabels(api, target, labels); err != nil {
+		if err := updateLabels(api, target, labels, config.AppendLabels); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -1007,7 +1008,15 @@ func resolveRenamedFile(
 	return pg, nil
 }
 
-func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels []string) error {
+// updateLabels brings a page's labels in line with what its document asks for.
+//
+// Whether that means removing the others is the caller's choice. A page's
+// labels are not only mark's to decide: teams label pages in Confluence to
+// drive macros, searches and reports, and removing a label somebody added there
+// destroys work no document ever mentioned. Appending leaves them, at the cost
+// of a label outliving the Label header that introduced it -- which is visible
+// and reversible, unlike the deletion.
+func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels []string, appendOnly bool) error {
 	labelInfo, err := api.GetPageLabels(target, "global")
 	if err != nil {
 		return err
@@ -1018,7 +1027,10 @@ func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels [
 	log.Debug().Msg("Meta Labels:")
 	log.Debug().Interface("labels", metaLabels).Send()
 
-	delLabels := determineLabelsToRemove(labelInfo, metaLabels)
+	var delLabels []string
+	if !appendOnly {
+		delLabels = determineLabelsToRemove(labelInfo, metaLabels)
+	}
 	log.Debug().Msg("Del Labels:")
 	log.Debug().Interface("labels", delLabels).Send()
 

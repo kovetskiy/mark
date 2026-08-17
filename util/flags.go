@@ -205,6 +205,12 @@ var Flags = []cli.Flag{
 			altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
+		Name:    "append-labels",
+		Value:   false,
+		Usage:   "add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_APPEND_LABELS"), altsrctoml.TOML("append-labels", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
 		Name:    "check-links-warn-only",
 		Value:   false,
 		Usage:   "report links that do not resolve without failing the run. Only meaningful together with --check-links.",
