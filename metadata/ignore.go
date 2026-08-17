@@ -140,51 +140,112 @@ func ignoreMarker(line string) marker {
 	}
 }
 
-// codeLines reports which lines of the document are inside a code block.
+// Region is a half-open byte range within a document.
+type Region struct {
+	Start int
+	Stop  int
+}
+
+// Contains reports whether offset falls inside the region.
+func (r Region) Contains(offset int) bool {
+	return offset >= r.Start && offset < r.Stop
+}
+
+// InCode reports whether offset falls inside any of the regions.
+func InCode(regions []Region, offset int) bool {
+	for _, region := range regions {
+		if region.Contains(offset) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// CodeRegions reports where the code is in a document.
 //
-// Both kinds count: a fenced block and an indented one. The fence lines
-// themselves are not included, which does not matter -- a fence is never a
-// marker -- and neither is a code span, since a marker has to be alone on its
-// line to be one at all.
-func codeLines(data []byte) map[int]bool {
-	code := map[int]bool{}
+// Fenced blocks, indented blocks and code spans, which between them are every
+// place a reader is being shown text rather than told something. Anything that
+// rewrites a document -- a macro, an include directive, an ignore marker -- has
+// to leave these alone, or a page documenting the feature has its own example
+// eaten by it.
+//
+// Asking the parser rather than looking for backticks is deliberate: tildes,
+// indented blocks, closing fences longer than their opener and nesting are all
+// easy to get subtly wrong, and goldmark already knows.
+func CodeRegions(data []byte) []Region {
+	var regions []Region
 
 	doc := goldmark.New().Parser().Parse(text.NewReader(data))
 
-	// Line numbers come from counting newlines before an offset, so the offsets
-	// are collected first and turned into lines in one pass over the document.
-	var spans [][2]int
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 
-		switch node.(type) {
-		case *ast.FencedCodeBlock, *ast.CodeBlock:
-		default:
-			return ast.WalkContinue, nil
-		}
+		switch node.Kind() {
+		case ast.KindFencedCodeBlock, ast.KindCodeBlock:
+			lines := node.Lines()
+			if lines.Len() == 0 {
+				return ast.WalkContinue, nil
+			}
+			regions = append(regions, Region{
+				Start: lines.At(0).Start,
+				Stop:  lines.At(lines.Len() - 1).Stop,
+			})
 
-		lines := node.Lines()
-		if lines.Len() == 0 {
-			return ast.WalkContinue, nil
+		case ast.KindCodeSpan:
+			// A span's own segments live on its children.
+			first, last := node.FirstChild(), node.LastChild()
+			if first == nil || last == nil {
+				return ast.WalkContinue, nil
+			}
+			start, ok := segmentStart(first)
+			if !ok {
+				return ast.WalkContinue, nil
+			}
+			stop, ok := segmentStop(last)
+			if !ok {
+				return ast.WalkContinue, nil
+			}
+			regions = append(regions, Region{Start: start, Stop: stop})
 		}
-		spans = append(spans, [2]int{lines.At(0).Start, lines.At(lines.Len() - 1).Stop})
 
 		return ast.WalkContinue, nil
 	})
 
+	return regions
+}
+
+func segmentStart(node ast.Node) (int, bool) {
+	if t, ok := node.(*ast.Text); ok {
+		return t.Segment.Start, true
+	}
+
+	return 0, false
+}
+
+func segmentStop(node ast.Node) (int, bool) {
+	if t, ok := node.(*ast.Text); ok {
+		return t.Segment.Stop, true
+	}
+
+	return 0, false
+}
+
+// codeLines reports which lines of the document are inside code.
+func codeLines(data []byte) map[int]bool {
+	code := map[int]bool{}
+
+	spans := CodeRegions(data)
 	if len(spans) == 0 {
 		return code
 	}
 
 	line := 0
 	for offset := range data {
-		for _, span := range spans {
-			if offset >= span[0] && offset < span[1] {
-				code[line] = true
-				break
-			}
+		if InCode(spans, offset) {
+			code[line] = true
 		}
 		if data[offset] == '\n' {
 			line++

@@ -8,6 +8,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/includes"
+	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
@@ -81,8 +82,15 @@ func (macro *Macro) Apply(
 ) ([]byte, error) {
 	var err error
 
-	content = macro.Regexp.ReplaceAllFunc(
-		content,
+	// Where the code is, so that a macro pattern shown inside a fenced block or
+	// a code span is left as the sample it is. Only the start of a match is
+	// judged: a macro that wraps a region of the document may perfectly well
+	// have code inside it, and refusing that would break the very macros this
+	// is protecting.
+	code := metadata.CodeRegions(content)
+
+	content = replaceAllOutsideCode(
+		macro.Regexp, content, code,
 		func(match []byte) []byte {
 			config := map[string]any{}
 
@@ -124,6 +132,37 @@ func (macro *Macro) Apply(
 	)
 
 	return content, err
+}
+
+// replaceAllOutsideCode is regexp.ReplaceAllFunc with the matches that begin
+// inside code left alone.
+func replaceAllOutsideCode(
+	re *regexp.Regexp,
+	content []byte,
+	code []metadata.Region,
+	expand func(match []byte) []byte,
+) []byte {
+	matches := re.FindAllIndex(content, -1)
+	if len(matches) == 0 {
+		return content
+	}
+
+	var out bytes.Buffer
+	last := 0
+
+	for _, match := range matches {
+		if metadata.InCode(code, match[0]) {
+			continue
+		}
+
+		out.Write(content[last:match[0]])
+		out.Write(expand(content[match[0]:match[1]]))
+		last = match[1]
+	}
+
+	out.Write(content[last:])
+
+	return out.Bytes()
 }
 
 func (macro *Macro) configure(node any, groups [][]byte) any {

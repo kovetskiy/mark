@@ -110,3 +110,52 @@ func TestIncludedContentStillGetsMacros(t *testing.T) {
 	assert.Contains(t, out, `<ac:parameter ac:name="key">MYJIRA-123</ac:parameter>`,
 		"a macro must still apply to included text")
 }
+
+// TestRegionMacroWrapsBlocks covers a macro whose pattern spans block
+// boundaries: two markers with everything between them captured, which is how
+// the ac:details collapsible is written.
+//
+// This is the shape an AST-based expansion cannot express. Matching per text
+// node can never see across a paragraph into a list, and the definition itself
+// contains "-->", so the parser ended the directive halfway through it and the
+// rest of the definition rendered as an indented code block.
+func TestRegionMacroWrapsBlocks(t *testing.T) {
+	out := compile(t, "testdata/x.md",
+		"<!-- Macro: <!-- ac:details -->([^:][\\s\\S]*?)<!-- ac:details end -->\n"+
+			"     Template: ac:details\n"+
+			"     Body: ${1} -->\n\n"+
+			"Before.\n\n"+
+			"<!-- ac:details -->\n"+
+			"Hidden paragraph.\n\n"+
+			"- a list item\n"+
+			"<!-- ac:details end -->\n\n"+
+			"After.\n")
+
+	assert.Contains(t, out, `<ac:structured-macro ac:name="details"`,
+		"the region must become a details macro")
+	assert.Contains(t, out, "<li>a list item</li>",
+		"blocks inside the region must still be parsed as blocks")
+	assert.Contains(t, out, "</ac:rich-text-body></ac:structured-macro>",
+		"the macro must close after the region")
+	assert.NotContains(t, out, "ac:details end",
+		"the markers must be consumed")
+	assert.NotContains(t, out, "Body: ${1}",
+		"the definition must not survive into the page")
+}
+
+// TestRegionMacroKeepsCodeInsideIt: a region macro may perfectly well wrap a
+// fenced block, and refusing that would break the macros the code check exists
+// to protect.
+func TestRegionMacroKeepsCodeInsideIt(t *testing.T) {
+	out := compile(t, "testdata/x.md",
+		"<!-- Macro: <!-- ac:details -->([^:][\\s\\S]*?)<!-- ac:details end -->\n"+
+			"     Template: ac:details\n"+
+			"     Body: ${1} -->\n\n"+
+			"<!-- ac:details -->\n"+
+			"```\nsample code\n```\n"+
+			"<!-- ac:details end -->\n")
+
+	assert.Contains(t, out, `<ac:structured-macro ac:name="details"`,
+		"a region containing code must still expand")
+	assert.Contains(t, out, "sample code")
+}
