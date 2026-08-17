@@ -205,6 +205,12 @@ var Flags = []cli.Flag{
 			altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
+		Name:    "check-links-warn-only",
+		Value:   false,
+		Usage:   "report links that do not resolve without failing the run. Only meaningful together with --check-links.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS_WARN_ONLY"), altsrctoml.TOML("check-links-warn-only", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
 		Name:    "no-overwrite",
 		Value:   false,
 		Usage:   "Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered.",
