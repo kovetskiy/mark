@@ -19,21 +19,22 @@ import (
 )
 
 const (
-	HeaderParent      = `Parent`
-	HeaderFolder      = `Folder`
-	HeaderSpace       = `Space`
-	HeaderType        = `Type`
-	HeaderTitle       = `Title`
-	HeaderLayout      = `Layout`
-	HeaderEmoji       = `Emoji`
-	HeaderAttachment  = `Attachment`
-	HeaderLabel       = `Label`
-	HeaderOrder       = `Order`
-	HeaderInclude     = `Include`
-	HeaderSidebar     = `Sidebar`
-	ContentAppearance = `Content-Appearance`
-	HeaderImageAlign  = `Image-Align`
-	HeaderProperty    = `Property`
+	HeaderParent       = `Parent`
+	HeaderFolder       = `Folder`
+	HeaderSpace        = `Space`
+	HeaderType         = `Type`
+	HeaderTitle        = `Title`
+	HeaderLayout       = `Layout`
+	HeaderEmoji        = `Emoji`
+	HeaderAttachment   = `Attachment`
+	HeaderLabel        = `Label`
+	HeaderOrder        = `Order`
+	HeaderInclude      = `Include`
+	HeaderSidebar      = `Sidebar`
+	ContentAppearance  = `Content-Appearance`
+	HeaderImageAlign   = `Image-Align`
+	HeaderProperty     = `Property`
+	HeaderSynchronized = `Synchronized`
 )
 
 type Meta struct {
@@ -48,6 +49,13 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
+
+	// Synchronized is whether the document is published at all. Nil means it
+	// said nothing, which is not the same as false: a pointer keeps the
+	// difference between a document opting out and a Meta that simply never
+	// mentioned it, so that no code path can accidentally skip a page by
+	// leaving a field at its zero value.
+	Synchronized *bool
 
 	// Properties are Confluence content properties to set on the page.
 	//
@@ -85,6 +93,21 @@ func toStringSlice(val any) []string {
 		}
 	}
 	return res
+}
+
+// toBool reads a front matter boolean, which YAML gives as a bool but a quoted
+// document gives as a string.
+func toBool(val any) (bool, bool) {
+	switch v := val.(type) {
+	case bool:
+		return v, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(v))
+
+		return parsed, err == nil
+	default:
+		return false, false
+	}
 }
 
 // toStringMap reads a front matter mapping, keeping the values as written.
@@ -201,6 +224,14 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				setContentAppearance(meta, toString(v))
 			case "imagealign":
 				meta.ImageAlign = strings.ToLower(toString(v))
+			case "synchronized":
+				value, ok := toBool(v)
+				if !ok {
+					return nil, nil, fmt.Errorf(
+						"synchronized must be true or false, got %v", v,
+					)
+				}
+				meta.Synchronized = &value
 			case "properties":
 				for key, value := range toStringMap(v) {
 					if meta.Properties == nil {
@@ -303,6 +334,16 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				case HeaderImageAlign:
 					meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
+
+				case HeaderSynchronized:
+					synchronized, err := strconv.ParseBool(strings.TrimSpace(value))
+					if err != nil {
+						return nil, nil, fmt.Errorf(
+							"%s header must be true or false, got %q",
+							HeaderSynchronized, value,
+						)
+					}
+					meta.Synchronized = &synchronized
 
 				case HeaderProperty:
 					key, propValue, ok := strings.Cut(value, "=")
@@ -462,4 +503,17 @@ func parseHeaderComment(line string) (string, string, bool) {
 	key := strings.TrimSpace(content[:colonIdx])
 	value := strings.TrimSpace(content[colonIdx+1:])
 	return key, value, true
+}
+
+// Publish reports whether a document asks to be published.
+//
+// Saying nothing means yes: a repository full of documents that never mention
+// synchronisation is the ordinary case, and it is the opting out that has to be
+// deliberate.
+func (meta *Meta) Publish() bool {
+	if meta == nil || meta.Synchronized == nil {
+		return true
+	}
+
+	return *meta.Synchronized
 }

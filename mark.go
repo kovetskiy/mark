@@ -372,6 +372,26 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		meta = nil
 	}
 
+	// Before anything is asked of Confluence: a document that has opted out
+	// should cost nothing, not a page lookup and an attachment upload it will
+	// not use.
+	if !meta.Publish() {
+		log.Info().Msgf("%s is not synchronized; leaving it alone", file)
+
+		// Looked up purely to mark the path as seen. A page somebody stopped
+		// synchronising is one they chose to keep, and a run that did not
+		// account for the file would read it as gone: the page is reported as
+		// having no source file and its mapping is dropped, so synchronising it
+		// again later would no longer know which page was already its own.
+		if tracker != nil && meta != nil && meta.Space != "" {
+			if _, _, err := tracker.Lookup(meta.Space, file); err != nil {
+				return nil, nil, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+			}
+		}
+
+		return nil, nil, nil
+	}
+
 	if config.PageID == "" && meta == nil {
 		return nil, nil, fmt.Errorf(
 			"specified file doesn't contain metadata and URL is not specified " +
