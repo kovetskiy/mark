@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,12 @@ import (
 // checkLinksRun publishes a directory containing one document with the given
 // body and returns whatever the run made of it.
 func checkLinksRun(t *testing.T, modes []string, body string, extra map[string]string) error {
+	t.Helper()
+
+	return checkLinksRunWith(t, modes, false, body, extra)
+}
+
+func checkLinksRunWith(t *testing.T, modes []string, warnOnly bool, body string, extra map[string]string) error {
 	t.Helper()
 
 	server := confluencetest.New(t)
@@ -36,10 +43,11 @@ func checkLinksRun(t *testing.T, modes []string, body string, extra map[string]s
 
 	return Run(Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
-		Files:      filepath.Join(dir, "doc.md"),
-		Features:   []string{"mention"},
-		CheckLinks: modes,
-		Output:     io.Discard,
+		Files:              filepath.Join(dir, "doc.md"),
+		Features:           []string{"mention"},
+		CheckLinks:         modes,
+		CheckLinksWarnOnly: warnOnly,
+		Output:             io.Discard,
 	})
 }
 
@@ -169,5 +177,69 @@ func TestCheckLinksConfluence(t *testing.T) {
 	t.Run("confluence alone does not judge a relative link", func(t *testing.T) {
 		err := checkLinksRun(t, []string{"confluence"}, "See [it](./missing.md).\n", nil)
 		assert.NoError(t, err)
+	})
+}
+
+// TestCheckLinksReportsEveryBrokenLink pins that a file is not abandoned at the
+// first failure. Reporting one at a time turns a page with several into as many
+// runs to find out.
+func TestCheckLinksReportsEveryBrokenLink(t *testing.T) {
+	err := checkLinksRun(t, []string{"all"},
+		"[a](./one.md) [b](./two.md) [c](./three.md) [d](ac:Nowhere)\n", nil)
+
+	require.Error(t, err)
+	for _, expected := range []string{"./one.md", "./two.md", "./three.md", "Nowhere"} {
+		assert.Contains(t, err.Error(), expected)
+	}
+	assert.Contains(t, err.Error(), "4 links do not resolve")
+}
+
+func TestCheckLinksCountsOneLinkAsSingular(t *testing.T) {
+	err := checkLinksRun(t, []string{"internal"}, "[a](./one.md)\n", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "1 link does not resolve")
+}
+
+// TestCheckLinksWarnOnly is the adoption path: see the whole list without the
+// build failing over it.
+func TestCheckLinksWarnOnly(t *testing.T) {
+	t.Run("a broken link does not fail the run", func(t *testing.T) {
+		err := checkLinksRunWith(t, []string{"all"}, true,
+			"[a](./one.md) [b](ac:Nowhere)\n", nil)
+		assert.NoError(t, err)
+	})
+
+	t.Run("the page is still published", func(t *testing.T) {
+		// A run that reports and refuses to publish would be the worst of both.
+		server := confluencetest.New(t)
+		home := server.AddPage("DOCS", "Home", "page", "")
+		server.SetHomepage("DOCS", home.ID)
+		server.AddPage("DOCS", "Parent", "page", home.ID)
+
+		dir := t.TempDir()
+		writeFile(t, dir, "doc.md",
+			"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+
+				"Body here. [a](./missing.md)\n")
+
+		require.NoError(t, Run(Config{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			Files:      filepath.Join(dir, "doc.md"),
+			Features:   []string{"mention"},
+			CheckLinks: []string{"internal"}, CheckLinksWarnOnly: true,
+			Output: io.Discard,
+		}))
+
+		api := confluence.NewAPI(server.URL, "user", "token", false)
+		doc, err := api.FindPage("DOCS", "Doc", "page")
+		require.NoError(t, err)
+		require.NotNil(t, doc)
+		assert.Contains(t, server.Page(doc.ID).Body, "Body here")
+	})
+
+	t.Run("without it the same document fails", func(t *testing.T) {
+		err := checkLinksRunWith(t, []string{"all"}, false,
+			"[a](./one.md) [b](ac:Nowhere)\n", nil)
+		require.Error(t, err)
 	})
 }

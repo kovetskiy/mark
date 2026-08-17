@@ -36,6 +36,29 @@ type LinkResolver struct {
 
 	// Checker decides how much is verified. Nil checks nothing.
 	Checker *LinkChecker
+
+	// broken collects the links that failed a check, rather than the first one
+	// stopping the file. Reporting one at a time would mean fixing a link,
+	// running again, and finding the next -- which for a page with six of them
+	// is six runs to learn what one could have said.
+	//
+	// No lock: a resolver belongs to one file, and a file is walked by one
+	// goroutine.
+	broken []string
+}
+
+// Broken returns what failed a check, in the order the links appear.
+func (r *LinkResolver) Broken() []string {
+	if r == nil {
+		return nil
+	}
+
+	return r.broken
+}
+
+// note records a failed check and keeps going.
+func (r *LinkResolver) note(format string, args ...any) {
+	r.broken = append(r.broken, fmt.Sprintf(format, args...))
 }
 
 // NewLinkResolver builds a resolver for the document at base.
@@ -88,7 +111,7 @@ func (r *LinkResolver) Resolve(target, text string) (string, error) {
 	// whether it answers only when external links are being checked.
 	if strings.Contains(target, "://") {
 		if err := r.Checker.CheckExternal(target); err != nil {
-			return "", fmt.Errorf("%s: %w", target, err)
+			r.note("%s: %s", target, err)
 		}
 
 		return "", nil
@@ -122,9 +145,11 @@ func (r *LinkResolver) Resolve(target, text string) (string, error) {
 
 	if why != nil && r.checking() {
 		if why.transient {
+			// Never a failure: the ordinary state of a first run over files
+			// that link to each other.
 			log.Warn().Msgf("link %q does not resolve: %s", target, why.reason)
 		} else {
-			return "", fmt.Errorf("link %q does not resolve: %s", target, why.reason)
+			r.note("link %q does not resolve: %s", target, why.reason)
 		}
 	}
 
@@ -154,7 +179,9 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 	}
 
 	if title == "" {
-		return fmt.Errorf("link %q does not resolve: it names no page", target)
+		r.note("link %q does not resolve: it names no page", target)
+
+		return nil
 	}
 
 	// Same space as the document doing the linking, which is what an ac:link
@@ -165,7 +192,7 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 	}
 
 	if found == nil {
-		return fmt.Errorf(
+		r.note(
 			"link %q does not resolve: there is no page %q in space %q",
 			target, title, r.SpaceForLinks,
 		)

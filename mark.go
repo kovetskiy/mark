@@ -64,14 +64,15 @@ type Config struct {
 	ContentAppearance        string
 
 	// Page updates
-	MinorEdit        bool
-	VersionMessage   string
-	EditLock         bool
-	ChangesOnly      bool
-	PreserveComments bool
-	TrackPages       bool
-	NoOverwrite      bool
-	CheckLinks       []string
+	MinorEdit          bool
+	VersionMessage     string
+	EditLock           bool
+	ChangesOnly        bool
+	PreserveComments   bool
+	TrackPages         bool
+	NoOverwrite        bool
+	CheckLinks         []string
+	CheckLinksWarnOnly bool
 
 	// Rendering
 	DropH1          bool
@@ -136,6 +137,13 @@ func Run(config Config) error {
 		return err
 	}
 	checker := page.NewLinkChecker(linkChecks)
+
+	if config.CheckLinksWarnOnly && !linkChecks.Any() {
+		log.Warn().Msg(
+			"--check-links-warn-only has no effect without --check-links: " +
+				"no links are being checked at all",
+		)
+	}
 
 	// Without the manifest there is nowhere to have remembered what mark last
 	// published, so there is nothing to compare a page against and the flag
@@ -371,7 +379,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// Links are rewritten while the document is being rendered, by walking the
 	// parsed tree. Doing it here, over the text, meant a fenced block showing
 	// Markdown syntax had its example links turned into Confluence URLs.
-	resolveLink := page.NewLinkResolver(
+	resolver := page.NewLinkResolver(
 		api,
 		meta,
 		filepath.Dir(file),
@@ -382,7 +390,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		config.TitleAppendGeneratedHash,
 		frontMatterEnabled,
 		checker,
-	).Resolve
+	)
+	resolveLink := resolver.Resolve
 
 	if config.DryRun {
 		if meta != nil {
@@ -617,6 +626,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+	}
+
+	if err := reportBrokenLinks(resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
+		return nil, nil, err
 	}
 
 	// Only knowable once the document has been walked.
@@ -1482,4 +1495,33 @@ func hasDrifted(
 	}
 
 	return target.Version.Number != entry.Version, entry.Version, nil
+}
+
+// reportBrokenLinks says what failed a link check, and decides whether it ends
+// the file.
+//
+// Every one is named, not just the first: a page with six broken links should
+// take one run to find out, not six. Whether that is fatal is the caller's
+// choice, because adopting --check-links on a repository that has been
+// publishing for years wants to see the list before the build starts failing
+// over it.
+func reportBrokenLinks(broken []string, file string, warnOnly bool) error {
+	if len(broken) == 0 {
+		return nil
+	}
+
+	if warnOnly {
+		for _, item := range broken {
+			log.Warn().Msgf("%s: %s", file, item)
+		}
+
+		return nil
+	}
+
+	summary := fmt.Sprintf("%d links do not resolve", len(broken))
+	if len(broken) == 1 {
+		summary = "1 link does not resolve"
+	}
+
+	return fmt.Errorf("%s:\n  %s", summary, strings.Join(broken, "\n  "))
 }

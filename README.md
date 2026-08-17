@@ -913,6 +913,23 @@ perfectly well.
 Bare `#fragments`, `mailto:` links and rooted paths are not links Mark resolves,
 and are never checked.
 
+Every broken link in a document is reported, not just the first, so a page with
+several of them takes one run to find out rather than one run each.
+
+#### Adopting it on a repository that already publishes
+
+`--check-links-warn-only` reports the same links without failing the run, which
+is how to see the list before the build starts failing over it:
+
+```bash
+mark --check-links all --check-links-warn-only --files "docs/**/*.md"
+```
+
+Pages still publish exactly as they would have. It is a separate flag from
+`--continue-on-error`, which is about files rather than links and still fails
+the run at the end: use `--check-links-warn-only` to not fail at all, and
+`--continue-on-error` to attempt every file before failing.
+
 ### Upload and included inline images
 
 ```markdown
@@ -1149,6 +1166,7 @@ GLOBAL OPTIONS:
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --check-links string [ --check-links string ]  fail on links that do not resolve. Repeat or comma-separate any of: "internal" (relative links to other files in the repository), "confluence" (ac: links naming a page by title), "external" (requests each URL to see whether it answers), or "all". [$MARK_CHECK_LINKS]
+   --check-links-warn-only                  report links that do not resolve without failing the run. Only meaningful together with --check-links. [$MARK_CHECK_LINKS_WARN_ONLY]
    --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
