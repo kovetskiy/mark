@@ -68,6 +68,7 @@ appended to the values from front matter.
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
 <!-- Property: <key>=<value> -->
+<!-- Synchronized: <true|false> -->
 <!-- Image-Align: <left|center|right> -->
 
 <page contents>
@@ -862,6 +863,33 @@ the parsed document, so a link that appears inside a code span or a fenced or
 indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with
 the document that includes them.
+
+### Leaving a document unpublished
+
+A document can ask to be left out of a run:
+
+```markdown
+<!-- Synchronized: false -->
+```
+
+or, in YAML front matter:
+
+```yaml
+---
+title: Runbook
+synchronized: false
+---
+```
+
+Mark skips the file before it asks Confluence anything, so a document that has
+opted out costs no page lookup and uploads no attachments. Saying nothing means
+the document is published, which is the ordinary case; opting out has to be
+deliberate.
+
+A page that was published before is left exactly as it is -- Mark does not
+delete it, and does not report it as having lost its source file. Setting
+`Synchronized: true` again, or removing the header, resumes publishing to the
+same page.
 
 ### Confluence content properties
 
