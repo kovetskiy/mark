@@ -71,7 +71,7 @@ type Config struct {
 	PreserveComments bool
 	TrackPages       bool
 	NoOverwrite      bool
-	CheckLinks       string
+	CheckLinks       []string
 
 	// Rendering
 	DropH1          bool
@@ -131,11 +131,11 @@ func Run(config Config) error {
 
 	// Rejected before anything is published rather than on the first link that
 	// happens to be checked.
-	linkCheck, err := page.ParseLinkCheck(config.CheckLinks)
+	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
 	if err != nil {
 		return err
 	}
-	checker := page.NewLinkChecker(linkCheck)
+	checker := page.NewLinkChecker(linkChecks)
 
 	// Without the manifest there is nowhere to have remembered what mark last
 	// published, so there is nothing to compare a page against and the flag
@@ -289,12 +289,12 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	linkCheck, err := page.ParseLinkCheck(config.CheckLinks)
+	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
 	if err != nil {
 		return nil, err
 	}
 
-	target, _, err := processFile(file, api, config, std, nil, nil, page.NewLinkChecker(linkCheck))
+	target, _, err := processFile(file, api, config, std, nil, nil, page.NewLinkChecker(linkChecks))
 	return target, err
 }
 

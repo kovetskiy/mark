@@ -198,10 +198,9 @@ var Flags = []cli.Flag{
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
 	},
-	&cli.StringFlag{
+	&cli.StringSliceFlag{
 		Name:  "check-links",
-		Value: "",
-		Usage: "fail on links that do not resolve. \"relative-only\" checks links to other files in the repository; \"all\" additionally requests every external URL to see whether it answers.",
+		Usage: "fail on links that do not resolve. Repeat or comma-separate any of: \"internal\" (relative links to other files in the repository), \"confluence\" (ac: links naming a page by title), \"external\" (requests each URL to see whether it answers), or \"all\".",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS"),
 			altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
 	},

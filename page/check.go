@@ -8,35 +8,70 @@ import (
 	"time"
 )
 
-// LinkCheck says how thoroughly links should be checked.
-type LinkCheck string
-
+// The kinds of link --check-links understands.
 const (
-	// LinkCheckNone leaves links unchecked, which is what mark has always done.
-	LinkCheckNone LinkCheck = ""
+	// CheckInternal is a relative link to another Markdown file in the
+	// repository.
+	CheckInternal = "internal"
 
-	// LinkCheckRelative checks links to other files in the repository.
-	LinkCheckRelative LinkCheck = "relative-only"
+	// CheckConfluence is an ac: link, which names a Confluence page by title
+	// rather than by path.
+	CheckConfluence = "confluence"
 
-	// LinkCheckAll additionally asks whether external URLs answer.
-	LinkCheckAll LinkCheck = "all"
+	// CheckExternal is a link with a scheme, somewhere off this Confluence
+	// entirely.
+	CheckExternal = "external"
+
+	// CheckAll is shorthand for the three above.
+	CheckAll = "all"
 )
 
-// ParseLinkCheck reads the value given to --check-links.
-func ParseLinkCheck(value string) (LinkCheck, error) {
-	switch LinkCheck(strings.TrimSpace(value)) {
-	case LinkCheckNone:
-		return LinkCheckNone, nil
-	case LinkCheckRelative:
-		return LinkCheckRelative, nil
-	case LinkCheckAll:
-		return LinkCheckAll, nil
-	default:
-		return LinkCheckNone, fmt.Errorf(
-			"unknown --check-links value %q: expected %q or %q",
-			value, LinkCheckRelative, LinkCheckAll,
-		)
+// LinkChecks is the set of link kinds a run was asked to check.
+//
+// A set rather than a single mode because the three cost wildly different
+// things. Internal links are answered from the filesystem, Confluence links
+// cost a lookup each, and external ones leave the building entirely -- so a
+// repository will often want the first two in CI and none of the third.
+type LinkChecks struct {
+	Internal   bool
+	Confluence bool
+	External   bool
+}
+
+// Any reports whether anything is being checked at all.
+func (c LinkChecks) Any() bool {
+	return c.Internal || c.Confluence || c.External
+}
+
+// ParseLinkChecks reads the values given to --check-links.
+func ParseLinkChecks(values []string) (LinkChecks, error) {
+	var checks LinkChecks
+
+	for _, value := range values {
+		for _, name := range strings.Split(value, ",") {
+			switch strings.ToLower(strings.TrimSpace(name)) {
+			case "":
+				continue
+			case CheckInternal:
+				checks.Internal = true
+			case CheckConfluence:
+				checks.Confluence = true
+			case CheckExternal:
+				checks.External = true
+			case CheckAll:
+				checks.Internal = true
+				checks.Confluence = true
+				checks.External = true
+			default:
+				return LinkChecks{}, fmt.Errorf(
+					"unknown --check-links value %q: expected %s, %s, %s or %s",
+					name, CheckInternal, CheckConfluence, CheckExternal, CheckAll,
+				)
+			}
+		}
 	}
+
+	return checks, nil
 }
 
 // LinkChecker answers whether an external URL resolves.
@@ -46,17 +81,17 @@ func ParseLinkCheck(value string) (LinkCheck, error) {
 // a run over a large repository otherwise spends most of its time asking the
 // same hosts the same question.
 type LinkChecker struct {
-	Mode   LinkCheck
+	Checks LinkChecks
 	Client *http.Client
 
 	mu   sync.Mutex
 	seen map[string]error
 }
 
-// NewLinkChecker returns a checker for the given mode.
-func NewLinkChecker(mode LinkCheck) *LinkChecker {
+// NewLinkChecker returns a checker for the given set.
+func NewLinkChecker(checks LinkChecks) *LinkChecker {
 	return &LinkChecker{
-		Mode: mode,
+		Checks: checks,
 		Client: &http.Client{
 			// Long enough for a slow host, short enough that a hung one does
 			// not hold up a publish indefinitely.
@@ -72,7 +107,7 @@ func NewLinkChecker(mode LinkCheck) *LinkChecker {
 // answer HEAD with 405 or 403 while serving the same URL perfectly well over
 // GET, so that answer is not taken at face value and the request is repeated.
 func (c *LinkChecker) CheckExternal(url string) error {
-	if c == nil || c.Mode != LinkCheckAll {
+	if c == nil || !c.Checks.External {
 		return nil
 	}
 

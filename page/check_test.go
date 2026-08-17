@@ -10,21 +10,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseLinkCheck(t *testing.T) {
-	for value, expected := range map[string]LinkCheck{
-		"":              LinkCheckNone,
-		"relative-only": LinkCheckRelative,
-		"all":           LinkCheckAll,
-		"  all  ":       LinkCheckAll,
+func TestParseLinkChecks(t *testing.T) {
+	all := LinkChecks{Internal: true, Confluence: true, External: true}
+
+	for name, tt := range map[string]struct {
+		values   []string
+		expected LinkChecks
+	}{
+		"nothing":            {nil, LinkChecks{}},
+		"empty string":       {[]string{""}, LinkChecks{}},
+		"one":                {[]string{"internal"}, LinkChecks{Internal: true}},
+		"comma separated":    {[]string{"internal,confluence"}, LinkChecks{Internal: true, Confluence: true}},
+		"repeated flag":      {[]string{"internal", "confluence"}, LinkChecks{Internal: true, Confluence: true}},
+		"spaced and cased":   {[]string{" Internal , CONFLUENCE "}, LinkChecks{Internal: true, Confluence: true}},
+		"all":                {[]string{"all"}, all},
+		"all beside another": {[]string{"external", "all"}, all},
+		"repeats are fine":   {[]string{"internal", "internal"}, LinkChecks{Internal: true}},
 	} {
-		got, err := ParseLinkCheck(value)
-		assert.NoError(t, err, "value %q", value)
-		assert.Equal(t, expected, got, "value %q", value)
+		t.Run(name, func(t *testing.T) {
+			got, err := ParseLinkChecks(tt.values)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+		})
 	}
 
-	_, err := ParseLinkCheck("everything")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "relative-only")
+	t.Run("an unknown value is rejected", func(t *testing.T) {
+		_, err := ParseLinkChecks([]string{"internal", "sideways"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "sideways")
+		assert.Contains(t, err.Error(), "confluence")
+	})
+}
+
+func TestLinkChecksAny(t *testing.T) {
+	assert.False(t, LinkChecks{}.Any())
+	assert.True(t, LinkChecks{Internal: true}.Any())
+	assert.True(t, LinkChecks{Confluence: true}.Any())
+	assert.True(t, LinkChecks{External: true}.Any())
 }
 
 // TestLinkCheckerAsksOnce pins the cache. A URL on twenty pages should cost one
@@ -37,7 +59,7 @@ func TestLinkCheckerAsksOnce(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker := NewLinkChecker(LinkCheckAll)
+	checker := NewLinkChecker(LinkChecks{External: true})
 	for range 5 {
 		assert.NoError(t, checker.CheckExternal(server.URL+"/page"))
 	}
@@ -57,7 +79,7 @@ func TestLinkCheckerFallsBackToGet(t *testing.T) {
 	}))
 	defer server.Close()
 
-	assert.NoError(t, NewLinkChecker(LinkCheckAll).CheckExternal(server.URL+"/page"))
+	assert.NoError(t, NewLinkChecker(LinkChecks{External: true}).CheckExternal(server.URL+"/page"))
 }
 
 func TestLinkCheckerReportsFailures(t *testing.T) {
@@ -66,17 +88,17 @@ func TestLinkCheckerReportsFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewLinkChecker(LinkCheckAll).CheckExternal(server.URL + "/gone")
+	err := NewLinkChecker(LinkChecks{External: true}).CheckExternal(server.URL + "/gone")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 
 	// Nothing listening at all.
-	err = NewLinkChecker(LinkCheckAll).CheckExternal("http://127.0.0.1:1/nope")
+	err = NewLinkChecker(LinkChecks{External: true}).CheckExternal("http://127.0.0.1:1/nope")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unreachable")
 }
 
-// TestLinkCheckerOffAsksNothing: relative-only must not make network requests.
+// TestLinkCheckerOffAsksNothing: only "external" may make network requests.
 func TestLinkCheckerOffAsksNothing(t *testing.T) {
 	var requests int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,8 +106,10 @@ func TestLinkCheckerOffAsksNothing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	for _, mode := range []LinkCheck{LinkCheckNone, LinkCheckRelative} {
-		assert.NoError(t, NewLinkChecker(mode).CheckExternal(server.URL))
+	// Asking for internal or Confluence checks must not put mark on the
+	// network; that is the point of the set being a set.
+	for _, checks := range []LinkChecks{{}, {Internal: true}, {Confluence: true}, {Internal: true, Confluence: true}} {
+		assert.NoError(t, NewLinkChecker(checks).CheckExternal(server.URL))
 	}
 	assert.Nil(t, (*LinkChecker)(nil).CheckExternal(server.URL))
 

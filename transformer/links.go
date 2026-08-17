@@ -18,14 +18,14 @@ import (
 // block, so neither can happen here.
 type LinkTransformer struct {
 	// Resolve reports what a target should become, or "" to leave it alone.
-	Resolve func(target string) (string, error)
+	Resolve func(target, text string) (string, error)
 
 	// Err holds the first failure, since an AST walk cannot return one.
 	Err error
 }
 
 // NewLinkTransformer creates a LinkTransformer using the given resolver.
-func NewLinkTransformer(resolve func(target string) (string, error)) *LinkTransformer {
+func NewLinkTransformer(resolve func(target, text string) (string, error)) *LinkTransformer {
 	return &LinkTransformer{Resolve: resolve}
 }
 
@@ -58,7 +58,8 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 			return ast.WalkContinue, nil
 		}
 
-		resolved, err := t.Resolve(target)
+		//nolint:staticcheck // Text is what the renderer reads for an ac: link.
+		resolved, err := t.Resolve(target, string(link.Text(reader.Source())))
 		if err != nil {
 			return ast.WalkStop, err
 		}
