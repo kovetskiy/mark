@@ -983,6 +983,13 @@ An `internal` link fails the run when the file it names is missing, is a
 directory, or is a document that never becomes a page -- one with no title, so
 there is nothing for the link to point at.
 
+A link is looked for beside the document that contains it, and then beside each
+file that document includes. A fragment reads as a document in its own right, so
+a link inside one is written from where the fragment lives rather than from
+wherever it is pulled into. The document's own directory is always tried first,
+so this cannot change what an unambiguous link already meant. Only the files a
+document includes directly are considered, not what those files include in turn.
+
 One case is reported but does not fail: a link to a document that exists and has
 a title, but is not in the space yet. That is the ordinary state of a first run
 over files that link to each other, and failing there would break a build that
@@ -992,6 +999,10 @@ A `confluence` link is checked by looking for a page of that title in the
 document's own space, which is what an `ac:` link resolves against. The title is
 read the way the renderer reads it: whatever follows the colon, or the link text
 when nothing does, so `[Some Page](ac:)` is checked as `Some Page`.
+
+These are checked once the run has finished rather than as each document
+compiles, because a page named this way is often published by another file in
+the same run. Each page is looked up once however many documents link to it.
 
 `external` needs network access from wherever Mark runs, and makes publishing
 dependent on every site you link to being up. Each URL is requested once per run

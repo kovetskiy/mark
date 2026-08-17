@@ -254,6 +254,18 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		}
 	}
 
+	// Where the run of headers begins and ends. Two boundaries rather than one
+	// because a document may open with something that is not a header at all --
+	// a Macro definition spanning several lines is the usual case -- and that
+	// has to survive into the body rather than being swallowed as though it
+	// were metadata.
+	firstStart := -1
+
+	// Where body already begins within data, which is past the front matter
+	// when there was any. stripFrontMatter returns a suffix of data, so the
+	// difference in lengths is the offset.
+	bodyStart := len(data) - len(body)
+
 	var lastStop int
 	shouldBreak := false
 
@@ -272,6 +284,15 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				key, value, ok := parseHeaderComment(line)
 				if !ok {
+					if firstStart == -1 {
+						// Nothing has been read as a header yet, so this block
+						// is not the header block: a Macro or Include directive
+						// written above them, or raw HTML. Leave it alone and
+						// look at the next one, rather than giving up on the
+						// document's metadata entirely.
+						break
+					}
+
 					shouldBreak = true
 					break
 				}
@@ -279,6 +300,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				if meta == nil {
 					meta = &Meta{}
 					meta.Type = "page" // Default if not specified
+				}
+
+				if firstStart == -1 {
+					firstStart = lineSeg.Start
 				}
 
 				header := cases.Title(language.English).String(key)
@@ -384,7 +409,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	}
 
 	if lastStop > 0 {
-		body = data[lastStop:]
+		// Only the headers are taken out. Whatever preceded them stays, which
+		// is what keeps a Macro defined above the headers working.
+		body = append(append([]byte{}, data[bodyStart:firstStart]...), data[lastStop:]...)
 	}
 
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {

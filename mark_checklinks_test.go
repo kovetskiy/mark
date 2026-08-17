@@ -183,15 +183,19 @@ func TestCheckLinksConfluence(t *testing.T) {
 // TestCheckLinksReportsEveryBrokenLink pins that a file is not abandoned at the
 // first failure. Reporting one at a time turns a page with several into as many
 // runs to find out.
+//
+// Only the links judged while the file compiles are counted here. An ac: link
+// is judged after the run, when everything that was going to be published has
+// been, and is reported separately for that reason.
 func TestCheckLinksReportsEveryBrokenLink(t *testing.T) {
 	err := checkLinksRun(t, []string{"all"},
-		"[a](./one.md) [b](./two.md) [c](./three.md) [d](ac:Nowhere)\n", nil)
+		"[a](./one.md) [b](./two.md) [c](./three.md)\n", nil)
 
 	require.Error(t, err)
-	for _, expected := range []string{"./one.md", "./two.md", "./three.md", "Nowhere"} {
+	for _, expected := range []string{"./one.md", "./two.md", "./three.md"} {
 		assert.Contains(t, err.Error(), expected)
 	}
-	assert.Contains(t, err.Error(), "4 links do not resolve")
+	assert.Contains(t, err.Error(), "3 links do not resolve")
 }
 
 func TestCheckLinksCountsOneLinkAsSingular(t *testing.T) {

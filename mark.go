@@ -24,6 +24,7 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
 	"github.com/kovetskiy/mark/v16/mermaid"
@@ -229,6 +230,17 @@ func Run(config Config) error {
 		}
 	}
 
+	// Once everything that was going to be published has been, an ac: link that
+	// still names no page names none.
+	missingPages, err := checker.MissingPages(api)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range missingPages {
+		log.Warn().Msg(item)
+	}
+
 	// The manifest is saved before the run's own outcome is decided. Returning
 	// early on hasErrors used to skip it entirely, so a single bad file threw
 	// away the mapping for every page that had published perfectly well --
@@ -250,6 +262,16 @@ func Run(config Config) error {
 		if saveErr = tracker.Save(); saveErr != nil {
 			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)
 		}
+	}
+
+	// After the manifest is written: an unresolved link says nothing about
+	// whether the pages that did publish are recorded correctly, and throwing
+	// the mapping away over it would be a far worse outcome than the link.
+	if len(missingPages) > 0 && !config.CheckLinksWarnOnly {
+		return fmt.Errorf(
+			"%s:\n  %s",
+			pluraliseLinks(len(missingPages)), strings.Join(missingPages, "\n  "),
+		)
 	}
 
 	if hasErrors {
@@ -316,11 +338,25 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, err
 	}
 
-	target, _, err := processFile(
-		file, api, config, std, nil, nil,
-		page.NewLinkChecker(linkChecks), globalProperties,
-	)
-	return target, err
+	checker := page.NewLinkChecker(linkChecks)
+
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties)
+	if err != nil {
+		return target, err
+	}
+
+	missing, err := checker.MissingPages(api)
+	if err != nil {
+		return target, err
+	}
+	if len(missing) > 0 && !config.CheckLinksWarnOnly {
+		return target, fmt.Errorf("%s", strings.Join(missing, "\n  "))
+	}
+	for _, item := range missing {
+		log.Warn().Msg(item)
+	}
+
+	return target, nil
 }
 
 func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any) (*confluence.PageInfo, *page.Ordered, error) {
@@ -416,6 +452,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// Links are rewritten while the document is being rendered, by walking the
 	// parsed tree. Doing it here, over the text, meant a fenced block showing
 	// Markdown syntax had its example links turned into Confluence URLs.
+	// A fragment's links are written from where the fragment lives, so the
+	// directory of everything this document includes is worth looking in too.
+	// One level: a fragment that itself includes another is not followed here.
+	searchDirs := includeSearchDirs(filepath.Dir(file), config.IncludePath, markdown)
+
 	resolver := page.NewLinkResolver(
 		api,
 		meta,
@@ -427,6 +468,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		config.TitleAppendGeneratedHash,
 		frontMatterEnabled,
 		checker,
+		searchDirs,
 	)
 	resolveLink := resolver.Resolve
 
@@ -799,10 +841,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		documentProperties = meta.Properties
 	}
 
+	// No dry-run branch here: a dry run returns long before this, when the
+	// compiled page would have been printed.
 	if err := page.ApplyProperties(
 		api, target.ID,
 		page.MergeProperties(globalProperties, documentProperties),
-		config.DryRun,
 	); err != nil {
 		return nil, nil, err
 	}
@@ -1585,4 +1628,45 @@ func reportBrokenLinks(broken []string, file string, warnOnly bool) error {
 	}
 
 	return fmt.Errorf("%s:\n  %s", summary, strings.Join(broken, "\n  "))
+}
+
+// includeSearchDirs reports the directories of the files a document includes.
+//
+// Only the directories: what is wanted is somewhere to look for a link written
+// inside a fragment, and the fragment's neighbours are what such a link names.
+// Duplicates are dropped so that a document including several files from one
+// directory does not have it looked in repeatedly.
+func includeSearchDirs(base, includePath string, markdown []byte) []string {
+	var dirs []string
+	seen := map[string]bool{}
+
+	add := func(dir string) {
+		if dir == "" || dir == base || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+
+	for _, target := range includes.DirectiveTargets(markdown) {
+		add(filepath.Dir(filepath.Join(base, target)))
+
+		// The same fallback LoadTemplate uses when the file is not beside the
+		// document, so a link inside a shared fragment resolves the same way
+		// the fragment itself was found.
+		if includePath != "" {
+			add(filepath.Dir(filepath.Join(includePath, target)))
+		}
+	}
+
+	return dirs
+}
+
+// pluraliseLinks names a count of links in a sentence that reads.
+func pluraliseLinks(n int) string {
+	if n == 1 {
+		return "1 link does not resolve"
+	}
+
+	return fmt.Sprintf("%d links do not resolve", n)
 }
