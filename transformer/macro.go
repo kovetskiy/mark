@@ -5,10 +5,14 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/macro"
+	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/rs/zerolog/log"
+	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // MacroTransformer extracts macro directives from HTML comment blocks in the Goldmark AST,
@@ -19,13 +23,6 @@ type MacroTransformer struct {
 	IncludePath string
 	Templates   *template.Template
 	Err         error
-
-	// macros accumulates across pipeline passes. A definition is removed from
-	// the tree as soon as it is read, so a transformer that rebuilt this list
-	// each pass would forget every macro it had already seen -- and the pass
-	// that matters is often a later one, after an include has brought in the
-	// text a macro was written for.
-	macros []macro.Macro
 }
 
 // NewMacroTransformer creates a new MacroTransformer instance.
@@ -102,6 +99,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 	})
 
 	modified := false
+	var extractedMacros []macro.Macro
 
 	for _, target := range targets {
 		macros, _, err := macro.ExtractMacros(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
@@ -117,7 +115,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 		if len(macros) == 0 {
 			continue
 		}
-		t.macros = append(t.macros, macros...)
+		extractedMacros = append(extractedMacros, macros...)
 
 		for _, n := range target.nodesToRemove {
 			if n.Parent() != nil {
@@ -128,7 +126,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 		modified = true
 	}
 
-	for _, m := range t.macros {
+	for _, m := range extractedMacros {
 		var textNodesToReplace []struct {
 			node    ast.Node
 			val     []byte
@@ -140,26 +138,9 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				return ast.WalkContinue, nil
 			}
 
-			// Leaf text only. Matching whole paragraphs as well caught the
-			// same words twice, and a paragraph's text includes whatever is
-			// inside its code spans -- so a macro pattern mentioned in
-			// `backticks` was expanded along with the prose around it.
-			//
-			// Both kinds of leaf count. Text is what the document itself was
-			// parsed into; a plain String is text an include brought in, which
-			// a macro is just as entitled to act on. A String carrying markup
-			// is not text at all and is left alone.
-			switch n := node.(type) {
-			case *ast.Text:
-			case *ast.String:
-				if n.IsRaw() || n.IsCode() {
-					return ast.WalkContinue, nil
-				}
+			switch node.(type) {
+			case *ast.Paragraph, *ast.Text:
 			default:
-				return ast.WalkContinue, nil
-			}
-
-			if insideCode(node) || isExpansion(node) {
 				return ast.WalkContinue, nil
 			}
 
@@ -197,23 +178,33 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				continue
 			}
 
-			// Whitespace at either end has to be held back and put in again
-			// afterwards. Parsing is what loses it: the expansion is parsed as
-			// a document of its own, and a document does not begin with a
-			// space, so " MYJIRA-123." came back as "<ac:.../>." and the word
-			// before it ran into the macro.
-			lead, trail, body := splitEdgeSpace(expanded)
-
-			p := newSubParser()
-			subDoc := p.Parse(text.NewReader(body))
-			convertSegmentsToStrings(subDoc, body)
+			p := goldmark.New(
+				goldmark.WithParserOptions(
+					parser.WithInlineParsers(
+						util.Prioritized(cparser.NewConfluenceTagParser(), 99),
+					),
+				),
+				goldmark.WithRendererOptions(
+					html.WithUnsafe(),
+				),
+			).Parser()
+			subDoc := p.Parse(text.NewReader(expanded))
+			convertSegmentsToStrings(subDoc, expanded)
 
 			parent := item.node.Parent()
 			if parent == nil {
 				continue
 			}
 
-			spliceExpansion(parent, item.node, subDoc, lead, trail)
+			for subDoc.FirstChild() != nil {
+				child := subDoc.FirstChild()
+				subDoc.RemoveChild(subDoc, child)
+				parent.InsertBefore(parent, item.node, child)
+			}
+
+			if item.node.Parent() != nil {
+				item.node.Parent().RemoveChild(item.node.Parent(), item.node)
+			}
 
 			modified = true
 		}

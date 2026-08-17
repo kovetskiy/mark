@@ -22,6 +22,13 @@ type IncludeDirective struct {
 }
 
 func findIncludeDirectiveBounds(s string) (startIdx int, endIdx int) {
+	return findIncludeDirective(s, nil)
+}
+
+// findIncludeDirective finds the first Include directive that skip does not
+// reject, which is how a directive shown inside a code block is passed over
+// rather than acted on.
+func findIncludeDirective(s string, skip func(offset int) bool) (startIdx int, endIdx int) {
 	searchFrom := 0
 	for {
 		start := strings.Index(s[searchFrom:], "<!--")
@@ -41,7 +48,7 @@ func findIncludeDirectiveBounds(s string) (startIdx int, endIdx int) {
 
 		comment := s[startIdx:endIdx]
 		trimmed := strings.TrimSpace(comment[4 : len(comment)-3])
-		if strings.HasPrefix(trimmed, "Include:") {
+		if strings.HasPrefix(trimmed, "Include:") && (skip == nil || !skip(startIdx)) {
 			return startIdx, endIdx
 		}
 
@@ -199,7 +206,14 @@ func ProcessIncludesWithStack(
 	}
 
 	s := string(contents)
-	startIdx, endIdx := findIncludeDirectiveBounds(s)
+
+	// A directive inside a code block is a code sample: a page documenting how
+	// to write an Include had the file pulled in where its own example should
+	// have been.
+	code := metadata.CodeRegions(contents)
+	startIdx, endIdx := findIncludeDirective(s, func(offset int) bool {
+		return metadata.InCode(code, offset)
+	})
 	if startIdx == -1 {
 		return templates, contents, false, nil
 	}
