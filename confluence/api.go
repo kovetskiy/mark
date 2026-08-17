@@ -1527,6 +1527,52 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 // parent. Atlassian warn against using it when the target is a top-level page,
 // where it can move content to the root of the space; callers are expected not
 // to.
+// DeletePage moves a page to the space's trash.
+//
+// Trash, not oblivion: Confluence keeps a deleted page recoverable until
+// somebody purges it, and purging is a second call this deliberately does not
+// make. A tool that removes pages because a file left a repository should leave
+// the last word to a person.
+func (api *API) DeletePage(contentID string) error {
+	request, err := api.rest.Res("content").Id(contentID, &struct{}{}).Delete()
+	if err != nil {
+		return fmt.Errorf("unable to delete content %s: %w", contentID, err)
+	}
+
+	// 204 is the documented answer; 200 is accepted because some versions send
+	// it, and a page already gone is the outcome that was wanted anyway.
+	switch request.Raw.StatusCode {
+	case http.StatusNoContent, http.StatusOK, http.StatusNotFound:
+		return nil
+	default:
+		return newErrorStatusNotOK(request)
+	}
+}
+
+// ArchivePage archives a page, which is gentler than the trash: it leaves the
+// page findable and restorable without an administrator.
+//
+// Cloud only. Server and Data Center have no archive, and say so with a 404,
+// which is reported rather than swallowed so that a run asking to archive is
+// not silently doing nothing.
+func (api *API) ArchivePage(contentID string) error {
+	payload := map[string]any{
+		"pages": []map[string]string{{"id": contentID}},
+	}
+
+	request, err := api.rest.Res("content").Res("archive", &struct{}{}).Post(payload)
+	if err != nil {
+		return fmt.Errorf("unable to archive content %s: %w", contentID, err)
+	}
+
+	switch request.Raw.StatusCode {
+	case http.StatusOK, http.StatusAccepted, http.StatusNoContent:
+		return nil
+	default:
+		return newErrorStatusNotOK(request)
+	}
+}
+
 func (api *API) MoveContentAfter(contentID, siblingID string) error {
 	return api.moveContent(contentID, "after", siblingID)
 }

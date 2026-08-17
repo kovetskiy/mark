@@ -34,6 +34,11 @@ type Page struct {
 	Message  string
 	Body     string
 	Labels   []string
+
+	// Trashed and Archived record what became of a page, so a test can tell
+	// "moved to the trash" from "gone" and from "archived".
+	Trashed  bool
+	Archived bool
 }
 
 // Attachment is a file attached to a page.
@@ -263,6 +268,36 @@ func (s *Server) DeletePage(id string) {
 	delete(s.pages, id)
 }
 
+// archiveContent serves the bulk archive endpoint, which takes a list of pages
+// rather than addressing one by id.
+func (s *Server) archiveContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		Pages []struct {
+			ID string `json:"id"`
+		} `json:"pages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad body"})
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, item := range payload.Pages {
+		if p, ok := s.pages[item.ID]; ok {
+			p.Archived = true
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"id": "archive-task"})
+}
+
 // SetHomepage marks a page as the space homepage.
 func (s *Server) SetHomepage(spaceKey, pageID string) {
 	s.mu.Lock()
@@ -487,6 +522,9 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 
 	case strings.HasPrefix(path, "/space/"):
 		s.getSpace(w, strings.TrimPrefix(path, "/space/"))
+
+	case path == "/content/archive":
+		s.archiveContent(w, r)
 
 	case strings.HasPrefix(path, "/content/"):
 		rest := strings.TrimPrefix(path, "/content/")
@@ -954,6 +992,16 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 	}
 
 	switch r.Method {
+	case http.MethodDelete:
+		// Confluence moves a page to the trash; purging is a separate call with
+		// status=trashed, which mark deliberately never makes.
+		if r.URL.Query().Get("status") == "trashed" {
+			delete(s.pages, id)
+		} else {
+			p.Trashed = true
+		}
+		w.WriteHeader(http.StatusNoContent)
+
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.pageJSON(p))
 	case http.MethodPut:

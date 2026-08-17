@@ -782,6 +782,52 @@ func (s *Store) LookupFolder(spaceKey, folderPath string) (string, bool, error) 
 // genuine deletions in a list of files that are perfectly present. Entries with
 // no recorded pattern predate this and are never reported, because there is no
 // way to know what they were in scope of.
+// Orphan is a tracked page whose source file was not seen in the run, together
+// with what is known about it.
+type Orphan struct {
+	Path  string
+	Entry Entry
+}
+
+// OrphanEntries is Orphans with the page each path published to, for a caller
+// that means to do something about them rather than only say so.
+func (s *Store) OrphanEntries(spaceKey string) []Orphan {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.spaces[spaceKey]
+	if !ok {
+		return nil
+	}
+
+	var orphans []Orphan
+	for _, path := range s.orphans(spaceKey) {
+		orphans = append(orphans, Orphan{
+			Path:  path,
+			Entry: state.shards[shardFor(path)].pages[path],
+		})
+	}
+
+	return orphans
+}
+
+// Published reports how many pages this run actually published in a space.
+//
+// Nothing published means nothing to compare against: a checkout that failed,
+// or a pattern that matched no files, looks exactly like every document having
+// been deleted at once, and acting on that reading would empty a space.
+func (s *Store) Published(spaceKey string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.spaces[spaceKey]
+	if !ok {
+		return 0
+	}
+
+	return len(state.seen)
+}
+
 func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

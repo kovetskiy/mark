@@ -76,6 +76,8 @@ type Config struct {
 	CheckLinksWarnOnly bool
 	AppendLabels       bool
 	GlobalProperties   string
+	OnOrphan           string
+	OrphansUnder       string
 
 	// Rendering
 	DropH1          bool
@@ -103,6 +105,35 @@ func (c Config) output() io.Writer {
 
 // Run processes all files matching Config.Files and publishes them to Confluence.
 func Run(config Config) error {
+	// Settings are checked before anything else happens. A value that cannot be
+	// acted on should be said so plainly, not after a glob has been resolved
+	// and a connection opened -- and least of all part way through publishing.
+	onOrphan, err := page.ParseOnOrphan(config.OnOrphan)
+	if err != nil {
+		return err
+	}
+
+	// Removing a page needs to know mark put it there, and only the manifest
+	// knows that. Without it the flag could only guess from titles, which is
+	// not a guess worth making about deletion.
+	if onOrphan != page.OnOrphanReport && !config.TrackPages {
+		return fmt.Errorf(
+			"--on-orphan %s requires --track-pages: "+
+				"only the page manifest knows which pages mark published",
+			onOrphan,
+		)
+	}
+
+	if config.NoOverwrite && !config.TrackPages {
+		return fmt.Errorf("--no-overwrite requires --track-pages: " +
+			"the version mark last published is remembered in the page manifest")
+	}
+
+	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
+	if err != nil {
+		return err
+	}
+
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
 
 	// Folder resolutions are cached in a package-level map that outlives this
@@ -140,12 +171,6 @@ func Run(config Config) error {
 		return err
 	}
 
-	// Rejected before anything is published rather than on the first link that
-	// happens to be checked.
-	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
-	if err != nil {
-		return err
-	}
 	checker := page.NewLinkChecker(linkChecks)
 
 	if config.CheckLinksWarnOnly && !linkChecks.Any() {
@@ -153,14 +178,6 @@ func Run(config Config) error {
 			"--check-links-warn-only has no effect without --check-links: " +
 				"no links are being checked at all",
 		)
-	}
-
-	// Without the manifest there is nowhere to have remembered what mark last
-	// published, so there is nothing to compare a page against and the flag
-	// would quietly do nothing.
-	if config.NoOverwrite && !config.TrackPages {
-		return fmt.Errorf("--no-overwrite requires --track-pages: " +
-			"the version mark last published is remembered in the page manifest")
 	}
 
 	// The manifest is only consulted when asked for. It changes how an existing
@@ -258,6 +275,9 @@ func Run(config Config) error {
 	var saveErr error
 	if tracker != nil {
 		reportOrphans(tracker, hasErrors)
+		if err := actOnOrphans(tracker, api, config, onOrphan, hasErrors); err != nil {
+			return err
+		}
 		pruneOrphans(tracker, hasErrors, config.DryRun)
 		if saveErr = tracker.Save(); saveErr != nil {
 			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)
@@ -1669,4 +1689,86 @@ func pluraliseLinks(n int) string {
 	}
 
 	return fmt.Sprintf("%d links do not resolve", n)
+}
+
+// actOnOrphans archives or deletes the pages whose source files are gone.
+//
+// Nothing happens under the default, which only reports. Everything else is
+// hedged about, because this is the one thing mark does that a person cannot
+// simply run again to undo.
+func actOnOrphans(
+	tracker *manifest.Store,
+	api *confluence.API,
+	config Config,
+	action string,
+	hadErrors bool,
+) error {
+	if action == page.OnOrphanReport {
+		return nil
+	}
+
+	if hadErrors {
+		// A file that failed to process is indistinguishable from one that was
+		// deleted, and this is not a distinction to get wrong.
+		log.Warn().Msg("some files failed to process; orphaned pages are left alone")
+
+		return nil
+	}
+
+	for _, space := range tracker.Spaces() {
+		orphans := tracker.OrphanEntries(space)
+		if len(orphans) == 0 {
+			continue
+		}
+
+		// A run that published nothing in a space says nothing about that
+		// space: a failed checkout and every document having been deleted look
+		// exactly alike.
+		//
+		// A second line of defence rather than the first -- a pattern matching
+		// no files stops the run well before this -- and kept because the cost
+		// of it being needed once is a space emptied by a bad checkout.
+		if tracker.Published(space) == 0 {
+			log.Warn().Msgf(
+				"space %q: nothing was published in this run, so its %d orphaned page(s) are left alone",
+				space, len(orphans),
+			)
+
+			continue
+		}
+
+		scopeID, err := page.ResolveScope(api, space, config.OrphansUnder)
+		if err != nil {
+			return err
+		}
+
+		candidates := make([]page.Orphan, 0, len(orphans))
+		for _, orphan := range orphans {
+			candidates = append(candidates, page.Orphan{
+				Path:   orphan.Path,
+				PageID: orphan.Entry.PageID,
+				Title:  orphan.Entry.Title,
+			})
+		}
+
+		handled, err := page.HandleOrphans(api, action, scopeID, candidates, config.DryRun)
+		if err != nil {
+			return err
+		}
+
+		if config.DryRun {
+			continue
+		}
+
+		// Only what was actually dealt with is forgotten. A page left alone --
+		// out of scope, or holding children -- stays in the manifest so the
+		// next run finds it again instead of losing sight of it.
+		for _, path := range handled {
+			if err := tracker.Forget(space, path); err != nil {
+				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)
+			}
+		}
+	}
+
+	return nil
 }

@@ -121,6 +121,8 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		CheckLinksWarnOnly: cmd.Bool("check-links-warn-only"),
 		AppendLabels:       cmd.Bool("append-labels"),
 		GlobalProperties:   cmd.String("global-properties"),
+		OnOrphan:           cmd.String("on-orphan"),
+		OrphansUnder:       cmd.String("orphans-under"),
 		PreserveComments:   cmd.Bool("preserve-comments"),
 
 		DropH1:          cmd.Bool("drop-h1"),
