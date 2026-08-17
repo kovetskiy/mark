@@ -198,6 +198,20 @@ var Flags = []cli.Flag{
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:  "on-orphan",
+		Value: "report",
+		Usage: "what to do about a page whose source file is gone: \"report\" says so and does nothing (the default), \"archive\" archives the page (Confluence Cloud only), \"delete\" moves it to the trash. Requires --track-pages.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ON_ORPHAN"),
+			altsrctoml.TOML("on-orphan", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:  "orphans-under",
+		Value: "",
+		Usage: "limit --on-orphan to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ORPHANS_UNDER"),
+			altsrctoml.TOML("orphans-under", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.StringSliceFlag{
 		Name:  "check-links",
 		Usage: "fail on links that do not resolve. Repeat or comma-separate any of: \"internal\" (relative links to other files in the repository), \"confluence\" (ac: links naming a page by title), \"external\" (requests each URL to see whether it answers), or \"all\".",

@@ -1265,6 +1265,8 @@ GLOBAL OPTIONS:
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
+   --on-orphan string                       what to do about a page whose source file is gone: "report" says so and does nothing (the default), "archive" archives the page (Confluence Cloud only), "delete" moves it to the trash. Requires --track-pages. [$MARK_ON_ORPHAN]
+   --orphans-under string                   limit --on-orphan to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope. [$MARK_ORPHANS_UNDER]
    --check-links string [ --check-links string ]  fail on links that do not resolve. Repeat or comma-separate any of: "internal" (relative links to other files in the repository), "confluence" (ac: links naming a page by title), "external" (requests each URL to see whether it answers), or "all". [$MARK_CHECK_LINKS]
    --global-properties string               path to a YAML or JSON file of Confluence content properties to set on every page. A Property header or properties front matter in a document wins over the file for that page. [$MARK_GLOBAL_PROPERTIES]
    --append-labels                          add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name. [$MARK_APPEND_LABELS]
@@ -1535,6 +1537,53 @@ It is split over sixteen properties rather than held in one because Confluence
 bounds how large a single property value may be, and one blob would cap how many
 files a repository may have. Each path is assigned a shard by hash; all of them
 are read in a single request and only the ones that changed are written back.
+
+### Removing pages whose files are gone
+
+By default Mark reports a tracked page whose source file has disappeared and
+does nothing about it. `--on-orphan` chooses otherwise:
+
+| Value | Effect |
+| --- | --- |
+| `report` | say so and leave the page alone (the default) |
+| `archive` | archive the page. Confluence Cloud only |
+| `delete` | move the page to the trash |
+
+```bash
+mark --track-pages --on-orphan delete --files "docs/**/*.md"
+```
+
+`delete` means the trash, which Confluence keeps recoverable. Mark never purges
+a page: that second step is left to a person.
+
+`--orphans-under` narrows it further to the pages below one page or folder,
+named by title or by id:
+
+```bash
+mark --track-pages --on-orphan delete --orphans-under "Team Handbook" \
+     --files "docs/**/*.md"
+```
+
+Without it, every tracked page the `--files` pattern would have published is in
+scope -- which is already narrower than the space, since a pattern is only
+evidence about where it was looking.
+
+#### What stops a page being removed
+
+* `--track-pages` is required, and Mark refuses to start without it. Only the
+  manifest knows which pages Mark published, and a guess from titles is not one
+  worth making about deletion.
+* A page holding **child pages** is left alone and reported, because removing it
+  would take them with it and they may be pages nobody wrote in this repository.
+* A run in which **any file failed** removes nothing: a file that failed to
+  process is indistinguishable from one that was deleted.
+* A run that **published nothing** removes nothing, so a failed checkout cannot
+  empty a space.
+* A document that opted out with `Synchronized: false` still counts as present.
+* `--dry-run` reports what would go and touches nothing.
+
+A page that is left alone stays in the manifest, so the next run finds it again
+rather than losing sight of it.
 
 #### Worth knowing
 
