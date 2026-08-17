@@ -862,6 +862,44 @@ indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with
 the document that includes them.
 
+### Checking that links go somewhere
+
+By default a link that cannot be resolved is left exactly as written, which in
+Confluence means a link that leads nowhere. `--check-links` makes that a failure
+instead:
+
+```bash
+mark --check-links relative-only --files "docs/**/*.md"
+```
+
+```text
+ERR unable to compile markdown: link "./architecure.md" does not resolve:
+    there is no such file
+```
+
+| Value | Checks |
+| --- | --- |
+| `relative-only` | links to other files in the repository |
+| `all` | the above, and requests every external URL to see whether it answers |
+
+A relative link fails the run when the file it names is missing, is a directory,
+or is a document that never becomes a page -- one with no title, so there is
+nothing for the link to point at.
+
+One case is reported but does not fail: a link to a document that exists and has
+a title, but is not in the space yet. That is the ordinary state of a first run
+over files that link to each other, and failing there would break a build that
+succeeds on the second attempt.
+
+Links with a scheme, bare `#fragments`, `mailto:`, `ac:` page-title links and
+rooted paths are not links into the repository, and only the first of those is
+checked, and only under `all`.
+
+`all` needs network access from wherever Mark runs, and makes it dependent on
+every site it links to being up. Each URL is requested once per run however many
+pages mention it. `HEAD` is tried first and a refusal is retried with `GET`,
+since plenty of servers reject `HEAD` while serving the URL perfectly well.
+
 ### Upload and included inline images
 
 ```markdown
@@ -1097,6 +1135,7 @@ GLOBAL OPTIONS:
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
+   --check-links string                     fail on links that do not resolve. "relative-only" checks links to other files in the repository; "all" additionally requests every external URL to see whether it answers. [$MARK_CHECK_LINKS]
    --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]

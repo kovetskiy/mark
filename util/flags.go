@@ -198,6 +198,13 @@ var Flags = []cli.Flag{
 		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:  "check-links",
+		Value: "",
+		Usage: "fail on links that do not resolve. \"relative-only\" checks links to other files in the repository; \"all\" additionally requests every external URL to see whether it answers.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS"),
+			altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.BoolFlag{
 		Name:    "no-overwrite",
 		Value:   false,

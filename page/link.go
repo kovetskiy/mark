@@ -33,6 +33,9 @@ type LinkResolver struct {
 	Parents                  []string
 	TitleAppendGeneratedHash bool
 	FrontMatterEnabled       bool
+
+	// Checker decides how much is verified. Nil checks nothing.
+	Checker *LinkChecker
 }
 
 // NewLinkResolver builds a resolver for the document at base.
@@ -49,6 +52,7 @@ func NewLinkResolver(
 	parents []string,
 	titleAppendGeneratedHash bool,
 	frontMatterEnabled bool,
+	checker *LinkChecker,
 ) *LinkResolver {
 	spaceForLinks := spaceFromCli
 	if spaceForLinks == "" && meta != nil {
@@ -64,6 +68,7 @@ func NewLinkResolver(
 		Parents:                  parents,
 		TitleAppendGeneratedHash: titleAppendGeneratedHash,
 		FrontMatterEnabled:       frontMatterEnabled,
+		Checker:                  checker,
 	}
 }
 
@@ -76,16 +81,27 @@ func (r *LinkResolver) Resolve(target string) (string, error) {
 		return "", nil
 	}
 
-	// Anything with a scheme, or a bare fragment, is not a link to a file in
-	// this repository and is left as written.
-	if strings.Contains(target, "://") || strings.HasPrefix(target, "#") ||
-		strings.HasPrefix(target, "mailto:") {
+	// A link somewhere else entirely. It is left as written either way; with
+	// --check-links=all it is also asked whether it answers.
+	if strings.Contains(target, "://") {
+		if err := r.Checker.CheckExternal(target); err != nil {
+			return "", fmt.Errorf("%s: %w", target, err)
+		}
+
+		return "", nil
+	}
+
+	// None of these name a file in this repository. "ac:" is a link to a
+	// Confluence page by title, which the renderer turns into an ac:link, and a
+	// rooted path is either site-absolute or one an attachment already claimed.
+	if strings.HasPrefix(target, "#") || strings.HasPrefix(target, "mailto:") ||
+		strings.HasPrefix(target, "ac:") || strings.HasPrefix(target, "/") {
 		return "", nil
 	}
 
 	filename, hash, _ := strings.Cut(target, "#")
 
-	resolved, err := resolveLink(
+	resolved, why, err := resolveLink(
 		r.API, r.Base,
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.SpaceForLinks, r.TitleFromH1, r.TitleFromFilename,
@@ -95,9 +111,39 @@ func (r *LinkResolver) Resolve(target string) (string, error) {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
 	}
 
+	if why != nil && r.checking() {
+		if why.transient {
+			log.Warn().Msgf("link %q does not resolve: %s", target, why.reason)
+		} else {
+			return "", fmt.Errorf("link %q does not resolve: %s", target, why.reason)
+		}
+	}
+
 	return resolved, nil
 }
 
+func (r *LinkResolver) checking() bool {
+	return r.Checker != nil && r.Checker.Mode != LinkCheckNone
+}
+
+// unresolved says why a link produced no Confluence link.
+//
+// Transient marks the one cause that is not the document's fault: the page it
+// points at has not been published yet. That is the ordinary state of a first
+// run over a repository whose files link to each other, so --check-links
+// reports it and carries on rather than failing a build that would succeed on
+// the second attempt.
+type unresolved struct {
+	reason    string
+	transient bool
+}
+
+// resolveLink reports the Confluence link a target should become.
+//
+// The second return value says why the answer was empty, in the words a person
+// would want to read. Nothing acts on it unless --check-links is on; the rest of
+// the time an unresolvable link is left as written, which is what mark has
+// always done.
 func resolveLink(
 	api *confluence.API,
 	base string,
@@ -108,7 +154,7 @@ func resolveLink(
 	parents []string,
 	titleAppendGeneratedHash bool,
 	frontMatterEnabled bool,
-) (string, error) {
+) (string, *unresolved, error) {
 	var result string
 
 	if len(link.filename) > 0 {
@@ -120,23 +166,23 @@ func resolveLink(
 			// Not a link to a file on disk (or unreadable): leave the link
 			// untouched rather than failing the run. Swallowing err is
 			// deliberate here.
-			return "", nil //nolint:nilerr
+			return "", &unresolved{reason: "there is no such file"}, nil //nolint:nilerr
 		}
 
 		if stat.IsDir() {
-			return "", nil
+			return "", &unresolved{reason: "it is a directory, not a document"}, nil
 		}
 
 		linkContents, err := os.ReadFile(filepath)
 		if err != nil {
-			return "", fmt.Errorf("read file %s: %w", filepath, err)
+			return "", nil, fmt.Errorf("read file %s: %w", filepath, err)
 		}
 
 		contentType := http.DetectContentType(linkContents)
 		// Check if the MIME type starts with "text/"
 		if !strings.HasPrefix(contentType, "text/") {
 			log.Debug().Msgf("Ignoring link to file %q: detected content type %v", filepath, contentType)
-			return "", nil
+			return "", &unresolved{reason: fmt.Sprintf("it is not a text file (%s)", contentType)}, nil
 		}
 
 		linkContents = bytes.ReplaceAll(
@@ -156,11 +202,11 @@ func resolveLink(
 					filepath,
 				)
 
-			return "", nil
+			return "", &unresolved{reason: "its metadata could not be read"}, nil
 		}
 
 		if linkMeta == nil {
-			return "", nil
+			return "", &unresolved{reason: "it has no mark metadata, so it is never published"}, nil
 		}
 
 		log.Trace().
@@ -170,13 +216,25 @@ func resolveLink(
 				linkMeta.Title,
 			)
 
+		// A file with no headers still gets metadata when the run knows a space,
+		// so absence shows up as an empty title rather than a nil. Either way
+		// the file is never published and the link can never lead anywhere.
+		if linkMeta.Title == "" {
+			return "", &unresolved{reason: "it has no title, so it is never published"}, nil
+		}
+
 		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
-			return "", fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", filepath, linkMeta.Space, linkMeta.Title, err)
+			return "", nil, fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", filepath, linkMeta.Space, linkMeta.Title, err)
 		}
 
 		if result == "" {
-			return "", nil
+			return "", &unresolved{
+				reason: fmt.Sprintf(
+					"%q is not in space %q yet", linkMeta.Title, linkMeta.Space,
+				),
+				transient: true,
+			}, nil
 		}
 	}
 
@@ -184,7 +242,7 @@ func resolveLink(
 		result = result + "#" + link.hash
 	}
 
-	return result, nil
+	return result, nil, nil
 }
 
 // getConfluenceLink builds a stable Confluence tiny link for the given page or blog post.
