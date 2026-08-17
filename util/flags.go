@@ -199,6 +199,12 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
+		Name:    "no-overwrite",
+		Value:   false,
+		Usage:   "Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_NO_OVERWRITE"), altsrctoml.TOML("no-overwrite", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
 		Name:    "track-pages",
 		Value:   false,
 		Usage:   "Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository.",

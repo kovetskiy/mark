@@ -70,6 +70,7 @@ type Config struct {
 	ChangesOnly      bool
 	PreserveComments bool
 	TrackPages       bool
+	NoOverwrite      bool
 
 	// Rendering
 	DropH1          bool
@@ -130,6 +131,14 @@ func Run(config Config) error {
 	// The manifest is only consulted when asked for. It changes how an existing
 	// page is found, which is not something to switch on under anyone without
 	// their say-so.
+	// Without the manifest there is nowhere to have remembered what mark last
+	// published, so there is nothing to compare a page against and the flag
+	// would quietly do nothing.
+	if config.NoOverwrite && !config.TrackPages {
+		return fmt.Errorf("--no-overwrite requires --track-pages: " +
+			"the version mark last published is remembered in the page manifest")
+	}
+
 	var tracker *manifest.Store
 	if config.TrackPages {
 		// A dry run resolves exactly as a real one does -- otherwise its preview
@@ -507,6 +516,34 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
+	// Checked here, before anything is written: attachments are uploaded a few
+	// lines below, and there is no point sending them for a page that is about
+	// to be left alone.
+	if config.NoOverwrite && !pageCreated && tracker != nil && meta != nil && target != nil {
+		drifted, recorded, err := hasDrifted(tracker, meta.Space, file, target)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if drifted {
+			log.Warn().Msgf(
+				"page %q was edited in Confluence since mark published it "+
+					"(version %d, mark wrote %d); leaving it alone",
+				target.Title, target.Version.Number, recorded,
+			)
+
+			// Recorded, so the page still counts as seen and is not mistaken
+			// for an orphan and deleted. The version is deliberately not
+			// updated: until somebody resolves the difference, every run should
+			// say so again.
+			if err := tracker.Record(meta.Space, file, target.ID, target.Title, sourceHash); err != nil {
+				return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+			}
+
+			return target, nil, nil
+		}
+	}
+
 	// Collect attachments declared via <!-- Attachment: --> directives.
 	var declaredAttachments []string
 	if meta != nil {
@@ -673,6 +710,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to update page: %w", err)
+		}
+	}
+
+	// What --no-overwrite compares against on the next run. UpdatePage advances
+	// the version it was given, so this reads the same either way: a run that
+	// wrote nothing still records what it found, so that a page nobody touches
+	// gets a version on the first run rather than staying unguarded forever.
+	if tracker != nil && meta != nil {
+		if err := tracker.RecordVersion(meta.Space, file, target.Version.Number); err != nil {
+			return nil, nil, fmt.Errorf("unable to record page version for %q: %w", file, err)
 		}
 	}
 
@@ -1393,4 +1440,31 @@ func mergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 func Cleanup() {
 	d2.Cleanup()
 	mermaid.Cleanup()
+}
+
+// hasDrifted reports whether a page has been changed by somebody other than
+// mark since mark last published it, along with the version mark wrote.
+//
+// The comparison is against the version number rather than the page's content:
+// Confluence rewrites storage markup on save often enough that comparing bodies
+// would report a difference on pages nobody had touched.
+//
+// An entry with no recorded version cannot answer the question -- it was
+// written before versions were tracked, or by a run without --no-overwrite --
+// and a page is given the benefit of the doubt rather than frozen.
+func hasDrifted(
+	tracker *manifest.Store,
+	spaceKey, file string,
+	target *confluence.PageInfo,
+) (bool, int64, error) {
+	entry, ok, err := tracker.Lookup(spaceKey, file)
+	if err != nil {
+		return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+	}
+
+	if !ok || entry.Version == 0 || entry.PageID != target.ID {
+		return false, 0, nil
+	}
+
+	return target.Version.Number != entry.Version, entry.Version, nil
 }

@@ -307,6 +307,19 @@ func (s *Server) Page(id string) *Page {
 	return nil
 }
 
+// EditPage stands in for somebody editing a page in the Confluence web UI: the
+// body changes and the version moves on, with no involvement from mark.
+func (s *Server) EditPage(id, body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[id]; ok {
+		p.Body = body
+		p.Version++
+		p.Message = "edited by hand"
+	}
+}
+
 // Attachments returns the attachments stored for a page.
 func (s *Server) Attachments(pageID string) []Attachment {
 	s.mu.Lock()
