@@ -59,7 +59,7 @@ func MergeProperties(global, document map[string]any) map[string]any {
 // Only what changed is written. A property holds a version that Confluence
 // increments on every write, so rewriting an unchanged value would fill its
 // history as surely as republishing an unchanged page fills the page's.
-func ApplyProperties(api *confluence.API, pageID string, properties map[string]any, dryRun bool) error {
+func ApplyProperties(api *confluence.API, pageID string, properties map[string]any) error {
 	if len(properties) == 0 {
 		return nil
 	}
@@ -90,11 +90,6 @@ func ApplyProperties(api *confluence.API, pageID string, properties map[string]a
 
 		if held, ok := current[key]; ok && json.Valid(held.Value) &&
 			equalJSON(held.Value, value) {
-			continue
-		}
-
-		if dryRun {
-			log.Info().Msgf("property %q of page %s would be set to %s", key, pageID, value)
 			continue
 		}
 

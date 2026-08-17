@@ -268,3 +268,36 @@ func ProcessIncludesWithStack(
 
 	return templates, res.Bytes(), true, nil
 }
+
+// DirectiveTargets reports the files a document asks to include, in the order
+// they appear and skipping any shown inside a code block.
+//
+// Wanted so that a relative link written in an included fragment can be
+// resolved against the fragment's own directory: the fragment reads as a
+// document in its own right, and its links are written from where it lives
+// rather than from wherever it is pulled into.
+func DirectiveTargets(contents []byte) []string {
+	s := string(contents)
+	code := metadata.CodeRegions(contents)
+
+	var targets []string
+	searchFrom := 0
+
+	for searchFrom < len(s) {
+		start, end := findIncludeDirective(s[searchFrom:], func(offset int) bool {
+			return metadata.InCode(code, searchFrom+offset)
+		})
+		if start == -1 {
+			break
+		}
+
+		directive, err := ParseIncludeDirective([]byte(s[searchFrom+start : searchFrom+end]))
+		if err == nil && directive != nil && directive.Template != "" {
+			targets = append(targets, directive.Template)
+		}
+
+		searchFrom += end
+	}
+
+	return targets
+}

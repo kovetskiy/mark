@@ -3,9 +3,12 @@ package page
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kovetskiy/mark/v16/confluence"
 )
 
 // The kinds of link --check-links understands.
@@ -84,8 +87,17 @@ type LinkChecker struct {
 	Checks LinkChecks
 	Client *http.Client
 
-	mu   sync.Mutex
-	seen map[string]error
+	mu      sync.Mutex
+	seen    map[string]error
+	pending map[string]pendingPage
+}
+
+// pendingPage is an ac: link waiting to be checked, and the first document that
+// asked about it.
+type pendingPage struct {
+	space  string
+	title  string
+	source string
 }
 
 // NewLinkChecker returns a checker for the given set.
@@ -97,8 +109,75 @@ func NewLinkChecker(checks LinkChecks) *LinkChecker {
 			// not hold up a publish indefinitely.
 			Timeout: 15 * time.Second,
 		},
-		seen: map[string]error{},
+		seen:    map[string]error{},
+		pending: map[string]pendingPage{},
 	}
+}
+
+// NotePage records an ac: link to check once the run has finished.
+//
+// Deferred rather than looked up on the spot because a page named here may be
+// published later in the same run, by a file that sorts after this one.
+// Checking as each document compiles would make the answer depend on the order
+// the files happen to be in, and a first run over a set of pages that link to
+// each other would fail on roughly half of them.
+func (c *LinkChecker) NotePage(space, title, source string) {
+	if c == nil || !c.Checks.Confluence {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Keyed on the page, so a title linked from twenty documents costs one
+	// lookup and is reported once.
+	key := space + "\x00" + title
+	if _, ok := c.pending[key]; !ok {
+		c.pending[key] = pendingPage{space: space, title: title, source: source}
+	}
+}
+
+// MissingPages reports the ac: links that named no page, once everything that
+// was going to be published has been.
+func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
+	if c == nil || len(c.pending) == 0 {
+		return nil, nil
+	}
+
+	c.mu.Lock()
+	keys := make([]string, 0, len(c.pending))
+	for key := range c.pending {
+		keys = append(keys, key)
+	}
+	pending := c.pending
+	c.mu.Unlock()
+
+	sort.Strings(keys)
+
+	var missing []string
+	for _, key := range keys {
+		link := pending[key]
+
+		found, err := finder.FindPage(link.space, link.title, "page")
+		if err != nil {
+			return nil, fmt.Errorf("find confluence page %q: %w", link.title, err)
+		}
+
+		if found == nil {
+			missing = append(missing, fmt.Sprintf(
+				"%s: link \"ac:%s\" does not resolve: there is no page %q in space %q",
+				link.source, link.title, link.title, link.space,
+			))
+		}
+	}
+
+	return missing, nil
+}
+
+// PageFinder is the part of the Confluence API this needs, kept narrow so the
+// check can be exercised without one.
+type PageFinder interface {
+	FindPage(space, title, pageType string) (*confluence.PageInfo, error)
 }
 
 // CheckExternal reports whether url answers, or nil if it was not asked.

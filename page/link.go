@@ -34,6 +34,13 @@ type LinkResolver struct {
 	TitleAppendGeneratedHash bool
 	FrontMatterEnabled       bool
 
+	// SearchDirs are tried after Base, and exist for links written inside an
+	// included fragment. Such a link is written from where the fragment lives,
+	// not from where it is included, so the fragment's own directory has to be
+	// among the places looked. Base is always tried first, so a document's own
+	// links keep their meaning.
+	SearchDirs []string
+
 	// Checker decides how much is verified. Nil checks nothing.
 	Checker *LinkChecker
 
@@ -76,6 +83,7 @@ func NewLinkResolver(
 	titleAppendGeneratedHash bool,
 	frontMatterEnabled bool,
 	checker *LinkChecker,
+	searchDirs []string,
 ) *LinkResolver {
 	spaceForLinks := spaceFromCli
 	if spaceForLinks == "" && meta != nil {
@@ -92,6 +100,7 @@ func NewLinkResolver(
 		TitleAppendGeneratedHash: titleAppendGeneratedHash,
 		FrontMatterEnabled:       frontMatterEnabled,
 		Checker:                  checker,
+		SearchDirs:               searchDirs,
 	}
 }
 
@@ -134,7 +143,7 @@ func (r *LinkResolver) Resolve(target, text string) (string, error) {
 	filename, hash, _ := strings.Cut(target, "#")
 
 	resolved, why, err := resolveLink(
-		r.API, r.Base,
+		r.API, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.SpaceForLinks, r.TitleFromH1, r.TitleFromFilename,
 		r.Parents, r.TitleAppendGeneratedHash, r.FrontMatterEnabled,
@@ -184,19 +193,9 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 		return nil
 	}
 
-	// Same space as the document doing the linking, which is what an ac:link
-	// with only a title resolves against.
-	found, err := r.API.FindPage(r.SpaceForLinks, title, "page")
-	if err != nil {
-		return fmt.Errorf("find confluence page %q: %w", title, err)
-	}
-
-	if found == nil {
-		r.note(
-			"link %q does not resolve: there is no page %q in space %q",
-			target, title, r.SpaceForLinks,
-		)
-	}
+	// Noted rather than looked up: the page may not have been published yet,
+	// and whether it ever is can only be known once the run is over.
+	r.Checker.NotePage(r.SpaceForLinks, title, r.Base)
 
 	return nil
 }
@@ -221,7 +220,7 @@ type unresolved struct {
 // always done.
 func resolveLink(
 	api *confluence.API,
-	base string,
+	bases []string,
 	link markdownLink,
 	spaceForLinks string,
 	titleFromH1 bool,
@@ -233,19 +232,9 @@ func resolveLink(
 	var result string
 
 	if len(link.filename) > 0 {
-		filepath := filepath.Join(base, link.filename)
-
-		log.Trace().Msgf("filepath: %s", filepath)
-		stat, err := os.Stat(filepath)
-		if err != nil {
-			// Not a link to a file on disk (or unreadable): leave the link
-			// untouched rather than failing the run. Swallowing err is
-			// deliberate here.
-			return "", &unresolved{reason: "there is no such file"}, nil //nolint:nilerr
-		}
-
-		if stat.IsDir() {
-			return "", &unresolved{reason: "it is a directory, not a document"}, nil
+		filepath, why := findLinkTarget(bases, link.filename)
+		if why != nil {
+			return "", why, nil
 		}
 
 		linkContents, err := os.ReadFile(filepath)
@@ -323,6 +312,40 @@ func resolveLink(
 // getConfluenceLink builds a stable Confluence tiny link for the given page or blog post.
 // Tiny links use the format {baseURL}/x/{encodedPageID} and are immune to
 // Cloud-specific URL variations like /ex/confluence/<cloudId>/wiki/...
+// findLinkTarget looks for the file a link names, in each base in turn.
+//
+// The first base is the document's own directory and wins where both would do,
+// so adding places to look cannot change what an unambiguous link already meant.
+func findLinkTarget(bases []string, name string) (string, *unresolved) {
+	var directory bool
+
+	for _, base := range bases {
+		candidate := filepath.Join(base, name)
+
+		log.Trace().Msgf("filepath: %s", candidate)
+		stat, err := os.Stat(candidate)
+		if err != nil {
+			// Not a file on disk here, or unreadable. Swallowing err is
+			// deliberate: the next base may have it, and if none does the link
+			// is left as written rather than failing the run.
+			continue //nolint:nilerr
+		}
+
+		if stat.IsDir() {
+			directory = true
+			continue
+		}
+
+		return candidate, nil
+	}
+
+	if directory {
+		return "", &unresolved{reason: "it is a directory, not a document"}
+	}
+
+	return "", &unresolved{reason: "there is no such file"}
+}
+
 func getConfluenceLink(
 	api *confluence.API,
 	space, title string,
