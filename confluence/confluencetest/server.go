@@ -307,6 +307,16 @@ func (s *Server) Page(id string) *Page {
 	return nil
 }
 
+// AddLabel stands in for somebody labelling a page in the Confluence web UI.
+func (s *Server) AddLabel(id, label string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[id]; ok {
+		p.Labels = append(p.Labels, label)
+	}
+}
+
 // EditPage stands in for somebody editing a page in the Confluence web UI: the
 // body changes and the version moves on, with no involvement from mark.
 func (s *Server) EditPage(id, body string) {

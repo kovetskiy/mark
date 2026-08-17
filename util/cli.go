@@ -119,6 +119,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		NoOverwrite:        cmd.Bool("no-overwrite"),
 		CheckLinks:         cmd.StringSlice("check-links"),
 		CheckLinksWarnOnly: cmd.Bool("check-links-warn-only"),
+		AppendLabels:       cmd.Bool("append-labels"),
 		PreserveComments:   cmd.Bool("preserve-comments"),
 
 		DropH1:          cmd.Bool("drop-h1"),
