@@ -71,6 +71,7 @@ type Config struct {
 	PreserveComments bool
 	TrackPages       bool
 	NoOverwrite      bool
+	CheckLinks       string
 
 	// Rendering
 	DropH1          bool
@@ -128,9 +129,14 @@ func Run(config Config) error {
 		return fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	// The manifest is only consulted when asked for. It changes how an existing
-	// page is found, which is not something to switch on under anyone without
-	// their say-so.
+	// Rejected before anything is published rather than on the first link that
+	// happens to be checked.
+	linkCheck, err := page.ParseLinkCheck(config.CheckLinks)
+	if err != nil {
+		return err
+	}
+	checker := page.NewLinkChecker(linkCheck)
+
 	// Without the manifest there is nowhere to have remembered what mark last
 	// published, so there is nothing to compare a page against and the flag
 	// would quietly do nothing.
@@ -139,6 +145,9 @@ func Run(config Config) error {
 			"the version mark last published is remembered in the page manifest")
 	}
 
+	// The manifest is only consulted when asked for. It changes how an existing
+	// page is found, which is not something to switch on under anyone without
+	// their say-so.
 	var tracker *manifest.Store
 	if config.TrackPages {
 		// A dry run resolves exactly as a real one does -- otherwise its preview
@@ -182,7 +191,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -280,11 +289,16 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	target, _, err := processFile(file, api, config, std, nil, nil)
+	linkCheck, err := page.ParseLinkCheck(config.CheckLinks)
+	if err != nil {
+		return nil, err
+	}
+
+	target, _, err := processFile(file, api, config, std, nil, nil, page.NewLinkChecker(linkCheck))
 	return target, err
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -367,6 +381,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		config.Parents,
 		config.TitleAppendGeneratedHash,
 		frontMatterEnabled,
+		checker,
 	).Resolve
 
 	if config.DryRun {

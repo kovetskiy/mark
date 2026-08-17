@@ -117,6 +117,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		ChangesOnly:      cmd.Bool("changes-only"),
 		TrackPages:       cmd.Bool("track-pages"),
 		NoOverwrite:      cmd.Bool("no-overwrite"),
+		CheckLinks:       cmd.String("check-links"),
 		PreserveComments: cmd.Bool("preserve-comments"),
 
 		DropH1:          cmd.Bool("drop-h1"),
