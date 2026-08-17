@@ -74,6 +74,7 @@ type Config struct {
 	CheckLinks         []string
 	CheckLinksWarnOnly bool
 	AppendLabels       bool
+	GlobalProperties   string
 
 	// Rendering
 	DropH1          bool
@@ -129,6 +130,13 @@ func Run(config Config) error {
 	std, err := stdlib.New(api)
 	if err != nil {
 		return fmt.Errorf("unable to retrieve standard library: %w", err)
+	}
+
+	// Read once and before anything is published: a file that cannot be parsed
+	// should not be discovered halfway through a repository.
+	globalProperties, err := page.LoadGlobalProperties(config.GlobalProperties)
+	if err != nil {
+		return err
 	}
 
 	// Rejected before anything is published rather than on the first link that
@@ -200,7 +208,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -303,11 +311,19 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 		return nil, err
 	}
 
-	target, _, err := processFile(file, api, config, std, nil, nil, page.NewLinkChecker(linkChecks))
+	globalProperties, err := page.LoadGlobalProperties(config.GlobalProperties)
+	if err != nil {
+		return nil, err
+	}
+
+	target, _, err := processFile(
+		file, api, config, std, nil, nil,
+		page.NewLinkChecker(linkChecks), globalProperties,
+	)
 	return target, err
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -756,6 +772,19 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if err := updateLabels(api, target, labels, config.AppendLabels); err != nil {
 			return nil, nil, err
 		}
+	}
+
+	var documentProperties map[string]any
+	if meta != nil {
+		documentProperties = meta.Properties
+	}
+
+	if err := page.ApplyProperties(
+		api, target.ID,
+		page.MergeProperties(globalProperties, documentProperties),
+		config.DryRun,
+	); err != nil {
+		return nil, nil, err
 	}
 
 	// Where this page asked to sit among its siblings. Applied once the whole

@@ -33,6 +33,7 @@ const (
 	HeaderSidebar     = `Sidebar`
 	ContentAppearance = `Content-Appearance`
 	HeaderImageAlign  = `Image-Align`
+	HeaderProperty    = `Property`
 )
 
 type Meta struct {
@@ -47,6 +48,14 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
+
+	// Properties are Confluence content properties to set on the page.
+	//
+	// Values are whatever the document wrote, because a content property holds
+	// JSON and a caller may reasonably want a number, a list or an object. The
+	// Property header can only express a string; front matter can express the
+	// rest.
+	Properties map[string]any
 
 	// Order positions this page among its siblings, smaller first. Nil means
 	// the document said nothing about order, which is not the same as zero:
@@ -76,6 +85,28 @@ func toStringSlice(val any) []string {
 		}
 	}
 	return res
+}
+
+// toStringMap reads a front matter mapping, keeping the values as written.
+//
+// A YAML mapping decodes to map[string]any, but a document nested inside
+// another structure can arrive as map[any]any, so both are accepted.
+func toStringMap(val any) map[string]any {
+	switch v := val.(type) {
+	case map[string]any:
+		return v
+	case map[any]any:
+		out := make(map[string]any, len(v))
+		for key, value := range v {
+			if name, ok := key.(string); ok {
+				out[name] = value
+			}
+		}
+
+		return out
+	default:
+		return nil
+	}
 }
 
 func toString(val any) string {
@@ -170,6 +201,13 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				setContentAppearance(meta, toString(v))
 			case "imagealign":
 				meta.ImageAlign = strings.ToLower(toString(v))
+			case "properties":
+				for key, value := range toStringMap(v) {
+					if meta.Properties == nil {
+						meta.Properties = map[string]any{}
+					}
+					meta.Properties[key] = value
+				}
 			}
 		}
 
@@ -265,6 +303,27 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				case HeaderImageAlign:
 					meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
+
+				case HeaderProperty:
+					key, propValue, ok := strings.Cut(value, "=")
+					if !ok {
+						return nil, nil, fmt.Errorf(
+							"%s header must be written as key=value, got %q",
+							HeaderProperty, value,
+						)
+					}
+
+					key = strings.TrimSpace(key)
+					if key == "" {
+						return nil, nil, fmt.Errorf(
+							"%s header has no name: %q", HeaderProperty, value,
+						)
+					}
+
+					if meta.Properties == nil {
+						meta.Properties = map[string]any{}
+					}
+					meta.Properties[key] = strings.TrimSpace(propValue)
 
 				default:
 					log.Error().
