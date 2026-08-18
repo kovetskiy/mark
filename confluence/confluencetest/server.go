@@ -276,9 +276,11 @@ func (s *Server) archiveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The documented schema is a number, and Confluence rejects a quoted one.
+	// Decoding into int64 makes the fake as strict as the real thing.
 	var payload struct {
 		Pages []struct {
-			ID string `json:"id"`
+			ID int64 `json:"id"`
 		} `json:"pages"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -290,12 +292,16 @@ func (s *Server) archiveContent(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	for _, item := range payload.Pages {
-		if p, ok := s.pages[item.ID]; ok {
+		if p, ok := s.pages[strconv.FormatInt(item.ID, 10)]; ok {
 			p.Archived = true
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"id": "archive-task"})
+	// 202 with a task to watch: the archiving itself happens afterwards.
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"id":    "archive-task",
+		"links": map[string]any{"status": "/rest/api/longtask/archive-task"},
+	})
 }
 
 // SetHomepage marks a page as the space homepage.

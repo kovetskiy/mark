@@ -1549,15 +1549,30 @@ func (api *API) DeletePage(contentID string) error {
 	}
 }
 
-// ArchivePage archives a page, which is gentler than the trash: it leaves the
-// page findable and restorable without an administrator.
+// ArchivePage asks for a page to be archived, which is gentler than the trash:
+// it leaves the page findable and restorable without an administrator.
 //
-// Cloud only. Server and Data Center have no archive, and say so with a 404,
-// which is reported rather than swallowed so that a run asking to archive is
-// not silently doing nothing.
+// The identifier goes in as a number. Confluence documents the body as
+// {"pages":[{"id":<number>}]} and rejects a quoted one with 400, which is easy
+// to miss because every other endpoint here takes an id as a string.
+//
+// The answer is 202: the request has been accepted and the archiving happens
+// afterwards, reported through the long-running task the response names. mark
+// does not wait for it. A page that fails to archive after acceptance is not
+// noticed here, which is worth knowing before relying on this in a place where
+// it matters.
+//
+// Cloud only. Server and Data Center have no archive and say so, which is
+// reported rather than swallowed so that a run asking to archive is not
+// silently doing nothing.
 func (api *API) ArchivePage(contentID string) error {
+	id, err := strconv.ParseInt(contentID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("cannot archive content %q: not a page id: %w", contentID, err)
+	}
+
 	payload := map[string]any{
-		"pages": []map[string]string{{"id": contentID}},
+		"pages": []map[string]any{{"id": id}},
 	}
 
 	request, err := api.rest.Res("content").Res("archive", &struct{}{}).Post(payload)

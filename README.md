@@ -1621,6 +1621,12 @@ mark --track-pages --on-orphan delete --files "docs/**/*.md"
 `delete` means the trash, which Confluence keeps recoverable. Mark never purges
 a page: that second step is left to a person.
 
+`archive` exists only on Confluence Cloud, and Server and Data Center report
+that they have no such thing rather than appearing to have archived anything.
+Confluence accepts the request and archives afterwards, so Mark reports that it
+asked rather than that it finished; a failure after acceptance is not something
+Mark sees.
+
 `--orphans-under` narrows it further to the pages below one page or folder,
 named by title or by id:
 
