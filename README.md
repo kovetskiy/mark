@@ -189,6 +189,39 @@ to the template relative to current working dir, e.g.:
 
 If the template cannot be found relative to the current directory, a fallback directory can be defined via `--include-path`. This way it is possible to have global include files while local ones will still take precedence.
 
+## Whitespace inside `ac:parameter`
+
+A template's output is published exactly as written, whitespace included, and
+there is one place where that matters. A storage-format element inside an
+`<ac:parameter>` must not have anything around it:
+
+```xml
+<ac:parameter ac:name="name"><ri:attachment ri:filename="diagram.drawio"/></ac:parameter>
+```
+
+Written across several lines, the newlines become part of the parameter, and
+Confluence resolves a parameter holding both text and an element by writing the
+element out as a string. The page then contains something like
+`AttachmentResourceIdentifier[...,filename=diagram.drawio]` where the attachment
+should be, and nothing is reported: Mark uploaded what it was given, and the
+change happened on the server.
+
+Go's trim markers keep the template readable and the output tight:
+
+```text
+<ac:structured-macro ac:name="inc-drawio">
+  {{- "" -}}
+  <ac:parameter ac:name="name">
+    {{- "" -}}
+    <ri:attachment ri:filename="{{ .Name }}"/>
+    {{- "" -}}
+  </ac:parameter>
+  {{- "" -}}
+</ac:structured-macro>
+```
+
+The built-in templates are written on one line for the same reason.
+
 Optionally the delimiters can be defined:
 
 ```markdown
