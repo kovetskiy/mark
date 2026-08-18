@@ -8,6 +8,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server
 	config := Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
-		TrackPages: true, OnOrphan: onOrphan, OrphansUnder: under,
+		TrackPages: true, OnOrphan: onOrphan, OrphanUnder: under,
 		Output: io.Discard,
 	}
 	require.NoError(t, Run(config))
@@ -217,8 +218,8 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 		"a run that published nothing must remove nothing")
 }
 
-// TestOrphansUnderLimitsScope: only pages below the named parent are in scope.
-func TestOrphansUnderLimitsScope(t *testing.T) {
+// TestOrphanUnderLimitsScope: only pages below the named parent are in scope.
+func TestOrphanUnderLimitsScope(t *testing.T) {
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
@@ -236,7 +237,7 @@ func TestOrphansUnderLimitsScope(t *testing.T) {
 	config := Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
-		TrackPages: true, OnOrphan: "delete", OrphansUnder: "Inside",
+		TrackPages: true, OnOrphan: "delete", OrphanUnder: "Inside",
 		Output: io.Discard,
 	}
 	require.NoError(t, Run(config))
@@ -256,4 +257,81 @@ func TestOrphansUnderLimitsScope(t *testing.T) {
 
 	assert.True(t, server.Page(in.ID).Trashed, "the page below Inside is in scope")
 	assert.False(t, server.Page(out.ID).Trashed, "the page below Outside is not")
+}
+
+// TestOrphanUnderScopesReportingToo is the inconsistency this fixes. The scope
+// narrowed what was archived or deleted, while reporting named everything and
+// forgetting dropped everything -- so a page deliberately put out of scope was
+// announced and then lost track of anyway.
+func TestOrphanUnderScopesReportingToo(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Inside", "page", home.ID)
+	server.AddPage("DOCS", "Outside", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "in.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: In -->\n\nIn.\n")
+	writeFile(t, dir, "out.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Outside -->\n<!-- Title: Out -->\n\nOut.\n")
+	writeFile(t, dir, "keep.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, OnOrphan: "report", OrphanUnder: "Inside",
+		Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	out, err := api.FindPage("DOCS", "Out", "page")
+	require.NoError(t, err)
+	require.NotNil(t, out)
+
+	// Both documents go. Only the one under "Inside" is mark's business.
+	require.NoError(t, os.Remove(filepath.Join(dir, "in.md")))
+	require.NoError(t, os.Remove(filepath.Join(dir, "out.md")))
+	require.NoError(t, Run(config))
+
+	store := manifest.NewStore(api)
+
+	_, inKnown, err := store.Lookup("DOCS", filepath.Join(dir, "in.md"))
+	require.NoError(t, err)
+	assert.False(t, inKnown, "an in-scope orphan is reported once and forgotten")
+
+	_, outKnown, err := store.Lookup("DOCS", filepath.Join(dir, "out.md"))
+	require.NoError(t, err)
+	assert.True(t, outKnown,
+		"a page put out of scope must still be remembered, not quietly dropped")
+}
+
+// TestOrphanUnderWithoutScopeIsUnchanged: with no scope every tracked page is
+// mark's business, which is what it has always been.
+func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	writeFile(t, dir, "keep.md", header+"<!-- Title: Keep -->\n\nKeep.\n")
+	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	_, known, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "gone.md"))
+	require.NoError(t, err)
+	assert.False(t, known, "reported once and then forgotten, as before")
 }

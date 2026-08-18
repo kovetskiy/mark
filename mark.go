@@ -79,7 +79,7 @@ type Config struct {
 	GlobalProperties   string
 	OnOrphan           string
 	OutputFormat       string
-	OrphansUnder       string
+	OrphanUnder        string
 
 	// Rendering
 	DropH1          bool
@@ -110,6 +110,13 @@ func Run(config Config) error {
 	// Settings are checked before anything else happens. A value that cannot be
 	// acted on should be said so plainly, not after a glob has been resolved
 	// and a connection opened -- and least of all part way through publishing.
+	//
+	// A combination that would leave somebody believing they are protected is
+	// refused rather than warned about. "I asked for links to be reported and
+	// saw none" and "I asked not to overwrite" are both conclusions people draw
+	// from silence, and silence is exactly what these produce on their own. A
+	// combination that merely does nothing, and that nobody would read anything
+	// into, is a warning.
 	outputFormat, err := report.ParseFormat(config.OutputFormat)
 	if err != nil {
 		return err
@@ -128,6 +135,13 @@ func Run(config Config) error {
 			"--on-orphan %s requires --track-pages: "+
 				"only the page manifest knows which pages mark published",
 			onOrphan,
+		)
+	}
+
+	if config.CheckLinksWarnOnly && len(config.CheckLinks) == 0 {
+		return fmt.Errorf(
+			"--check-links-warn-only requires --check-links: " +
+				"on its own no links are checked, so the silence means nothing",
 		)
 	}
 
@@ -179,13 +193,6 @@ func Run(config Config) error {
 	}
 
 	checker := page.NewLinkChecker(linkChecks)
-
-	if config.CheckLinksWarnOnly && !linkChecks.Any() {
-		log.Warn().Msg(
-			"--check-links-warn-only has no effect without --check-links: " +
-				"no links are being checked at all",
-		)
-	}
 
 	// The manifest is only consulted when asked for. It changes how an existing
 	// page is found, which is not something to switch on under anyone without
@@ -337,11 +344,9 @@ func Run(config Config) error {
 
 	var saveErr error
 	if tracker != nil {
-		reportOrphans(tracker, hasErrors)
-		if err := actOnOrphans(tracker, api, config, onOrphan, hasErrors, results); err != nil {
+		if err := handleOrphans(tracker, api, config, onOrphan, hasErrors, results); err != nil {
 			return err
 		}
-		pruneOrphans(tracker, hasErrors, config.DryRun)
 		if saveErr = tracker.Save(); saveErr != nil {
 			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)
 		}
@@ -371,37 +376,6 @@ func Run(config Config) error {
 	}
 
 	return saveErr
-}
-
-// reportOrphans logs pages the manifest knows about that this run did not
-// publish to. It only reports; nothing here deletes anything.
-//
-// A path can be missing for two very different reasons -- the file was deleted,
-// or this run simply did not cover it -- and mark cannot tell them apart. A run
-// narrowed by --files leaves everything outside the glob unseen, and those files
-// are present and fine. The wording says candidates for that reason, and acting
-// on them is left to a human until there is a mechanism that can distinguish the
-// two cases.
-func reportOrphans(tracker *manifest.Store, hadErrors bool) {
-	for _, space := range tracker.Spaces() {
-		orphans := tracker.Orphans(space)
-		if len(orphans) == 0 {
-			continue
-		}
-		if hadErrors {
-			// Some files did not process, which is indistinguishable from those
-			// files being gone. Reporting them now would be actively misleading.
-			log.Debug().Msgf(
-				"space %q has %d unpublished tracked pages, not reported because this run had errors",
-				space, len(orphans),
-			)
-			continue
-		}
-		log.Info().Msgf(
-			"space %q: %d tracked page(s) had no matching source file in this run: %s",
-			space, len(orphans), strings.Join(orphans, ", "),
-		)
-	}
 }
 
 // ProcessFile processes a single markdown file and publishes it to Confluence.
@@ -989,30 +963,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	return target, placement, nil
-}
-
-// pruneOrphans forgets the entries reportOrphans just named.
-//
-// Left in place the mapping only ever grows, and a file deleted once is
-// reported as missing on every run from then on -- which teaches people to
-// ignore the one message worth reading. Reported once, then forgotten.
-//
-// Nothing is forgotten on a run that had errors, where a file that failed to
-// process is indistinguishable from one that is gone, nor on a dry run, which
-// does not get to change what the next run believes.
-func pruneOrphans(tracker *manifest.Store, hadErrors, dryRun bool) {
-	if hadErrors || dryRun {
-		return
-	}
-
-	for _, space := range tracker.Spaces() {
-		if pruned := tracker.PruneOrphans(space); len(pruned) > 0 {
-			log.Debug().Msgf(
-				"space %q: stopped tracking %d page(s) whose source files are gone",
-				space, len(pruned),
-			)
-		}
-	}
 }
 
 // previewTrackedResolution says what a real run would have done with a document
@@ -1786,91 +1736,6 @@ func pluraliseLinks(n int) string {
 	return fmt.Sprintf("%d links do not resolve", n)
 }
 
-// actOnOrphans archives or deletes the pages whose source files are gone.
-//
-// Nothing happens under the default, which only reports. Everything else is
-// hedged about, because this is the one thing mark does that a person cannot
-// simply run again to undo.
-func actOnOrphans(
-	tracker *manifest.Store,
-	api *confluence.API,
-	config Config,
-	action string,
-	hadErrors bool,
-	results *report.Report,
-) error {
-	if action == page.OnOrphanReport {
-		return nil
-	}
-
-	if hadErrors {
-		// A file that failed to process is indistinguishable from one that was
-		// deleted, and this is not a distinction to get wrong.
-		log.Warn().Msg("some files failed to process; orphaned pages are left alone")
-
-		return nil
-	}
-
-	for _, space := range tracker.Spaces() {
-		orphans := tracker.OrphanEntries(space)
-		if len(orphans) == 0 {
-			continue
-		}
-
-		// A run that published nothing in a space says nothing about that
-		// space: a failed checkout and every document having been deleted look
-		// exactly alike.
-		//
-		// A second line of defence rather than the first -- a pattern matching
-		// no files stops the run well before this -- and kept because the cost
-		// of it being needed once is a space emptied by a bad checkout.
-		if tracker.Published(space) == 0 {
-			log.Warn().Msgf(
-				"space %q: nothing was published in this run, so its %d orphaned page(s) are left alone",
-				space, len(orphans),
-			)
-
-			continue
-		}
-
-		scopeID, err := page.ResolveScope(api, space, config.OrphansUnder)
-		if err != nil {
-			return err
-		}
-
-		candidates := make([]page.Orphan, 0, len(orphans))
-		for _, orphan := range orphans {
-			candidates = append(candidates, page.Orphan{
-				Path:   orphan.Path,
-				PageID: orphan.Entry.PageID,
-				Title:  orphan.Entry.Title,
-			})
-		}
-
-		handled, err := page.HandleOrphans(api, action, scopeID, candidates, config.DryRun)
-		if err != nil {
-			return err
-		}
-
-		if config.DryRun {
-			continue
-		}
-
-		// Only what was actually dealt with is forgotten. A page left alone --
-		// out of scope, or holding children -- stays in the manifest so the
-		// next run finds it again instead of losing sight of it.
-		for _, path := range handled {
-			results.AddOrphan(report.Orphan{File: path, Action: action})
-
-			if err := tracker.Forget(space, path); err != nil {
-				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)
-			}
-		}
-	}
-
-	return nil
-}
-
 func spaceOf(meta *metadata.Meta) string {
 	if meta == nil {
 		return ""
@@ -1885,4 +1750,124 @@ func titleOf(meta *metadata.Meta) string {
 	}
 
 	return meta.Title
+}
+
+// handleOrphans deals with the pages whose source files were not seen.
+//
+// Reporting, acting and forgetting are one thing because they have to agree
+// about which pages are being talked about. When they were separate, a scope
+// narrowed what was archived or deleted while leaving reporting to name
+// everything and forgetting to drop everything -- so a page deliberately put
+// out of scope was announced and then lost track of anyway.
+//
+// A page outside the scope is not mark's business on this run: not reported,
+// not touched, and still remembered, so that a later run with a wider scope
+// still knows about it.
+func handleOrphans(
+	tracker *manifest.Store,
+	api *confluence.API,
+	config Config,
+	action string,
+	hadErrors bool,
+	results *report.Report,
+) error {
+	for _, space := range tracker.Spaces() {
+		orphans := tracker.OrphanEntries(space)
+		if len(orphans) == 0 {
+			continue
+		}
+
+		if hadErrors {
+			// Some files did not process, which is indistinguishable from those
+			// files being gone. Saying anything now would be actively
+			// misleading, and acting on it worse.
+			log.Debug().Msgf(
+				"space %q has %d unpublished tracked pages, not reported because this run had errors",
+				space, len(orphans),
+			)
+
+			continue
+		}
+
+		scopeID, err := page.ResolveScope(api, space, config.OrphanUnder)
+		if err != nil {
+			return err
+		}
+
+		candidates := make([]page.Orphan, 0, len(orphans))
+		for _, orphan := range orphans {
+			candidate := page.Orphan{
+				Path:   orphan.Path,
+				PageID: orphan.Entry.PageID,
+				Title:  orphan.Entry.Title,
+			}
+
+			inScope, err := page.InScope(api, scopeID, candidate)
+			if err != nil {
+				return err
+			}
+
+			if inScope {
+				candidates = append(candidates, candidate)
+			}
+		}
+
+		if len(candidates) == 0 {
+			continue
+		}
+
+		paths := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			paths = append(paths, candidate.Path)
+		}
+
+		log.Info().Msgf(
+			"space %q: %d tracked page(s) had no matching source file in this run: %s",
+			space, len(paths), strings.Join(paths, ", "),
+		)
+
+		handled := paths
+		if action != page.OnOrphanReport {
+			// A run that published nothing in a space says nothing about that
+			// space: a failed checkout and every document having been deleted
+			// look exactly alike.
+			//
+			// A second line of defence rather than the first -- a pattern
+			// matching no files stops the run well before this -- and kept
+			// because the cost of it being needed once is a space emptied by a
+			// bad checkout.
+			if tracker.Published(space) == 0 {
+				log.Warn().Msgf(
+					"space %q: nothing was published in this run, so its %d orphaned page(s) are left alone",
+					space, len(candidates),
+				)
+
+				continue
+			}
+
+			handled, err = page.HandleOrphans(api, action, scopeID, candidates, config.DryRun)
+			if err != nil {
+				return err
+			}
+		}
+
+		if config.DryRun {
+			continue
+		}
+
+		// Only what was actually dealt with is forgotten. A page left alone --
+		// holding children, or out of scope -- stays in the manifest so a later
+		// run finds it again instead of losing sight of it.
+		for _, path := range handled {
+			if action != page.OnOrphanReport {
+				results.AddOrphan(report.Orphan{File: path, Action: action})
+			}
+
+			if err := tracker.Forget(space, path); err != nil {
+				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)
+			}
+		}
+	}
+
+	return nil
 }

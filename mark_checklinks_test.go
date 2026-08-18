@@ -247,3 +247,16 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+// TestCheckLinksWarnOnlyRequiresCheckLinks: on its own the flag checks nothing,
+// so somebody who set it and saw no warnings would conclude their links were
+// fine. That reading is what makes this a refusal rather than a warning.
+func TestCheckLinksWarnOnlyRequiresCheckLinks(t *testing.T) {
+	err := Run(Config{
+		BaseURL: "http://127.0.0.1:1", Username: "user", Password: "token",
+		Files: "none", CheckLinksWarnOnly: true, Output: io.Discard,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--check-links")
+}

@@ -1331,7 +1331,7 @@ GLOBAL OPTIONS:
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --output-format string                   how to report what the run did: "url" prints the address of each published page (the default), "json" prints one object describing the whole run, "github" prints GitHub Actions workflow commands so that failures appear against the file that caused them. [$MARK_OUTPUT_FORMAT]
    --on-orphan string                       what to do about a page whose source file is gone: "report" says so and does nothing (the default), "archive" archives the page (Confluence Cloud only), "delete" moves it to the trash. Requires --track-pages. [$MARK_ON_ORPHAN]
-   --orphans-under string                   limit --on-orphan to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope. [$MARK_ORPHANS_UNDER]
+   --orphan-under string                   limit --on-orphan to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope. [$MARK_ORPHAN_UNDER]
    --check-links string [ --check-links string ]  fail on links that do not resolve. Repeat or comma-separate any of: "internal" (relative links to other files in the repository), "confluence" (ac: links naming a page by title), "external" (requests each URL to see whether it answers), or "all". [$MARK_CHECK_LINKS]
    --global-properties string               path to a YAML or JSON file of Confluence content properties to set on every page. A Property header or properties front matter in a document wins over the file for that page. [$MARK_GLOBAL_PROPERTIES]
    --append-labels                          add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name. [$MARK_APPEND_LABELS]
@@ -1627,17 +1627,33 @@ Confluence accepts the request and archives afterwards, so Mark reports that it
 asked rather than that it finished; a failure after acceptance is not something
 Mark sees.
 
-`--orphans-under` narrows it further to the pages below one page or folder,
-named by title or by id:
+`--orphan-under` narrows it to the pages below one page or folder, named by
+title or by id:
 
 ```bash
-mark --track-pages --on-orphan delete --orphans-under "Team Handbook" \
+mark --track-pages --on-orphan delete --orphan-under "Team Handbook" \
      --files "docs/**/*.md"
 ```
 
 Without it, every tracked page the `--files` pattern would have published is in
 scope -- which is already narrower than the space, since a pattern is only
 evidence about where it was looking.
+
+The scope applies to everything Mark does about orphans, not only to removing
+them. A page outside it is not reported either, and is still remembered, so a
+later run with a wider scope knows about it.
+
+#### Flags that need other flags
+
+A combination that would leave you believing you are protected is refused
+outright rather than warned about, because the belief comes from silence:
+
+* `--on-orphan archive` or `delete` without `--track-pages`
+* `--no-overwrite` without `--track-pages`
+* `--check-links-warn-only` without `--check-links`
+
+A combination that merely does nothing -- `--track-pages` alongside a page ID,
+where the mapping cannot apply -- is a warning.
 
 #### What stops a page being removed
 

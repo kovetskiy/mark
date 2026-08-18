@@ -53,7 +53,7 @@ type OrphanScope struct {
 	Under string
 }
 
-// ResolveScope finds the page or folder --orphans-under names.
+// ResolveScope finds the page or folder --orphan-under names.
 //
 // A title or an id, and a page or a folder, because the thing people want to
 // put a boundary around is a place in the tree and mark's tree has both in it.
@@ -87,7 +87,7 @@ func ResolveScope(api *confluence.API, spaceKey, under string) (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"--orphans-under names %q, which is not a page or folder in space %q",
+		"--orphan-under names %q, which is not a page or folder in space %q",
 		under, spaceKey,
 	)
 }
