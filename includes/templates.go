@@ -253,9 +253,13 @@ func ProcessIncludesWithStack(
 		return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
 	}
 
+	// A parameter holding an element must hold nothing else, and a template is
+	// written to be read rather than to be careful about that.
+	expanded := TrimElementParameters(buffer.Bytes())
+
 	// Recursively process nested includes with updated stack
 	newStack := append(stack, dir.Template)
-	subTemplates, subBytes, _, subErr := ProcessIncludesWithStack(base, includePath, buffer.Bytes(), templates, newStack)
+	subTemplates, subBytes, _, subErr := ProcessIncludesWithStack(base, includePath, expanded, templates, newStack)
 	if subErr != nil {
 		return templates, contents, false, subErr
 	}

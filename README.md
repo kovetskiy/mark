@@ -191,36 +191,33 @@ If the template cannot be found relative to the current directory, a fallback di
 
 ## Whitespace inside `ac:parameter`
 
-A template's output is published exactly as written, whitespace included, and
-there is one place where that matters. A storage-format element inside an
-`<ac:parameter>` must not have anything around it:
-
-```xml
-<ac:parameter ac:name="name"><ri:attachment ri:filename="diagram.drawio"/></ac:parameter>
-```
-
-Written across several lines, the newlines become part of the parameter, and
-Confluence resolves a parameter holding both text and an element by writing the
-element out as a string. The page then contains something like
-`AttachmentResourceIdentifier[...,filename=diagram.drawio]` where the attachment
-should be, and nothing is reported: Mark uploaded what it was given, and the
-change happened on the server.
-
-Go's trim markers keep the template readable and the output tight:
+A macro parameter holding a storage-format element must hold nothing else, so
+Mark publishes such a parameter with the whitespace taken out of it. A template
+can be written to be read:
 
 ```text
 <ac:structured-macro ac:name="inc-drawio">
-  {{- "" -}}
   <ac:parameter ac:name="name">
-    {{- "" -}}
     <ri:attachment ri:filename="{{ .Name }}"/>
-    {{- "" -}}
   </ac:parameter>
-  {{- "" -}}
 </ac:structured-macro>
 ```
 
-The built-in templates are written on one line for the same reason.
+and reaches Confluence as
+`<ac:parameter ac:name="name"><ri:attachment ri:filename="..."/></ac:parameter>`.
+
+Left as written, the newlines would make the parameter hold text as well as an
+element, and Confluence resolves that by writing the element out as a string:
+the page ends up carrying `AttachmentResourceIdentifier[...,filename=...]` where
+the attachment should be, with nothing reported, since Mark published what it
+was given.
+
+Only a parameter whose value is an element is tightened, which is decided by its
+content beginning with `<` and ending with `>`. A parameter holding a string
+keeps its spacing, because there the spacing is the value. Whitespace anywhere
+else is left alone and has to be: the blank lines inside `<ac:rich-text-body>`
+are what let a macro's body be read as Markdown, and a body ending in a list
+would otherwise swallow the closing tags.
 
 Optionally the delimiters can be defined:
 
