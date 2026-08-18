@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/metadata"
@@ -43,6 +45,15 @@ type LinkResolver struct {
 
 	// Checker decides how much is verified. Nil checks nothing.
 	Checker *LinkChecker
+
+	// SourceFile is the document being resolved for, so that a link waiting on
+	// a page this run has yet to create can name the file to publish again.
+	SourceFile string
+
+	// Deferrals collects those waits. Nil says nobody is going to publish
+	// anything a second time -- a dry run, or the second pass itself -- so a
+	// link to a page that is not there is reported rather than waited on.
+	Deferrals *Deferrals
 
 	// broken collects the links that failed a check, rather than the first one
 	// stopping the file. Reporting one at a time would mean fixing a link,
@@ -152,13 +163,23 @@ func (r *LinkResolver) Resolve(target, text string) (string, error) {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
 	}
 
-	if why != nil && r.checking() {
-		if why.transient {
-			// Never a failure: the ordinary state of a first run over files
-			// that link to each other.
+	if why != nil {
+		switch {
+		case !why.transient:
+			if r.checking() {
+				r.note("link %q does not resolve: %s", target, why.reason)
+			}
+
+		case r.Deferrals != nil:
+			// The page is not there yet, and this run is about to create it.
+			// Saying so now would be complaining about something that has not
+			// finished happening.
+			log.Debug().Msgf("link %q waits for %s", target, why.reason)
+			r.Deferrals.Note(r.SourceFile)
+
+		case r.checking():
+			// Nothing more is going to publish it.
 			log.Warn().Msgf("link %q does not resolve: %s", target, why.reason)
-		} else {
-			r.note("link %q does not resolve: %s", target, why.reason)
 		}
 	}
 
@@ -437,4 +458,51 @@ func encodeTinyLinkID(id uint64) string {
 	}
 
 	return result.String()
+}
+
+// Deferrals remembers which documents linked to pages that did not exist yet.
+//
+// mark resolves a link by finding the page it points at, so a document linking
+// to another that the same run is about to create has nothing to find. Rather
+// than leave the link dead until somebody runs mark again -- which is what the
+// documentation used to advise -- the documents that waited are published a
+// second time once everything exists.
+type Deferrals struct {
+	mu    sync.Mutex
+	files map[string]bool
+}
+
+// NewDeferrals returns an empty collector.
+func NewDeferrals() *Deferrals {
+	return &Deferrals{files: map[string]bool{}}
+}
+
+// Note records that a document has a link waiting on a page not yet published.
+func (d *Deferrals) Note(file string) {
+	if d == nil || file == "" {
+		return
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.files[file] = true
+}
+
+// Files returns the documents to publish again, in a stable order.
+func (d *Deferrals) Files() []string {
+	if d == nil {
+		return nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	files := make([]string, 0, len(d.files))
+	for file := range d.files {
+		files = append(files, file)
+	}
+	sort.Strings(files)
+
+	return files
 }

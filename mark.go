@@ -217,6 +217,17 @@ func Run(config Config) error {
 		tracker.SetRunFiles(config.Files, files)
 	}
 
+	// A link is resolved by finding the page it points at, so a document linking
+	// to another this run is about to create has nothing to find. Collected
+	// while publishing and dealt with afterwards.
+	//
+	// Not on a dry run or a compile: nothing is published, so nothing a link is
+	// waiting for will come to exist, and the wait is worth reporting instead.
+	var deferrals *page.Deferrals
+	if !config.DryRun && !config.CompileOnly {
+		deferrals = page.NewDeferrals()
+	}
+
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
 	// anything alongside the others.
@@ -226,7 +237,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -242,6 +253,34 @@ func Run(config Config) error {
 		if target != nil {
 			log.Info().Msgf("page successfully updated: %s", api.BaseURL+target.Links.Full)
 			if _, err := fmt.Fprintln(config.output(), api.BaseURL+target.Links.Full); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Everything exists now, so the documents that were waiting on a page this
+	// run created can be published again with their links resolved.
+	if waiting := deferrals.Files(); len(waiting) > 0 && !hasErrors {
+		log.Info().Msgf(
+			"%d document(s) linked to pages created in this run; publishing them again",
+			len(waiting),
+		)
+
+		for _, file := range waiting {
+			log.Info().Msgf("processing %s again", file)
+
+			// Nil deferrals: this is the last look, so a link that still does
+			// not resolve is reported rather than waited on again.
+			if _, _, err := processFile(
+				file, api, config, std, tracker, folders, checker, globalProperties, nil,
+			); err != nil {
+				if config.ContinueOnError {
+					log.Error().Err(err).Msgf("processing %s", file)
+					hasErrors = true
+
+					continue
+				}
+
 				return err
 			}
 		}
@@ -360,7 +399,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties)
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil)
 	if err != nil {
 		return target, err
 	}
@@ -379,7 +418,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -490,6 +529,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		checker,
 		searchDirs,
 	)
+	resolver.SourceFile = file
+	resolver.Deferrals = deferrals
+
 	resolveLink := resolver.Resolve
 
 	if config.DryRun {
