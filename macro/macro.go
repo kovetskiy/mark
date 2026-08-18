@@ -127,7 +127,10 @@ func (macro *Macro) Apply(
 				return match
 			}
 
-			return buf.Bytes()
+			// Same reason as for an include: a parameter holding an element
+			// must hold nothing else, and a readable template does not
+			// naturally produce that.
+			return includes.TrimElementParameters(buf.Bytes())
 		},
 	)
 

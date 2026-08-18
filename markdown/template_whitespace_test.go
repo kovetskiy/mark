@@ -35,16 +35,13 @@ const drawioDocument = "<!-- Macro: %%drawio%%\n" +
 	"     Template: inc-drawio\n" +
 	"     Name: diagram.drawio -->\n\n%%drawio%%\n"
 
-// TestCustomTemplateOutputIsPreservedVerbatim pins mark's side of issue #908: a
-// template's output is injected exactly as written, whitespace included.
+// TestParameterHoldingAnElementIsTightened is issue #908, written the way the
+// reporter wrote it: across lines, indented, readable.
 //
-// That is the contract, and it is also the trap. A storage-format element
-// surrounded by newlines inside <ac:parameter> makes the parameter mixed
-// content, and Confluence resolves that by writing the element out as a string
-// -- which is where AttachmentResourceIdentifier[...] comes from. It is worth a
-// test because the mangling happens on the server, so nothing here would ever
-// show it.
-func TestCustomTemplateOutputIsPreservedVerbatim(t *testing.T) {
+// The newlines would otherwise be published inside the parameter, leaving it
+// holding text as well as an element, which Confluence resolves by writing the
+// element out as a string.
+func TestParameterHoldingAnElementIsTightened(t *testing.T) {
 	out := compileWithTemplate(t, "inc-drawio",
 		"<ac:structured-macro ac:name=\"inc-drawio\">\n"+
 			"  <ac:parameter ac:name=\"name\">\n"+
@@ -53,39 +50,46 @@ func TestCustomTemplateOutputIsPreservedVerbatim(t *testing.T) {
 			"</ac:structured-macro>\n",
 		drawioDocument)
 
-	assert.Contains(t, out, `<ri:attachment ri:filename="diagram.drawio" />`,
-		"mark must not alter what a template produced")
-	assert.Regexp(t, `(?s)<ac:parameter ac:name="name">\s*\n`, out,
-		"the newlines the template asked for are still there")
-}
-
-// TestCustomTemplateCanEmitWhitespaceFreeParameters is the way out. Go's trim
-// markers let a template stay readable while emitting nothing between the
-// parameter and the element inside it, which is what the built-in templates do
-// by being joined without separators.
-func TestCustomTemplateCanEmitWhitespaceFreeParameters(t *testing.T) {
-	out := compileWithTemplate(t, "inc-drawio",
-		"<ac:structured-macro ac:name=\"inc-drawio\">\n"+
-			"  {{- \"\" -}}\n"+
-			"  <ac:parameter ac:name=\"name\">\n"+
-			"    {{- \"\" -}}\n"+
-			"    <ri:attachment ri:filename=\"{{ .Name }}\"/>\n"+
-			"    {{- \"\" -}}\n"+
-			"  </ac:parameter>\n"+
-			"  {{- \"\" -}}\n"+
-			"</ac:structured-macro>\n",
-		drawioDocument)
-
 	assert.Contains(t, out,
-		`<ac:parameter ac:name="name"><ri:attachment ri:filename="diagram.drawio"/></ac:parameter>`,
+		`<ac:parameter ac:name="name"><ri:attachment ri:filename="diagram.drawio" /></ac:parameter>`,
 		"nothing may sit between the parameter and the element inside it")
 }
 
-// TestBuiltinTemplateHasNoWhitespaceInItsParameter is the comparison the issue
-// rests on. The built-in works where the custom one did not, and this is the
-// whole of the difference: the built-in emits no whitespace, because its lines
-// are joined with nothing between them.
-func TestBuiltinTemplateHasNoWhitespaceInItsParameter(t *testing.T) {
+// TestParameterHoldingAStringIsUntouched: there the spacing is the value, and
+// mark has no business deciding what somebody meant by it.
+func TestParameterHoldingAStringIsUntouched(t *testing.T) {
+	out := compileWithTemplate(t, "inc-title",
+		"<ac:structured-macro ac:name=\"inc-title\">"+
+			"<ac:parameter ac:name=\"title\">  {{ .Name }}  </ac:parameter>"+
+			"</ac:structured-macro>\n",
+		"<!-- Macro: %%t%%\n     Template: inc-title\n     Name: spaced -->\n\n%%t%%\n")
+
+	assert.Contains(t, out, `<ac:parameter ac:name="title">  spaced  </ac:parameter>`,
+		"a string parameter keeps the spacing it was given")
+}
+
+// TestBodyWhitespaceIsPreserved is the property that rules out doing this more
+// widely. The blank lines inside a rich text body are what let a macro's body
+// be read as Markdown blocks; a body ending in a list would otherwise swallow
+// the closing tags.
+func TestBodyWhitespaceIsPreserved(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	out, _, err := mark.CompileMarkdown([]byte(
+		"<!-- Macro: :m:\n     Template: ac:box\n     Name: info\n"+
+			"     Body: \"- one\\n- two\" -->\n\n:m:\n"),
+		lib, "testdata/x.md", types.MarkConfig{MermaidScale: 1, D2Scale: 1})
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "<li>one</li>", "the body must still be read as Markdown")
+	assert.Contains(t, out, "</ul>\n</ac:rich-text-body>",
+		"the closing tags must still sit outside the list")
+}
+
+// TestBuiltinTemplateStillMatches: the built-in was already tight, being joined
+// with nothing between its lines, and must stay that way.
+func TestBuiltinTemplateStillMatches(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	require.NoError(t, err)
 
@@ -96,6 +100,5 @@ func TestBuiltinTemplateHasNoWhitespaceInItsParameter(t *testing.T) {
 
 	assert.Contains(t, out,
 		`<ac:parameter ac:name="name"><ri:attachment ri:filename="diagram.drawio"/></ac:parameter>`)
-	assert.NotContains(t, strings.SplitN(out, "</ac:parameter>", 2)[0], "\n",
-		"the built-in parameter holds no newline, which is why it survives")
+	assert.NotContains(t, strings.SplitN(out, "</ac:parameter>", 2)[0], "\n")
 }
