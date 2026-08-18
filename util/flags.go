@@ -213,11 +213,11 @@ var Flags = []cli.Flag{
 			altsrctoml.TOML("on-orphan", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
-		Name:  "orphans-under",
+		Name:  "orphan-under",
 		Value: "",
-		Usage: "limit --on-orphan to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ORPHANS_UNDER"),
-			altsrctoml.TOML("orphans-under", altsrc.NewStringPtrSourcer(&filename))),
+		Usage: "limit --on-orphan, and the reporting it does, to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ORPHAN_UNDER"),
+			altsrctoml.TOML("orphan-under", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringSliceFlag{
 		Name:  "check-links",

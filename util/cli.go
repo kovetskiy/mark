@@ -123,7 +123,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		GlobalProperties:   cmd.String("global-properties"),
 		OnOrphan:           cmd.String("on-orphan"),
 		OutputFormat:       cmd.String("output-format"),
-		OrphansUnder:       cmd.String("orphans-under"),
+		OrphanUnder:        cmd.String("orphan-under"),
 		PreserveComments:   cmd.Bool("preserve-comments"),
 
 		DropH1:          cmd.Bool("drop-h1"),
