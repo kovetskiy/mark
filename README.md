@@ -951,6 +951,20 @@ cannot tell a `Label` header somebody deleted from a label somebody added in
 Confluence. That is visible on the page and can be undone by hand, which the
 deletion it prevents is not.
 
+### Links between pages published together
+
+A link is resolved by finding the page it points at, so a document linking to
+another that the same run is creating has nothing to find yet.
+
+Mark notes those documents and publishes them again once everything exists, so
+links resolve within a single run. Only the documents that were waiting are
+published a second time, and only on the run that creates their targets: once
+the pages are there, later runs find them the first time and nothing is
+published twice.
+
+Nothing is published again on `--dry-run` or `--compile-only`, where no page is
+being created for a link to wait for.
+
 ### Checking that links go somewhere
 
 By default a link that cannot be resolved is left exactly as written, which in
@@ -991,9 +1005,9 @@ so this cannot change what an unambiguous link already meant. Only the files a
 document includes directly are considered, not what those files include in turn.
 
 One case is reported but does not fail: a link to a document that exists and has
-a title, but is not in the space yet. That is the ordinary state of a first run
-over files that link to each other, and failing there would break a build that
-succeeds on the second attempt.
+a title, but is not in the space and is not being published by this run either.
+A page the run is about to create is waited for rather than complained about --
+see below -- so this is left for the genuinely absent.
 
 A `confluence` link is checked by looking for a page of that title in the
 document's own space, which is what an `ac:` link resolves against. The title is
