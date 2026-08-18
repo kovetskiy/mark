@@ -199,6 +199,13 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
+		Name:  "output-format",
+		Value: "url",
+		Usage: "how to report what the run did: \"url\" prints the address of each published page (the default), \"json\" prints one object describing the whole run, \"github\" prints GitHub Actions workflow commands so that failures appear against the file that caused them.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OUTPUT_FORMAT"),
+			altsrctoml.TOML("output-format", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
 		Name:  "on-orphan",
 		Value: "report",
 		Usage: "what to do about a page whose source file is gone: \"report\" says so and does nothing (the default), \"archive\" archives the page (Confluence Cloud only), \"delete\" moves it to the trash. Requires --track-pages.",

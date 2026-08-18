@@ -951,6 +951,56 @@ cannot tell a `Label` header somebody deleted from a label somebody added in
 Confluence. That is visible on the page and can be undone by hand, which the
 deletion it prevents is not.
 
+### Reporting what a run did
+
+By default Mark prints the address of each page as it publishes, which is what
+it has always done. `--output-format` offers two other shapes.
+
+`json` describes the whole run as one object:
+
+```bash
+mark --output-format json --files "docs/**/*.md" | jq -r '.pages[] | select(.status=="published") | .url'
+```
+
+```json
+{
+  "pages": [
+    {
+      "file": "docs/architecture.md",
+      "status": "published",
+      "space": "DOCS",
+      "title": "Architecture",
+      "pageId": "1004",
+      "url": "https://example.atlassian.net/wiki/display/DOCS/Architecture"
+    },
+    {
+      "file": "docs/draft.md",
+      "status": "skipped",
+      "reason": "the document is not synchronized"
+    }
+  ],
+  "orphans": [{"file": "docs/old.md", "action": "delete"}]
+}
+```
+
+A page is `published`, `unchanged` (`--changes-only` found nothing to do),
+`skipped` (not synchronized, or edited in Confluence under `--no-overwrite`) or
+`failed`, with `reason` saying which in the last two cases.
+
+`github` prints [workflow
+commands](https://docs.github.com/actions/reference/workflow-commands-for-github-actions),
+so that a failure appears against the file that caused it in a pull request:
+
+```text
+::notice file=docs/architecture.md::published "Architecture" to https://...
+::warning file=docs/draft.md::the document is not synchronized
+::error file=docs/broken.md::unable to compile markdown: ...
+```
+
+```yaml
+- run: mark --output-format github --files "docs/**/*.md"
+```
+
 ### Links between pages published together
 
 A link is resolved by finding the page it points at, so a document linking to
@@ -1279,6 +1329,7 @@ GLOBAL OPTIONS:
    --mermaid-scale float                    defines the scaling factor for mermaid renderings. (default: 1) [$MARK_MERMAID_SCALE]
    --include-path string                    Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                           Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
+   --output-format string                   how to report what the run did: "url" prints the address of each published page (the default), "json" prints one object describing the whole run, "github" prints GitHub Actions workflow commands so that failures appear against the file that caused them. [$MARK_OUTPUT_FORMAT]
    --on-orphan string                       what to do about a page whose source file is gone: "report" says so and does nothing (the default), "archive" archives the page (Confluence Cloud only), "delete" moves it to the trash. Requires --track-pages. [$MARK_ON_ORPHAN]
    --orphans-under string                   limit --on-orphan to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope. [$MARK_ORPHANS_UNDER]
    --check-links string [ --check-links string ]  fail on links that do not resolve. Repeat or comma-separate any of: "internal" (relative links to other files in the repository), "confluence" (ac: links naming a page by title), "external" (requests each URL to see whether it answers), or "all". [$MARK_CHECK_LINKS]

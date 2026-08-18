@@ -30,6 +30,7 @@ import (
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
@@ -77,6 +78,7 @@ type Config struct {
 	AppendLabels       bool
 	GlobalProperties   string
 	OnOrphan           string
+	OutputFormat       string
 	OrphansUnder       string
 
 	// Rendering
@@ -108,6 +110,11 @@ func Run(config Config) error {
 	// Settings are checked before anything else happens. A value that cannot be
 	// acted on should be said so plainly, not after a glob has been resolved
 	// and a connection opened -- and least of all part way through publishing.
+	outputFormat, err := report.ParseFormat(config.OutputFormat)
+	if err != nil {
+		return err
+	}
+
 	onOrphan, err := page.ParseOnOrphan(config.OnOrphan)
 	if err != nil {
 		return err
@@ -228,6 +235,9 @@ func Run(config Config) error {
 		deferrals = page.NewDeferrals()
 	}
 
+	// What the run did, for whatever is reading the output rather than the log.
+	results := report.New()
+
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
 	// anything alongside the others.
@@ -237,23 +247,37 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
 		if err != nil {
+			results.AddPage(report.Page{
+				File: file, Status: report.StatusFailed, Reason: err.Error(),
+			})
+
 			if config.ContinueOnError {
 				log.Error().Err(err).Msgf("processing %s", file)
 				hasErrors = true
 				continue
 			}
+
+			if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
+				log.Error().Err(writeErr).Msg("unable to write the run report")
+			}
+
 			return err
 		}
 
 		if target != nil {
 			log.Info().Msgf("page successfully updated: %s", api.BaseURL+target.Links.Full)
-			if _, err := fmt.Fprintln(config.output(), api.BaseURL+target.Links.Full); err != nil {
-				return err
+
+			// The other formats describe the whole run at the end, where a
+			// page published twice can be reported once.
+			if outputFormat == report.FormatURL {
+				if _, err := fmt.Fprintln(config.output(), api.BaseURL+target.Links.Full); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -272,7 +296,7 @@ func Run(config Config) error {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, folders, checker, globalProperties, nil,
+				file, api, config, std, tracker, folders, checker, globalProperties, nil, results,
 			); err != nil {
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
@@ -314,7 +338,7 @@ func Run(config Config) error {
 	var saveErr error
 	if tracker != nil {
 		reportOrphans(tracker, hasErrors)
-		if err := actOnOrphans(tracker, api, config, onOrphan, hasErrors); err != nil {
+		if err := actOnOrphans(tracker, api, config, onOrphan, hasErrors, results); err != nil {
 			return err
 		}
 		pruneOrphans(tracker, hasErrors, config.DryRun)
@@ -331,6 +355,10 @@ func Run(config Config) error {
 			"%s:\n  %s",
 			pluraliseLinks(len(missingPages)), strings.Join(missingPages, "\n  "),
 		)
+	}
+
+	if err := results.Write(config.output(), outputFormat); err != nil {
+		return fmt.Errorf("unable to write the run report: %w", err)
 	}
 
 	if hasErrors {
@@ -399,7 +427,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil)
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -418,7 +446,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -472,6 +500,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// not use.
 	if !meta.Publish() {
 		log.Info().Msgf("%s is not synchronized; leaving it alone", file)
+		results.AddPage(report.Page{
+			File: file, Status: report.StatusSkipped,
+			Reason: "the document is not synchronized",
+			Space:  spaceOf(meta), Title: titleOf(meta),
+		})
 
 		// Looked up purely to mark the path as seen. A page somebody stopped
 		// synchronising is one they chose to keep, and a run that did not
@@ -697,6 +730,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				target.Title, target.Version.Number, recorded,
 			)
 
+			results.AddPage(report.Page{
+				File: file, Status: report.StatusSkipped,
+				Reason: fmt.Sprintf(
+					"edited in Confluence since mark published it (version %d, mark wrote %d)",
+					target.Version.Number, recorded,
+				),
+				Space: spaceOf(meta), Title: target.Title,
+				PageID: target.ID, URL: api.BaseURL + target.Links.Full,
+			})
+
 			// Recorded, so the page still counts as seen and is not mistaken
 			// for an orphan and deleted. The version is deliberately not
 			// updated: until somebody resolves the difference, every run should
@@ -867,6 +910,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 	}
+
+	status := report.StatusPublished
+	if !shouldUpdatePage {
+		status = report.StatusUnchanged
+	}
+	results.AddPage(report.Page{
+		File: file, Status: status,
+		Space: spaceOf(meta), Title: target.Title,
+		PageID: target.ID, URL: api.BaseURL + target.Links.Full,
+	})
 
 	if shouldUpdatePage {
 		err = api.UpdatePage(
@@ -1744,6 +1797,7 @@ func actOnOrphans(
 	config Config,
 	action string,
 	hadErrors bool,
+	results *report.Report,
 ) error {
 	if action == page.OnOrphanReport {
 		return nil
@@ -1806,6 +1860,8 @@ func actOnOrphans(
 		// out of scope, or holding children -- stays in the manifest so the
 		// next run finds it again instead of losing sight of it.
 		for _, path := range handled {
+			results.AddOrphan(report.Orphan{File: path, Action: action})
+
 			if err := tracker.Forget(space, path); err != nil {
 				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)
 			}
@@ -1813,4 +1869,20 @@ func actOnOrphans(
 	}
 
 	return nil
+}
+
+func spaceOf(meta *metadata.Meta) string {
+	if meta == nil {
+		return ""
+	}
+
+	return meta.Space
+}
+
+func titleOf(meta *metadata.Meta) string {
+	if meta == nil {
+		return ""
+	}
+
+	return meta.Title
 }
