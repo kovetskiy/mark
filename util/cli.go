@@ -122,6 +122,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		AppendLabels:       cmd.Bool("append-labels"),
 		GlobalProperties:   cmd.String("global-properties"),
 		OnOrphan:           cmd.String("on-orphan"),
+		OutputFormat:       cmd.String("output-format"),
 		OrphansUnder:       cmd.String("orphans-under"),
 		PreserveComments:   cmd.Bool("preserve-comments"),
 
