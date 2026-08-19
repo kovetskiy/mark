@@ -50,6 +50,13 @@ type Meta struct {
 	Labels            []string
 	ContentAppearance string
 
+	// DeclaredParents and DeclaredTitle record what the document said about
+	// itself, as against what a command line flag supplied. Deriving either
+	// from the file's path has to give way to an author who wrote it down, and
+	// by the time Parents and Title are assembled the two are indistinguishable.
+	DeclaredParents bool
+	DeclaredTitle   bool
+
 	// Synchronized is whether the document is published at all. Nil means it
 	// said nothing, which is not the same as false: a pointer keeps the
 	// difference between a document opting out and a Meta that simply never
@@ -202,6 +209,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			switch normKey {
 			case "parents":
 				meta.Parents = append(meta.Parents, toStringSlice(v)...)
+				meta.DeclaredParents = true
 			case "folders":
 				meta.Folders = append(meta.Folders, toStringSlice(v)...)
 			case "space":
@@ -210,6 +218,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				meta.Type = toString(v)
 			case "title":
 				meta.Title = toString(v)
+				meta.DeclaredTitle = true
 			case "layout":
 				meta.Layout = toString(v)
 			case "sidebar":
@@ -311,6 +320,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				switch header {
 				case HeaderParent:
 					meta.Parents = append(meta.Parents, value)
+					meta.DeclaredParents = true
 
 				case HeaderFolder:
 					meta.Folders = append(meta.Folders, value)
@@ -323,6 +333,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				case HeaderTitle:
 					meta.Title = strings.TrimSpace(value)
+					meta.DeclaredTitle = true
 
 				case HeaderLayout:
 					meta.Layout = strings.TrimSpace(value)
@@ -467,10 +478,16 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 func setTitleFromFilename(meta *Meta, filename string) {
 	base := filepath.Base(filename)
-	title := strings.TrimSuffix(base, filepath.Ext(base))
-	title = strings.ReplaceAll(title, "_", " ")
-	title = strings.ReplaceAll(title, "-", " ")
-	meta.Title = cases.Title(language.English).String(title)
+	meta.Title = TitleFromName(strings.TrimSuffix(base, filepath.Ext(base)))
+}
+
+// TitleFromName turns a file or directory name into a page title, so that
+// "getting-started" reads as "Getting Started".
+func TitleFromName(name string) string {
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, "-", " ")
+
+	return cases.Title(language.English).String(name)
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading

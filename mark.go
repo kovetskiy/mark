@@ -63,6 +63,8 @@ type Config struct {
 	TitleFromH1              bool
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
+	ParentsFromPath          bool
+	ParentsFromPathRoot      string
 	ContentAppearance        string
 
 	// Page updates
@@ -245,6 +247,13 @@ func Run(config Config) error {
 	// What the run did, for whatever is reading the output rather than the log.
 	results := report.New()
 
+	// Only when the path decides where pages go: that is what turns a title
+	// two documents share from bad luck into the ordinary case.
+	var titles *page.TitleClaims
+	if config.ParentsFromPath {
+		titles = page.NewTitleClaims()
+	}
+
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
 	// anything alongside the others.
@@ -254,7 +263,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results, titles)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -303,7 +312,7 @@ func Run(config Config) error {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, folders, checker, globalProperties, nil, results,
+				file, api, config, std, tracker, folders, checker, globalProperties, nil, results, titles,
 			); err != nil {
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
@@ -401,7 +410,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil)
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -420,7 +429,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, titles *page.TitleClaims) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -459,6 +468,37 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
+	}
+
+	// Where the file sits says where the page goes, unless the document says
+	// otherwise. An author who wrote a Parent header meant it.
+	if config.ParentsFromPath && meta != nil {
+		root := config.ParentsFromPathRoot
+		if root == "" {
+			root = page.GlobRoot(config.Files)
+		}
+
+		derived, title := page.PathHierarchy(root, file)
+
+		if !meta.DeclaredParents {
+			meta.Parents = append(meta.Parents, derived...)
+		}
+
+		// An index file has no title of its own to speak of: taken from the
+		// filename it would be "Readme" on every page that has one.
+		if title != "" && !meta.DeclaredTitle {
+			meta.Title = title
+		}
+	}
+
+	if meta != nil {
+		if previous, taken := titles.Claim(meta.Space, meta.Title, file); taken {
+			return nil, nil, fmt.Errorf(
+				"%s already publishes %q in space %q, and a space holds one page of a title: "+
+					"rename one of them, or use --title-append-generated-hash",
+				previous, meta.Title, meta.Space,
+			)
+		}
 	}
 
 	if config.PageID != "" && meta != nil {

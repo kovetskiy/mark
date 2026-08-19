@@ -77,6 +77,59 @@ appended to the values from front matter.
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
 
+## Parents from the directory a file is in
+
+`--parents-from-path` puts each page under a page named after every directory
+between the file pattern's root and the file itself, so the page tree comes out
+looking like the repository:
+
+```bash
+mark --parents-from-path --files "docs/**/*.md"
+```
+
+```text
+docs/guides/setup.md        ->  Guides > Setup
+docs/guides/deep/tuning.md  ->  Guides > Deep > Tuning
+```
+
+Directory names are titled the way filenames are, so `getting-started` becomes
+"Getting Started".
+
+An `index.md` or `README.md` **is** its directory's page rather than a page
+inside it, and takes the directory's name as its title unless it gives itself
+one. So `docs/guides/README.md` is the "Guides" page that `setup.md` sits under.
+
+The root is everything in `--files` before the first wildcard, and
+`--parents-from-path-root` overrides that where the guess is wrong. A document
+that names its own `Parent` is left where it asks to be, and `--parents` still
+prefixes everything.
+
+### One page per title
+
+A space holds one page of a given title, so two documents wanting the same title
+want the same page: the second would overwrite the first and drag it under its
+own parents. Deriving parents from the path makes that likely rather than
+unlucky -- every directory tends to hold a README, and several will want an
+"Overview".
+
+Mark refuses before publishing the second one:
+
+```text
+docs/api/overview.md already publishes "Overview" in space "DOCS", and a space
+holds one page of a title: rename one of them, or use
+--title-append-generated-hash
+```
+
+`--title-append-generated-hash` is the way to keep both titles as they are: it
+appends a short hash of the page's parents, space and title, which differs
+between two documents in different directories.
+
+### Turning it on for pages that already exist
+
+Every page not already where its path implies will be moved on the next run.
+`--dry-run` reports the moves without making them, and is worth reading first on
+a space anybody else works in.
+
 Changing a `Parent` header on a page that has already been published moves that
 page to the new parent. Mark treats your repository as the source of truth for
 where a page lives, as it already does for the page's title and content, so a
@@ -1311,6 +1364,8 @@ GLOBAL OPTIONS:
    --strip-linebreaks, -L                   remove linebreaks inside of tags, to accommodate non-standard Confluence behavior [$MARK_STRIP_LINEBREAKS]
    --title-from-h1                          extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. Mutually exclusive with --title-from-filename. [$MARK_TITLE_FROM_H1]
    --title-from-filename                    use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1. [$MARK_TITLE_FROM_FILENAME]
+   --parents-from-path                      place each page under a page named after every directory between the file pattern's root and the file itself. An index.md or README.md is the page for its own directory rather than a page inside it. A document that names its own Parent is left alone. [$MARK_PARENTS_FROM_PATH]
+   --parents-from-path-root string          the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard. [$MARK_PARENTS_FROM_PATH_ROOT]
    --title-append-generated-hash            appends a short hash generated from the path of the page (space, parents, and title) to the title [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                             don't send notifications while updating Confluence page. [$MARK_MINOR_EDIT]
    --version-message string                 add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
