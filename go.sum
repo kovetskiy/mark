@@ -37,8 +37,8 @@ github.com/dlclark/regexp2 v1.11.4 h1:rPYF9/LECdNymJufQKmri9gV604RvvABwgOA8un7yA
 github.com/dlclark/regexp2 v1.11.4/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/dop251/goja v0.0.0-20240927123429-241b342198c2 h1:Ux9RXuPQmTB4C1MKagNLme0krvq8ulewfor+ORO/QL4=
 github.com/dop251/goja v0.0.0-20240927123429-241b342198c2/go.mod h1:MxLav0peU43GgvwVgNbLAj1s/bSGboKkhuULvq/7hx4=
-github.com/dreampuf/mermaid.go v0.2.3 h1:CkSum5f5CsaMNP4UX2jMl4wZ0Z4N7G76kzWJM7wQS5U=
-github.com/dreampuf/mermaid.go v0.2.3/go.mod h1:I/re/aAkBgC6N+rl+fsOtxsZrihL2h2b0gH9wH5Ew1Q=
+github.com/dreampuf/mermaid.go v0.3.0 h1:y0W04Nlb1BPdyyWNlr+lDTm3PaOyh2b7huGbnzbf4zw=
+github.com/dreampuf/mermaid.go v0.3.0/go.mod h1:I/re/aAkBgC6N+rl+fsOtxsZrihL2h2b0gH9wH5Ew1Q=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 h1:KZaTBSyshWX3MP5jukJcNSuXDQTO+rNpt0J564dX/eg=

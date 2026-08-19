@@ -10,7 +10,7 @@ require (
 	github.com/chromedp/chromedp v0.16.0
 	github.com/d2lang/d2 v0.8.1
 	github.com/d2lang/util-go v0.2.0
-	github.com/dreampuf/mermaid.go v0.2.3
+	github.com/dreampuf/mermaid.go v0.3.0
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.1
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1

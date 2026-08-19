@@ -1,12 +1,16 @@
 package mermaid
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
+	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExtractMermaidImage(t *testing.T) {
@@ -50,4 +54,53 @@ func TestExtractMermaidImage(t *testing.T) {
 			assert.Greater(t, gotHeight, int64(0), "processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))
 		})
 	}
+}
+
+// A diagram mermaid.js refuses is reported as ErrRenderException, which says the
+// page raised an exception rather than that the browser died. The engine is
+// therefore kept: before mermaid.go classified its failures, every bad diagram
+// in a run tore Chrome down and made the next one pay a relaunch.
+func TestInvalidDiagramKeepsEngine(t *testing.T) {
+	before, err := getMermaidEngine()
+	require.NoError(t, err)
+
+	_, err = ProcessMermaidLocally("invalid", []byte("this is not a mermaid diagram"), 1.0)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, mermaid.ErrRenderException)
+
+	after, err := getMermaidEngine()
+	require.NoError(t, err)
+	assert.Same(t, before, after)
+}
+
+// A render that outruns renderTimeout also leaves the engine usable, because
+// cancelling it aborts only the commands in flight. Both timeouts are shortened
+// here: the context one bounds the wait for a turn on the page, the engine one
+// bounds the render itself.
+func TestRenderTimeoutKeepsEngine(t *testing.T) {
+	before, err := getMermaidEngine()
+	require.NoError(t, err)
+
+	original := renderTimeout
+	t.Cleanup(func() {
+		renderTimeout = original
+		before.SetRenderTimeout(original)
+	})
+	renderTimeout = time.Nanosecond
+	before.SetRenderTimeout(time.Nanosecond)
+
+	_, err = ProcessMermaidLocally("timeout", []byte("graph TD;\n A-->B;"), 1.0)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	renderTimeout = original
+	before.SetRenderTimeout(original)
+
+	after, err := getMermaidEngine()
+	require.NoError(t, err)
+	assert.Same(t, before, after)
+
+	got, err := ProcessMermaidLocally("after-timeout", []byte("graph TD;\n A-->B;"), 1.0)
+	require.NoError(t, err)
+	assert.NotEmpty(t, got.FileBytes)
 }
