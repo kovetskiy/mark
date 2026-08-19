@@ -298,3 +298,78 @@ func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok, "a parent mark did not derive from the path is not its to track")
 }
+
+// TestIndexTitleIsTheDirectoryTitle is a bug phase one left behind. A README
+// that titled itself published under that title, while the documents beside it
+// went on looking for a page named after the directory -- so mark made a second,
+// empty one and put them under that, leaving the README's page childless.
+func TestIndexTitleIsTheDirectoryTitle(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", space+"<!-- Title: Developer Handbook -->\n\nIntro.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, nil)
+
+	assert.Equal(t, []string{"Home", "Developer Handbook"}, ancestryOf(t, api, "Setup"),
+		"the children belong to the page their directory's document published")
+
+	empty, err := api.FindPage("DOCS", "Guides", "page")
+	require.NoError(t, err)
+	assert.Nil(t, empty, "no second page named after the directory")
+}
+
+// TestIndexH1BecomesTheDirectoryTitle: with --title-from-h1 the heading is what
+// the document calls itself, and phase one threw it away.
+func TestIndexH1BecomesTheDirectoryTitle(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", space+"\n# Developer Handbook\n\nIntro.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, func(c *Config) { c.TitleFromH1 = true })
+
+	assert.Equal(t, []string{"Home", "Developer Handbook"}, ancestryOf(t, api, "Setup"))
+
+	empty, err := api.FindPage("DOCS", "Guides", "page")
+	require.NoError(t, err)
+	assert.Nil(t, empty)
+}
+
+// TestPagesFileNamesADirectory covers a directory with no document of its own.
+func TestPagesFileNamesADirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/.pages", "title: Developer Handbook\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, nil)
+
+	assert.Equal(t, []string{"Home", "Developer Handbook"}, ancestryOf(t, api, "Setup"))
+}
+
+// TestDocumentBeatsPagesFile: a directory's own document is the more particular
+// statement about what its page is called.
+func TestDocumentBeatsPagesFile(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/.pages", "title: From The Pages File\n")
+	writeAt(t, dir, "guides/README.md", space+"<!-- Title: From The Document -->\n\nx.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, nil)
+
+	assert.Equal(t, []string{"Home", "From The Document"}, ancestryOf(t, api, "Setup"))
+}
+
+// TestFilenameNeverNamesADirectory: --title-from-filename would call every
+// directory's page "Readme", which is a name for a file rather than a page.
+func TestFilenameNeverNamesADirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", space+"\nIntro.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, func(c *Config) { c.TitleFromFilename = true })
+
+	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
+
+	readme, err := api.FindPage("DOCS", "Readme", "page")
+	require.NoError(t, err)
+	assert.Nil(t, readme, "no page should be called Readme")
+}

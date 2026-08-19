@@ -35,6 +35,7 @@ import (
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
+	"go.yaml.in/yaml/v3"
 )
 
 var markerRegex = regexp.MustCompile(`(?s)<ac:inline-comment-marker ac:ref="([^"]+)">(.*?)</ac:inline-comment-marker>`)
@@ -249,9 +250,13 @@ func Run(config Config) error {
 
 	// Only when the path decides where pages go: that is what turns a title
 	// two documents share from bad luck into the ordinary case.
-	var titles *page.TitleClaims
+	var (
+		titles          *page.TitleClaims
+		directoryTitles *page.DirectoryTitles
+	)
 	if config.ParentsFromPath {
 		titles = page.NewTitleClaims()
+		directoryTitles = page.NewDirectoryTitles(directoryTitleReader(config))
 	}
 
 	// Pages that asked for a position among their siblings, collected as they
@@ -263,7 +268,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results, titles)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results, titles, directoryTitles)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -312,7 +317,7 @@ func Run(config Config) error {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, folders, checker, globalProperties, nil, results, titles,
+				file, api, config, std, tracker, folders, checker, globalProperties, nil, results, titles, directoryTitles,
 			); err != nil {
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
@@ -410,7 +415,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil)
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -429,7 +434,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, titles *page.TitleClaims) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, titles *page.TitleClaims, directoryTitles *page.DirectoryTitles) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -478,17 +483,20 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if config.ParentsFromPath && meta != nil {
-		root := pathRoot
-
-		derived, title := page.PathHierarchy(root, file)
+		derived, title, err := page.PathHierarchy(pathRoot, file, directoryTitles)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		if !meta.DeclaredParents {
 			meta.Parents = append(meta.Parents, derived...)
 		}
 
-		// An index file has no title of its own to speak of: taken from the
-		// filename it would be "Readme" on every page that has one.
-		if title != "" && !meta.DeclaredTitle {
+		// A directory's own document is titled by the directory, whatever the
+		// filename would have said -- "Readme" on every page that has one. The
+		// title comes from the same place its children's parent does, so the
+		// two cannot disagree.
+		if title != "" {
 			meta.Title = title
 		}
 	}
@@ -1968,4 +1976,61 @@ func recordDirectoryPages(
 // document could be mistaken for that document under a previous name.
 func directoryHash(key string) string {
 	return sha1Hash("mark:directory:" + key)
+}
+
+// directoryTitleReader works out what a directory's page should be called.
+//
+// A directory's own document says so first, in the same order publishing would
+// read it: a Title header or front matter, then a leading heading when
+// --title-from-h1 asked for that. A .pages file beside the documents says so
+// for a directory that has no document of its own. Failing both, the directory
+// is named after itself.
+//
+// The filename is deliberately not consulted. It is "README" in every directory
+// that has one, which is a name for a file rather than for a page.
+func directoryTitleReader(config Config) func(string) (string, error) {
+	return func(directory string) (string, error) {
+		for _, name := range []string{"index.md", "README.md", "readme.md", "Index.md"} {
+			path := filepath.Join(directory, name)
+
+			source, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+
+			meta, _, err := metadata.ExtractMeta(
+				source, "", config.TitleFromH1, false, path, nil, false, "",
+				slices.Contains(config.Features, "frontmatter"),
+			)
+			if err != nil {
+				return "", fmt.Errorf("unable to read the title of %q: %w", path, err)
+			}
+
+			if meta != nil && meta.Title != "" {
+				return meta.Title, nil
+			}
+
+			break
+		}
+
+		return directoryTitleFromPagesFile(directory)
+	}
+}
+
+// directoryTitleFromPagesFile reads a .pages file, the convention MkDocs and
+// others already use for naming a directory.
+func directoryTitleFromPagesFile(directory string) (string, error) {
+	source, err := os.ReadFile(filepath.Join(directory, ".pages"))
+	if err != nil {
+		return "", nil //nolint:nilerr // absence is the ordinary case
+	}
+
+	var pages struct {
+		Title string `yaml:"title"`
+	}
+	if err := yaml.Unmarshal(source, &pages); err != nil {
+		return "", fmt.Errorf("unable to parse %s: %w", filepath.Join(directory, ".pages"), err)
+	}
+
+	return strings.TrimSpace(pages.Title), nil
 }

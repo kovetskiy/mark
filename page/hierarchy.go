@@ -56,7 +56,7 @@ func GlobRoot(pattern string) string {
 //
 // The returned title is only a suggestion, and only for an index file: every
 // other document keeps whatever title it would have had.
-func PathHierarchy(root, file string) (parents []string, title string) {
+func PathHierarchy(root, file string, titles *DirectoryTitles) (parents []string, title string, err error) {
 	file = filepath.ToSlash(file)
 	root = strings.TrimSuffix(filepath.ToSlash(root), "/")
 
@@ -65,7 +65,7 @@ func PathHierarchy(root, file string) (parents []string, title string) {
 		trimmed, ok := strings.CutPrefix(file, root+"/")
 		if !ok {
 			// Outside the root the path says nothing about where the page goes.
-			return nil, ""
+			return nil, "", nil
 		}
 		relative = trimmed
 	}
@@ -87,28 +87,52 @@ func PathHierarchy(root, file string) (parents []string, title string) {
 		// The document is its directory's page, so its parents are the
 		// directories above it and its title is the directory's own.
 		if len(segments) == 0 {
-			return nil, ""
+			return nil, "", nil
 		}
 
-		parents = titles(segments[:len(segments)-1])
+		parents, err = resolveTitles(root, segments[:len(segments)-1], titles)
+		if err != nil {
+			return nil, "", err
+		}
 
-		return parents, metadata.TitleFromName(segments[len(segments)-1])
+		own, err := titles.Title(joinPath(root, segments))
+		if err != nil {
+			return nil, "", err
+		}
+
+		return parents, own, nil
 	}
 
-	return titles(segments), ""
+	parents, err = resolveTitles(root, segments, titles)
+
+	return parents, "", err
 }
 
-func titles(segments []string) []string {
+func joinPath(root string, segments []string) string {
+	path := strings.Join(segments, "/")
+	if root != "" {
+		return root + "/" + path
+	}
+
+	return path
+}
+
+// resolveTitles names each directory on the way down.
+func resolveTitles(root string, segments []string, titles *DirectoryTitles) ([]string, error) {
 	if len(segments) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	out := make([]string, 0, len(segments))
-	for _, segment := range segments {
-		out = append(out, metadata.TitleFromName(segment))
+	for i := range segments {
+		title, err := titles.Title(joinPath(root, segments[:i+1]))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, title)
 	}
 
-	return out
+	return out, nil
 }
 
 // TitleClaims remembers which document laid claim to which page title.
@@ -212,4 +236,54 @@ func HasIndexFile(directory string) bool {
 	}
 
 	return false
+}
+
+// DirectoryTitles answers what the page standing for a directory is called.
+//
+// One answer, asked for in two places: by the document that is the directory's
+// page, and by every document underneath it that has to name its parent. Worked
+// out separately they disagreed, and a README that titled itself ended up beside
+// an empty page named after its directory rather than being it.
+type DirectoryTitles struct {
+	resolve func(directory string) (string, error)
+
+	mu     sync.Mutex
+	cached map[string]string
+}
+
+// NewDirectoryTitles returns a register that asks resolve once per directory.
+func NewDirectoryTitles(resolve func(directory string) (string, error)) *DirectoryTitles {
+	return &DirectoryTitles{resolve: resolve, cached: map[string]string{}}
+}
+
+// Title reports what the directory's page is called, falling back to the
+// directory's own name.
+func (d *DirectoryTitles) Title(directory string) (string, error) {
+	name := metadata.TitleFromName(filepath.Base(directory))
+
+	if d == nil || d.resolve == nil {
+		return name, nil
+	}
+
+	d.mu.Lock()
+	if title, ok := d.cached[directory]; ok {
+		d.mu.Unlock()
+
+		return title, nil
+	}
+	d.mu.Unlock()
+
+	title, err := d.resolve(directory)
+	if err != nil {
+		return "", err
+	}
+	if title == "" {
+		title = name
+	}
+
+	d.mu.Lock()
+	d.cached[directory] = title
+	d.mu.Unlock()
+
+	return title, nil
 }

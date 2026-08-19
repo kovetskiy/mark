@@ -96,8 +96,19 @@ Directory names are titled the way filenames are, so `getting-started` becomes
 "Getting Started".
 
 An `index.md` or `README.md` **is** its directory's page rather than a page
-inside it, and takes the directory's name as its title unless it gives itself
-one. So `docs/guides/README.md` is the "Guides" page that `setup.md` sits under.
+inside it. So `docs/guides/README.md` is the page that `setup.md` sits under.
+
+What that page is called is decided once, and the documents beneath it look for
+the same name, so the two cannot disagree:
+
+1. the `Title` header or front matter of the directory's own document
+2. its leading heading, with `--title-from-h1`
+3. a `title:` in a `.pages` file beside the documents, for a directory that has
+   no document of its own
+4. the directory's name
+
+The filename is never used. It is `README` in every directory that has one,
+which names a file rather than a page.
 
 The root is everything in `--files` before the first wildcard, and
 `--parents-from-path-root` overrides that where the guess is wrong. A document
