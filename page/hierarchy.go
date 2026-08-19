@@ -1,6 +1,7 @@
 package page
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -149,4 +150,66 @@ func (c *TitleClaims) Claim(space, title, file string) (string, bool) {
 	c.claims[key] = file
 
 	return "", false
+}
+
+// DirectoryKeys reports the directories a document's derived parents stand for,
+// outermost first, as paths rather than titles.
+//
+// "docs/guides/deep/setup.md" under root "docs" gives docs/guides and
+// docs/guides/deep, which are the pages mark creates on the way to it. They are
+// worth remembering: nothing else does, so when the last document under a
+// directory goes, the page standing for that directory would otherwise be left
+// behind with no one aware it was ever mark's.
+//
+// An index file is not counted as its own directory, having a page of its own
+// under its own name already.
+func DirectoryKeys(root, file string) []string {
+	file = filepath.ToSlash(file)
+	root = strings.TrimSuffix(filepath.ToSlash(root), "/")
+
+	relative := file
+	if root != "" {
+		trimmed, ok := strings.CutPrefix(file, root+"/")
+		if !ok {
+			return nil
+		}
+		relative = trimmed
+	}
+
+	directory := filepath.ToSlash(filepath.Dir(relative))
+	if directory == "." {
+		return nil
+	}
+
+	segments := strings.Split(directory, "/")
+
+	base := filepath.Base(relative)
+	if indexNames[strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))] {
+		segments = segments[:len(segments)-1]
+	}
+
+	keys := make([]string, 0, len(segments))
+	for i := range segments {
+		path := strings.Join(segments[:i+1], "/")
+		if root != "" {
+			path = root + "/" + path
+		}
+		keys = append(keys, path)
+	}
+
+	return keys
+}
+
+// HasIndexFile reports whether a directory holds a document of its own.
+//
+// One that does owns the directory's page under its own path, and recording the
+// directory as well would leave two entries claiming a single page.
+func HasIndexFile(directory string) bool {
+	for _, name := range []string{"index.md", "README.md", "readme.md", "Index.md"} {
+		if _, err := os.Stat(filepath.Join(directory, name)); err == nil {
+			return true
+		}
+	}
+
+	return false
 }

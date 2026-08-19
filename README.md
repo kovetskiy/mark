@@ -124,6 +124,23 @@ holds one page of a title: rename one of them, or use
 appends a short hash of the page's parents, space and title, which differs
 between two documents in different directories.
 
+### Directories are remembered too
+
+Mark creates the page standing for a directory, so it remembers doing so. When
+the last document under a directory goes away, that page turns up as a page with
+no source file like any other, and `--on-orphan` decides what becomes of it:
+
+```bash
+mark --parents-from-path --track-pages --on-orphan delete --files "docs/**/*.md"
+```
+
+A directory's page is only removable once it holds nothing, since a page with
+children is always left alone. So a directory and everything in it takes two
+runs to disappear: the documents first, then the page that held them.
+
+A directory holding its own `index.md` or `README.md` is not remembered this
+way, that document's own entry having the page already.
+
 ### Turning it on for pages that already exist
 
 Every page not already where its path implies will be moved on the next run.

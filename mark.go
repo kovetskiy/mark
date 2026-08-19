@@ -472,11 +472,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	// Where the file sits says where the page goes, unless the document says
 	// otherwise. An author who wrote a Parent header meant it.
+	pathRoot := config.ParentsFromPathRoot
+	if config.ParentsFromPath && pathRoot == "" {
+		pathRoot = page.GlobRoot(config.Files)
+	}
+
 	if config.ParentsFromPath && meta != nil {
-		root := config.ParentsFromPathRoot
-		if root == "" {
-			root = page.GlobRoot(config.Files)
-		}
+		root := pathRoot
 
 		derived, title := page.PathHierarchy(root, file)
 
@@ -922,6 +924,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if tracker != nil && meta != nil {
 		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
 			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+		}
+
+		if config.ParentsFromPath && !meta.DeclaredParents {
+			if err := recordDirectoryPages(tracker, target, pathRoot, file, meta.Space); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
@@ -1910,4 +1918,54 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// recordDirectoryPages remembers the pages standing for the directories a
+// document sits under.
+//
+// mark creates them and nothing has been keeping track of them, so the last
+// document under a directory going away used to leave its page behind with
+// nobody aware it was ever mark's doing. Recorded, it turns up as a page with
+// no source file like any other, and --on-orphan can be told what to do about
+// it.
+//
+// The ids come from the published page's own ancestors rather than from the
+// code that creates them: a document's ancestors end with exactly the pages its
+// path asked for, and reading them costs nothing extra.
+func recordDirectoryPages(
+	tracker *manifest.Store,
+	target *confluence.PageInfo,
+	root, file, space string,
+) error {
+	keys := page.DirectoryKeys(root, file)
+	if len(keys) == 0 || len(target.Ancestors) < len(keys) {
+		return nil
+	}
+
+	tail := target.Ancestors[len(target.Ancestors)-len(keys):]
+
+	for i, key := range keys {
+		// A directory holding a document of its own has that document's entry
+		// for its page already, and two entries claiming one page is the thing
+		// the manifest complains about.
+		if page.HasIndexFile(key) {
+			continue
+		}
+
+		if err := tracker.Record(
+			space, key, tail[i].ID, tail[i].Title, directoryHash(key),
+		); err != nil {
+			return fmt.Errorf("unable to record directory page for %q: %w", key, err)
+		}
+	}
+
+	return nil
+}
+
+// directoryHash gives a directory entry a fingerprint of its own.
+//
+// A directory has no content to fingerprint, and an entry sharing a hash with a
+// document could be mistaken for that document under a previous name.
+func directoryHash(key string) string {
+	return sha1Hash("mark:directory:" + key)
 }

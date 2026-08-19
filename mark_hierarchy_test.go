@@ -8,6 +8,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -203,4 +204,97 @@ func TestSameTitleInDifferentSpacesIsFine(t *testing.T) {
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
 	}))
+}
+
+// TestEmptiedDirectoryBecomesAnOrphan is what phase two is for. mark creates
+// the page standing for a directory, and nothing used to remember that, so when
+// the last document under it went away the page stayed behind with nobody aware
+// it had ever been mark's doing.
+func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
+		ParentsFromPath: true, ParentsFromPathRoot: dir,
+		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	guides, err := api.FindPage("DOCS", "Guides", "page")
+	require.NoError(t, err)
+	require.NotNil(t, guides, "mark created a page for the directory")
+
+	setup, err := api.FindPage("DOCS", "Setup", "page")
+	require.NoError(t, err)
+	require.NotNil(t, setup)
+
+	// The whole directory goes.
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
+	require.NoError(t, Run(config))
+
+	// Setup goes first, then Guides, which is only removable once empty.
+	assert.True(t, server.Page(setup.ID).Trashed, "the document's page is an orphan")
+	require.NoError(t, Run(config))
+	assert.True(t, server.Page(guides.ID).Trashed,
+		"the page standing for the directory is an orphan too")
+}
+
+// TestDirectoryWithAnIndexIsNotRecordedTwice: a directory holding its own
+// document has that document's entry for its page already, and two entries
+// claiming one page is what the manifest complains about.
+func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", space+"\nWhat the guides are.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
+		ParentsFromPath: true, ParentsFromPathRoot: dir,
+		TrackPages: true, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	guides, err := api.FindPage("DOCS", "Guides", "page")
+	require.NoError(t, err)
+	require.NotNil(t, guides)
+
+	store := manifest.NewStore(api)
+
+	// The README owns the page, under its own path.
+	entry, ok, err := store.Lookup("DOCS", filepath.Join(dir, "guides", "README.md"))
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, guides.ID, entry.PageID)
+
+	// The directory itself is not a second claim on it.
+	_, ok, err = store.Lookup("DOCS", filepath.Join(dir, "guides"))
+	require.NoError(t, err)
+	assert.False(t, ok, "the directory must not claim a page its own document owns")
+}
+
+// TestDirectoryPagesAreNotRecordedWithoutTheFlag guards the default.
+func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/setup.md",
+		space+"<!-- Title: Setup -->\n<!-- Parent: Guides -->\n\nSetup.\n")
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
+		TrackPages: true, Output: io.Discard,
+	}))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	_, ok, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "guides"))
+	require.NoError(t, err)
+	assert.False(t, ok, "a parent mark did not derive from the path is not its to track")
 }

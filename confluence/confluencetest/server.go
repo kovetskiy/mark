@@ -908,6 +908,11 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 
 	var matches []*Page
 	for _, p := range s.pages {
+		// A page in the trash is not found by a search, the way it is not in
+		// the space any more as far as anything else is concerned.
+		if p.Trashed {
+			continue
+		}
 		if spaceKey != "" && p.SpaceKey != spaceKey {
 			continue
 		}
@@ -1190,7 +1195,8 @@ func (s *Server) childPages(w http.ResponseWriter, r *http.Request, parentID str
 
 	results := []map[string]any{}
 	for _, id := range s.childOrder[parentID] {
-		if p, ok := s.pages[id]; ok && p.ParentID == parentID {
+		// Trashing a page takes it out of its parent's children.
+		if p, ok := s.pages[id]; ok && p.ParentID == parentID && !p.Trashed {
 			results = append(results, s.pageJSON(p))
 		}
 	}
