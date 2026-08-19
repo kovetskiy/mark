@@ -35,6 +35,7 @@ import (
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
+	"go.yaml.in/yaml/v3"
 )
 
 var markerRegex = regexp.MustCompile(`(?s)<ac:inline-comment-marker ac:ref="([^"]+)">(.*?)</ac:inline-comment-marker>`)
@@ -63,6 +64,8 @@ type Config struct {
 	TitleFromH1              bool
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
+	ParentsFromPath          bool
+	ParentsFromPathRoot      string
 	ContentAppearance        string
 
 	// Page updates
@@ -245,6 +248,17 @@ func Run(config Config) error {
 	// What the run did, for whatever is reading the output rather than the log.
 	results := report.New()
 
+	// Only when the path decides where pages go: that is what turns a title
+	// two documents share from bad luck into the ordinary case.
+	var (
+		titles          *page.TitleClaims
+		directoryTitles *page.DirectoryTitles
+	)
+	if config.ParentsFromPath {
+		titles = page.NewTitleClaims()
+		directoryTitles = page.NewDirectoryTitles(directoryTitleReader(config))
+	}
+
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
 	// anything alongside the others.
@@ -254,7 +268,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results)
+		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results, titles, directoryTitles)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -303,7 +317,7 @@ func Run(config Config) error {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, folders, checker, globalProperties, nil, results,
+				file, api, config, std, tracker, folders, checker, globalProperties, nil, results, titles, directoryTitles,
 			); err != nil {
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
@@ -401,7 +415,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil)
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -420,7 +434,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, titles *page.TitleClaims, directoryTitles *page.DirectoryTitles) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -459,6 +473,42 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
+	}
+
+	// Where the file sits says where the page goes, unless the document says
+	// otherwise. An author who wrote a Parent header meant it.
+	pathRoot := config.ParentsFromPathRoot
+	if config.ParentsFromPath && pathRoot == "" {
+		pathRoot = page.GlobRoot(config.Files)
+	}
+
+	if config.ParentsFromPath && meta != nil {
+		derived, title, err := page.PathHierarchy(pathRoot, file, directoryTitles)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if !meta.DeclaredParents {
+			meta.Parents = append(meta.Parents, derived...)
+		}
+
+		// A directory's own document is titled by the directory, whatever the
+		// filename would have said -- "Readme" on every page that has one. The
+		// title comes from the same place its children's parent does, so the
+		// two cannot disagree.
+		if title != "" {
+			meta.Title = title
+		}
+	}
+
+	if meta != nil {
+		if previous, taken := titles.Claim(meta.Space, meta.Title, file); taken {
+			return nil, nil, fmt.Errorf(
+				"%s already publishes %q in space %q, and a space holds one page of a title: "+
+					"rename one of them, or use --title-append-generated-hash",
+				previous, meta.Title, meta.Space,
+			)
+		}
 	}
 
 	if config.PageID != "" && meta != nil {
@@ -882,6 +932,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if tracker != nil && meta != nil {
 		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
 			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+		}
+
+		if config.ParentsFromPath && !meta.DeclaredParents {
+			if err := recordDirectoryPages(tracker, target, pathRoot, file, meta.Space); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
@@ -1870,4 +1926,111 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// recordDirectoryPages remembers the pages standing for the directories a
+// document sits under.
+//
+// mark creates them and nothing has been keeping track of them, so the last
+// document under a directory going away used to leave its page behind with
+// nobody aware it was ever mark's doing. Recorded, it turns up as a page with
+// no source file like any other, and --on-orphan can be told what to do about
+// it.
+//
+// The ids come from the published page's own ancestors rather than from the
+// code that creates them: a document's ancestors end with exactly the pages its
+// path asked for, and reading them costs nothing extra.
+func recordDirectoryPages(
+	tracker *manifest.Store,
+	target *confluence.PageInfo,
+	root, file, space string,
+) error {
+	keys := page.DirectoryKeys(root, file)
+	if len(keys) == 0 || len(target.Ancestors) < len(keys) {
+		return nil
+	}
+
+	tail := target.Ancestors[len(target.Ancestors)-len(keys):]
+
+	for i, key := range keys {
+		// A directory holding a document of its own has that document's entry
+		// for its page already, and two entries claiming one page is the thing
+		// the manifest complains about.
+		if page.HasIndexFile(key) {
+			continue
+		}
+
+		if err := tracker.Record(
+			space, key, tail[i].ID, tail[i].Title, directoryHash(key),
+		); err != nil {
+			return fmt.Errorf("unable to record directory page for %q: %w", key, err)
+		}
+	}
+
+	return nil
+}
+
+// directoryHash gives a directory entry a fingerprint of its own.
+//
+// A directory has no content to fingerprint, and an entry sharing a hash with a
+// document could be mistaken for that document under a previous name.
+func directoryHash(key string) string {
+	return sha1Hash("mark:directory:" + key)
+}
+
+// directoryTitleReader works out what a directory's page should be called.
+//
+// A directory's own document says so first, in the same order publishing would
+// read it: a Title header or front matter, then a leading heading when
+// --title-from-h1 asked for that. A .pages file beside the documents says so
+// for a directory that has no document of its own. Failing both, the directory
+// is named after itself.
+//
+// The filename is deliberately not consulted. It is "README" in every directory
+// that has one, which is a name for a file rather than for a page.
+func directoryTitleReader(config Config) func(string) (string, error) {
+	return func(directory string) (string, error) {
+		for _, name := range []string{"index.md", "README.md", "readme.md", "Index.md"} {
+			path := filepath.Join(directory, name)
+
+			source, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+
+			meta, _, err := metadata.ExtractMeta(
+				source, "", config.TitleFromH1, false, path, nil, false, "",
+				slices.Contains(config.Features, "frontmatter"),
+			)
+			if err != nil {
+				return "", fmt.Errorf("unable to read the title of %q: %w", path, err)
+			}
+
+			if meta != nil && meta.Title != "" {
+				return meta.Title, nil
+			}
+
+			break
+		}
+
+		return directoryTitleFromPagesFile(directory)
+	}
+}
+
+// directoryTitleFromPagesFile reads a .pages file, the convention MkDocs and
+// others already use for naming a directory.
+func directoryTitleFromPagesFile(directory string) (string, error) {
+	source, err := os.ReadFile(filepath.Join(directory, ".pages"))
+	if err != nil {
+		return "", nil //nolint:nilerr // absence is the ordinary case
+	}
+
+	var pages struct {
+		Title string `yaml:"title"`
+	}
+	if err := yaml.Unmarshal(source, &pages); err != nil {
+		return "", fmt.Errorf("unable to parse %s: %w", filepath.Join(directory, ".pages"), err)
+	}
+
+	return strings.TrimSpace(pages.Title), nil
 }
