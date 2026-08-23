@@ -16,7 +16,7 @@ require (
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.12.0
 	github.com/urfave/cli-altsrc/v3 v3.1.0
-	github.com/urfave/cli/v3 v3.10.1
+	github.com/urfave/cli/v3 v3.11.0
 	github.com/yuin/goldmark v1.8.5
 	go.abhg.dev/goldmark/frontmatter v0.3.0
 	go.yaml.in/yaml/v3 v3.0.5
