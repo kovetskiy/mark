@@ -1591,6 +1591,7 @@ GLOBAL OPTIONS:
    --log-level string                       set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
    --username string, -u string             use specified username for updating Confluence page. [$MARK_USERNAME]
    --password string, -p string             use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
+   --password-command string                run the specified command and use its trimmed stdout as the token for updating Confluence page. Runs without a shell, and is ignored when a password is set. [$MARK_PASSWORD_COMMAND]
    --target-url string, -l string           edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url string, -b string             base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
    --config string, -c string               use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
@@ -1628,12 +1629,17 @@ located in a system specific directory (or specified via `-c --config <path>`) w
 ```toml
 username = "your-email"
 password = "password-or-api-key-for-confluence-cloud"
+# Or name a command that prints the token, instead of storing it here:
+# password-command = "pass show confluence/api-token"
 # If you are using Confluence Cloud add the /wiki suffix to base_url
 base-url = "http://confluence.local"
 title-from-h1 = true
 drop-h1 = true
 image-align = "center"
 ```
+
+**NOTE**: `password-command` keeps the token out of both the configuration file and the environment.
+A password manager or keychain helper supplies it per run.
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
