@@ -68,8 +68,10 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	log.Logger = zerolog.New(output).With().Timestamp().Logger()
 
 	creds, err := GetCredentials(
+		ctx,
 		cmd.String("username"),
 		cmd.String("password"),
+		cmd.String("password-command"),
 		cmd.String("target-url"),
 		cmd.String("base-url"),
 		cmd.Bool("compile-only"),
@@ -81,7 +83,8 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	log.Debug().Msg("config:")
 	for _, f := range cmd.Flags {
 		flag := f.Names()
-		if flag[0] == "password" {
+		// A command can name a token inline, so it leaks the same way the password would.
+		if flag[0] == "password" || flag[0] == "password-command" {
 			log.Debug().Msgf("%20s: %v", flag[0], "******")
 		} else {
 			log.Debug().Msgf("%20s: %v", flag[0], cmd.Value(flag[0]))

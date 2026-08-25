@@ -168,6 +168,12 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD"), altsrctoml.TOML("password", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
+		Name:    "password-command",
+		Value:   "",
+		Usage:   "run the specified command and use its trimmed stdout as the token for updating Confluence page. Runs without a shell, and is ignored when a password is set.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD_COMMAND"), altsrctoml.TOML("password-command", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
 		Name:    "target-url",
 		Aliases: []string{"l"},
 		Value:   "",
