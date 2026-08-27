@@ -272,7 +272,7 @@ var Flags = []cli.Flag{
 	&cli.StringSliceFlag{
 		Name:    "features",
 		Value:   []string{"mermaid", "mention"},
-		Usage:   "Enables optional features. Current features: d2, date, details, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml",
+		Usage:   "Enables optional features. Current features: d2, date, details, footnotes, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
