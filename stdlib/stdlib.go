@@ -318,6 +318,49 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		/*
+			Footnotes. Confluence has no footnote of its own outside the
+			marketplace, so a footnote is assembled from two things it does
+			have: the bundled anchor macro, and a link that names an anchor
+			instead of a page.
+
+			An id attribute is not an option -- Confluence discards the ids in
+			the storage format and generates its own from the element's text --
+			so every jump target here has to be a real anchor macro. The macro
+			renders nothing, which is what lets one sit in the middle of a
+			sentence next to the marker it belongs to.
+
+			A link with ac:anchor and no ri:* resource is a link within the
+			current page; the same tag with an ri:page would leave the page
+			first, which reloads it and loses the reader's place.
+		*/
+
+		`ac:footnote:anchor`: text(
+			`<ac:structured-macro ac:name="anchor">`,
+			`<ac:parameter ac:name="">{{ .Anchor | xmlesc }}</ac:parameter>`,
+			`</ac:structured-macro>`,
+		),
+
+		// The marker is superscript inside the link body rather than around
+		// the whole link: ac:link-body is documented to take sup, while a
+		// storage-format sup wrapping a macro is not, and the editor is free
+		// to normalise what it was not promised.
+		`ac:footnote:ref`: text(
+			`<ac:link ac:anchor="{{ .Anchor | xmlesc }}">`,
+			`<ac:link-body><sup>[{{ .Number }}]</sup></ac:link-body>`,
+			`</ac:link>`,
+		),
+
+		// U+21A9 followed by U+FE0E: the variation selector asks for the text
+		// glyph, without which the arrow is drawn as a colour emoji.
+		// .Number is zero unless the note is cited more than once, in which
+		// case each way back has to be told apart.
+		`ac:footnote:backref`: text(
+			`&#160;<ac:link ac:anchor="{{ .Anchor | xmlesc }}">`,
+			`<ac:link-body>&#x21a9;&#xfe0e;{{ if .Number }}<sup>{{ .Number }}</sup>{{ end }}</ac:link-body>`,
+			`</ac:link>`,
+		),
+
 		/* https://confluence.atlassian.com/conf59/expand-macro-792499106.html */
 
 		// The body is separated from the wrapper tags by blank lines; see

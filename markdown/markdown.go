@@ -73,6 +73,16 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
+	if slices.Contains(c.MarkConfig.Features, "footnotes") {
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			// Below the 500 goldmark's own footnote extension registers at.
+			// Node renderers are registered from the highest priority number
+			// down, and each registration overwrites the last, so the *smaller*
+			// number is the one that ends up rendering the node.
+			util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
+		))
+	}
+
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
 		m.Parser().AddOptions(
 			parser.WithBlockParsers(
@@ -373,6 +383,17 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	if slices.Contains(c.MarkConfig.Features, "details") {
 		m.Parser().AddOptions(parser.WithASTTransformers(
 			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+		))
+	}
+
+	// Add Confluence-native footnote rendering if requested
+	if slices.Contains(c.MarkConfig.Features, "footnotes") {
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			// Below the 500 goldmark's own footnote extension registers at.
+			// Node renderers are registered from the highest priority number
+			// down, and each registration overwrites the last, so the *smaller*
+			// number is the one that ends up rendering the node.
+			util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
 		))
 	}
 

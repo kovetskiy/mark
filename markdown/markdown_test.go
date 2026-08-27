@@ -252,6 +252,40 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
+// TestCompileMarkdownFootnotes covers the footnotes feature. testdata/footnotes.md
+// is also picked up by the feature-off tests above, which pin goldmark's own
+// HTML footnotes -- the ids and #fragment links Confluence discards -- so the
+// pair of fixtures records exactly what the feature changes.
+func TestCompileMarkdownFootnotes(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	const fixture = "testdata/footnotes.md"
+	markdown, htmlname, html := loadData(t, fixture, "-confluence")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"mkdocsadmonitions", "mention", "footnotes"},
+	}
+
+	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
+}
+
 // TestCompileMarkdownMath covers the math feature, which renders LaTeX to
 // KaTeX markup at compile time. testdata/math.md is also picked up by the
 // feature-off tests above, which assert the formulas pass through as plain

@@ -1278,6 +1278,63 @@ display text and render as regular hyperlinks, unchanged.
 
 *Note: Inline Smart Cards (`data-card-appearance="inline"`) are a **Confluence Cloud** feature. On Confluence Data Center / Server, the attribute is safely ignored and the link displays as a standard hyperlink.*
 
+### Footnotes
+
+Optionally you can render Markdown footnotes as footnotes Confluence can
+actually navigate, via `--features="footnotes"`.
+
+```markdown
+The estimate is optimistic[^basis], and the deadline is not[^deadline].
+
+[^basis]: Measured on the staging cluster, which has half the nodes.
+[^deadline]: Set before the scope changed.
+```
+
+Each marker becomes a superscript `[1]` linking down to the note, and each note
+ends with a `↩` linking back to the sentence that cited it. Notes are collected
+into a numbered list under a horizontal rule at the foot of the page, in the
+order they were first cited -- so the definitions can be written in whatever
+order suits the source file, and a definition nothing cites is left out rather
+than numbered.
+
+Citing the same note twice gives it one entry with a numbered arrow per
+citation, so both ways back are distinguishable.
+
+#### Why the feature exists
+
+Markdown footnote syntax is parsed whether or not the feature is on -- that part
+has always worked. What did not work is the navigation. Goldmark, like every
+other Markdown renderer, wires the two ends together with `id` attributes and
+`href="#id"` links, and Confluence keeps neither: it discards the ids in the
+storage format and generates its own from element text. The result renders,
+looks right, and does nothing when clicked.
+
+This feature replaces that plumbing with the two things Confluence does
+understand:
+
+* the **Anchor macro** for the jump targets, which is bundled with both Cloud
+  and Data Center and so needs no marketplace plugin, and
+* `<ac:link ac:anchor="...">` for the jumps, with no `ri:page` -- an anchor link
+  within the current page, which scrolls rather than reloads.
+
+```html
+<!-- at the marker -->
+<ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro>
+<ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>
+
+<!-- at the note -->
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>Measured on the staging cluster, which has half the nodes.&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+```
+
+Anchor names are `footnote-<n>` and `footnote-ref-<n>`, which share a namespace
+with the page's heading anchors -- avoid headings that would generate the same
+names.
+
+Leaving the feature off keeps the previous output: plain HTML footnotes, which
+still read correctly top to bottom but whose links go nowhere.
+
 **Note**: `mark` will read configuration from your environment variables or the configuration file.
 
 ## Installation
@@ -1370,7 +1427,7 @@ GLOBAL OPTIONS:
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, date, details, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, date, details, footnotes, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help
