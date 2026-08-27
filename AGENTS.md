@@ -68,16 +68,19 @@ table cells. `macro.ExtractMacros` and `includes.ProcessIncludes` run on the raw
 `CompileMarkdown` before the converter is built. Do not move this work into an AST
 transformer without understanding why it was moved out of one.
 
-**4. goldmark priorities run in opposite directions for parsers and renderers.**
+**4. A smaller goldmark priority number wins, for parsers and renderers alike.**
 
-- *Node renderers*: registered in ascending priority order, so a **larger** number is
-  registered later and **overrides** an earlier registration for the same node kind. The
-  GH-alerts blockquote/text renderers use `200` specifically to beat the `100` defaults.
 - *Inline/block parsers*: a **smaller** number is tried **first**. `ConfluenceTagParser`
   uses `199` to run before goldmark's own link parser at `200`, so that `<ac:*/>` tags are
   not parsed as links.
+- *Node renderers*: goldmark sorts them ascending and then calls `RegisterFuncs` from the
+  **end backwards** (`renderer/renderer.go`), and each registration overwrites the last
+  for a given node kind -- so the **smaller** number is the one that renders. The
+  footnote renderers use `100` to beat goldmark's own footnote extension at `500`.
+  The GH-alerts blockquote/text renderers' `200` is not doing this job: the main
+  extension registers no competing blockquote or text renderer, so they are unopposed.
 
-Getting this backwards silently produces the default rendering.
+Getting this backwards silently produces the default rendering, with no error anywhere.
 
 **5. AST transformers cannot return errors.** goldmark's `ASTTransformer` interface has no
 error return, so `transformer.PipelineTransformer` accumulates errors internally and
