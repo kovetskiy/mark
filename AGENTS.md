@@ -75,10 +75,12 @@ transformer without understanding why it was moved out of one.
   not parsed as links.
 - *Node renderers*: goldmark sorts them ascending and then calls `RegisterFuncs` from the
   **end backwards** (`renderer/renderer.go`), and each registration overwrites the last
-  for a given node kind -- so the **smaller** number is the one that renders. The
-  footnote renderers use `100` to beat goldmark's own footnote extension at `500`.
-  The GH-alerts blockquote/text renderers' `200` is not doing this job: the main
-  extension registers no competing blockquote or text renderer, so they are unopposed.
+  for a given node kind -- so the **smaller** number is the one that renders. Every
+  renderer in this repo is competing with one of goldmark's: the default `html.Renderer`
+  goes in at `1000` (`markdown.go`) and claims every core kind, so anything meant to
+  replace it has to sit below that. Both numbers you will see are load-bearing --- the
+  GH-alerts blockquote/text renderers' `200` clears the default renderer, and the
+  footnote renderers' `100` has to clear the footnote extension's `500` as well.
 
 Getting this backwards silently produces the default rendering, with no error anywhere.
 
