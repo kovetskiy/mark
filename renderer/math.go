@@ -5,6 +5,7 @@ import (
 	cmath "github.com/kovetskiy/mark/v16/math"
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/types"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/util"
@@ -20,6 +21,7 @@ import (
 type ConfluenceMathRenderer struct {
 	Stdlib      *stdlib.Lib
 	Attachments attachment.Attacher
+	MarkConfig  types.MarkConfig
 	// attached remembers the formulas already queued for upload. The same
 	// formula written twice on a page renders to the same file, and a renderer
 	// lives for one document, so this keeps that one upload rather than one per
@@ -28,10 +30,11 @@ type ConfluenceMathRenderer struct {
 }
 
 // NewConfluenceMathRenderer creates a new instance of the ConfluenceMathRenderer.
-func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher) renderer.NodeRenderer {
+func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig) renderer.NodeRenderer {
 	return &ConfluenceMathRenderer{
 		Stdlib:      stdlib,
 		Attachments: attachments,
+		MarkConfig:  cfg,
 		attached:    map[string]bool{},
 	}
 }
@@ -52,7 +55,7 @@ func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte
 	// which locates it better than a line number would: an inline formula has
 	// no position of its own in the AST, and a document usually has few enough
 	// formulas that the source is the clearer identifier.
-	rendered, err := cmath.Process(string(n.Equation), n.Display)
+	rendered, err := cmath.Process(string(n.Equation), n.Display, r.MarkConfig.MathFormat, r.MarkConfig.MathScale)
 	if err != nil {
 		return ast.WalkStop, err
 	}

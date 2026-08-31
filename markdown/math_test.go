@@ -12,6 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// compileMath compiles with the vector format, which every test that is not
+// about the format itself should use: it is the same storage format either way,
+// and it does not start a browser.
 func compileMath(t *testing.T, markdown string, features ...string) (string, []attachment.Attachment, error) {
 	t.Helper()
 
@@ -19,7 +22,8 @@ func compileMath(t *testing.T, markdown string, features ...string) (string, []a
 	require.NoError(t, err)
 
 	return mark.CompileMarkdown([]byte(markdown), lib, "testdata/test.md", types.MarkConfig{
-		Features: features,
+		Features:   features,
+		MathFormat: "svg",
 	})
 }
 
@@ -111,4 +115,40 @@ func TestMathDoesNotEatPrices(t *testing.T) {
 
 	assert.Contains(t, actual, "It costs $5 and $7 today.")
 	assert.Empty(t, attachments)
+}
+
+// TestMathPNGFormat covers the default format end to end.
+//
+// PNG is what Confluence certainly displays, and rasterising costs the same
+// browser mermaid already needs, so it is what a document gets unless it asks
+// for the vector picture instead.
+func TestMathPNGFormat(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	actual, attachments, err := mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
+		types.MarkConfig{Features: []string{"math"}, MathScale: 2})
+	require.NoError(t, err)
+	assertWellFormed(t, actual)
+
+	require.Len(t, attachments, 1)
+	assert.True(t, strings.HasSuffix(attachments[0].Filename, ".png"))
+	assert.Contains(t, actual, `<ri:attachment ri:filename="`+attachments[0].Filename+`"/>`)
+
+	// The formula still occupies the space it asked for, whatever the format.
+	assert.Contains(t, actual, `ac:width="70"`)
+}
+
+// TestMathRejectsAnUnknownFormat covers the value the flag will not take. The
+// CLI rejects it up front; this is the second line of that check, for a caller
+// that reaches CompileMarkdown directly.
+func TestMathRejectsAnUnknownFormat(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	_, _, err = mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
+		types.MarkConfig{Features: []string{"math"}, MathFormat: "jpeg"})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "jpeg")
 }

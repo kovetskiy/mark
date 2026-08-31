@@ -186,6 +186,18 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
+		Name:    "math-format",
+		Value:   "png",
+		Usage:   "image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_FORMAT"), altsrctoml.TOML("math-format", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.FloatFlag{
+		Name:    "math-scale",
+		Value:   2.0,
+		Usage:   "defines the scaling factor for PNG formula renderings; ignored when math-format is svg.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_SCALE"), altsrctoml.TOML("math-scale", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
 		Name:      "include-path",
 		Value:     "",
 		Usage:     "Path for shared includes, used as a fallback if the include doesn't exist in the current directory.",
@@ -349,6 +361,19 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 			return context, fmt.Errorf(
 				"invalid value for --content-appearance: %q (expected: full-width, fixed, or default)",
 				contentAppearance,
+			)
+		}
+	}
+
+	mathFormat := strings.TrimSpace(command.String("math-format"))
+	if mathFormat != "" {
+		switch mathFormat {
+		case "svg", "png":
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --math-format: %q (expected: svg or png)",
+				mathFormat,
 			)
 		}
 	}

@@ -1,8 +1,12 @@
 package types
 
 type MarkConfig struct {
-	MermaidScale  float64
-	D2Scale       float64
+	MermaidScale float64
+	D2Scale      float64
+	// MathFormat is the image a formula is published as, "svg" or "png".
+	// MathScale multiplies the pixels of a PNG one, and is ignored for SVG.
+	MathFormat    string
+	MathScale     float64
 	DropFirstH1   bool
 	StripNewlines bool
 	Features      []string

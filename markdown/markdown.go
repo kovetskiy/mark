@@ -471,7 +471,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		))
 
 		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMathRenderer(c.Stdlib, c), 100),
+			util.Prioritized(crenderer.NewConfluenceMathRenderer(c.Stdlib, c, c.MarkConfig), 100),
 		))
 	}
 

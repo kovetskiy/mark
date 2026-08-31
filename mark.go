@@ -86,6 +86,8 @@ type Config struct {
 	StripLinebreaks bool
 	MermaidScale    float64
 	D2Scale         float64
+	MathFormat      string
+	MathScale       float64
 	Features        []string
 	ImageAlign      string
 	IncludePath     string
@@ -572,6 +574,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		cfg := types.MarkConfig{
 			MermaidScale:  config.MermaidScale,
 			D2Scale:       config.D2Scale,
+			MathFormat:    config.MathFormat,
+			MathScale:     config.MathScale,
 			DropFirstH1:   config.DropH1,
 			StripNewlines: config.StripLinebreaks,
 			Features:      config.Features,
@@ -771,6 +775,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	cfg := types.MarkConfig{
 		MermaidScale:  config.MermaidScale,
 		D2Scale:       config.D2Scale,
+		MathFormat:    config.MathFormat,
+		MathScale:     config.MathScale,
 		DropFirstH1:   config.DropH1,
 		StripNewlines: config.StripLinebreaks,
 		Features:      config.Features,

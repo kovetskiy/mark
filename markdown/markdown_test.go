@@ -323,14 +323,16 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 }
 
 // TestCompileMarkdownMath covers the math feature, which renders LaTeX to an
-// SVG published as an attachment. testdata/math.md is also picked up by the
+// image published as an attachment. testdata/math.md is also picked up by the
 // feature-off tests above, which assert the formulas pass through as plain
-// text; this one pins what actually reaches the page.
+// text; these two pin what actually reaches the page, in both formats.
 //
-// The fixture matters because the rendering is tied to the bundled mathjax-go:
+// The fixtures matter because the rendering is tied to the bundled mathjax-go:
 // the pixel dimensions on every ac:image, and the file names, are derived from
 // its output, so a version that changes either shows up here rather than as a
-// silently resized formula.
+// silently resized formula. The rendered bytes are not compared -- Chrome's
+// output is not stable across environments -- only the storage format is, and
+// that is derived from the formula rather than from the picture.
 func TestCompileMarkdownMath(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "..")
@@ -339,26 +341,42 @@ func TestCompileMarkdownMath(t *testing.T) {
 		panic(err)
 	}
 
-	test := assert.New(t)
-
-	lib, err := stdlib.New(nil)
-	if err != nil {
-		panic(err)
+	tests := []struct {
+		name    string
+		variant string
+		format  string
+	}{
+		// The default, which needs the same browser mermaid does.
+		{name: "png", variant: "-png", format: ""},
+		{name: "svg", variant: "-svg", format: "svg"},
 	}
 
-	const fixture = "testdata/math.md"
-	markdown, htmlname, html := loadData(t, fixture, "-svg")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			test := assert.New(t)
 
-	cfg := types.MarkConfig{
-		MermaidScale:  1.0,
-		D2Scale:       1.0,
-		DropFirstH1:   false,
-		StripNewlines: false,
-		Features:      []string{"mkdocsadmonitions", "mention", "math"},
+			lib, err := stdlib.New(nil)
+			if err != nil {
+				panic(err)
+			}
+
+			const fixture = "testdata/math.md"
+			markdown, htmlname, html := loadData(t, fixture, tt.variant)
+
+			cfg := types.MarkConfig{
+				MermaidScale:  1.0,
+				D2Scale:       1.0,
+				MathScale:     2.0,
+				MathFormat:    tt.format,
+				DropFirstH1:   false,
+				StripNewlines: false,
+				Features:      []string{"mkdocsadmonitions", "mention", "math"},
+			}
+
+			actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+			test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
+		})
 	}
-
-	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
-	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
 // TestCompileMarkdownMathPreservesEscapes guards a property no golden file

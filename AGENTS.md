@@ -37,7 +37,8 @@ is dominated by them. There is currently no `-short` skip.
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |
-| `math/` | LaTeX → SVG, for the `math` feature; no browser, unlike `d2/` and `mermaid/` |
+| `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
+| `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 
@@ -100,9 +101,10 @@ Checksums live in the remote attachment's comment behind the `AttachmentChecksum
 (`mark:checksum:` followed by a space).
 Mermaid and d2 attachments set `Checksum` from the *diagram source*, not the rendered PNG
 bytes, because Chrome's output is not byte-stable across environments; `math/` does the
-same with the formula, so that a mathjax-go release changing its output by a hair does not
-re-upload every formula on every page. `ResolveAttachments` skips checksum computation when
-`Checksum` is already set — preserve that.
+same with the formula, plus the format and — for a PNG — the scale, since anything that
+changes the bytes has to change the name or the page keeps the attachment it had.
+`ResolveAttachments` skips checksum computation when `Checksum` is already set — preserve
+that.
 
 **8. `--features` replaces the defaults, it does not add to them.** Defaults are
 `mermaid,mention`. When adding a feature: register it in `markdown/markdown.go` (both

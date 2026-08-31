@@ -18,6 +18,21 @@ import (
 
 	mathjax "github.com/d2lang/mathjax-go"
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/chrome"
+)
+
+// The two shapes a formula can be published as.
+//
+// PNG is the default: it is what Confluence certainly displays, and it is what
+// the diagram renderers have always produced, so a page full of formulas
+// behaves like a page full of diagrams. Rasterising costs a browser, which is
+// no new dependency -- mermaid is on by default and needs the same one.
+//
+// SVG is the better picture where an instance displays it: vector, sharp at any
+// zoom, a few kilobytes, and rendered without a browser at all.
+const (
+	FormatSVG = "svg"
+	FormatPNG = "png"
 )
 
 // pixelsPerEx converts the ex units MathJax sizes its output in into the pixels
@@ -29,13 +44,21 @@ import (
 // small beside the text they sit in.
 const pixelsPerEx = 8.0
 
-// svgSize pulls the width and height MathJax put on the root element.
-var svgSize = regexp.MustCompile(`^<svg[^>]*?\bwidth="([0-9.]+)ex"[^>]*?\bheight="([0-9.]+)ex"`)
+// svgSize picks the width and height MathJax put on the root element out of
+// their surroundings, so that they can be read and also rewritten in place --
+// replacing the whole prefix would drop the xmlns, and a browser will not parse
+// an SVG document without one.
+var svgSize = regexp.MustCompile(`^(<svg[^>]*?\bwidth=")([0-9.]+)ex("[^>]*?\bheight=")([0-9.]+)ex(")`)
 
 // svgError finds the message MathJax draws in place of a formula it could not
 // read. It reports a mistake in the source as a rendered box rather than as an
 // error, so without this a typo publishes a picture of its own complaint.
 var svgError = regexp.MustCompile(`data-mjx-error="([^"]*)"`)
+
+// defaultScale is what a PNG formula is rasterised at when nothing says
+// otherwise. Formulas are small, and a 1:1 rasterisation of one looks ragged
+// beside the text it sits in.
+const defaultScale = 2.0
 
 // Process renders one formula and returns it as an attachment.
 //
@@ -43,7 +66,19 @@ var svgError = regexp.MustCompile(`data-mjx-error="([^"]*)"`)
 // has no equivalent of a diagram's title, and two identical formulas on a page
 // should be one attachment. display selects the same distinction TeX makes --
 // an inline formula is set compactly, a display one is given room.
-func Process(tex string, display bool) (attachment.Attachment, error) {
+func Process(tex string, display bool, format string, scale float64) (attachment.Attachment, error) {
+	switch format {
+	case "":
+		format = FormatPNG
+	case FormatSVG, FormatPNG:
+	default:
+		return attachment.Attachment{}, fmt.Errorf("unknown math format %q, expected %q or %q", format, FormatSVG, FormatPNG)
+	}
+
+	if scale <= 0 {
+		scale = defaultScale
+	}
+
 	svg, err := mathjax.RenderWithOptions(tex, displayOptions(display))
 	if err != nil {
 		return attachment.Attachment{}, fmt.Errorf("unable to render formula %q: %w", tex, err)
@@ -58,12 +93,13 @@ func Process(tex string, display bool) (attachment.Attachment, error) {
 		return attachment.Attachment{}, err
 	}
 
-	// The name has to distinguish inline from display: the same formula set
-	// both ways is two different images, and a name that ignored that would
-	// have the second one overwrite the first.
-	seed := tex
-	if display {
-		seed = "display:" + tex
+	// Everything that changes the bytes has to change the name, or a document
+	// that switches format or scale keeps the attachment it had. Display is
+	// part of it because the same formula set both ways is two images; scale is
+	// only part of it for a PNG, since an SVG is the same file at any scale.
+	seed := fmt.Sprintf("%s:%v:%s", format, display, tex)
+	if format == FormatPNG {
+		seed = fmt.Sprintf("%s:%v:%v:%s", format, display, scale, tex)
 	}
 
 	checksum, err := attachment.GetChecksum(strings.NewReader(seed))
@@ -73,10 +109,18 @@ func Process(tex string, display bool) (attachment.Attachment, error) {
 
 	name := "math-" + checksum[:12]
 
+	contents := []byte(svg)
+	if format == FormatPNG {
+		contents, err = rasterise(svg, width, height, scale)
+		if err != nil {
+			return attachment.Attachment{}, fmt.Errorf("unable to rasterise formula %q: %w", tex, err)
+		}
+	}
+
 	return attachment.Attachment{
 		Name:      name,
-		Filename:  name + ".svg",
-		FileBytes: []byte(svg),
+		Filename:  name + "." + format,
+		FileBytes: contents,
 		// Addressed by the formula rather than by the rendered bytes, so that a
 		// later mathjax-go release changing its output by a hair does not
 		// re-upload every formula on every page.
@@ -98,7 +142,7 @@ func displayOptions(display bool) mathjax.Options {
 // sizeInPixels converts the root element's ex dimensions into pixels.
 func sizeInPixels(svg string) (width, height string, err error) {
 	groups := svgSize.FindStringSubmatch(svg)
-	if len(groups) != 3 {
+	if len(groups) != 6 {
 		return "", "", fmt.Errorf("rendered formula has no ex dimensions to convert: %.80s", svg)
 	}
 
@@ -113,15 +157,38 @@ func sizeInPixels(svg string) (width, height string, err error) {
 		return strconv.Itoa(int(value*pixelsPerEx + 0.999)), nil
 	}
 
-	width, err = toPixels(groups[1])
+	width, err = toPixels(groups[2])
 	if err != nil {
 		return "", "", err
 	}
 
-	height, err = toPixels(groups[2])
+	height, err = toPixels(groups[4])
 	if err != nil {
 		return "", "", err
 	}
 
 	return width, height, nil
+}
+
+// rasterise turns the rendered SVG into a PNG.
+//
+// The width and height are written back onto the root element first, in pixels.
+// MathJax sizes its output in ex, which is a font-relative unit, and a browser
+// asked to lay out a bare SVG document has no text around it to resolve that
+// against; the picture would come out at whatever the default font size makes
+// of it rather than at the size the ac:image claims.
+//
+// scale multiplies the pixels, not the size: the image still occupies the space
+// the formula asked for, with more pixels in it for a display that can use
+// them. A formula is small enough that a 1:1 rasterisation looks ragged beside
+// the text it sits in.
+func rasterise(svg, width, height string, scale float64) ([]byte, error) {
+	sized := svgSize.ReplaceAllString(svg, "${1}"+width+"${3}"+height+"${5}")
+
+	png, _, _, err := chrome.PNGFromSVG([]byte(sized), `document.querySelector("svg")`, scale)
+	if err != nil {
+		return nil, err
+	}
+
+	return png, nil
 }

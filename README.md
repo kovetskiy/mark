@@ -1233,9 +1233,10 @@ This is the hidden content.
 
 Optionally you can enable LaTeX / Math formula rendering via `--features="math"`.
 
-Each formula is rendered to an SVG, uploaded as a page attachment, and shown
-with `<ac:image>`. The LaTeX stays with it as the image's alt text, so the
-formula is still findable by search and readable to a screen reader.
+Each formula is rendered as an image, uploaded as a page attachment, and shown
+with `<ac:image>` — the same thing mark already does with mermaid and d2
+diagrams. The LaTeX stays with it as the image's alt text, so the formula is
+still findable by search and readable to a screen reader.
 
 **Inline math**, with either pair of delimiters:
 
@@ -1264,9 +1265,25 @@ A formula MathJax cannot read fails the file, quoting both the formula and the
 complaint — `unable to render formula "\frac{a": Missing close brace` — rather
 than publishing a picture of the error message.
 
-Rendering is done by [mathjax-go](https://github.com/d2lang/mathjax-go): no
-browser, no CGO, and no Confluence plugin on the instance. The same formula
-written twice on a page is uploaded once.
+Typesetting is done by [mathjax-go](https://github.com/d2lang/mathjax-go), with
+no CGO and no Confluence plugin on the instance. The same formula written twice
+on a page is uploaded once.
+
+#### Choosing the image format
+
+| `--math-format` | What you get | What it costs |
+| --- | --- | --- |
+| `png` (default) | What Confluence certainly displays, and what the diagram renderers have always produced | Rasterised through the same headless Chrome mermaid uses |
+| `svg` | Vector: sharp at any zoom, a few kilobytes | Nothing — no browser at all — where the instance displays an SVG attachment |
+
+```bash
+mark --features=math --math-format=svg -f document.md
+```
+
+`--math-scale` (2 by default) applies to PNG only, and multiplies the pixels
+rather than the size: the image still occupies the space the formula asked for,
+with more pixels in it for a display that can use them, because a formula
+rasterised 1:1 looks ragged beside the text it sits in.
 
 #### Why an image
 
@@ -1505,6 +1522,8 @@ GLOBAL OPTIONS:
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
+   --math-format string                     image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
+   --math-scale float                       defines the scaling factor for PNG formula renderings; ignored when math-format is svg. (default: 2) [$MARK_MATH_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, date, details, emoji, footnotes, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
