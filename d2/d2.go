@@ -3,16 +3,10 @@ package d2
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
-	"fmt"
 	"math"
 	"strconv"
-	"sync"
 	"time"
-
-	"github.com/chromedp/cdproto/dom"
-	"github.com/chromedp/chromedp"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/chrome"
@@ -62,7 +56,9 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 	}
 
 	log.Debug().Msgf("Rendering: %q", title)
-	pngBytes, boxModel, err := convertSVGtoPNG(ctx, out, scale)
+	// d2 nests the diagram in an outer svg, so the inner one is what to
+	// screenshot: the outer one carries the padding.
+	pngBytes, width, height, err := chrome.PNGFromSVG(out, `document.querySelector("svg > svg")`, scale)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -93,78 +89,16 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 		FileBytes: pngBytes,
 		Checksum:  checkSum,
 		Replace:   title,
-		Width:     strconv.FormatInt(boxModel.Width, 10),
-		Height:    strconv.FormatInt(boxModel.Height, 10),
+		Width:     strconv.FormatInt(width, 10),
+		Height:    strconv.FormatInt(height, 10),
 	}, nil
 }
 
-var (
-	chromeCtx       context.Context
-	chromeCtxCancel context.CancelFunc
-	chromeMutex     sync.Mutex
-)
-
-func getChromeCtx(ctx context.Context) (context.Context, error) {
-	chromeMutex.Lock()
-	defer chromeMutex.Unlock()
-
-	if chromeCtx != nil {
-		return chromeCtx, nil
-	}
-
-	opts := append(chromedp.DefaultExecAllocatorOptions[:], chrome.AllocatorOptions()...)
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	cCtx, cCancel := chromedp.NewContext(allocCtx)
-
-	err := chromedp.Run(cCtx)
-	if err != nil {
-		cCancel()
-		allocCancel()
-		return nil, err
-	}
-
-	chromeCtx = cCtx
-	chromeCtxCancel = func() {
-		cCancel()
-		allocCancel()
-	}
-	return chromeCtx, nil
-}
-
-func convertSVGtoPNG(ctx context.Context, svg []byte, scale float64) (png []byte, m *dom.BoxModel, err error) {
-	var (
-		result []byte
-		model  *dom.BoxModel
-	)
-
-	cCtx, err := getChromeCtx(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	runCtx, runCancel := context.WithTimeout(cCtx, renderTimeout)
-	defer runCancel()
-
-	err = chromedp.Run(runCtx,
-		chromedp.Navigate(fmt.Sprintf("data:image/svg+xml;base64,%s", base64.StdEncoding.EncodeToString(svg))),
-		chromedp.ScreenshotScale(`document.querySelector("svg > svg")`, scale, &result, chromedp.ByJSPath),
-		chromedp.Dimensions(`document.querySelector("svg > svg")`, &model, chromedp.ByJSPath),
-	)
-	if err != nil {
-		Cleanup()
-		return nil, nil, err
-	}
-	return result, model, err
-}
-
+// Cleanup shuts down the browser this package renders through.
+//
+// It is kept here as well as in chrome/ because the tests in this package and
+// in markdown/ call it by name, and because a caller that only knows it renders
+// diagrams should not have to know which package owns the browser.
 func Cleanup() {
-	chromeMutex.Lock()
-	defer chromeMutex.Unlock()
-
-	if chromeCtxCancel != nil {
-		chromeCtxCancel()
-		chromeCtx = nil
-		chromeCtxCancel = nil
-	}
+	chrome.Cleanup()
 }

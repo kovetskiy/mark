@@ -130,6 +130,8 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		StripLinebreaks: cmd.Bool("strip-linebreaks"),
 		MermaidScale:    cmd.Float("mermaid-scale"),
 		D2Scale:         cmd.Float("d2-scale"),
+		MathFormat:      cmd.String("math-format"),
+		MathScale:       cmd.Float("math-scale"),
 		Features:        cmd.StringSlice("features"),
 		ImageAlign:      cmd.String("image-align"),
 		IncludePath:     cmd.String("include-path"),
