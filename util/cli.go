@@ -109,6 +109,8 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		TitleFromH1:              cmd.Bool("title-from-h1"),
 		TitleFromFilename:        cmd.Bool("title-from-filename"),
 		TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
+		ParentsFromPath:          cmd.Bool("parents-from-path"),
+		ParentsFromPathRoot:      cmd.String("parents-from-path-root"),
 		ContentAppearance:        cmd.String("content-appearance"),
 
 		MinorEdit:          cmd.Bool("minor-edit"),

@@ -77,6 +77,18 @@ var Flags = []cli.Flag{
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_FILENAME"), altsrctoml.TOML("title-from-filename", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
+		Name:    "parents-from-path",
+		Value:   false,
+		Usage:   "place each page under a page named after every directory between the file pattern's root and the file itself. An index.md or README.md is the page for its own directory rather than a page inside it. A document that names its own Parent is left alone.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_FROM_PATH"), altsrctoml.TOML("parents-from-path", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "parents-from-path-root",
+		Value:   "",
+		Usage:   "the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_FROM_PATH_ROOT"), altsrctoml.TOML("parents-from-path-root", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.BoolFlag{
 		Name:    "title-append-generated-hash",
 		Value:   false,
 		Usage:   "appends a short hash generated from the path of the page (space, parents, and title) to the title",
