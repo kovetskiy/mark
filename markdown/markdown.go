@@ -19,6 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 	mkDocsParser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/yuin/goldmark"
+	emoji "github.com/yuin/goldmark-emoji"
 
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -70,6 +71,21 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 	if slices.Contains(c.MarkConfig.Features, "details") {
 		m.Parser().AddOptions(parser.WithASTTransformers(
 			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+		))
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "emoji") {
+		m.Parser().AddOptions(parser.WithInlineParsers(
+			// The priority goldmark-emoji's own extension gives this parser.
+			// Nothing else in the set triggers on ':'.
+			util.Prioritized(emoji.NewParser(), 999),
+		))
+
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			// Only the parser is taken from goldmark-emoji, so the renderer it
+			// registers at 200 is not in play; 100 is what the rest of this
+			// file uses.
+			util.Prioritized(crenderer.NewConfluenceEmojiRenderer(c.Stdlib), 100),
 		))
 	}
 
@@ -383,6 +399,22 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	if slices.Contains(c.MarkConfig.Features, "details") {
 		m.Parser().AddOptions(parser.WithASTTransformers(
 			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+		))
+	}
+
+	// Add emoji shortcode support if requested
+	if slices.Contains(c.MarkConfig.Features, "emoji") {
+		m.Parser().AddOptions(parser.WithInlineParsers(
+			// The priority goldmark-emoji's own extension gives this parser.
+			// Nothing else in the set triggers on ':'.
+			util.Prioritized(emoji.NewParser(), 999),
+		))
+
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			// Only the parser is taken from goldmark-emoji, so the renderer it
+			// registers at 200 is not in play; 100 is what the rest of this
+			// file uses.
+			util.Prioritized(crenderer.NewConfluenceEmojiRenderer(c.Stdlib), 100),
 		))
 	}
 

@@ -1335,6 +1335,57 @@ names.
 Leaving the feature off keeps the previous output: plain HTML footnotes, which
 still read correctly top to bottom but whose links go nowhere.
 
+### Emoji
+
+Optionally you can write emoji as `:shortcode:`, via `--features="emoji"`.
+
+```markdown
+Shipped it :tada: and the build is green :white_check_mark:
+```
+
+The shortcodes are the GitHub ones. A shortcode no emoji answers to, one inside
+a code span or code block, and a bare colon in running text (`10:30`) are all
+left exactly as written.
+
+#### What ends up in the page
+
+Confluence holds an emoji in `<ac:emoticon>`, and its two flavours read that tag
+differently. Data Center goes by `ac:name` and knows only the couple of dozen
+names listed in the [storage format
+reference](https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html);
+Cloud writes `ac:emoji-id`, `ac:emoji-shortname` and `ac:emoji-fallback`
+alongside it and takes the glyph from those. A name Data Center does not know
+renders as nothing at all.
+
+So `mark` writes whichever of the two is safe on both:
+
+* an emoji Confluence has a legacy name for -- `:smile:`, `:wink:`,
+  `:thumbsup:`, `:warning:`, `:white_check_mark:`, `:x:`, `:heart:` and the rest
+  of that short list -- becomes the macro, with the name for Data Center and the
+  `ac:emoji-*` attributes for Cloud;
+* every other emoji is written as the character itself, which both flavours
+  render as text without having to understand a macro.
+
+```html
+<!-- :white_check_mark: -->
+<ac:emoticon ac:name="tick" ac:emoji-shortname=":white_check_mark:" ac:emoji-id="2705" ac:emoji-fallback="✅"/>
+
+<!-- :tada: -->
+🎉
+```
+
+Several emoji can share one legacy name -- Data Center has one smiley where
+Unicode has four -- which is only visible on Data Center, since Cloud picks the
+exact emoji from `ac:emoji-id`.
+
+An emoji in a heading is part of that heading's anchor, and the anchor is built
+from the source text rather than the rendered emoji: `## Release :tada:` gets
+the id `Release-tada`.
+
+This feature is about emoji in the body of a document. The page's icon is set
+separately, with the `<!-- Emoji: -->` header described above, which takes the
+character rather than a shortcode.
+
 **Note**: `mark` will read configuration from your environment variables or the configuration file.
 
 ## Installation
@@ -1427,7 +1478,7 @@ GLOBAL OPTIONS:
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, date, details, footnotes, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, date, details, emoji, footnotes, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help
