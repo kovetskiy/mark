@@ -123,10 +123,18 @@ compared against `testdata/<name>.html`; variant suffixes cover flag combination
 Adding a `.md` fixture without its matching `.html` panics the test — the loader reads
 both unconditionally. There is no `-update` flag; golden files are written by hand.
 
-Coverage is uneven and worth knowing before you trust a green run: `page/` ~10%,
-`renderer/` ~14%, `confluence/` ~19%, and `stdlib/`, `vfs/`, `cmd/mark/` at 0%. There is
-no fake Confluence server, so nothing that touches the REST API is covered. If you change
-`page/ancestry.go` or `confluence/api.go`, the test suite will very likely still pass.
+Coverage is uneven, and where it is thin matters more than the number. Measured with
+`go test -cover ./...`: `markdown/` 82%, `renderer/` 74%, `confluence/` 61%, `stdlib/` 68%,
+`util/` 52%, `page/` 31%, `attachment/` 32%, and the root package 84%. `cmd/mark/`, `vfs/` and
+`chrome/` are at 0% on purpose: a thin `main`, a 19-line `os.Open` wrapper, and a package
+that needs a browser and is exercised through `d2/` and `mermaid/`.
+
+Two things to know before reading those numbers. `make test` passes no `-coverpkg`, so a
+package's figure counts only what its *own* tests exercise — renderer code driven by the
+`markdown/` golden tests does not show up in `renderer/`'s. And `confluence/confluencetest`
+is an in-memory fake of the REST API in the spirit of `httptest`: point `confluence.NewAPI`
+at its URL and drive real calls over real HTTP, rather than assuming anything that touches
+the API is untestable.
 
 ## Conventions
 
