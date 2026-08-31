@@ -640,16 +640,30 @@ func (s *Server) SpaceProperty(ownerID, key string) *SpaceProperty {
 	return nil
 }
 
+// ContentProperty returns the property stored against a page under key, or
+// nil. Content and space properties share one store in the fake; they are
+// told apart by the owner id.
+func (s *Server) ContentProperty(pageID, key string) *SpaceProperty {
+	return s.SpaceProperty(pageID, key)
+}
+
 // SetSpaceProperty seeds a property without going through HTTP.
 func (s *Server) SetSpaceProperty(ownerID, key string, value []byte) *SpaceProperty {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	p := s.putContentProperty(ownerID, key, value)
+	cp := *p
+	return &cp
+}
+
+// putContentProperty upserts a property, bumping its version the way
+// Confluence does. The caller must hold the lock.
+func (s *Server) putContentProperty(ownerID, key string, value []byte) *SpaceProperty {
 	for _, p := range s.properties {
 		if p.OwnerID == ownerID && p.Key == key {
 			p.Value = append(json.RawMessage(nil), value...)
 			p.Version++
-			cp := *p
-			return &cp
+			return p
 		}
 	}
 	p := &SpaceProperty{
@@ -660,8 +674,7 @@ func (s *Server) SetSpaceProperty(ownerID, key string, value []byte) *SpacePrope
 		Version: 1,
 	}
 	s.properties = append(s.properties, p)
-	cp := *p
-	return &cp
+	return p
 }
 
 // contentProperties serves the v1 content property API, which differs from the
@@ -1022,6 +1035,11 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 					Value string `json:"value"`
 				} `json:"storage"`
 			} `json:"body"`
+			Metadata struct {
+				Properties map[string]struct {
+					Value json.RawMessage `json:"value"`
+				} `json:"properties"`
+			} `json:"metadata"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "bad payload", http.StatusBadRequest)
@@ -1040,6 +1058,12 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		p.Body = payload.Body.Storage.Value
 		if payload.Title != "" {
 			p.Title = payload.Title
+		}
+		// Content properties ride along on the update payload rather than
+		// going through the property endpoints, which is how mark writes the
+		// page width and the emoji.
+		for key, prop := range payload.Metadata.Properties {
+			s.putContentProperty(id, key, prop.Value)
 		}
 		writeJSON(w, http.StatusOK, s.pageJSON(p))
 	default:

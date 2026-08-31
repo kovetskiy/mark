@@ -865,15 +865,27 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		}
 	}
 
-	properties := map[string]any{
+	properties := map[string]any{}
+
+	// A page edited by id with no metadata in the file has no appearance to
+	// carry, and an empty value here would reset the width of a page nobody
+	// asked to restyle.
+	if appearance != "" {
 		// Fix to set full-width as has changed on Confluence APIs again.
 		// https://jira.atlassian.com/browse/CONFCLOUD-65447
 		//
-		"content-appearance-published": map[string]any{
+		properties["content-appearance-published"] = map[string]any{
 			"value": appearance,
-		},
-		// content-appearance-draft should not be set as this is impacted by
-		// the user editor default configurations - which caused the sporadic published widths.
+		}
+		// The draft key was previously left alone, because the user's editor
+		// defaults drove it and writing it produced sporadic published widths
+		// (the same CONFCLOUD-65447 above). Writing published on its own,
+		// though, leaves the two keys disagreeing, and the editor believes the
+		// draft: the width reverts as soon as anyone opens the page. The
+		// Confluence editor itself writes both keys with the same value.
+		properties["content-appearance-draft"] = map[string]any{
+			"value": appearance,
+		}
 	}
 
 	if emojiString != "" {
