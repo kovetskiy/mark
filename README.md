@@ -1233,29 +1233,56 @@ This is the hidden content.
 
 Optionally you can enable LaTeX / Math formula rendering via `--features="math"`.
 
-When enabled, mathematical formulas are rendered into HTML using server-side KaTeX rendering powered by [goldmark-katex](https://github.com/FurqanSoftware/goldmark-katex)—requiring no external browser process, no CGO, and no third-party Confluence plugins.
+Each formula is rendered to an SVG, uploaded as a page attachment, and shown
+with `<ac:image>`. The LaTeX stays with it as the image's alt text, so the
+formula is still findable by search and readable to a screen reader.
 
-**Inline Math:**
+**Inline math**, with either pair of delimiters:
 
 ```markdown
-Euler's identity is $e^{i\pi} + 1 = 0$ or \(e^{i\pi} + 1 = 0\).
+Euler's identity is $e^{i\pi} + 1 = 0$, or \(e^{i\pi} + 1 = 0\).
 ```
 
-**Display / Block Math:**
+**Display math**, likewise:
 
 ```markdown
 $$
 \int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
 $$
-```
 
-Or using `\[ ... \]`:
-
-```markdown
 \[
 f(x) = \int_{-\infty}^\infty \hat{f}(\xi)\,e^{2\pi i \xi x}\,d\xi
 \]
 ```
+
+A dollar sign in ordinary prose is left alone: a formula may not begin or end
+with a space, so `it costs $5 and $7 today` is a sentence about money rather
+than mathematics. `\$5` is always literal, and anything inside a code span or a
+code block is quoted rather than rendered.
+
+A formula MathJax cannot read fails the file, quoting both the formula and the
+complaint — `unable to render formula "\frac{a": Missing close brace` — rather
+than publishing a picture of the error message.
+
+Rendering is done by [mathjax-go](https://github.com/d2lang/mathjax-go): no
+browser, no CGO, and no Confluence plugin on the instance. The same formula
+written twice on a page is uploaded once.
+
+#### Why an image
+
+Confluence has no math of its own, and the usual answer for a Markdown tool —
+publishing KaTeX or MathJax HTML — does not survive the trip. That markup is a
+pile of positioned `<span>`s whose layout lives entirely in `katex.css`, which a
+Confluence page never loads, and it ships a MathML twin and the LaTeX source
+alongside. Stripped of the styling Confluence discards, a reader saw the formula
+spelled out three times:
+
+```text
+Inline math: E=mc2E = mc^2E=mc2 and a Greek pair α+β\alpha + \betaα+β.
+```
+
+An SVG carries its own geometry and its glyphs as outlines, so it needs no
+stylesheet, no fonts, and nothing installed on the instance.
 
 ### Inline Link Cards
 

@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -321,15 +322,15 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
-// TestCompileMarkdownMath covers the math feature, which renders LaTeX to
-// KaTeX markup at compile time. testdata/math.md is also picked up by the
+// TestCompileMarkdownMath covers the math feature, which renders LaTeX to an
+// SVG published as an attachment. testdata/math.md is also picked up by the
 // feature-off tests above, which assert the formulas pass through as plain
-// text; this one pins what KaTeX actually emits.
+// text; this one pins what actually reaches the page.
 //
-// The fixture matters because the emitted markup is tied to the bundled KaTeX
-// version: the v0.18 upgrade renamed presentational classes (base ->
-// katex-base, strut -> katex-strut, sizing -> katex-sizing) and, with no
-// fixture, the suite stayed green through the change.
+// The fixture matters because the rendering is tied to the bundled mathjax-go:
+// the pixel dimensions on every ac:image, and the file names, are derived from
+// its output, so a version that changes either shows up here rather than as a
+// silently resized formula.
 func TestCompileMarkdownMath(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "..")
@@ -346,7 +347,7 @@ func TestCompileMarkdownMath(t *testing.T) {
 	}
 
 	const fixture = "testdata/math.md"
-	markdown, htmlname, html := loadData(t, fixture, "-katex")
+	markdown, htmlname, html := loadData(t, fixture, "-svg")
 
 	cfg := types.MarkConfig{
 		MermaidScale:  1.0,
@@ -360,24 +361,40 @@ func TestCompileMarkdownMath(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
-// TestCompileMarkdownMathPreservesEscapes guards a property the golden file
-// alone would not make obvious: the math parser has to claim the formula
-// before Goldmark processes backslash escapes. Without that ordering "\\"
-// collapses to "\" and a pmatrix loses its row separator, which is exactly
-// what testdata/math.html records happening when the feature is off.
+// TestCompileMarkdownMathPreservesEscapes guards a property no golden file
+// would make obvious: the math parser has to claim the formula before goldmark
+// processes backslash escapes. Without that ordering "\\" collapses to "\" and a
+// pmatrix loses its row separator -- which is exactly what testdata/math.html
+// records happening when the feature is off.
+//
+// The check is the rendered height. A two-row matrix is taller than a one-row
+// matrix; if the separator had been eaten, the two would render alike.
 func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
-	lib, err := stdlib.New(nil)
-	assert.NoError(t, err)
+	render := func(t *testing.T, markdown string) (string, int) {
+		t.Helper()
 
-	markdown := []byte(`$$\begin{pmatrix} a & b \\ c & d \end{pmatrix}$$`)
+		lib, err := stdlib.New(nil)
+		assert.NoError(t, err)
 
-	cfg := types.MarkConfig{Features: []string{"math"}}
-	actual, _, err := mark.CompileMarkdown(markdown, lib, "testdata/math.md", cfg)
-	assert.NoError(t, err)
+		actual, attachments, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/math.md",
+			types.MarkConfig{Features: []string{"math"}})
+		assert.NoError(t, err)
 
-	assert.Contains(t, actual, `\\`, "the row separator must reach KaTeX unescaped")
-	assert.Equal(t, 2, strings.Count(actual, "<mtr>"), "the matrix should render two rows")
-	assert.NotContains(t, actual, "katex-error", "the formula should parse cleanly")
+		if !assert.Len(t, attachments, 1) {
+			return actual, 0
+		}
+
+		pixels, err := strconv.Atoi(attachments[0].Height)
+		assert.NoError(t, err)
+
+		return actual, pixels
+	}
+
+	_, oneRow := render(t, `$$\begin{pmatrix} a & b \end{pmatrix}$$`)
+	body, twoRows := render(t, `$$\begin{pmatrix} a & b \\ c & d \end{pmatrix}$$`)
+
+	assert.Contains(t, body, `\\`, "the row separator must reach MathJax unescaped")
+	assert.Greater(t, twoRows, oneRow, "the second row has to be rendered, not swallowed with its separator")
 }
 
 func TestContinueOnError(t *testing.T) {
