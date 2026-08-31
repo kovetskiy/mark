@@ -286,6 +286,41 @@ func TestCompileMarkdownFootnotes(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
+// TestCompileMarkdownEmoji covers the emoji feature. testdata/emoji.md is also
+// picked up by the feature-off tests above, which pin the shortcodes passing
+// through as text, so the pair of fixtures records exactly what the feature
+// changes -- including which emoji become an ac:emoticon and which are written
+// as the character itself.
+func TestCompileMarkdownEmoji(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	const fixture = "testdata/emoji.md"
+	markdown, htmlname, html := loadData(t, fixture, "-confluence")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"mkdocsadmonitions", "mention", "emoji"},
+	}
+
+	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
+}
+
 // TestCompileMarkdownMath covers the math feature, which renders LaTeX to
 // KaTeX markup at compile time. testdata/math.md is also picked up by the
 // feature-off tests above, which assert the formulas pass through as plain

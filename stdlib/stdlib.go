@@ -213,8 +213,17 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		/* https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html */
 
+		// The optional attributes are what Confluence Cloud writes beside the
+		// name, and what it reads the glyph from; Data Center understands none
+		// of them and goes by ac:name alone. A caller that has only a name --
+		// every use of this template that predates the emoji feature -- still
+		// gets exactly the tag it got before.
 		`ac:emoticon`: text(
-			`<ac:emoticon ac:name="{{ .Name }}"/>`,
+			`<ac:emoticon ac:name="{{ .Name | xmlesc }}"`,
+			`{{ with .ShortName }} ac:emoji-shortname="{{ . | xmlesc }}"{{ end }}`,
+			`{{ with .ID }} ac:emoji-id="{{ . | xmlesc }}"{{ end }}`,
+			`{{ with .Fallback }} ac:emoji-fallback="{{ . | xmlesc }}"{{ end }}`,
+			`/>`,
 		),
 
 		`ac:image`: text(
