@@ -7,7 +7,6 @@ import (
 	"slices"
 	"text/template"
 
-	katex "github.com/FurqanSoftware/goldmark-katex"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/macro"
@@ -462,9 +461,18 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
-	// Add math / latex formula support if requested via goldmark-katex
+	// Add math / latex formula support if requested
 	if slices.Contains(c.MarkConfig.Features, "math") {
-		(&katex.Extender{}).Extend(m)
+		m.Parser().AddOptions(parser.WithInlineParsers(
+			// Ahead of goldmark's own inline parsers, so that a formula holding
+			// markup characters -- and TeX is made of them -- is taken as a
+			// formula rather than partly as emphasis or a link.
+			util.Prioritized(cparser.NewMathParser(), 99),
+		))
+
+		m.Renderer().AddOptions(renderer.WithNodeRenderers(
+			util.Prioritized(crenderer.NewConfluenceMathRenderer(c.Stdlib, c), 100),
+		))
 	}
 
 	// Add inline-link-card support if requested · renders auto-detected bare
