@@ -17,7 +17,7 @@ golangci-lint run ./...    # config in .golangci.yml; CI runs this
 markdownlint-cli2          # config in .markdownlint-cli2.jsonc; CI runs this on *.md
 ```
 
-Go 1.26. The module path is `github.com/kovetskiy/mark/v16` — the major version is part
+Go 1.27. The module path is `github.com/kovetskiy/mark/v16` — the major version is part
 of the path, so a major bump means rewriting every internal import.
 
 `d2` and `mermaid` tests launch headless Chrome and take ~4s each; a full `go test ./...`
