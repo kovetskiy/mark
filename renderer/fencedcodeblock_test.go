@@ -136,20 +136,52 @@ func TestFencedCodeBlockOptions(t *testing.T) {
 	}
 }
 
-// TestFencedCodeBlockDashLanguage records what the "-" prefix currently does,
-// which is not what the README says it does.
+// TestFencedCodeBlockDashLanguage covers the "-" the README offers as the way
+// to write a block with no language but with the other options after it
+// ("- 1 collapse midnight title ...").
 //
-// The README offers "-" as the way to write a block with no language but with
-// the other options ("- 1 collapse midnight title ..."). The regex means to
-// allow that -- its comment reads (<Lang>|-) -- but "-" is also in the language
-// character class, so the first alternative matches it and the language
-// parameter is published as a literal "-" rather than left empty.
+// The regex always meant to allow it -- its comment reads (<Lang>|-) -- but
+// widening the language class to accept the hyphens in real language names
+// (objective-c) made the bare marker match as a language of its own, and the
+// macro went out with ac:name="language" set to a literal "-".
 func TestFencedCodeBlockDashLanguage(t *testing.T) {
 	actual := fencedCode(t, "- 1 collapse title Some long long code")
 	assertWellFormed(t, actual)
 
-	assert.Contains(t, actual, `<ac:parameter ac:name="language">-</ac:parameter>`)
+	assert.Contains(t, actual, `<ac:parameter ac:name="language"></ac:parameter>`,
+		"the marker means no language, not a language called -")
 	assert.Contains(t, actual, `<ac:parameter ac:name="title">Some long long code</ac:parameter>`)
+	assert.Contains(t, actual, `<ac:parameter ac:name="collapse">true</ac:parameter>`,
+		"and the options after it are still read")
+}
+
+// TestFencedCodeBlockDashAlone is the marker with nothing after it.
+func TestFencedCodeBlockDashAlone(t *testing.T) {
+	actual := fencedCode(t, "-")
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="language"></ac:parameter>`)
+}
+
+// TestFencedCodeBlockLanguageWithAHyphenSurvives is the reason the class was
+// widened in the first place, and has to keep working.
+func TestFencedCodeBlockLanguageWithAHyphenSurvives(t *testing.T) {
+	actual := fencedCode(t, "objective-c")
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="language">objective-c</ac:parameter>`)
+}
+
+// TestFencedCodeBlockBraceInATitleIsKept: the attribute-block pattern is for
+// the "{ .js hl_lines=... }" list Pandoc and MkDocs write at one end of the
+// info string. Matching it anywhere took a brace out of a title written in the
+// documented space form.
+func TestFencedCodeBlockBraceInATitleIsKept(t *testing.T) {
+	actual := fencedCode(t, "js title Some {Thing} Here")
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">Some {Thing} Here</ac:parameter>`)
+	assert.Contains(t, actual, `<ac:parameter ac:name="language">js</ac:parameter>`)
 }
 
 // TestFencedCodeBlockEscapesTheCDATATerminator covers a code sample carrying
