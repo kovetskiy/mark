@@ -74,6 +74,20 @@ appended to the values from front matter.
 <page contents>
 ```
 
+Headers are read from the run of comments the document opens with, and only
+from there. Blank lines between them are fine, so headers may be grouped —
+identity, then labels, then properties — but anything else ends the run, and a
+header written below the page's own text is published as text rather than
+applied. Mark warns when it finds one there.
+
+A header Mark does not recognise is an error rather than a warning: the line is
+taken out of the page either way, so a misspelled `Titel` would otherwise
+publish the document without its title and still exit zero.
+
+An `Include` directive may be written among the headers or anywhere below them.
+It is left in the page for the include expander to find, so it is the one
+comment in the header block that survives into the body.
+
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
 
