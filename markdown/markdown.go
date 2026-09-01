@@ -143,6 +143,14 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
+	// Close the void elements and repair the comments an author may have
+	// written by hand, which Markdown allows and storage format does not.
+	// After everything at 110 that owns raw HTML of its own, so that this only
+	// sees what those transformers left behind.
+	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 120),
+	))
+
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
 		// the <ac:*/> tags.
@@ -489,6 +497,17 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 			util.Prioritized(ctransformer.NewAutoLinkTransformer(), 110),
 		))
 	}
+
+	// Close the void elements and repair the comments an author may have
+	// written by hand, which Markdown allows and storage format does not.
+	// After everything at 110 that owns raw HTML of its own -- the <img> and
+	// <details> transformers -- so that this only sees what they left behind,
+	// and never turns an <img> into storage format the <img> transformer would
+	// then fail to recognise.
+	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 120),
+	))
+
 	// Add confluence tag parser for <ac:*/> tags
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
