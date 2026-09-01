@@ -42,6 +42,24 @@ func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attach
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .
 func (r *ConfluenceMathRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(cparser.KindMath, r.renderMath)
+	reg.Register(cparser.KindMathBlock, r.renderMathBlock)
+}
+
+// renderMathBlock publishes a display formula written on lines of its own. The
+// picture is the same one an inline display formula gets; only where it sits on
+// the page differs, and that is the block structure around it rather than
+// anything here.
+func (r *ConfluenceMathRenderer) renderMathBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+
+	n, ok := node.(*cparser.MathBlock)
+	if !ok {
+		return ast.WalkContinue, nil
+	}
+
+	return r.writeFormula(writer, n.Equation, true)
 }
 
 func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -51,11 +69,16 @@ func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte
 
 	n := node.(*cparser.Math)
 
+	return r.writeFormula(writer, n.Equation, n.Display)
+}
+
+// writeFormula renders one formula and writes the ac:image that shows it.
+func (r *ConfluenceMathRenderer) writeFormula(writer util.BufWriter, equation []byte, display bool) (ast.WalkStatus, error) {
 	// The error math.Process returns names the formula it could not render,
-	// which locates it better than a line number would: an inline formula has
-	// no position of its own in the AST, and a document usually has few enough
+	// which locates it better than a line number would: a formula has no
+	// position of its own in the AST, and a document usually has few enough
 	// formulas that the source is the clearer identifier.
-	rendered, err := cmath.Process(string(n.Equation), n.Display, r.MarkConfig.MathFormat, r.MarkConfig.MathScale)
+	rendered, err := cmath.Process(string(equation), display, r.MarkConfig.MathFormat, r.MarkConfig.MathScale)
 	if err != nil {
 		return ast.WalkStop, err
 	}
@@ -87,7 +110,7 @@ func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte
 			rendered.Width,
 			rendered.Height,
 			"",
-			string(n.Equation),
+			string(equation),
 			rendered.Filename,
 			"",
 		},

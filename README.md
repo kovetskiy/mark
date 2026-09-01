@@ -1269,10 +1269,31 @@ f(x) = \int_{-\infty}^\infty \hat{f}(\xi)\,e^{2\pi i \xi x}\,d\xi
 \]
 ```
 
+A `$$` alone on a line opens a formula that runs to the next `$$` alone on a
+line, so a formula may contain blank lines — which is how `aligned` and
+`gather` environments are written:
+
+```markdown
+$$
+\begin{aligned}
+  a &= b + c \\
+
+  d &= e + f
+\end{aligned}
+$$
+```
+
+Written that way the formula is a block of its own, so it may sit inside a
+blockquote or a list item without the `>` or the indentation reaching LaTeX. A
+formula that opens and closes on one line — `$$E = mc^2$$` — is read as it
+always was, wherever it is written.
+
 A dollar sign in ordinary prose is left alone: a formula may not begin or end
 with a space, so `it costs $5 and $7 today` is a sentence about money rather
 than mathematics. `\$5` is always literal, and anything inside a code span or a
-code block is quoted rather than rendered.
+code block is quoted rather than rendered — including a `$$` fence, so a
+document explaining this syntax publishes the example rather than a picture of
+it.
 
 A formula MathJax cannot read fails the file, quoting both the formula and the
 complaint — `unable to render formula "\frac{a": Missing close brace` — rather
