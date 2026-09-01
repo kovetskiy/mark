@@ -155,9 +155,6 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 
 	// We were unable to resolve it locally, treat as URL
 	if err != nil {
-		escapedURL := string(n.Destination)
-		escapedURL = strings.ReplaceAll(escapedURL, "&", "&amp;")
-
 		effectiveAlign := calculateAlign(align, explicitWidth)
 		effectiveLayout := calculateLayout(effectiveAlign, explicitWidth)
 		displayWidth := calculateDisplayWidth(explicitWidth, effectiveLayout)
@@ -186,7 +183,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				string(n.Title),
 				string(nodeToHTMLText(n, source)),
 				"",
-				escapedURL,
+				string(n.Destination),
 			},
 		)
 	} else {
@@ -245,7 +242,10 @@ func nodeToHTMLText(n ast.Node, source []byte) []byte {
 		if s, ok := c.(*ast.String); ok && s.IsCode() {
 			buf.Write(s.Value)
 		} else if t, ok := c.(*ast.Text); ok {
-			buf.Write(util.EscapeHTML(t.Value(source)))
+			// Not escaped here: every consumer interpolates the result into an
+			// attribute through a template that escapes, and escaping twice
+			// puts a literal &amp;amp; on the page.
+			buf.Write(t.Value(source))
 		} else {
 			buf.Write(nodeToHTMLText(c, source))
 		}
