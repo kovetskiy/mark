@@ -59,3 +59,35 @@ func compileParagraphDoc(t *testing.T, src string, features ...string) string {
 
 	return out
 }
+
+// TestParagraphWithTwoElementsOfTheSameName: the wrapper was dropped whenever
+// the paragraph's first and last fragments were tags of the same name, which is
+// true of prose bracketed by two separate elements. The text between them ended
+// up at bare body level.
+func TestParagraphWithTwoElementsOfTheSameName(t *testing.T) {
+	out := compileParagraphDoc(t, "<em>Hello</em> world <em>again</em>\n")
+
+	assert.Contains(t, out, "<p><em>Hello</em> world <em>again</em></p>",
+		"two elements of the same name are not one element around the prose")
+}
+
+// TestParagraphWithACompleteConfluenceElement: an ac: element that opens and
+// closes inside the paragraph is complete, so whatever follows it is prose and
+// belongs in the wrapper. The opening tag was judged on its own, and an
+// <ac:link> is not self-closing, so the paragraph was unwrapped and the trailing
+// prose left at body level.
+func TestParagraphWithACompleteConfluenceElement(t *testing.T) {
+	out := compileParagraphDoc(t, "<ac:link>foo</ac:link> and more prose.\n")
+
+	assert.Contains(t, out, "<p><ac:link>foo</ac:link> and more prose.</p>")
+}
+
+// TestParagraphThatOnlyOpensAConfluenceElement is the case both of the above
+// have to leave alone: a half of an element spread over several blocks, where a
+// <p> would interleave with the element being built.
+func TestParagraphThatOnlyOpensAConfluenceElement(t *testing.T) {
+	out := compileParagraphDoc(t, "<ac:layout-cell>\n\nInside.\n\n</ac:layout-cell>\n")
+
+	assert.NotContains(t, out, "<p><ac:layout-cell>")
+	assert.Contains(t, out, "<p>Inside.</p>")
+}
