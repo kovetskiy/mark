@@ -814,3 +814,31 @@ func TestKeysWrittenBeforeNormalisationAreMigrated(t *testing.T) {
 	assert.Equal(t, map[string]string{"docs/a.md": "1234"}, manifestPages(t, server, id),
 		"the old key should be gone, not sitting beside the new one")
 }
+
+// TestUnseenPropertyDoesNotAbandonTheRestOfTheSave: a 409 on a create raises
+// ErrPropertyUnseen, which was deliberately not an ErrPropertyConflict -- so no
+// caller recognised it, Save returned on the first one, and the run failed.
+//
+// Save writes the folder mapping, then the parents, then seventeen shards, so a
+// collision on the first of those abandoned everything after it. Every one of
+// those describes pages the failed write says nothing about.
+func TestUnseenPropertyDoesNotAbandonTheRestOfTheSave(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	id := spaceID(t, server, "DOCS")
+
+	// Recording loads the space, so the listing this run works from happens
+	// here -- and finds nothing.
+	require.NoError(t, store.RecordFolder("DOCS", "anchor\x00Guides", "folder-1"))
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "A", ""))
+
+	// Only then does the folder mapping appear, so the create below collides
+	// with a key this run's listing never showed.
+	server.SetSpaceProperty(id, manifest.FolderPropertyKey, []byte(`{"version":1,"folders":{}}`))
+
+	require.NoError(t, store.Save(),
+		"one unseen property must not fail the whole save")
+
+	assert.Equal(t, map[string]string{"a.md": "1"}, manifestPages(t, server, id),
+		"the page shards are written even though the folder mapping collided")
+}
