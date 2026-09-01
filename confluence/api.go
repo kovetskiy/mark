@@ -1868,9 +1868,47 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 	switch request.Raw.StatusCode {
 	case http.StatusOK, http.StatusNoContent:
 		return nil
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		// content/{id}/move is a Cloud endpoint, reached whenever a page's
+		// ancestry stops matching its headers or whenever pages are ordered.
+		// Folder creation is gated on IsCloud() and RestrictPageUpdates names
+		// the old-Server case in so many words; this path did neither, so a
+		// Server or Data Center user reorganising a docs tree got a bare 404
+		// with nothing in it to act on.
+		//
+		// Whether DC lacks the endpoint outright is unverified from here, so
+		// the status stays in the message: a 404 that really is a missing page
+		// arrives looking exactly the same.
+		if !api.IsCloud() {
+			return fmt.Errorf(
+				"unable to move %s (%s %s): this Confluence is not Cloud, and the "+
+					"content move endpoint mark uses to reparent and reorder pages is "+
+					"Cloud-only (status: %d); move the page in Confluence by hand, or "+
+					"leave its ancestry as the instance already has it",
+				api.describeContent(contentID), position, targetID, request.Raw.StatusCode,
+			)
+		}
+		return newErrorStatusNotOK(request)
 	default:
 		return newErrorStatusNotOK(request)
 	}
+}
+
+// describeContent names a page for an error message, falling back to its id.
+//
+// The cache is consulted rather than the API: this is only ever reached after
+// something has already failed, and a second request made to phrase a message
+// more nicely is a second thing that can go wrong.
+func (api *API) describeContent(contentID string) string {
+	api.lazyInit()
+	api.pageCacheMutex.RLock()
+	defer api.pageCacheMutex.RUnlock()
+
+	if page, ok := api.pageCacheByID[contentID]; ok && page != nil && page.Title != "" {
+		return fmt.Sprintf("page %q (%s)", page.Title, contentID)
+	}
+
+	return "content " + contentID
 }
 
 // ErrNotFound reports that Confluence answered 404. It is a sentinel so a
