@@ -902,6 +902,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	})
 
 	if shouldUpdatePage {
+		// Checked here rather than anywhere earlier because this is the body
+		// that is actually sent: after the layout wrap, and after any inline
+		// comments have been merged back into it.
+		if err := markmd.CheckWellFormed(html); err != nil {
+			return nil, nil, err
+		}
+
 		err = api.UpdatePage(
 			target,
 			html,
