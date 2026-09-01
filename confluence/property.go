@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	"github.com/kovetskiy/gopencils"
 )
@@ -26,16 +28,34 @@ type Property struct {
 	} `json:"version"`
 }
 
-// propertyPageSize is requested when listing properties. Callers here hold a
-// small fixed number of them, so one page is always enough and no pagination
-// loop is needed; asking explicitly keeps that true regardless of what the
-// server's default page size happens to be.
-const propertyPageSize = "100"
+// propertyPageSize is requested when listing properties.
+//
+// One page is never enough on its own, whatever the caller holds. Properties
+// belong to the object, not to the app that wrote them: on Server and Data
+// Center every one of mark's manifest shards is a content property of the space
+// homepage, sitting next to `editor`, `content-appearance-published`, the
+// emoji-title keys and whatever else any installed app has put there. Once the
+// total passes a page and a shard falls off the end, the caller sees no
+// property, treats every mapping it held as absent, and its next write POSTs a
+// key that already exists. Both listings therefore read to the end of the
+// collection.
+const propertyPageSize = 100
 
 // ErrPropertyConflict reports that a property write lost a race with another
 // writer. It is separate from a generic error so a caller can re-read and retry
 // on exactly this case and nothing else.
 var ErrPropertyConflict = errors.New("property version conflict")
+
+// ErrPropertyUnseen reports that a create collided with a property the listing
+// never showed.
+//
+// This is what an incomplete listing looks like from the write side: the key is
+// there, this run did not see it, and everything it held has already been
+// treated as absent. It is deliberately not an ErrPropertyConflict, which
+// callers report as "updated by a concurrent run" and carry on from -- that
+// diagnosis is wrong here, and carrying on loses the same data again on every
+// run afterwards.
+var ErrPropertyUnseen = errors.New("property already exists but was not listed")
 
 // ListSpaceProperties returns every property stored against a space.
 //
@@ -48,30 +68,76 @@ var ErrPropertyConflict = errors.New("property version conflict")
 // key. A space with none is not an error: the first run of anything that stores
 // state this way finds nothing, and that is the normal case.
 func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
-	var result struct {
-		Results []Property `json:"results"`
+	var all []Property
+	var cursor string
+
+	for {
+		var result struct {
+			Results []Property `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+
+		query := map[string]string{"limit": strconv.Itoa(propertyPageSize)}
+		if cursor != "" {
+			query["cursor"] = cursor
+		}
+
+		request, err := api.v2().
+			Res("spaces").
+			Res(spaceID).
+			Res("properties", &result).
+			Get(query)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read properties of space %s: %w", spaceID, err)
+		}
+
+		// A space with no properties at all answers 404 rather than an empty
+		// collection, so both shapes have to mean "none set". First page only:
+		// a 404 partway through is a real failure, and reading it as "none"
+		// would throw away the pages already in hand.
+		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+			return nil, nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Results...)
+
+		next := nextCursor(result.Links.Next)
+		// A server that hands back the cursor it was given would otherwise
+		// keep this loop going for as long as it keeps answering.
+		if next == "" || next == cursor {
+			break
+		}
+		cursor = next
 	}
 
-	request, err := api.v2().
-		Res("spaces").
-		Res(spaceID).
-		Res("properties", &result).
-		Get(map[string]string{"limit": propertyPageSize})
+	return all, nil
+}
+
+// nextCursor pulls the cursor out of a v2 _links.next.
+//
+// v2 paginates by an opaque cursor rather than by offset, and names the next
+// page as a whole URL -- relative on some deployments, absolute on others -- of
+// which the cursor is the only part worth reusing. Rebuilding the request
+// around it rather than following the link keeps this client's base URL and
+// headers, which is what makes the loop work through the scoped-token gateway
+// as well as against a tenant directly.
+func nextCursor(next string) string {
+	if next == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(next)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read properties of space %s: %w", spaceID, err)
+		return ""
 	}
 
-	// A space with no properties at all answers 404 rather than an empty
-	// collection, so both shapes have to mean "none set".
-	if request.Raw.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
-
-	return result.Results, nil
+	return parsed.Query().Get("cursor")
 }
 
 // SetSpaceProperty writes value to a space property, creating it if absent.
@@ -103,7 +169,7 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 		return fmt.Errorf("unable to write property %q of space %s: %w", key, spaceID, err)
 	}
 
-	return propertyWriteResult(request, key, "space "+spaceID)
+	return propertyWriteResult(request, key, "space "+spaceID, existing == nil)
 }
 
 // ListContentProperties returns every property stored against a page.
@@ -112,28 +178,51 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 // Center as well as Cloud, which is what makes it usable as the storage of last
 // resort on a non-Cloud instance.
 func (api *API) ListContentProperties(contentID string) ([]Property, error) {
-	var result struct {
-		Results []Property `json:"results"`
+	var all []Property
+	start := 0
+
+	for {
+		var result struct {
+			Results []Property `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+
+		request, err := api.v1().
+			Res("content").
+			Res(contentID).
+			Res("property", &result).
+			Get(map[string]string{
+				"limit": strconv.Itoa(propertyPageSize),
+				"start": strconv.Itoa(start),
+			})
+		if err != nil {
+			return nil, fmt.Errorf("unable to read properties of content %s: %w", contentID, err)
+		}
+
+		// Only the first page may read 404 as "none set"; one partway through
+		// is a failure, and swallowing it would discard the pages already read.
+		if request.Raw.StatusCode == http.StatusNotFound && start == 0 {
+			return nil, nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Results...)
+
+		// _links.next is the server's own word on whether more exist; the short
+		// page is the second condition because a deployment that omits the link
+		// would otherwise be asked for the same page forever.
+		if result.Links.Next == "" || len(result.Results) < propertyPageSize {
+			break
+		}
+		start += len(result.Results)
 	}
 
-	request, err := api.v1().
-		Res("content").
-		Res(contentID).
-		Res("property", &result).
-		Get(map[string]string{"limit": propertyPageSize})
-	if err != nil {
-		return nil, fmt.Errorf("unable to read properties of content %s: %w", contentID, err)
-	}
-
-	if request.Raw.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
-	}
-
-	return result.Results, nil
+	return all, nil
 }
 
 // SetContentProperty writes value to a page property, creating it if absent.
@@ -167,17 +256,30 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		return fmt.Errorf("unable to write property %q of content %s: %w", key, contentID, err)
 	}
 
-	return propertyWriteResult(request, key, "content "+contentID)
+	return propertyWriteResult(request, key, "content "+contentID, existing == nil)
 }
 
 // propertyWriteResult turns a property write response into an error, singling
 // out the version conflict so a caller can react to losing a race and nothing
 // else.
-func propertyWriteResult(request *gopencils.Resource, key, subject string) error {
+//
+// creating says whether the caller believed the key was absent, which is what
+// tells the two ways a 409 arrives apart. Losing a race to another writer is
+// ordinary and survivable. Colliding with a key that was there the whole time
+// is neither: it means the listing this run worked from was incomplete, so
+// whatever that property held has already been treated as missing.
+func propertyWriteResult(request *gopencils.Resource, key, subject string, creating bool) error {
 	switch request.Raw.StatusCode {
 	case http.StatusOK, http.StatusCreated:
 		return nil
 	case http.StatusConflict:
+		if creating {
+			return fmt.Errorf(
+				"property %q of %s already exists but was not in the listing this run read, "+
+					"so anything it held has been treated as absent: %w",
+				key, subject, ErrPropertyUnseen,
+			)
+		}
 		return fmt.Errorf(
 			"property %q of %s was modified concurrently: %w",
 			key, subject, ErrPropertyConflict,
