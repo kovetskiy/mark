@@ -1915,7 +1915,7 @@ func handleOrphans(
 				continue
 			}
 
-			handled, err = page.HandleOrphans(api, action, scopeID, candidates, config.DryRun)
+			handled, err = page.HandleOrphans(api, action, candidates, config.DryRun)
 			if err != nil {
 				return err
 			}
