@@ -121,9 +121,9 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 
 func convertSegmentsToStrings(doc ast.Node, source []byte) {
 	type replaceItem struct {
-		node  ast.Node
-		val   []byte
-		isRaw bool
+		node     ast.Node
+		val      []byte
+		verbatim bool
 	}
 	var nodesToReplace []replaceItem
 
@@ -137,13 +137,13 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 				val := t.Segment.Value(source)
 				valCopy := make([]byte, len(val))
 				copy(valCopy, val)
-				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: false})
+				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: false})
 			}
 		case *ast.HTMLBlock:
 			val := extractHTMLBlockBytes(t, source)
 			valCopy := make([]byte, len(val))
 			copy(valCopy, val)
-			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: true})
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: true})
 		case *ast.RawHTML:
 			if t.Segments.Len() == 1 {
 				seg := t.Segments.At(0)
@@ -151,7 +151,7 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 					val := seg.Value(source)
 					valCopy := make([]byte, len(val))
 					copy(valCopy, val)
-					nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: true})
+					nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: true})
 				}
 			} else {
 				buf := getBuffer()
@@ -164,7 +164,7 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 				valCopy := make([]byte, buf.Len())
 				copy(valCopy, buf.Bytes())
 				putBuffer(buf)
-				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, isRaw: true})
+				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: true})
 			}
 		}
 		return ast.WalkContinue, nil
@@ -174,8 +174,13 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 		parent := item.node.Parent()
 		if parent != nil {
 			strNode := ast.NewString(item.val)
-			if item.isRaw {
-				strNode.SetRaw(true)
+			if item.verbatim {
+				// SetCode, not SetRaw. A "raw" string still goes through
+				// Writer.RawWrite, which escapes & < > and ", so the
+				// <ac:structured-macro> a macro or include exists to carry was
+				// published as visible literal text. SetCode is goldmark's
+				// only verbatim path.
+				strNode.SetCode(true)
 			}
 			parent.InsertBefore(parent, item.node, strNode)
 			parent.RemoveChild(parent, item.node)
