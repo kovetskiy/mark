@@ -1271,7 +1271,12 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 			return nil, fmt.Errorf("failed to get parent folder info for space consistency: %w", err)
 		}
 
-		if parentFolder.SpaceID != "" {
+		// A folder that is not there answers (nil, nil), not an error, and the
+		// id reaching here came from a cache or from the manifest -- so it names
+		// a folder that existed when it was recorded and may not now. Every
+		// other caller of GetFolderByID checks this; only here did a folder
+		// deleted between runs panic instead of falling back to the space.
+		if parentFolder != nil && parentFolder.SpaceID != "" {
 			actualSpaceID = parentFolder.SpaceID
 		}
 	}
