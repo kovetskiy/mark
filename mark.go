@@ -221,6 +221,26 @@ func Run(config Config) error {
 		}
 	}
 
+	// What has been recorded has already been published, so the mapping is
+	// worth keeping however the run ends -- including when it ends early.
+	// Returning on the first failing file used to skip the save entirely,
+	// throwing away the mapping for every page that had published perfectly
+	// well, and the next run then resolved all of them by title alone: no
+	// rename detection, and no version baseline for --no-overwrite.
+	//
+	// Deferred rather than repeated before each return, because there are five
+	// of them and the next one added would miss it too. The explicit save at
+	// the end stays: it is the one whose failure the caller hears about, and
+	// once it succeeds this becomes a no-op.
+	defer func() {
+		if tracker == nil {
+			return
+		}
+		if err := tracker.Save(); err != nil {
+			log.Error().Err(err).Msg("unable to save page manifest")
+		}
+	}()
+
 	// A nil *manifest.Store put into a non-nil interface is still a non-nil
 	// interface, so page would see tracking as enabled and call through a nil
 	// receiver. Build the interface value only when there is a store behind it.
