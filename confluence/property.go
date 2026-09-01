@@ -52,7 +52,7 @@ func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
 		Results []Property `json:"results"`
 	}
 
-	request, err := api.restV2.
+	request, err := api.v2().
 		Res("spaces").
 		Res(spaceID).
 		Res("properties", &result).
@@ -87,7 +87,7 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 		err     error
 	)
 
-	space := api.restV2.Res("spaces").Res(spaceID)
+	space := api.v2().Res("spaces").Res(spaceID)
 
 	if existing == nil {
 		// The result pointer goes on the collection resource itself: routing it
@@ -116,7 +116,7 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 		Results []Property `json:"results"`
 	}
 
-	request, err := api.rest.
+	request, err := api.v1().
 		Res("content").
 		Res(contentID).
 		Res("property", &result).
@@ -149,7 +149,7 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		err     error
 	)
 
-	content := api.rest.Res("content").Res(contentID)
+	content := api.v1().Res("content").Res(contentID)
 
 	if existing == nil {
 		request, err = content.Res("property", &result).Post(payload)

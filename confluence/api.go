@@ -30,6 +30,12 @@ type API struct {
 	restV2  *gopencils.Resource
 	BaseURL string
 
+	// bearerToken is the Personal Access Token used when no username was
+	// given. It is kept here instead of being installed on rest/restV2 because
+	// those two would then hand it, and their whole header map, to every
+	// resource derived from them; see resource().
+	bearerToken string
+
 	isCloudFlag bool
 	isCloudOnce sync.Once
 
@@ -279,32 +285,63 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	// back with a nil error -- was never retried at all. retryTransport in the
 	// client handles both cases, and is the single place retries happen.
 	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 0)
-	if username == "" {
-		if rest.Headers == nil {
-			rest.Headers = http.Header{}
-		}
-		rest.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
-	}
-
 	restV2 := gopencils.Api(baseURL+"/api/v2", auth, httpClient, 0) // v2 API for folders and new features
-	if username == "" {
-		if restV2.Headers == nil {
-			restV2.Headers = http.Header{}
-		}
-		restV2.SetHeader("Authorization", fmt.Sprintf("Bearer %s", password))
-	}
 
 	if zerolog.GlobalLevel() == zerolog.TraceLevel {
 		rest.Logger = &tracer{"rest:"}
 		restV2.Logger = &tracer{"rest-v2:"}
 	}
 
-	return &API{
+	api := &API{
 		rest:          rest,
 		restV2:        restV2,
 		BaseURL:       baseURL,
 		pageCache:     make(map[string]*PageInfo),
 		pageCacheByID: make(map[string]*PageInfo),
+	}
+
+	// A Personal Access Token arrives as the password with no username. It is
+	// recorded rather than installed on rest/restV2 so that resource() can put
+	// it on a header map belonging to one request.
+	if username == "" {
+		api.bearerToken = password
+	}
+
+	return api
+}
+
+// v1 returns a request-scoped resource rooted at /rest/api, and v2 the same for
+// /api/v2. Every call in this package starts from one of them.
+//
+// The indirection is what keeps one request's headers out of the next one's.
+// gopencils hands the same http.Header map to a resource and to everything
+// Res() derives from it, and after each response it copies that response's
+// headers into the map with Add. A header map installed on the two roots
+// therefore lived for the whole run: it grew one value per header per request,
+// and since gopencils sends the *first* value ever recorded for a key, a single
+// odd Content-Type -- an SSO login page, a proxy interstitial, anything
+// answering below 400 -- pinned that Content-Type on every later PUT and POST
+// body for the rest of the run. CreateAttachment used to escape this only by
+// rebinding Headers to a fresh map by hand.
+func (api *API) v1() *gopencils.Resource {
+	return api.resource(api.rest)
+}
+
+func (api *API) v2() *gopencils.Resource {
+	return api.resource(api.restV2)
+}
+
+func (api *API) resource(root *gopencils.Resource) *gopencils.Resource {
+	headers := http.Header{}
+	if api.bearerToken != "" {
+		headers.Set("Authorization", "Bearer "+api.bearerToken)
+	}
+
+	return &gopencils.Resource{
+		Api:     root.Api,
+		Url:     root.Url,
+		Headers: headers,
+		Logger:  root.Logger,
 	}
 }
 
@@ -336,7 +373,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		"expand": "homepage",
 	}
 
-	v1Request, v1Err := api.rest.Res(
+	v1Request, v1Err := api.v1().Res(
 		"space/"+space, &SpaceInfo{},
 	).Get(payload)
 	if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK {
@@ -356,7 +393,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		} `json:"results"`
 	}{}
 
-	v2Request, v2Err := api.restV2.Res(
+	v2Request, v2Err := api.v2().Res(
 		"spaces", &v2Result,
 	).Get(map[string]string{"keys": space})
 	if v2Err == nil && v2Request.Raw.StatusCode != http.StatusOK {
@@ -421,7 +458,7 @@ func (api *API) FindPage(
 		payload["title"] = title
 	}
 
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"content/", &result,
 	).Get(payload)
 	if err != nil {
@@ -493,17 +530,15 @@ func (api *API) CreateAttachment(
 		Results []AttachmentInfo `json:"results"`
 	}
 
-	resource := api.rest.Res(
+	resource := api.v1().Res(
 		"content/"+pageID+"/child/attachment", &result,
 	)
 
 	resource.Payload = form.buffer
-	oldHeaders := resource.Headers.Clone()
-	resource.Headers = http.Header{}
-	if resource.Api.BasicAuth == nil {
-		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
-	}
-
+	// The multipart Content-Type has to be the only one on the request. It used
+	// to be set on a hand-made replacement header map because the map reached
+	// here carrying every header of every earlier response; resource() now
+	// gives each request a map of its own, so setting it is enough.
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
 
@@ -563,17 +598,15 @@ func (api *API) UpdateAttachment(
 
 	var result json.RawMessage
 
-	resource := api.rest.Res(
+	resource := api.v1().Res(
 		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
 	)
 
 	resource.Payload = form.buffer
-	oldHeaders := resource.Headers.Clone()
-	resource.Headers = http.Header{}
-	if resource.Api.BasicAuth == nil {
-		resource.Headers.Set("Authorization", oldHeaders.Get("Authorization"))
-	}
-
+	// The multipart Content-Type has to be the only one on the request. It used
+	// to be set on a hand-made replacement header map because the map reached
+	// here carrying every header of every earlier response; resource() now
+	// gives each request a map of its own, so setting it is enough.
 	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
 	resource.SetHeader("X-Atlassian-Token", "no-check")
 
@@ -673,7 +706,7 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 			"start":  fmt.Sprintf("%d", start),
 		}
 
-		request, err := api.rest.Res(
+		request, err := api.v1().Res(
 			"content/"+pageID+"/child/attachment", &result,
 		).Get(payload)
 		if err != nil {
@@ -708,7 +741,7 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 }
 
 func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, error) {
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"content/"+pageID, &PageInfo{},
 	).Get(map[string]string{"expand": expand})
 	if err != nil {
@@ -729,7 +762,7 @@ func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
 
 	for {
 		result := &InlineComments{}
-		request, err := api.rest.Res(
+		request, err := api.v1().Res(
 			"content/"+pageID+"/child/comment", result,
 		).Get(map[string]string{
 			"expand": "extensions.inlineProperties",
@@ -794,7 +827,7 @@ func (api *API) CreatePage(
 		}
 	}
 
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"content/", &PageInfo{},
 	).Post(payload)
 	if err != nil {
@@ -912,7 +945,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		},
 	}
 
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"content/"+page.ID, &map[string]any{},
 	).Put(payload)
 	if err != nil {
@@ -976,7 +1009,7 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 
 	payload := labels
 
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"content/"+page.ID+"/label", &LabelInfo{},
 	).Post(payload)
 	if err != nil {
@@ -992,7 +1025,7 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 
 func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
 
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"content/"+page.ID+"/label", &LabelInfo{},
 	).SetQuery(map[string]string{"name": label}).Delete()
 	if err != nil {
@@ -1026,7 +1059,7 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 	for {
 		var result labelPage
 
-		request, err := api.rest.Res(
+		request, err := api.v1().Res(
 			"content/"+page.ID+"/label", &result,
 		).Get(map[string]string{
 			"prefix": prefix,
@@ -1093,7 +1126,7 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 	}
 
 	// Try the new path first
-	request, err := api.rest.
+	request, err := api.v1().
 		Res("search").
 		Res("user", &response).
 		Get(map[string]string{
@@ -1105,7 +1138,7 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 
 	// Try old path
 	if request.Raw.StatusCode != http.StatusOK || len(response.Results) == 0 {
-		request, err = api.rest.
+		request, err = api.v1().
 			Res("search", &response).
 			Get(map[string]string{
 				"cql": fmt.Sprintf("user.fullname~%q", name),
@@ -1129,7 +1162,7 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 func (api *API) GetCurrentUser() (*User, error) {
 	var user User
 
-	request, err := api.rest.
+	request, err := api.v1().
 		Res("user").
 		Res("current", &user).
 		Get()
@@ -1189,7 +1222,7 @@ func (api *API) IsCloud() bool {
 
 		// 2. Slow path: probe Cloud-only v2 API endpoint
 		var result any
-		request, err := api.restV2.Res("spaces", &result).Get(map[string]string{
+		request, err := api.v2().Res("spaces", &result).Get(map[string]string{
 			"limit": "1",
 		})
 		api.isCloudFlag = err == nil &&
@@ -1228,7 +1261,7 @@ func (api *API) RestrictPageUpdates(
 	}
 
 	var result any
-	request, err := api.rest.
+	request, err := api.v1().
 		Res("content").
 		Id(page.ID).
 		Res("restriction", &result).
@@ -1291,7 +1324,7 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 		payload["parentType"] = parentType
 	}
 
-	request, err := api.restV2.Res(
+	request, err := api.v2().Res(
 		"folders", &FolderInfo{},
 	).Post(payload)
 	if err != nil {
@@ -1330,7 +1363,7 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 		"expand": "content",
 	}
 
-	request, err := api.rest.Res(
+	request, err := api.v1().Res(
 		"search", &result,
 	).Get(payload)
 	if err != nil {
@@ -1355,7 +1388,7 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 }
 
 func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
-	request, err := api.restV2.Res(
+	request, err := api.v2().Res(
 		"folders/"+folderID, &FolderInfo{},
 	).Get()
 	if err != nil {
@@ -1389,7 +1422,7 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 	// about this field, which is what made the mismatch easy to miss.
 	var v1Result SpaceInfo
 
-	request, err := api.rest.Res("space/"+spaceKey, &v1Result).Get()
+	request, err := api.v1().Res("space/"+spaceKey, &v1Result).Get()
 	if err == nil && request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
 		return strconv.Itoa(v1Result.ID), nil
 	}
@@ -1406,7 +1439,7 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 		"keys": spaceKey,
 	}
 
-	request, err = api.restV2.Res(
+	request, err = api.v2().Res(
 		"spaces", &v2Result,
 	).Get(payload)
 	if err != nil {
@@ -1452,7 +1485,7 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	result := &PageInfo{}
-	request, err := api.restV2.Res("pages", result).Post(payload)
+	request, err := api.v2().Res("pages", result).Post(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -1502,7 +1535,7 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 			Results []PageInfo `json:"results"`
 		}{}
 
-		request, err := api.rest.Res(
+		request, err := api.v1().Res(
 			"content/"+parentID+"/child/page", &result,
 		).Get(map[string]string{
 			"limit": fmt.Sprintf("%d", pageSize),
@@ -1539,7 +1572,7 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 // make. A tool that removes pages because a file left a repository should leave
 // the last word to a person.
 func (api *API) DeletePage(contentID string) error {
-	request, err := api.rest.Res("content").Id(contentID, &struct{}{}).Delete()
+	request, err := api.v1().Res("content").Id(contentID, &struct{}{}).Delete()
 	if err != nil {
 		return fmt.Errorf("unable to delete content %s: %w", contentID, err)
 	}
@@ -1580,7 +1613,7 @@ func (api *API) ArchivePage(contentID string) error {
 		"pages": []map[string]any{{"id": id}},
 	}
 
-	request, err := api.rest.Res("content").Res("archive", &struct{}{}).Post(payload)
+	request, err := api.v1().Res("content").Res("archive", &struct{}{}).Post(payload)
 	if err != nil {
 		return fmt.Errorf("unable to archive content %s: %w", contentID, err)
 	}
@@ -1610,7 +1643,7 @@ func (api *API) MoveContentAppend(contentID, targetID string) error {
 func (api *API) moveContent(contentID, position, targetID string) error {
 	path := fmt.Sprintf("content/%s/move/%s/%s", contentID, position, targetID)
 	var result map[string]any
-	request, err := api.rest.Res(path, &result).Put(map[string]interface{}{})
+	request, err := api.v1().Res(path, &result).Put(map[string]interface{}{})
 	if err != nil {
 		return fmt.Errorf("failed to move content %s %s %s: %w", contentID, position, targetID, err)
 	}
