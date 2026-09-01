@@ -1145,7 +1145,17 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 		// same question, so this costs nothing on the common path where the
 		// parent is exactly where it says it is.
 		existing, err := api.FindPage(meta.Space, title, "page")
-		if err != nil || existing != nil {
+		if err != nil {
+			// A lookup that failed is not a parent that is missing. Reading it
+			// as one leaves the stale title in place, and a stale title is
+			// exactly the condition this exists to prevent: ancestry creates an
+			// empty page under the old name and moves the real one's children
+			// beneath it. resolveTrackedPage refuses the same conflation.
+			return fmt.Errorf(
+				"unable to look up parent %q in space %q: %w", title, meta.Space, err,
+			)
+		}
+		if existing != nil {
 			continue
 		}
 
@@ -1164,7 +1174,24 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 		}
 
 		renamed, err := api.GetPageByID(pageID)
-		if err != nil || renamed == nil || renamed.Title == title {
+		if err != nil {
+			// Only a recorded page that is genuinely gone may be passed over.
+			// Anything else is a failure to read, and carrying on with the old
+			// title turns a network blip into a duplicate parent.
+			if !errors.Is(err, confluence.ErrNotFound) {
+				return fmt.Errorf(
+					"unable to load page %s recorded for parent %q: %w", pageID, title, err,
+				)
+			}
+
+			log.Warn().Msgf(
+				"parent %q was recorded as page %s, which no longer exists; leaving the title as written",
+				title, pageID,
+			)
+
+			continue
+		}
+		if renamed == nil || renamed.Title == title {
 			continue
 		}
 
