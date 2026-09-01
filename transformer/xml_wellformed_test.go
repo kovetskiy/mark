@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Void elements written the HTML way leave the page as not-well-formed XML,
@@ -63,4 +64,48 @@ func TestWellFormedHTMLRepairsCommentBodies(t *testing.T) {
 			assert.Equal(t, testcase.changed, changed)
 		})
 	}
+}
+
+// TestCDATAIsCopiedThroughUntouched: html.NewTokenizer has no notion of CDATA.
+// It reports "<![CDATA[" as a bogus comment ending at the first ">" and reads
+// the rest as markup, so a code sample containing "<br>" had it rewritten to
+// "<br />" -- the one thing a CDATA section exists to prevent, done by the pass
+// that was added to make the page well-formed.
+func TestCDATAIsCopiedThroughUntouched(t *testing.T) {
+	samples := []string{
+		`<ac:plain-text-body><![CDATA[if a > b then <br> done]]></ac:plain-text-body>`,
+		`<ac:plain-text-body><![CDATA[<input type="checkbox">]]></ac:plain-text-body>`,
+		`<ac:plain-text-body><![CDATA[a <!-- b -- c --> d]]></ac:plain-text-body>`,
+	}
+
+	for _, sample := range samples {
+		out, changed := wellFormedHTML([]byte(sample))
+
+		assert.False(t, changed, "nothing inside CDATA needs repairing: %s", sample)
+		assert.Equal(t, sample, string(out))
+	}
+}
+
+// TestMarkupAroundCDATAIsStillRepaired is the other half: cutting the sections
+// out must not stop the rest of the block being fixed.
+func TestMarkupAroundCDATAIsStillRepaired(t *testing.T) {
+	out, changed := wellFormedHTML([]byte(
+		`<div><br><ac:plain-text-body><![CDATA[keep <br> me]]></ac:plain-text-body><hr></div>`,
+	))
+
+	require.True(t, changed)
+	assert.Contains(t, string(out), `<div><br />`, "markup before the section is repaired")
+	assert.Contains(t, string(out), `<![CDATA[keep <br> me]]>`, "the section is not")
+	assert.Contains(t, string(out), `<hr /></div>`, "markup after it is repaired")
+}
+
+// TestUnterminatedCDATAIsLeftAlone: an opener with no closer means everything
+// after it is inside the section as far as anything downstream can tell.
+func TestUnterminatedCDATAIsLeftAlone(t *testing.T) {
+	const sample = `<ac:plain-text-body><![CDATA[unterminated <br>`
+
+	out, changed := wellFormedHTML([]byte(sample))
+
+	assert.False(t, changed)
+	assert.Equal(t, sample, string(out))
 }
