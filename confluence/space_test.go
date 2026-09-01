@@ -118,7 +118,7 @@ func TestTransientFailureIsNotCached(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	var failing bool = true
+	failing := true
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		// Both the v1 lookup and the v2 fallback, or the fallback answers and
 		// there is no failure to remember.
