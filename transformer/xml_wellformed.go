@@ -74,11 +74,72 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 	}
 }
 
+var (
+	cdataOpen  = []byte("<![CDATA[")
+	cdataClose = []byte("]]>")
+)
+
 // wellFormedHTML returns raw with void elements closed and comment bodies made
 // legal, and reports whether anything had to change. Every other byte, tag and
 // attribute is passed through untouched -- the input is the author's markup,
 // not something to normalise.
+//
+// CDATA sections are cut out and copied through before any of that happens.
+// html.NewTokenizer has no notion of CDATA: it reports "<![CDATA[" as a bogus
+// comment that ends at the first ">", and then reads everything after it as
+// ordinary markup -- so a "<br>" inside a code sample was rewritten to "<br />"
+// and the sample silently changed, which is the one thing CDATA is there to
+// prevent.
 func wellFormedHTML(raw []byte) ([]byte, bool) {
+	if len(raw) == 0 {
+		return raw, false
+	}
+
+	if !bytes.Contains(raw, cdataOpen) {
+		return wellFormedMarkup(raw)
+	}
+
+	var buf bytes.Buffer
+	changed := false
+	rest := raw
+
+	for len(rest) > 0 {
+		start := bytes.Index(rest, cdataOpen)
+		if start == -1 {
+			out, outChanged := wellFormedMarkup(rest)
+			buf.Write(out)
+			changed = changed || outChanged
+
+			break
+		}
+
+		out, outChanged := wellFormedMarkup(rest[:start])
+		buf.Write(out)
+		changed = changed || outChanged
+
+		end := bytes.Index(rest[start:], cdataClose)
+		if end == -1 {
+			// Unterminated. Everything left is inside the section as far as
+			// anything downstream can tell, so it is copied out as written.
+			buf.Write(rest[start:])
+
+			break
+		}
+
+		stop := start + end + len(cdataClose)
+		buf.Write(rest[start:stop])
+		rest = rest[stop:]
+	}
+
+	if !changed {
+		return raw, false
+	}
+
+	return buf.Bytes(), true
+}
+
+// wellFormedMarkup does the work on a span known to hold no CDATA section.
+func wellFormedMarkup(raw []byte) ([]byte, bool) {
 	if len(raw) == 0 {
 		return raw, false
 	}
