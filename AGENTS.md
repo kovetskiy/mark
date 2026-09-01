@@ -79,10 +79,12 @@ transformer without understanding why it was moved out of one.
   **end backwards** (`renderer/renderer.go`), and each registration overwrites the last
   for a given node kind -- so the **smaller** number is the one that renders. Every
   renderer in this repo is competing with one of goldmark's: the default `html.Renderer`
-  goes in at `1000` (`markdown.go`) and claims every core kind, so anything meant to
-  replace it has to sit below that. Both numbers you will see are load-bearing --- the
-  GH-alerts blockquote/text renderers' `200` clears the default renderer, and the
-  footnote renderers' `100` has to clear the footnote extension's `500` as well.
+  goes in at `1000` and claims every core kind, so anything meant to replace it has to
+  sit below that. Only the bound is load-bearing there --- anything in `(0, 1000)`
+  clears `html.Renderer`, so the GH-alerts blockquote/text renderers' `200` would work
+  just as well at `100`. The numbers that are genuinely constrained are the footnote
+  renderers' `100`, which has to beat goldmark's footnote extension at `500` as well,
+  and `ConfluenceTagParser`'s `199` above.
 
 Getting this backwards silently produces the default rendering, with no error anywhere.
 
@@ -111,10 +113,14 @@ that.
 extensions if applicable), add it to the `Usage` string of the `features` flag in
 `util/flags.go`, and document it in `README.md`.
 
-**9. Everything is sequential today, and some caches rely on that.**
-`page.createdFolderCache` is an unguarded map with a comment saying so, and
-`confluence.API.isCloudFlag/isCloudChecked` are unsynchronised (unlike `pageCache`, which
-is mutex-guarded). Anything that introduces concurrency across files must fix those first.
+**9. Everything is sequential today, and one thing still relies on that.**
+The two that used to be named here are done: the folder cache in `page/ancestry.go` sits
+behind an `RWMutex` (`page/concurrency_test.go` races it on purpose), and
+`confluence.API`'s Cloud probe goes through a `sync.Once`, so the field the old wording
+named no longer exists. What is genuinely single-threaded is `page.LinkChecker`:
+`MissingPages` reads `len(c.pending)` before taking the mutex and then reads the map
+itself after releasing it (`page/check.go`). Anything that introduces concurrency across
+files has to fix that first.
 
 ## Tests
 
