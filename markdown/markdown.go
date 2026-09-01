@@ -223,6 +223,65 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 // without a bound the document grows until the process is killed.
 const maxIncludePasses = 10
 
+// expandDirectives drains every include and macro the document names, and
+// everything they name in turn, before goldmark is given the bytes.
+//
+// The two produce each other's work: an included fragment may define a macro,
+// and a macro's expansion may include a file. Running includes once and then
+// macros once left the second kind unexpanded, and the AST transformers were
+// what picked it up afterwards -- splicing a sub-document, parsed from its own
+// bytes, into an AST that is rendered against the document's. Every node those
+// two did not rewrite kept offsets into the wrong buffer, so a fenced code
+// block in an included fragment came out with its language read from the middle
+// of the directive, a body sliced from wherever those offsets happened to land,
+// and NUL bytes where the slice ran past the end -- illegal in XML, so the page
+// was refused.
+//
+// Draining them here means the AST never sees a directive, which is what
+// invariant 3 in AGENTS.md says should be true.
+func expandDirectives(
+	path string,
+	cfg types.MarkConfig,
+	markdown []byte,
+	tmpl *template.Template,
+) (*template.Template, []byte, error) {
+	for pass := 0; pass < maxIncludePasses; pass++ {
+		before := markdown
+
+		var err error
+
+		tmpl, markdown, err = expandIncludes(path, cfg.IncludePath, markdown, tmpl)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		var macros []macro.Macro
+
+		macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to extract macros: %w", err)
+		}
+
+		for _, m := range macros {
+			markdown, err = m.Apply(markdown)
+			if err != nil {
+				return nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+			}
+		}
+
+		// Nothing left to find. Compared by content rather than by counting
+		// what was applied, since a macro that matches nothing still counts as
+		// applied and would keep the loop going for ever.
+		if bytes.Equal(before, markdown) {
+			return tmpl, markdown, nil
+		}
+	}
+
+	return nil, nil, fmt.Errorf(
+		"includes and macros did not settle after %d passes over %q", maxIncludePasses, path,
+	)
+}
+
 // expandIncludes runs include expansion over the document until it settles,
 // which is what both compile paths need before goldmark ever sees the bytes.
 func expandIncludes(
@@ -260,21 +319,12 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 		tmpl = template.New("stdlib")
 	}
 
-	tmpl, markdown, err := expandIncludes(path, cfg.IncludePath, markdown, tmpl)
+	// The template set the expansion built is not carried forward: the
+	// extension takes its templates from the stdlib, as it did when the macro
+	// pass held this set locally.
+	_, markdown, err := expandDirectives(path, cfg, markdown, tmpl)
 	if err != nil {
 		return "", nil, err
-	}
-
-	var macros []macro.Macro
-	macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
-	if err != nil {
-		return "", nil, fmt.Errorf("unable to extract macros: %w", err)
-	}
-	for _, m := range macros {
-		markdown, err = m.Apply(markdown)
-		if err != nil {
-			return "", nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
-		}
 	}
 
 	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
@@ -303,21 +353,12 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 		tmpl = template.New("stdlib")
 	}
 
-	tmpl, markdown, err := expandIncludes(path, cfg.IncludePath, markdown, tmpl)
+	// The template set the expansion built is not carried forward: the
+	// extension takes its templates from the stdlib, as it did when the macro
+	// pass held this set locally.
+	_, markdown, err := expandDirectives(path, cfg, markdown, tmpl)
 	if err != nil {
 		return "", nil, err
-	}
-
-	var macros []macro.Macro
-	macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
-	if err != nil {
-		return "", nil, fmt.Errorf("unable to extract macros: %w", err)
-	}
-	for _, m := range macros {
-		markdown, err = m.Apply(markdown)
-		if err != nil {
-			return "", nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
-		}
 	}
 
 	confluenceExtension := NewConfluenceLegacyExtension(stdlib, path, cfg)
