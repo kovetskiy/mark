@@ -33,7 +33,7 @@ func TestEnsureAncestryAllParentsExist(t *testing.T) {
 	team := server.AddPage("DOCS", "Team", "page", root.ID)
 	server.AddPage("DOCS", "Guides", "page", team.ID)
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Root", "Team", "Guides"})
+	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -46,7 +46,7 @@ func TestEnsureAncestryCreatesMissingParents(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Root", "Team", "Guides"})
+	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -69,7 +69,7 @@ func TestEnsureAncestryDryRunCreatesNothing(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	_, err := page.EnsureAncestry(true, api, "DOCS", []string{"Root", "Team", "Guides"})
+	_, err := page.EnsureAncestry(true, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, server.CountRequests("POST", "/rest/api/content"),
@@ -84,7 +84,7 @@ func TestEnsureAncestryFallsBackToRootPage(t *testing.T) {
 	api, server := newAPI(t)
 	existing := server.AddPage("DOCS", "Existing", "page", "")
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Brand New"})
+	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Brand New"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Brand New", parent.Title)

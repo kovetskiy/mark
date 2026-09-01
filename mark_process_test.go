@@ -483,6 +483,131 @@ func TestUnknownParentTitleIsStillCreated(t *testing.T) {
 		"an unknown parent title is not stale and should still be created")
 }
 
+// handMadeParent puts a page under DOCS > Parent the way somebody would in the
+// Confluence UI, and returns it. No document in the repository publishes it,
+// which is what a parent usually is and what the title index cannot know about.
+func handMadeParent(t *testing.T, server *confluencetest.Server, title string) *confluencetest.Page {
+	t.Helper()
+	under, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Parent", "page")
+	require.NoError(t, err)
+	require.NotNil(t, under)
+	return server.AddPage("DOCS", title, "page", under.ID)
+}
+
+// TestRenamedHandMadeParentIsFollowedNotRecreated is the case the title index
+// could never answer. Following a stale parent used to mean asking which page
+// mark had published under that title, and a parent nobody publishes -- made by
+// hand, or created empty by mark to hold a hierarchy -- has never been in that
+// index. The chain each document declares is recorded when it resolves, so the
+// position is what is followed rather than the title.
+func TestRenamedHandMadeParentIsFollowedNotRecreated(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	guide := handMadeParent(t, server, "Guide")
+
+	file := writeFile(t, dir, "child.md", markdownUnder("Guide", "Child"))
+	require.NoError(t, Run(trackingConfig(server, file)))
+
+	// Somebody renames it in the UI. The document still says "Guide".
+	server.RenamePage(guide.ID, "Guide Renamed")
+	require.NoError(t, Run(trackingConfig(server, file)))
+
+	assert.Equal(t, 0, countPagesTitled(t, server, "Guide"),
+		"no empty page should have been created under the old title")
+
+	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Child", "page")
+	require.NoError(t, err)
+	require.NotNil(t, child)
+	assert.Equal(t, guide.ID, server.Page(child.ID).ParentID,
+		"the child should still sit under the page it always did")
+}
+
+// TestRenamedHandMadeParentDuplicatesWithoutTracking is the control: without
+// the flag the old behaviour stands, which is what makes the test above mean
+// anything.
+func TestRenamedHandMadeParentDuplicatesWithoutTracking(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	guide := handMadeParent(t, server, "Guide")
+
+	config := trackingConfig(server, writeFile(t, dir, "child.md", markdownUnder("Guide", "Child")))
+	config.TrackPages = false
+	require.NoError(t, Run(config))
+
+	server.RenamePage(guide.ID, "Guide Renamed")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "Guide"),
+		"without tracking an empty page appears under the old title")
+
+	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Child", "page")
+	require.NoError(t, err)
+	require.NotNil(t, child)
+	assert.NotEqual(t, guide.ID, server.Page(child.ID).ParentID,
+		"and the child is moved beneath it")
+}
+
+// TestParentCreatedByMarkIsFollowedAfterRename covers the other half of the
+// recording: a parent mark created itself to hold the hierarchy is remembered
+// at the moment it is created, not only when it is found again.
+func TestParentCreatedByMarkIsFollowedAfterRename(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	file := writeFile(t, dir, "child.md", markdownUnder("Brand New Parent", "Child"))
+	require.NoError(t, Run(trackingConfig(server, file)))
+
+	created, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Brand New Parent", "page")
+	require.NoError(t, err)
+	require.NotNil(t, created)
+
+	server.RenamePage(created.ID, "Brand New Parent Renamed")
+	require.NoError(t, Run(trackingConfig(server, file)))
+
+	assert.Equal(t, 0, countPagesTitled(t, server, "Brand New Parent"),
+		"the parent mark created should have been followed, not made again")
+}
+
+// TestRenamedParentChainIsFollowedAtEveryLevel: the keys name the chain as the
+// document declares it. Rewriting one level and then keying the next off the
+// rewritten title would look up a chain that was never recorded, so a run where
+// two levels were renamed at once would repair the first and recreate the
+// second.
+func TestRenamedParentChainIsFollowedAtEveryLevel(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	top, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Parent", "page")
+	require.NoError(t, err)
+	guide := handMadeParent(t, server, "Guide")
+
+	file := writeFile(t, dir, "child.md", markdownUnder("Guide", "Child"))
+	require.NoError(t, Run(trackingConfig(server, file)))
+
+	server.RenamePage(top.ID, "Parent Renamed")
+	server.RenamePage(guide.ID, "Guide Renamed")
+	require.NoError(t, Run(trackingConfig(server, file)))
+
+	assert.Equal(t, 0, countPagesTitled(t, server, "Parent"),
+		"the top of the chain should have been followed")
+	assert.Equal(t, 0, countPagesTitled(t, server, "Guide"),
+		"and so should the level below it, whose key is unaffected by the rewrite above")
+
+	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Child", "page")
+	require.NoError(t, err)
+	require.NotNil(t, child)
+	assert.Equal(t, guide.ID, server.Page(child.ID).ParentID,
+		"the child should not have moved")
+}
+
 // TestTwoFilesClaimingOnePageIsReported: nothing stops two documents resolving
 // to the same page by title, and then a rename of either moves a page the other
 // also believes is its own. mark cannot tell which was meant, so it says so.

@@ -224,9 +224,9 @@ func Run(config Config) error {
 	// A nil *manifest.Store put into a non-nil interface is still a non-nil
 	// interface, so page would see tracking as enabled and call through a nil
 	// receiver. Build the interface value only when there is a store behind it.
-	var folders page.FolderTracker
+	var ancestryTracker page.AncestryTracker
 	if tracker != nil {
-		folders = tracker
+		ancestryTracker = tracker
 		// The whole file set is known before any of it is processed, which is
 		// what lets a recorded path missing from the run be read as a rename
 		// rather than a guess made one document at a time.
@@ -256,7 +256,7 @@ func Run(config Config) error {
 	for _, file := range files {
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, folders, checker, globalProperties, deferrals, results)
+		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -305,7 +305,7 @@ func Run(config Config) error {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, folders, checker, globalProperties, nil, results,
+				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results,
 			); err != nil {
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
@@ -422,7 +422,7 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, folders page.FolderTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -545,7 +545,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	if config.DryRun {
 		if meta != nil {
-			if _, pg, err := page.ResolvePage(true, api, meta, folders); err != nil {
+			if _, pg, err := page.ResolvePage(true, api, meta, ancestryTracker); err != nil {
 				return nil, nil, fmt.Errorf("unable to resolve page location: %w", err)
 			} else if pg == nil {
 				// The title found nothing, which is where a real run consults
@@ -608,7 +608,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, err
 		}
 
-		parent, pg, err := page.ResolvePage(false, api, meta, folders)
+		parent, pg, err := page.ResolvePage(false, api, meta, ancestryTracker)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 		}
@@ -1073,16 +1073,31 @@ func resolveTrackedPage(
 // beneath it. Tracking makes that more likely rather than less, because the
 // parent is now renamed in place instead of being duplicated somewhere visible.
 //
-// Only titles mark itself published are followed, and only when exactly one
-// page was published under the title. Anything ambiguous, or any title mark has
-// never seen, is left exactly as written -- a parent that is genuinely meant to
+// Two records are consulted, in order of how precisely each answers the
+// question. The chain a document declares was recorded when it last resolved,
+// so it names the page that held this exact position -- including a parent
+// nobody publishes from the repository, which is what most parents are. Failing
+// that, a title mark itself published is followed, and only when exactly one
+// page was published under it. Anything ambiguous, or a title neither record
+// has seen, is left exactly as written -- a parent that is genuinely meant to
 // be created still is.
+//
+// The rewrite happens here rather than inside ancestry resolution because
+// everything downstream compares titles: validation, the decision that a page
+// is misplaced, and the lookup that walks the chain. Repairing the title once,
+// before any of them run, leaves them all agreeing.
 func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *metadata.Meta) error {
 	if tracker == nil {
 		return nil
 	}
 
-	for i, title := range meta.Parents {
+	// Keys name the chain as the document declares it, which is not what
+	// meta.Parents holds once an earlier entry has been rewritten. A chain
+	// whose first parent was also renamed would otherwise be looked up under a
+	// name it was never recorded under.
+	declared := slices.Clone(meta.Parents)
+
+	for i, title := range declared {
 		// FindPage is memoised, and ancestry resolution is about to ask the
 		// same question, so this costs nothing on the common path where the
 		// parent is exactly where it says it is.
@@ -1091,12 +1106,18 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 			continue
 		}
 
-		pageID, ok, err := tracker.ResolveStaleTitle(meta.Space, title)
+		pageID, ok, err := tracker.LookupParent(meta.Space, page.ParentPathKey(declared[:i+1]))
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 		}
 		if !ok {
-			continue
+			pageID, ok, err = tracker.ResolveStaleTitle(meta.Space, title)
+			if err != nil {
+				return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
+			}
+			if !ok {
+				continue
+			}
 		}
 
 		renamed, err := api.GetPageByID(pageID)

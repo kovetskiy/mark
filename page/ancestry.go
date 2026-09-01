@@ -125,9 +125,44 @@ type FolderTracker interface {
 	LookupFolder(space, folderPath string) (string, bool, error)
 }
 
+// ParentTracker remembers which Confluence page a declared parent chain
+// resolved to.
+//
+// Parents are found by title too, so renaming one leaves every document that
+// declares it pointing at a name nothing carries: mark creates an empty page
+// under the old title and the real one's children end up beneath it.
+// Remembering what the chain resolved to makes the rename survivable for any
+// parent -- including the ones no document in the repository publishes, which
+// is most of them.
+//
+// An interface for the reason FolderTracker is one, and a nil tracker disables
+// it just the same.
+type ParentTracker interface {
+	RecordParent(space, parentPath, pageID string) error
+	LookupParent(space, parentPath string) (string, bool, error)
+}
+
+// AncestryTracker is everything the resolver can remember about where a
+// document was put.
+type AncestryTracker interface {
+	FolderTracker
+	ParentTracker
+}
+
 // folderPathKey names a folder by the chain of titles leading to it, under the
 // anchor it hangs from. The anchor is part of the key because the same chain of
 // titles under a different anchor is a different folder.
+// ParentPathKey names a parent by the chain of titles leading to it.
+//
+// No anchor, unlike folderPathKey: a parent chain is resolved from the space
+// root, and the mapping is already per space, so the titles alone identify it.
+//
+// Exported because the chain is recorded here and consulted where a stale
+// parent title is repaired, which is a decision made before resolution starts.
+func ParentPathKey(chain []string) string {
+	return strings.Join(chain, "\x00")
+}
+
 func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	anchor := ""
 	if anchorPageID != nil {
@@ -334,7 +369,7 @@ func EnsureFolderAncestry(
 func EnsureMixedAncestry(
 	dryRun bool,
 	api *confluence.API,
-	tracker FolderTracker,
+	tracker AncestryTracker,
 	space string,
 	folders []string,
 	pages []string,
@@ -342,7 +377,7 @@ func EnsureMixedAncestry(
 	var anchorPageID *string
 
 	if len(pages) > 0 {
-		anchor, err := EnsureAncestry(dryRun, api, space, pages)
+		anchor, err := EnsureAncestry(dryRun, api, space, pages, tracker)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve MARK_PARENTS page ancestry: %w", err)
 		}
@@ -356,7 +391,7 @@ func EnsureMixedAncestry(
 		if len(pages) == 0 {
 			return nil, nil
 		}
-		return EnsureAncestry(dryRun, api, space, pages)
+		return EnsureAncestry(dryRun, api, space, pages, tracker)
 	}
 
 	folderParent, err := EnsureFolderAncestry(dryRun, api, space, folders, anchorPageID, tracker)
@@ -383,6 +418,7 @@ func EnsureAncestry(
 	api *confluence.API,
 	space string,
 	ancestry []string,
+	tracker ParentTracker,
 ) (*confluence.PageInfo, error) {
 	var parent *confluence.PageInfo
 
@@ -399,6 +435,12 @@ func EnsureAncestry(
 		}
 
 		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
+
+		if tracker != nil {
+			if err := tracker.RecordParent(space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
+				return nil, err
+			}
+		}
 
 		rest = ancestry[i:]
 		parent = page
@@ -426,10 +468,20 @@ func EnsureAncestry(
 		)
 
 	if !dryRun {
-		for _, title := range rest {
+		// rest is the tail of ancestry that does not exist yet, so its offset
+		// within ancestry is what makes a recorded key match on the next run.
+		firstNew := len(ancestry) - len(rest)
+		for offset, title := range rest {
 			page, err := api.CreatePage(space, "page", parent, title, ``)
 			if err != nil {
 				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
+			}
+
+			if tracker != nil {
+				key := ParentPathKey(ancestry[:firstNew+offset+1])
+				if err := tracker.RecordParent(space, key, page.ID); err != nil {
+					return nil, err
+				}
 			}
 
 			parent = page

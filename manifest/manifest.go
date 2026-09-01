@@ -116,6 +116,15 @@ const PropertyKeyPrefix = "mark.manifest"
 // page keys would be reported as a source file that had gone missing.
 const FolderPropertyKey = PropertyKeyPrefix + ".folders"
 
+// ParentPropertyKey holds the parent mapping.
+//
+// Kept apart from the page shards for the reasons the folder mapping is: it is
+// keyed by the chain of titles a document declares rather than by a source
+// path, there are few enough of them that splitting them buys nothing, and a
+// parent key among the page keys would be reported as a source file that had
+// gone missing.
+const ParentPropertyKey = PropertyKeyPrefix + ".parents"
+
 // ShardCount is how many properties the mapping is spread over.
 //
 // Fixed rather than grown on demand: the shard a path belongs to is derived
@@ -210,6 +219,12 @@ type folderDocument struct {
 	Folders map[string]string `json:"folders"`
 }
 
+// parentDocument is the parent mapping as stored.
+type parentDocument struct {
+	Version int               `json:"version"`
+	Parents map[string]string `json:"parents"`
+}
+
 // document is one shard as stored.
 type document struct {
 	Version int              `json:"version"`
@@ -275,6 +290,18 @@ type spaceState struct {
 	folders        map[string]string
 	folderProperty *confluence.Property
 	foldersDirty   bool
+
+	// parents maps a declared parent chain to the page it resolved to, so a
+	// parent renamed in Confluence is found again instead of a second page
+	// being created under the title the document still declares.
+	//
+	// Distinct from titles, which only knows pages mark published from a source
+	// file. Most parents are not that: they are pages somebody made in the UI,
+	// or the empty ones mark created to hold a hierarchy, and neither has ever
+	// been in the title index.
+	parents        map[string]string
+	parentProperty *confluence.Property
+	parentsDirty   bool
 
 	// titles maps the title each path was published under *as read*, and is
 	// deliberately never updated during a run. Resolving a stale reference asks
@@ -416,6 +443,33 @@ func (state *spaceState) writeProperty(
 	return api.SetContentProperty(state.contentID, key, value, existing)
 }
 
+// writeMapping stores one of the mappings that covers the whole space -- the
+// folders or the parents -- and reports whether it was written.
+//
+// A conflict is warned about rather than failed on, as it is for a shard:
+// another run wrote between this run's read and its write, the two are not
+// mergeable from here, and losing the mapping is not worth failing a publish
+// that has already succeeded.
+func (state *spaceState) writeMapping(
+	api *confluence.API,
+	spaceKey, key string,
+	value []byte,
+	existing *confluence.Property,
+	what string,
+) (bool, error) {
+	if err := state.writeProperty(api, key, value, existing); err != nil {
+		if errors.Is(err, confluence.ErrPropertyConflict) {
+			log.Warn().Msgf(
+				"%s for space %q was updated by a concurrent run; it was not saved",
+				what, spaceKey,
+			)
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // load returns the state for a space, reading it from Confluence on first use.
 func (s *Store) load(spaceKey string) (*spaceState, error) {
 	if state, ok := s.spaces[spaceKey]; ok {
@@ -427,6 +481,7 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 		byPage:  map[string]string{},
 		titles:  map[string]string{},
 		folders: map[string]string{},
+		parents: map[string]string{},
 		seen:    map[string]bool{},
 		claimed: map[string]bool{},
 	}
@@ -464,6 +519,20 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 				)
 			} else if doc.Version <= formatVersion && doc.Folders != nil {
 				state.folders = doc.Folders
+			}
+			continue
+		}
+
+		if properties[i].Key == ParentPropertyKey {
+			state.parentProperty = &properties[i]
+			var doc parentDocument
+			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
+				log.Warn().Err(err).Msgf(
+					"ignoring unreadable %s property of space %q; parents are no longer tracked",
+					ParentPropertyKey, spaceKey,
+				)
+			} else if doc.Version <= formatVersion && doc.Parents != nil {
+				state.parents = doc.Parents
 			}
 			continue
 		}
@@ -774,6 +843,46 @@ func (s *Store) LookupFolder(spaceKey, folderPath string) (string, bool, error) 
 	return folderID, ok, nil
 }
 
+// RecordParent notes which Confluence page a declared parent chain resolved to.
+// The path is the chain of titles from the document's headers, joined so that
+// the same title at a different depth is a different key.
+func (s *Store) RecordParent(spaceKey, parentPath, pageID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.load(spaceKey)
+	if err != nil {
+		return err
+	}
+
+	if existing, ok := state.parents[parentPath]; ok && existing == pageID {
+		return nil
+	}
+
+	state.parents[parentPath] = pageID
+	state.parentsDirty = true
+	return nil
+}
+
+// LookupParent returns the page a declared parent chain resolved to last time.
+//
+// A chain is never forgotten, including after the parent has been renamed and
+// the new title recorded alongside it. The old key still names the same page,
+// and a document that has not been updated to the new title is exactly the one
+// this exists for.
+func (s *Store) LookupParent(spaceKey, parentPath string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.load(spaceKey)
+	if err != nil {
+		return "", false, err
+	}
+
+	pageID, ok := state.parents[parentPath]
+	return pageID, ok, nil
+}
+
 // Orphans returns the recorded paths this run was looking for and did not find.
 //
 // Only entries published by the same --files pattern count. A run narrowed to
@@ -921,19 +1030,31 @@ func (s *Store) Save() error {
 				return fmt.Errorf("unable to encode folder mapping for space %q: %w", spaceKey, err)
 			}
 
-			err = state.writeProperty(s.api, FolderPropertyKey, value, state.folderProperty)
+			written, err := state.writeMapping(
+				s.api, spaceKey, FolderPropertyKey, value, state.folderProperty, "folder mapping",
+			)
 			if err != nil {
-				if errors.Is(err, confluence.ErrPropertyConflict) {
-					log.Warn().Msgf(
-						"folder mapping for space %q was updated by a concurrent run; it was not saved",
-						spaceKey,
-					)
-				} else {
-					return err
-				}
-			} else {
-				state.foldersDirty = false
+				return err
 			}
+			state.foldersDirty = !written
+		}
+
+		if state.parentsDirty {
+			value, err := json.Marshal(parentDocument{
+				Version: formatVersion,
+				Parents: state.parents,
+			})
+			if err != nil {
+				return fmt.Errorf("unable to encode parent mapping for space %q: %w", spaceKey, err)
+			}
+
+			written, err := state.writeMapping(
+				s.api, spaceKey, ParentPropertyKey, value, state.parentProperty, "parent mapping",
+			)
+			if err != nil {
+				return err
+			}
+			state.parentsDirty = !written
 		}
 
 		for i := range state.shards {
