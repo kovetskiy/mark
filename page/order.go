@@ -35,7 +35,14 @@ func OrderChildren(api *confluence.API, dryRun bool, pages []Ordered) error {
 	for _, p := range pages {
 		if p.ParentID == "" {
 			// Nothing to be ordered relative to. Confluence's before/after also
-			// misbehave against top-level targets, so this is left alone.
+			// misbehave against top-level targets, so this is left alone -- but
+			// said out loud, because a document that asked for a position and
+			// silently got none looks exactly like one that never asked.
+			log.Warn().Msgf(
+				"page %q asked to be ordered %d but its parent is not known, so it is left where it is",
+				p.Title, p.Order,
+			)
+
 			continue
 		}
 		byParent[p.ParentID] = append(byParent[p.ParentID], p)

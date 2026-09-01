@@ -621,6 +621,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	var target *confluence.PageInfo
 	var pageCreated bool
+
+	// What this document's headers placed the page under, kept beyond the
+	// resolution block because a folder parent is not visible anywhere else: it
+	// is not a page, so it never appears among the page's ancestors.
+	var resolvedParent *confluence.PageInfo
 	// A page whose title changed has to be written even when its content did
 	// not, or --changes-only would leave it under the old title forever.
 	var titleChanged bool
@@ -638,6 +643,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if err != nil {
 			return nil, nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 		}
+		resolvedParent = parent
 
 		// The title lookup found nothing, which is how both "this page is new"
 		// and "this page was renamed" look. Ask the manifest which of the two
@@ -994,7 +1000,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if meta != nil && meta.Order != nil {
 		placement = &page.Ordered{
 			PageID:   target.ID,
-			ParentID: page.ImmediateParentID(target),
+			ParentID: page.ParentIDFor(target, resolvedParent),
 			Title:    target.Title,
 			Order:    *meta.Order,
 		}
