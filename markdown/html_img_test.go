@@ -14,9 +14,7 @@ func compileWithImgTag(t *testing.T, src string) string {
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{
-		Features: []string{"html-img-tag"},
-	})
+	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
 	require.NoError(t, err)
 	return out
 }

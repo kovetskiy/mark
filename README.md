@@ -1157,7 +1157,7 @@ Currently this is not compatible with the automated upload of inline images.
 
 ### Use HTML img tags for sizing
 
-Standard HTML `<img>` tags (inline, block, single-line, or multi-line) can be converted into `<ac:image>` macros by enabling the `--features html-img-tag` flag. This allows you to specify sizing while keeping the document readable in standard Markdown renderers like GitHub:
+Standard HTML `<img>` tags (inline, block, single-line, or multi-line) are converted into `<ac:image>` macros. This allows you to specify sizing while keeping the document readable in standard Markdown renderers like GitHub:
 
 ```markdown
 <img src="../images/example.png" width="300" alt="Example" title="An Example" />
@@ -1218,9 +1218,8 @@ When enabled, this renders note, warning, tip, info admonitions as Confluence al
 
 ### HTML Details/Summary Macro
 
-Optionally you can enable auto-conversion of standard HTML `<details>` and `<summary>` tags to native Confluence `expand` macros via `--features="details"`.
-
-When enabled, this maps standard HTML details blocks directly to Confluence expand macros:
+Standard HTML `<details>` and `<summary>` tags are converted to native
+Confluence `expand` macros:
 
 ```markdown
 <details>
@@ -1324,8 +1323,7 @@ display text and render as regular hyperlinks, unchanged.
 
 ### Footnotes
 
-Optionally you can render Markdown footnotes as footnotes Confluence can
-actually navigate, via `--features="footnotes"`.
+Markdown footnotes are rendered as footnotes Confluence can actually navigate.
 
 ```markdown
 The estimate is optimistic[^basis], and the deadline is not[^deadline].
@@ -1344,17 +1342,17 @@ than numbered.
 Citing the same note twice gives it one entry with a numbered arrow per
 citation, so both ways back are distinguishable.
 
-#### Why the feature exists
+#### Why it is not a plain HTML footnote
 
-Markdown footnote syntax is parsed whether or not the feature is on -- that part
-has always worked. What did not work is the navigation. Goldmark, like every
-other Markdown renderer, wires the two ends together with `id` attributes and
-`href="#id"` links, and Confluence keeps neither: it discards the ids in the
-storage format and generates its own from element text. The result renders,
-looks right, and does nothing when clicked.
+Markdown footnote syntax has always been parsed. What did not work is the
+navigation. Goldmark, like every other Markdown renderer, wires the two ends
+together with `id` attributes and `href="#id"` links, and Confluence keeps
+neither: it discards the ids in the storage format and generates its own from
+element text. The result renders, looks right, and does nothing when clicked.
+There is nothing to choose between, which is why this is not a feature you turn
+on.
 
-This feature replaces that plumbing with the two things Confluence does
-understand:
+The plumbing is replaced with the two things Confluence does understand:
 
 * the **Anchor macro** for the jump targets, which is bundled with both Cloud
   and Data Center and so needs no marketplace plugin, and
@@ -1375,9 +1373,6 @@ understand:
 Anchor names are `footnote-<n>` and `footnote-ref-<n>`, which share a namespace
 with the page's heading anchors -- avoid headings that would generate the same
 names.
-
-Leaving the feature off keeps the previous output: plain HTML footnotes, which
-still read correctly top to bottom but whose links go nowhere.
 
 ### Emoji
 
@@ -1524,7 +1519,7 @@ GLOBAL OPTIONS:
    --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
    --math-format string                     image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
    --math-scale float                       defines the scaling factor for PNG formula renderings; ignored when math-format is svg. (default: 2) [$MARK_MATH_SCALE]
-   --features string [ --features string ]  Enables optional features. Current features: d2, date, details, emoji, footnotes, frontmatter, html-img-tag, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]  Enables optional features. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify               skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --image-align string                     set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                               show help

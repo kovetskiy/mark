@@ -67,11 +67,12 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 	))
 
-	if slices.Contains(c.MarkConfig.Features, "details") {
-		m.Parser().AddOptions(parser.WithASTTransformers(
-			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
-		))
-	}
+	// <details> reaches here only because the document wrote the tag, and the
+	// storage format has no way to carry it, so leaving it alone publishes
+	// markup Confluence discards or rejects. There is nothing to opt into.
+	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+	))
 
 	if slices.Contains(c.MarkConfig.Features, "emoji") {
 		m.Parser().AddOptions(parser.WithInlineParsers(
@@ -88,15 +89,17 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
-	if slices.Contains(c.MarkConfig.Features, "footnotes") {
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			// Below the 500 goldmark's own footnote extension registers at.
-			// Node renderers are registered from the highest priority number
-			// down, and each registration overwrites the last, so the *smaller*
-			// number is the one that ends up rendering the node.
-			util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
-		))
-	}
+	// goldmark's footnote extension is always on, so `[^1]` is always parsed.
+	// The only question is what renders it, and the alternative is the HTML
+	// that extension emits -- ids and fragment links, neither of which survives
+	// a Confluence page.
+	m.Renderer().AddOptions(renderer.WithNodeRenderers(
+		// Below the 500 goldmark's own footnote extension registers at.
+		// Node renderers are registered from the highest priority number
+		// down, and each registration overwrites the last, so the *smaller*
+		// number is the one that ends up rendering the node.
+		util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
+	))
 
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
 		m.Parser().AddOptions(
@@ -394,12 +397,12 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
-	// Add details transformer support if requested
-	if slices.Contains(c.MarkConfig.Features, "details") {
-		m.Parser().AddOptions(parser.WithASTTransformers(
-			util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
-		))
-	}
+	// <details> reaches here only because the document wrote the tag, and the
+	// storage format has no way to carry it, so leaving it alone publishes
+	// markup Confluence discards or rejects. There is nothing to opt into.
+	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+	))
 
 	// Add emoji shortcode support if requested
 	if slices.Contains(c.MarkConfig.Features, "emoji") {
@@ -417,23 +420,25 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
-	// Add Confluence-native footnote rendering if requested
-	if slices.Contains(c.MarkConfig.Features, "footnotes") {
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			// Below the 500 goldmark's own footnote extension registers at.
-			// Node renderers are registered from the highest priority number
-			// down, and each registration overwrites the last, so the *smaller*
-			// number is the one that ends up rendering the node.
-			util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
-		))
-	}
+	// goldmark's footnote extension is always on, so `[^1]` is always parsed.
+	// The only question is what renders it, and the alternative is the HTML
+	// that extension emits -- ids and fragment links, neither of which survives
+	// a Confluence page.
+	m.Renderer().AddOptions(renderer.WithNodeRenderers(
+		// Below the 500 goldmark's own footnote extension registers at.
+		// Node renderers are registered from the highest priority number
+		// down, and each registration overwrites the last, so the *smaller*
+		// number is the one that ends up rendering the node.
+		util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
+	))
 
-	// Add html-img-tag transformer support if requested
-	if slices.Contains(c.MarkConfig.Features, "html-img-tag") {
-		m.Parser().AddOptions(parser.WithASTTransformers(
-			util.Prioritized(ctransformer.NewHTMLImgTransformer(), 110),
-		))
-	}
+	// An <img> is a void tag, which the storage format -- being XML -- cannot
+	// carry as written. Publishing one unconverted is how a page ends up
+	// malformed rather than how it ends up without a picture, so this is a
+	// correctness pass and not something to enable.
+	m.Parser().AddOptions(parser.WithASTTransformers(
+		util.Prioritized(ctransformer.NewHTMLImgTransformer(), 110),
+	))
 
 	// Add mkdocsadmonitions support if requested
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
