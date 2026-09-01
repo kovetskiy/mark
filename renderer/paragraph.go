@@ -73,13 +73,59 @@ func unwrapParagraph(n ast.Node, source []byte) bool {
 
 	firstTag := rawHTMLTag(first, source)
 
-	if last, ok := n.LastChild().(*ast.RawHTML); ok {
-		if closesTag(firstTag, rawHTMLTag(last, source)) {
-			return true
+	// Where does the element the first fragment opens close?
+	//
+	// Comparing the first and last fragments by name alone said "<em>Hello</em>
+	// world <em>again</em>" was one element with prose inside it, because the
+	// last fragment happens to close an element of the same name. Counting
+	// depth tells the two apart: an element whose closer is the last thing in
+	// the paragraph wraps the whole of it, and one that closes earlier leaves
+	// prose outside it, which is what a <p> is for.
+	if closer := closingFragment(n, firstTag, source); closer != nil {
+		return closer == n.LastChild()
+	}
+
+	// Never closed here: half of an element the author spread over several
+	// blocks, where a <p> would interleave with the element being built.
+	return spansConfluenceElement(firstTag)
+}
+
+// closingFragment returns the fragment that closes the element opened by
+// firstTag, or nil if the paragraph does not close it.
+func closingFragment(n ast.Node, firstTag []byte, source []byte) ast.Node {
+	if !isOpeningTag(firstTag) {
+		return nil
+	}
+
+	name := tagName(firstTag)
+	if len(name) == 0 {
+		return nil
+	}
+
+	depth := 0
+	for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+		raw, ok := child.(*ast.RawHTML)
+		if !ok {
+			continue
+		}
+
+		tag := rawHTMLTag(raw, source)
+		if !bytes.EqualFold(tagName(tag), name) {
+			continue
+		}
+
+		switch {
+		case isOpeningTag(tag):
+			depth++
+		case bytes.HasPrefix(tag, []byte("</")):
+			depth--
+			if depth == 0 {
+				return child
+			}
 		}
 	}
 
-	return spansConfluenceElement(firstTag)
+	return nil
 }
 
 // rawHTMLTag returns the fragment's bytes, which for an inline raw HTML node is
@@ -91,18 +137,6 @@ func rawHTMLTag(n *ast.RawHTML, source []byte) []byte {
 		buf.Write(segment.Value(source))
 	}
 	return bytes.TrimSpace(buf.Bytes())
-}
-
-// closesTag reports whether closing is the closing tag of the element that
-// opening opens.
-func closesTag(opening []byte, closing []byte) bool {
-	if !isOpeningTag(opening) || !bytes.HasPrefix(closing, []byte("</")) {
-		return false
-	}
-
-	name := tagName(opening)
-
-	return len(name) > 0 && bytes.EqualFold(name, tagName(closing))
 }
 
 // spansConfluenceElement reports whether the fragment is the opening or closing
