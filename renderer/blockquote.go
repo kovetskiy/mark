@@ -3,6 +3,7 @@ package renderer
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -53,15 +54,54 @@ type BlockQuoteClassifier struct {
 	patternMap map[string]*regexp.Regexp
 }
 
+// blockQuoteMarker matches a line that opens with an admonition marker.
+//
+// Anchored, and requiring the marker to end on a word boundary, because the
+// unanchored version this replaces matched the word anywhere in the line:
+// "Information about pricing is below." became an info macro and "Please note
+// that the API changed." became a note, since `info` and `note` are substrings
+// of both. Four of the commonest words in English documentation silently
+// rewrote the paragraphs that used them, and the author's only recourse was to
+// reword the sentence.
+//
+// Everything the documented syntax allows still matches -- "Info: text",
+// "**Note:** text", "NOTES:", a bare "Warn" -- because the marker is written
+// at the front of the line in every one of them. Emphasis is not in the text
+// this sees, goldmark having already made a node of it, so "**Warn**" arrives
+// as "Warn".
+var blockQuoteMarker = regexp.MustCompile(
+	`^(?i)(info|infos|note|notes|warn|warns|warning|warnings|tip|tips)\b[[:punct:]]*(\s|$)`,
+)
+
 func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
 	return BlockQuoteClassifier{
 		patternMap: map[string]*regexp.Regexp{
-			"info": regexp.MustCompile(`(?i)info`),
-			"note": regexp.MustCompile(`(?i)note`),
-			"warn": regexp.MustCompile(`(?i)warn`),
-			"tip":  regexp.MustCompile(`(?i)tip`),
+			"info": regexp.MustCompile(`(?i)^info`),
+			"note": regexp.MustCompile(`(?i)^note`),
+			"warn": regexp.MustCompile(`(?i)^warn`),
+			"tip":  regexp.MustCompile(`(?i)^tip`),
 		},
 	}
+}
+
+// markerOf returns the admonition marker a line opens with, or "" if the line
+// is ordinary prose.
+//
+// The comment form is stripped first: "<!-- Info -->" is a marker written in a
+// way that keeps it out of the rendered page, and testdata/quotes.md has
+// carried one since long before this was written.
+func markerOf(literal string) string {
+	marker := strings.TrimSpace(literal)
+	marker = strings.TrimPrefix(marker, "<!--")
+	marker = strings.TrimSuffix(marker, "-->")
+	marker = strings.TrimSpace(marker)
+
+	found := blockQuoteMarker.FindString(marker)
+	if found == "" {
+		return ""
+	}
+
+	return found
 }
 
 // ClassifyingBlockQuote compares a string against a set of patterns and returns a BlockQuoteType
@@ -69,15 +109,20 @@ func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
 // in the GitHub Alerts extension, not by this legacy blockquote renderer
 func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) BlockQuoteType {
 
+	marker := markerOf(literal)
+	if marker == "" {
+		return None
+	}
+
 	var t = None
 	switch {
-	case classifier.patternMap["info"].MatchString(literal):
+	case classifier.patternMap["info"].MatchString(marker):
 		t = Info
-	case classifier.patternMap["note"].MatchString(literal):
+	case classifier.patternMap["note"].MatchString(marker):
 		t = Note
-	case classifier.patternMap["warn"].MatchString(literal):
+	case classifier.patternMap["warn"].MatchString(marker):
 		t = Warn
-	case classifier.patternMap["tip"].MatchString(literal):
+	case classifier.patternMap["tip"].MatchString(marker):
 		t = Tip
 	}
 	return t
