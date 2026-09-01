@@ -87,11 +87,7 @@ func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte
 			rendered.Width,
 			rendered.Height,
 			"",
-			// Escaped here rather than by the template, which leaves ac:alt
-			// alone because its other caller escapes too. The formula is the
-			// one attribute value on this element that comes straight out of
-			// the document, and TeX is full of the characters that would end it.
-			string(util.EscapeHTML(n.Equation)),
+			string(n.Equation),
 			rendered.Filename,
 			"",
 		},

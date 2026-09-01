@@ -69,8 +69,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 					),
 				)
 			},
-			"xmlesc": func(s string) string {
-				return html.EscapeString(s)
+			// Takes any so that a template may pipe a parameter with a
+			// non-string default through it. A bool or a number reaching
+			// html.EscapeString directly is a template execution error, which
+			// would make escaping those parameters impossible without
+			// rewriting every default as a string.
+			"xmlesc": func(v any) string {
+				return html.EscapeString(fmt.Sprint(v))
 			},
 		},
 	)
@@ -96,10 +101,10 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:code`: text(
 			`<ac:structured-macro ac:name="code">`,
 			/**/ `<ac:parameter ac:name="language">{{ .Language | xmlesc }}</ac:parameter>`,
-			/**/ `<ac:parameter ac:name="collapse">{{ .Collapse }}</ac:parameter>`,
+			/**/ `<ac:parameter ac:name="collapse">{{ .Collapse | xmlesc }}</ac:parameter>`,
 			/**/ `{{ if .Theme }}<ac:parameter ac:name="theme">{{ .Theme | xmlesc }}</ac:parameter>{{ end }}`,
-			/**/ `{{ if .Linenumbers }}<ac:parameter ac:name="linenumbers">{{ .Linenumbers }}</ac:parameter>{{ end }}`,
-			/**/ `{{ if .Firstline }}<ac:parameter ac:name="firstline">{{ .Firstline }}</ac:parameter>{{ end }}`,
+			/**/ `{{ if .Linenumbers }}<ac:parameter ac:name="linenumbers">{{ .Linenumbers | xmlesc }}</ac:parameter>{{ end }}`,
+			/**/ `{{ if .Firstline }}<ac:parameter ac:name="firstline">{{ .Firstline | xmlesc }}</ac:parameter>{{ end }}`,
 			/**/ `{{ if .Title }}<ac:parameter ac:name="title">{{ .Title | xmlesc }}</ac:parameter>{{ end }}`,
 			/**/ `<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
 			`</ac:structured-macro>`,
@@ -109,7 +114,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="status">`,
 			`<ac:parameter ac:name="colour">{{ or .Color "Grey" | xmlesc }}</ac:parameter>`,
 			`<ac:parameter ac:name="title">{{ or .Title .Color | xmlesc }}</ac:parameter>`,
-			`<ac:parameter ac:name="subtle">{{ or .Subtle false }}</ac:parameter>`,
+			`<ac:parameter ac:name="subtle">{{ or .Subtle false | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -117,21 +122,21 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`{{ with .Name | user }}`,
 			/**/ `<ac:link>`,
 			/**/ `{{ if .AccountID }}`,
-			/****/ `<ri:user ri:account-id="{{ .AccountID }}" />`,
+			/****/ `<ri:user ri:account-id="{{ .AccountID | xmlesc }}" />`,
 			/**/ `{{ else }}`,
-			/****/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
+			/****/ `<ri:user ri:userkey="{{ .UserKey | xmlesc }}" />`,
 			/**/ `{{ end }}`,
 			/**/ `</ac:link>`,
 			`{{ else }}`,
-			/**/ `{{ .Name }}`,
+			/**/ `{{ .Name | xmlesc }}`,
 			`{{ end }}`,
 		),
 
 		`ac:jira:ticket`: text(
 			`<ac:structured-macro ac:name="jira">`,
-			`<ac:parameter ac:name="key">{{ .Ticket }}</ac:parameter>`,
+			`<ac:parameter ac:name="key">{{ .Ticket | xmlesc }}</ac:parameter>`,
 			`{{ if .Server }}`,
-			`<ac:parameter ac:name="server">{{ .Server }}</ac:parameter>`,
+			`<ac:parameter ac:name="server">{{ .Server | xmlesc }}</ac:parameter>`,
 			`{{ end }}`,
 			`</ac:structured-macro>`,
 		),
@@ -140,24 +145,24 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:jira:filter`: text(
 			`<ac:structured-macro ac:name="jira">`,
-			`<ac:parameter ac:name="server">{{ or .Server "System JIRA" }}</ac:parameter>`,
-			`<ac:parameter ac:name="jqlQuery">{{ .JQL }}</ac:parameter>`,
+			`<ac:parameter ac:name="server">{{ or .Server "System JIRA" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="jqlQuery">{{ .JQL | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
 		/* https://confluence.atlassian.com/doc/jira-issues-macro-139380.html */
 		`ac:jiraissues`: text(
 			`<ac:structured-macro ac:name="jiraissues">`,
-			`<ac:parameter ac:name="anonymous">{{ or .Anonymous false }}</ac:parameter>`,
-			`<ac:parameter ac:name="baseurl"><ri:url ri:value="{{ or .BaseURL .URL }}" /></ac:parameter>`,
-			`<ac:parameter ac:name="columns">{{ or .Columns "type;key;summary;assignee;reporter;priority;status;resolution;created;updated;due" }}</ac:parameter>`,
-			`<ac:parameter ac:name="count">{{ or .Count false }}</ac:parameter>`,
-			`<ac:parameter ac:name="cache">{{ or .Cache "on" }}</ac:parameter>`,
-			`<ac:parameter ac:name="height">{{ or .Height 480 }}</ac:parameter>`,
-			`<ac:parameter ac:name="renderMode">{{ or .RenderMode "static" }}</ac:parameter>`,
-			`<ac:parameter ac:name="title">{{ or .Title "Jira Issues" }}</ac:parameter>`,
-			`<ac:parameter ac:name="url"><ri:url ri:value="{{ .URL }}" /></ac:parameter>`,
-			`<ac:parameter ac:name="width">{{ or .Width "100%" }}</ac:parameter>`,
+			`<ac:parameter ac:name="anonymous">{{ or .Anonymous false | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="baseurl"><ri:url ri:value="{{ or .BaseURL .URL | xmlesc }}" /></ac:parameter>`,
+			`<ac:parameter ac:name="columns">{{ or .Columns "type;key;summary;assignee;reporter;priority;status;resolution;created;updated;due" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="count">{{ or .Count false | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="cache">{{ or .Cache "on" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="height">{{ or .Height 480 | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="renderMode">{{ or .RenderMode "static" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="title">{{ or .Title "Jira Issues" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="url"><ri:url ri:value="{{ .URL | xmlesc }}" /></ac:parameter>`,
+			`<ac:parameter ac:name="width">{{ or .Width "100%" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -167,8 +172,8 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// ac:details. A body ending in a list or table would otherwise absorb
 		// the closing tags as content.
 		`ac:box`: text(
-			`<ac:structured-macro ac:name="{{ .Name }}">`,
-			`<ac:parameter ac:name="icon">{{ or .Icon "false" }}</ac:parameter>`,
+			`<ac:structured-macro ac:name="{{ .Name | xmlesc }}">`,
+			`<ac:parameter ac:name="icon">{{ or .Icon "false" | xmlesc }}</ac:parameter>`,
 			`{{ if .Title }}<ac:parameter ac:name="title">{{ .Title | xmlesc }}</ac:parameter>{{ end }}`,
 			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
@@ -178,15 +183,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:toc`: text(
 			`<ac:structured-macro ac:name="toc">`,
-			`<ac:parameter ac:name="printable">{{ or .Printable "true" }}</ac:parameter>`,
-			`<ac:parameter ac:name="style">{{ or .Style "disc" }}</ac:parameter>`,
-			`<ac:parameter ac:name="maxLevel">{{ or .MaxLevel "7" }}</ac:parameter>`,
-			`<ac:parameter ac:name="indent">{{ or .Indent "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="minLevel">{{ or .MinLevel "1" }}</ac:parameter>`,
-			`<ac:parameter ac:name="exclude">{{ or .Exclude "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="type">{{ or .Type "list" }}</ac:parameter>`,
-			`<ac:parameter ac:name="outline">{{ or .Outline "clear" }}</ac:parameter>`,
-			`<ac:parameter ac:name="include">{{ or .Include "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="printable">{{ or .Printable "true" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="style">{{ or .Style "disc" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="maxLevel">{{ or .MaxLevel "7" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="indent">{{ or .Indent "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="minLevel">{{ or .MinLevel "1" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="exclude">{{ or .Exclude "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="type">{{ or .Type "list" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="outline">{{ or .Outline "clear" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="include">{{ or .Include "" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -194,20 +199,20 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:children`: text(
 			`<ac:structured-macro ac:name="children">`,
-			`{{ if .Reverse }}<ac:parameter ac:name="reverse">{{ or .Reverse }}</ac:parameter>{{ end }}`,
-			`{{ if .Sort }}<ac:parameter ac:name="sort">{{ .Sort }}</ac:parameter>{{ end }}`,
-			`{{ if .Style }}<ac:parameter ac:name="style">{{ .Style }}</ac:parameter>{{ end }}`,
+			`{{ if .Reverse }}<ac:parameter ac:name="reverse">{{ or .Reverse | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Sort }}<ac:parameter ac:name="sort">{{ .Sort | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Style }}<ac:parameter ac:name="style">{{ .Style | xmlesc }}</ac:parameter>{{ end }}`,
 			`{{ if .Page }}`,
 			/**/ `<ac:parameter ac:name="page">`,
 			/**/ `<ac:link>`,
-			/**/ `<ri:page ri:content-title="{{ .Page }}"/>`,
+			/**/ `<ri:page ri:content-title="{{ .Page | xmlesc }}"/>`,
 			/**/ `</ac:link>`,
 			/**/ `</ac:parameter>`,
 			`{{ end }}`,
-			`{{ if .Excerpt }}<ac:parameter ac:name="excerptType">{{ .Excerpt }}</ac:parameter>{{ end }}`,
-			`{{ if .First }}<ac:parameter ac:name="first">{{ .First }}</ac:parameter>{{ end }}`,
-			`{{ if .Depth }}<ac:parameter ac:name="depth">{{ .Depth }}</ac:parameter>{{ end }}`,
-			`{{ if .All }}<ac:parameter ac:name="all">{{ .All }}</ac:parameter>{{ end }}`,
+			`{{ if .Excerpt }}<ac:parameter ac:name="excerptType">{{ .Excerpt | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .First }}<ac:parameter ac:name="first">{{ .First | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Depth }}<ac:parameter ac:name="depth">{{ .Depth | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .All }}<ac:parameter ac:name="all">{{ .All | xmlesc }}</ac:parameter>{{ end }}`,
 			`</ac:structured-macro>`,
 		),
 
@@ -228,17 +233,17 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:image`: text(
 			`<ac:image`,
-			`{{ if .Align }} ac:align="{{ .Align }}"{{ end }}`,
-			`{{ if .Layout }} ac:layout="{{ .Layout }}"{{ end }}`,
-			`{{ if .OriginalWidth }} ac:original-width="{{ .OriginalWidth }}"{{ end }}`,
-			`{{ if .OriginalHeight }} ac:original-height="{{ .OriginalHeight }}"{{ end }}`,
+			`{{ if .Align }} ac:align="{{ .Align | xmlesc }}"{{ end }}`,
+			`{{ if .Layout }} ac:layout="{{ .Layout | xmlesc }}"{{ end }}`,
+			`{{ if .OriginalWidth }} ac:original-width="{{ .OriginalWidth | xmlesc }}"{{ end }}`,
+			`{{ if .OriginalHeight }} ac:original-height="{{ .OriginalHeight | xmlesc }}"{{ end }}`,
 			`{{ if .Width }} ac:custom-width="true"{{ end }}`,
-			`{{ if .Width }} ac:width="{{ .Width }}"{{ end }}`,
-			`{{ if .Height }} ac:height="{{ .Height }}"{{ end }}`,
+			`{{ if .Width }} ac:width="{{ .Width | xmlesc }}"{{ end }}`,
+			`{{ if .Height }} ac:height="{{ .Height | xmlesc }}"{{ end }}`,
 			`{{ if .Title }} ac:title="{{ .Title | xmlesc }}"{{ end }}`,
-			`{{ if .Alt }} ac:alt="{{ .Alt }}"{{ end }}>`,
+			`{{ if .Alt }} ac:alt="{{ .Alt | xmlesc }}"{{ end }}>`,
 			`{{ if .Attachment }}<ri:attachment ri:filename="{{ .Attachment | convertAttachment }}"/>{{ end }}`,
-			`{{ if .Url }}<ri:url ri:value="{{ .Url }}"/>{{ end }}`,
+			`{{ if .Url }}<ri:url ri:value="{{ .Url | xmlesc }}"/>{{ end }}`,
 			`</ac:image>`,
 		),
 
@@ -248,9 +253,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="widget">`,
 			`<ac:parameter ac:name="overlay">youtube</ac:parameter>`,
 			`<ac:parameter ac:name="_template">com/atlassian/confluence/extra/widgetconnector/templates/youtube.vm</ac:parameter>`,
-			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>`,
-			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>`,
-			`<ac:parameter ac:name="url"><ri:url ri:value="{{ .URL }}" /></ac:parameter>`,
+			`<ac:parameter ac:name="width">{{ or .Width "640px" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="height">{{ or .Height "360px" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="url"><ri:url ri:value="{{ .URL | xmlesc }}" /></ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -258,12 +263,12 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:iframe`: text(
 			`<ac:structured-macro ac:name="iframe">`,
-			`<ac:parameter ac:name="src"><ri:url ri:value="{{ .URL }}" /></ac:parameter>`,
-			`{{ if .Frameborder }}<ac:parameter ac:name="frameborder">{{ .Frameborder }}</ac:parameter>{{ end }}`,
-			`{{ if .Scrolling }}<ac:parameter ac:name="id">{{ .Scrolling }}</ac:parameter>{{ end }}`,
-			`{{ if .Align }}<ac:parameter ac:name="align">{{ .Align }}</ac:parameter>{{ end }}`,
-			`<ac:parameter ac:name="width">{{ or .Width "640px" }}</ac:parameter>`,
-			`<ac:parameter ac:name="height">{{ or .Height "360px" }}</ac:parameter>`,
+			`<ac:parameter ac:name="src"><ri:url ri:value="{{ .URL | xmlesc }}" /></ac:parameter>`,
+			`{{ if .Frameborder }}<ac:parameter ac:name="frameborder">{{ .Frameborder | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Scrolling }}<ac:parameter ac:name="id">{{ .Scrolling | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Align }}<ac:parameter ac:name="align">{{ .Align | xmlesc }}</ac:parameter>{{ end }}`,
+			`<ac:parameter ac:name="width">{{ or .Width "640px" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="height">{{ or .Height "360px" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -271,14 +276,14 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:blog-posts`: text(
 			`<ac:structured-macro ac:name="blog-posts">`,
-			`{{ if .Content }}<ac:parameter ac:name="content">{{ .Content }}</ac:parameter>{{ end }}`,
-			`{{ if .Spaces }}<ac:parameter ac:name="spaces">{{ .Spaces }}</ac:parameter>{{ end }}`,
-			`{{ if .Author }}<ac:parameter ac:name="author">{{ .Author }}</ac:parameter>{{ end }}`,
-			`{{ if .Time }}<ac:parameter ac:name="time">{{ .Time }}</ac:parameter>{{ end }}`,
-			`{{ if .Reverse }}<ac:parameter ac:name="reverse">{{ .Reverse }}</ac:parameter>{{ end }}`,
-			`{{ if .Sort }}<ac:parameter ac:name="sort">{{ .Sort }}</ac:parameter>{{ end }}`,
-			`{{ if .Max }}<ac:parameter ac:name="max">{{ .Max }}</ac:parameter>{{ end }}`,
-			`{{ if .Label }}<ac:parameter ac:name="label">{{ .Label }}</ac:parameter>{{ end }}`,
+			`{{ if .Content }}<ac:parameter ac:name="content">{{ .Content | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Spaces }}<ac:parameter ac:name="spaces">{{ .Spaces | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Author }}<ac:parameter ac:name="author">{{ .Author | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Time }}<ac:parameter ac:name="time">{{ .Time | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Reverse }}<ac:parameter ac:name="reverse">{{ .Reverse | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Sort }}<ac:parameter ac:name="sort">{{ .Sort | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Max }}<ac:parameter ac:name="max">{{ .Max | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Label }}<ac:parameter ac:name="label">{{ .Label | xmlesc }}</ac:parameter>{{ end }}`,
 			`</ac:structured-macro>`,
 		),
 
@@ -288,7 +293,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="include">`,
 			`<ac:parameter ac:name="">`,
 			`<ac:link>`,
-			`<ri:page ri:content-title="{{ .Page }}" {{if .Space }}ri:space-key="{{ .Space }}"{{ end }}/>`,
+			`<ri:page ri:content-title="{{ .Page | xmlesc }}" {{if .Space }}ri:space-key="{{ .Space | xmlesc }}"{{ end }}/>`,
 			`</ac:link>`,
 			`</ac:parameter>`,
 			`</ac:structured-macro>`,
@@ -299,9 +304,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:excerpt-include`: text(
 			`<ac:macro ac:name="excerpt-include">`,
-			`{{ if .Name }}<ac:parameter ac:name="name">{{ .Name }}</ac:parameter>{{ end }}`,
-			`<ac:parameter ac:name="nopanel">{{ if .NoPanel }}{{ .NoPanel }}{{ else }}false{{ end }}</ac:parameter>`,
-			`<ac:default-parameter>{{ .Page }}</ac:default-parameter>`,
+			`{{ if .Name }}<ac:parameter ac:name="name">{{ .Name | xmlesc }}</ac:parameter>{{ end }}`,
+			`<ac:parameter ac:name="nopanel">{{ if .NoPanel }}{{ .NoPanel | xmlesc }}{{ else }}false{{ end }}</ac:parameter>`,
+			`<ac:default-parameter>{{ .Page | xmlesc }}</ac:default-parameter>`,
 			`</ac:macro>`,
 		),
 
@@ -310,11 +315,11 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:excerpt`: text(
 			`<ac:structured-macro ac:name="excerpt">`,
-			`{{ if .Name }}<ac:parameter ac:name="name">{{ .Name }}</ac:parameter>{{ end }}`,
-			`<ac:parameter ac:name="hidden">{{ if .Hidden }}{{ .Hidden }}{{ else }}false{{ end }}</ac:parameter>`,
-			`<ac:parameter ac:name="atlassian-macro-output-type">{{ if .OutputType }}{{ .OutputType }}{{ else }}BLOCK{{ end }}</ac:parameter>`,
+			`{{ if .Name }}<ac:parameter ac:name="name">{{ .Name | xmlesc }}</ac:parameter>{{ end }}`,
+			`<ac:parameter ac:name="hidden">{{ if .Hidden }}{{ .Hidden | xmlesc }}{{ else }}false{{ end }}</ac:parameter>`,
+			`<ac:parameter ac:name="atlassian-macro-output-type">{{ if .OutputType }}{{ .OutputType | xmlesc }}{{ else }}BLOCK{{ end }}</ac:parameter>`,
 			`<ac:rich-text-body>`,
-			`{{ .Excerpt }}`,
+			`{{ .Excerpt | xmlesc }}`,
 			`</ac:rich-text-body>`,
 			`</ac:structured-macro>`,
 		),
@@ -323,7 +328,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:anchor`: text(
 			`<ac:structured-macro ac:name="anchor">`,
-			`<ac:parameter ac:name="">{{ .Anchor }}</ac:parameter>`,
+			`<ac:parameter ac:name="">{{ .Anchor | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -356,7 +361,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// to normalise what it was not promised.
 		`ac:footnote:ref`: text(
 			`<ac:link ac:anchor="{{ .Anchor | xmlesc }}">`,
-			`<ac:link-body><sup>[{{ .Number }}]</sup></ac:link-body>`,
+			`<ac:link-body><sup>[{{ .Number | xmlesc }}]</sup></ac:link-body>`,
 			`</ac:link>`,
 		),
 
@@ -366,7 +371,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// case each way back has to be told apart.
 		`ac:footnote:backref`: text(
 			`&#160;<ac:link ac:anchor="{{ .Anchor | xmlesc }}">`,
-			`<ac:link-body>&#x21a9;&#xfe0e;{{ if .Number }}<sup>{{ .Number }}</sup>{{ end }}</ac:link-body>`,
+			`<ac:link-body>&#x21a9;&#xfe0e;{{ if .Number }}<sup>{{ .Number | xmlesc }}</sup>{{ end }}</ac:link-body>`,
 			`</ac:link>`,
 		),
 
@@ -377,7 +382,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// the closing tags as content.
 		`ac:expand`: text(
 			`<ac:structured-macro ac:name="expand">`,
-			`<ac:parameter ac:name="title">{{ .Title }}</ac:parameter>`,
+			`<ac:parameter ac:name="title">{{ .Title | xmlesc }}</ac:parameter>`,
 			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
@@ -389,9 +394,9 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="profile">`,
 			`<ac:parameter ac:name="user">`,
 			`{{ if .AccountID }}`,
-			/**/ `<ri:user ri:account-id="{{ .AccountID }}" />`,
+			/**/ `<ri:user ri:account-id="{{ .AccountID | xmlesc }}" />`,
 			`{{ else }}`,
-			/**/ `<ri:user ri:userkey="{{ .UserKey }}" />`,
+			/**/ `<ri:user ri:userkey="{{ .UserKey | xmlesc }}" />`,
 			`{{ end }}`,
 			`</ac:parameter>`,
 			`</ac:structured-macro>`,
@@ -402,7 +407,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:contentbylabel`: text(
 			`<ac:structured-macro ac:name="contentbylabel" ac:schema-version="3">`,
-			`<ac:parameter ac:name="cql">{{ .CQL }}</ac:parameter>`,
+			`<ac:parameter ac:name="cql">{{ .CQL | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -410,10 +415,10 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:detailssummary`: text(
 			`<ac:structured-macro ac:name="detailssummary" ac:schema-version="2">`,
-			`<ac:parameter ac:name="headings">{{ .Headings }}</ac:parameter>`,
-			`<ac:parameter ac:name="firstcolumn">{{ .FirstColumn }}</ac:parameter>`,
-			`<ac:parameter ac:name="sortBy">{{ .SortBy }}</ac:parameter>`,
-			`<ac:parameter ac:name="cql">{{ .CQL }}</ac:parameter>`,
+			`<ac:parameter ac:name="headings">{{ .Headings | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="firstcolumn">{{ .FirstColumn | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="sortBy">{{ .SortBy | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="cql">{{ .CQL | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -435,15 +440,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="pagetree" ac:schema-version="1">`,
 			`<ac:parameter ac:name="root">`,
 			`<ac:link>`,
-			`<ri:page ri:content-title="{{ or .Title "@self" }}"/>`,
+			`<ri:page ri:content-title="{{ or .Title "@self" | xmlesc }}"/>`,
 			`</ac:link>`,
 			`</ac:parameter>`,
-			`<ac:parameter ac:name="sort">{{ or .Sort "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="excerpt">{{ or .Excerpt "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="reverse">{{ or .Reverse "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="searchBox">{{ or .SearchBox "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="expandCollapseAll">{{ or .ExpandCollapseAll "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="startDepth">{{ or .StartDepth "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="sort">{{ or .Sort "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="excerpt">{{ or .Excerpt "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="reverse">{{ or .Reverse "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="searchBox">{{ or .SearchBox "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="expandCollapseAll">{{ or .ExpandCollapseAll "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="startDepth">{{ or .StartDepth "" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
@@ -451,7 +456,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 
 		`ac:pagetreesearch`: text(
 			`<ac:structured-macro ac:name="pagetreesearch">`,
-			`{{ if .Root }}<ac:parameter ac:name="root">{{ .Root }}</ac:parameter>{{ end }}`,
+			`{{ if .Root }}<ac:parameter ac:name="root">{{ .Root | xmlesc }}</ac:parameter>{{ end }}`,
 			`</ac:structured-macro>`,
 		),
 
@@ -462,12 +467,12 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// the closing tags as content.
 		`ac:panel`: text(
 			`<ac:structured-macro ac:name="panel">`,
-			`<ac:parameter ac:name="bgColor">{{ or .BGColor "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="titleBGColor">{{ or .TitleBGColor "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="title">{{ or .Title "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="borderStyle">{{ or .BorderStyle "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="borderColor">{{ or .BorderColor "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="titleColor">{{ or .TitleColor "" }}</ac:parameter>`,
+			`<ac:parameter ac:name="bgColor">{{ or .BGColor "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="titleBGColor">{{ or .TitleBGColor "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="title">{{ or .Title "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="borderStyle">{{ or .BorderStyle "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="borderColor">{{ or .BorderColor "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="titleColor">{{ or .TitleColor "" | xmlesc }}</ac:parameter>`,
 			"<ac:rich-text-body>\n\n{{ .Body }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
@@ -475,13 +480,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 		/* https://confluence.atlassian.com/conf59/recently-updated-macro-792499187.html */
 		`ac:recently-updated`: text(
 			`<ac:structured-macro ac:name="recently-updated">`,
-			`{{ if .Spaces }}<ac:parameter ac:name="spaces"><ri:space ri:space-key={{ .Spaces }}/></ac:parameter>{{ end }}`,
-			`<ac:parameter ac:name="showProfilePic">{{ or .ShowProfilePic "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="types">{{ or .Types "page, comment, blogpost" }}</ac:parameter>`,
-			`<ac:parameter ac:name="max">{{ or .Max "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="labels">{{ or .Labels "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="hideHeading">{{ or .HideHeading "" }}</ac:parameter>`,
-			`<ac:parameter ac:name="theme">{{ or .Theme "" }}</ac:parameter>`,
+			`{{ if .Spaces }}<ac:parameter ac:name="spaces"><ri:space ri:space-key="{{ .Spaces | xmlesc }}"/></ac:parameter>{{ end }}`,
+			`<ac:parameter ac:name="showProfilePic">{{ or .ShowProfilePic "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="types">{{ or .Types "page, comment, blogpost" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="max">{{ or .Max "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="labels">{{ or .Labels "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="hideHeading">{{ or .HideHeading "" | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="theme">{{ or .Theme "" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 		/* https://confluence.atlassian.com/conf59/column-macro-792499085.html */
@@ -490,18 +495,18 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// the closing tags as content.
 		`ac:column`: text(
 			`<ac:structured-macro ac:name="column">`,
-			`<ac:parameter ac:name="width">{{ or .Width "" }}</ac:parameter>`,
-			"<ac:rich-text-body>\n\n{{ or .Body \"\" }}\n\n</ac:rich-text-body>",
+			`<ac:parameter ac:name="width">{{ or .Width "" | xmlesc }}</ac:parameter>`,
+			"<ac:rich-text-body>\n\n{{ or .Body \"\" | xmlesc }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 		/* https://confluence.atlassian.com/conf59/multimedia-macro-792499140.html */
 		`ac:multimedia`: text(
 			`<ac:structured-macro ac:name="multimedia">`,
-			`<ac:parameter ac:name="width">{{ or .Width 500 }}</ac:parameter>`,
+			`<ac:parameter ac:name="width">{{ or .Width 500 | xmlesc }}</ac:parameter>`,
 			`<ac:parameter ac:name="name">`,
 			`<ri:attachment ri:filename="{{ .Name | convertAttachment }}"/>`,
 			`</ac:parameter>`,
-			`<ac:parameter ac:name="autoplay">{{ or .AutoPlay "false"}}</ac:parameter>`,
+			`<ac:parameter ac:name="autoplay">{{ or .AutoPlay "false" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 		/* https://confluence.atlassian.com/conf59/view-file-macro-792499226.html */
@@ -510,7 +515,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="name">`,
 			`<ri:attachment ri:filename="{{ .Name | convertAttachment }}"/>`,
 			`</ac:parameter>`,
-			`<ac:parameter ac:name="height">{{ or .Height 250 }}</ac:parameter>`,
+			`<ac:parameter ac:name="height">{{ or .Height 250 | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 
