@@ -424,9 +424,16 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					meta.Properties[key] = strings.TrimSpace(propValue)
 
 				default:
-					log.Error().
-						Err(nil).
-						Msgf(`encountered unknown header %q line: %#v`, header, line)
+					// Refused rather than reported. The line is inside the
+					// header run, so it is taken out of the body either way,
+					// and a run that logged the typo and published the page
+					// without whatever the header asked for still exited zero
+					// -- a misspelled Title changed what was published and only
+					// said so in a line of output nobody was reading.
+					return nil, nil, fmt.Errorf(
+						"unknown header %q, expected one of: %s",
+						header, strings.Join(knownHeaders, ", "),
+					)
 				}
 
 				lastStop = lineSeg.Stop

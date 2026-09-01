@@ -105,6 +105,51 @@ Body.
 	assert.Contains(t, body, "<!-- Include: fragment.md -->")
 }
 
+// TestUnknownHeaderIsRefused pins the fix for a misspelled header. The line
+// sits inside the header run, so it is taken out of the body whatever happens
+// next; logging the typo and publishing anyway meant a page silently lost its
+// title and the run still exited zero.
+func TestUnknownHeaderIsRefused(t *testing.T) {
+	_, _, err := extract(t, `<!-- Space: TEST -->
+<!-- Titel: Typo -->
+
+Body.
+`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown header "Titel"`)
+	assert.Contains(t, err.Error(), HeaderTitle, "the message has to name the valid headers")
+	assert.Contains(t, err.Error(), ContentAppearance)
+}
+
+// TestUnknownHeaderBeforeAnyKnownOneIsRefused covers the same typo written as
+// the document's very first line, where nothing has been read as a header yet.
+func TestUnknownHeaderBeforeAnyKnownOneIsRefused(t *testing.T) {
+	_, _, err := extract(t, `<!-- Titel: Typo -->
+<!-- Space: TEST -->
+
+Body.
+`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown header "Titel"`)
+}
+
+// TestCommentBelowHeadersIsNotAHeader guards the other side of the previous
+// test: a comment that is not part of the header run is page content, and
+// refusing those would fail documents that merely mention a colon.
+func TestCommentBelowHeadersIsNotAHeader(t *testing.T) {
+	meta, body, err := extract(t, `<!-- Space: TEST -->
+<!-- Title: Commented -->
+
+Body.
+
+<!-- note: generated file, do not edit -->
+`)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+
+	assert.Contains(t, body, "<!-- note: generated file, do not edit -->")
+}
+
 // TestMacroAboveHeadersIsKept pins the reason the cut has two boundaries rather
 // than one: whatever a document opens with before its headers -- a Macro
 // definition is the usual case -- is not metadata and must reach the page.
