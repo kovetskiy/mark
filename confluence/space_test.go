@@ -2,6 +2,7 @@ package confluence_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -101,4 +102,44 @@ func TestFindHomePageV1WithoutAHomepageIsAnError(t *testing.T) {
 
 	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/spaces"),
 		"v1 answered, so there is nothing for v2 to add")
+}
+
+// TestTransientFailureIsNotCached: memoising the space lookups is correct
+// because a space's home page and id cannot change mid-run. That premise covers
+// a 404 and a space with no home page -- both conclusions -- and not a
+// throttling burst or a gateway error, which are moments.
+//
+// The retry transport gives up after four attempts, so remembering one of those
+// made a few unlucky seconds fail every remaining file in the space. Before the
+// memoisation, the next document simply asked again and succeeded.
+func TestTransientFailureIsNotCached(t *testing.T) {
+	api, server := newAPI(t)
+	space := server.AddSpace("DOCS")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	var failing bool = true
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		// Both the v1 lookup and the v2 fallback, or the fallback answers and
+		// there is no failure to remember.
+		if failing && strings.Contains(r.URL.Path, "space") {
+			return http.StatusServiceUnavailable, "upstream is busy", true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.FindHomePage("DOCS")
+	require.Error(t, err, "the outage is reported")
+
+	// The outage passes, as outages do.
+	failing = false
+
+	found, err := api.FindHomePage("DOCS")
+	require.NoError(t, err, "the next document must not inherit the failure")
+	require.NotNil(t, found)
+	assert.Equal(t, home.ID, found.ID)
+
+	id, err := api.GetSpaceID("DOCS")
+	require.NoError(t, err)
+	assert.Equal(t, space.ID, id)
 }
