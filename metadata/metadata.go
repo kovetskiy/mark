@@ -37,6 +37,27 @@ const (
 	HeaderSynchronized = `Synchronized`
 )
 
+// knownHeaders is every header name a document may write, in the order an
+// unknown one is reported against.
+var knownHeaders = []string{
+	HeaderAttachment,
+	ContentAppearance,
+	HeaderEmoji,
+	HeaderFolder,
+	HeaderImageAlign,
+	HeaderInclude,
+	HeaderLabel,
+	HeaderLayout,
+	HeaderOrder,
+	HeaderParent,
+	HeaderProperty,
+	HeaderSidebar,
+	HeaderSpace,
+	HeaderSynchronized,
+	HeaderTitle,
+	HeaderType,
+}
+
 type Meta struct {
 	Parents           []string
 	Folders           []string
@@ -273,7 +294,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		if htmlBlock, ok := child.(*ast.HTMLBlock); ok {
 			lines := htmlBlock.Lines()
 			if lines.Len() > 0 {
-				if lastStop > 0 && lines.At(0).Start != lastStop {
+				if lastStop > 0 && !onlyWhitespace(data, lastStop, lines.At(0).Start) {
 					break
 				}
 			}
@@ -414,6 +435,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		body = append(append([]byte{}, data[bodyStart:firstStart]...), data[lastStop:]...)
 	}
 
+	if meta != nil {
+		warnStrandedHeaders(body)
+	}
+
 	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
 		if meta == nil {
 			meta = &Meta{}
@@ -463,6 +488,57 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	meta.Title = strings.Trim(meta.Title, " ")
 	meta.Space = strings.Trim(meta.Space, " ")
 	return meta, body, nil
+}
+
+// onlyWhitespace reports whether nothing but whitespace separates one header
+// comment from the next.
+//
+// Each comment is its own HTML block, and the run of them used to have to be
+// byte-contiguous: a single blank line ended it, so every header below the gap
+// was neither applied nor removed. Grouping headers -- identity, then labels,
+// then properties -- is the natural way to write them and nothing ever said it
+// was forbidden; the symptom was a Label that quietly did nothing and its own
+// comment published as the first line of the page.
+func onlyWhitespace(data []byte, from, to int) bool {
+	if from > to || to > len(data) {
+		return false
+	}
+
+	return strings.TrimSpace(string(data[from:to])) == ""
+}
+
+// warnStrandedHeaders reports header comments that stayed in the page body.
+//
+// Headers are read only from the run of comments the document opens with, so
+// one written after a paragraph -- or after anything else that ends the run --
+// is not metadata at all. It is published as page text and whatever it asked
+// for silently never happens, which is the failure a blank line used to cause
+// and which anything else ending the run still can. Saying so is cheap;
+// guessing what was meant is not.
+func warnStrandedHeaders(body []byte) {
+	for _, line := range strings.Split(string(body), "\n") {
+		key, _, ok := parseHeaderComment(line)
+		if !ok {
+			continue
+		}
+
+		header := cases.Title(language.English).String(key)
+		if header == HeaderInclude {
+			// An Include below the headers is the ordinary way to write one.
+			continue
+		}
+
+		for _, known := range knownHeaders {
+			if header == known {
+				log.Warn().Msgf(
+					"%s header is below the document's opening comments, so it is published as text rather than applied: %s",
+					header, strings.TrimSpace(line),
+				)
+
+				break
+			}
+		}
+	}
 }
 
 func setTitleFromFilename(meta *Meta, filename string) {
