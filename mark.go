@@ -430,6 +430,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
 
+	// A byte-order mark is not content, and leaving it in front of the first
+	// header comment makes the file look to every parser here like one with no
+	// metadata at all -- reported as "doesn't contain metadata", which is not
+	// where the author would look. Windows editors write one routinely.
+	markdown = bytes.TrimPrefix(markdown, []byte{0xEF, 0xBB, 0xBF})
+
 	// Fingerprint the source as read, before metadata is stripped and links are
 	// substituted. Both of those depend on state outside the file -- what is
 	// already published, what other files resolve to -- and a fingerprint that
