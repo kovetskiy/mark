@@ -880,6 +880,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 		target = pg
 
+		// The refetch carries the title Confluence holds now, which is the old
+		// one whenever this run is renaming the page: the new title is staged
+		// on the object that was just replaced and is not published until the
+		// update below. Without this the rename is dropped silently, and the
+		// manifest goes on to record a title the page does not carry -- which
+		// then misresolves every parent that names it.
+		if titleChanged && meta != nil {
+			target.Title = meta.Title
+		}
+
 		comments, err := api.GetInlineComments(target.ID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
