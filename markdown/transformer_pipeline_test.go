@@ -37,8 +37,11 @@ This is the main body text.`)
 		IncludePath: tempDir,
 	}
 
-	// Compile Markdown using Goldmark AST transformers pipeline
-	htmlOutput, _, err := CompileMarkdown(markdownInput, std, tempDir, cfg)
+	// Compile Markdown using Goldmark AST transformers pipeline. The path is a
+	// file inside the directory, not the directory: passing a directory hid a
+	// base-directory bug in the AST transformers, which resolve relative
+	// template paths against the document's own directory.
+	htmlOutput, _, err := CompileMarkdown(markdownInput, std, filepath.Join(tempDir, "doc.md"), cfg)
 	require.NoError(t, err)
 
 	// Assert that Macro expanded into Include, and Include expanded into Content
@@ -95,7 +98,7 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 		IncludePath: tempDir,
 	}
 
-	htmlOutput, _, err := CompileMarkdown(markdownInput, std, tempDir, cfg)
+	htmlOutput, _, err := CompileMarkdown(markdownInput, std, filepath.Join(tempDir, "doc.md"), cfg)
 	require.NoError(t, err)
 
 	// Assert that multi-level nested includes and macro expansions succeeded
@@ -138,7 +141,7 @@ func TestCircularIncludeLoopError(t *testing.T) {
 		IncludePath: tempDir,
 	}
 
-	_, _, err = CompileMarkdown(markdownInput, std, tempDir, cfg)
+	_, _, err = CompileMarkdown(markdownInput, std, filepath.Join(tempDir, "doc.md"), cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular include detected")
 }
