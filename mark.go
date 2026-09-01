@@ -221,6 +221,26 @@ func Run(config Config) error {
 		}
 	}
 
+	// What has been recorded has already been published, so the mapping is
+	// worth keeping however the run ends -- including when it ends early.
+	// Returning on the first failing file used to skip the save entirely,
+	// throwing away the mapping for every page that had published perfectly
+	// well, and the next run then resolved all of them by title alone: no
+	// rename detection, and no version baseline for --no-overwrite.
+	//
+	// Deferred rather than repeated before each return, because there are five
+	// of them and the next one added would miss it too. The explicit save at
+	// the end stays: it is the one whose failure the caller hears about, and
+	// once it succeeds this becomes a no-op.
+	defer func() {
+		if tracker == nil {
+			return
+		}
+		if err := tracker.Save(); err != nil {
+			log.Error().Err(err).Msg("unable to save page manifest")
+		}
+	}()
+
 	// A nil *manifest.Store put into a non-nil interface is still a non-nil
 	// interface, so page would see tracking as enabled and call through a nil
 	// receiver. Build the interface value only when there is a store behind it.
@@ -429,6 +449,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
+
+	// A byte-order mark is not content, and leaving it in front of the first
+	// header comment makes the file look to every parser here like one with no
+	// metadata at all -- reported as "doesn't contain metadata", which is not
+	// where the author would look. Windows editors write one routinely.
+	markdown = bytes.TrimPrefix(markdown, []byte{0xEF, 0xBB, 0xBF})
 
 	// Fingerprint the source as read, before metadata is stripped and links are
 	// substituted. Both of those depend on state outside the file -- what is
@@ -874,6 +900,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 		target = pg
 
+		// The refetch carries the title Confluence holds now, which is the old
+		// one whenever this run is renaming the page: the new title is staged
+		// on the object that was just replaced and is not published until the
+		// update below. Without this the rename is dropped silently, and the
+		// manifest goes on to record a title the page does not carry -- which
+		// then misresolves every parent that names it.
+		if titleChanged && meta != nil {
+			target.Title = meta.Title
+		}
+
 		comments, err := api.GetInlineComments(target.ID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
@@ -902,6 +938,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	})
 
 	if shouldUpdatePage {
+		// Checked here rather than anywhere earlier because this is the body
+		// that is actually sent: after the layout wrap, and after any inline
+		// comments have been merged back into it.
+		if err := markmd.CheckWellFormed(html); err != nil {
+			return nil, nil, err
+		}
+
 		err = api.UpdatePage(
 			target,
 			html,
