@@ -1,8 +1,8 @@
 <h1 id="Custom-Anchor-IDs">Custom Anchor IDs</h1>
 <p>An author can name a heading's anchor with the <code>{#custom-id}</code> syntax every other Markdown tool understands, rather than accepting the one Mark derives from the heading text.</p>
-<h2 id="custom-id">My Heading</h2>
-<p>The braces are consumed rather than rendered, so the heading reads as written and the anchor is exactly what was asked for: <a href="#custom-id">exact</a>.</p>
-<h2 id="Another-Heading">Another Heading</h2>
-<p>A heading with no custom id keeps its derived anchor, and a link written in the usual slug style still finds it: <a href="#Another-Heading">slug</a>.</p>
-<h2 id="rel">Release Notes</h2>
-<p>Naming an anchor replaces the derived one rather than adding to it, so the slug of the heading text no longer resolves: <a href="#release-notes">by slug</a> is left as written, while <a href="#rel">by name</a> resolves. This is what other Markdown tools do too -- a custom id is the id, not an alias.</p>
+<h2 id="custom-id"><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">custom-id</ac:parameter></ac:structured-macro>My Heading</h2>
+<p>The braces are consumed rather than rendered, so the heading reads as written and the anchor is exactly what was asked for: <ac:link ac:anchor="custom-id"><ac:link-body>exact</ac:link-body></ac:link>.</p>
+<h2 id="Another-Heading"><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">Another-Heading</ac:parameter></ac:structured-macro>Another Heading</h2>
+<p>A heading with no custom id keeps its derived anchor, and a link written in the usual slug style still finds it: <ac:link ac:anchor="Another-Heading"><ac:link-body>slug</ac:link-body></ac:link>.</p>
+<h2 id="rel"><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">rel</ac:parameter></ac:structured-macro>Release Notes</h2>
+<p>Naming an anchor replaces the derived one rather than adding to it, so the slug of the heading text no longer resolves: <ac:link ac:anchor="release-notes"><ac:link-body>by slug</ac:link-body></ac:link> is left as written, while <ac:link ac:anchor="rel"><ac:link-body>by name</ac:link-body></ac:link> resolves. This is what other Markdown tools do too -- a custom id is the id, not an alias.</p>

@@ -9,9 +9,11 @@ import (
 	"github.com/yuin/goldmark/renderer"
 )
 
-func headingRenderers(dropFirstH1 bool) []renderer.NodeRenderer {
+func headingRenderers(t *testing.T, dropFirstH1 bool) []renderer.NodeRenderer {
+	t.Helper()
+
 	return []renderer.NodeRenderer{
-		crenderer.NewConfluenceHeadingRenderer(dropFirstH1),
+		crenderer.NewConfluenceHeadingRenderer(newStdlib(t), dropFirstH1),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextLegacyRenderer(false),
 	}
@@ -26,7 +28,7 @@ const headingDocument = "# First\n\ntext\n\n## Second\n\n# Third\n"
 // Only the first h1 goes. A later h1 is content, not a repeated title, and an
 // h2 is never a title -- dropping either would silently lose a section heading.
 func TestHeadingDropFirstH1(t *testing.T) {
-	actual := render(t, headingDocument, headingRenderers(true))
+	actual := render(t, headingDocument, headingRenderers(t, true))
 	assertWellFormed(t, actual)
 
 	assert.NotContains(t, actual, "First", "the first h1 goes, text and all")
@@ -36,7 +38,7 @@ func TestHeadingDropFirstH1(t *testing.T) {
 
 // TestHeadingKeepsEverythingByDefault is the same document with the flag off.
 func TestHeadingKeepsEverythingByDefault(t *testing.T) {
-	actual := render(t, headingDocument, headingRenderers(false))
+	actual := render(t, headingDocument, headingRenderers(t, false))
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, "<h1>First</h1>")
@@ -51,7 +53,7 @@ func TestHeadingKeepsEverythingByDefault(t *testing.T) {
 // heading-anchor fixtures in markdown/ pin -- and this only asserts that the
 // renderer passes the attribute through.
 func TestHeadingKeepsItsID(t *testing.T) {
-	actual := render(t, "## A Section\n", headingRenderers(false), parser.WithAutoHeadingID())
+	actual := render(t, "## A Section\n", headingRenderers(t, false), parser.WithAutoHeadingID())
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `id="a-section"`)
@@ -62,7 +64,7 @@ func TestHeadingKeepsItsID(t *testing.T) {
 // document that opens with a paragraph: the flag drops the first h1 wherever it
 // appears, rather than only when it is the opening block.
 func TestHeadingDropsOnlyTheFirstH1EvenWhenItIsNotFirstInTheDocument(t *testing.T) {
-	actual := render(t, "intro\n\n# Title\n\n# Later\n", headingRenderers(true))
+	actual := render(t, "intro\n\n# Title\n\n# Later\n", headingRenderers(t, true))
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, "intro")

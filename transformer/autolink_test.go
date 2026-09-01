@@ -28,7 +28,7 @@ func TestAutoLinkTransformer(t *testing.T) {
 		goldmark.WithRendererOptions(
 			html.WithUnsafe(),
 			renderer.WithNodeRenderers(
-				util.Prioritized(crenderer.NewConfluenceLinkRenderer(), 100),
+				util.Prioritized(crenderer.NewConfluenceLinkRenderer(nil), 100),
 			),
 		),
 	)

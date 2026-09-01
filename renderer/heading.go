@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"github.com/kovetskiy/mark/v16/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
@@ -8,13 +10,15 @@ import (
 )
 
 type ConfluenceHeadingRenderer struct {
+	Stdlib *stdlib.Lib
 	html.Config
 	DropFirstH1 bool
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceHeadingRenderer(dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceHeadingRenderer(lib *stdlib.Lib, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceHeadingRenderer{
+		Stdlib:      lib,
 		Config:      html.NewConfig(),
 		DropFirstH1: dropFirstH1,
 	}
@@ -48,6 +52,25 @@ func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, sour
 			html.RenderAttributes(w, node, html.HeadingAttributeFilter)
 		}
 		_ = w.WriteByte('>')
+
+		// The heading says where it is, for the links on this page that point
+		// at it. Confluence keeps no id on a heading and generates its own from
+		// the element's text, so the id rendered just above is decoration: the
+		// Anchor macro is what a link can actually reach, and it is what mark
+		// already uses for footnotes.
+		//
+		// Inside the heading rather than before it, which is where the editor
+		// puts one, and the macro renders as nothing either way.
+		if anchor, ok := node.AttributeString(ctransformer.AnchorAttribute); ok && r.Stdlib != nil {
+			err := r.Stdlib.Templates.ExecuteTemplate(w, "ac:anchor", struct {
+				Anchor string
+			}{
+				string(anchor.([]byte)),
+			})
+			if err != nil {
+				return ast.WalkStop, err
+			}
+		}
 	} else {
 		_, _ = w.WriteString("</h")
 		_ = w.WriteByte("0123456"[n.Level])

@@ -355,6 +355,16 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		// A link to an anchor on the same page. Confluence keeps no id on a
+		// heading and generates its own from the element's text, so the HTML
+		// idiom -- id="X" on the heading, href="#X" on the link -- renders,
+		// looks right, and does nothing when clicked. ac:link with ac:anchor
+		// and no ri:page is the storage format's own way of saying it.
+		`ac:link:anchor`: text(
+			`<ac:link ac:anchor="{{ .Anchor | xmlesc }}">`,
+			`<ac:link-body>`,
+		),
+
 		// The marker is superscript inside the link body rather than around
 		// the whole link: ac:link-body is documented to take sup, while a
 		// storage-format sup wrapping a macro is not, and the editor is free
