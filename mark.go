@@ -616,6 +616,19 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if _, err := fmt.Fprintln(config.output(), html); err != nil {
 			return nil, nil, err
 		}
+
+		// Checked here as well as before an upload. Validating documents in CI
+		// without Confluence credentials is the whole of what --compile-only is
+		// for, and a body that Confluence would reject outright passed that
+		// check silently -- so the failure was found at publish time by the
+		// person who could least act on it.
+		//
+		// The layout wrap and the comment merge are missing from this output,
+		// and neither introduces the errors this catches.
+		if err := markmd.CheckWellFormed(html); err != nil {
+			return nil, nil, err
+		}
+
 		return nil, nil, nil
 	}
 

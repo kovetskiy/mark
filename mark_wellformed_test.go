@@ -128,3 +128,44 @@ An <span>unclosed tag.
 	assert.Empty(t, bodyOfPageTitled(t, server, "Bad"),
 		"the malformed one should have uploaded no body")
 }
+
+// TestCompileOnlyRefusesAMalformedBody: validating documents in CI without
+// Confluence credentials is the whole of what --compile-only is for, and the
+// gate ran only on the path that uploads -- so the mode that exists to catch
+// this exited zero and the failure was found at publish time instead.
+func TestCompileOnlyRefusesAMalformedBody(t *testing.T) {
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", `<!-- Space: DOCS -->
+<!-- Title: Malformed -->
+
+Text with an <span>unclosed tag.
+`)
+
+	err := Run(Config{
+		Files: file, CompileOnly: true,
+		Features: []string{"mention"}, Output: io.Discard,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not well-formed XML")
+}
+
+// TestCompileOnlyAcceptsAWellFormedBody is the control: the check must not
+// stand in the way of the markup mark itself emits.
+func TestCompileOnlyAcceptsAWellFormedBody(t *testing.T) {
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", `<!-- Space: DOCS -->
+<!-- Title: Fine -->
+
+A & B, "quoted", 3 < 4, and a table:
+
+| a | b |
+|---|---|
+| 1 | 2 |
+`)
+
+	require.NoError(t, Run(Config{
+		Files: file, CompileOnly: true,
+		Features: []string{"mention"}, Output: io.Discard,
+	}))
+}
