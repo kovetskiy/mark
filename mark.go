@@ -927,12 +927,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
-	if tracker != nil && meta != nil {
-		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
-			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
-		}
-	}
-
 	status := report.StatusPublished
 	if !shouldUpdatePage {
 		status = report.StatusUnchanged
@@ -961,6 +955,19 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to update page: %w", err)
+		}
+	}
+
+	// Recorded after the write, not before it. The mapping asserts what is on
+	// the page -- the title it carries and a fingerprint of the source that
+	// produced its body -- and the manifest is now saved however the run ends,
+	// so recording first meant a body that was refused as malformed, or an
+	// update that failed, still left the mapping claiming both. The fingerprint
+	// is what rename detection matches on, so the next run would then read a
+	// document it had never published as unchanged.
+	if tracker != nil && meta != nil {
+		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
+			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 	}
 
