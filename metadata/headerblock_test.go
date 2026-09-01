@@ -117,8 +117,8 @@ Body.
 `)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown header "Titel"`)
-	assert.Contains(t, err.Error(), HeaderTitle, "the message has to name the valid headers")
-	assert.Contains(t, err.Error(), ContentAppearance)
+	assert.Contains(t, err.Error(), HeaderTitle,
+		"the message has to name the header that was probably meant")
 }
 
 // TestUnknownHeaderBeforeAnyKnownOneIsRefused covers the same typo written as
