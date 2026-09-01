@@ -293,34 +293,40 @@ func EnsureFolderAncestry(
 				folder, err = api.CreateFolder(spaceID, title, &pid, "folder")
 			}
 			if err != nil {
+				createErr := err
+
 				underID := ""
 				if parent != nil {
 					underID = parent.ID
 				} else if anchorPageID != nil {
 					underID = *anchorPageID
 				}
-				// Another file in the same run may have created this folder already.
-				if strings.Contains(err.Error(), "folder exists with the same title") {
-					if id, ok := cachedFolderID(space, underID, title); ok {
-						folder, err = api.GetFolderByID(id)
-					} else {
-						folder, err = resolveFolder(api, space, title, underID, anchorPageID)
-					}
+
+				// Another file in the same run may have created this folder
+				// already. Asked by looking for the folder rather than by
+				// reading the refusal: the "folder exists with the same title"
+				// wording comes from Confluence and is not a contract, so a
+				// reworded or localised instance turned a collision anybody can
+				// hit into a hard failure. A create that failed for a real
+				// reason leaves nothing to find, and the original error is what
+				// gets reported.
+				if id, ok := cachedFolderID(space, underID, title); ok {
+					folder, err = api.GetFolderByID(id)
+				} else {
+					folder, err = resolveFolder(api, space, title, underID, anchorPageID)
 				}
-				if err != nil {
+				if err != nil || folder == nil {
 					return nil, fmt.Errorf(
 						"error creating folder with title %q: %w",
 						title,
-						err,
+						createErr,
 					)
 				}
-				if folder == nil {
-					return nil, fmt.Errorf(
-						"folder %q reported as existing but could not be found in space %q",
-						title,
-						space,
-					)
-				}
+
+				log.Info().Msgf(
+					"folder %q already exists as %s; using it rather than creating another",
+					title, folder.ID,
+				)
 			}
 
 			underID := ""
