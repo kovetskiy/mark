@@ -468,6 +468,35 @@ func paginate[T any](r *http.Request, items []T) (page []T, hasNext bool) {
 	return items[start:end], end < len(items)
 }
 
+// cursorPage slices items the way the v2 API paginates: an opaque cursor
+// rather than a start offset, handed back inside a whole _links.next URL.
+//
+// The fake's cursor is the index of the next item. That is opaque enough that a
+// client cannot do arithmetic on it -- it has to read the link -- and simple
+// enough to be obviously right.
+func cursorPage[T any](r *http.Request, items []T) (page []T, next string) {
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	start := 0
+	if v := r.URL.Query().Get("cursor"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			start = n
+		}
+	}
+	if start >= len(items) {
+		return nil, ""
+	}
+	end := min(start+limit, len(items))
+	if end < len(items) {
+		next = strconv.Itoa(end)
+	}
+	return items[start:end], next
+}
+
 func linksWithNext(hasNext bool) map[string]any {
 	links := map[string]any{"base": "/wiki", "context": "/wiki"}
 	if hasNext {
@@ -750,13 +779,23 @@ func (s *Server) contentProperties(w http.ResponseWriter, r *http.Request, conte
 	switch r.Method {
 	case http.MethodGet:
 		if key == "" {
-			results := []map[string]any{}
+			// Paginated, because a real homepage carries the properties of
+			// every app installed on the instance and not just this one's.
+			var owned []*SpaceProperty
 			for _, p := range s.properties {
 				if p.OwnerID == contentID {
-					results = append(results, propertyJSON(p))
+					owned = append(owned, p)
 				}
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"results": results})
+			page, hasNext := paginate(r, owned)
+			results := []map[string]any{}
+			for _, p := range page {
+				results = append(results, propertyJSON(p))
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"results": results,
+				"_links":  linksWithNext(hasNext),
+			})
 			return
 		}
 		p := find(key)
@@ -844,13 +883,27 @@ func (s *Server) spaceProperties(w http.ResponseWriter, r *http.Request, ownerID
 	switch r.Method {
 	case http.MethodGet:
 		key := r.URL.Query().Get("key")
-		results := []map[string]any{}
+		var owned []*SpaceProperty
 		for _, p := range s.properties {
 			if p.OwnerID == ownerID && (key == "" || p.Key == key) {
-				results = append(results, propertyJSON(p))
+				owned = append(owned, p)
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"results": results})
+		// v2 pages by cursor, and names the next page as a URL rather than as
+		// an offset the client could have worked out for itself.
+		page, next := cursorPage(r, owned)
+		results := []map[string]any{}
+		for _, p := range page {
+			results = append(results, propertyJSON(p))
+		}
+		links := map[string]any{}
+		if next != "" {
+			links["next"] = fmt.Sprintf(
+				"/api/v2/spaces/%s/properties?cursor=%s&limit=%s",
+				ownerID, next, r.URL.Query().Get("limit"),
+			)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
 
 	case http.MethodPost:
 		var payload struct {
