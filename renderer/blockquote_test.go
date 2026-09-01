@@ -63,18 +63,61 @@ func TestBlockQuoteUnclassifiedStaysAQuote(t *testing.T) {
 	assert.NotContains(t, actual, "ac:structured-macro")
 }
 
-// TestBlockQuoteClassifierMatchesAnywhereInTheFirstLine records a trap in the
-// legacy syntax rather than an intention: the classifier looks for the word
-// anywhere in the first line, unanchored and case-insensitively, so a quote that
-// merely mentions the word becomes a macro. Authors who want a plain quotation
-// of a sentence containing "note" have to reword it or use a different
-// construct.
-func TestBlockQuoteClassifierMatchesAnywhereInTheFirstLine(t *testing.T) {
-	actual := render(t, "> Nothing here was noteworthy.\n", legacyBlockQuoteRenderers())
-	assertWellFormed(t, actual)
+// TestBlockQuoteMarkerMustOpenTheLine covers the trap this syntax used to set.
+// The classifier looked for the word anywhere in the first line, so a quotation
+// that merely mentioned one of four very common words became an admonition
+// macro -- and the author's only recourse was to reword the sentence. The
+// marker now has to open the line, which is where every documented form of it
+// is written anyway.
+func TestBlockQuoteMarkerMustOpenTheLine(t *testing.T) {
+	prose := []struct {
+		name  string
+		input string
+	}{
+		{"word inside another word", "> Nothing here was noteworthy.\n"},
+		{"info inside information", "> Information about pricing is below.\n"},
+		{"note mid-sentence", "> Please note that the API changed.\n"},
+		{"tip inside multiple", "> There are multiple ways to do this.\n"},
+		{"warn inside a sentence", "> We should warn them first.\n"},
+	}
 
-	assert.Contains(t, actual, `ac:name="note"`,
-		"the word inside another word still classifies the quote")
+	for _, tt := range prose {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := render(t, tt.input, legacyBlockQuoteRenderers())
+			assertWellFormed(t, actual)
+
+			assert.Contains(t, actual, "<blockquote>",
+				"ordinary prose stays a quotation")
+			assert.NotContains(t, actual, "ac:structured-macro")
+		})
+	}
+}
+
+// TestBlockQuoteMarkerFormsStillClassify is the other half: everything the
+// syntax has always accepted has to keep working, or the fix above would be a
+// removal rather than a repair.
+func TestBlockQuoteMarkerFormsStillClassify(t *testing.T) {
+	forms := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"marker with a colon and text", "> Info: the build is nightly.\n", `ac:name="info"`},
+		{"marker alone", "> Warn\n", `ac:name="warning"`},
+		{"plural with a colon", "> **NOTES:**\n>\n> One.\n", `ac:name="note"`},
+		{"emphasised marker", "> **Tip:** use the cache.\n", `ac:name="tip"`},
+		{"shouting", "> NOTE: shouting.\n", `ac:name="note"`},
+		{"warning spelled out", "> Warning: this deletes data.\n", `ac:name="warning"`},
+	}
+
+	for _, tt := range forms {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := render(t, tt.input, legacyBlockQuoteRenderers())
+			assertWellFormed(t, actual)
+
+			assert.Contains(t, actual, tt.want)
+		})
+	}
 }
 
 // TestBlockQuoteTypeComesFromTheFirstParagraphOnly pins the scope of the
