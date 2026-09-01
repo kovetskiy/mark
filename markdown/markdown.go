@@ -159,11 +159,20 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 		goldmark.WithExtensions(
 			extension.Footnote,
 			extension.DefinitionList,
+			// GFM's members are listed one by one rather than through
+			// extension.GFM, which bundles its own default-configured Table.
+			// Registering Table twice put two cell renderers at the same
+			// priority 500, and goldmark sorts renderers with sort.Slice, which
+			// is not stable -- so which alignment method survived was decided by
+			// nothing at all. Alignment came out as ac:align attributes or as
+			// style="text-align:..." depending on the sort.
 			extension.NewTable(
 				extension.WithTableCellAlignMethod(extension.TableCellAlignStyle),
 			),
 			ext,
-			extension.GFM,
+			extension.Linkify,
+			extension.Strikethrough,
+			extension.TaskList,
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
