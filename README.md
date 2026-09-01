@@ -80,13 +80,22 @@ identity, then labels, then properties — but anything else ends the run, and a
 header written below the page's own text is published as text rather than
 applied. Mark warns when it finds one there.
 
-A header Mark does not recognise is an error rather than a warning: the line is
-taken out of the page either way, so a misspelled `Titel` would otherwise
-publish the document without its title and still exit zero.
+Only a comment naming one of the headers above is read as one. A comment that
+names something else — `<!-- TODO: ... -->`, `<!-- Author: ... -->`, an SPDX
+line, an editor modeline — is an ordinary comment: it stays in the page and the
+headers around it still apply. So do the `ac:` markers, which are storage-format
+markup rather than metadata, and a `Macro` definition, which belongs to the
+macro expander; the layout markers may therefore follow `<!-- Layout: plain -->`
+directly, as [Customizing the page
+layout](#customizing-the-page-layout) shows.
+
+A comment that is *nearly* a header is an error: `<!-- Titel: ... -->` fails the
+run naming the header it was probably meant to be. The line is taken out of the
+page either way, so publishing the document without its title and exiting zero
+was the alternative.
 
 An `Include` directive may be written among the headers or anywhere below them.
-It is left in the page for the include expander to find, so it is the one
-comment in the header block that survives into the body.
+It is left in the page for the include expander to find.
 
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
