@@ -37,7 +37,7 @@ func (t *GHAlertsTransformer) Transform(doc *ast.Document, reader text.Reader, p
 		}
 
 		// Transform the blockquote into a GitHub Alert node
-		t.transformBlockquote(blockquote, alertType, reader)
+		t.transformBlockquote(blockquote, alertType)
 
 		return ast.WalkContinue, nil
 	})
@@ -101,33 +101,27 @@ func (t *GHAlertsTransformer) extractAlertType(blockquote *ast.Blockquote, reade
 
 // transformBlockquote modifies the blockquote to remove the GitHub Alert syntax
 // and adds metadata for rendering
-func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, alertType string, reader text.Reader) {
+func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, alertType string) {
 	// Set a custom attribute to identify this as a GitHub Alert
 	blockquote.SetAttribute([]byte("gh-alert-type"), []byte(alertType))
 
-	// Find and remove/replace the GitHub Alert syntax from the first paragraph
+	// Find and remove the GitHub Alert syntax from the first paragraph
 	firstChild := blockquote.FirstChild()
 	if firstChild != nil && firstChild.Kind() == ast.KindParagraph {
 		paragraph := firstChild.(*ast.Paragraph)
-		t.splitAlertParagraph(blockquote, paragraph, alertType, reader)
+		t.stripAlertMarker(blockquote, paragraph)
 	}
 }
 
-// splitAlertParagraph removes the [!TYPE] syntax and creates a separate paragraph for the title
-func (t *GHAlertsTransformer) splitAlertParagraph(blockquote *ast.Blockquote, paragraph *ast.Paragraph, alertType string, reader text.Reader) {
-	// Generate user-friendly title
-	title := strings.ToUpper(alertType[:1]) + alertType[1:]
-
-	// Create a new paragraph for the title
-	titleParagraph := ast.NewParagraph()
-	titleText := ast.NewText()
-	titleText.Segment = text.NewSegment(0, 0) // Dummy segment, we'll use attribute for content
-	titleText.SetAttribute([]byte("replacement-content"), []byte(title))
-	titleParagraph.AppendChild(titleParagraph, titleText)
-
-	// Insert the title paragraph before the current one
-	blockquote.InsertBefore(blockquote, paragraph, titleParagraph)
-
+// stripAlertMarker removes the [!TYPE] syntax, leaving the blockquote holding
+// only what the author wrote underneath it.
+//
+// The alert's title used to be added back here as a paragraph of its own, which
+// made it the first line of the macro's body rather than its header. The
+// renderer passes it as the macro's title parameter instead, which is what
+// Confluence styles as a header -- so nothing has to be synthesised into the
+// body at all.
+func (t *GHAlertsTransformer) stripAlertMarker(blockquote *ast.Blockquote, paragraph *ast.Paragraph) {
 	// Remove the first three nodes ([ !TYPE ]) from the original paragraph
 	currentNode := paragraph.FirstChild()
 	for i := 0; i < 3 && currentNode != nil; i++ {

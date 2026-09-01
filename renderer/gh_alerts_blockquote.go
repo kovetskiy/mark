@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -27,6 +28,27 @@ func NewConfluenceGHAlertsBlockQuoteRenderer(opts ...html.Option) renderer.NodeR
 // RegisterFuncs implements NodeRenderer.RegisterFuncs
 func (r *ConfluenceGHAlertsBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
+}
+
+// getConfluenceMacroTitle gives the alert the header Confluence draws for it.
+//
+// The title used to be injected into the body as a paragraph of its own, which
+// published it as the first line of the alert's text rather than as its
+// heading: no icon alignment, no weight, and it moved with the content when a
+// reader edited the page in Confluence. The macro takes a title parameter for
+// exactly this, and it is styled as a header.
+//
+// Only the five types the transformer recognises get one. Nothing else can
+// reach this in practice, but the value is interpolated into an attribute, so
+// answering with a fixed vocabulary rather than with the argument is what keeps
+// the document well-formed no matter what set the attribute.
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) getConfluenceMacroTitle(alertType string) string {
+	switch alertType {
+	case "note", "tip", "important", "warning", "caution":
+		return strings.ToUpper(alertType[:1]) + alertType[1:]
+	default:
+		return ""
+	}
 }
 
 // Define GitHub Alert to Confluence macro mapping
@@ -69,7 +91,11 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWrit
 	if quoteLevel == 0 && entering {
 		r.BlockQuoteNode = node
 		macroName := r.getConfluenceMacroName(alertType)
-		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", macroName)
+		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter>", macroName)
+		if title := r.getConfluenceMacroTitle(alertType); title != "" {
+			prefix += fmt.Sprintf("<ac:parameter ac:name=\"title\">%s</ac:parameter>", title)
+		}
+		prefix += "<ac:rich-text-body>\n"
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
 		}
