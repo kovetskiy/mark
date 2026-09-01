@@ -133,32 +133,24 @@ func InScope(api *confluence.API, scopeID string, orphan Orphan) (bool, error) {
 
 // HandleOrphans acts on the pages whose source files are gone.
 //
+// Every orphan given here is acted on: the caller decides what is in scope,
+// because it has to name the same set in what it reports and in what it stops
+// tracking. Asking again here meant a second GetPageByIDExpanded for every
+// candidate -- twice the API cost of the one operation in mark that deletes
+// pages -- for an answer that had just been computed.
+//
 // Returns the paths that were dealt with, which the caller stops tracking. A
 // page that could not be acted on stays in the manifest, so the next run finds
 // it again rather than losing sight of it.
 func HandleOrphans(
 	api *confluence.API,
 	action string,
-	scopeID string,
 	orphans []Orphan,
 	dryRun bool,
 ) ([]string, error) {
 	var handled []string
 
 	for _, orphan := range orphans {
-		inScope, err := InScope(api, scopeID, orphan)
-		if err != nil {
-			return handled, err
-		}
-
-		if !inScope {
-			log.Debug().Msgf(
-				"page %q is outside the orphan scope; leaving it alone", orphan.Title,
-			)
-
-			continue
-		}
-
 		if action == OnOrphanReport {
 			handled = append(handled, orphan.Path)
 
