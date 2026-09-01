@@ -474,6 +474,29 @@ Block Quotes are converted to Confluence Info/Warn/Note box when the following c
 
 In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
 
+
+### Definition Lists
+
+A definition list is published as a two-column table, with each term heading its
+own row:
+
+```markdown
+Term
+: What it means
+
+Another term
+: One definition
+: And a second
+```
+
+Confluence storage format has no `<dl>`, `<dt>` or `<dd>` — its sanitiser drops
+all three, which left the list as an unstructured run of text with the terms no
+longer distinguishable from what defined them. A table is what the Confluence
+editor produces for this shape, and it is what the elements mean.
+
+Several definitions of one term share its cell rather than each taking a row,
+since a row with no term to head it reads as though something is missing.
+
 ### Task Lists
 
 Mark supports [GitHub Flavored Markdown task lists](https://github.github.com/gfm/#task-list-items-extension-).
