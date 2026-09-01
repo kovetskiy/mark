@@ -351,8 +351,13 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		tmpl = stdlib.Templates
 	}
 	pipeline := ctransformer.NewPipelineTransformer(
-		ctransformer.NewMacroTransformer(path, path, cfg.IncludePath, tmpl),
-		ctransformer.NewIncludeTransformer(path, path, cfg.IncludePath, tmpl),
+		// The base directory a template path is resolved against is the
+		// document's directory, not the document itself. Passing path for both
+		// made every relative Template: resolve under "doc.md/", which no
+		// filesystem has, so the AST macro and include transformers only ever
+		// worked when --include-path happened to cover the file.
+		ctransformer.NewMacroTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
+		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
 		Config:          html.NewConfig(),
