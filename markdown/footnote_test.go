@@ -71,9 +71,14 @@ func TestFootnotesFeature(t *testing.T) {
 	assert.NotContains(t, enabled, `id="fn:1"`)
 	assert.NotContains(t, enabled, `href="#fn:1"`)
 
-	disabled := compileFootnotes(t, markdown, "mermaid", "mention")
-	assert.Contains(t, disabled, `id="fn:1"`, "without the feature goldmark's own HTML is left alone")
-	assert.NotContains(t, disabled, `ac:name="anchor"`)
+	// goldmark's own footnote HTML -- ids and fragment links -- does not
+	// survive a Confluence page, so there is no configuration that produces it.
+	// The feature name is still accepted, since nothing validates the list.
+	for _, features := range [][]string{nil, {"mermaid", "mention"}} {
+		actual := compileFootnotes(t, markdown, features...)
+		assert.NotContains(t, actual, `id="fn:1"`, features)
+		assert.Contains(t, actual, `ac:name="anchor"`, features)
+	}
 }
 
 // TestFootnotesRepeatedCitation covers a note cited more than once: the ways

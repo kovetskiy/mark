@@ -60,9 +60,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{
-		Features: []string{"details"},
-	}
+	cfg := types.MarkConfig{}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,9 +78,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 func TestDetailsWithFencedCodeBlock(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{
-		Features: []string{"details"},
-	}
+	cfg := types.MarkConfig{}
 
 	markdown := []byte("```xml\n<![CDATA[hello world]]>\n```\n\n<details>\n<summary>Details</summary>\n<p>Some content</p>\n</details>")
 
@@ -98,7 +94,7 @@ func TestDetailsWithFencedCodeBlock(t *testing.T) {
 func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{Features: []string{"details"}}
+	cfg := types.MarkConfig{}
 
 	tests := []string{
 		"`<details>` maps to the native expand macro.\n",
@@ -124,7 +120,7 @@ func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 func TestDetailsWithBlankLines(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{Features: []string{"details"}}
+	cfg := types.MarkConfig{}
 
 	tests := []struct {
 		name  string
@@ -168,7 +164,7 @@ func TestDetailsWithBlankLines(t *testing.T) {
 func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{Features: []string{"details"}}
+	cfg := types.MarkConfig{}
 
 	markdown := []byte("<details>\n<summary>S</summary>\n\nBody with **bold** text.\n\n</details>\n")
 
@@ -185,7 +181,7 @@ func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
 func TestDetailsMalformedStaysBalanced(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{Features: []string{"details"}}
+	cfg := types.MarkConfig{}
 
 	tests := []struct {
 		name  string
@@ -218,7 +214,7 @@ func TestDetailsMalformedStaysBalanced(t *testing.T) {
 func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{Features: []string{"details"}}
+	cfg := types.MarkConfig{}
 
 	markdown := []byte("```html\n<details>\n<summary>S</summary>\n</details>\n```\n")
 

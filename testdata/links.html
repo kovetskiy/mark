@@ -9,15 +9,13 @@
 <p><ac:image ac:alt="My External Image"><ri:url ri:value="http://confluence.atlassian.com/images/logo/confluence_48_trans.png?key1=value1&amp;key2=value2"/></ac:image></p>
 <p><ac:link><ri:page ri:content-title="test_link"/><ac:plain-text-link-body><![CDATA[My test_link]]></ac:plain-text-link-body></ac:link></p>
 <p><ac:link><ri:page ri:content-title="test_link_link"/><ac:plain-text-link-body><![CDATA[Another [Link]]]></ac:plain-text-link-body></ac:link></p>
-<p>Use footnotes link <sup id="fnref:1"><a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a></sup></p>
+<p>Use footnotes link <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link></p>
 <p>Use <a href="foo">Link [Text]</a></p>
 <h2 id="Empty-link">Empty link</h2>
 <p><a href=""></a></p>
-<div class="footnotes" role="doc-endnotes">
 <hr />
 <ol>
-<li id="fn:1">
-<p>a footnote link&#160;<a href="#fnref:1" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>a footnote link&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
 </li>
 </ol>
-</div>

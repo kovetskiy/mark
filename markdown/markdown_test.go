@@ -253,40 +253,6 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
-// TestCompileMarkdownFootnotes covers the footnotes feature. testdata/footnotes.md
-// is also picked up by the feature-off tests above, which pin goldmark's own
-// HTML footnotes -- the ids and #fragment links Confluence discards -- so the
-// pair of fixtures records exactly what the feature changes.
-func TestCompileMarkdownFootnotes(t *testing.T) {
-	_, filename, _, _ := runtime.Caller(0)
-	dir := path.Join(path.Dir(filename), "..")
-	err := os.Chdir(dir)
-	if err != nil {
-		panic(err)
-	}
-
-	test := assert.New(t)
-
-	lib, err := stdlib.New(nil)
-	if err != nil {
-		panic(err)
-	}
-
-	const fixture = "testdata/footnotes.md"
-	markdown, htmlname, html := loadData(t, fixture, "-confluence")
-
-	cfg := types.MarkConfig{
-		MermaidScale:  1.0,
-		D2Scale:       1.0,
-		DropFirstH1:   false,
-		StripNewlines: false,
-		Features:      []string{"mkdocsadmonitions", "mention", "footnotes"},
-	}
-
-	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
-	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
-}
-
 // TestCompileMarkdownEmoji covers the emoji feature. testdata/emoji.md is also
 // picked up by the feature-off tests above, which pin the shortcodes passing
 // through as text, so the pair of fixtures records exactly what the feature
@@ -451,7 +417,11 @@ func TestContinueOnError(t *testing.T) {
 	assert.ErrorContains(t, err, "one or more files failed to process")
 }
 
-func TestDetailsFeature(t *testing.T) {
+// TestDetailsIsNotOptional: <details> is converted whatever --features says.
+// The storage format cannot carry the tag, so the alternative was never a
+// working page -- and the feature name is still accepted, since nothing
+// validates the list.
+func TestDetailsIsNotOptional(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
 	markdown := []byte(`<details>
@@ -459,48 +429,34 @@ func TestDetailsFeature(t *testing.T) {
 Some content
 </details>`)
 
-	// 1. With details feature enabled
-	cfgEnabled := types.MarkConfig{
-		Features: []string{"details"},
+	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"details"}} {
+		actual, _, err := mark.CompileMarkdown(
+			markdown, lib, "testdata/test.md", types.MarkConfig{Features: features},
+		)
+		assert.NoError(t, err)
+		assert.Contains(t, actual, `<ac:structured-macro ac:name="expand">`, features)
+		assert.Contains(t, actual, `<ac:parameter ac:name="title">Summary Text</ac:parameter>`, features)
+		assert.Contains(t, actual, `<ac:rich-text-body>`, features)
+		assert.NotContains(t, actual, `<details>`, features)
 	}
-	actualEnabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgEnabled)
-	assert.NoError(t, err)
-	assert.Contains(t, actualEnabled, `<ac:structured-macro ac:name="expand">`)
-	assert.Contains(t, actualEnabled, `<ac:parameter ac:name="title">Summary Text</ac:parameter>`)
-	assert.Contains(t, actualEnabled, `<ac:rich-text-body>`)
-
-	// 2. Without details feature enabled
-	cfgDisabled := types.MarkConfig{
-		Features: []string{"mermaid", "mention"},
-	}
-	actualDisabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgDisabled)
-	assert.NoError(t, err)
-	assert.NotContains(t, actualDisabled, `<ac:structured-macro ac:name="expand">`)
-	assert.Contains(t, actualDisabled, `<details>`)
 }
 
-func TestHTMLImgTagFeature(t *testing.T) {
+// TestHTMLImgTagIsNotOptional: an <img> is a void tag, so leaving it as written
+// is not a page without a picture but a body Confluence rejects outright.
+func TestHTMLImgTagIsNotOptional(t *testing.T) {
 	lib, err := stdlib.New(nil)
 	assert.NoError(t, err)
 	markdown := []byte(`<img src="https://example.com/image.png" width="300" alt="Test Image">`)
 
-	// 1. With html-img-tag feature enabled
-	cfgEnabled := types.MarkConfig{
-		Features: []string{"html-img-tag"},
+	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"html-img-tag"}} {
+		actual, _, err := mark.CompileMarkdown(
+			markdown, lib, "testdata/test.md", types.MarkConfig{Features: features},
+		)
+		assert.NoError(t, err)
+		assert.Contains(t, actual, `<ac:image`, features)
+		assert.Contains(t, actual, `ri:value="https://example.com/image.png"`, features)
+		assert.Contains(t, actual, `ac:width="300"`, features)
 	}
-	actualEnabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgEnabled)
-	assert.NoError(t, err)
-	assert.Contains(t, actualEnabled, `<ac:image`)
-	assert.Contains(t, actualEnabled, `ri:value="https://example.com/image.png"`)
-	assert.Contains(t, actualEnabled, `ac:width="300"`)
-
-	// 2. Without html-img-tag feature enabled
-	cfgDisabled := types.MarkConfig{
-		Features: []string{"mermaid", "mention"},
-	}
-	actualDisabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgDisabled)
-	assert.NoError(t, err)
-	assert.NotContains(t, actualDisabled, `<ac:image`)
 }
 
 func TestDateFeature(t *testing.T) {
