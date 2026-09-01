@@ -1717,7 +1717,7 @@ file, no commit. The record lives in Confluence.
 | `Title` header edited | the path is the key, so the lookup still hits |
 | leading H1 edited | the same |
 | file renamed | content fingerprint, matched against paths that stopped appearing |
-| parent page renamed | the title it was published under, followed to the page holding it now |
+| parent page renamed | the page the declared parent chain resolved to last run, whatever it is called now |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
 | two files claiming one page | the reverse index, when the second one is recorded |
@@ -1774,7 +1774,7 @@ writes nothing at all -- neither to Confluence nor to the mapping.
 
 | | storage |
 | --- | --- |
-| Cloud | space properties `mark.manifest.0` … `mark.manifest.15`, and `mark.manifest.folders` |
+| Cloud | space properties `mark.manifest.0` … `mark.manifest.15`, `mark.manifest.folders` and `mark.manifest.parents` |
 | Server / Data Center | content properties of the same names, on the space homepage |
 
 Space properties exist only in the v2 API, so Server and Data Center anchor to
@@ -1786,6 +1786,12 @@ It is split over sixteen properties rather than held in one because Confluence
 bounds how large a single property value may be, and one blob would cap how many
 files a repository may have. Each path is assigned a shard by hash; all of them
 are read in a single request and only the ones that changed are written back.
+
+Folders and parents live in properties of their own rather than among the
+shards. They are keyed by the chain of titles a document declares rather than by
+a source path, there are few enough of them that splitting them buys nothing,
+and a key of theirs among the page keys would be reported as a source file that
+had gone missing.
 
 ### Removing pages whose files are gone
 

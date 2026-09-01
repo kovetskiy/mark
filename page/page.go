@@ -14,7 +14,7 @@ func ResolvePage(
 	dryRun bool,
 	api *confluence.API,
 	meta *metadata.Meta,
-	tracker FolderTracker,
+	tracker AncestryTracker,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
 	if meta == nil {
 		return nil, nil, fmt.Errorf("metadata is empty")
@@ -145,6 +145,7 @@ func ResolvePage(
 			api,
 			meta.Space,
 			meta.Parents,
+			tracker,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("can't create ancestry tree %q: %w", strings.Join(meta.Parents, ` > `), err)

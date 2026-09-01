@@ -348,6 +348,18 @@ func (s *Server) Page(id string) *Page {
 	return nil
 }
 
+// RenamePage retitles a page, as somebody doing it in the Confluence UI would
+// -- which is the case mark cannot see coming, and the one that strands every
+// document declaring the old title as its parent.
+func (s *Server) RenamePage(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[id]; ok {
+		p.Title = title
+	}
+}
+
 // AddLabel stands in for somebody labelling a page in the Confluence web UI.
 func (s *Server) AddLabel(id, label string) {
 	s.mu.Lock()

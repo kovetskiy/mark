@@ -579,6 +579,65 @@ func TestFolderMappingIsKeptOutOfThePageShards(t *testing.T) {
 		"a folder key must never be reported as a missing file")
 }
 
+// TestParentMappingRoundTrip covers the parent half. Parents are found by title
+// too, so one renamed in Confluence stops matching the header that declares it
+// and mark creates an empty page under the old name.
+func TestParentMappingRoundTrip(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	require.NoError(t, store.RecordParent("DOCS", "Docs\x00Team", "page-1"))
+	require.NoError(t, store.Save())
+
+	next := newStoreOn(t, server)
+	id, ok, err := next.LookupParent("DOCS", "Docs\x00Team")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "page-1", id)
+}
+
+// TestParentMappingIsKeptOutOfThePageShards: a parent key among the page keys
+// would be reported as a source file that had gone missing, and most parents
+// have no source file at all.
+func TestParentMappingIsKeptOutOfThePageShards(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	id := spaceID(t, server, "DOCS")
+
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "A", ""))
+	require.NoError(t, store.RecordParent("DOCS", "Docs", "page-1"))
+	require.NoError(t, store.Save())
+
+	assert.Equal(t, map[string]string{"a.md": "1"}, manifestPages(t, server, id),
+		"parents must not appear among the tracked source paths")
+	assert.NotNil(t, server.SpaceProperty(id, manifest.ParentPropertyKey),
+		"they live in their own property")
+
+	next := newStoreOn(t, server)
+	require.NoError(t, next.Record("DOCS", "a.md", "1", "A", ""))
+	assert.Empty(t, next.Orphans("DOCS"),
+		"a parent key must never be reported as a missing file")
+}
+
+// TestParentMappingSkippedWhenUnchanged: parents move even less than folders do,
+// so a run that resolves the same chain must not rewrite the property.
+func TestParentMappingSkippedWhenUnchanged(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	id := spaceID(t, server, "DOCS")
+
+	require.NoError(t, store.RecordParent("DOCS", "Docs", "page-1"))
+	require.NoError(t, store.Save())
+	require.Equal(t, 1, server.SpaceProperty(id, manifest.ParentPropertyKey).Version)
+
+	next := newStoreOn(t, server)
+	require.NoError(t, next.RecordParent("DOCS", "Docs", "page-1"))
+	require.NoError(t, next.Save())
+
+	assert.Equal(t, 1, server.SpaceProperty(id, manifest.ParentPropertyKey).Version,
+		"an unchanged parent mapping must not be rewritten")
+}
+
 // TestFolderMappingSkippedWhenUnchanged: folders rarely move, so a run that
 // resolves the same ones must not rewrite the property.
 func TestFolderMappingSkippedWhenUnchanged(t *testing.T) {
