@@ -256,6 +256,15 @@ func ExtractMacros(
 	var extracted []Macro
 	remaining := contents
 
+	// A macro directive written inside a fenced or indented code block is an
+	// example of one, not one to obey -- which is how any document about mark
+	// shows the syntax, this repository's own README included. Include
+	// directives have always been skipped there, and Macro.Apply already
+	// refuses to rewrite matches inside code; only this pass was missing it, so
+	// the example was hoisted out of the block, registered as a real macro, and
+	// the code block left empty.
+	codeRegions := metadata.CodeRegions(remaining)
+
 	searchOffset := 0
 	for searchOffset < len(remaining) {
 		relStart := bytes.Index(remaining[searchOffset:], []byte("<!--"))
@@ -271,6 +280,11 @@ func ExtractMacros(
 		if macroIdx == -1 || firstEndIdx == -1 || macroIdx > firstEndIdx {
 			// Not a macro directive comment, move past this comment
 			searchOffset = startIdx + firstEndIdx + 3
+			continue
+		}
+
+		if metadata.InCode(codeRegions, startIdx) {
+			searchOffset = startIdx + 4
 			continue
 		}
 
@@ -362,6 +376,11 @@ func ExtractMacros(
 
 		remaining = append(remaining[:startIdx], remaining[endIdx:]...)
 		searchOffset = startIdx
+
+		// Every offset after the splice has moved, so the regions have to be
+		// found again rather than adjusted -- a directive removed from between
+		// two code blocks changes where both of them start.
+		codeRegions = metadata.CodeRegions(remaining)
 	}
 
 	return extracted, remaining, nil
