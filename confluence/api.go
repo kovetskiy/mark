@@ -538,7 +538,7 @@ func (api *API) FindPage(
 		"content/", &result,
 	).Get(payload)
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(request, fmt.Sprintf("find page %q in space %s", title, space), err)
 	}
 
 	// allow 404 because it's fine if page is not found,
@@ -623,7 +623,9 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 		"content/", &result,
 	).Get(payload)
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(
+			request, fmt.Sprintf("find %s page %q in space %s", status, title, space), err,
+		)
 	}
 
 	if request.Raw.StatusCode == http.StatusNotFound {
@@ -721,7 +723,9 @@ func (api *API) CreateAttachment(
 
 	request, err := resource.Post()
 	if err != nil {
-		return info, err
+		return info, newTransportError(
+			request, fmt.Sprintf("attach %q to page %s", name, pageID), err,
+		)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -789,7 +793,9 @@ func (api *API) UpdateAttachment(
 
 	request, err := resource.Post()
 	if err != nil {
-		return info, err
+		return info, newTransportError(
+			request, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID), err,
+		)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -887,7 +893,7 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 			"content/"+pageID+"/child/attachment", &result,
 		).Get(payload)
 		if err != nil {
-			return nil, err
+			return nil, newTransportError(request, "list attachments of page "+pageID, err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -922,7 +928,7 @@ func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, er
 		"content/"+pageID, &PageInfo{},
 	).Get(map[string]string{"expand": expand})
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(request, "read page "+pageID, err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -947,7 +953,7 @@ func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
 			"start":  fmt.Sprintf("%d", start),
 		})
 		if err != nil {
-			return nil, err
+			return nil, newTransportError(request, "read inline comments of page "+pageID, err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -1008,7 +1014,9 @@ func (api *API) CreatePage(
 		"content/", &PageInfo{},
 	).Post(payload)
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(
+			request, fmt.Sprintf("create page %q in space %s", title, space), err,
+		)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1136,7 +1144,9 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		"content/"+page.ID, &map[string]any{},
 	).Put(payload)
 	if err != nil {
-		return err
+		return newTransportError(
+			request, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
+		)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1200,7 +1210,7 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 		"content/"+page.ID+"/label", &LabelInfo{},
 	).Post(payload)
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(request, "add labels to page "+page.ID, err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1216,7 +1226,9 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		"content/"+page.ID+"/label", &LabelInfo{},
 	).SetQuery(map[string]string{"name": label}).Delete()
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(
+			request, fmt.Sprintf("remove label %q from page %s", label, page.ID), err,
+		)
 	}
 
 	if request.Raw.StatusCode == http.StatusNoContent {
@@ -1254,7 +1266,7 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 			"start":  fmt.Sprintf("%d", start),
 		})
 		if err != nil {
-			return nil, err
+			return nil, newTransportError(request, "read labels of page "+page.ID, err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -1320,7 +1332,7 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 			"cql": fmt.Sprintf("user.fullname~%q", name),
 		})
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(request, fmt.Sprintf("look up user %q", name), err)
 	}
 
 	// Try old path
@@ -1331,7 +1343,7 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 				"cql": fmt.Sprintf("user.fullname~%q", name),
 			})
 		if err != nil {
-			return nil, err
+			return nil, newTransportError(request, fmt.Sprintf("look up user %q", name), err)
 		}
 		if request.Raw.StatusCode != http.StatusOK {
 			return nil, newErrorStatusNotOK(request)
@@ -1354,7 +1366,7 @@ func (api *API) GetCurrentUser() (*User, error) {
 		Res("current", &user).
 		Get()
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(request, "read the current user", err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1463,7 +1475,7 @@ func (api *API) RestrictPageUpdates(
 			},
 		})
 	if err != nil {
-		return err
+		return newTransportError(request, "restrict updates of page "+page.ID, err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
@@ -1704,7 +1716,9 @@ func (api *API) CreatePageWithFolderParent(
 	result := &PageInfo{}
 	request, err := api.v2().Res("pages", result).Post(payload)
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(
+			request, fmt.Sprintf("create page %q under folder %s", title, folderID), err,
+		)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
@@ -1921,26 +1935,66 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		_ = request.Raw.Body.Close()
 	}()
 
+	// The URL is part of every one of these. mark makes several calls per page,
+	// and a status on its own does not say which of them refused.
+	target := requestTarget(request)
+
 	if request.Raw.StatusCode == http.StatusUnauthorized {
-		return errors.New(
-			"the Confluence API returned unexpected status: 401 (Unauthorized)",
+		return fmt.Errorf(
+			"the Confluence API returned unexpected status: 401 (Unauthorized) for %s",
+			target,
 		)
 	}
 
 	if request.Raw.StatusCode == http.StatusNotFound {
 		// Wrapped rather than a bare string so callers that need to act on
 		// "this is gone" specifically can ask with errors.Is instead of
-		// matching on the message. The rendered text is unchanged.
+		// matching on the message.
 		return fmt.Errorf(
-			"the Confluence API returned unexpected status: %w", ErrNotFound,
+			"the Confluence API returned unexpected status: %w for %s", ErrNotFound, target,
 		)
 	}
 
 	output, _ := io.ReadAll(request.Raw.Body)
 
 	return fmt.Errorf(
-		"the Confluence API returned unexpected status: %v, "+
+		"the Confluence API returned unexpected status: %v for %s, "+
 			"output: %q",
-		request.Raw.Status, output,
+		request.Raw.Status, target, output,
+	)
+}
+
+// requestTarget names the URL a request was made to, with any credentials in
+// it redacted.
+func requestTarget(request *gopencils.Resource) string {
+	if request == nil || request.Raw == nil ||
+		request.Raw.Request == nil || request.Raw.Request.URL == nil {
+		return "the Confluence API"
+	}
+
+	return request.Raw.Request.URL.Redacted()
+}
+
+// newTransportError explains an error the HTTP library returned in place of a
+// status.
+//
+// gopencils hands the JSON decode error straight back for any response below
+// 400 whose body it cannot parse, so newErrorStatusNotOK -- the one place that
+// builds a readable message -- is never reached for those. The common trigger
+// is a Confluence behind SSO answering 200 with an HTML login page, and what
+// reached the user was `invalid character '<' looking for beginning of value`:
+// no URL, no status, and no page name.
+func newTransportError(request *gopencils.Resource, operation string, err error) error {
+	// No response at all means the request never completed, and there is
+	// nothing to add beyond what it was trying to do.
+	if request == nil || request.Raw == nil {
+		return fmt.Errorf("unable to %s: %w", operation, err)
+	}
+
+	return fmt.Errorf(
+		"unable to %s: %s answered %s with a body that is not JSON "+
+			"(an SSO login page or a proxy interstitial in front of Confluence is the "+
+			"usual cause): %w",
+		operation, requestTarget(request), request.Raw.Status, err,
 	)
 }

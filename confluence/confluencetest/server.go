@@ -1026,11 +1026,9 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 	for _, p := range page {
 		results = append(results, s.pageJSON(p))
 	}
-	links := linksWithNext(hasNext)
-	links["base"] = "/wiki"
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results": results,
-		"_links":  links,
+		"_links":  linksWithNext(hasNext),
 	})
 }
 

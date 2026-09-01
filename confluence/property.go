@@ -90,7 +90,7 @@ func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
 			Res("properties", &result).
 			Get(query)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read properties of space %s: %w", spaceID, err)
+			return nil, newTransportError(request, "read properties of space "+spaceID, err)
 		}
 
 		// A space with no properties at all answers 404 rather than an empty
@@ -166,7 +166,9 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 		request, err = space.Res("properties").Res(existing.ID, &result).Put(payload)
 	}
 	if err != nil {
-		return fmt.Errorf("unable to write property %q of space %s: %w", key, spaceID, err)
+		return newTransportError(
+			request, fmt.Sprintf("write property %q of space %s", key, spaceID), err,
+		)
 	}
 
 	return propertyWriteResult(request, key, "space "+spaceID, existing == nil)
@@ -198,7 +200,7 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 				"start": strconv.Itoa(start),
 			})
 		if err != nil {
-			return nil, fmt.Errorf("unable to read properties of content %s: %w", contentID, err)
+			return nil, newTransportError(request, "read properties of content "+contentID, err)
 		}
 
 		// Only the first page may read 404 as "none set"; one partway through
@@ -253,7 +255,9 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		request, err = content.Res("property").Res(key, &result).Put(payload)
 	}
 	if err != nil {
-		return fmt.Errorf("unable to write property %q of content %s: %w", key, contentID, err)
+		return newTransportError(
+			request, fmt.Sprintf("write property %q of content %s", key, contentID), err,
+		)
 	}
 
 	return propertyWriteResult(request, key, "content "+contentID, existing == nil)
