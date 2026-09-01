@@ -48,7 +48,12 @@ var reBlockDetails = regexp.MustCompile(
 // published a Confluence code macro with a theme of "}" and of
 // "{.line-numbers}" respectively, and the first also lost its language and had
 // its line numbering turned on by the digits inside hl_lines.
-var reAttributeBlock = regexp.MustCompile(`\{[^}]*\}`)
+//
+// Anchored to the ends of the info string, which is the only place Pandoc and
+// MkDocs put one. Matching anywhere took a brace out of a title written in the
+// documented space form -- "```js title Some {Thing} Here" published its
+// caption as "Some  Here".
+var reAttributeBlock = regexp.MustCompile(`^\{[^}]*\}|\{[^}]*\}$`)
 
 // reAttributeLang matches the ".language" class inside an attribute block,
 // which is where the language is named when the block is the whole info
@@ -67,6 +72,17 @@ var reAssignedTitle = regexp.MustCompile(`\btitle\s*=\s*(?:"([^"]*)"|'([^']*)'|(
 // is given.
 func parseBlockDetails(info string) (lang string, options []string, title string) {
 	info = strings.TrimSpace(info)
+
+	// "-" is the documented way to write "no language, but there are options
+	// after it" -- README's "```- 1 collapse midnight title ...". Widening the
+	// language class to accept the hyphens in real language names made the bare
+	// marker match as a language of its own, so the macro was published with
+	// ac:name="language" set to "-".
+	noLanguage := false
+	if info == "-" || strings.HasPrefix(info, "- ") {
+		noLanguage = true
+		info = strings.TrimSpace(strings.TrimPrefix(info, "-"))
+	}
 
 	if groups := reAssignedTitle.FindStringSubmatch(info); groups != nil {
 		for _, group := range groups[1:] {
@@ -95,7 +111,7 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 		return lang, nil, title
 	}
 
-	if lang == "" {
+	if lang == "" && !noLanguage {
 		lang = groups[1]
 	}
 	if title == "" {
