@@ -123,6 +123,63 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 
 		return ast.WalkContinue, nil
 	})
+
+	markTargetedHeadings(doc)
+}
+
+// AnchorAttribute names the heading attribute that carries the anchor a link
+// on this page points at.
+//
+// Confluence keeps no id on a heading -- it generates its own from the
+// element's text -- so a heading has to say where it is with the Anchor macro,
+// which is what mark already does for footnotes. The macro is only worth
+// emitting for a heading something actually links to: every heading carrying
+// one would be markup nobody reads, on every page.
+//
+// Not an HTML attribute name, so goldmark's HeadingAttributeFilter drops it
+// from the rendered tag rather than publishing it.
+const AnchorAttribute = "mark:anchor"
+
+// markTargetedHeadings records, on each heading, whether a link on this page
+// points at it.
+func markTargetedHeadings(doc *ast.Document) {
+	targets := map[string]bool{}
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		if link, ok := node.(*ast.Link); ok {
+			if target, found := strings.CutPrefix(string(link.Destination), "#"); found && target != "" {
+				targets[target] = true
+			}
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	if len(targets) == 0 {
+		return
+	}
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || node.Kind() != ast.KindHeading {
+			return ast.WalkContinue, nil
+		}
+
+		id, ok := node.AttributeString("id")
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+
+		value := attributeString(id)
+		if targets[value] {
+			node.SetAttributeString(AnchorAttribute, []byte(value))
+		}
+
+		return ast.WalkContinue, nil
+	})
 }
 
 // attributeString renders a node attribute value, which goldmark hands back as

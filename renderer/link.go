@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"github.com/kovetskiy/mark/v16/stdlib"
 	stdhtml "html"
 	"strings"
 
@@ -12,12 +13,14 @@ import (
 
 type ConfluenceLinkRenderer struct {
 	html.Config
+	Stdlib *stdlib.Lib
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceLinkRenderer(opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceLinkRenderer(lib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceLinkRenderer{
 		Config: html.NewConfig(),
+		Stdlib: lib,
 	}
 }
 
@@ -29,6 +32,32 @@ func (r *ConfluenceLinkRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 // renderLink renders links specifically for confluence
 func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	n := node.(*ast.Link)
+
+	// A link to an anchor on this page. The HTML idiom -- href="#X" against an
+	// id="X" on the heading -- renders and does nothing when clicked, because
+	// Confluence keeps no id on a heading and generates its own from the
+	// element's text. ac:link with ac:anchor and no ri:page is the storage
+	// format's own way of saying "somewhere on this page", and is what the
+	// footnote renderers have always emitted.
+	if anchor, found := strings.CutPrefix(string(n.Destination), "#"); found && anchor != "" && r.Stdlib != nil {
+		if entering {
+			err := r.Stdlib.Templates.ExecuteTemplate(writer, "ac:link:anchor", struct {
+				Anchor string
+			}{anchor})
+			if err != nil {
+				return ast.WalkStop, err
+			}
+
+			return ast.WalkContinue, nil
+		}
+
+		if _, err := writer.WriteString("</ac:link-body></ac:link>"); err != nil {
+			return ast.WalkStop, err
+		}
+
+		return ast.WalkContinue, nil
+	}
+
 	if len(n.Destination) >= 3 && string(n.Destination[0:3]) == "ac:" {
 		if entering {
 			_, err := writer.Write([]byte("<ac:link><ri:page ri:content-title=\""))

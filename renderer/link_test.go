@@ -8,9 +8,11 @@ import (
 	"github.com/yuin/goldmark/renderer"
 )
 
-func linkRenderers() []renderer.NodeRenderer {
+func linkRenderers(t *testing.T) []renderer.NodeRenderer {
+	t.Helper()
+
 	return []renderer.NodeRenderer{
-		crenderer.NewConfluenceLinkRenderer(),
+		crenderer.NewConfluenceLinkRenderer(newStdlib(t)),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextLegacyRenderer(false),
 	}
@@ -19,7 +21,7 @@ func linkRenderers() []renderer.NodeRenderer {
 // TestLinkToConfluencePageByTitle covers the ac: destination, which is how a
 // document links to another Confluence page by title rather than by URL.
 func TestLinkToConfluencePageByTitle(t *testing.T) {
-	actual := render(t, "[Text](ac:Page)\n", linkRenderers())
+	actual := render(t, "[Text](ac:Page)\n", linkRenderers(t))
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual,
@@ -32,11 +34,11 @@ func TestLinkToConfluencePageByTitle(t *testing.T) {
 // rejects the whole page, not the one link -- and a quote closes the attribute
 // early, letting document text inject attributes of its own.
 func TestLinkTitleIsEscapedIntoTheAttribute(t *testing.T) {
-	amp := render(t, "[A & B](<ac:Q & A>)\n", linkRenderers())
+	amp := render(t, "[A & B](<ac:Q & A>)\n", linkRenderers(t))
 	assertWellFormed(t, amp)
 	assert.Contains(t, amp, `ri:content-title="Q &amp; A"`)
 
-	quoted := render(t, "[t](<ac:Say \"hi\">)\n", linkRenderers())
+	quoted := render(t, "[t](<ac:Say \"hi\">)\n", linkRenderers(t))
 	assertWellFormed(t, quoted)
 	assert.NotContains(t, quoted, `ri:content-title="Say "hi""`,
 		"a raw quote would close the attribute and let the rest inject more")
@@ -50,7 +52,7 @@ func TestLinkBodyEscapesTheCDATATerminator(t *testing.T) {
 	// A code span is how the sequence gets into link text at all: a bare "]" in
 	// a label ends the label, and a backslash-escaped one stays backslashed
 	// (see TestLinkBodyKeepsBackslashEscapes).
-	actual := render(t, "[a `]]>` b](ac:Page)\n", linkRenderers())
+	actual := render(t, "[a `]]>` b](ac:Page)\n", linkRenderers(t))
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `<![CDATA[a ]]><![CDATA[]]]]><![CDATA[> b]]>`)
@@ -63,11 +65,11 @@ func TestLinkBodyEscapesTheCDATATerminator(t *testing.T) {
 // fares better -- emphasis is dropped to plain text, which is all
 // ac:plain-text-link-body can hold.
 func TestLinkBodyKeepsBackslashEscapes(t *testing.T) {
-	escaped := render(t, `[foo \_bar\_](ac:Page)`+"\n", linkRenderers())
+	escaped := render(t, `[foo \_bar\_](ac:Page)`+"\n", linkRenderers(t))
 	assertWellFormed(t, escaped)
 	assert.Contains(t, escaped, `<![CDATA[foo \_bar\_]]>`)
 
-	emphasised := render(t, "[**bold** text](ac:Page)\n", linkRenderers())
+	emphasised := render(t, "[**bold** text](ac:Page)\n", linkRenderers(t))
 	assertWellFormed(t, emphasised)
 	assert.Contains(t, emphasised, `<![CDATA[bold text]]>`)
 }
@@ -75,7 +77,7 @@ func TestLinkBodyKeepsBackslashEscapes(t *testing.T) {
 // TestLinkWithEmptyPageTitleFallsBackToTheText covers a bare "ac:" destination:
 // with no title after the prefix, the link text is the title.
 func TestLinkWithEmptyPageTitleFallsBackToTheText(t *testing.T) {
-	actual := render(t, "[bare](ac:)\n", linkRenderers())
+	actual := render(t, "[bare](ac:)\n", linkRenderers(t))
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `ri:content-title="bare"`)
@@ -85,7 +87,7 @@ func TestLinkWithEmptyPageTitleFallsBackToTheText(t *testing.T) {
 // change: an ordinary URL is still an <a>, with the destination and title
 // escaped for HTML.
 func TestOrdinaryLinkKeepsGoldmarkBehaviour(t *testing.T) {
-	actual := render(t, "[ext](https://example.com/a?b=1&c=2 \"T & T\")\n", linkRenderers())
+	actual := render(t, "[ext](https://example.com/a?b=1&c=2 \"T & T\")\n", linkRenderers(t))
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `<a href="https://example.com/a?b=1&amp;c=2" title="T &amp; T">ext</a>`)

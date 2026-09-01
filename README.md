@@ -1733,6 +1733,16 @@ about which punctuation survives: a heading `API/v2 Guide` becomes
 in punctuation that matching drops, the link is left exactly as written rather
 than guessed at.
 
+Both ends are published in the storage format's own terms rather than as HTML.
+Confluence keeps no `id` on a heading — it generates its own from the element's
+text — so a heading a link points at carries the Anchor macro, and the link
+becomes `<ac:link ac:anchor="…">`. That is what footnotes have always used, and
+it is the difference between a link that works and one that renders, is
+clickable, and does nothing.
+
+Only a heading something links to carries an anchor; the rest are left as they
+were.
+
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.
