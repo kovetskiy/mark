@@ -15,6 +15,26 @@ func ImmediateParentID(pg *confluence.PageInfo) string {
 	return pg.Ancestors[len(pg.Ancestors)-1].ID
 }
 
+// ParentIDFor returns the id of a page's direct parent, preferring what
+// Confluence expanded and falling back to the parent this run resolved.
+//
+// A page under a folder has no expanded ancestors -- folders are not pages and
+// never appear in that chain -- so the ancestors alone answer "" for every
+// folder-parented page. Everything that needs a parent id then quietly did
+// nothing: a document declaring both Folder and Order got neither the ordering
+// nor a word about it.
+func ParentIDFor(pg *confluence.PageInfo, resolved *confluence.PageInfo) string {
+	if id := ImmediateParentID(pg); id != "" {
+		return id
+	}
+
+	if resolved != nil {
+		return resolved.ID
+	}
+
+	return ""
+}
+
 // UnderDeclaredParents reports whether a page sits under the parents its
 // headers declare.
 //
