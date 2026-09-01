@@ -45,6 +45,13 @@ type API struct {
 
 	userCache      map[string]userCacheEntry
 	userCacheMutex sync.RWMutex
+
+	// Both maps are keyed by space key and guarded by the one mutex: they
+	// answer the same question about the same thing and are always populated
+	// from the same place in a run.
+	homePageCache   map[string]homePageCacheEntry
+	spaceIDCache    map[string]spaceIDCacheEntry
+	spaceCacheMutex sync.RWMutex
 }
 
 // userCacheEntry records the outcome of a user lookup, including a failed one:
@@ -53,6 +60,20 @@ type API struct {
 type userCacheEntry struct {
 	user *User
 	err  error
+}
+
+// homePageCacheEntry and spaceIDCacheEntry record what a space lookup answered,
+// failures included. Neither answer can change while a run is in progress, and
+// a space that cannot be resolved cannot become resolvable either -- re-asking
+// only pays the same two round trips again for every file in the space.
+type homePageCacheEntry struct {
+	page *PageInfo
+	err  error
+}
+
+type spaceIDCacheEntry struct {
+	id  string
+	err error
 }
 
 func pageCacheKey(space, title, pageType string) string {
@@ -368,7 +389,39 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 	}, nil
 }
 
+// FindHomePage returns a space's home page.
+//
+// Results are cached for the lifetime of the API value, failures included. The
+// call is made for every non-blogpost document, again for any page that turns
+// out to have no ancestors, and once more when the manifest loads -- and it
+// costs two requests rather than one on a scoped token, because the v1 refusal
+// is what sends it to v2. A space's home page cannot change mid-run, so asking
+// twice can only ever get the same answer.
 func (api *API) FindHomePage(space string) (*PageInfo, error) {
+	if entry, ok := api.cachedHomePage(space); ok {
+		return clonePageInfo(entry.page), entry.err
+	}
+
+	page, err := api.fetchHomePage(space)
+
+	api.spaceCacheMutex.Lock()
+	if api.homePageCache == nil {
+		api.homePageCache = make(map[string]homePageCacheEntry)
+	}
+	api.homePageCache[space] = homePageCacheEntry{page: clonePageInfo(page), err: err}
+	api.spaceCacheMutex.Unlock()
+
+	return page, err
+}
+
+func (api *API) cachedHomePage(space string) (homePageCacheEntry, bool) {
+	api.spaceCacheMutex.RLock()
+	defer api.spaceCacheMutex.RUnlock()
+	entry, ok := api.homePageCache[space]
+	return entry, ok
+}
+
+func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	payload := map[string]string{
 		"expand": "homepage",
 	}
@@ -377,7 +430,19 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 		"space/"+space, &SpaceInfo{},
 	).Get(payload)
 	if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK {
-		return &v1Request.Response.(*SpaceInfo).Homepage, nil
+		homepage := &v1Request.Response.(*SpaceInfo).Homepage
+
+		// A 200 does not guarantee a homepage came with it. Returning the zero
+		// PageInfo handed the caller an empty id, which then went out as a
+		// content id -- a page published under nothing at all. v2 already tells
+		// "space has no homepage" apart from "no such space"; v1 says the same
+		// thing here rather than falling through to a v2 that does not exist on
+		// Server or Data Center.
+		if homepage.ID == "" {
+			return nil, fmt.Errorf("space %s has no home page", space)
+		}
+
+		return homepage, nil
 	}
 
 	// Any non-OK v1 answer falls through to v2, mirroring GetSpaceID. The case
@@ -1416,7 +1481,37 @@ func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
 	return request.Response.(*FolderInfo), nil
 }
 
+// GetSpaceID resolves a space key to the numeric id v2 endpoints want.
+//
+// Cached for the lifetime of the API value, failures included, for the same
+// reason as FindHomePage: it is called for every file that has a folder in its
+// ancestry and once more per manifest load, and a space key's id does not move
+// while a run is going on.
 func (api *API) GetSpaceID(spaceKey string) (string, error) {
+	if entry, ok := api.cachedSpaceID(spaceKey); ok {
+		return entry.id, entry.err
+	}
+
+	id, err := api.fetchSpaceID(spaceKey)
+
+	api.spaceCacheMutex.Lock()
+	if api.spaceIDCache == nil {
+		api.spaceIDCache = make(map[string]spaceIDCacheEntry)
+	}
+	api.spaceIDCache[spaceKey] = spaceIDCacheEntry{id: id, err: err}
+	api.spaceCacheMutex.Unlock()
+
+	return id, err
+}
+
+func (api *API) cachedSpaceID(spaceKey string) (spaceIDCacheEntry, bool) {
+	api.spaceCacheMutex.RLock()
+	defer api.spaceCacheMutex.RUnlock()
+	entry, ok := api.spaceIDCache[spaceKey]
+	return entry, ok
+}
+
+func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// Try v1 first: it looks a space up by key directly, where v2 has to be
 	// asked for a filtered collection.
 	//
