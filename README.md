@@ -1743,6 +1743,26 @@ clickable, and does nothing.
 Only a heading something links to carries an anchor; the rest are left as they
 were.
 
+To mark a place no heading names, write an anchor by hand — Confluence keeps
+neither the `name` nor the `id`, so mark turns it into the same macro a heading
+gets:
+
+```markdown
+<a name="details"></a>
+
+...later: [see the details](#details)
+```
+
+An anchor on *another* page is written after the page's title:
+
+```markdown
+[the setup](<ac:Other Page#Setup>)
+```
+
+The part after the last `#` is taken as an anchor only if it has no whitespace
+in it, which is true of every anchor mark generates — so a page whose title
+contains a `#`, like `<ac:C# Guide>`, is still just a title.
+
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.
