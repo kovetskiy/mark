@@ -51,10 +51,13 @@ var ErrPropertyConflict = errors.New("property version conflict")
 //
 // This is what an incomplete listing looks like from the write side: the key is
 // there, this run did not see it, and everything it held has already been
-// treated as absent. It is deliberately not an ErrPropertyConflict, which
-// callers report as "updated by a concurrent run" and carry on from -- that
-// diagnosis is wrong here, and carrying on loses the same data again on every
-// run afterwards.
+// treated as absent. The diagnosis a plain conflict gets -- "updated by a
+// concurrent run" -- is wrong here and worth saying differently.
+//
+// Deliberately not an ErrPropertyConflict: a caller that shrugs this off the
+// way it shrugs off a lost race loses the same data again on every run
+// afterwards. It is still not a reason to abandon the writes that would have
+// succeeded -- see how the manifest handles it.
 var ErrPropertyUnseen = errors.New("property already exists but was not listed")
 
 // ListSpaceProperties returns every property stored against a space.

@@ -458,6 +458,12 @@ func (state *spaceState) writeMapping(
 	what string,
 ) (bool, error) {
 	if err := state.writeProperty(api, key, value, existing); err != nil {
+		if errors.Is(err, confluence.ErrPropertyUnseen) {
+			log.Warn().Err(err).Msgf(
+				"%s for space %q was not saved", what, spaceKey,
+			)
+			return false, nil
+		}
 		if errors.Is(err, confluence.ErrPropertyConflict) {
 			log.Warn().Msgf(
 				"%s for space %q was updated by a concurrent run; it was not saved",
@@ -1082,6 +1088,16 @@ func (s *Store) Save() error {
 			}
 
 			if err := state.write(s.api, i, value); err != nil {
+				if errors.Is(err, confluence.ErrPropertyUnseen) {
+					// Said differently from a plain conflict, and still not
+					// fatal: the other shards describe pages this one says
+					// nothing about, and abandoning them helps nobody.
+					log.Warn().Err(err).Msgf(
+						"manifest shard %s of space %q was not saved",
+						PropertyKey(i), spaceKey,
+					)
+					continue
+				}
 				if errors.Is(err, confluence.ErrPropertyConflict) {
 					// Another run wrote between this run's read and its write.
 					// The two are not mergeable from here without re-reading,
