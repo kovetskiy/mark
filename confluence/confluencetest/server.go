@@ -41,6 +41,20 @@ type Page struct {
 	Archived bool
 }
 
+// Status is what v1 reports for the page and, more to the point, what it
+// filters lookups on. Trashed wins over archived: a page can be archived first
+// and trashed afterwards, and the trash is the state it is in.
+func (p *Page) Status() string {
+	switch {
+	case p.Trashed:
+		return "trashed"
+	case p.Archived:
+		return "archived"
+	default:
+		return "current"
+	}
+}
+
 // Attachment is a file attached to a page.
 type Attachment struct {
 	ID       string
@@ -427,6 +441,7 @@ func (s *Server) pageJSON(p *Page) map[string]any {
 		"id":        p.ID,
 		"title":     p.Title,
 		"type":      p.Type,
+		"status":    p.Status(),
 		"ancestors": ancestors,
 		"version": map[string]any{
 			"number":  p.Version,
@@ -968,6 +983,21 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	spaceKey, title, pageType := q.Get("spaceKey"), q.Get("title"), q.Get("type")
 
+	// An absent status means current, which is the behaviour that hides an
+	// archived page from a lookup while it goes on owning its title. A fake
+	// that returned archived pages here would certify a client that can never
+	// see the problem. Comma-separated, as v1 accepts.
+	wanted := map[string]bool{}
+	for _, status := range strings.Split(q.Get("status"), ",") {
+		status = strings.TrimSpace(status)
+		if status != "" {
+			wanted[status] = true
+		}
+	}
+	if len(wanted) == 0 {
+		wanted["current"] = true
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -982,18 +1012,25 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 		if title != "" && p.Title != title {
 			continue
 		}
+		if !wanted["any"] && !wanted[p.Status()] {
+			continue
+		}
 		matches = append(matches, p)
 	}
 	// Deterministic ordering: the client takes results[0].
 	sort.Slice(matches, func(i, j int) bool { return matches[i].ID < matches[j].ID })
 
+	page, hasNext := paginate(r, matches)
+
 	results := []map[string]any{}
-	for _, p := range matches {
+	for _, p := range page {
 		results = append(results, s.pageJSON(p))
 	}
+	links := linksWithNext(hasNext)
+	links["base"] = "/wiki"
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results": results,
-		"_links":  map[string]any{"base": "/wiki"},
+		"_links":  links,
 	})
 }
 
@@ -1116,13 +1153,19 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		}
 		// An ancestors key that is present moves the page: to the last id it
 		// names, or -- when the list is empty -- to the root of the space.
+		//
+		// Naming the parent a page already has is not a move, and must not
+		// disturb where the page sits among its siblings; only a real change of
+		// parent re-places it.
 		if payload.Ancestors != nil {
 			parentID := ""
 			if n := len(*payload.Ancestors); n > 0 {
 				parentID = (*payload.Ancestors)[n-1].ID
 			}
-			p.ParentID = parentID
-			s.placeChild(parentID, p.ID, "")
+			if parentID != p.ParentID {
+				p.ParentID = parentID
+				s.placeChild(parentID, p.ID, "")
+			}
 		}
 		writeJSON(w, http.StatusOK, s.pageJSON(p))
 	default:

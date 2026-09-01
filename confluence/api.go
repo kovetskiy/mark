@@ -186,6 +186,13 @@ type PageInfo struct {
 	Title string `json:"title"`
 	Type  string `json:"type"`
 
+	// Status is "current", "archived", "trashed" or "draft".
+	//
+	// It matters because v1 filters a lookup to current unless told otherwise,
+	// so a page being absent from a lookup does not mean its title is free: an
+	// archived page is invisible and still owns the name.
+	Status string `json:"status"`
+
 	Version struct {
 		Number  int64  `json:"number"`
 		Message string `json:"message"`
@@ -517,6 +524,10 @@ func (api *API) FindPage(
 		"spaceKey": space,
 		"expand":   "ancestors,version",
 		"type":     pageType,
+		// Stated rather than left to the default, because the default is the
+		// whole subtlety here: this lookup deliberately sees live content only,
+		// and pageHoldingTitle is the one place that asks about the rest.
+		"status": "current",
 	}
 
 	if title != "" {
@@ -573,6 +584,107 @@ func (api *API) FindPage(
 		api.setCacheEntry(canonicalKey, &page)
 	}
 	return clonePageInfo(&page), nil
+}
+
+// statusesHoldingTitle are the states in which a page is invisible to an
+// ordinary lookup and still owns its title.
+//
+// Whether Confluence really refuses to reuse the title of an archived or
+// trashed page is not verifiable from here without an instance. Everything
+// below only ever produces a better error message on a create that has already
+// failed, so being wrong about it costs a misleading sentence rather than a
+// wrong action.
+var statusesHoldingTitle = []string{"archived", "trashed"}
+
+// findPageWithStatus looks a title up in one particular status.
+//
+// Separate from FindPage rather than a parameter on it: the page cache is keyed
+// by space, title and type, with no room for a fourth dimension, and caching an
+// archived page under the key a live one will want would be worse than not
+// caching at all. This is made only after a create has failed, so paying for it
+// each time is fine.
+func (api *API) findPageWithStatus(space, title, pageType, status string) (*PageInfo, error) {
+	result := struct {
+		Results []PageInfo `json:"results"`
+	}{}
+
+	payload := map[string]string{
+		"spaceKey": space,
+		"expand":   "ancestors,version",
+		"type":     pageType,
+		"status":   status,
+	}
+
+	if title != "" {
+		payload["title"] = title
+	}
+
+	request, err := api.v1().Res(
+		"content/", &result,
+	).Get(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Raw.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	if len(result.Results) == 0 {
+		return nil, nil
+	}
+
+	page := result.Results[0]
+	if page.Status == "" {
+		page.Status = status
+	}
+
+	return &page, nil
+}
+
+// pageHoldingTitle finds a page that owns a title without being visible to an
+// ordinary lookup, or nil.
+//
+// This is the gap that made --on-orphan archive a one-way door: mark archives a
+// page, the source file comes back, FindPage returns nil because v1 hides
+// archived content, and the create that follows fails with a bare
+// 400 Bad Request naming nothing.
+func (api *API) pageHoldingTitle(space, title, pageType string) *PageInfo {
+	for _, status := range statusesHoldingTitle {
+		page, err := api.findPageWithStatus(space, title, pageType, status)
+		if err != nil || page == nil {
+			// The create has already failed. A failure to explain it is not
+			// worth replacing the caller's real error with.
+			continue
+		}
+		return page
+	}
+
+	return nil
+}
+
+// explainCreateFailure adds the one cause of a failed create the API never
+// names, and leaves every other failure exactly as it was.
+//
+// It reports rather than acts: restoring or purging somebody's page is a
+// decision for a person, and mark has already shown it cannot see the whole
+// picture here.
+func (api *API) explainCreateFailure(space, title, pageType string, err error) error {
+	blocker := api.pageHoldingTitle(space, title, pageType)
+	if blocker == nil {
+		return err
+	}
+
+	return fmt.Errorf(
+		"%w -- a page titled %q exists in space %s but is %s (id %s), and it still "+
+			"holds the title; restore or purge it in Confluence, or publish under a "+
+			"different title",
+		err, title, space, blocker.Status, blocker.ID,
+	)
 }
 
 func (api *API) CreateAttachment(
@@ -900,7 +1012,7 @@ func (api *API) CreatePage(
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
 	}
 
 	page := request.Response.(*PageInfo)
@@ -1596,7 +1708,7 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
-		return nil, newErrorStatusNotOK(request)
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
 	}
 
 	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
