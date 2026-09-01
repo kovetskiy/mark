@@ -90,8 +90,17 @@ func (s *mathParser) Parse(parent ast.Node, block text.Reader, pc parser.Context
 	_, segment := block.Position()
 	start := segment.Start
 
+	// A formula ends inside the block it began in. Handing scan the whole
+	// document let a "$$" written in one paragraph close against the next
+	// "$$" three paragraphs further down: everything between them became the
+	// equation, and since those paragraphs are still blocks of their own they
+	// were published a second time as prose. Swallowed text carrying a "#" or
+	// an "&" was worse -- LaTeX rejects both outside a macro, so the file
+	// failed to compile at all.
+	source = source[:blockEnd(parent, source)]
+
 	for _, d := range delimiters {
-		if !bytes.HasPrefix(source[start:], []byte(d.open)) {
+		if start >= len(source) || !bytes.HasPrefix(source[start:], []byte(d.open)) {
 			continue
 		}
 
@@ -111,6 +120,31 @@ func (s *mathParser) Parse(parent ast.Node, block text.Reader, pc parser.Context
 	}
 
 	return nil
+}
+
+// blockEnd is the offset just past the block goldmark is parsing inlines for.
+//
+// An inline parser is handed the source of the whole document; parent is the
+// block node that owns every inline in this pass, so its own line segments are
+// the only bound available. A block with no lines -- and the inline node an
+// inline parser is never given as a parent, whose Lines panics -- leaves the
+// source as it was.
+func blockEnd(parent ast.Node, source []byte) int {
+	if parent.Type() != ast.TypeBlock {
+		return len(source)
+	}
+
+	lines := parent.Lines()
+	if lines == nil || lines.Len() == 0 {
+		return len(source)
+	}
+
+	last := lines.At(lines.Len() - 1)
+	if last.Stop < 0 || last.Stop > len(source) {
+		return len(source)
+	}
+
+	return last.Stop
 }
 
 // scan finds the end of a formula that starts at the opening marker, and
