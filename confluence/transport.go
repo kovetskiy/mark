@@ -91,6 +91,32 @@ type retryTransport struct {
 	sleep func(time.Duration)
 }
 
+// wait sleeps for the backoff, or stops early if the request is cancelled.
+//
+// t.sleep is what the tests replace, so the timer is built from it rather than
+// from time.After: a test that makes the wait instant would otherwise still
+// wait for a real one here.
+func (t *retryTransport) wait(ctx context.Context, d time.Duration) error {
+	if ctx == nil || ctx.Done() == nil {
+		t.sleep(d)
+
+		return nil
+	}
+
+	done := make(chan struct{})
+	go func() {
+		t.sleep(d)
+		close(done)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
+}
+
 // retryableStatus reports whether a response status is worth retrying for the
 // given method.
 //
@@ -227,7 +253,12 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		event.Msg("Confluence request failed, retrying")
 
-		t.sleep(wait)
+		// The wait respects the request's context, so a cancelled run stops
+		// waiting instead of finishing its backoff first. Three retries at the
+		// cap is a minute and a half a caller could not otherwise escape.
+		if err := t.wait(req.Context(), wait); err != nil {
+			return nil, err
+		}
 	}
 
 	if lastErr != nil {
