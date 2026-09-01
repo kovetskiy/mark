@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
@@ -36,10 +37,15 @@ func NewAnchorTransformer() *AnchorTransformer {
 // survive at all. mark keeps "/" and "." in an id where a slug drops them, so
 // "API/v2 Guide" becomes "API/v2-Guide" one way and "apiv2-guide" the other.
 // Comparing only the alphanumerics is what makes those the same heading.
+//
+// "Letters and digits" has to mean it in every script, not just in ASCII: mark
+// keeps non-ASCII letters in an id, so an a-z test folded every heading written
+// in CJK or Cyrillic down to the empty key -- which is discarded -- and no link
+// to one could ever be matched.
 func anchorKey(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
 		}
 	}

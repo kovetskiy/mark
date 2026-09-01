@@ -12,7 +12,7 @@ func TestAnchorKey(t *testing.T) {
 		{"API/v2-Guide", "apiv2-guide"},    // a slug drops the slash, an id keeps it
 		{"Release.Notes", "release-notes"}, // and the dot
 		{"Heading_With_Underscores", "heading-with-underscores"},
-		{"Ünïcödé", "ünïcödé"}, // neither side keeps non-ASCII
+		{"Ünïcödé", "ünïcödé"}, // case folding has to reach past ASCII
 	}
 	for _, pair := range same {
 		if anchorKey(pair[0]) != anchorKey(pair[1]) {
