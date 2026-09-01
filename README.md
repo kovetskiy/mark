@@ -1283,10 +1283,17 @@ $$
 $$
 ```
 
+The `\[` and `\]` markers work the same way, and a run of more than two
+dollars is matched by its own length, so `$$$` opens and closes a formula too.
+
 Written that way the formula is a block of its own, so it may sit inside a
 blockquote or a list item without the `>` or the indentation reaching LaTeX. A
 formula that opens and closes on one line — `$$E = mc^2$$` — is read as it
 always was, wherever it is written.
+
+`\[` is CommonMark's escape for a literal bracket, so the bracket form is only
+read as a formula when the formula is the whole of the line it is on: `use
+\[brackets\] here` is a sentence about brackets.
 
 A dollar sign in ordinary prose is left alone: a formula may not begin or end
 with a space, so `it costs $5 and $7 today` is a sentence about money rather

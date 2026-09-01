@@ -61,13 +61,20 @@ type delimiter struct {
 	// just inside either marker. It is only needed for "$", which is the only
 	// marker that occurs in ordinary writing.
 	strict bool
+	// lineWide requires the formula to be the whole of the line it is written
+	// on. "\[" is CommonMark's escape for a literal bracket, so a sentence
+	// like "use \[brackets\] here" is prose that happens to contain the
+	// marker -- and rendering it produced a picture of the word "brackets" and
+	// uploaded an attachment for it. Display math is written on a line of its
+	// own, so the two are told apart by where the formula sits.
+	lineWide bool
 }
 
 // delimiters are tried in order, so the two-character "$$" has to be tried
 // before the one-character "$" that is its prefix.
 var delimiters = []delimiter{
 	{open: "$$", close: "$$", display: true, multiline: true},
-	{open: `\[`, close: `\]`, display: true, multiline: true},
+	{open: `\[`, close: `\]`, display: true, multiline: true, lineWide: true},
 	{open: `\(`, close: `\)`},
 	{open: "$", close: "$", strict: true},
 }
@@ -120,6 +127,26 @@ func (s *mathParser) Parse(parent ast.Node, block text.Reader, pc parser.Context
 	}
 
 	return nil
+}
+
+// spansWholeLine reports whether nothing but whitespace shares the formula's
+// line with it.
+//
+// The multi-line forms are allowed to run past the end of their first line, so
+// only what precedes the opening marker and what follows the closing one is
+// examined.
+func spansWholeLine(source []byte, start, end int) bool {
+	before := source[:start]
+	if at := bytes.LastIndexByte(before, '\n'); at >= 0 {
+		before = before[at+1:]
+	}
+
+	after := source[end:]
+	if at := bytes.IndexByte(after, '\n'); at >= 0 {
+		after = after[:at]
+	}
+
+	return len(bytes.TrimSpace(before)) == 0 && len(bytes.TrimSpace(after)) == 0
 }
 
 // blockEnd is the offset just past the block goldmark is parsing inlines for.
@@ -181,5 +208,11 @@ func (d delimiter) scan(source []byte, start int) (equation []byte, width int, o
 		return nil, 0, false
 	}
 
-	return equation, len(d.open) + end + len(d.close), true
+	width = len(d.open) + end + len(d.close)
+
+	if d.lineWide && !spansWholeLine(source, start, start+width) {
+		return nil, 0, false
+	}
+
+	return equation, width, true
 }

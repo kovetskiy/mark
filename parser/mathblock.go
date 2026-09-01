@@ -36,6 +36,10 @@ type MathBlock struct {
 	// Equation is the formula's source, assembled once the closing fence is
 	// found. Empty until then.
 	Equation []byte
+
+	// fence is the pair of markers this block was opened with, so the closer
+	// looked for is the one that matches the opener.
+	fence fence
 }
 
 func (m *MathBlock) Dump(source []byte, level int) {
@@ -64,11 +68,73 @@ func NewMathBlock() *MathBlock {
 	return &MathBlock{}
 }
 
-// mathBlockFence is the marker that opens and closes the block. Only "$$" has
-// the block form: "\[" and "\]" are written around a formula rather than on
-// lines of their own, and a document that puts them on their own lines is read
-// the same way by the inline parser.
-var mathBlockFence = []byte("$$")
+// fence is one pair of markers that can stand on lines of their own around a
+// display formula.
+type fence struct {
+	// dollars says the opener is a run of two or more "$", closed by another
+	// run of two or more. Counting rather than matching a fixed "$$" is what
+	// makes "$$$" a fence rather than a "$$" with a stray dollar after it.
+	dollars bool
+	open    []byte
+	close   []byte
+}
+
+var fences = []fence{
+	{dollars: true},
+	{open: []byte(`\[`), close: []byte(`\]`)},
+}
+
+// openingFence reports which fence, if any, a line opens with, and whether
+// anything follows it.
+//
+// Only a fence with nothing after it opens a block. A formula that opens and
+// closes on one line is left to the inline parser, which has always handled it
+// and whose one-line answer never needed bounding.
+func openingFence(line []byte, pos int) (fence, bool) {
+	rest := line[pos:]
+
+	if run := dollarRun(rest); run >= 2 {
+		if len(bytes.TrimSpace(rest[run:])) > 0 {
+			return fence{}, false
+		}
+
+		return fences[0], true
+	}
+
+	for _, f := range fences[1:] {
+		if !bytes.HasPrefix(rest, f.open) {
+			continue
+		}
+		if len(bytes.TrimSpace(rest[len(f.open):])) > 0 {
+			return fence{}, false
+		}
+
+		return f, true
+	}
+
+	return fence{}, false
+}
+
+// closesBlock reports whether a line is the closing fence.
+func (f fence) closesBlock(line []byte) bool {
+	trimmed := bytes.TrimSpace(line)
+
+	if f.dollars {
+		return len(trimmed) >= 2 && dollarRun(trimmed) == len(trimmed)
+	}
+
+	return bytes.Equal(trimmed, f.close)
+}
+
+// dollarRun counts the "$" a slice opens with.
+func dollarRun(b []byte) int {
+	run := 0
+	for run < len(b) && b[run] == '$' {
+		run++
+	}
+
+	return run
+}
 
 type mathBlockParser struct{}
 
@@ -79,34 +145,35 @@ func NewMathBlockParser() parser.BlockParser {
 }
 
 func (b *mathBlockParser) Trigger() []byte {
-	return []byte{'$'}
+	return []byte{'$', '\\'}
 }
 
 func (b *mathBlockParser) Open(parent ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
 	line, segment := reader.PeekLine()
 
 	pos := pc.BlockOffset()
-	if pos < 0 || !bytes.HasPrefix(line[pos:], mathBlockFence) {
+	if pos < 0 {
 		return nil, parser.NoChildren
 	}
 
-	// Only a fence with nothing after it opens a block. A formula that opens
-	// and closes on one line -- "$$E = mc^2$$", whether alone on the line or in
-	// the middle of a sentence -- is left to the inline parser, which has
-	// always handled it and whose one-line answer never needed bounding.
-	if len(bytes.TrimSpace(line[pos+len(mathBlockFence):])) > 0 {
+	opened, ok := openingFence(line, pos)
+	if !ok {
 		return nil, parser.NoChildren
 	}
 
 	reader.Advance(segment.Len() - 1)
 
-	return NewMathBlock(), parser.NoChildren
+	node := NewMathBlock()
+	node.fence = opened
+
+	return node, parser.NoChildren
 }
 
 func (b *mathBlockParser) Continue(node ast.Node, reader text.Reader, pc parser.Context) parser.State {
 	line, segment := reader.PeekLine()
 
-	if bytes.Equal(bytes.TrimSpace(line), mathBlockFence) {
+	block, ok := node.(*MathBlock)
+	if ok && block.fence.closesBlock(line) {
 		reader.Advance(segment.Len() - 1)
 
 		return parser.Close

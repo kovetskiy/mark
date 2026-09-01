@@ -109,3 +109,51 @@ func TestUnclosedMathFenceDoesNotSwallowTheDocument(t *testing.T) {
 
 	assert.Equal(t, 1, strings.Count(out, "<ac:image"))
 }
+
+// TestBracketFenceIsABlock: "\[" on a line of its own opens a display formula
+// the same way "$$" does. Read as an inline the formula carried the blockquote
+// marker into LaTeX -- and "> " is valid in math mode, so MathJax typeset it
+// happily and published a quietly wrong picture rather than failing.
+func TestBracketFenceIsABlock(t *testing.T) {
+	quoted := compileMath(t, "> \\[\n> E = mc^2\n> \\]\n")
+
+	assert.Contains(t, quoted, `ac:alt="E = mc^2"`)
+	assert.NotContains(t, quoted, "&gt; E = mc")
+	assert.Contains(t, quoted, "<blockquote>")
+
+	// The equation no longer carries the newlines the markers sat on either.
+	plain := compileMath(t, "\\[\nE = mc^2\n\\]\n")
+	assert.Contains(t, plain, `ac:alt="E = mc^2"`)
+}
+
+// TestBracketsInProseStayLiteral: "\[" is CommonMark's escape for a literal
+// bracket, so a sentence using it is prose. Parsing it as a formula published a
+// picture of the word and uploaded an attachment for it.
+func TestBracketsInProseStayLiteral(t *testing.T) {
+	out := compileMath(t, "Use \\[brackets\\] literally here.\n")
+
+	assert.NotContains(t, out, "<ac:image")
+	assert.Contains(t, out, "[brackets]")
+}
+
+// TestBracketFormulaAloneOnALineStillRenders is the line between the two above:
+// display math written on its own line, opening and closing together, is what
+// the README documents and what testdata/math.md carries.
+func TestBracketFormulaAloneOnALineStillRenders(t *testing.T) {
+	out := compileMath(t, "Text.\n\n\\[\\begin{pmatrix} a & b \\end{pmatrix}\\]\n\nMore.\n")
+
+	assert.Contains(t, out, "<ac:image")
+	assert.Contains(t, out, `\begin{pmatrix}`)
+}
+
+// TestLongerDollarFenceIsMatchedByItsOwnLength: a run of three was read as a
+// "$$" fence with a stray "$" after it, which the inline parser then published
+// beside the image.
+func TestLongerDollarFenceIsMatchedByItsOwnLength(t *testing.T) {
+	out := compileMath(t, "$$$\nE = mc^2\n$$$\n")
+
+	assert.Contains(t, out, `ac:alt="E = mc^2"`)
+	assert.Equal(t, 1, strings.Count(out, "<ac:image"))
+	assert.NotContains(t, out, "<p>$</p>")
+	assert.NotContains(t, out, "</ac:image>$")
+}
