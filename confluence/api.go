@@ -931,7 +931,13 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 
 		all = append(all, result.Results...)
 
-		if len(result.Results) < pageSize || result.Links.Next == "" {
+		// A short page does not mean the end: Confluence caps limit at its
+		// max-results setting and answers a capped request with a short page
+		// and a next link both. Nor does a missing link, since deployments that
+		// omit it only ever go short. Stop when neither says there is more, and
+		// on an empty page whatever they say.
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < pageSize) {
 			break
 		}
 
@@ -988,7 +994,13 @@ func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
 
 		all.Results = append(all.Results, result.Results...)
 
-		if len(result.Results) < pageSize || result.Links.Next == "" {
+		// A short page does not mean the end: Confluence caps limit at its
+		// max-results setting and answers a capped request with a short page
+		// and a next link both. Nor does a missing link, since deployments that
+		// omit it only ever go short. Stop when neither says there is more, and
+		// on an empty page whatever they say.
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < pageSize) {
 			break
 		}
 
@@ -1297,7 +1309,13 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 
 		all = append(all, result.Labels...)
 
-		if len(result.Labels) < pageSize || result.Links.Next == "" {
+		// A short page does not mean the end: Confluence caps limit at its
+		// max-results setting and answers a capped request with a short page
+		// and a next link both. Nor does a missing link, since deployments that
+		// omit it only ever go short. Stop when neither says there is more, and
+		// on an empty page whatever they say.
+		if len(result.Labels) == 0 ||
+			(result.Links.Next == "" && len(result.Labels) < pageSize) {
 			break
 		}
 
@@ -1790,6 +1808,13 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 	for {
 		result := struct {
 			Results []PageInfo `json:"results"`
+
+			// The listing's own word on whether more exist. Without it this
+			// loop stopped on a short page, which is what a deployment that
+			// caps max-results answers a full request with.
+			Links struct {
+				Next string `json:"next"`
+			} `json:"_links"`
 		}{}
 
 		request, err := api.v1().Res(
@@ -1807,9 +1832,17 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 		}
 
 		all = append(all, result.Results...)
-		if len(result.Results) < pageSize {
+
+		// A short page does not mean the end: Confluence caps limit at its
+		// max-results setting and answers a capped request with a short page
+		// and a next link both. Nor does a missing link, since deployments that
+		// omit it only ever go short. Stop when neither says there is more, and
+		// on an empty page whatever they say.
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < pageSize) {
 			break
 		}
+
 		start += len(result.Results)
 	}
 

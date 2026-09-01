@@ -2,6 +2,8 @@ package confluence_test
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -124,4 +126,61 @@ func TestStalePropertyUpdateStaysAConflict(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, confluence.ErrPropertyConflict)
 	assert.NotErrorIs(t, err, confluence.ErrPropertyUnseen)
+}
+
+// TestListingContinuesPastAShortPageWithANextLink: Confluence caps limit at the
+// deployment's max-results setting and answers a capped request with a short
+// page *and* a next link. Stopping on the short page threw the rest of the
+// listing away -- silently, and on exactly the instances configured to hand out
+// less than they were asked for. For the manifest that means shards treated as
+// absent, and the mappings they held lost.
+func TestListingContinuesPastAShortPageWithANextLink(t *testing.T) {
+	var pages int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages++
+
+		// Two short pages, the first advertising a next: a server that caps at
+		// less than the client asked for.
+		body := `{"results":[{"id":"1","key":"mark.manifest.0","value":{}}],` +
+			`"_links":{"next":"/rest/api/content/1/property?start=1"}}`
+		if pages > 1 {
+			body = `{"results":[{"id":"2","key":"mark.manifest.1","value":{}}],"_links":{}}`
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	properties, err := api.ListContentProperties("1")
+	require.NoError(t, err)
+
+	assert.Len(t, properties, 2, "the second page has to be read")
+	assert.Equal(t, 2, pages)
+}
+
+// TestListingStopsWithoutANextLink covers the other kind of deployment, which
+// omits the link and only ever goes short. Depending on the link alone would
+// truncate those at the first page.
+func TestListingStopsWithoutANextLink(t *testing.T) {
+	var pages int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages++
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"id":"1","key":"mark.manifest.0","value":{}}],"_links":{}}`))
+	}))
+	defer server.Close()
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	properties, err := api.ListContentProperties("1")
+	require.NoError(t, err)
+
+	assert.Len(t, properties, 1)
+	assert.Equal(t, 1, pages, "a short page with no next link is the end")
 }
