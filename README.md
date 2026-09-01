@@ -506,7 +506,14 @@ Task lists are automatically converted to Confluence `ac:task-list` elements.
 - [ ] Unfinished task
 ```
 
-If a list is "mixed" (contains both tasks and regular list items), it will fall back to a standard HTML list with textual markers like `[x]` or `[ ]` to ensure validity in Confluence storage format.
+A list holding both kinds is published as one Confluence task list per run of
+checkboxes and one ordinary list per run of bullets, in the order they were
+written — mixing `<ac:task>` and `<li>` inside a single container is not
+something the storage format allows.
+
+An *ordered* mixed list is the exception: splitting it would restart the
+numbering at every run, so it falls back to a standard list with textual `[x]`
+and `[ ]` markers, which keeps the completion state visible if not actionable.
 
 ## Template & Macros
 

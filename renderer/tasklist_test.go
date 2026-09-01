@@ -134,3 +134,79 @@ func TestTaskListCheckedState(t *testing.T) {
 	assert.Contains(t, got, "<ac:task-status>incomplete</ac:task-status>")
 	assert.Equal(t, 1, strings.Count(got, "<ac:task-list>"))
 }
+
+// renderTaskList compiles with the task-list extension and mark's renderer,
+// which is the pair every test here needs.
+func renderTaskList(t *testing.T, input string) string {
+	t.Helper()
+
+	gm := goldmark.New(
+		goldmark.WithExtensions(extension.TaskList),
+		goldmark.WithRendererOptions(
+			renderer.WithNodeRenderers(
+				util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
+			),
+		),
+	)
+
+	var buf bytes.Buffer
+	require.NoError(t, gm.Convert([]byte(input), &buf))
+
+	return buf.String()
+}
+
+// TestMixedListSplitsIntoRuns is what this replaced. Mixing <ac:task> and <li>
+// in one container is not something the storage format allows, so a list with
+// one explanatory bullet among its checkboxes fell back wholesale: every task
+// became an <li> and every checkbox the literal text "[x]". A checklist with a
+// note in it lost every task on the page.
+func TestMixedListSplitsIntoRuns(t *testing.T) {
+	actual := renderTaskList(t, "- [x] done\n- plain bullet\n- [ ] todo\n")
+	assertWellFormed(t, actual)
+
+	assert.Equal(t, 2, strings.Count(actual, "<ac:task-list>"), "one per run of tasks")
+	assert.Equal(t, 1, strings.Count(actual, "<ul>"), "and one for the bullet between them")
+
+	assert.Contains(t, actual, "<ac:task-status>complete</ac:task-status>")
+	assert.Contains(t, actual, "<ac:task-status>incomplete</ac:task-status>")
+	assert.Contains(t, actual, "<li>plain bullet</li>")
+
+	assert.NotContains(t, actual, "[x]", "no task is published as its marker")
+	assert.NotContains(t, actual, "[ ]")
+}
+
+// TestMixedListTaskIdsStayUnique: the ids number the tasks on the page, and a
+// split list must not restart or repeat them.
+func TestMixedListTaskIdsStayUnique(t *testing.T) {
+	actual := renderTaskList(t, "- [x] one\n- note\n- [ ] two\n- note\n- [ ] three\n")
+	assertWellFormed(t, actual)
+
+	for _, id := range []string{"<ac:task-id>1<", "<ac:task-id>2<", "<ac:task-id>3<"} {
+		assert.Equal(t, 1, strings.Count(actual, id), id)
+	}
+}
+
+// TestOrderedMixedListIsNotSplit: splitting an ordered list restarts its
+// numbering at every run, and renumbering somebody's list quietly is worse than
+// the fallback that keeps the state as text.
+func TestOrderedMixedListIsNotSplit(t *testing.T) {
+	actual := renderTaskList(t, "1. [x] done\n1. plain\n1. [ ] todo\n")
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, "<ol>")
+	assert.NotContains(t, actual, "<ac:task-list>")
+	assert.Contains(t, actual, "[x]", "completion state is kept as text")
+}
+
+// TestPureListsAreUnchanged is the control for both shapes that already worked.
+func TestPureListsAreUnchanged(t *testing.T) {
+	tasks := renderTaskList(t, "- [x] one\n- [ ] two\n")
+	assertWellFormed(t, tasks)
+	assert.Equal(t, 1, strings.Count(tasks, "<ac:task-list>"))
+	assert.NotContains(t, tasks, "<ul>")
+
+	plain := renderTaskList(t, "- one\n- two\n")
+	assertWellFormed(t, plain)
+	assert.Equal(t, 1, strings.Count(plain, "<ul>"))
+	assert.NotContains(t, plain, "ac:task")
+}
