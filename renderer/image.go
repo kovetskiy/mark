@@ -239,7 +239,15 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 func nodeToHTMLText(n ast.Node, source []byte) []byte {
 	var buf bytes.Buffer
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-		if s, ok := c.(*ast.String); ok && s.IsCode() {
+		if s, ok := c.(*ast.String); ok {
+			// The <img> transformer hands the alt text over as a plain String,
+			// and only the IsCode branch existed, so every alt written as an
+			// HTML attribute was silently dropped while the Markdown spelling
+			// kept its own.
+			//
+			// Written out unescaped, like the Text branch below and for the
+			// same reason: the ac:image template escapes what it interpolates,
+			// and doing it here as well puts a literal &amp;amp; on the page.
 			buf.Write(s.Value)
 		} else if t, ok := c.(*ast.Text); ok {
 			// Not escaped here: every consumer interpolates the result into an
