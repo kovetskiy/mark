@@ -114,3 +114,55 @@ func TestExtractMacros_InlineTemplateUsesDefaultDelims(t *testing.T) {
 	assert.Equal(t, "Hello world", out.String(),
 		"an inline macro must use {{ }} regardless of any Delims: an include declared")
 }
+
+// TestExtractMacros_SkipsDirectivesInsideCodeBlocks: a macro directive inside a
+// fence is an example of the syntax, not an instruction. Extracting it hoisted
+// the example out of the block, registered it as a live macro, and left the
+// block empty -- which is what happened to every document that documented mark,
+// this repository's own README included. Include directives were always skipped
+// there; only this pass was not.
+func TestExtractMacros_SkipsDirectivesInsideCodeBlocks(t *testing.T) {
+	contents := []byte("Here is how a macro is written:\n\n" +
+		"```markdown\n" +
+		"<!-- Macro: MYJIRA-\\d+\n" +
+		"     Template: #inline\n" +
+		"     inline: \"ticket ${0}\" -->\n" +
+		"```\n\nAnd some prose after it.\n")
+
+	macros, remaining, err := ExtractMacros("", "", contents, template.New("test"))
+	require.NoError(t, err)
+
+	assert.Empty(t, macros, "a directive inside a fence must not be registered")
+	assert.Contains(t, string(remaining), "<!-- Macro: MYJIRA-",
+		"the example must stay in the code block, verbatim")
+	assert.Contains(t, string(remaining), "And some prose after it.")
+}
+
+// TestExtractMacros_StillTakesDirectivesOutsideCode is the control: skipping
+// code must not turn into skipping everything.
+func TestExtractMacros_StillTakesDirectivesOutsideCode(t *testing.T) {
+	contents := []byte("<!-- Macro: TICKET-(\\d+)\n" +
+		"     Template: #inline\n" +
+		"     inline: \"ticket ${1}\" -->\n\n" +
+		"```markdown\n<!-- Macro: EXAMPLE -->\n```\n\nSee TICKET-42.\n")
+
+	macros, remaining, err := ExtractMacros("", "", contents, template.New("test"))
+	require.NoError(t, err)
+
+	require.Len(t, macros, 1, "the real directive is still extracted")
+	rest := string(remaining)
+	assert.NotContains(t, rest, "Macro: TICKET-", "the real one is stripped")
+	assert.Contains(t, rest, "<!-- Macro: EXAMPLE -->", "the example one is not")
+}
+
+// TestExtractMacros_SkipsDirectivesInIndentedCode covers the other code form,
+// since CodeRegions reports both and a fence is the easy half.
+func TestExtractMacros_SkipsDirectivesInIndentedCode(t *testing.T) {
+	contents := []byte("Written like this:\n\n    <!-- Macro: X\n         Template: #inline\n         inline: \"y\" -->\n\nDone.\n")
+
+	macros, remaining, err := ExtractMacros("", "", contents, template.New("test"))
+	require.NoError(t, err)
+
+	assert.Empty(t, macros)
+	assert.Contains(t, string(remaining), "<!-- Macro: X")
+}
