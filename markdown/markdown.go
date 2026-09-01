@@ -209,6 +209,41 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 	return string(html), nil
 }
 
+// maxIncludePasses bounds the number of times the whole document is rescanned
+// for include directives. ProcessIncludes drains every directive it can see in
+// one pass, so a pass that still finds work is expansion feeding itself, and
+// without a bound the document grows until the process is killed.
+const maxIncludePasses = 10
+
+// expandIncludes runs include expansion over the document until it settles,
+// which is what both compile paths need before goldmark ever sees the bytes.
+func expandIncludes(
+	path string,
+	includePath string,
+	markdown []byte,
+	tmpl *template.Template,
+) (*template.Template, []byte, error) {
+	for pass := 0; pass < maxIncludePasses; pass++ {
+		var recurse bool
+		var err error
+
+		tmpl, markdown, recurse, err = includes.ProcessIncludes(
+			filepath.Dir(path),
+			includePath,
+			markdown,
+			tmpl,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to process includes: %w", err)
+		}
+		if !recurse {
+			return tmpl, markdown, nil
+		}
+	}
+
+	return nil, nil, fmt.Errorf("include expansion did not settle after %d passes over %q", maxIncludePasses, path)
+}
+
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
 	var tmpl *template.Template
 	if stdlib != nil {
@@ -217,21 +252,9 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 		tmpl = template.New("stdlib")
 	}
 
-	var err error
-	var recurse bool
-	for {
-		tmpl, markdown, recurse, err = includes.ProcessIncludes(
-			filepath.Dir(path),
-			cfg.IncludePath,
-			markdown,
-			tmpl,
-		)
-		if err != nil {
-			return "", nil, fmt.Errorf("unable to process includes: %w", err)
-		}
-		if !recurse {
-			break
-		}
+	tmpl, markdown, err := expandIncludes(path, cfg.IncludePath, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
 	}
 
 	var macros []macro.Macro
@@ -272,21 +295,9 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 		tmpl = template.New("stdlib")
 	}
 
-	var err error
-	var recurse bool
-	for {
-		tmpl, markdown, recurse, err = includes.ProcessIncludes(
-			filepath.Dir(path),
-			cfg.IncludePath,
-			markdown,
-			tmpl,
-		)
-		if err != nil {
-			return "", nil, fmt.Errorf("unable to process includes: %w", err)
-		}
-		if !recurse {
-			break
-		}
+	tmpl, markdown, err := expandIncludes(path, cfg.IncludePath, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
 	}
 
 	var macros []macro.Macro

@@ -181,6 +181,12 @@ func LoadTemplate(
 	return templates, nil
 }
 
+// maxDirectivesPerLevel bounds how many directives a single level of a document
+// may expand. The stack below names every cycle it can see, but a template that
+// grows the document by some route the stack cannot express would otherwise be
+// expanded until the process ran out of memory; failing loudly is better.
+const maxDirectivesPerLevel = 1000
+
 func ProcessIncludes(
 	base string,
 	includePath string,
@@ -205,72 +211,95 @@ func ProcessIncludesWithStack(
 		return strings.Join(parts, ", ")
 	}
 
-	s := string(contents)
-
-	// A directive inside a code block is a code sample: a page documenting how
-	// to write an Include had the file pulled in where its own example should
-	// have been.
-	code := metadata.CodeRegions(contents)
-	startIdx, endIdx := findIncludeDirective(s, func(offset int) bool {
-		return metadata.InCode(code, offset)
-	})
-	if startIdx == -1 {
-		return templates, contents, false, nil
-	}
-
-	rawDirective := contents[startIdx:endIdx]
-	dir, err := ParseIncludeDirective(rawDirective)
-	if err != nil {
-		return templates, contents, false, err
-	}
-	if dir == nil {
-		return templates, contents, false, nil
-	}
-
-	// Detect circular include loops
-	cleanTmpl := filepath.Clean(dir.Template)
-	for _, item := range stack {
-		if filepath.Clean(item) == cleanTmpl {
-			return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", strings.Join(append(stack, dir.Template), " -> "), dir.Template)
+	// Every directive at this level is drained here, under one stack, rather
+	// than one per call with the caller looping. A sibling directive that
+	// re-included an ancestor was never compared against the stack -- the
+	// caller's loop started each pass with an empty one -- so
+	// "a.md" holding an include of "b.md" next to an include of itself grew the
+	// document without bound instead of being reported as circular.
+	modified := false
+	for expansions := 0; ; expansions++ {
+		if expansions >= maxDirectivesPerLevel {
+			return templates, contents, false, fmt.Errorf(
+				"more than %d include directives expanded at one level (stack: %s), giving up",
+				maxDirectivesPerLevel,
+				strings.Join(stack, " -> "),
+			)
 		}
+
+		s := string(contents)
+
+		// A directive inside a code block is a code sample: a page documenting how
+		// to write an Include had the file pulled in where its own example should
+		// have been.
+		code := metadata.CodeRegions(contents)
+		startIdx, endIdx := findIncludeDirective(s, func(offset int) bool {
+			return metadata.InCode(code, offset)
+		})
+		if startIdx == -1 {
+			return templates, contents, modified, nil
+		}
+
+		rawDirective := contents[startIdx:endIdx]
+		dir, err := ParseIncludeDirective(rawDirective)
+		if err != nil {
+			return templates, contents, false, err
+		}
+		if dir == nil {
+			return templates, contents, modified, nil
+		}
+
+		// Detect circular include loops
+		cleanTmpl := filepath.Clean(dir.Template)
+		for _, item := range stack {
+			if filepath.Clean(item) == cleanTmpl {
+				return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", strings.Join(stack, " -> "), dir.Template)
+			}
+		}
+
+		log.Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
+
+		// LoadTemplate returns the specific template it loaded, whose name encodes the
+		// delimiters. Execute it directly rather than looking it up by path again,
+		// which would find the wrong parse when the same file is included twice with
+		// different Delims:.
+		loaded, err := LoadTemplate(base, includePath, dir.Template, dir.Left, dir.Right, templates)
+		if err != nil {
+			return templates, contents, false, fmt.Errorf("unable to load template %q: %w", dir.Template, err)
+		}
+		templates = loaded
+
+		var buffer bytes.Buffer
+		err = loaded.Execute(&buffer, dir.Data)
+		if err != nil {
+			return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
+		}
+
+		// A parameter holding an element must hold nothing else, and a template is
+		// written to be read rather than to be careful about that.
+		expanded := TrimElementParameters(buffer.Bytes())
+
+		// Recursively process nested includes with updated stack. The stack is
+		// copied rather than appended in place: every branch off this level
+		// would otherwise share -- and overwrite -- the same backing array.
+		newStack := make([]string, 0, len(stack)+1)
+		newStack = append(newStack, stack...)
+		newStack = append(newStack, dir.Template)
+
+		subTemplates, subBytes, _, subErr := ProcessIncludesWithStack(base, includePath, expanded, templates, newStack)
+		if subErr != nil {
+			return templates, contents, false, subErr
+		}
+		templates = subTemplates
+
+		var res bytes.Buffer
+		res.Write(contents[:startIdx])
+		res.Write(subBytes)
+		res.Write(contents[endIdx:])
+
+		contents = res.Bytes()
+		modified = true
 	}
-
-	log.Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
-
-	// LoadTemplate returns the specific template it loaded, whose name encodes the
-	// delimiters. Execute it directly rather than looking it up by path again,
-	// which would find the wrong parse when the same file is included twice with
-	// different Delims:.
-	loaded, err := LoadTemplate(base, includePath, dir.Template, dir.Left, dir.Right, templates)
-	if err != nil {
-		return templates, contents, false, fmt.Errorf("unable to load template %q: %w", dir.Template, err)
-	}
-	templates = loaded
-
-	var buffer bytes.Buffer
-	err = loaded.Execute(&buffer, dir.Data)
-	if err != nil {
-		return templates, contents, false, fmt.Errorf("unable to execute template %q (vars: %s): %w", dir.Template, formatVardump(dir.Data), err)
-	}
-
-	// A parameter holding an element must hold nothing else, and a template is
-	// written to be read rather than to be careful about that.
-	expanded := TrimElementParameters(buffer.Bytes())
-
-	// Recursively process nested includes with updated stack
-	newStack := append(stack, dir.Template)
-	subTemplates, subBytes, _, subErr := ProcessIncludesWithStack(base, includePath, expanded, templates, newStack)
-	if subErr != nil {
-		return templates, contents, false, subErr
-	}
-	templates = subTemplates
-
-	var res bytes.Buffer
-	res.Write(contents[:startIdx])
-	res.Write(subBytes)
-	res.Write(contents[endIdx:])
-
-	return templates, res.Bytes(), true, nil
 }
 
 // DirectiveTargets reports the files a document asks to include, in the order
