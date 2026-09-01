@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -360,4 +361,33 @@ func TestNewHTTPClientSetsTimeouts(t *testing.T) {
 	assert.Equal(t, tlsHandshakeTimeout, transport.TLSHandshakeTimeout)
 	assert.Zero(t, client.Timeout,
 		"a whole-exchange timeout would cut off large attachment uploads")
+}
+
+// TestRetryBackoffStopsWhenTheRequestIsCancelled: the backoff slept
+// unconditionally, so three retries at the cap held a cancelled request for a
+// minute and a half it could not escape.
+func TestRetryBackoffStopsWhenTheRequestIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	transport := &retryTransport{
+		base: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return respond(http.StatusTooManyRequests, nil), nil
+		}),
+		// Cancels while the backoff is waiting, which is what a caller giving
+		// up mid-run looks like from here.
+		sleep: func(time.Duration) {
+			cancel()
+			time.Sleep(10 * time.Millisecond)
+		},
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com", nil)
+	require.NoError(t, err)
+
+	response, err := transport.RoundTrip(request)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	require.ErrorIs(t, err, context.Canceled)
 }

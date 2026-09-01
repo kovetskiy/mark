@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	// SHA-1 is used only as a content fingerprint for --changes-only, never as
 	// a security primitive. The digest is embedded in the page version message
 	// and matched back with a 40-hex-character regex, so widening it would stop
@@ -107,8 +108,33 @@ func (c Config) output() io.Writer {
 	return io.Discard
 }
 
-// Run processes all files matching Config.Files and publishes them to Confluence.
+// Run processes all files matching Config.Files and publishes them to
+// Confluence, and is RunContext with a context that is never cancelled.
 func Run(config Config) error {
+	return RunContext(context.Background(), config)
+}
+
+// RunContext is Run, stoppable.
+//
+// Cancellation is checked between files and before the second pass, so a run
+// stops at the next boundary rather than part way through publishing a page --
+// which is the one place stopping would leave a page half written. It does not
+// abort a request already in flight: the Confluence client builds its own
+// requests, so the context reaches the retry backoff and no further.
+//
+// Whatever the run did before it stopped stands, including the page manifest,
+// which is saved on the way out as it is for any other ending.
+func RunContext(ctx context.Context, config Config) error {
+	// The browser is shared for the life of the process and is started lazily
+	// by the first diagram or formula. A library caller has no other way to
+	// know it exists, so a run that started one shuts it down; the CLI's own
+	// call is harmless, since closing it twice is.
+	defer Cleanup()
+
+	return run(ctx, config)
+}
+
+func run(ctx context.Context, config Config) error {
 	// Settings are checked before anything else happens. A value that cannot be
 	// acted on should be said so plainly, not after a glob has been resolved
 	// and a connection opened -- and least of all part way through publishing.
@@ -274,6 +300,10 @@ func Run(config Config) error {
 
 	var hasErrors bool
 	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		log.Info().Msgf("processing %s", file)
 
 		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results)
@@ -320,6 +350,10 @@ func Run(config Config) error {
 		)
 
 		for _, file := range waiting {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
 			log.Info().Msgf("processing %s again", file)
 
 			// Nil deferrals: this is the last look, so a link that still does
@@ -406,6 +440,27 @@ func Run(config Config) error {
 // Callers processing several files should prefer Run, which builds the standard
 // library once instead of once per file.
 func ProcessFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	return ProcessFileContext(context.Background(), file, api, config)
+}
+
+// ProcessFileContext is ProcessFile, stoppable.
+//
+// One file is one page, so there is no boundary inside it to stop at: the
+// context is checked before the work begins and not again. A caller looping
+// over files gets the same effect as RunContext by checking between them.
+//
+// Unlike RunContext this does not shut the shared browser down, since a caller
+// publishing several files would pay to start it again for each. Call Cleanup
+// when the last one is done.
+func ProcessFileContext(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	return processOneFile(file, api, config)
+}
+
+func processOneFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
 	std, err := stdlib.New(api)
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
