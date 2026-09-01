@@ -501,6 +501,14 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 
 	// Add math / latex formula support if requested
 	if slices.Contains(c.MarkConfig.Features, "math") {
+		m.Parser().AddOptions(parser.WithBlockParsers(
+			// Between goldmark's fenced code block (700) and its block quote
+			// (800). Below the fence so that a "$$" shown inside one stays a
+			// code sample, and above the paragraph (1000) it would otherwise
+			// become.
+			util.Prioritized(cparser.NewMathBlockParser(), 750),
+		))
+
 		m.Parser().AddOptions(parser.WithInlineParsers(
 			// Ahead of goldmark's own inline parsers, so that a formula holding
 			// markup characters -- and TeX is made of them -- is taken as a
