@@ -474,7 +474,6 @@ Block Quotes are converted to Confluence Info/Warn/Note box when the following c
 
 In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
 
-
 ### Definition Lists
 
 A definition list is published as a two-column table, with each term heading its
