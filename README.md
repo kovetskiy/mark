@@ -1743,7 +1743,7 @@ recovers a rename after the fact rather than being told about it.
 | anything in the first run | nothing is recorded until a file publishes with the flag set, so the first run only adopts |
 | a rename across two `--files` patterns | matching and reporting are both scoped to the pattern that recorded the entry, so the file is a deletion in one and a new page in the other. That scoping is what lets several Mark invocations publish different folders into one space without reaching into each other's pages |
 | whether a deletion was intended | it reports; it never deletes |
-| a `Parent:` header change | still fails the run with an ancestry error rather than moving the page |
+| a page nested deeper than its headers declare | every parent it declares is still somewhere in its ancestry, so there is nothing to find wrong, and moving it would tear up a hierarchy nobody asked to change. A `Parent:` change that does contradict the ancestry moves the page, with tracking or without it |
 | a moved space homepage (Server/DC) | the mapping is anchored to it, so tracking starts over |
 
 A page renamed by hand in Confluence is found by its ID and renamed back to what
