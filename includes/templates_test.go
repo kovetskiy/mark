@@ -64,15 +64,48 @@ func TestLoadTemplateScopedBySubdirectory(t *testing.T) {
 	tmpl, err = LoadTemplate(tempDir, "", "dirB/header.md", "", "", tmpl)
 	require.NoError(t, err)
 
-	assert.NotNil(t, tmpl.Lookup("dirA/header"))
-	assert.NotNil(t, tmpl.Lookup("dirB/header"))
+	// Rendered through the includes, since what the entry is called is an
+	// implementation detail and what it holds is not.
+	tmpl, a, _, err := ProcessIncludes(tempDir, "", []byte("<!-- Include: dirA/header.md -->\n"), tmpl)
+	require.NoError(t, err)
 
-	var bufA, bufB bytes.Buffer
-	require.NoError(t, tmpl.Lookup("dirA/header").Execute(&bufA, nil))
-	require.NoError(t, tmpl.Lookup("dirB/header").Execute(&bufB, nil))
+	_, b, _, err := ProcessIncludes(tempDir, "", []byte("<!-- Include: dirB/header.md -->\n"), tmpl)
+	require.NoError(t, err)
 
-	assert.Equal(t, "Header A", bufA.String())
-	assert.Equal(t, "Header B", bufB.String())
+	assert.Contains(t, string(a), "Header A")
+	assert.Contains(t, string(b), "Header B")
+}
+
+// TestSameNameInDifferentDirectories is the bug the test above only half
+// covered. One template set is shared by every document in a run, and the cache
+// key was the name the directive wrote -- so "partial.md" beside one document
+// was the same entry as "partial.md" beside another, and the first one read was
+// served to every document that asked. A repository keeping a partial per
+// directory published the first one on every page, silently.
+func TestSameNameInDifferentDirectories(t *testing.T) {
+	tempDir := t.TempDir()
+
+	dirA := filepath.Join(tempDir, "a")
+	dirB := filepath.Join(tempDir, "b")
+	require.NoError(t, os.MkdirAll(dirA, 0755))
+	require.NoError(t, os.MkdirAll(dirB, 0755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dirA, "partial.md"), []byte("CONTENT-FROM-A"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dirB, "partial.md"), []byte("CONTENT-FROM-B"), 0644))
+
+	// One set, as a run has: the documents are in different directories and
+	// each writes the same name.
+	tmpl := template.New("stdlib")
+
+	tmpl, fromA, _, err := ProcessIncludes(dirA, "", []byte("<!-- Include: partial.md -->\n"), tmpl)
+	require.NoError(t, err)
+
+	_, fromB, _, err := ProcessIncludes(dirB, "", []byte("<!-- Include: partial.md -->\n"), tmpl)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(fromA), "CONTENT-FROM-A")
+	assert.Contains(t, string(fromB), "CONTENT-FROM-B",
+		"each document includes the file beside it, not the first one read")
 }
 
 func TestProcessIncludesInlineCodeTemplateVar(t *testing.T) {

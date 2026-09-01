@@ -113,6 +113,40 @@ func ParseIncludeDirective(raw []byte) (*IncludeDirective, error) {
 	return dir, nil
 }
 
+// resolveTemplatePath names the file a directive refers to.
+//
+// The document's own directory first, then --include-path, which is the order
+// the read used to try them in. A name that matches nothing resolves against
+// the document's directory anyway, so the failure to read it names the place
+// the author would look first.
+func resolveTemplatePath(base, includePath, path string) string {
+	candidate := filepath.Join(base, path)
+	if _, err := os.Stat(candidate); err == nil {
+		return absolute(candidate)
+	}
+
+	if includePath != "" {
+		fallback := filepath.Join(includePath, path)
+		if _, err := os.Stat(fallback); err == nil {
+			return absolute(fallback)
+		}
+	}
+
+	return absolute(candidate)
+}
+
+// absolute makes a path the key of exactly one file, whatever directory the
+// run was started from. A path that cannot be made absolute is returned as it
+// was: it is still a better key than the bare name, and the read that follows
+// will report whatever is wrong with it.
+func absolute(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+
+	return path
+}
+
 func LoadTemplate(
 	base string,
 	includePath string,
@@ -131,29 +165,29 @@ func LoadTemplate(
 		return template, nil
 	}
 
-	// For file-backed templates the delimiters are part of what makes the parse,
-	// so they belong in the cache key. Keying on the path alone meant a file
-	// included twice with different Delims: reused the first parse and silently
-	// discarded the second set, rendering the wrong output with no error.
-	cacheName := name
+	// Which file this is, decided before the cache is consulted rather than
+	// after. One template set is shared by every document in a run, so keying
+	// on the name a directive wrote made "partial.md" beside one document the
+	// same entry as "partial.md" beside another: the first one read was then
+	// served to every document that asked for that name, publishing one page's
+	// fragment onto another's, silently and with no error anywhere.
+	resolved := resolveTemplatePath(base, includePath, path)
+
+	// The delimiters are part of what makes the parse, so they belong in the
+	// key too. Without them a file included twice with different Delims: reused
+	// the first parse and silently discarded the second set.
+	cacheName := resolved
 	if left != "" || right != "" {
-		cacheName = name + "\x00" + left + "\x00" + right
+		cacheName = resolved + "\x00" + left + "\x00" + right
 	}
 
 	if template := templates.Lookup(cacheName); template != nil {
 		return template, nil
 	}
 
-	var body []byte
-
-	body, err := os.ReadFile(filepath.Join(base, path))
+	body, err := os.ReadFile(resolved)
 	if err != nil {
-		if includePath != "" {
-			body, err = os.ReadFile(filepath.Join(includePath, path))
-		}
-		if err != nil {
-			return nil, fmt.Errorf("unable to read template file %q: %w", path, err)
-		}
+		return nil, fmt.Errorf("unable to read template file %q: %w", path, err)
 	}
 
 	body = bytes.ReplaceAll(
