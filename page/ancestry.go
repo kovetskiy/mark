@@ -531,12 +531,21 @@ func ValidateAncestry(
 
 	isHomepage := false
 	if len(page.Ancestors) < 1 {
+		// Compared against, not used, so a space that will not give up its home
+		// page must not fail every document in it. Without one to compare
+		// against, a parentless page is treated as the misplacement below --
+		// which is recoverable, where refusing outright was not.
 		homepage, err := api.FindHomePage(space)
 		if err != nil {
-			return nil, fmt.Errorf("can't obtain home page from space %q: %w", space, err)
+			log.Debug().Err(err).Msgf(
+				"no home page for space %q; cannot tell whether %q is it",
+				space, page.Title,
+			)
+
+			homepage = nil
 		}
 
-		if page.ID == homepage.ID {
+		if homepage != nil && page.ID == homepage.ID {
 			log.Debug().Msgf("page is homepage for space %q", space)
 			isHomepage = true
 		} else {

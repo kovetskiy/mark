@@ -46,14 +46,22 @@ func ResolvePage(
 		return nil, page, nil
 	}
 
-	// check to see if home page is in Parents
+	// The home page is only ever compared against here -- never used as a
+	// parent -- so a space that will not give one up is not a reason to refuse
+	// the document. Failing on it aborted every file in the space, including
+	// documents whose Parent headers never needed a home page at all.
 	homepage, err := api.FindHomePage(meta.Space)
 	if err != nil {
-		return nil, nil, fmt.Errorf("can't obtain home page from space %q: %w", meta.Space, err)
+		log.Debug().Err(err).Msgf(
+			"no home page for space %q; publishing without comparing against one",
+			meta.Space,
+		)
+
+		homepage = nil
 	}
 
 	skipHomeAncestry := false
-	if len(meta.Parents) > 0 {
+	if homepage != nil && len(meta.Parents) > 0 {
 		if homepage.Title == meta.Parents[0] {
 			skipHomeAncestry = true
 		}
