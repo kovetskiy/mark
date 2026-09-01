@@ -404,6 +404,26 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 // costs two requests rather than one on a scoped token, because the v1 refusal
 // is what sends it to v2. A space's home page cannot change mid-run, so asking
 // twice can only ever get the same answer.
+// worthCaching reports whether an outcome is one that cannot change during the
+// run, and so is safe to remember.
+//
+// A space's home page and a space's id are both fixed for the life of a run,
+// which is what makes memoising them correct. The premise does not extend to
+// every way of failing to find them: a 404, or a space that genuinely has no
+// home page, is a conclusion, but a throttling burst or a gateway error is a
+// moment. The retry transport gives up after four attempts, so remembering one
+// of those made a few unlucky seconds fail every remaining file in the space --
+// where before the memoisation the next document would simply have asked again.
+func worthCaching(err error) bool {
+	return err == nil ||
+		errors.Is(err, ErrNotFound) ||
+		errors.Is(err, errNoHomePage)
+}
+
+// errNoHomePage is the answer for a space that exists and has no home page.
+// A conclusion rather than a hiccup, so it is remembered like a success.
+var errNoHomePage = errors.New("space has no home page")
+
 func (api *API) FindHomePage(space string) (*PageInfo, error) {
 	if entry, ok := api.cachedHomePage(space); ok {
 		return clonePageInfo(entry.page), entry.err
@@ -411,12 +431,14 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 
 	page, err := api.fetchHomePage(space)
 
-	api.spaceCacheMutex.Lock()
-	if api.homePageCache == nil {
-		api.homePageCache = make(map[string]homePageCacheEntry)
+	if worthCaching(err) {
+		api.spaceCacheMutex.Lock()
+		if api.homePageCache == nil {
+			api.homePageCache = make(map[string]homePageCacheEntry)
+		}
+		api.homePageCache[space] = homePageCacheEntry{page: clonePageInfo(page), err: err}
+		api.spaceCacheMutex.Unlock()
 	}
-	api.homePageCache[space] = homePageCacheEntry{page: clonePageInfo(page), err: err}
-	api.spaceCacheMutex.Unlock()
 
 	return page, err
 }
@@ -446,7 +468,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		// thing here rather than falling through to a v2 that does not exist on
 		// Server or Data Center.
 		if homepage.ID == "" {
-			return nil, fmt.Errorf("space %s has no home page", space)
+			return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
 		}
 
 		return homepage, nil
@@ -485,14 +507,14 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	}
 
 	if len(v2Result.Results) == 0 {
-		return nil, fmt.Errorf("space with key %s not found", space)
+		return nil, fmt.Errorf("space with key %s not found: %w", space, ErrNotFound)
 	}
 
 	// A space that exists but has no homepage is a different failure from a
 	// space that does not exist, and reporting it as "not found" sends people
 	// looking for a typo in a space key that is perfectly correct.
 	if v2Result.Results[0].HomepageID == "" {
-		return nil, fmt.Errorf("space %s has no home page", space)
+		return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
 	}
 
 	return api.GetPageByID(v2Result.Results[0].HomepageID)
@@ -1617,6 +1639,10 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 	}
 
 	id, err := api.fetchSpaceID(spaceKey)
+
+	if !worthCaching(err) {
+		return id, err
+	}
 
 	api.spaceCacheMutex.Lock()
 	if api.spaceIDCache == nil {
