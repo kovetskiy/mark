@@ -290,6 +290,11 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	var lastStop int
 	shouldBreak := false
 
+	// The Include directives found among the headers. They are metadata here
+	// only in that this loop has to recognise them; the expansion happens later
+	// and reads the body, so each one is carried across the cut below.
+	var includes []text.Segment
+
 	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
 		if htmlBlock, ok := child.(*ast.HTMLBlock); ok {
 			lines := htmlBlock.Lines()
@@ -371,7 +376,13 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					meta.Labels = append(meta.Labels, value)
 
 				case HeaderInclude:
-					// Includes are parsed by a different func
+					// Includes are parsed by a different func, which reads the
+					// body -- so this line has to survive being cut out along
+					// with the headers around it. Without that, an Include
+					// written among the headers was deleted before anything
+					// could expand it and the page went up missing a whole
+					// section, with a zero exit code.
+					includes = append(includes, lineSeg)
 					lastStop = lineSeg.Stop
 					continue
 
@@ -431,8 +442,14 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 	if lastStop > 0 {
 		// Only the headers are taken out. Whatever preceded them stays, which
-		// is what keeps a Macro defined above the headers working.
-		body = append(append([]byte{}, data[bodyStart:firstStart]...), data[lastStop:]...)
+		// is what keeps a Macro defined above the headers working, and the
+		// Include directives found among them are put back where they stood.
+		rebuilt := make([]byte, 0, (firstStart-bodyStart)+(len(data)-lastStop))
+		rebuilt = append(rebuilt, data[bodyStart:firstStart]...)
+		for _, include := range includes {
+			rebuilt = append(rebuilt, data[include.Start:include.Stop]...)
+		}
+		body = append(rebuilt, data[lastStop:]...)
 	}
 
 	if meta != nil {
