@@ -889,7 +889,8 @@ func (api *API) CreatePage(
 
 func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
 	nextPageVersion := page.Version.Number + 1
-	oldAncestors := []map[string]any{}
+
+	var oldAncestors []map[string]any
 
 	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
 		// picking only the last one, which is required by confluence
@@ -933,7 +934,6 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 			"minorEdit": minorEdit,
 			"message":   versionMessage,
 		},
-		"ancestors": oldAncestors,
 		"body": map[string]any{
 			"storage": map[string]any{
 				"value":          newContent,
@@ -943,6 +943,16 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		"metadata": map[string]any{
 			"properties": properties,
 		},
+	}
+
+	// ancestors on an update is how Confluence documents *moving* a page, so
+	// the key goes in only when there is an ancestor to name. A page created
+	// under a folder comes back from v2 with no ancestors at all -- folders are
+	// not ancestors -- and the update a moment later used to send
+	// "ancestors": [], which is at best ignored and at worst read as a request
+	// to reparent the page to the space root.
+	if len(oldAncestors) > 0 {
+		payload["ancestors"] = oldAncestors
 	}
 
 	request, err := api.v1().Res(

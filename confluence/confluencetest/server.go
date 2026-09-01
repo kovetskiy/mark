@@ -1077,7 +1077,15 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		writeJSON(w, http.StatusOK, s.pageJSON(p))
 	case http.MethodPut:
 		var payload struct {
-			Title   string `json:"title"`
+			Title string `json:"title"`
+			// A pointer, so that an absent key and an empty list are different
+			// things. Confluence documents ancestors on an update as the way to
+			// move a page, which makes "ancestors": [] a request rather than a
+			// no-op, and that distinction is the whole question for a page
+			// whose parent is a folder.
+			Ancestors *[]struct {
+				ID string `json:"id"`
+			} `json:"ancestors"`
 			Version struct {
 				Number  int64  `json:"number"`
 				Message string `json:"message"`
@@ -1105,6 +1113,16 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		p.Body = payload.Body.Storage.Value
 		if payload.Title != "" {
 			p.Title = payload.Title
+		}
+		// An ancestors key that is present moves the page: to the last id it
+		// names, or -- when the list is empty -- to the root of the space.
+		if payload.Ancestors != nil {
+			parentID := ""
+			if n := len(*payload.Ancestors); n > 0 {
+				parentID = (*payload.Ancestors)[n-1].ID
+			}
+			p.ParentID = parentID
+			s.placeChild(parentID, p.ID, "")
 		}
 		writeJSON(w, http.StatusOK, s.pageJSON(p))
 	default:
