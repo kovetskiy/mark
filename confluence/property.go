@@ -218,10 +218,19 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 
 		all = append(all, result.Results...)
 
-		// _links.next is the server's own word on whether more exist; the short
-		// page is the second condition because a deployment that omits the link
-		// would otherwise be asked for the same page forever.
-		if result.Links.Next == "" || len(result.Results) < propertyPageSize {
+		// Two ways a listing says it is finished, and a deployment may use
+		// either. Confluence caps limit at its max-results setting and answers
+		// a capped request with a short page *and* a next link, so a short page
+		// alone does not mean the end -- that is how the tail of a listing was
+		// being thrown away, silently, on exactly the instances configured to
+		// hand out less than they were asked for. Other deployments omit the
+		// link entirely and only ever go short.
+		//
+		// So: keep going while either says there is more, and stop on an empty
+		// page whatever they say, which is what keeps a server that does
+		// neither from being asked for the same offset forever.
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < propertyPageSize) {
 			break
 		}
 		start += len(result.Results)
