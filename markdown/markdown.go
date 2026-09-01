@@ -411,6 +411,9 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		// well as the ones written in the file, and so that heading ids have
 		// already been assigned.
 		util.Prioritized(ctransformer.NewAnchorTransformer(), 900),
+		// After the anchor transformer, so a heading that a manual anchor sits
+		// beside has already been matched to the links that name it.
+		util.Prioritized(ctransformer.NewManualAnchorTransformer(), 901),
 		// After includes and macros have brought their content in, so links
 		// inside an included fragment are resolved too.
 		// Before link resolution, so that a path a document declared as an

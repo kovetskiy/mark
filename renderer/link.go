@@ -4,6 +4,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	stdhtml "html"
 	"strings"
+	"unicode"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -27,6 +28,30 @@ func NewConfluenceLinkRenderer(lib *stdlib.Lib, opts ...html.Option) renderer.No
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .
 func (r *ConfluenceLinkRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindLink, r.renderLink)
+}
+
+// splitPageAnchor separates a page title from the anchor written after it.
+//
+// A "#" alone is not enough to split on: "ac:C# Guide" is a page whose title
+// contains one, and reading it as a page called "C" with an anchor called
+// " Guide" would break a link that works today. So the part after the last "#"
+// has to look like an anchor -- present, and with no whitespace in it, which is
+// true of every id mark generates, since a heading's spaces become hyphens.
+//
+// The last "#" rather than the first, so a title containing one can still be
+// given an anchor.
+func splitPageAnchor(destination string) (title, anchor string) {
+	at := strings.LastIndex(destination, "#")
+	if at <= 0 || at == len(destination)-1 {
+		return destination, ""
+	}
+
+	candidate := destination[at+1:]
+	if strings.ContainsFunc(candidate, unicode.IsSpace) {
+		return destination, ""
+	}
+
+	return destination[:at], candidate
 }
 
 // renderLink renders links specifically for confluence
@@ -60,7 +85,19 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 
 	if len(n.Destination) >= 3 && string(n.Destination[0:3]) == "ac:" {
 		if entering {
-			_, err := writer.Write([]byte("<ac:link><ri:page ri:content-title=\""))
+			// A "#" in the destination names an anchor on the page rather than
+			// part of its title: "ac:Other Page#Setup" is the section, not a
+			// page called "Other Page#Setup". Storage format says so with the
+			// same ac:anchor a same-page link uses, alongside the ri:page that
+			// says which page.
+			title, anchor := splitPageAnchor(string(n.Destination[min(3, len(n.Destination)):]))
+
+			opening := "<ac:link>"
+			if anchor != "" {
+				opening = `<ac:link ac:anchor="` + xmlAttrEscape(anchor) + `">`
+			}
+
+			_, err := writer.Write([]byte(opening + "<ri:page ri:content-title=\""))
 			if err != nil {
 				return ast.WalkStop, err
 			}
@@ -75,7 +112,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 					return ast.WalkStop, err
 				}
 			} else {
-				_, err := writer.WriteString(xmlAttrEscape(string(n.Destination[3:])))
+				_, err := writer.WriteString(xmlAttrEscape(title))
 				if err != nil {
 					return ast.WalkStop, err
 				}
