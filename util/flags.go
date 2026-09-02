@@ -416,6 +416,19 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		}
 	}
 
+	imageAlign := strings.TrimSpace(command.String("image-align"))
+	if imageAlign != "" {
+		switch strings.ToLower(imageAlign) {
+		case "left", "center", "right":
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --image-align: %q (expected: left, center, or right)",
+				imageAlign,
+			)
+		}
+	}
+
 	mathFormat := strings.TrimSpace(command.String("math-format"))
 	if mathFormat != "" {
 		switch mathFormat {

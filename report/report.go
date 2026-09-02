@@ -112,6 +112,25 @@ func (r *Report) AddPage(page Page) {
 	r.Pages = append(r.Pages, page)
 }
 
+// StatusOf reports what the run last recorded for a document, or "" if it
+// recorded nothing about it.
+func (r *Report) StatusOf(file string) string {
+	if r == nil {
+		return ""
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.Pages {
+		if r.Pages[i].File == file {
+			return r.Pages[i].Status
+		}
+	}
+
+	return ""
+}
+
 // AddOrphan records a tracked page whose document has gone.
 func (r *Report) AddOrphan(orphan Orphan) {
 	if r == nil {

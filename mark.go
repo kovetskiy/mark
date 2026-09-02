@@ -133,7 +133,7 @@ func Run(config Config) error {
 //
 // Whatever the run did before it stopped stands, including the page manifest,
 // which is saved on the way out as it is for any other ending.
-func RunContext(ctx context.Context, config Config) error {
+func RunContext(ctx context.Context, config Config) (err error) {
 	// The browser is shared for the life of the process and is started lazily
 	// by the first diagram or formula. A library caller has no other way to
 	// know it exists, so a run that started one shuts it down; the CLI's own
@@ -303,6 +303,24 @@ func run(ctx context.Context, config Config) error {
 	// What the run did, for whatever is reading the output rather than the log.
 	results := report.New()
 
+	// Written on the way out, whatever the way out is. It used to be written at
+	// the end of a successful run only, so --output-format json produced zero
+	// bytes whenever the run failed after publishing -- an unresolved link, a
+	// failed ordering pass, an orphan that could not be handled -- which is
+	// exactly when an account of what was published is worth having. A failed
+	// write still fails the run, but only when nothing worse already has.
+	defer func() {
+		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
+			if err == nil {
+				err = fmt.Errorf("unable to write the run report: %w", writeErr)
+
+				return
+			}
+
+			log.Error().Err(writeErr).Msg("unable to write the run report")
+		}
+	}()
+
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
 	// anything alongside the others.
@@ -331,20 +349,36 @@ func run(ctx context.Context, config Config) error {
 				continue
 			}
 
-			if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
-				log.Error().Err(writeErr).Msg("unable to write the run report")
-			}
-
 			return err
 		}
 
 		if target != nil {
-			log.Info().Msgf("page successfully updated: %s", api.BaseURL+target.Links.Full)
+			url := api.BaseURL + target.Links.Full
+
+			// What the report says rather than "there is a page here". A page
+			// held back by --no-overwrite is one this run deliberately did not
+			// write, and announcing it as updated contradicted the warning
+			// printed a line earlier -- "leaving it alone" followed
+			// immediately by "page successfully updated".
+			status := results.StatusOf(file)
+
+			switch status {
+			case report.StatusSkipped:
+				// Already said where the decision was made, with the reason.
+
+			case report.StatusUnchanged:
+				log.Info().Msgf("page is already up to date: %s", url)
+
+			default:
+				log.Info().Msgf("page successfully updated: %s", url)
+			}
 
 			// The other formats describe the whole run at the end, where a
-			// page published twice can be reported once.
-			if outputFormat == report.FormatURL {
-				if _, err := fmt.Fprintln(config.output(), api.BaseURL+target.Links.Full); err != nil {
+			// page published twice can be reported once. A page left alone is
+			// not one this run put there, so it is not named among the URLs of
+			// the pages it did.
+			if outputFormat == report.FormatURL && status != report.StatusSkipped {
+				if _, err := fmt.Fprintln(config.output(), url); err != nil {
 					return err
 				}
 			}
@@ -426,10 +460,6 @@ func run(ctx context.Context, config Config) error {
 			"%s:\n  %s",
 			pluraliseLinks(len(missingPages)), strings.Join(missingPages, "\n  "),
 		)
-	}
-
-	if err := results.Write(config.output(), outputFormat); err != nil {
-		return fmt.Errorf("unable to write the run report: %w", err)
 	}
 
 	if hasErrors {

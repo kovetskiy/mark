@@ -88,7 +88,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	parents := strings.Split(cmd.String("parents"), cmd.String("parents-delimiter"))
+	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
 	config := mark.Config{
 		BaseURL:               creds.BaseURL,
@@ -171,4 +171,24 @@ func SetLogLevel(cmd *cli.Command) error {
 	}
 
 	return nil
+}
+
+// splitParents reads the --parents value, dropping empty fields.
+//
+// A delimiter is a separator, not a parent. "/A/B" split to ["", "A", "B"] and
+// the guard downstream checks only element zero, so a leading delimiter
+// silently discarded the whole list and published the page under whatever
+// ancestry the document itself named. "A//B" and "A/B/" went the other way and
+// put a parent with no title into the chain, which ancestry resolution then
+// looks up and, finding nothing, creates.
+func splitParents(value, delimiter string) []string {
+	var parents []string
+
+	for _, parent := range strings.Split(value, delimiter) {
+		if parent != "" {
+			parents = append(parents, parent)
+		}
+	}
+
+	return parents
 }
