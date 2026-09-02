@@ -7,6 +7,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConvertDetailsToExpand(t *testing.T) {
@@ -222,4 +223,50 @@ func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, actual, "<details>")
 	assert.NotContains(t, actual, `ac:name="expand"`)
+}
+
+// TestCDATAInsideDetailsSurvivesUnaltered: converting a <details> parses the
+// fragment as HTML, and html.Parse has no notion of CDATA. It reads
+// "<![CDATA[" as a bogus comment ending at the first ">", and everything after
+// that as markup -- so a sample containing ">" was cut in two: the tail
+// re-parsed and rewritten, the section left unterminated.
+//
+// A code sample is the one thing that must reach the page as written, and this
+// rewrote it and then failed the publish for it.
+func TestCDATAInsideDetailsSurvivesUnaltered(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	sample := "<![CDATA[if a > b then <br> done]]>"
+	input := "<details>\n<summary>Code</summary>\n" +
+		`<ac:structured-macro ac:name="code"><ac:plain-text-body>` + sample +
+		"</ac:plain-text-body></ac:structured-macro>\n</details>\n"
+
+	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+	require.NoError(t, err)
+
+	assert.Contains(t, actual, sample, "the sample reaches the page as written")
+	assert.NotContains(t, actual, "<br />", "and nothing inside it was rewritten")
+	assert.NotContains(t, actual, "]]&gt;", "and the section is not left unterminated")
+
+	assert.Contains(t, actual, `ac:name="expand"`, "the details still became a macro")
+	require.NoError(t, CheckWellFormed(actual))
+}
+
+// TestCDATAWithoutAngleBracketStillWorks is the case that happened to survive
+// before, kept so the fix is not mistaken for the whole of the behaviour.
+func TestCDATAWithoutAngleBracketStillWorks(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	sample := "<![CDATA[plain sample]]>"
+	input := "<details>\n<summary>Code</summary>\n" +
+		`<ac:structured-macro ac:name="code"><ac:plain-text-body>` + sample +
+		"</ac:plain-text-body></ac:structured-macro>\n</details>\n"
+
+	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+	require.NoError(t, err)
+
+	assert.Contains(t, actual, sample)
+	require.NoError(t, CheckWellFormed(actual))
 }
