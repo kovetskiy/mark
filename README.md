@@ -1207,6 +1207,21 @@ The width will be the commented html after the image (in this case 300px).
 
 Currently this is not compatible with the automated upload of inline images.
 
+#### Where an attachment may come from
+
+A file is attached when it is inside the directory Mark is running in, or inside
+the document's own directory. An upward path is ordinary — `../images/logo.png`
+from a `docs` folder is how a repository refers to shared assets — and stays
+inside the repository when Mark is run at its root.
+
+A path that resolves outside both, `../../../etc/passwd` or a symlink pointing
+out of the repository, fails the file rather than being uploaded. A document
+says which files to publish, and on a repository that accepts pull requests a
+document is something a contributor writes.
+
+If a legitimate attachment lives outside, publish from a directory that contains
+both it and the documents.
+
 ### Use HTML img tags for sizing
 
 Standard HTML `<img>` tags (inline, block, single-line, or multi-line) are converted into `<ac:image>` macros. This allows you to specify sizing while keeping the document readable in standard Markdown renderers like GitHub:

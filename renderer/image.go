@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -152,6 +153,17 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 	}
 
 	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{string(n.Destination)})
+
+	// A path that reaches outside the project is refused rather than quietly
+	// treated as a URL. The file is not uploaded either way, but publishing a
+	// broken image and saying nothing leaves the author to work out why, and
+	// leaves a document that tried to read somewhere it should not looking
+	// like a typo.
+	if errors.Is(err, attachment.ErrOutsideProject) {
+		line, col := GetLineCol(source, node.Pos())
+
+		return ast.WalkStop, fmt.Errorf("line %d, col %d: %w", line, col, err)
+	}
 
 	// We were unable to resolve it locally, treat as URL
 	if err != nil {

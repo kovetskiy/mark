@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -11,6 +12,7 @@ import (
 	_ "image/png"
 	"io"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -223,9 +225,102 @@ func prepareAttachments(opener vfs.Opener, base string, replacements []string) (
 	return attachments, nil
 }
 
+// ErrOutsideProject reports an attachment that resolves outside the directories
+// mark is publishing from.
+var ErrOutsideProject = errors.New("attachment is outside the project")
+
+// checkAttachmentPath refuses an attachment that resolves outside both the
+// document's own directory and the directory mark is running in.
+//
+// A document says which files to upload, and a document is content: on a
+// repository that takes pull requests, a contributor could point an image at
+// "../../../../home/runner/.aws/credentials" and have its contents published as
+// a page attachment, under a flattened filename that looks like anything else.
+//
+// Upward paths themselves are ordinary -- "../images/logo.png" is how a docs
+// directory refers to shared assets, and README documents it -- so the boundary
+// is not the document's directory. It is that directory or the one mark was run
+// in, which for a run at the root of a repository is the repository.
+//
+// Symlinks are resolved before the comparison, since a link committed to the
+// repository is as good as a path for reaching outside it. A link that cannot
+// be resolved is left to the open below to report.
+func checkAttachmentPath(base, name string) error {
+	path := filepath.Join(base, name)
+
+	roots := []string{base}
+	if cwd, err := os.Getwd(); err == nil {
+		roots = append(roots, cwd)
+	}
+
+	candidates := []string{path}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		candidates = append(candidates, resolved)
+	}
+
+	for _, candidate := range candidates {
+		if withinAny(candidate, roots) {
+			continue
+		}
+
+		// Reported as an absolute path: "docs/../../id_rsa" cleans down to
+		// "../id_rsa", which says less about where the file actually is than
+		// the reader needs in order to judge it.
+		shown := candidate
+		if absolute, err := filepath.Abs(candidate); err == nil {
+			shown = absolute
+		}
+
+		return fmt.Errorf(
+			"%w: %q resolves to %s, which is outside both %q and the directory mark is "+
+				"running in; publish from a directory that contains it",
+			ErrOutsideProject, name, shown, base,
+		)
+	}
+
+	return nil
+}
+
+// withinAny reports whether a path is inside any of the roots.
+func withinAny(path string, roots []string) bool {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	for _, root := range roots {
+		absoluteRoot, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+
+		// EvalSymlinks on the root as well, or a repository reached through a
+		// symlinked path would put every file in it outside itself.
+		if resolved, err := filepath.EvalSymlinks(absoluteRoot); err == nil {
+			absoluteRoot = resolved
+		}
+
+		relative, err := filepath.Rel(absoluteRoot, absolute)
+		if err != nil {
+			continue
+		}
+
+		if relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // prepareAttachement opens the file, reads its content and creates an attachement object
 func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error) {
 	attachmentPath := filepath.Join(base, name)
+
+	if err := checkAttachmentPath(base, name); err != nil {
+		return Attachment{}, err
+	}
+
 	file, err := opener.Open(attachmentPath)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unable to open file %q: %w", attachmentPath, err)
