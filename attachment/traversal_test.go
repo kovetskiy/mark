@@ -16,6 +16,15 @@ func project(t *testing.T) (root, docs string) {
 	t.Helper()
 
 	root = t.TempDir()
+
+	// t.TempDir may hand back a path through a symlink (/tmp on macOS).
+	// Resolved first, so that every path built below is in the same terms --
+	// resolving root afterwards left docs spelled the other way, which is why
+	// these tests passed on Linux while the boundary was broken.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+
 	docs = filepath.Join(root, "docs")
 	require.NoError(t, os.MkdirAll(docs, 0o755))
 
@@ -24,12 +33,6 @@ func project(t *testing.T) (root, docs string) {
 
 	require.NoError(t, os.Chdir(root))
 	t.Cleanup(func() { _ = os.Chdir(before) })
-
-	// t.TempDir may hand back a path through a symlink (/tmp on macOS), and the
-	// boundary is compared after resolving them.
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
 
 	return root, docs
 }
@@ -96,4 +99,77 @@ func TestAttachmentBesideTheDocumentStillWorks(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
+}
+
+// TestProjectReachedThroughASymlinkStillWorks: mark is run in the repository,
+// but the document was named through a link to it -- "-f ~/work/docs/*.md" with
+// ~/work a symlink, a bind-mounted CI workspace, or any path under macOS's /tmp.
+// The file sits beside its own document; that the path used to reach it is
+// spelled differently is not the document's doing.
+func TestProjectReachedThroughASymlinkStillWorks(t *testing.T) {
+	root, docs := project(t)
+
+	require.NoError(t, os.WriteFile(filepath.Join(docs, "logo.png"), []byte("PNG"), 0o644))
+
+	link := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.Symlink(root, link))
+
+	attachments, err := ResolveLocalAttachments(
+		vfs.LocalOS, filepath.Join(link, "docs"), []string{"logo.png"},
+	)
+
+	require.NoError(t, err)
+	assert.Len(t, attachments, 1)
+}
+
+// TestUpwardPathThroughASymlinkStillWorks: the shared-assets shape README
+// documents, reached through a link. "../images" is a sibling of the document
+// directory, so it is only inside the project once both sides are resolved.
+func TestUpwardPathThroughASymlinkStillWorks(t *testing.T) {
+	root, _ := project(t)
+
+	images := filepath.Join(root, "images")
+	require.NoError(t, os.MkdirAll(images, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(images, "logo.png"), []byte("PNG"), 0o644))
+
+	link := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.Symlink(root, link))
+
+	attachments, err := ResolveLocalAttachments(
+		vfs.LocalOS, filepath.Join(link, "docs"), []string{"../images/logo.png"},
+	)
+
+	require.NoError(t, err)
+	assert.Len(t, attachments, 1)
+}
+
+// TestOutsideTheProjectIsStillRefusedThroughASymlink: resolving both sides is
+// what makes the boundary work, not what loosens it.
+func TestOutsideTheProjectIsStillRefusedThroughASymlink(t *testing.T) {
+	root, _ := project(t)
+
+	secret := filepath.Join(filepath.Dir(root), "id_rsa")
+	require.NoError(t, os.WriteFile(secret, []byte("PRIVATE KEY"), 0o600))
+
+	link := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.Symlink(root, link))
+
+	_, err := ResolveLocalAttachments(
+		vfs.LocalOS, filepath.Join(link, "docs"), []string{"../../id_rsa"},
+	)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOutsideProject)
+}
+
+// TestMissingFileIsReportedByTheOpen: a misspelled name is refused by the open,
+// which names the file, rather than by the boundary, which would send the
+// author looking for a traversal they did not write.
+func TestMissingFileIsReportedByTheOpen(t *testing.T) {
+	_, docs := project(t)
+
+	_, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"logo.png"})
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrOutsideProject)
 }

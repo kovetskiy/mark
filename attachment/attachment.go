@@ -242,46 +242,69 @@ var ErrOutsideProject = errors.New("attachment is outside the project")
 // is not the document's directory. It is that directory or the one mark was run
 // in, which for a run at the root of a repository is the repository.
 //
-// Symlinks are resolved before the comparison, since a link committed to the
-// repository is as good as a path for reaching outside it. A link that cannot
-// be resolved is left to the open below to report.
+// Both sides are resolved before the comparison, since a link committed to the
+// repository is as good as a path for reaching outside it -- and since the
+// roots have to be resolved too, or a repository reached through a symlinked
+// path would put every file in it outside itself.
 func checkAttachmentPath(base, name string) error {
-	path := filepath.Join(base, name)
+	path := resolveDeepest(filepath.Join(base, name))
 
-	roots := []string{base}
+	roots := []string{resolveDeepest(base)}
 	if cwd, err := os.Getwd(); err == nil {
-		roots = append(roots, cwd)
+		roots = append(roots, resolveDeepest(cwd))
 	}
 
-	candidates := []string{path}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		candidates = append(candidates, resolved)
+	if withinAny(path, roots) {
+		return nil
 	}
 
-	for _, candidate := range candidates {
-		if withinAny(candidate, roots) {
-			continue
-		}
-
-		// Reported as an absolute path: "docs/../../id_rsa" cleans down to
-		// "../id_rsa", which says less about where the file actually is than
-		// the reader needs in order to judge it.
-		shown := candidate
-		if absolute, err := filepath.Abs(candidate); err == nil {
-			shown = absolute
-		}
-
-		return fmt.Errorf(
-			"%w: %q resolves to %s, which is outside both %q and the directory mark is "+
-				"running in; publish from a directory that contains it",
-			ErrOutsideProject, name, shown, base,
-		)
-	}
-
-	return nil
+	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
+	// to "../id_rsa", which says less about where the file actually is than the
+	// reader needs in order to judge it.
+	return fmt.Errorf(
+		"%w: %q resolves to %s, which is outside both %q and the directory mark is "+
+			"running in; publish from a directory that contains it",
+		ErrOutsideProject, name, path, base,
+	)
 }
 
-// withinAny reports whether a path is inside any of the roots.
+// resolveDeepest resolves the longest leading part of a path that exists and
+// re-appends whatever is left.
+//
+// Both sides of the comparison have to be in the same terms or a directory is
+// found not to contain the file sitting in it: with mark run in
+// "/mnt/data/work" and the document named through a link as
+// "~/work/docs/x.md", "/home/me/work/docs/logo.png" is not relative to
+// "/mnt/data/work", however plainly it sits beside its own document. Symlinked
+// checkouts, bind-mounted CI workspaces and every path under macOS's /tmp
+// arrive this way.
+//
+// The deepest part rather than the whole path, because the file itself need not
+// exist: a name that is merely misspelled should be refused by the open, which
+// says so, rather than by the boundary, which would say something else.
+func resolveDeepest(path string) string {
+	path = filepath.Clean(path)
+
+	rest := ""
+	for {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+
+		parent := filepath.Dir(path)
+		if parent == path {
+			// The root itself did not resolve; nothing is left to walk up to.
+			return filepath.Join(path, rest)
+		}
+
+		rest = filepath.Join(filepath.Base(path), rest)
+		path = parent
+	}
+}
+
+// withinAny reports whether a path is inside any of the roots. It compares the
+// paths as it is given them; resolving one side but not the other is the bug
+// resolveDeepest exists to prevent.
 func withinAny(path string, roots []string) bool {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -292,12 +315,6 @@ func withinAny(path string, roots []string) bool {
 		absoluteRoot, err := filepath.Abs(root)
 		if err != nil {
 			continue
-		}
-
-		// EvalSymlinks on the root as well, or a repository reached through a
-		// symlinked path would put every file in it outside itself.
-		if resolved, err := filepath.EvalSymlinks(absoluteRoot); err == nil {
-			absoluteRoot = resolved
 		}
 
 		relative, err := filepath.Rel(absoluteRoot, absolute)
