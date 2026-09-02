@@ -1763,6 +1763,24 @@ The part after the last `#` is taken as an anchor only if it has no whitespace
 in it, which is true of every anchor mark generates — so a page whose title
 contains a `#`, like `<ac:C# Guide>`, is still just a title.
 
+A relative link to a section of another document works the same way, and is
+written the way every other Markdown tool expects:
+
+```markdown
+[the setup](./other.md#setup-guide)
+```
+
+The slug is folded onto the id mark gave that heading, exactly as a same-page
+link is, and the link is published as an anchor on that page rather than as a
+URL with a fragment — a fragment on a Confluence address names nothing, since
+Confluence keeps a heading's anchor in the macro rather than in the address.
+
+Two limits, both deliberate. The document has to be published to the same space,
+because a page named without a space key is looked for in the current one; a
+link across spaces keeps its URL. And a fragment naming no heading in that
+document is left exactly as written, since guessing which section was meant
+would send the reader somewhere the author did not choose.
+
 ### Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.

@@ -29,7 +29,7 @@ func NewAnchorTransformer() *AnchorTransformer {
 	return &AnchorTransformer{}
 }
 
-// anchorKey reduces an id or a link target to what the two conventions agree
+// AnchorKey reduces an id or a link target to what the two conventions agree
 // on: the letters and digits, in order, folded to lower case.
 //
 // Everything else is discarded rather than mapped, because the conventions do
@@ -42,7 +42,7 @@ func NewAnchorTransformer() *AnchorTransformer {
 // keeps non-ASCII letters in an id, so an a-z test folded every heading written
 // in CJK or Cyrillic down to the empty key -- which is discarded -- and no link
 // to one could ever be matched.
-func anchorKey(s string) string {
+func AnchorKey(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -68,7 +68,7 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 		}
 
 		value := attributeString(id)
-		key := anchorKey(value)
+		key := AnchorKey(value)
 		if key == "" {
 			return ast.WalkContinue, nil
 		}
@@ -112,7 +112,7 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 			}
 		}
 
-		key := anchorKey(target)
+		key := AnchorKey(target)
 		if ambiguous[key] {
 			return ast.WalkContinue, nil
 		}
