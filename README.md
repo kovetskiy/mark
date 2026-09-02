@@ -46,6 +46,7 @@ labels:
   - <label 1>
   - <label 2>
 image-align: <left|center|right>
+order: <whole number>
 ---
 
 <page contents>

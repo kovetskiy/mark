@@ -198,3 +198,46 @@ func TestConfigOnTheCommandLineStillWins(t *testing.T) {
 	assert.Equal(t, "flag", resolved["username"])
 	assert.Equal(t, fromFlag, resolved["config"])
 }
+
+// TestFeaturesRejectsAnUnknownName: every feature is read with a plain
+// slices.Contains where it takes effect, so a misspelling was indistinguishable
+// from a feature deliberately left off -- "--features=mermaidd" published the
+// page with mermaid quietly not running, and said nothing.
+func TestFeaturesRejectsAnUnknownName(t *testing.T) {
+	cmd := &cli.Command{Flags: Flags}
+	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "mermaidd"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mermaidd", "the message names the value")
+	assert.Contains(t, err.Error(), "mermaid", "and what was expected instead")
+}
+
+// TestFeaturesRejectsAnUntrimmedName: --features "math, mermaid" hands the
+// second one over with its leading space still attached, and it goes
+// unrecognised where it is read. Saying so beats switching it off in silence.
+func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
+	cmd := &cli.Command{Flags: Flags}
+	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "math, mermaid"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "features")
+}
+
+// TestFeaturesAcceptsEveryKnownName guards the list against drifting from the
+// names the code actually looks for.
+func TestFeaturesAcceptsEveryKnownName(t *testing.T) {
+	for _, feature := range KnownFeatures {
+		t.Run(feature, func(t *testing.T) {
+			cmd := &cli.Command{Flags: Flags}
+			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", feature))
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// mustParseArgs is mustParse with the context CheckFlags wants alongside.
+func mustParseArgs(t *testing.T, cmd *cli.Command, args ...string) (context.Context, *cli.Command) {
+	t.Helper()
+
+	return context.Background(), mustParse(t, cmd, args...)
+}

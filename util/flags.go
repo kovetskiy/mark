@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -16,6 +17,30 @@ import (
 )
 
 var filename string
+
+// KnownFeatures are the values --features accepts. Every one of them is read
+// with a plain slices.Contains at the point it takes effect, so a name that is
+// not on this list is indistinguishable from one deliberately left off: the
+// feature is simply never switched on, and nothing is said about it.
+//
+// The usage text is built from this list, so the two cannot drift.
+var KnownFeatures = []string{
+	"d2",
+	"date",
+	"emoji",
+	"frontmatter",
+	"inline-link-card",
+	"math",
+	"mention",
+	"mermaid",
+	"mkdocsadmonitions",
+	"plantuml",
+}
+
+// defaultFeatures are what --features replaces when it is given at all, which
+// is worth saying in the usage: enabling one feature silently turns the others
+// off.
+var defaultFeatures = []string{"mermaid", "mention"}
 
 var Flags = []cli.Flag{
 	// First, and it has to stay first. Every other flag finds the
@@ -293,9 +318,11 @@ var Flags = []cli.Flag{
 	},
 
 	&cli.StringSliceFlag{
-		Name:    "features",
-		Value:   []string{"mermaid", "mention"},
-		Usage:   "Enables optional features. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml",
+		Name:  "features",
+		Value: []string{"mermaid", "mention"},
+		Usage: "Enables optional features, replacing the defaults (" +
+			strings.Join(defaultFeatures, ", ") + ") rather than adding to them. " +
+			"Current features: " + strings.Join(KnownFeatures, ", "),
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
@@ -372,6 +399,19 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 			return context, fmt.Errorf(
 				"invalid value for --content-appearance: %q (expected: full-width, fixed, or default)",
 				contentAppearance,
+			)
+		}
+	}
+
+	for _, feature := range command.StringSlice("features") {
+		// Compared as written rather than trimmed, because that is how it is
+		// read where it takes effect: --features "math, mermaid" hands the
+		// second one over with its leading space still on, and it would go
+		// unrecognised there just as surely.
+		if !slices.Contains(KnownFeatures, feature) {
+			return context, fmt.Errorf(
+				"invalid value for --features: %q (expected any of: %s)",
+				feature, strings.Join(KnownFeatures, ", "),
 			)
 		}
 	}
