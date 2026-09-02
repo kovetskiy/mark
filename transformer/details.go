@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"github.com/yuin/goldmark/ast"
@@ -126,7 +127,104 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 
 // transformDetailsAt converts the <details> tags in one AST node's raw content,
 // advancing *depth by the fragment's net nesting change.
+//
+// CDATA sections are lifted out first and put back at the end. html.Parse has
+// no notion of CDATA: it reads "<![CDATA[" as a bogus comment ending at the
+// first ">", and everything after that as ordinary markup. So a code sample
+// containing ">" was cut in two -- the tail re-parsed and rewritten, the
+// section left unterminated -- which is the one thing CDATA is there to
+// prevent, and it failed the page outright with "unexpected EOF in CDATA
+// section".
 func (t *DetailsTransformer) transformDetailsAt(rawContent []byte, depth *int) ([]byte, bool) {
+	protected, sections := protectCDATA(rawContent)
+
+	out, changed := t.transformDetailsMarkup(protected, depth)
+	if !changed {
+		return rawContent, false
+	}
+
+	return restoreCDATA(out, sections), true
+}
+
+// cdataToken is what a CDATA section is stood in by while the markup around it
+// is parsed. Letters and digits only, so that neither html.Parse nor the
+// renderer's escaping can alter it.
+const cdataToken = "MARKCDATASECTION"
+
+// protectCDATA replaces every CDATA section with a token and returns the
+// sections in the order they were found.
+func protectCDATA(raw []byte) ([]byte, [][]byte) {
+	if !bytes.Contains(raw, cdataOpen) {
+		return raw, nil
+	}
+
+	// A token the document is not already using, so that restoring cannot put a
+	// section somewhere the author wrote the token themselves.
+	token := cdataToken
+	for bytes.Contains(raw, []byte(token)) {
+		token += "X"
+	}
+
+	var (
+		buf      bytes.Buffer
+		sections [][]byte
+		rest     = raw
+	)
+
+	for len(rest) > 0 {
+		start := bytes.Index(rest, cdataOpen)
+		if start == -1 {
+			buf.Write(rest)
+
+			break
+		}
+
+		buf.Write(rest[:start])
+
+		end := bytes.Index(rest[start:], cdataClose)
+		if end == -1 {
+			// Unterminated. Everything left is inside the section as far as
+			// anything downstream can tell, so it is carried out whole.
+			sections = append(sections, rest[start:])
+			fmt.Fprintf(&buf, "%s%d%s", token, len(sections)-1, token)
+
+			break
+		}
+
+		stop := start + end + len(cdataClose)
+		sections = append(sections, rest[start:stop])
+		fmt.Fprintf(&buf, "%s%d%s", token, len(sections)-1, token)
+
+		rest = rest[stop:]
+	}
+
+	if len(sections) == 0 {
+		return raw, nil
+	}
+
+	// The token is handed back with the sections so that restoring uses the one
+	// substituting actually chose.
+	return buf.Bytes(), append([][]byte{[]byte(token)}, sections...)
+}
+
+// restoreCDATA puts the sections back where their tokens stand.
+func restoreCDATA(rendered []byte, sections [][]byte) []byte {
+	if len(sections) == 0 {
+		return rendered
+	}
+
+	token := string(sections[0])
+	for i, section := range sections[1:] {
+		rendered = bytes.ReplaceAll(
+			rendered, fmt.Appendf(nil, "%s%d%s", token, i, token), section,
+		)
+	}
+
+	return rendered
+}
+
+// transformDetailsMarkup does the work on content holding no CDATA section.
+func (t *DetailsTransformer) transformDetailsMarkup(rawContent []byte, depth *int) ([]byte, bool) {
 	lower := bytes.ToLower(rawContent)
 	hasOpen := bytes.Contains(lower, []byte("<details"))
 	hasClose := bytes.Contains(lower, []byte("</details"))
