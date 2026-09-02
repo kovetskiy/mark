@@ -4,3 +4,9 @@
 /mark.test
 /profile.cov
 .vscode
+
+# Chrome dumps core where the test that was driving it happened to be running,
+# so these land in the repository root and in whichever package's tests were
+# running at the time. They are hundreds of megabytes each and one bad run
+# leaves a dozen, so `git add -A` otherwise stages several gigabytes of them.
+core.*
