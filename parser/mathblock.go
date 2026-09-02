@@ -3,6 +3,8 @@ package parser
 import (
 	"bytes"
 
+	"github.com/kovetskiy/mark/v16/metadata"
+
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
@@ -136,36 +138,75 @@ func openingFence(line []byte, pos int) (fence, bool) {
 // written.
 //
 // Read from the source rather than through the reader, which is mid-parse and
-// not ours to move.
-func (f fence) closerAhead(source []byte, from int) bool {
+// not ours to move -- and checked against where the code is, because reading
+// the source means reading the code samples in it too. A document showing what
+// a display formula looks like
+//
+//	```
+//	$$
+//	```
+//
+// closed a fence opened further up, and the formula then swallowed everything
+// between them, the opening ``` included -- which left the rest of the document
+// inside a code block that nothing had opened on purpose. Silently, and with a
+// zero exit code.
+func (f fence) closerAhead(source []byte, from int, code []metadata.Region) bool {
 	if from < 0 || from >= len(source) {
 		return false
 	}
 
+	offset := from
 	for _, line := range bytes.Split(source[from:], []byte("\n")) {
-		if f.closesBlock(undoContainerPrefix(line)) {
+		// Asked at the content rather than at the start of the line. An
+		// indented code block's region begins after the indent that made it
+		// one, so a line measured from its first byte falls outside the very
+		// region that describes it.
+		content, skipped := undoContainerPrefix(line)
+
+		if !metadata.InCode(code, offset+skipped) && f.closesBlock(content) {
 			return true
 		}
+
+		offset += len(line) + 1 // the newline Split consumed
 	}
 
 	return false
 }
 
+// codeRegionsKey holds the document's code regions for the length of one parse.
+var codeRegionsKey = parser.NewContextKey()
+
+// codeRegions reports where the code is, working it out once per document.
+//
+// goldmark is asked rather than the bytes searched for backticks: tildes,
+// indented blocks, closing fences longer than their opener and nesting are all
+// easy to get subtly wrong, and the parser already knows.
+func codeRegions(reader text.Reader, pc parser.Context) []metadata.Region {
+	if cached, ok := pc.Get(codeRegionsKey).([]metadata.Region); ok {
+		return cached
+	}
+
+	regions := metadata.CodeRegions(reader.Source())
+	pc.Set(codeRegionsKey, regions)
+
+	return regions
+}
+
 // undoContainerPrefix strips what a container takes off a line before a block
-// parser is ever shown it.
+// parser is ever shown it, and reports how many bytes went.
 //
 // The lookahead reads the source, so a closing fence inside a blockquote still
 // carries its "> ". Erring towards finding a closer is the safe direction: a
 // fence that is found to close behaves exactly as it always has, and only one
 // that closes nowhere is read as text.
-func undoContainerPrefix(line []byte) []byte {
-	line = bytes.TrimLeft(line, " \t")
+func undoContainerPrefix(line []byte) ([]byte, int) {
+	rest := bytes.TrimLeft(line, " \t")
 
-	for len(line) > 0 && line[0] == '>' {
-		line = bytes.TrimLeft(line[1:], " \t")
+	for len(rest) > 0 && rest[0] == '>' {
+		rest = bytes.TrimLeft(rest[1:], " \t")
 	}
 
-	return line
+	return rest, len(line) - len(rest)
 }
 
 // closesBlock reports whether a line is the closing fence.
@@ -215,7 +256,7 @@ func (b *mathBlockParser) Open(parent ast.Node, reader text.Reader, pc parser.Co
 	}
 
 	// Nothing closes it, so it opens nothing.
-	if !opened.closerAhead(reader.Source(), segment.Stop) {
+	if !opened.closerAhead(reader.Source(), segment.Stop, codeRegions(reader, pc)) {
 		return nil, parser.NoChildren
 	}
 
