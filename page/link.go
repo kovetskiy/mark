@@ -278,7 +278,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash, "", frontMatterEnabled)
+		linkMeta, linkBody, err := metadata.ExtractMeta(linkContents, spaceForLinks, titleFromH1, titleFromFilename, filepath, parents, titleAppendGeneratedHash, "", frontMatterEnabled)
 		if err != nil {
 			log.Error().
 				Err(err).
@@ -320,6 +320,26 @@ func resolveLink(
 				),
 				transient: true,
 			}, nil
+		}
+
+		// A link naming a section of the other document is written as an
+		// anchor rather than as a URL. A fragment on a Confluence URL names
+		// nothing: Confluence puts a heading's anchor in the Anchor macro, not
+		// in the address, so ".../x/abc123#Setup" scrolls nowhere however the
+		// fragment is spelled. ac:link with ri:page and ac:anchor is how the
+		// storage format says "that section of that page".
+		//
+		// Written only once the page has been found, so that a link to a
+		// document that is not published yet is still reported and still
+		// deferred -- the anchor changes what the link becomes, not whether it
+		// resolves.
+		//
+		// Only within one space: an ri:page with no ri:space-key means this
+		// space, while the URL carries its own space in it.
+		if link.hash != "" && linkMeta.Space == spaceForLinks {
+			if anchor := headingAnchor(linkBody, link.hash); anchor != "" {
+				return "ac:" + linkMeta.Title + "#" + anchor, nil, nil
+			}
 		}
 	}
 

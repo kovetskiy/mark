@@ -15,9 +15,9 @@ func TestAnchorKey(t *testing.T) {
 		{"Ünïcödé", "ünïcödé"}, // case folding has to reach past ASCII
 	}
 	for _, pair := range same {
-		if anchorKey(pair[0]) != anchorKey(pair[1]) {
+		if AnchorKey(pair[0]) != AnchorKey(pair[1]) {
 			t.Errorf("%q and %q should reduce alike, got %q and %q",
-				pair[0], pair[1], anchorKey(pair[0]), anchorKey(pair[1]))
+				pair[0], pair[1], AnchorKey(pair[0]), AnchorKey(pair[1]))
 		}
 	}
 
@@ -26,14 +26,14 @@ func TestAnchorKey(t *testing.T) {
 		{"Release-Notes", "Release-Notes-1"}, // goldmark's dedupe suffix is a digit
 	}
 	for _, pair := range differ {
-		if anchorKey(pair[0]) == anchorKey(pair[1]) {
+		if AnchorKey(pair[0]) == AnchorKey(pair[1]) {
 			t.Errorf("%q and %q should not reduce alike, both gave %q",
-				pair[0], pair[1], anchorKey(pair[0]))
+				pair[0], pair[1], AnchorKey(pair[0]))
 		}
 	}
 
 	// Nothing to match on is not a match against everything.
-	if anchorKey("---") != "" {
-		t.Errorf("punctuation alone should reduce to nothing, got %q", anchorKey("---"))
+	if AnchorKey("---") != "" {
+		t.Errorf("punctuation alone should reduce to nothing, got %q", AnchorKey("---"))
 	}
 }
