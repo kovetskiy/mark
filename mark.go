@@ -108,6 +108,15 @@ func (c Config) output() io.Writer {
 	return io.Discard
 }
 
+// readOnly reports whether this run may leave Confluence untouched. A compile
+// prints the body it would have sent and stops; a dry run reports what it would
+// have done. Neither publishes anything, so neither may delete, archive or
+// reorder either -- a guard that asks only about --dry-run is one --compile-only
+// walks straight past.
+func (c Config) readOnly() bool {
+	return c.DryRun || c.CompileOnly
+}
+
 // Run processes all files matching Config.Files and publishes them to
 // Confluence, and is RunContext with a context that is never cancelled.
 func Run(config Config) error {
@@ -227,10 +236,11 @@ func run(ctx context.Context, config Config) error {
 	// their say-so.
 	var tracker *manifest.Store
 	if config.TrackPages {
-		// A dry run resolves exactly as a real one does -- otherwise its preview
-		// is fiction -- and resolving records what it finds. The store it gets
-		// cannot write, which is a guard that holds however it is used.
-		if config.DryRun {
+		// A run that publishes nothing resolves exactly as a real one does --
+		// otherwise its preview is fiction -- and resolving records what it
+		// finds. The store it gets cannot write, which is a guard that holds
+		// however it is used.
+		if config.readOnly() {
 			tracker = manifest.NewReadOnlyStore(api)
 		} else {
 			tracker = manifest.NewStore(api)
@@ -393,7 +403,7 @@ func run(ctx context.Context, config Config) error {
 		// Not attempted when a file failed: the pages that did not publish are
 		// missing from the sequence, and ordering the rest against each other
 		// would arrange them as though the absent ones were gone for good.
-		if err := page.OrderChildren(api, config.DryRun, ordered); err != nil {
+		if err := page.OrderChildren(api, config.readOnly(), ordered); err != nil {
 			return fmt.Errorf("unable to order pages: %w", err)
 		}
 	}
@@ -2023,13 +2033,13 @@ func handleOrphans(
 				continue
 			}
 
-			handled, err = page.HandleOrphans(api, action, candidates, config.DryRun)
+			handled, err = page.HandleOrphans(api, action, candidates, config.readOnly())
 			if err != nil {
 				return err
 			}
 		}
 
-		if config.DryRun {
+		if config.readOnly() {
 			continue
 		}
 

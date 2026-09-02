@@ -335,3 +335,45 @@ func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, known, "reported once and then forgotten, as before")
 }
+
+// TestOnOrphanCompileOnlyActsOnNothing: --compile-only prints the body it would
+// have sent and stops, so it may not delete either. Only --dry-run got the
+// read-only manifest, so a compile took the writable one and then returned
+// before publishing -- which made every tracked page an orphan.
+//
+// The guard that keeps a space from being emptied counts what the run saw, and
+// a document that has opted out of synchronising is looked up purely to mark it
+// seen. One such document is therefore enough to carry the run past the guard
+// and on to trashing a page whose source file is still sitting on disk.
+func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	writeFile(t, dir, "keep.md", header+"<!-- Title: Keep -->\n\nKeep.\n")
+	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	gone, err := api.FindPage("DOCS", "Gone", "page")
+	require.NoError(t, err)
+	require.NotNil(t, gone)
+
+	// keep.md stays exactly where it is and merely stops synchronising.
+	writeFile(t, dir, "keep.md", header+"<!-- Title: Keep -->\n<!-- Synchronized: false -->\n\nKeep.\n")
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+
+	config.CompileOnly = true
+	require.NoError(t, Run(config))
+
+	assert.False(t, server.Page(gone.ID).Trashed, "a compile must remove nothing")
+}
