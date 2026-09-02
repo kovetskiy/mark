@@ -660,6 +660,14 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 			s.getFolder(w, folderID)
 			return
 		}
+		// /pages/{id}/direct-children -- children of every type, which is what
+		// separates it from the v1 child/page listing.
+		if rest, ok := strings.CutPrefix(path, "/pages/"); ok {
+			if pageID, sub, found := strings.Cut(rest, "/"); found && sub == "direct-children" {
+				s.directChildren(w, r, pageID)
+				return
+			}
+		}
 		// /spaces/{id}/properties and /spaces/{id}/properties/{propertyID}
 		if rest, ok := strings.CutPrefix(path, "/spaces/"); ok {
 			spaceID, sub, _ := strings.Cut(rest, "/")
@@ -1319,6 +1327,40 @@ func (s *Server) childPages(w http.ResponseWriter, r *http.Request, parentID str
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// directChildren answers the v2 listing of a page's children of every type.
+// Only pages and folders exist in this fake; the type field is what a caller
+// telling them apart relies on.
+func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, parentID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	results := []map[string]any{}
+	for _, id := range s.childOrder[parentID] {
+		if p, ok := s.pages[id]; ok && p.ParentID == parentID {
+			results = append(results, map[string]any{
+				"id": p.ID, "type": "page", "title": p.Title,
+			})
+		}
+	}
+	for _, f := range s.folders {
+		if f.ParentID == parentID {
+			results = append(results, map[string]any{
+				"id": f.ID, "type": "folder", "title": f.Title,
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results": results,
+		"_links":  map[string]any{},
+	})
 }
 
 // ChildOrder returns the ids of a page's children, in order.

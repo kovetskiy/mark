@@ -173,6 +173,24 @@ func HandleOrphans(
 			continue
 		}
 
+		// The listing above is of pages, and a folder is not one. mark puts
+		// folders under pages itself, so a page whose children are all folders
+		// reads as childless there -- and trashing it takes the folders, and
+		// every page inside them, along with it.
+		folders, err := api.HasChildFolders(orphan.PageID)
+		if err != nil {
+			return handled, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
+		}
+
+		if folders {
+			log.Warn().Msgf(
+				"page %q has child folder(s) and is left alone: removing it would take them too",
+				orphan.Title,
+			)
+
+			continue
+		}
+
 		if dryRun {
 			log.Info().Msgf("page %q would be %sd", orphan.Title, action)
 			handled = append(handled, orphan.Path)

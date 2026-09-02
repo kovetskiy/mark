@@ -377,3 +377,43 @@ func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
 
 	assert.False(t, server.Page(gone.ID).Trashed, "a compile must remove nothing")
 }
+
+// TestOnOrphanLeavesAPageWithChildFolders: the child listing that guards the
+// deletion is a listing of pages, and a folder is not one. mark puts folders
+// under pages itself, so a page whose children are all folders read as
+// childless -- and trashing it takes the folders, and every page inside them,
+// along with it.
+func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	writeFile(t, dir, "keep.md", header+"<!-- Title: Keep -->\n\nKeep.\n")
+	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	gone, err := api.FindPage("DOCS", "Gone", "page")
+	require.NoError(t, err)
+	require.NotNil(t, gone)
+
+	// A folder beneath it, holding a page nobody in this repository wrote.
+	folder := server.AddFolder("DOCS", "Manuals", gone.ID, "page")
+	server.AddFolder("DOCS", "Nested", folder.ID, "folder")
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+	require.NoError(t, Run(config))
+
+	page := server.Page(gone.ID)
+	require.NotNil(t, page)
+	assert.False(t, page.Trashed, "a page holding folders must be left alone")
+}
