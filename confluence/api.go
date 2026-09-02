@@ -1899,6 +1899,75 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 	return all, nil
 }
 
+// HasChildFolders reports whether a folder sits directly beneath a page.
+//
+// Folders are v2 entities and never appear in content/{id}/child/page, which
+// lists content of type page and nothing else. A page whose only children are
+// folders therefore looks childless there -- while trashing it takes the
+// folders, and every page inside them, along with it.
+//
+// A deployment that does not route the v2 children endpoint is a deployment
+// without folders, so a 404 is read as "none" rather than as a failure: there
+// is nothing there for the answer to be wrong about. Any other status is a real
+// failure and is reported, because a caller about to delete something should
+// not be told "no children" by a request that did not work.
+//
+// Stops at the first folder it sees. The answer is a yes or a no, and the rest
+// of the listing cannot change it.
+func (api *API) HasChildFolders(parentID string) (bool, error) {
+	const pageSize = 100
+
+	var cursor string
+	for {
+		result := struct {
+			Results []struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"results"`
+
+			Links struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}{}
+
+		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
+		if cursor != "" {
+			query["cursor"] = cursor
+		}
+
+		request, err := api.v2().Res(
+			"pages/"+parentID+"/direct-children", &result,
+		).Get(query)
+		if err != nil {
+			return false, fmt.Errorf("unable to list children of %s: %w", parentID, err)
+		}
+
+		// First page only: a 404 partway through is a real failure, and reading
+		// it as "none" would answer from a listing already known to be partial.
+		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+			return false, nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return false, newErrorStatusNotOK(request)
+		}
+
+		for _, child := range result.Results {
+			if child.Type == "folder" {
+				return true, nil
+			}
+		}
+
+		next := nextCursor(result.Links.Next)
+		// A server that hands back the cursor it was given would otherwise keep
+		// this loop going for as long as it keeps answering.
+		if next == "" || next == cursor || len(result.Results) == 0 {
+			return false, nil
+		}
+		cursor = next
+	}
+}
+
 // MoveContentAfter places a page immediately after one of its siblings.
 //
 // Unlike the append form, the target here is a sibling rather than the new
