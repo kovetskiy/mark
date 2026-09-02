@@ -194,3 +194,48 @@ func TestClosedMathFenceInABlockquoteIsStillFound(t *testing.T) {
 	assert.Contains(t, out, "<ac:image")
 	assert.Contains(t, out, "<blockquote>")
 }
+
+// TestMathFenceIsNotClosedByOneInsideACodeBlock: the lookahead for a closing
+// fence reads the source, so it read the code samples in it too. A document
+// showing what a display formula looks like closed a fence opened further up,
+// and the formula then swallowed everything between them -- the opening ```
+// included, which left the rest of the document inside a code block nobody had
+// opened. Silently, and with a zero exit code.
+func TestMathFenceIsNotClosedByOneInsideACodeBlock(t *testing.T) {
+	out := compileMath(t, "Intro.\n\n$$\na + b\n\nProse that must survive.\n\n```\n$$\n```\n\nTail.\n")
+
+	assert.NotContains(t, out, "<ac:image", "nothing closed the fence, so nothing was a formula")
+	assert.Contains(t, out, "Prose that must survive.")
+	assert.Contains(t, out, "Tail.")
+	assert.Contains(t, out, "<![CDATA[$$]]>", "and the sample is still a code sample")
+	require.NoError(t, CheckWellFormed(out))
+}
+
+// TestMathFenceIsNotClosedByOneInAnIndentedCodeBlock covers the other kind of
+// code block, which the parser knows about and a scan for "$$" does not.
+func TestMathFenceIsNotClosedByOneInAnIndentedCodeBlock(t *testing.T) {
+	out := compileMath(t, "Intro.\n\n$$\na + b\n\nProse that must survive.\n\n    $$\n\nTail.\n")
+
+	assert.NotContains(t, out, "<ac:image")
+	assert.Contains(t, out, "Prose that must survive.")
+	assert.Contains(t, out, "Tail.")
+}
+
+// TestMathFenceIsStillClosedByOneAfterACodeBlock is the other half: a sample
+// showing the syntax does not stop a real closer further down from working.
+func TestMathFenceIsStillClosedByOneAfterACodeBlock(t *testing.T) {
+	out := compileMath(t, "```\n$$\n```\n\n$$\nE = mc^2\n$$\n\nTail.\n")
+
+	assert.Contains(t, out, `ac:alt="E = mc^2"`, "the real fence still renders")
+	assert.Contains(t, out, "<![CDATA[$$]]>", "and the sample is still a sample")
+	assert.Contains(t, out, "<p>Tail.</p>")
+}
+
+// TestMathFenceInABlockquoteIsNotClosedFromInsideACodeBlock: the two rules meet
+// -- a closer inside a quotation still counts, one inside code still does not.
+func TestMathFenceInABlockquoteIsNotClosedFromInsideACodeBlock(t *testing.T) {
+	out := compileMath(t, "> $$\n> a + b\n\nProse.\n\n```\n> $$\n```\n")
+
+	assert.NotContains(t, out, "<ac:image")
+	assert.Contains(t, out, "Prose.")
+}
