@@ -241,3 +241,53 @@ func mustParseArgs(t *testing.T, cmd *cli.Command, args ...string) (context.Cont
 
 	return context.Background(), mustParse(t, cmd, args...)
 }
+
+// TestSplitParentsDropsEmptyFields: a delimiter is a separator, not a parent.
+// "/A/B" split to ["", "A", "B"], and the guard that consumes this checks only
+// element zero -- so a leading delimiter silently discarded the whole list and
+// the page published under whatever ancestry the document itself named. "A//B"
+// and "A/B/" went the other way and put a parent with no title into the chain,
+// which ancestry resolution looks up and, finding nothing, creates.
+func TestSplitParentsDropsEmptyFields(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		written  string
+		expected []string
+	}{
+		{"plain", "A/B", []string{"A", "B"}},
+		{"leading", "/A/B", []string{"A", "B"}},
+		{"trailing", "A/B/", []string{"A", "B"}},
+		{"doubled", "A//B", []string{"A", "B"}},
+		{"only delimiters", "//", nil},
+		{"empty", "", nil},
+		{"single", "A", []string{"A"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, splitParents(test.written, "/"))
+		})
+	}
+}
+
+// TestImageAlignIsCheckedBeforeAnythingIsCreated: --content-appearance and
+// --math-format are both checked here, and --image-align was not -- it was
+// validated inside the publish, after CreatePage and after attachments had
+// gone up. A misspelling therefore left an empty page in Confluence and then
+// failed the run.
+func TestImageAlignIsCheckedBeforeAnythingIsCreated(t *testing.T) {
+	cmd := &cli.Command{Flags: Flags}
+	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", "centre"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "centre")
+	assert.Contains(t, err.Error(), "center")
+}
+
+func TestImageAlignAcceptsWhatItDocuments(t *testing.T) {
+	for _, align := range []string{"left", "center", "right", "CENTER", " right "} {
+		t.Run(align, func(t *testing.T) {
+			cmd := &cli.Command{Flags: Flags}
+			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", align))
+			assert.NoError(t, err)
+		})
+	}
+}

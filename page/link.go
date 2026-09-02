@@ -216,7 +216,16 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 
 	// Noted rather than looked up: the page may not have been published yet,
 	// and whether it ever is can only be known once the run is over.
-	r.Checker.NotePage(r.SpaceForLinks, title, r.Base)
+	//
+	// Reported against the document rather than r.Base, which is the directory
+	// the document sits in: with several documents in one directory the message
+	// named a folder and left the reader to find which file it meant.
+	source := r.SourceFile
+	if source == "" {
+		source = r.Base
+	}
+
+	r.Checker.NotePage(r.SpaceForLinks, title, source)
 
 	return nil
 }
