@@ -115,6 +115,59 @@ func openingFence(line []byte, pos int) (fence, bool) {
 	return fence{}, false
 }
 
+// closerAhead reports whether this fence is ever closed in what follows.
+//
+// A fence that is never closed used to run to the end of the document. Every
+// remaining paragraph became part of the formula, so the page was published as
+// one picture of the rest of the file -- or, more often, failed outright, since
+// prose is not valid TeX:
+//
+//	unable to render formula "a + b\n\n## A heading\n\nBody text...":
+//	You can't use macro parameter character # in math mode
+//
+// which names the formula rather than the line the fence was opened on, and
+// leaves the author reading an error about TeX to find a missing "$$".
+//
+// CommonMark lets an unclosed code fence run to the end of its container, and
+// goldmark's fenced code block does just that. A code block is still legible
+// that way and its content still reaches the page; a formula is neither, and
+// takes everything after it along. So a fence that closes nowhere is not
+// treated as a fence at all, and the "$$" stays in the text where it was
+// written.
+//
+// Read from the source rather than through the reader, which is mid-parse and
+// not ours to move.
+func (f fence) closerAhead(source []byte, from int) bool {
+	if from < 0 || from >= len(source) {
+		return false
+	}
+
+	for _, line := range bytes.Split(source[from:], []byte("\n")) {
+		if f.closesBlock(undoContainerPrefix(line)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// undoContainerPrefix strips what a container takes off a line before a block
+// parser is ever shown it.
+//
+// The lookahead reads the source, so a closing fence inside a blockquote still
+// carries its "> ". Erring towards finding a closer is the safe direction: a
+// fence that is found to close behaves exactly as it always has, and only one
+// that closes nowhere is read as text.
+func undoContainerPrefix(line []byte) []byte {
+	line = bytes.TrimLeft(line, " \t")
+
+	for len(line) > 0 && line[0] == '>' {
+		line = bytes.TrimLeft(line[1:], " \t")
+	}
+
+	return line
+}
+
 // closesBlock reports whether a line is the closing fence.
 func (f fence) closesBlock(line []byte) bool {
 	trimmed := bytes.TrimSpace(line)
@@ -158,6 +211,11 @@ func (b *mathBlockParser) Open(parent ast.Node, reader text.Reader, pc parser.Co
 
 	opened, ok := openingFence(line, pos)
 	if !ok {
+		return nil, parser.NoChildren
+	}
+
+	// Nothing closes it, so it opens nothing.
+	if !opened.closerAhead(reader.Source(), segment.Stop) {
 		return nil, parser.NoChildren
 	}
 

@@ -101,13 +101,19 @@ func TestMathFenceInsideACodeBlockStaysCode(t *testing.T) {
 }
 
 // TestUnclosedMathFenceDoesNotSwallowTheDocument: an opening fence with no
-// closer takes the rest of the document, which is what a fenced code block does
-// too. What matters is that it is one formula rather than a parse that runs
-// away.
+// closer is not a fence.
+//
+// This used to run to the end of the document on the grounds that a fenced code
+// block does the same, which CommonMark does say. The two are not comparable in
+// what it costs. A code block still publishes what it swallowed, and publishes
+// it legibly; a formula publishes a picture of it, or nothing at all -- prose
+// is not valid TeX, so the usual outcome is a failed page and an error naming
+// the formula rather than the line the fence was opened on.
 func TestUnclosedMathFenceDoesNotSwallowTheDocument(t *testing.T) {
 	out := compileMath(t, "$$\nE = mc^2\n\nstill inside\n")
 
-	assert.Equal(t, 1, strings.Count(out, "<ac:image"))
+	assert.Equal(t, 0, strings.Count(out, "<ac:image"), "nothing was a formula")
+	assert.Contains(t, out, "still inside", "and the rest of the document survives")
 }
 
 // TestBracketFenceIsABlock: "\[" on a line of its own opens a display formula
@@ -156,4 +162,35 @@ func TestLongerDollarFenceIsMatchedByItsOwnLength(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(out, "<ac:image"))
 	assert.NotContains(t, out, "<p>$</p>")
 	assert.NotContains(t, out, "</ac:image>$")
+}
+
+// TestUnclosedBracketFenceLeavesTheDocumentAlone is the same for the other
+// fence. "\[" with no "\]" is the CommonMark escape for a literal bracket.
+func TestUnclosedBracketFenceLeavesTheDocumentAlone(t *testing.T) {
+	out := compileMath(t, "Intro paragraph.\n\n\\[\na + b\n\n## A heading\n\nBody text that must survive.\n")
+
+	assert.Contains(t, out, "<p>Intro paragraph.</p>")
+	assert.Contains(t, out, "A heading")
+	assert.Contains(t, out, "Body text that must survive.")
+	assert.NotContains(t, out, "<ac:image")
+}
+
+// TestClosedMathFenceStillOpensABlock is the other half: a fence that does
+// close behaves exactly as it always has, wherever its closer happens to be.
+func TestClosedMathFenceStillOpensABlock(t *testing.T) {
+	out := compileMath(t, "Intro.\n\n$$\na + b\n$$\n\nProse after.\n")
+
+	assert.Contains(t, out, "<ac:image")
+	assert.Contains(t, out, "<p>Prose after.</p>")
+	assert.NotContains(t, out, "$$")
+}
+
+// TestClosedMathFenceInABlockquoteIsStillFound: the lookahead reads the source,
+// where a closing fence inside a quotation still carries its "> ". Missing it
+// would refuse a formula that closes perfectly well.
+func TestClosedMathFenceInABlockquoteIsStillFound(t *testing.T) {
+	out := compileMath(t, "> $$\n> \\begin{aligned}\n> a &= b\n>\n> c &= d\n> \\end{aligned}\n> $$\n")
+
+	assert.Contains(t, out, "<ac:image")
+	assert.Contains(t, out, "<blockquote>")
 }
