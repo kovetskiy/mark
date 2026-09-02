@@ -24,10 +24,23 @@ import (
 type ConfluenceDefinitionListRenderer struct {
 	html.Config
 
-	// inRow and inCell track how much of the current row has been written.
-	// A row spans several nodes -- one term, then any number of descriptions --
-	// so the closing tags belong to whatever node comes next rather than to the
-	// node that opened them.
+	// open holds one frame per definition list currently being written, and
+	// only the innermost is ever written to.
+	//
+	// A definition may itself contain a definition list, and the two lists'
+	// rows have nothing to do with each other: with a single pair of flags the
+	// inner list reset them on the way in and closed the outer list's row on
+	// the way out, leaving a <td> and a <tr> that nothing ever closed. One
+	// nested list anywhere in a document made the whole page fail the
+	// well-formedness check and never reach Confluence.
+	open []listRow
+}
+
+// listRow tracks how much of the current row has been written. A row spans
+// several nodes -- one term, then any number of descriptions -- so the closing
+// tags belong to whatever node comes next rather than to the node that opened
+// them.
+type listRow struct {
 	inRow  bool
 	inCell bool
 }
@@ -46,8 +59,7 @@ func (r *ConfluenceDefinitionListRenderer) RegisterFuncs(reg renderer.NodeRender
 
 func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if entering {
-		r.inRow = false
-		r.inCell = false
+		r.open = append(r.open, listRow{})
 
 		_, _ = w.WriteString("<table>\n<tbody>\n")
 
@@ -55,9 +67,21 @@ func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source [
 	}
 
 	r.closeRow(w)
+	if len(r.open) > 0 {
+		r.open = r.open[:len(r.open)-1]
+	}
 	_, _ = w.WriteString("</tbody>\n</table>\n")
 
 	return ast.WalkContinue, nil
+}
+
+// current returns the list being written, or nil outside one.
+func (r *ConfluenceDefinitionListRenderer) current() *listRow {
+	if len(r.open) == 0 {
+		return nil
+	}
+
+	return &r.open[len(r.open)-1]
 }
 
 func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -66,7 +90,9 @@ func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source [
 		r.closeRow(w)
 
 		_, _ = w.WriteString("<tr>\n<th>")
-		r.inRow = true
+		if row := r.current(); row != nil {
+			row.inRow = true
+		}
 
 		return ast.WalkContinue, nil
 	}
@@ -81,18 +107,23 @@ func (r *ConfluenceDefinitionListRenderer) renderDescription(w util.BufWriter, s
 		return ast.WalkContinue, nil
 	}
 
+	row := r.current()
+	if row == nil {
+		return ast.WalkContinue, nil
+	}
+
 	// A definition written before any term -- which the syntax allows -- still
 	// needs a row to sit in.
-	if !r.inRow {
+	if !row.inRow {
 		_, _ = w.WriteString("<tr>\n<th></th>\n")
-		r.inRow = true
+		row.inRow = true
 	}
 
 	// Several definitions of one term share its cell rather than each claiming
 	// a row of their own, which would leave rows with no term to head them.
-	if !r.inCell {
+	if !row.inCell {
 		_, _ = w.WriteString("<td>")
-		r.inCell = true
+		row.inCell = true
 
 		return ast.WalkContinue, nil
 	}
@@ -110,17 +141,18 @@ func (r *ConfluenceDefinitionListRenderer) renderDescription(w util.BufWriter, s
 // closeRow finishes whatever row is open, giving a term with no definition an
 // empty cell so that every row has both columns.
 func (r *ConfluenceDefinitionListRenderer) closeRow(w util.BufWriter) {
-	if !r.inRow {
+	row := r.current()
+	if row == nil || !row.inRow {
 		return
 	}
 
-	if r.inCell {
+	if row.inCell {
 		_, _ = w.WriteString("</td>\n")
-		r.inCell = false
+		row.inCell = false
 	} else {
 		_, _ = w.WriteString("<td></td>\n")
 	}
 
 	_, _ = w.WriteString("</tr>\n")
-	r.inRow = false
+	row.inRow = false
 }
