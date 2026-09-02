@@ -501,3 +501,53 @@ func TestParseHeaderCommentStillParsesValidHeaders(t *testing.T) {
 	assert.Equal(t, "a", key)
 	assert.Empty(t, value)
 }
+
+// TestExtractMetaYAMLFrontMatterOrder: Meta.Order exists and the HTML-comment
+// path has always read it, but the front matter switch had no case for it -- so
+// a document written that way could not position itself among its siblings at
+// all, and said nothing about why.
+func TestExtractMetaYAMLFrontMatterOrder(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test Page\norder: 3\n---\n# Content\n"
+
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.NoError(t, err)
+	require.NotNil(t, meta.Order)
+	assert.Equal(t, 3, *meta.Order)
+}
+
+// TestExtractMetaYAMLFrontMatterOrderAccepts covers the shapes a YAML number
+// arrives in: bare, quoted, and negative for a page that sorts first.
+func TestExtractMetaYAMLFrontMatterOrderAccepts(t *testing.T) {
+	for _, test := range []struct {
+		written  string
+		expected int
+	}{
+		{"3", 3},
+		{`"4"`, 4},
+		{"-1", -1},
+		{"0", 0},
+	} {
+		t.Run(test.written, func(t *testing.T) {
+			markdown := "---\nspace: DOCS\norder: " + test.written + "\n---\nBody\n"
+
+			meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+			require.NoError(t, err)
+			require.NotNil(t, meta.Order)
+			assert.Equal(t, test.expected, *meta.Order)
+		})
+	}
+}
+
+// TestExtractMetaYAMLFrontMatterOrderRejectsNonNumbers: a position among
+// siblings is a whole number, and saying so beats ordering by nothing.
+func TestExtractMetaYAMLFrontMatterOrderRejectsNonNumbers(t *testing.T) {
+	for _, written := range []string{"first", "1.5", "[1]"} {
+		t.Run(written, func(t *testing.T) {
+			markdown := "---\nspace: DOCS\norder: " + written + "\n---\nBody\n"
+
+			_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "order")
+		})
+	}
+}

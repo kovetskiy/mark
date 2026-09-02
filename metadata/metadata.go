@@ -228,6 +228,33 @@ func toBool(val any) (bool, bool) {
 	}
 }
 
+// toInt reads a front matter number.
+//
+// YAML decodes a whole number as int, but a value written in a document nested
+// inside another structure can arrive as int64 or float64, and one that was
+// quoted arrives as a string. All of them are the number the author wrote.
+func toInt(val any) (int, bool) {
+	switch v := val.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		// Only a whole number: 1.5 is not a position among siblings.
+		if v != float64(int(v)) {
+			return 0, false
+		}
+
+		return int(v), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
 // toStringMap reads a front matter mapping, keeping the values as written.
 //
 // A YAML mapping decodes to map[string]any, but a document nested inside
@@ -342,6 +369,14 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				setContentAppearance(meta, toString(v))
 			case "imagealign":
 				meta.ImageAlign = strings.ToLower(toString(v))
+			case "order":
+				order, ok := toInt(v)
+				if !ok {
+					return nil, nil, fmt.Errorf(
+						"order must be a whole number, got %v", v,
+					)
+				}
+				meta.Order = &order
 			case "synchronized":
 				value, ok := toBool(v)
 				if !ok {
