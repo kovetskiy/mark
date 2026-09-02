@@ -1641,6 +1641,13 @@ image-align = "center"
 **NOTE**: `password-command` keeps the token out of both the configuration file and the environment.
 A password manager or keychain helper supplies it per run.
 
+The command runs without a shell, so the string is split on whitespace and
+nothing is expanded: there is no quoting, and a program path or argument
+containing a space cannot be written here. Wrap such a helper in a small script
+and name the script instead. The command also gets no standard input, so a
+helper that prompts on stdin cannot be used -- one that opens the terminal
+itself, as `pinentry` does, is fine.
+
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
 **NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.

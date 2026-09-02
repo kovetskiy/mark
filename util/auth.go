@@ -18,6 +18,11 @@ import (
 // A helper that prompts for input or hangs on a locked keyring then fails the run instead of stalling it.
 const passwordCommandTimeout = 30 * time.Second
 
+// passwordCommandWaitDelay bounds the wait for the helper's output pipe once
+// the helper itself has been killed, so that a process it left behind cannot
+// hold the run open past the timeout.
+const passwordCommandWaitDelay = 2 * time.Second
+
 type Credentials struct {
 	Username string
 	Password string
@@ -59,8 +64,15 @@ func GetCredentials(
 
 	// Ahead of the empty-password check below, otherwise supplying only a command errors out before the command ever runs.
 	// Behind the "-" branch above, so that whatever the command prints is the token itself and cannot be taken for the flag that says to read one from standard input.
-	// A compile-only run never authenticates, so running the command there would prompt for a passphrase or wait on a hardware key to produce a token nothing uses.
-	if password == "" && passwordCommand != "" && !compileOnly {
+	//
+	// A compile-only run is not exempt. It looks like one that never
+	// authenticates, and it is not: a relative link to another document is
+	// resolved by looking that page up, so compiling one file that links to
+	// another makes two authenticated requests before it prints anything.
+	// Skipping the command there left the password at "none" and 401'd them --
+	// while the same configuration with password= set worked. --check-links
+	// confluence is the same shape.
+	if password == "" && passwordCommand != "" {
 		password, err = runPasswordCommand(ctx, passwordCommand)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read password from command: %w", err)
@@ -129,15 +141,42 @@ func runPasswordCommand(ctx context.Context, command string) (string, error) {
 	// Without this the helper's own diagnostics are lost.
 	cmd.Stderr = os.Stderr
 
+	// Cancelling kills the helper, and nothing else: Wait goes on reading the
+	// stdout pipe for as long as anything still holds it open, which for a
+	// helper that starts an agent -- gpg-agent, on demand, is the ordinary case
+	// -- is long after the helper itself is gone. Without a delay the deadline
+	// bounds the process and not the call, which is the opposite of what it is
+	// for.
+	cmd.WaitDelay = passwordCommandWaitDelay
+
 	out, err := cmd.Output()
-	if ctx.Err() != nil {
-		return "", fmt.Errorf("command did not complete: %w", ctx.Err())
-	}
-	if err != nil {
+	password := strings.TrimSpace(string(out))
+
+	// The command's own outcome first. Output() returns once the pipe closes,
+	// which can be after the deadline even for a helper that printed its token
+	// and exited cleanly -- and reading ctx.Err() ahead of err threw that token
+	// away and failed a run that had everything it needed.
+	switch {
+	case err == nil:
+		// Nothing to explain.
+
+	case errors.Is(err, exec.ErrWaitDelay) && password != "":
+		// The helper printed its token and exited; something it started still
+		// held the output pipe, so Wait gave up on the pipe rather than on the
+		// command. What the helper printed was read before any of that.
+		log.Debug().Msg(
+			"password command left a process holding its output; using the token it printed",
+		)
+
+	case ctx.Err() != nil:
+		return "", fmt.Errorf(
+			"command did not complete within %s: %w", passwordCommandTimeout, ctx.Err(),
+		)
+
+	default:
 		return "", fmt.Errorf("command failed: %w", err)
 	}
 
-	password := strings.TrimSpace(string(out))
 	if password == "" {
 		return "", errors.New("command produced no output")
 	}

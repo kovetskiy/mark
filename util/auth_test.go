@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +41,18 @@ func TestMain(m *testing.M) {
 
 	case "hang":
 		time.Sleep(time.Minute)
+		os.Exit(0)
+
+	case "linger":
+		// A helper that prints its token and exits, leaving something behind
+		// that still holds the output pipe -- which is what a helper starting
+		// an agent on demand does.
+		child := exec.Command(os.Args[0]) //nolint:gosec // G204: the test binary itself
+		child.Env = append(os.Environ(), helperModeEnv+"=hang")
+		child.Stdout = os.Stdout
+		_ = child.Start()
+
+		fmt.Println(os.Getenv(helperOutputEnv))
 		os.Exit(0)
 
 	default:
@@ -371,16 +384,54 @@ func TestGetCredentialsTreatsACommandsDashAsTheToken(t *testing.T) {
 	assert.Equal(t, "-", creds.Password)
 }
 
-// TestGetCredentialsSkipsTheCommandWhenCompilingOnly covers --compile-only beside a command.
-// That run never authenticates, so invoking a helper would prompt for a passphrase or wait on a hardware key for a token nothing uses.
-// The helper fails unconditionally, so reaching the compile-only password proves it was never invoked.
-func TestGetCredentialsSkipsTheCommandWhenCompilingOnly(t *testing.T) {
-	command := helperCommand(t, "fail", "")
+// TestGetCredentialsResolvesTheCommandWhenCompilingOnly covers --compile-only
+// beside a command.
+//
+// A compile looks like a run that never authenticates and is not one: a
+// relative link to another document is resolved by looking that page up, so
+// compiling one file that links to another makes two authenticated requests
+// before it prints anything. Skipping the command left the password at "none"
+// and 401'd them, while the same configuration with a literal password worked.
+//
+// The helper prints, so reaching its token proves it was invoked.
+func TestGetCredentialsResolvesTheCommandWhenCompilingOnly(t *testing.T) {
+	command := helperCommand(t, "print", "s3cret")
 
 	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", true)
 	require.NoError(t, err)
 
+	assert.Equal(t, "s3cret", creds.Password)
+}
+
+// TestGetCredentialsCompileOnlyStillNeedsNoPassword is the boundary: a compile
+// with nothing to run still gets its placeholder rather than an error.
+func TestGetCredentialsCompileOnlyStillNeedsNoPassword(t *testing.T) {
+	creds, err := GetCredentials(context.Background(), "user", "", "", "https://confluence.example.com", "", true)
+	require.NoError(t, err)
+
 	assert.Equal(t, "none", creds.Password)
+}
+
+// TestRunPasswordCommandKeepsTheTokenOfAHelperThatLeftAProcessBehind: Output()
+// returns once the stdout pipe closes, and the pipe is held by everything that
+// inherited it, not just the helper. A helper that starts an agent -- gpg-agent,
+// on demand, is the ordinary case -- therefore returns long after it exited.
+//
+// Reading ctx.Err() before err threw away a token that had been printed, read
+// and exited cleanly for, and failed a run that had everything it needed.
+func TestRunPasswordCommandKeepsTheTokenOfAHelperThatLeftAProcessBehind(t *testing.T) {
+	command := helperCommand(t, "linger", "s3cret")
+
+	start := time.Now()
+	password, err := runPasswordCommand(context.Background(), command)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	assert.Equal(t, "s3cret", password)
+
+	// And it did not sit there for the minute the lingering process lives.
+	assert.Less(t, elapsed, 10*time.Second,
+		"the wait delay bounds the pipe, not the process that inherited it")
 }
 
 // TestPasswordCommandFlagReachesCredentials drives the real flag set rather than calling GetCredentials directly.
