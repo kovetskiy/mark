@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -291,7 +292,56 @@ type tracer struct {
 }
 
 func (tracer *tracer) Printf(format string, args ...any) {
-	log.Trace().Msgf(tracer.prefix+" "+format, args...)
+	// Formatted here and passed on as a message rather than as another format
+	// string: a dump is arbitrary bytes, and a body containing a percent sign
+	// would otherwise come out mangled.
+	log.Trace().Msg(tracer.prefix + " " + redactHeaders(fmt.Sprintf(format, args...)))
+}
+
+// sensitiveHeaders name the values that are credentials rather than metadata.
+var sensitiveHeaders = []string{
+	"authorization",
+	"proxy-authorization",
+	"cookie",
+	"set-cookie",
+}
+
+// redactHeaders replaces the value of every credential-bearing header in a raw
+// HTTP dump.
+//
+// The trace is a dump of the whole request, headers included, taken after the
+// client has set Authorization -- so it wrote the token, in a form that decodes
+// in one step, wherever the log goes. "--log-level TRACE" is the natural thing
+// to ask a bug reporter for, which is how it reached issue threads and CI logs,
+// and it undid the masking the config dump already does.
+//
+// Only the value goes. Which headers were sent, and that one carried
+// credentials at all, is exactly what someone reading a trace is trying to
+// establish.
+func redactHeaders(dump string) string {
+	lines := strings.Split(dump, "\n")
+
+	for i, line := range lines {
+		name, _, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+
+		if !slices.Contains(sensitiveHeaders, strings.ToLower(strings.TrimSpace(name))) {
+			continue
+		}
+
+		// A dump keeps its CRLFs, and the line endings should survive being
+		// read as the HTTP message they are.
+		if strings.HasSuffix(line, "\r") {
+			lines[i] = name + ": <redacted>\r"
+			continue
+		}
+
+		lines[i] = name + ": <redacted>"
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
