@@ -226,10 +226,23 @@ func EnsureFolderAncestry(
 			if ok {
 				folder, err = api.GetFolderByID(id)
 				if err != nil {
-					// Recorded but gone. Fall through and create it again.
+					// Not "gone": GetFolderByID answers a 404 with (nil, nil),
+					// so an error here is a 401, a 403 or a 5xx that outlived
+					// every retry -- most often a scoped token without folder
+					// read. Taking that for absence created a second folder
+					// with the same title and split the hierarchy this lookup
+					// exists to hold together, and the run that did it looked
+					// like it had worked.
+					return nil, fmt.Errorf(
+						"unable to check whether folder %q was renamed: %w", title, err,
+					)
+				}
+
+				if folder == nil {
+					// Recorded, and really not there any more. Fall through and
+					// create it again.
 					log.Warn().Msgf("folder %q was recorded as %s, which no longer exists", title, id)
-					folder = nil
-				} else if folder != nil {
+				} else {
 					log.Info().Msgf(
 						"folder %q was renamed to %q; using it rather than creating another",
 						title, folder.Title,

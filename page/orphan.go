@@ -1,6 +1,7 @@
 package page
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -113,12 +114,23 @@ func InScope(api *confluence.API, scopeID string, orphan Orphan) (bool, error) {
 
 	page, err := api.GetPageByIDExpanded(orphan.PageID, "ancestors")
 	if err != nil {
+		// Already gone from Confluence -- deleted by hand between runs, most
+		// likely. Out of scope for acting on, and the caller forgets it either
+		// way.
+		//
+		// Asked of the error rather than of a nil page: this call answers a 404
+		// with an error and never with (nil, nil), so the nil check below was
+		// unreachable and --orphan-under failed the whole run over a page
+		// somebody had already deleted. The same repository publishes fine
+		// without the flag, which made the flag itself look broken.
+		if errors.Is(err, confluence.ErrNotFound) {
+			return false, nil
+		}
+
 		return false, fmt.Errorf("unable to read page %s: %w", orphan.PageID, err)
 	}
 
 	if page == nil {
-		// Already gone from Confluence. Out of scope for acting on, and the
-		// caller forgets it either way.
 		return false, nil
 	}
 
