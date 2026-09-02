@@ -34,17 +34,21 @@ func (o *virtualOpener) Open(name string) (io.ReadCloser, error) {
 	return nil, os.ErrNotExist
 }
 
+// The base is a directory below the one mark is running in, which is the
+// ordinary shape: a docs folder inside a repository. An upward reference from
+// there is still inside the repository, which is what makes "../image3.jpg"
+// resolvable.
 func TestPrepareAttachmentsWithWorkDirBase(t *testing.T) {
 
 	testingOpener := &virtualOpener{
 		PathToBuf: map[string]*bufferCloser{
-			"image1.jpg":        {bytes.NewBuffer(nil)},
-			"images/image2.jpg": {bytes.NewBuffer(nil)},
-			"../image3.jpg":     {bytes.NewBuffer(nil)},
+			"docs/image1.jpg":        {bytes.NewBuffer(nil)},
+			"docs/images/image2.jpg": {bytes.NewBuffer(nil)},
+			"image3.jpg":             {bytes.NewBuffer(nil)},
 		},
 	}
 
-	attaches, err := prepareAttachments(testingOpener, ".", replacements)
+	attaches, err := prepareAttachments(testingOpener, "docs", replacements)
 	t.Logf("attaches: %v", err)
 	if err != nil {
 		println(err.Error())
