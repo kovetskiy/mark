@@ -18,6 +18,26 @@ import (
 var filename string
 
 var Flags = []cli.Flag{
+	// First, and it has to stay first. Every other flag finds the
+	// configuration file through the pointer below, which is filled in as the
+	// flags are resolved -- in the order they are declared. Anything declared
+	// above this looks for its TOML value while that pointer is still empty and
+	// silently gets nothing.
+	//
+	// A path on the command line happened to survive being declared late. One
+	// in MARK_CONFIG did not, so "MARK_CONFIG=/etc/mark.toml mark" ignored
+	// files, username, password, target-url, base-url and log-level while
+	// honouring space, parents and features -- reported, if at all, as
+	// "confluence password should be specified using -p flag".
+	&cli.StringFlag{
+		Name:        "config",
+		Aliases:     []string{"c"},
+		Value:       ConfigFilePath(),
+		Usage:       "use the specified configuration file.",
+		TakesFile:   true,
+		Sources:     cli.NewValueSourceChain(cli.EnvVar("MARK_CONFIG")),
+		Destination: &filename,
+	},
 	&cli.StringFlag{
 		Name:      "files",
 		Aliases:   []string{"f"},
@@ -136,15 +156,6 @@ var Flags = []cli.Flag{
 		Usage:   "base URL for Confluence. Alternative option for base_url config field.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_BASE_URL"),
 			altsrctoml.TOML("base-url", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:        "config",
-		Aliases:     []string{"c"},
-		Value:       ConfigFilePath(),
-		Usage:       "use the specified configuration file.",
-		TakesFile:   true,
-		Sources:     cli.NewValueSourceChain(cli.EnvVar("MARK_CONFIG")),
-		Destination: &filename,
 	},
 	&cli.BoolFlag{
 		Name:    "ci",
