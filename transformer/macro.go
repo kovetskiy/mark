@@ -65,7 +65,14 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			return ast.WalkContinue, nil
 		}
 
-		rawContent := ExtractNodeRawContent(node, reader.Source())
+		// A directive written as an example is not a directive. The span
+		// itself contributes nothing, and its children are skipped too or the
+		// walk simply finds the directive one level further down.
+		if node.Kind() == ast.KindCodeSpan {
+			return ast.WalkSkipChildren, nil
+		}
+
+		rawContent := ExtractDirectiveContent(node, reader.Source())
 
 		dir, _ := macro.ParseMacroDirective(rawContent)
 		if dir != nil {
@@ -81,7 +88,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				var combined bytes.Buffer
 				combined.Write(rawContent)
 				for sibling := node.NextSibling(); sibling != nil; sibling = sibling.NextSibling() {
-					sibContent := ExtractNodeRawContent(sibling, reader.Source())
+					sibContent := ExtractDirectiveContent(sibling, reader.Source())
 					combined.Write(sibContent)
 					target.nodesToRemove = append(target.nodesToRemove, sibling)
 					visited[sibling] = true
@@ -138,13 +145,17 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				return ast.WalkContinue, nil
 			}
 
+			if node.Kind() == ast.KindCodeSpan {
+				return ast.WalkSkipChildren, nil
+			}
+
 			switch node.(type) {
 			case *ast.Paragraph, *ast.Text:
 			default:
 				return ast.WalkContinue, nil
 			}
 
-			raw := ExtractNodeRawContent(node, reader.Source())
+			raw := ExtractDirectiveContent(node, reader.Source())
 			if len(raw) > 0 && m.Regexp.Match(raw) {
 				textNodesToReplace = append(textNodesToReplace, struct {
 					node    ast.Node

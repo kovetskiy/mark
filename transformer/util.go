@@ -74,6 +74,51 @@ func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
 	return res
 }
 
+// ExtractDirectiveContent is ExtractNodeRawContent with inline code left out.
+//
+// A directive is only a directive where it would run. The pass that expands
+// includes and macros before goldmark ever sees the document skips code
+// regions, and metadata.CodeRegions covers spans as well as fenced blocks -- but
+// the AST transformers that pick up what that pass left behind had no
+// equivalent, and they match a paragraph at a time. So
+//
+//	To include, write `<!-- Include: nav.md -->` in your doc.
+//
+// pulled nav.md into the page and dropped the code span with it, and naming a
+// file that does not exist failed the whole compile. Writing about mark's own
+// syntax broke the document doing it.
+//
+// Fenced blocks were never affected: they hold no child nodes, so there is
+// nothing here to concatenate.
+func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
+	if node.Kind() == ast.KindCodeSpan {
+		return nil
+	}
+
+	// The leaf kinds carry their own bytes; only the recursive case has
+	// children a code span could be hiding among.
+	switch node.(type) {
+	case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *ast.String:
+		return ExtractNodeRawContent(node, source)
+	}
+
+	if !node.HasChildren() {
+		return ExtractNodeRawContent(node, source)
+	}
+
+	buf := getBuffer()
+	defer putBuffer(buf)
+
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		buf.Write(ExtractDirectiveContent(child, source))
+	}
+
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+
+	return out
+}
+
 func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	switch t := node.(type) {
 	case *ast.HTMLBlock:
