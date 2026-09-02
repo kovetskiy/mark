@@ -45,6 +45,16 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 		switch node.(type) {
 		case *ast.HTMLBlock, *ast.RawHTML:
 			nodes = append(nodes, node)
+
+		case *ast.Text:
+			// A transformer that ran earlier -- Details, Layout -- replaces the
+			// HTML block it rewrote with a Text node carrying the result, so by
+			// the time this one walks the tree those bytes are no longer in a
+			// node this switch would otherwise recognise. They are still the
+			// author's markup and still have to be well-formed.
+			if _, ok := node.Attribute(replacementContent); ok {
+				nodes = append(nodes, node)
+			}
 		}
 
 		return ast.WalkContinue, nil
@@ -53,6 +63,21 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 	source := reader.Source()
 
 	for _, node := range nodes {
+		// Repaired in place: the bytes are held on the attribute rather than in
+		// the source, and the node is already what the renderer expects.
+		if existing, ok := node.Attribute(replacementContent); ok {
+			raw, ok := existing.([]byte)
+			if !ok {
+				continue
+			}
+
+			if fixed, changed := wellFormedHTML(raw); changed {
+				node.SetAttribute(replacementContent, fixed)
+			}
+
+			continue
+		}
+
 		parent := node.Parent()
 		if parent == nil {
 			continue
@@ -77,6 +102,10 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 var (
 	cdataOpen  = []byte("<![CDATA[")
 	cdataClose = []byte("]]>")
+
+	// replacementContent is the attribute an earlier transformer leaves its
+	// rewritten markup on. See renderer/text.go, which writes it out as-is.
+	replacementContent = []byte("replacement-content")
 )
 
 // wellFormedHTML returns raw with void elements closed and comment bodies made
