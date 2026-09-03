@@ -1648,6 +1648,9 @@ and name the script instead. The command also gets no standard input, so a
 helper that prompts on stdin cannot be used -- one that opens the terminal
 itself, as `pinentry` does, is fine.
 
+A compile resolves the command like any other run, so a helper that cannot
+produce a token fails the run rather than being skipped.
+
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
 **NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.

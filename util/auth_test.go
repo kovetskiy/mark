@@ -412,6 +412,18 @@ func TestGetCredentialsCompileOnlyStillNeedsNoPassword(t *testing.T) {
 	assert.Equal(t, "none", creds.Password)
 }
 
+// TestGetCredentialsCompileOnlyFailsOnAFailingCommand is the other side of that boundary.
+// A compile authenticates, so a helper that cannot produce a token fails the run rather than being skipped.
+// Falling back to "none" would turn a broken helper into a 401 further along, naming the wrong cause.
+func TestGetCredentialsCompileOnlyFailsOnAFailingCommand(t *testing.T) {
+	command := helperCommand(t, "fail", "")
+
+	_, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", true)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "command failed")
+}
+
 // TestRunPasswordCommandKeepsTheTokenOfAHelperThatLeftAProcessBehind: Output()
 // returns once the stdout pipe closes, and the pipe is held by everything that
 // inherited it, not just the helper. A helper that starts an agent -- gpg-agent,
