@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/chrome"
+	"github.com/kovetskiy/mark/v16/svg"
 	"github.com/rs/zerolog/log"
 
 	"github.com/d2lang/d2/d2graph"
@@ -17,6 +18,7 @@ import (
 	"github.com/d2lang/d2/d2lib"
 	"github.com/d2lang/d2/d2renderers/d2svg"
 	"github.com/d2lang/d2/d2themes/d2themescatalog"
+	"github.com/d2lang/d2/lib/imgbundler"
 	d2log "github.com/d2lang/d2/lib/log"
 	"github.com/d2lang/d2/lib/textmeasure"
 	"github.com/d2lang/util-go/go2"
@@ -24,14 +26,12 @@ import (
 
 var renderTimeout = 120 * time.Second
 
-func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
-	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
-	ctx = d2log.WithDefault(ctx)
-	defer cancel()
-
+// renderSVG compiles a diagram and draws it, which is where both outputs start:
+// the PNG is a screenshot of this, and the SVG is this.
+func renderSVG(ctx context.Context, d2Diagram []byte) ([]byte, error) {
 	ruler, err := textmeasure.NewRuler()
 	if err != nil {
-		return attachment.Attachment{}, err
+		return nil, err
 	}
 	layoutResolver := func(engine string) (d2graph.LayoutGraph, error) {
 		return d2dagrelayout.DefaultLayout, nil
@@ -47,10 +47,18 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 
 	diagram, _, err := d2lib.Compile(ctx, string(d2Diagram), compileOpts, renderOpts)
 	if err != nil {
-		return attachment.Attachment{}, err
+		return nil, err
 	}
 
-	out, err := d2svg.Render(diagram, renderOpts)
+	return d2svg.Render(diagram, renderOpts)
+}
+
+func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
+	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
+	ctx = d2log.WithDefault(ctx)
+	defer cancel()
+
+	out, err := renderSVG(ctx, d2Diagram)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -93,6 +101,86 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 		Height:    strconv.FormatInt(height, 10),
 	}, nil
 }
+
+// ProcessD2SVG publishes a diagram as the SVG it was drawn as, rather than a
+// picture of it: one file that is sharp at any zoom and whose text stays text.
+//
+// scale multiplies the size the page displays it at. The file itself is the
+// same drawing whatever that is, so unlike the PNG's the scale is not part of
+// what identifies the attachment.
+func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float64) (attachment.Attachment, error) {
+	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
+	ctx = d2log.WithDefault(ctx)
+	defer cancel()
+
+	out, err := renderSVG(ctx, d2Diagram)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
+	// A PNG carries what a diagram references by being a picture of it. An SVG
+	// carries the reference itself, and Confluence serves the attachment from
+	// its own host, where a path relative to the document resolves to nothing
+	// and a remote image may be blocked. Both are inlined here, which is what
+	// d2's own --bundle does.
+	log.Debug().Msgf("Bundling what the diagram references: %q", title)
+
+	out, err = imgbundler.BundleLocal(ctx, bundleLogger{}, inputPath, out, false)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
+	out, err = imgbundler.BundleRemote(ctx, bundleLogger{}, out, false)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
+	// Taken over the drawing rather than over the source it was drawn from,
+	// because what the diagram references is now inside it: an image that
+	// changed at the other end of a URL changes the attachment without changing
+	// a line of the source, and a checksum over the source would call that
+	// unchanged and leave the old one on the page.
+	checkSum, err := attachment.GetChecksum(bytes.NewReader(out))
+	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
+
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
+	if title == "" {
+		title = checkSum
+	}
+
+	width, height := svg.Dimensions(string(out))
+	if width == 0 || height == 0 {
+		log.Warn().Msgf(
+			"d2 diagram %q states no size of its own; the page will lay it out without one", title,
+		)
+	}
+
+	if scale > 0 {
+		width *= scale
+		height *= scale
+	}
+
+	return attachment.Attachment{
+		ID:        "",
+		Name:      title,
+		Filename:  title + ".svg",
+		FileBytes: out,
+		Checksum:  checkSum,
+		Replace:   title,
+		Width:     svg.Pixels(width),
+		Height:    svg.Pixels(height),
+	}, nil
+}
+
+// bundleLogger hands what d2's bundler has to say to mark's own log.
+type bundleLogger struct{}
+
+func (bundleLogger) Debug(message string) { log.Debug().Msg(message) }
+func (bundleLogger) Info(message string)  { log.Info().Msg(message) }
+func (bundleLogger) Error(message string) { log.Error().Msg(message) }
 
 // Cleanup shuts down the browser this package renders through.
 //

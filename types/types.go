@@ -8,7 +8,11 @@ type MarkConfig struct {
 	// published as, and applies to nothing else.
 	MermaidOutput string
 	MermaidBundle bool
-	D2Scale       float64
+	// D2Output is the image a diagram is published as, "png" or "svg".
+	// D2Scale multiplies the pixels of a PNG one and the size the page
+	// displays an SVG one at.
+	D2Output string
+	D2Scale  float64
 	// MathFormat is the image a formula is published as, "svg" or "png".
 	// MathScale multiplies the pixels of a PNG one, and is ignored for SVG.
 	MathFormat    string

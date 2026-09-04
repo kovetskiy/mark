@@ -328,10 +328,16 @@ var Flags = []cli.Flag{
 		Usage:   "Fetch and preserve inline comments on existing Confluence pages.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PRESERVE_COMMENTS"), altsrctoml.TOML("preserve-comments", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:    "d2-output",
+		Value:   "png",
+		Usage:   "image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment).",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_OUTPUT"), altsrctoml.TOML("d2-output", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.FloatFlag{
 		Name:    "d2-scale",
 		Value:   1.0,
-		Usage:   "defines the scaling factor for d2 renderings.",
+		Usage:   "defines the scaling factor for d2 renderings: the pixels of a png, and the size the page displays an svg at.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2-scale", altsrc.NewStringPtrSourcer(&filename))),
 	},
 
@@ -457,6 +463,37 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	// configuration file, or MARK_MERMAID_OUTPUT exported with nothing in it,
 	// would otherwise skip the check below and quietly publish a PNG. A command
 	// that does not carry the flag at all has neither, and is left alone.
+	// Checked as written, without trimming, because what is checked has to be
+	// what is used: the value goes into the configuration whole and the
+	// renderer compares it literally. Asked of IsSet as well as of the value,
+	// because a flag carrying a default is never empty unless somebody emptied
+	// it, and an emptied one would otherwise fall through and publish a PNG
+	// without a word.
+	d2Output := command.String("d2-output")
+	if d2Output != "" || command.IsSet("d2-output") {
+		switch d2Output {
+		case "png", "svg":
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --d2-output: %q (expected: png or svg)",
+				d2Output,
+			)
+		}
+	}
+
+	// A scale of zero renders nothing and a negative one renders nonsense, and
+	// both reach Chrome as a screenshot request that fails somewhere further in
+	// with nothing to point at the setting. Asked of IsSet as well, so that a
+	// command built without the flag -- which is what the tests around this one
+	// do -- is left alone.
+	if command.IsSet("d2-scale") && command.Float("d2-scale") <= 0 {
+		return context, fmt.Errorf(
+			"invalid value for --d2-scale: %v (expected: greater than 0)",
+			command.Float("d2-scale"),
+		)
+	}
+
 	mermaidOutput := command.String("mermaid-output")
 	if mermaidOutput != "" || command.IsSet("mermaid-output") {
 		switch mermaidOutput {
