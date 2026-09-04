@@ -26,6 +26,21 @@ func GetCredentials(
 ) (*Credentials, error) {
 	var err error
 
+	// Ahead of the empty check and not after it. "-p -" does not carry a token,
+	// it says where the token is, so whether one was given at all is only known
+	// once standard input has been read. Checked first, the check passed on the
+	// "-" itself and a run with nothing piped in went on to authenticate with
+	// an empty password -- reported by Confluence as a 401, which reads as the
+	// wrong credential rather than as a missing one.
+	if password == "-" {
+		stdin, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read password from stdin: %w", err)
+		}
+
+		password = strings.TrimSpace(string(stdin))
+	}
+
 	if password == "" {
 		if !compileOnly {
 			return nil, errors.New(
@@ -34,15 +49,6 @@ func GetCredentials(
 			)
 		}
 		password = "none"
-	}
-
-	if password == "-" {
-		stdin, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read password from stdin: %w", err)
-		}
-
-		password = strings.TrimSpace(string(stdin))
 	}
 
 	if compileOnly && targetURL == "" {
