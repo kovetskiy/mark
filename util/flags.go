@@ -170,7 +170,7 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "password-command",
 		Value:   "",
-		Usage:   "run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. A password set on the command line, in the environment or in the configuration file takes precedence over one set further down that list.",
+		Usage:   "run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. Mutually exclusive with password.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD_COMMAND"), altsrctoml.TOML("password-command", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{

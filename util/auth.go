@@ -42,6 +42,21 @@ func GetCredentials(
 	compileOnly bool,
 
 ) (*Credentials, error) {
+	// Two answers to one question, and no way to tell which is meant: a
+	// password left in the configuration file from before the command was set
+	// up looks exactly like one somebody wants used. Either resolves through
+	// its own chain -- command line, then environment, then configuration file
+	// -- so preferring one of them by value cannot tell a token typed just now
+	// from one that has sat in a file for a year, and preferring one by layer
+	// only moves the guess. Say so instead, the way mark says it about every
+	// other pair of settings that contradict each other.
+	if password != "" && passwordCommand != "" {
+		return nil, errors.New(
+			"password and password-command are mutually exclusive. Please specify only one, " +
+				"whether by flag, environment variable or configuration file",
+		)
+	}
+
 	// Ahead of everything to do with the password. A run that cannot go
 	// anywhere for want of a base URL has no business asking a keyring for a
 	// token it will never send: putting somebody through a pinentry dialog and
@@ -83,16 +98,7 @@ func GetCredentials(
 		password = strings.TrimSpace(string(stdin))
 	}
 
-	// Both still carrying a value means they came from the same layer, since
-	// passwordPrecedence has already dropped the weaker of two layers. Warn
-	// rather than settle it in silence: a password left beside a command is
-	// usually the older of the two.
-	if password != "" && passwordCommand != "" {
-		log.Warn().Msg("both password and password-command are set; using password and ignoring password-command")
-	}
-
 	// Ahead of the empty-password check below, otherwise supplying only a command errors out before the command ever runs.
-	// Behind the "-" branch above, so that whatever the command prints is the token itself and cannot be taken for the flag that says to read one from standard input.
 	//
 	// A compile-only run is not exempt. It looks like one that never
 	// authenticates, and it is not: a relative link to another document is
@@ -225,110 +231,4 @@ func firstLine(out string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
 
 	return strings.TrimSpace(line)
-}
-
-// passwordPrecedence returns the password and the password command a run should
-// go on with, decided by where each of them was set.
-//
-// Each of the two resolves through its own chain -- command line, then
-// environment, then configuration file -- so a rule stated over the two
-// resolved values alone cannot tell a token typed on the command line from one
-// that has been sitting in the configuration file for a year. Preferring the
-// password whenever it is non-empty therefore made --password-command the one
-// flag in mark that the configuration file overrides, and left editing that
-// file the only way to use it. The setting from the stronger layer wins
-// instead. A tie -- both from the same layer -- is left to GetCredentials,
-// which keeps the password.
-//
-// args is the command line mark was run with, os.Args in a real run.
-func passwordPrecedence(password string, passwordCommand string, args []string) (string, string) {
-	if password == "" || passwordCommand == "" {
-		return password, passwordCommand
-	}
-
-	byPassword := layerOf(args, "MARK_PASSWORD", "password", "p")
-	byCommand := layerOf(args, "MARK_PASSWORD_COMMAND", "password-command")
-
-	switch {
-	case byCommand > byPassword:
-		log.Warn().Msgf(
-			"both password and password-command are set; using password-command from %s and ignoring password from %s",
-			byCommand, byPassword,
-		)
-
-		return "", passwordCommand
-
-	case byPassword > byCommand:
-		log.Warn().Msgf(
-			"both password and password-command are set; using password from %s and ignoring password-command from %s",
-			byPassword, byCommand,
-		)
-
-		return password, ""
-	}
-
-	return password, passwordCommand
-}
-
-// layer is where a setting was given, ordered the way every flag in mark is
-// resolved: the command line beats the environment, which beats the
-// configuration file. urfave applies that order to each flag on its own and
-// keeps no record of which layer answered, so a rule spanning two flags has to
-// work it out again.
-type layer int
-
-const (
-	fromConfigFile layer = iota
-	fromEnvironment
-	fromCommandLine
-)
-
-func (l layer) String() string {
-	switch l {
-	case fromCommandLine:
-		return "the command line"
-
-	case fromEnvironment:
-		return "the environment"
-
-	default:
-		return "the configuration file"
-	}
-}
-
-// layerOf reports where a setting that has a value was given. A value named
-// nowhere on the command line and absent from the environment can only have
-// come from the configuration file, which is the last place urfave looks.
-func layerOf(args []string, env string, names ...string) layer {
-	switch {
-	case namedIn(args, names):
-		return fromCommandLine
-
-	case os.Getenv(env) != "":
-		return fromEnvironment
-
-	default:
-		return fromConfigFile
-	}
-}
-
-// namedIn reports whether any of names appears in args as a flag, in the forms
-// urfave accepts: one dash or two, with the value either attached or following.
-func namedIn(args []string, names []string) bool {
-	for _, arg := range args {
-		// Nothing past this is a flag, whatever it looks like.
-		if arg == "--" {
-			return false
-		}
-
-		for _, name := range names {
-			for _, dashed := range []string{"-" + name, "--" + name} {
-				if arg == dashed || strings.HasPrefix(arg, dashed+"=") {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
 }
