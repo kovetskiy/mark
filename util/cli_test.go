@@ -146,6 +146,14 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", ""}))
 	})
 
+	// What is checked has to be what is used. Trimmed for the check and passed
+	// on whole, " svg " was accepted here and then compared literally by the
+	// renderer, which knows no such format and publishes a PNG -- taking a
+	// bundle asked for alongside it down with it.
+	t.Run("a padded value is not the value it is padding", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", " svg "}))
+	})
+
 	t.Run("a scale does not apply to an svg", func(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-scale", "2"}))
 	})

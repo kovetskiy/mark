@@ -177,6 +177,29 @@ func run(ctx context.Context, config Config) error {
 		)
 	}
 
+	// Checked here as well as in the CLI, because Config is a public API and a
+	// library caller reaches this without passing a flag at all. A value the
+	// renderer does not know falls to its default branch, so an unrecognised
+	// format publishes a PNG without a word -- taking a bundle asked for
+	// alongside it down with it. An empty value is not that: it is a caller
+	// that never set the field, and it means the PNG mark has always published.
+	switch config.MermaidOutput {
+	case "", "png", "svg":
+		// ok
+	default:
+		return fmt.Errorf(
+			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
+			config.MermaidOutput,
+		)
+	}
+
+	if config.MermaidBundle && config.MermaidOutput != "svg" {
+		return errors.New(
+			"MermaidBundle needs MermaidOutput \"svg\": " +
+				"there is nowhere in a PNG to keep the diagram's source",
+		)
+	}
+
 	if config.CheckLinksWarnOnly && len(config.CheckLinks) == 0 {
 		return fmt.Errorf(
 			"--check-links-warn-only requires --check-links: " +

@@ -447,12 +447,17 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		}
 	}
 
+	// Checked as written, without trimming, because what is checked has to be
+	// what is used: the value goes into the configuration whole, and the
+	// renderer compares it literally, so a trimmed " svg " would pass here and
+	// publish a PNG -- taking a bundle asked for alongside it down with it.
+	//
 	// Asked of IsSet as well as of the value, because a flag carrying a default
 	// is never empty unless somebody emptied it: mermaid-output = "" in the
 	// configuration file, or MARK_MERMAID_OUTPUT exported with nothing in it,
 	// would otherwise skip the check below and quietly publish a PNG. A command
 	// that does not carry the flag at all has neither, and is left alone.
-	mermaidOutput := strings.TrimSpace(command.String("mermaid-output"))
+	mermaidOutput := command.String("mermaid-output")
 	if mermaidOutput != "" || command.IsSet("mermaid-output") {
 		switch mermaidOutput {
 		case "png", "svg":
