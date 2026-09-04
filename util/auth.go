@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/urfave/cli/v3"
 )
 
 // passwordCommandTimeout bounds how long a password command may run.
-// A helper that prompts for input or hangs on a locked keyring then fails the run instead of stalling it.
-const passwordCommandTimeout = 30 * time.Second
+// A helper that hangs on a locked keyring fails the run instead of stalling it,
+// with room left for one that opens a terminal of its own -- pinentry against a
+// cold gpg-agent is the ordinary case -- and waits for a passphrase to be typed.
+const passwordCommandTimeout = 60 * time.Second
 
 // passwordCommandWaitDelay bounds the wait for the helper's output pipe once
 // the helper itself has been killed, so that a process it left behind cannot
@@ -57,7 +60,10 @@ func GetCredentials(
 		password = strings.TrimSpace(string(stdin))
 	}
 
-	// Either can arrive from the flag, the environment or the config file, so a password left in one layer would otherwise shadow the command in silence.
+	// Both still carrying a value means they came from the same layer, since
+	// passwordPrecedence has already dropped the weaker of two layers. Warn
+	// rather than settle it in silence: a password left beside a command is
+	// usually the older of the two.
 	if password != "" && passwordCommand != "" {
 		log.Warn().Msg("both password and password-command are set; using password and ignoring password-command")
 	}
@@ -71,10 +77,28 @@ func GetCredentials(
 	// another makes two authenticated requests before it prints anything.
 	// Skipping the command there left the password at "none" and 401'd them --
 	// while the same configuration with password= set worked. --check-links
-	// confluence is the same shape.
+	// confluence is the same shape. What a compile does not do is fail when the
+	// helper is unavailable; see below.
 	if password == "" && passwordCommand != "" {
 		password, err = runPasswordCommand(ctx, passwordCommand)
-		if err != nil {
+
+		switch {
+		case err == nil:
+			// What it printed is the password.
+
+		case compileOnly:
+			// Validating documents without Confluence credentials is the whole
+			// of what --compile-only is for, and a helper that is absent -- a
+			// CI image without the password manager, a configuration file
+			// shared with a workstation -- must not take that offline. The
+			// command is still resolved whenever it can be, which is what the
+			// links a compile follows need.
+			log.Warn().Msgf(
+				"unable to read password from command: %s; continuing without a token, as --compile-only is set",
+				err,
+			)
+
+		default:
 			return nil, fmt.Errorf("unable to read password from command: %w", err)
 		}
 	}
@@ -150,7 +174,7 @@ func runPasswordCommand(ctx context.Context, command string) (string, error) {
 	cmd.WaitDelay = passwordCommandWaitDelay
 
 	out, err := cmd.Output()
-	password := strings.TrimSpace(string(out))
+	password := firstLine(string(out))
 
 	// The command's own outcome first. Output() returns once the pipe closes,
 	// which can be after the deadline even for a helper that printed its token
@@ -182,4 +206,102 @@ func runPasswordCommand(ctx context.Context, command string) (string, error) {
 	}
 
 	return password, nil
+}
+
+// firstLine returns the first line of what a helper printed, trimmed.
+//
+// A password manager prints an entry, not a token: pass show, which the README
+// names, puts the password on the first line and metadata below it. Keeping the
+// rest would put a newline inside the Authorization header -- rejected by the
+// transport with an error naming nothing about the helper, or, once a username
+// makes it Basic auth, base64-encoded into a silent 401. The same applies to
+// anything a process the helper left behind appends to the pipe.
+func firstLine(out string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+
+	return strings.TrimSpace(line)
+}
+
+// passwordPrecedence returns the password and the password command a run should
+// go on with, decided by where each of them came from.
+//
+// Each of the two resolves through its own chain -- command line, then
+// environment, then configuration file -- so a rule stated over the two
+// resolved values alone cannot tell a token typed on the command line from one
+// that has been sitting in the configuration file for a year. Preferring the
+// password whenever it is non-empty therefore made --password-command the one
+// flag in mark that the configuration file overrides, and left editing that
+// file the only way to use it. The value from the stronger source wins instead.
+// A tie -- both from the same source -- is left to GetCredentials, which keeps
+// the password.
+func passwordPrecedence(cmd *cli.Command) (string, string) {
+	password := cmd.String("password")
+	command := cmd.String("password-command")
+
+	if password == "" || command == "" {
+		return password, command
+	}
+
+	passwordRank, passwordSource := flagSource(cmd, "password")
+	commandRank, commandSource := flagSource(cmd, "password-command")
+
+	switch {
+	case commandRank > passwordRank:
+		log.Warn().Msgf(
+			"both password and password-command are set; using password-command from %s and ignoring password from %s",
+			commandSource, passwordSource,
+		)
+
+		return "", command
+
+	case passwordRank > commandRank:
+		log.Warn().Msgf(
+			"both password and password-command are set; using password from %s and ignoring password-command from %s",
+			passwordSource, commandSource,
+		)
+
+		return password, ""
+	}
+
+	return password, command
+}
+
+// flagSource reports where a string flag took its value from, as a rank that
+// grows with precedence, and as a name for the message that says so.
+//
+// urfave keeps no record of which source answered, so this repeats the lookup:
+// the sources are consulted in order and only after the command line, so the
+// first one holding the value the flag ended up with is the one that named it,
+// and one holding a different value was overridden from the command line.
+func flagSource(cmd *cli.Command, name string) (int, string) {
+	if !cmd.IsSet(name) {
+		return 0, "nowhere"
+	}
+
+	var chain []cli.ValueSource
+
+	for _, flag := range cmd.Flags {
+		if str, ok := flag.(*cli.StringFlag); ok && str.Name == name {
+			chain = str.Sources.Chain
+
+			break
+		}
+	}
+
+	value := cmd.String(name)
+
+	for i, source := range chain {
+		found, ok := source.Lookup()
+		if !ok {
+			continue
+		}
+
+		if found != value {
+			break
+		}
+
+		return len(chain) - i, source.String()
+	}
+
+	return len(chain) + 1, "the command line"
 }
