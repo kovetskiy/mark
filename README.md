@@ -1652,6 +1652,11 @@ Only the first line of what the command prints becomes the token, so a helper
 that prints a whole entry with the password on top -- `pass show` does -- needs
 no wrapper to trim it.
 
+The command has to fetch the secret rather than contain it. It is handed to the
+operating system as written, so anyone who can list processes can read it for as
+long as it runs -- which is the exposure `password-command` exists to avoid, and
+writing a token into the command itself puts it straight back.
+
 Where both a `password` and a `password-command` are set, the one set in the
 stronger layer wins: the command line beats the environment, which beats the
 configuration file. Only when both come from the same layer does the `password`

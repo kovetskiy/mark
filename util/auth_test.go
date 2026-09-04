@@ -43,6 +43,17 @@ func TestMain(m *testing.M) {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 
+	case "linger-partial":
+		// The same, with the token's line left unterminated: what was read is
+		// the front of it and the rest never came.
+		child := exec.Command(os.Args[0]) //nolint:gosec // G204: the test binary itself
+		child.Env = append(os.Environ(), helperModeEnv+"=hang")
+		child.Stdout = os.Stdout
+		_ = child.Start()
+
+		fmt.Print(os.Getenv(helperOutputEnv))
+		os.Exit(0)
+
 	case "linger":
 		// A helper that prints its token and exits, leaving something behind
 		// that still holds the output pipe -- which is what a helper starting
@@ -180,6 +191,22 @@ func TestGetCredentialsCompileOnlyKeepsRealValues(t *testing.T) {
 
 	assert.Equal(t, "secret", creds.Password)
 	assert.Equal(t, "https://confluence.example.com", creds.BaseURL)
+}
+
+// TestGetCredentialsChecksTheURLBeforeRunningTheCommand covers the order the
+// two are done in. A run with no base URL cannot go anywhere, so putting
+// somebody through a keyring prompt -- or the timeout, when it is pinentry
+// waiting on a passphrase nobody is there to type -- before telling them that
+// is a strange order to do things in.
+//
+// The helper prints, so a token in the result would prove it ran.
+func TestGetCredentialsChecksTheURLBeforeRunningTheCommand(t *testing.T) {
+	command := helperCommand(t, "print", "s3cret")
+
+	_, err := GetCredentials(context.Background(), "user", "", command, "", "", false)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "-l", "the base URL is what is missing, not the token")
 }
 
 // TestGetCredentialsPasswordFromStdin covers "-p -", which is how a token gets
@@ -491,6 +518,20 @@ func TestRunPasswordCommandKeepsTheTokenOfAHelperThatLeftAProcessBehind(t *testi
 	// And it did not sit there for the minute the lingering process lives.
 	assert.Less(t, elapsed, 10*time.Second,
 		"the wait delay bounds the pipe, not the process that inherited it")
+}
+
+// TestRunPasswordCommandRejectsATruncatedTokenFromAHelperThatLingered is the
+// limit of that leniency. Giving up on the pipe means giving up on whatever had
+// not been read yet, so output with no newline in it is the front of a token
+// and not a token: authenticating with it earns a 401 that looks exactly like
+// the wrong password, which is a long way from what went wrong.
+func TestRunPasswordCommandRejectsATruncatedTokenFromAHelperThatLingered(t *testing.T) {
+	command := helperCommand(t, "linger-partial", "s3cret")
+
+	_, err := runPasswordCommand(context.Background(), command)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "command failed")
 }
 
 // TestPasswordCommandFlagReachesCredentials drives the real flag set rather than calling GetCredentials directly.

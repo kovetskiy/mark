@@ -42,7 +42,31 @@ func GetCredentials(
 	compileOnly bool,
 
 ) (*Credentials, error) {
-	var err error
+	// Ahead of everything to do with the password. A run that cannot go
+	// anywhere for want of a base URL has no business asking a keyring for a
+	// token it will never send: putting somebody through a pinentry dialog and
+	// then failing on the configuration is a strange order to do things in.
+	if compileOnly && targetURL == "" {
+		targetURL = "http://localhost"
+	}
+
+	url, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse %q as url: %w", targetURL, err)
+	}
+
+	if url.Host == "" && baseURL == "" {
+		return nil, errors.New(
+			"confluence base URL should be specified using -l " +
+				"flag or be stored in configuration file",
+		)
+	}
+
+	if baseURL == "" {
+		baseURL = url.Scheme + "://" + url.Host
+	}
+
+	baseURL = strings.TrimRight(baseURL, `/`)
 
 	// Ahead of the empty check and not after it. "-p -" does not carry a token,
 	// it says where the token is, so whether one was given at all is only known
@@ -112,35 +136,11 @@ func GetCredentials(
 		password = "none"
 	}
 
-	if compileOnly && targetURL == "" {
-		targetURL = "http://localhost"
-	}
-
-	url, err := url.Parse(targetURL)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse %q as url: %w", targetURL, err)
-	}
-
-	if url.Host == "" && baseURL == "" {
-		return nil, errors.New(
-			"confluence base URL should be specified using -l " +
-				"flag or be stored in configuration file",
-		)
-	}
-
-	if baseURL == "" {
-		baseURL = url.Scheme + "://" + url.Host
-	}
-
-	baseURL = strings.TrimRight(baseURL, `/`)
-
-	pageID := url.Query().Get("pageId")
-
 	creds := &Credentials{
 		Username: username,
 		Password: password,
 		BaseURL:  baseURL,
-		PageID:   pageID,
+		PageID:   url.Query().Get("pageId"),
 	}
 
 	return creds, nil
@@ -175,6 +175,12 @@ func runPasswordCommand(ctx context.Context, command string) (string, error) {
 	out, err := cmd.Output()
 	password := firstLine(string(out))
 
+	// A newline is what makes that first line whole. Without one, what was read
+	// may be the front of a token whose tail never arrived, and a truncated
+	// credential authenticates no better than no credential at all -- while
+	// looking, from the 401 it comes back as, exactly like the wrong password.
+	whole := strings.Contains(string(out), "\n")
+
 	// The command's own outcome first. Output() returns once the pipe closes,
 	// which can be after the deadline even for a helper that printed its token
 	// and exited cleanly -- and reading ctx.Err() ahead of err threw that token
@@ -183,7 +189,7 @@ func runPasswordCommand(ctx context.Context, command string) (string, error) {
 	case err == nil:
 		// Nothing to explain.
 
-	case errors.Is(err, exec.ErrWaitDelay) && password != "":
+	case errors.Is(err, exec.ErrWaitDelay) && whole:
 		// The helper printed its token and exited; something it started still
 		// held the output pipe, so Wait gave up on the pipe rather than on the
 		// command. What the helper printed was read before any of that.
