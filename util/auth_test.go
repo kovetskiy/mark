@@ -506,7 +506,7 @@ func TestPasswordCommandFlagReachesCredentials(t *testing.T) {
 	t.Cleanup(func() { log.Logger = restore })
 
 	cmd := &cli.Command{
-		Flags:  NewFlags(),
+		Flags:  Flags,
 		Before: CheckFlags,
 		Action: RunMark,
 	}
@@ -553,7 +553,7 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 	})
 
 	cmd := &cli.Command{
-		Flags:  NewFlags(),
+		Flags:  Flags,
 		Before: CheckFlags,
 		Action: RunMark,
 	}
@@ -578,118 +578,90 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 		"the command must not reach the log in full")
 }
 
-// withParsedFlags parses argv against a fresh copy of mark's real flag set,
-// with config written to a configuration file, and hands the parsed command to
-// inspect. Nothing of mark runs: the point is the values the flags resolved to
-// and the layers they came from.
-func withParsedFlags(t *testing.T, config string, argv []string, inspect func(*cli.Command)) {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "mark.toml")
-	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
-
-	cmd := &cli.Command{
-		Flags:  NewFlags(),
-		Before: CheckFlags,
-		Action: func(_ context.Context, cmd *cli.Command) error {
-			inspect(cmd)
-
-			return nil
-		},
-	}
-
-	require.NoError(t, cmd.Run(context.Background(),
-		append([]string{"mark", "--config", path}, argv...)))
-}
-
-// TestPasswordCommandOnTheCommandLineOverridesAConfiguredPassword covers the
-// reason precedence is decided by source and not by which value is non-empty.
+// TestPasswordPrecedence covers which of the two settings a run uses when both
+// carry a value.
 //
 // A password in the configuration file is the ordinary starting point -- it is
 // what the README has always shown -- so somebody trying --password-command for
-// the first time has one. Letting the file win would have made this the one
-// flag in mark that cannot be overridden from the command line, and editing
-// that file the only way to use it.
-func TestPasswordCommandOnTheCommandLineOverridesAConfiguredPassword(t *testing.T) {
-	command := helperCommand(t, "print", "from-command")
-	logged := captureLogs(t)
+// the first time has one. Deciding this over the two resolved values, as the
+// non-empty password did, cannot tell that password from one typed in the same
+// breath as the command, which made this the one flag in mark that the
+// configuration file overrides and left editing that file the only way to use
+// it.
+func TestPasswordPrecedence(t *testing.T) {
+	const (
+		password = "from-password"
+		command  = "from-command"
+	)
 
-	withParsedFlags(t, "password = \"from-config\"\n",
-		[]string{"--password-command", command},
-		func(cmd *cli.Command) {
-			password, passwordCommand := passwordPrecedence(cmd)
-			assert.Empty(t, password, "the configured password loses to the stronger source")
-			assert.Equal(t, command, passwordCommand)
+	tests := []struct {
+		name         string
+		args         []string
+		env          map[string]string
+		wantPassword string
+		wantCommand  string
+	}{
+		{
+			name:        "a command on the command line beats a configured password",
+			args:        []string{"mark", "--password-command", command},
+			wantCommand: command,
+		},
+		{
+			name:         "a password on the command line beats a configured command",
+			args:         []string{"mark", "-p", password},
+			wantPassword: password,
+		},
+		{
+			name:         "an attached value is the same flag",
+			args:         []string{"mark", "--password=" + password},
+			wantPassword: password,
+		},
+		{
+			name:        "the environment beats the configuration file",
+			env:         map[string]string{"MARK_PASSWORD_COMMAND": command},
+			wantCommand: command,
+		},
+		{
+			name:         "and loses to the command line",
+			args:         []string{"mark", "--password", password},
+			env:          map[string]string{"MARK_PASSWORD_COMMAND": command},
+			wantPassword: password,
+		},
+		{
+			// Nothing separates them, so the password stays what wins, and
+			// GetCredentials says as much.
+			name:         "two settings in one file are a tie",
+			wantPassword: password,
+			wantCommand:  command,
+		},
+		{
+			name:         "as are two on the command line",
+			args:         []string{"mark", "-p", password, "--password-command", command},
+			wantPassword: password,
+			wantCommand:  command,
+		},
+		{
+			// Which is what makes this worth getting right: a value that
+			// happens to read like a flag is not one.
+			name:         "nothing past a bare -- is a flag",
+			args:         []string{"mark", "--", "--password-command"},
+			wantPassword: password,
+			wantCommand:  command,
+		},
+	}
 
-			creds, err := GetCredentials(context.Background(), "user", password, passwordCommand,
-				"https://confluence.example.com", "", false)
-			require.NoError(t, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for name, value := range test.env {
+				t.Setenv(name, value)
+			}
 
-			assert.Equal(t, "from-command", creds.Password)
+			gotPassword, gotCommand := passwordPrecedence(password, command, test.args)
+
+			assert.Equal(t, test.wantPassword, gotPassword)
+			assert.Equal(t, test.wantCommand, gotCommand)
 		})
-
-	assert.Contains(t, logged.String(), "ignoring password from")
-}
-
-// TestPasswordOnTheCommandLineOverridesAConfiguredPasswordCommand is the same
-// rule the other way around, and the helper must not even run.
-func TestPasswordOnTheCommandLineOverridesAConfiguredPasswordCommand(t *testing.T) {
-	command := helperCommand(t, "fail", "")
-	logged := captureLogs(t)
-
-	withParsedFlags(t, fmt.Sprintf("password-command = %q\n", command),
-		[]string{"--password", "from-flag"},
-		func(cmd *cli.Command) {
-			password, passwordCommand := passwordPrecedence(cmd)
-			assert.Equal(t, "from-flag", password)
-			assert.Empty(t, passwordCommand)
-
-			creds, err := GetCredentials(context.Background(), "user", password, passwordCommand,
-				"https://confluence.example.com", "", false)
-			require.NoError(t, err)
-
-			assert.Equal(t, "from-flag", creds.Password)
-		})
-
-	assert.Contains(t, logged.String(), "ignoring password-command from")
-}
-
-// TestPasswordBeatsTheCommandWithinOneLayer is the tie, which is the only case
-// the old value-level rule got right: two settings in the same configuration
-// file say nothing about which is meant, so the password stays the one that
-// wins, out loud.
-func TestPasswordBeatsTheCommandWithinOneLayer(t *testing.T) {
-	command := helperCommand(t, "print", "from-command")
-	logged := captureLogs(t)
-
-	config := fmt.Sprintf("password = \"from-config\"\npassword-command = %q\n", command)
-
-	withParsedFlags(t, config, nil, func(cmd *cli.Command) {
-		password, passwordCommand := passwordPrecedence(cmd)
-		assert.Equal(t, "from-config", password)
-		assert.Equal(t, command, passwordCommand, "the tie is left for GetCredentials to warn about")
-
-		creds, err := GetCredentials(context.Background(), "user", password, passwordCommand,
-			"https://confluence.example.com", "", false)
-		require.NoError(t, err)
-
-		assert.Equal(t, "from-config", creds.Password)
-	})
-
-	assert.Contains(t, logged.String(), "ignoring password-command")
-}
-
-// TestPasswordCommandInTheEnvironmentOverridesAConfiguredPassword covers the
-// middle layer, which no flag on the command line is involved in.
-func TestPasswordCommandInTheEnvironmentOverridesAConfiguredPassword(t *testing.T) {
-	command := helperCommand(t, "print", "from-command")
-	t.Setenv("MARK_PASSWORD_COMMAND", command)
-
-	withParsedFlags(t, "password = \"from-config\"\n", nil, func(cmd *cli.Command) {
-		password, passwordCommand := passwordPrecedence(cmd)
-		assert.Empty(t, password)
-		assert.Equal(t, command, passwordCommand)
-	})
+	}
 }
 
 // TestPasswordPrecedenceLeavesASingleSettingAlone is the common case: only one
@@ -697,11 +669,24 @@ func TestPasswordCommandInTheEnvironmentOverridesAConfiguredPassword(t *testing.
 func TestPasswordPrecedenceLeavesASingleSettingAlone(t *testing.T) {
 	logged := captureLogs(t)
 
-	withParsedFlags(t, "password = \"from-config\"\n", nil, func(cmd *cli.Command) {
-		password, passwordCommand := passwordPrecedence(cmd)
-		assert.Equal(t, "from-config", password)
-		assert.Empty(t, passwordCommand)
-	})
+	password, command := passwordPrecedence("from-password", "", []string{"mark"})
+	assert.Equal(t, "from-password", password)
+	assert.Empty(t, command)
+
+	password, command = passwordPrecedence("", "helper", []string{"mark"})
+	assert.Empty(t, password)
+	assert.Equal(t, "helper", command)
 
 	assert.NotContains(t, logged.String(), "ignoring")
+}
+
+// TestPasswordPrecedenceNamesWhatItDropped covers the warning, which is the
+// only sign a setting was passed over.
+func TestPasswordPrecedenceNamesWhatItDropped(t *testing.T) {
+	logged := captureLogs(t)
+
+	passwordPrecedence("from-password", "from-command", []string{"mark", "--password-command", "from-command"})
+
+	assert.Contains(t, logged.String(),
+		"using password-command from the command line and ignoring password from the configuration file")
 }

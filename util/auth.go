@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-	"github.com/urfave/cli/v3"
 )
 
 // passwordCommandTimeout bounds how long a password command may run.
@@ -147,7 +146,7 @@ func GetCredentials(
 	return creds, nil
 }
 
-// runPasswordCommand runs command and returns its trimmed stdout.
+// runPasswordCommand runs command and returns the first line of what it printed.
 // No shell is involved, so the string undergoes no expansion and quoted arguments are not honoured.
 func runPasswordCommand(ctx context.Context, command string) (string, error) {
 	argv := strings.Fields(command)
@@ -223,7 +222,7 @@ func firstLine(out string) string {
 }
 
 // passwordPrecedence returns the password and the password command a run should
-// go on with, decided by where each of them came from.
+// go on with, decided by where each of them was set.
 //
 // Each of the two resolves through its own chain -- command line, then
 // environment, then configuration file -- so a rule stated over the two
@@ -231,77 +230,99 @@ func firstLine(out string) string {
 // that has been sitting in the configuration file for a year. Preferring the
 // password whenever it is non-empty therefore made --password-command the one
 // flag in mark that the configuration file overrides, and left editing that
-// file the only way to use it. The value from the stronger source wins instead.
-// A tie -- both from the same source -- is left to GetCredentials, which keeps
-// the password.
-func passwordPrecedence(cmd *cli.Command) (string, string) {
-	password := cmd.String("password")
-	command := cmd.String("password-command")
-
-	if password == "" || command == "" {
-		return password, command
+// file the only way to use it. The setting from the stronger layer wins
+// instead. A tie -- both from the same layer -- is left to GetCredentials,
+// which keeps the password.
+//
+// args is the command line mark was run with, os.Args in a real run.
+func passwordPrecedence(password string, passwordCommand string, args []string) (string, string) {
+	if password == "" || passwordCommand == "" {
+		return password, passwordCommand
 	}
 
-	passwordRank, passwordSource := flagSource(cmd, "password")
-	commandRank, commandSource := flagSource(cmd, "password-command")
+	byPassword := layerOf(args, "MARK_PASSWORD", "password", "p")
+	byCommand := layerOf(args, "MARK_PASSWORD_COMMAND", "password-command")
 
 	switch {
-	case commandRank > passwordRank:
+	case byCommand > byPassword:
 		log.Warn().Msgf(
 			"both password and password-command are set; using password-command from %s and ignoring password from %s",
-			commandSource, passwordSource,
+			byCommand, byPassword,
 		)
 
-		return "", command
+		return "", passwordCommand
 
-	case passwordRank > commandRank:
+	case byPassword > byCommand:
 		log.Warn().Msgf(
 			"both password and password-command are set; using password from %s and ignoring password-command from %s",
-			passwordSource, commandSource,
+			byPassword, byCommand,
 		)
 
 		return password, ""
 	}
 
-	return password, command
+	return password, passwordCommand
 }
 
-// flagSource reports where a string flag took its value from, as a rank that
-// grows with precedence, and as a name for the message that says so.
-//
-// urfave keeps no record of which source answered, so this repeats the lookup:
-// the sources are consulted in order and only after the command line, so the
-// first one holding the value the flag ended up with is the one that named it,
-// and one holding a different value was overridden from the command line.
-func flagSource(cmd *cli.Command, name string) (int, string) {
-	if !cmd.IsSet(name) {
-		return 0, "nowhere"
+// layer is where a setting was given, ordered the way every flag in mark is
+// resolved: the command line beats the environment, which beats the
+// configuration file. urfave applies that order to each flag on its own and
+// keeps no record of which layer answered, so a rule spanning two flags has to
+// work it out again.
+type layer int
+
+const (
+	fromConfigFile layer = iota
+	fromEnvironment
+	fromCommandLine
+)
+
+func (l layer) String() string {
+	switch l {
+	case fromCommandLine:
+		return "the command line"
+
+	case fromEnvironment:
+		return "the environment"
+
+	default:
+		return "the configuration file"
 	}
+}
 
-	var chain []cli.ValueSource
+// layerOf reports where a setting that has a value was given. A value named
+// nowhere on the command line and absent from the environment can only have
+// come from the configuration file, which is the last place urfave looks.
+func layerOf(args []string, env string, names ...string) layer {
+	switch {
+	case namedIn(args, names):
+		return fromCommandLine
 
-	for _, flag := range cmd.Flags {
-		if str, ok := flag.(*cli.StringFlag); ok && str.Name == name {
-			chain = str.Sources.Chain
+	case os.Getenv(env) != "":
+		return fromEnvironment
 
-			break
+	default:
+		return fromConfigFile
+	}
+}
+
+// namedIn reports whether any of names appears in args as a flag, in the forms
+// urfave accepts: one dash or two, with the value either attached or following.
+func namedIn(args []string, names []string) bool {
+	for _, arg := range args {
+		// Nothing past this is a flag, whatever it looks like.
+		if arg == "--" {
+			return false
+		}
+
+		for _, name := range names {
+			for _, dashed := range []string{"-" + name, "--" + name} {
+				if arg == dashed || strings.HasPrefix(arg, dashed+"=") {
+					return true
+				}
+			}
 		}
 	}
 
-	value := cmd.String(name)
-
-	for i, source := range chain {
-		found, ok := source.Lookup()
-		if !ok {
-			continue
-		}
-
-		if found != value {
-			break
-		}
-
-		return len(chain) - i, source.String()
-	}
-
-	return len(chain) + 1, "the command line"
+	return false
 }

@@ -1591,7 +1591,7 @@ GLOBAL OPTIONS:
    --log-level string                       set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
    --username string, -u string             use specified username for updating Confluence page. [$MARK_USERNAME]
    --password string, -p string             use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
-   --password-command string                run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. A password set from the same or a stronger source (command line, then environment, then configuration file) takes precedence. [$MARK_PASSWORD_COMMAND]
+   --password-command string                run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. A password set on the command line, in the environment or in the configuration file takes precedence over one set further down that list. [$MARK_PASSWORD_COMMAND]
    --target-url string, -l string           edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url string, -b string             base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
    --config string, -c string               use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
@@ -1652,9 +1652,9 @@ Only the first line of what the command prints becomes the token, so a helper
 that prints a whole entry with the password on top -- `pass show` does -- needs
 no wrapper to trim it.
 
-Where both a `password` and a `password-command` are set, the one from the
-stronger source wins: the command line beats the environment, which beats the
-configuration file. Only when both come from the same place does the `password`
+Where both a `password` and a `password-command` are set, the one set in the
+stronger layer wins: the command line beats the environment, which beats the
+configuration file. Only when both come from the same layer does the `password`
 win, and mark says so.
 
 A compile resolves the command like any other run, since a relative link is
