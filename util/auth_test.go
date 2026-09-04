@@ -43,27 +43,23 @@ func TestMain(m *testing.M) {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 
-	case "linger-partial":
-		// The same, with the token's line left unterminated: what was read is
-		// the front of it and the rest never came.
-		child := exec.Command(os.Args[0]) //nolint:gosec // G204: the test binary itself
-		child.Env = append(os.Environ(), helperModeEnv+"=hang")
-		child.Stdout = os.Stdout
-		_ = child.Start()
-
-		fmt.Print(os.Getenv(helperOutputEnv))
-		os.Exit(0)
-
-	case "linger":
+	case "linger", "linger-partial":
 		// A helper that prints its token and exits, leaving something behind
 		// that still holds the output pipe -- which is what a helper starting
-		// an agent on demand does.
+		// an agent on demand does. The partial one leaves the token's line
+		// unterminated with it: what was read is the front of the token and the
+		// rest never came.
 		child := exec.Command(os.Args[0]) //nolint:gosec // G204: the test binary itself
 		child.Env = append(os.Environ(), helperModeEnv+"=hang")
 		child.Stdout = os.Stdout
 		_ = child.Start()
 
-		fmt.Println(os.Getenv(helperOutputEnv))
+		token := os.Getenv(helperOutputEnv)
+		if os.Getenv(helperModeEnv) == "linger" {
+			token += "\n"
+		}
+
+		fmt.Print(token)
 		os.Exit(0)
 
 	default:
@@ -382,37 +378,41 @@ func TestRunPasswordCommandStopsAHelperThatHangs(t *testing.T) {
 // The token reaches mark without being written to the configuration file or exported into the environment.
 func TestGetCredentialsResolvesThePasswordFromACommand(t *testing.T) {
 	command := helperCommand(t, "print", "from-command")
-	logged := captureLogs(t)
 
 	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "from-command", creds.Password)
-	assert.NotContains(t, logged.String(), "ignoring password-command",
-		"nothing is being shadowed, so there is nothing to warn about")
 }
 
-// TestGetCredentialsPrefersAnExplicitPasswordOverTheCommand covers both being set.
-// A flag on the command line has to be able to override a token already in the configuration file.
-func TestGetCredentialsPrefersAnExplicitPasswordOverTheCommand(t *testing.T) {
+// TestGetCredentialsRefusesBothAtOnce covers a password and a command set
+// together.
+//
+// Either can arrive from the flag, the environment or the configuration file,
+// so the two say nothing about which is meant: a password left over from before
+// the command was set up reads exactly like one somebody wants used. Picking
+// either would be a guess, and the wrong guess is silent -- so this is refused
+// the way mark refuses every other pair of settings that contradict each other.
+func TestGetCredentialsRefusesBothAtOnce(t *testing.T) {
 	command := helperCommand(t, "print", "from-command")
-
-	creds, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false)
-	require.NoError(t, err)
-
-	assert.Equal(t, "from-flag", creds.Password)
-}
-
-// TestGetCredentialsWarnsThatTheCommandIsIgnored covers what that precedence costs.
-// Either value can arrive from a different layer, so a password left in one would otherwise shadow the command in silence.
-func TestGetCredentialsWarnsThatTheCommandIsIgnored(t *testing.T) {
-	command := helperCommand(t, "print", "from-command")
-	logged := captureLogs(t)
 
 	_, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false)
-	require.NoError(t, err)
+	require.Error(t, err)
 
-	assert.Contains(t, logged.String(), "ignoring password-command")
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+// TestGetCredentialsRefusesBothBeforeRunningEither is the point of refusing:
+// the helper never runs, so nothing is asked of a keyring for a run that is
+// going to stop anyway.
+func TestGetCredentialsRefusesBothBeforeRunningEither(t *testing.T) {
+	command := helperCommand(t, "fail", "")
+
+	_, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false)
+	require.Error(t, err)
+
+	assert.NotContains(t, err.Error(), "command failed",
+		"the contradiction is the error, not whatever the helper would have said")
 }
 
 // TestGetCredentialsSurfacesAFailingCommand covers the helper that fails with no password set.
@@ -617,117 +617,4 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 	assert.Contains(t, string(logged), "password-command: ******")
 	assert.NotContains(t, string(logged), command,
 		"the command must not reach the log in full")
-}
-
-// TestPasswordPrecedence covers which of the two settings a run uses when both
-// carry a value.
-//
-// A password in the configuration file is the ordinary starting point -- it is
-// what the README has always shown -- so somebody trying --password-command for
-// the first time has one. Deciding this over the two resolved values, as the
-// non-empty password did, cannot tell that password from one typed in the same
-// breath as the command, which made this the one flag in mark that the
-// configuration file overrides and left editing that file the only way to use
-// it.
-func TestPasswordPrecedence(t *testing.T) {
-	const (
-		password = "from-password"
-		command  = "from-command"
-	)
-
-	tests := []struct {
-		name         string
-		args         []string
-		env          map[string]string
-		wantPassword string
-		wantCommand  string
-	}{
-		{
-			name:        "a command on the command line beats a configured password",
-			args:        []string{"mark", "--password-command", command},
-			wantCommand: command,
-		},
-		{
-			name:         "a password on the command line beats a configured command",
-			args:         []string{"mark", "-p", password},
-			wantPassword: password,
-		},
-		{
-			name:         "an attached value is the same flag",
-			args:         []string{"mark", "--password=" + password},
-			wantPassword: password,
-		},
-		{
-			name:        "the environment beats the configuration file",
-			env:         map[string]string{"MARK_PASSWORD_COMMAND": command},
-			wantCommand: command,
-		},
-		{
-			name:         "and loses to the command line",
-			args:         []string{"mark", "--password", password},
-			env:          map[string]string{"MARK_PASSWORD_COMMAND": command},
-			wantPassword: password,
-		},
-		{
-			// Nothing separates them, so the password stays what wins, and
-			// GetCredentials says as much.
-			name:         "two settings in one file are a tie",
-			wantPassword: password,
-			wantCommand:  command,
-		},
-		{
-			name:         "as are two on the command line",
-			args:         []string{"mark", "-p", password, "--password-command", command},
-			wantPassword: password,
-			wantCommand:  command,
-		},
-		{
-			// Which is what makes this worth getting right: a value that
-			// happens to read like a flag is not one.
-			name:         "nothing past a bare -- is a flag",
-			args:         []string{"mark", "--", "--password-command"},
-			wantPassword: password,
-			wantCommand:  command,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			for name, value := range test.env {
-				t.Setenv(name, value)
-			}
-
-			gotPassword, gotCommand := passwordPrecedence(password, command, test.args)
-
-			assert.Equal(t, test.wantPassword, gotPassword)
-			assert.Equal(t, test.wantCommand, gotCommand)
-		})
-	}
-}
-
-// TestPasswordPrecedenceLeavesASingleSettingAlone is the common case: only one
-// of the two is set anywhere, and there is nothing to decide.
-func TestPasswordPrecedenceLeavesASingleSettingAlone(t *testing.T) {
-	logged := captureLogs(t)
-
-	password, command := passwordPrecedence("from-password", "", []string{"mark"})
-	assert.Equal(t, "from-password", password)
-	assert.Empty(t, command)
-
-	password, command = passwordPrecedence("", "helper", []string{"mark"})
-	assert.Empty(t, password)
-	assert.Equal(t, "helper", command)
-
-	assert.NotContains(t, logged.String(), "ignoring")
-}
-
-// TestPasswordPrecedenceNamesWhatItDropped covers the warning, which is the
-// only sign a setting was passed over.
-func TestPasswordPrecedenceNamesWhatItDropped(t *testing.T) {
-	logged := captureLogs(t)
-
-	passwordPrecedence("from-password", "from-command", []string{"mark", "--password-command", "from-command"})
-
-	assert.Contains(t, logged.String(),
-		"using password-command from the command line and ignoring password from the configuration file")
 }
