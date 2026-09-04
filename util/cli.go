@@ -67,11 +67,15 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	}
 	log.Logger = zerolog.New(output).With().Timestamp().Logger()
 
+	// Not cmd.String for these two: which of them a run uses depends on the
+	// source each arrived from, which the resolved values no longer carry.
+	password, passwordCommand := passwordPrecedence(cmd)
+
 	creds, err := GetCredentials(
 		ctx,
 		cmd.String("username"),
-		cmd.String("password"),
-		cmd.String("password-command"),
+		password,
+		passwordCommand,
 		cmd.String("target-url"),
 		cmd.String("base-url"),
 		cmd.Bool("compile-only"),

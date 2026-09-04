@@ -42,307 +42,319 @@ var KnownFeatures = []string{
 // off.
 var defaultFeatures = []string{"mermaid", "mention"}
 
-var Flags = []cli.Flag{
-	// First, and it has to stay first. Every other flag finds the
-	// configuration file through the pointer below, which is filled in as the
-	// flags are resolved -- in the order they are declared. Anything declared
-	// above this looks for its TOML value while that pointer is still empty and
-	// silently gets nothing.
-	//
-	// A path on the command line happened to survive being declared late. One
-	// in MARK_CONFIG did not, so "MARK_CONFIG=/etc/mark.toml mark" ignored
-	// files, username, password, target-url, base-url and log-level while
-	// honouring space, parents and features -- reported, if at all, as
-	// "confluence password should be specified using -p flag".
-	&cli.StringFlag{
-		Name:        "config",
-		Aliases:     []string{"c"},
-		Value:       ConfigFilePath(),
-		Usage:       "use the specified configuration file.",
-		TakesFile:   true,
-		Sources:     cli.NewValueSourceChain(cli.EnvVar("MARK_CONFIG")),
-		Destination: &filename,
-	},
-	&cli.StringFlag{
-		Name:      "files",
-		Aliases:   []string{"f"},
-		Value:     "",
-		Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
-		TakesFile: true,
-		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES"), altsrctoml.TOML("files", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "continue-on-error",
-		Value:   false,
-		Usage:   "don't exit if an error occurs while processing a file, continue processing remaining files.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CONTINUE_ON_ERROR"), altsrctoml.TOML("continue-on-error", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "compile-only",
-		Value:   false,
-		Usage:   "show resulting HTML and don't update Confluence page content.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COMPILE_ONLY"), altsrctoml.TOML("compile-only", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "dry-run",
-		Value:   false,
-		Usage:   "resolve page and ancestry, show resulting HTML and exit.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), altsrctoml.TOML("dry-run", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "edit-lock",
-		Value:   false,
-		Aliases: []string{"k"},
-		Usage:   "lock page editing to current user only to prevent accidental manual edits over Confluence Web UI.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_EDIT_LOCK"), altsrctoml.TOML("edit-lock", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "drop-h1",
-		Value:   false,
-		Usage:   "don't include the first H1 heading in Confluence output.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DROP_H1"), altsrctoml.TOML("drop-h1", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "strip-linebreaks",
-		Value:   false,
-		Aliases: []string{"L"},
-		Usage:   "remove linebreaks inside of tags, to accommodate non-standard Confluence behavior",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_STRIP_LINEBREAKS"), altsrctoml.TOML("strip-linebreaks", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "title-from-h1",
-		Value:   false,
-		Usage:   "extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. Mutually exclusive with --title-from-filename.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_H1"), altsrctoml.TOML("title-from-h1", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "title-from-filename",
-		Value:   false,
-		Usage:   "use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_FILENAME"), altsrctoml.TOML("title-from-filename", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "title-append-generated-hash",
-		Value:   false,
-		Usage:   "appends a short hash generated from the path of the page (space, parents, and title) to the title",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_APPEND_GENERATED_HASH"), altsrctoml.TOML("title-append-generated-hash", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "minor-edit",
-		Value:   false,
-		Usage:   "don't send notifications while updating Confluence page.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MINOR_EDIT"), altsrctoml.TOML("minor-edit", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "version-message",
-		Value:   "",
-		Usage:   "add a message to the page version, to explain the edit (default: \"\")",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_VERSION_MESSAGE"), altsrctoml.TOML("version-message", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:  "color",
-		Value: "auto",
-		Usage: "display logs in color. Possible values: auto, never.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COLOR"),
-			altsrctoml.TOML("color", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "log-level",
-		Value:   "info",
-		Usage:   "set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LOG_LEVEL"), altsrctoml.TOML("log-level", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "username",
-		Aliases: []string{"u"},
-		Value:   "",
-		Usage:   "use specified username for updating Confluence page.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_USERNAME"),
-			altsrctoml.TOML("username", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "password",
-		Aliases: []string{"p"},
-		Value:   "",
-		Usage:   "use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD"), altsrctoml.TOML("password", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "password-command",
-		Value:   "",
-		Usage:   "run the specified command and use its trimmed stdout as the token for updating Confluence page. Runs without a shell, and is ignored when a password is set.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD_COMMAND"), altsrctoml.TOML("password-command", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "target-url",
-		Aliases: []string{"l"},
-		Value:   "",
-		Usage:   "edit specified Confluence page. If -l is not specified, file should contain metadata (see above).",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TARGET_URL"), altsrctoml.TOML("target-url", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "base-url",
-		Aliases: []string{"b"},
-		Value:   "",
-		Usage:   "base URL for Confluence. Alternative option for base_url config field.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_BASE_URL"),
-			altsrctoml.TOML("base-url", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "ci",
-		Value:   false,
-		Usage:   "run on CI mode. It won't fail if files are not found.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CI"), altsrctoml.TOML("ci", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "space",
-		Value:   "",
-		Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), altsrctoml.TOML("space", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "parents",
-		Value:   "",
-		Usage:   "A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS"), altsrctoml.TOML("parents", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "parents-delimiter",
-		Value:   "/",
-		Usage:   "The delimiter used for the parents list",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_DELIMITER"), altsrctoml.TOML("parents-delimiter", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:  "content-appearance",
-		Value: "",
-		Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default.",
-		Sources: cli.NewValueSourceChain(
-			cli.EnvVar("MARK_CONTENT_APPEARANCE"),
-			altsrctoml.TOML("content-appearance", altsrc.NewStringPtrSourcer(&filename)),
-		),
-	},
-	&cli.FloatFlag{
-		Name:    "mermaid-scale",
-		Value:   1.0,
-		Usage:   "defines the scaling factor for mermaid renderings.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "math-format",
-		Value:   "png",
-		Usage:   "image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_FORMAT"), altsrctoml.TOML("math-format", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.FloatFlag{
-		Name:    "math-scale",
-		Value:   2.0,
-		Usage:   "defines the scaling factor for PNG formula renderings; ignored when math-format is svg.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_SCALE"), altsrctoml.TOML("math-scale", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:      "include-path",
-		Value:     "",
-		Usage:     "Path for shared includes, used as a fallback if the include doesn't exist in the current directory.",
-		TakesFile: true,
-		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_INCLUDE_PATH"), altsrctoml.TOML("include-path", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "changes-only",
-		Value:   false,
-		Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:  "output-format",
-		Value: "url",
-		Usage: "how to report what the run did: \"url\" prints the address of each published page (the default), \"json\" prints one object describing the whole run, \"github\" prints GitHub Actions workflow commands so that failures appear against the file that caused them.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OUTPUT_FORMAT"),
-			altsrctoml.TOML("output-format", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:  "on-orphan",
-		Value: "report",
-		Usage: "what to do about a page whose source file is gone: \"report\" says so and does nothing (the default), \"archive\" archives the page (Confluence Cloud only), \"delete\" moves it to the trash. Requires --track-pages.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ON_ORPHAN"),
-			altsrctoml.TOML("on-orphan", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:  "orphan-under",
-		Value: "",
-		Usage: "limit --on-orphan, and the reporting it does, to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ORPHAN_UNDER"),
-			altsrctoml.TOML("orphan-under", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringSliceFlag{
-		Name:  "check-links",
-		Usage: "fail on links that do not resolve. Repeat or comma-separate any of: \"internal\" (relative links to other files in the repository), \"confluence\" (ac: links naming a page by title), \"external\" (requests each URL to see whether it answers), or \"all\".",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS"),
-			altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:      "global-properties",
-		Value:     "",
-		Usage:     "path to a YAML or JSON file of Confluence content properties to set on every page. A Property header or properties front matter in a document wins over the file for that page.",
-		TakesFile: true,
-		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_GLOBAL_PROPERTIES"), altsrctoml.TOML("global-properties", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "append-labels",
-		Value:   false,
-		Usage:   "add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_APPEND_LABELS"), altsrctoml.TOML("append-labels", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "check-links-warn-only",
-		Value:   false,
-		Usage:   "report links that do not resolve without failing the run. Only meaningful together with --check-links.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS_WARN_ONLY"), altsrctoml.TOML("check-links-warn-only", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "no-overwrite",
-		Value:   false,
-		Usage:   "Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_NO_OVERWRITE"), altsrctoml.TOML("no-overwrite", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "track-pages",
-		Value:   false,
-		Usage:   "Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TRACK_PAGES"), altsrctoml.TOML("track-pages", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "preserve-comments",
-		Value:   false,
-		Usage:   "Fetch and preserve inline comments on existing Confluence pages.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PRESERVE_COMMENTS"), altsrctoml.TOML("preserve-comments", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.FloatFlag{
-		Name:    "d2-scale",
-		Value:   1.0,
-		Usage:   "defines the scaling factor for d2 renderings.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2-scale", altsrc.NewStringPtrSourcer(&filename))),
-	},
+// Flags is the flag set mark itself runs with.
+var Flags = NewFlags()
 
-	&cli.StringSliceFlag{
-		Name:  "features",
-		Value: []string{"mermaid", "mention"},
-		Usage: "Enables optional features, replacing the defaults (" +
-			strings.Join(defaultFeatures, ", ") + ") rather than adding to them. " +
-			"Current features: " + strings.Join(KnownFeatures, ", "),
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.BoolFlag{
-		Name:    "insecure-skip-tls-verify",
-		Value:   false,
-		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
-	},
-	&cli.StringFlag{
-		Name:    "image-align",
-		Value:   "",
-		Usage:   "set image alignment (left, center, right). Can be overridden per-file via the Image-Align header.",
-		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_IMAGE_ALIGN"), altsrctoml.TOML("image-align", altsrc.NewStringPtrSourcer(&filename))),
-	},
+// NewFlags returns a fresh copy of mark's flags.
+//
+// urfave records on the flag itself that a value has been set, and never clears
+// it: a flag set run a second time keeps the first run's values and skips its
+// own sources. Running mark happens once per process, so the set below could be
+// a plain variable -- but a test binary runs it many times over, and each of
+// those runs needs a set that has not been parsed before.
+func NewFlags() []cli.Flag {
+	return []cli.Flag{
+		// First, and it has to stay first. Every other flag finds the
+		// configuration file through the pointer below, which is filled in as the
+		// flags are resolved -- in the order they are declared. Anything declared
+		// above this looks for its TOML value while that pointer is still empty and
+		// silently gets nothing.
+		//
+		// A path on the command line happened to survive being declared late. One
+		// in MARK_CONFIG did not, so "MARK_CONFIG=/etc/mark.toml mark" ignored
+		// files, username, password, target-url, base-url and log-level while
+		// honouring space, parents and features -- reported, if at all, as
+		// "confluence password should be specified using -p flag".
+		&cli.StringFlag{
+			Name:        "config",
+			Aliases:     []string{"c"},
+			Value:       ConfigFilePath(),
+			Usage:       "use the specified configuration file.",
+			TakesFile:   true,
+			Sources:     cli.NewValueSourceChain(cli.EnvVar("MARK_CONFIG")),
+			Destination: &filename,
+		},
+		&cli.StringFlag{
+			Name:      "files",
+			Aliases:   []string{"f"},
+			Value:     "",
+			Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES"), altsrctoml.TOML("files", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "continue-on-error",
+			Value:   false,
+			Usage:   "don't exit if an error occurs while processing a file, continue processing remaining files.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CONTINUE_ON_ERROR"), altsrctoml.TOML("continue-on-error", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "compile-only",
+			Value:   false,
+			Usage:   "show resulting HTML and don't update Confluence page content.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COMPILE_ONLY"), altsrctoml.TOML("compile-only", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "dry-run",
+			Value:   false,
+			Usage:   "resolve page and ancestry, show resulting HTML and exit.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), altsrctoml.TOML("dry-run", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "edit-lock",
+			Value:   false,
+			Aliases: []string{"k"},
+			Usage:   "lock page editing to current user only to prevent accidental manual edits over Confluence Web UI.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_EDIT_LOCK"), altsrctoml.TOML("edit-lock", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "drop-h1",
+			Value:   false,
+			Usage:   "don't include the first H1 heading in Confluence output.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DROP_H1"), altsrctoml.TOML("drop-h1", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "strip-linebreaks",
+			Value:   false,
+			Aliases: []string{"L"},
+			Usage:   "remove linebreaks inside of tags, to accommodate non-standard Confluence behavior",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_STRIP_LINEBREAKS"), altsrctoml.TOML("strip-linebreaks", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "title-from-h1",
+			Value:   false,
+			Usage:   "extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. Mutually exclusive with --title-from-filename.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_H1"), altsrctoml.TOML("title-from-h1", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "title-from-filename",
+			Value:   false,
+			Usage:   "use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_FILENAME"), altsrctoml.TOML("title-from-filename", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "title-append-generated-hash",
+			Value:   false,
+			Usage:   "appends a short hash generated from the path of the page (space, parents, and title) to the title",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_APPEND_GENERATED_HASH"), altsrctoml.TOML("title-append-generated-hash", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "minor-edit",
+			Value:   false,
+			Usage:   "don't send notifications while updating Confluence page.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MINOR_EDIT"), altsrctoml.TOML("minor-edit", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "version-message",
+			Value:   "",
+			Usage:   "add a message to the page version, to explain the edit (default: \"\")",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_VERSION_MESSAGE"), altsrctoml.TOML("version-message", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:  "color",
+			Value: "auto",
+			Usage: "display logs in color. Possible values: auto, never.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COLOR"),
+				altsrctoml.TOML("color", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "log-level",
+			Value:   "info",
+			Usage:   "set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LOG_LEVEL"), altsrctoml.TOML("log-level", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "username",
+			Aliases: []string{"u"},
+			Value:   "",
+			Usage:   "use specified username for updating Confluence page.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_USERNAME"),
+				altsrctoml.TOML("username", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "password",
+			Aliases: []string{"p"},
+			Value:   "",
+			Usage:   "use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD"), altsrctoml.TOML("password", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "password-command",
+			Value:   "",
+			Usage:   "run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. A password set from the same or a stronger source (command line, then environment, then configuration file) takes precedence.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD_COMMAND"), altsrctoml.TOML("password-command", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "target-url",
+			Aliases: []string{"l"},
+			Value:   "",
+			Usage:   "edit specified Confluence page. If -l is not specified, file should contain metadata (see above).",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TARGET_URL"), altsrctoml.TOML("target-url", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "base-url",
+			Aliases: []string{"b"},
+			Value:   "",
+			Usage:   "base URL for Confluence. Alternative option for base_url config field.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_BASE_URL"),
+				altsrctoml.TOML("base-url", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "ci",
+			Value:   false,
+			Usage:   "run on CI mode. It won't fail if files are not found.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CI"), altsrctoml.TOML("ci", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "space",
+			Value:   "",
+			Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), altsrctoml.TOML("space", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "parents",
+			Value:   "",
+			Usage:   "A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS"), altsrctoml.TOML("parents", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "parents-delimiter",
+			Value:   "/",
+			Usage:   "The delimiter used for the parents list",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_DELIMITER"), altsrctoml.TOML("parents-delimiter", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:  "content-appearance",
+			Value: "",
+			Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default.",
+			Sources: cli.NewValueSourceChain(
+				cli.EnvVar("MARK_CONTENT_APPEARANCE"),
+				altsrctoml.TOML("content-appearance", altsrc.NewStringPtrSourcer(&filename)),
+			),
+		},
+		&cli.FloatFlag{
+			Name:    "mermaid-scale",
+			Value:   1.0,
+			Usage:   "defines the scaling factor for mermaid renderings.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "math-format",
+			Value:   "png",
+			Usage:   "image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_FORMAT"), altsrctoml.TOML("math-format", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.FloatFlag{
+			Name:    "math-scale",
+			Value:   2.0,
+			Usage:   "defines the scaling factor for PNG formula renderings; ignored when math-format is svg.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_SCALE"), altsrctoml.TOML("math-scale", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:      "include-path",
+			Value:     "",
+			Usage:     "Path for shared includes, used as a fallback if the include doesn't exist in the current directory.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_INCLUDE_PATH"), altsrctoml.TOML("include-path", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "changes-only",
+			Value:   false,
+			Usage:   "Avoids re-uploading pages that haven't changed since the last run.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHANGES_ONLY"), altsrctoml.TOML("changes-only", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:  "output-format",
+			Value: "url",
+			Usage: "how to report what the run did: \"url\" prints the address of each published page (the default), \"json\" prints one object describing the whole run, \"github\" prints GitHub Actions workflow commands so that failures appear against the file that caused them.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OUTPUT_FORMAT"),
+				altsrctoml.TOML("output-format", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:  "on-orphan",
+			Value: "report",
+			Usage: "what to do about a page whose source file is gone: \"report\" says so and does nothing (the default), \"archive\" archives the page (Confluence Cloud only), \"delete\" moves it to the trash. Requires --track-pages.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ON_ORPHAN"),
+				altsrctoml.TOML("on-orphan", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:  "orphan-under",
+			Value: "",
+			Usage: "limit --on-orphan, and the reporting it does, to pages below this page or folder, given by title or id. Without it, every tracked page the --files pattern would have published is in scope.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ORPHAN_UNDER"),
+				altsrctoml.TOML("orphan-under", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringSliceFlag{
+			Name:  "check-links",
+			Usage: "fail on links that do not resolve. Repeat or comma-separate any of: \"internal\" (relative links to other files in the repository), \"confluence\" (ac: links naming a page by title), \"external\" (requests each URL to see whether it answers), or \"all\".",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS"),
+				altsrctoml.TOML("check-links", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:      "global-properties",
+			Value:     "",
+			Usage:     "path to a YAML or JSON file of Confluence content properties to set on every page. A Property header or properties front matter in a document wins over the file for that page.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_GLOBAL_PROPERTIES"), altsrctoml.TOML("global-properties", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "append-labels",
+			Value:   false,
+			Usage:   "add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_APPEND_LABELS"), altsrctoml.TOML("append-labels", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "check-links-warn-only",
+			Value:   false,
+			Usage:   "report links that do not resolve without failing the run. Only meaningful together with --check-links.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS_WARN_ONLY"), altsrctoml.TOML("check-links-warn-only", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "no-overwrite",
+			Value:   false,
+			Usage:   "Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_NO_OVERWRITE"), altsrctoml.TOML("no-overwrite", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "track-pages",
+			Value:   false,
+			Usage:   "Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TRACK_PAGES"), altsrctoml.TOML("track-pages", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "preserve-comments",
+			Value:   false,
+			Usage:   "Fetch and preserve inline comments on existing Confluence pages.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PRESERVE_COMMENTS"), altsrctoml.TOML("preserve-comments", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.FloatFlag{
+			Name:    "d2-scale",
+			Value:   1.0,
+			Usage:   "defines the scaling factor for d2 renderings.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_SCALE"), altsrctoml.TOML("d2-scale", altsrc.NewStringPtrSourcer(&filename))),
+		},
+
+		&cli.StringSliceFlag{
+			Name:  "features",
+			Value: []string{"mermaid", "mention"},
+			Usage: "Enables optional features, replacing the defaults (" +
+				strings.Join(defaultFeatures, ", ") + ") rather than adding to them. " +
+				"Current features: " + strings.Join(KnownFeatures, ", "),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.BoolFlag{
+			Name:    "insecure-skip-tls-verify",
+			Value:   false,
+			Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
+		},
+		&cli.StringFlag{
+			Name:    "image-align",
+			Value:   "",
+			Usage:   "set image alignment (left, center, right). Can be overridden per-file via the Image-Align header.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_IMAGE_ALIGN"), altsrctoml.TOML("image-align", altsrc.NewStringPtrSourcer(&filename))),
+		},
+	}
 }
 
 // CheckFlags validates combinations and values of global flags.

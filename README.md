@@ -1591,7 +1591,7 @@ GLOBAL OPTIONS:
    --log-level string                       set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
    --username string, -u string             use specified username for updating Confluence page. [$MARK_USERNAME]
    --password string, -p string             use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
-   --password-command string                run the specified command and use its trimmed stdout as the token for updating Confluence page. Runs without a shell, and is ignored when a password is set. [$MARK_PASSWORD_COMMAND]
+   --password-command string                run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. A password set from the same or a stronger source (command line, then environment, then configuration file) takes precedence. [$MARK_PASSWORD_COMMAND]
    --target-url string, -l string           edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url string, -b string             base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
    --config string, -c string               use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
@@ -1648,8 +1648,20 @@ and name the script instead. The command also gets no standard input, so a
 helper that prompts on stdin cannot be used -- one that opens the terminal
 itself, as `pinentry` does, is fine.
 
-A compile resolves the command like any other run, so a helper that cannot
-produce a token fails the run rather than being skipped.
+Only the first line of what the command prints becomes the token, so a helper
+that prints a whole entry with the password on top -- `pass show` does -- needs
+no wrapper to trim it.
+
+Where both a `password` and a `password-command` are set, the one from the
+stronger source wins: the command line beats the environment, which beats the
+configuration file. Only when both come from the same place does the `password`
+win, and mark says so.
+
+A compile resolves the command like any other run, since a relative link is
+followed by looking that page up. A helper that cannot produce a token there is
+a warning and not an error, because `--compile-only` has to keep validating
+documents on a machine -- a CI image, typically -- that has no password manager
+on it.
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
