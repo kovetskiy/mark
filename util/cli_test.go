@@ -15,6 +15,9 @@ func runWithArgs(args []string) error {
 			&cli.BoolFlag{Name: "title-from-h1"},
 			&cli.BoolFlag{Name: "title-from-filename"},
 			&cli.StringFlag{Name: "content-appearance"},
+			&cli.StringFlag{Name: "mermaid-output", Value: "png"},
+			&cli.BoolFlag{Name: "mermaid-bundle"},
+			&cli.FloatFlag{Name: "mermaid-scale", Value: 1.0},
 		},
 		Before: CheckFlags,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -118,4 +121,47 @@ func Test_setLogLevel(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMermaidOutputFlagValidation covers the two settings that only mean
+// anything in one of the two output formats, and the format itself.
+func TestMermaidOutputFlagValidation(t *testing.T) {
+	t.Run("png is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "png"}))
+	})
+
+	t.Run("svg is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg"}))
+	})
+
+	t.Run("anything else is rejected", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "jpeg"}))
+	})
+
+	// A flag carrying a default is never empty unless somebody emptied it, so
+	// an empty value is somebody's doing and not the absence of one. Left to
+	// fall through it would publish a PNG without a word, which is the one
+	// thing a value set on purpose should not do.
+	t.Run("emptied on purpose is rejected", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", ""}))
+	})
+
+	t.Run("a scale does not apply to an svg", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-scale", "2"}))
+	})
+
+	t.Run("a bundle needs an svg to go in", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "png", "--mermaid-bundle"}))
+	})
+
+	// Switching a bundle off is not asking for one. Read as "the flag was
+	// mentioned" rather than as its value, mermaid-bundle = false left beside
+	// the default PNG output failed a run that had asked for nothing.
+	t.Run("but switching one off asks for nothing", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "png", "--mermaid-bundle=false"}))
+	})
+
+	t.Run("and a bundle in an svg is the point", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-bundle"}))
+	})
 }
