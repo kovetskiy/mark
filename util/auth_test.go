@@ -108,6 +108,30 @@ func TestGetCredentialsPasswordFromStdin(t *testing.T) {
 	assert.Equal(t, "token-from-stdin", creds.Password)
 }
 
+// TestGetCredentialsRejectsAnEmptyPasswordOnStdin covers "-p -" with nothing
+// piped in, which is what a shell substitution that produced nothing looks like.
+//
+// The flag names where the token is rather than carrying one, so an empty
+// standard input means no token was given -- the same as passing none, and
+// worth the same error. Sent as an empty password instead, it comes back from
+// Confluence as a 401: the report for a credential that is wrong, not for one
+// that was never there.
+func TestGetCredentialsRejectsAnEmptyPasswordOnStdin(t *testing.T) {
+	read, write, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, write.Close())
+
+	original := os.Stdin
+	os.Stdin = read
+
+	defer func() { os.Stdin = original }()
+
+	_, err = GetCredentials("user", "-", "", "https://confluence.example.com", false)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "-p")
+}
+
 // TestGetCredentialsRejectsAnUnparseableURL covers the target URL that is not
 // one at all, which is worth an error naming the value rather than a request to
 // an empty host.
