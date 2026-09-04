@@ -66,3 +66,32 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
 	require.NoError(t, Run(mermaidFixture(t)))
 }
+
+// TestMermaidScaleIsRefusedWhereItWouldHaveScaled covers a scale carried over
+// from a PNG setup. Nothing multiplies the pixels of an SVG, so the run would
+// publish diagrams at a size nobody asked for -- the original size -- and say
+// nothing about the setting it passed over.
+func TestMermaidScaleIsRefusedWhereItWouldHaveScaled(t *testing.T) {
+	config := mermaidFixture(t)
+	config.MermaidOutput = "svg"
+	config.MermaidScale = 2
+
+	err := Run(config)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "MermaidScale")
+}
+
+// TestMermaidScaleThatScalesNothingIsLeftAlone is the boundary, and the reason
+// the check is not the command line's. A Config field cannot say whether
+// anybody set it, and the CLI fills this one in with 1.0 on every run: refusing
+// that would refuse every SVG run mark makes of its own.
+func TestMermaidScaleThatScalesNothingIsLeftAlone(t *testing.T) {
+	for _, scale := range []float64{0, 1} {
+		config := mermaidFixture(t)
+		config.MermaidOutput = "svg"
+		config.MermaidScale = scale
+
+		assert.NoError(t, Run(config), "a scale of %v scales nothing", scale)
+	}
+}

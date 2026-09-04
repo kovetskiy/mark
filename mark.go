@@ -200,6 +200,21 @@ func run(ctx context.Context, config Config) error {
 		)
 	}
 
+	// A scale is refused here only where it would have done something. The
+	// command line refuses any scale set beside an SVG, because IsSet tells a
+	// value somebody chose from the default every run carries -- a Config field
+	// cannot say that, and the CLI fills this one in with 1.0 whether or not
+	// anybody asked for it. Zero is the field nobody set and one scales
+	// nothing, so neither is worth failing a run over; a 2 carried over from a
+	// PNG setup is a scaling that silently would not happen.
+	if config.MermaidOutput == "svg" && config.MermaidScale != 0 && config.MermaidScale != 1 {
+		return fmt.Errorf(
+			"MermaidScale %v does not apply to MermaidOutput \"svg\": "+
+				"an SVG is the same drawing at every size",
+			config.MermaidScale,
+		)
+	}
+
 	if config.CheckLinksWarnOnly && len(config.CheckLinks) == 0 {
 		return fmt.Errorf(
 			"--check-links-warn-only requires --check-links: " +
