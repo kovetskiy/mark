@@ -441,8 +441,13 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		}
 	}
 
+	// Asked of IsSet as well as of the value, because a flag carrying a default
+	// is never empty unless somebody emptied it: mermaid-output = "" in the
+	// configuration file, or MARK_MERMAID_OUTPUT exported with nothing in it,
+	// would otherwise skip the check below and quietly publish a PNG. A command
+	// that does not carry the flag at all has neither, and is left alone.
 	mermaidOutput := strings.TrimSpace(command.String("mermaid-output"))
-	if mermaidOutput != "" {
+	if mermaidOutput != "" || command.IsSet("mermaid-output") {
 		switch mermaidOutput {
 		case "png", "svg":
 			// ok
@@ -455,16 +460,21 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	}
 
 	// A scale that does nothing and a bundle that goes nowhere are both worth
-	// saying out loud rather than dropping: each was set on purpose, and each
-	// silently does not happen. Asked of IsSet rather than of the value, so
-	// that the defaults -- which every run carries -- contradict nothing.
+	// saying out loud rather than dropping: each was asked for on purpose, and
+	// each silently does not happen.
+	//
+	// The scale is asked of IsSet, since 1.0 is a scale like any other and
+	// there is nothing else to tell a default from a value somebody chose. The
+	// bundle is asked of its value instead, because false is exactly what a
+	// bundle nobody asked for looks like -- so mermaid-bundle = false, or
+	// --mermaid-bundle=false, contradicts a PNG in no way at all.
 	if mermaidOutput == "svg" && command.IsSet("mermaid-scale") {
 		return context, errors.New(
 			"--mermaid-scale does not apply to --mermaid-output=svg: an SVG is the same drawing at every size",
 		)
 	}
 
-	if mermaidOutput == "png" && command.IsSet("mermaid-bundle") {
+	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
 		return context, errors.New(
 			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
 		)
