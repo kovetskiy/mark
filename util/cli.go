@@ -67,9 +67,11 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	}
 	log.Logger = zerolog.New(output).With().Timestamp().Logger()
 
-	// Not cmd.String for these two: which of them a run uses depends on the
-	// source each arrived from, which the resolved values no longer carry.
-	password, passwordCommand := passwordPrecedence(cmd)
+	// Which of these two a run uses depends on the layer each was set in, and a
+	// resolved value no longer carries that -- hence the command line as well.
+	password, passwordCommand := passwordPrecedence(
+		cmd.String("password"), cmd.String("password-command"), os.Args,
+	)
 
 	creds, err := GetCredentials(
 		ctx,
