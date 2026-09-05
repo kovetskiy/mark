@@ -24,6 +24,11 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Stdlib      *stdlib.Lib
 	MarkConfig  types.MarkConfig
 	Attachments attachment.Attacher
+	// Path is the document the block was written in, which is what a local
+	// image referenced by a d2 diagram is relative to. Empty is allowed: d2
+	// reads "-" as a diagram that came from nowhere on disk, and resolves
+	// nothing local against it.
+	Path string
 }
 
 var reBlockDetails = regexp.MustCompile(
@@ -122,12 +127,13 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		MarkConfig:  cfg,
 		Attachments: attachments,
+		Path:        path,
 	}
 }
 
@@ -220,7 +226,25 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	}
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
-		attachment, err := d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		var (
+			attachment attachment.Attachment
+			err        error
+		)
+
+		if r.MarkConfig.D2Output == "svg" {
+			// "-" is what d2 calls a diagram that came from nowhere on disk,
+			// and it resolves nothing local against it -- which is the right
+			// answer for a document mark was handed rather than read.
+			path := r.Path
+			if path == "" {
+				path = "-"
+			}
+
+			attachment, err = d2.ProcessD2SVG(title, lval, path, r.MarkConfig.D2Scale)
+		} else {
+			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		}
+
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %w", line, col, err)

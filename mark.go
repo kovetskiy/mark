@@ -88,6 +88,7 @@ type Config struct {
 	MermaidScale    float64
 	MermaidOutput   string
 	MermaidBundle   bool
+	D2Output        string
 	D2Scale         float64
 	MathFormat      string
 	MathScale       float64
@@ -174,6 +175,31 @@ func run(ctx context.Context, config Config) error {
 			"--on-orphan %s requires --track-pages: "+
 				"only the page manifest knows which pages mark published",
 			onOrphan,
+		)
+	}
+
+	// The same for d2, and for the same reason: an unrecognised format falls to
+	// the renderer's PNG branch, publishing one without a word about the SVG
+	// that was asked for. An empty value is a caller that never set the field,
+	// and means the PNG mark has always published.
+	switch config.D2Output {
+	case "", "png", "svg":
+		// ok
+	default:
+		return fmt.Errorf(
+			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
+			config.D2Output,
+		)
+	}
+
+	// Zero is the field a caller never set, which for a scale is not a default
+	// but a diagram rendered at nothing. Only checked where diagrams are drawn
+	// at all, since a configuration that never turns d2 on carries the field
+	// past every code path that reads it.
+	if config.D2Scale <= 0 && slices.Contains(config.Features, "d2") {
+		return fmt.Errorf(
+			"invalid D2Scale %v: expected greater than 0 with the d2 feature enabled",
+			config.D2Scale,
 		)
 	}
 
@@ -736,6 +762,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			MermaidScale:  config.MermaidScale,
 			MermaidOutput: config.MermaidOutput,
 			MermaidBundle: config.MermaidBundle,
+			D2Output:      config.D2Output,
 			D2Scale:       config.D2Scale,
 			MathFormat:    config.MathFormat,
 			MathScale:     config.MathScale,
@@ -958,6 +985,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		MermaidScale:  config.MermaidScale,
 		MermaidOutput: config.MermaidOutput,
 		MermaidBundle: config.MermaidBundle,
+		D2Output:      config.D2Output,
 		D2Scale:       config.D2Scale,
 		MathFormat:    config.MathFormat,
 		MathScale:     config.MathScale,

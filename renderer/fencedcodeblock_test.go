@@ -31,7 +31,7 @@ func fencedCode(t *testing.T, info string) string {
 	t.Helper()
 
 	return render(t, "```"+info+"\nsample\n```\n", []renderer.NodeRenderer{
-		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}, ""),
 	})
 }
 
@@ -188,7 +188,7 @@ func TestFencedCodeBlockBraceInATitleIsKept(t *testing.T) {
 // the one sequence CDATA cannot hold.
 func TestFencedCodeBlockEscapesTheCDATATerminator(t *testing.T) {
 	actual := render(t, "```xml\n<![CDATA[x]]>\n```\n", []renderer.NodeRenderer{
-		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}, ""),
 	})
 	assertWellFormed(t, actual)
 

@@ -95,3 +95,26 @@ func TestMermaidScaleThatScalesNothingIsLeftAlone(t *testing.T) {
 		assert.NoError(t, Run(config), "a scale of %v scales nothing", scale)
 	}
 }
+
+// TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:
+// Config is a public API, so a library caller arrives with no command line to
+// have been checked, and a format the renderer does not know falls to its PNG
+// branch without a word.
+func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
+	config := mermaidFixture(t)
+	config.D2Output = "jpeg"
+
+	err := Run(config)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "D2Output")
+}
+
+// TestD2DefaultsPublishAsBefore is its control: a caller that never heard of
+// the field leaves it zero, and has always got a PNG.
+func TestD2DefaultsPublishAsBefore(t *testing.T) {
+	config := mermaidFixture(t)
+	config.D2Output = ""
+
+	require.NoError(t, Run(config))
+}

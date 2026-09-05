@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/chrome"
+	svgpkg "github.com/kovetskiy/mark/v16/svg"
 	"github.com/rs/zerolog/log"
 )
 
@@ -261,7 +260,7 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool) (attach
 		title = checkSum
 	}
 
-	width, height := extractSVGDimensions(svg)
+	width, height := svgpkg.Dimensions(svg)
 
 	return attachment.Attachment{
 		ID:        "",
@@ -270,8 +269,8 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool) (attach
 		FileBytes: []byte(svg),
 		Checksum:  checkSum,
 		Replace:   title,
-		Width:     width,
-		Height:    height,
+		Width:     svgpkg.Pixels(width),
+		Height:    svgpkg.Pixels(height),
 	}, nil
 }
 
@@ -282,88 +281,6 @@ func boolByte(b bool) byte {
 
 	return 0
 }
-
-// extractSVGDimensions reports the size of a rendered diagram in pixels, which
-// is what decides its alignment and display width on the page.
-//
-// The root element's width and height are preferred, and the viewBox is the
-// fallback for either of them -- mermaid draws a diagram wide enough to need
-// one as width="100%", which is not a number of pixels and would otherwise be
-// read as 100 of them, laying out a wide diagram as a narrow one.
-func extractSVGDimensions(svg string) (width, height string) {
-	var attrWidth, attrHeight, attrViewBox string
-
-	decoder := xml.NewDecoder(strings.NewReader(svg))
-
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			break
-		}
-
-		element, ok := token.(xml.StartElement)
-		if !ok || element.Name.Local != "svg" {
-			continue
-		}
-
-		for _, attr := range element.Attr {
-			switch attr.Name.Local {
-			case "width":
-				attrWidth = attr.Value
-			case "height":
-				attrHeight = attr.Value
-			case "viewBox":
-				attrViewBox = attr.Value
-			}
-		}
-
-		break
-	}
-
-	width = absoluteLength(attrWidth)
-	height = absoluteLength(attrHeight)
-
-	// "minX minY width height", separated by whitespace or commas.
-	if (width == "" || height == "") && attrViewBox != "" {
-		fields := strings.Fields(strings.ReplaceAll(attrViewBox, ",", " "))
-		if len(fields) == 4 {
-			if width == "" {
-				width = absoluteLength(fields[2])
-			}
-
-			if height == "" {
-				height = absoluteLength(fields[3])
-			}
-		}
-	}
-
-	return width, height
-}
-
-// absoluteLength reads a length that is a number of pixels -- bare, or written
-// with px -- and returns it rounded, or "" for anything else. A relative unit
-// (%, em, rem, vw, vh) is not a size on its own, so it is reported as unknown
-// rather than as the number in front of it.
-func absoluteLength(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-
-	if suffix := strings.TrimSuffix(value, "px"); suffix != value {
-		value = strings.TrimSpace(suffix)
-	} else if last := value[len(value)-1]; last < '0' || last > '9' {
-		return ""
-	}
-
-	pixels, err := strconv.ParseFloat(value, 64)
-	if err != nil || math.IsNaN(pixels) || math.IsInf(pixels, 0) {
-		return ""
-	}
-
-	return strconv.Itoa(int(math.Round(pixels)))
-}
-
 func Cleanup() {
 	mermaidMutex.Lock()
 	defer mermaidMutex.Unlock()

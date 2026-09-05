@@ -1266,6 +1266,17 @@ a PNG has nowhere to keep it.
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
 This will transform the d2 diagram into a png that will be attached to Confluence, similar to how mermaid-go support works.
+
+`--d2-output=svg` attaches the drawing itself instead: one file that is sharp at
+any zoom and whose text stays text, on an instance that displays an SVG
+attachment. Whatever the diagram references -- a local image beside the
+document, an icon at a URL -- is inlined into that file, the way d2's own
+`--bundle` does it, because Confluence serves the attachment from its own host
+where neither would resolve. A reference that cannot be fetched fails the run
+rather than publishing a diagram with a hole in it.
+
+`--d2-scale` applies to both: it multiplies the pixels of a PNG, and the size
+the page displays an SVG at.
 All you need is a codeblock marked as "d2".
 
 ```d2
@@ -1626,7 +1637,8 @@ GLOBAL OPTIONS:
    --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
-   --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
+   --d2-output string                       image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment). (default: "png") [$MARK_D2_OUTPUT]
+   --d2-scale float                         defines the scaling factor for d2 renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_D2_SCALE]
    --math-format string                     image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
    --math-scale float                       defines the scaling factor for PNG formula renderings; ignored when math-format is svg. (default: 2) [$MARK_MATH_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
