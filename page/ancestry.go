@@ -63,8 +63,16 @@ func cachedFolderID(space, contextID, title string) (string, bool) {
 	return id, ok
 }
 
+// resolveFolder finds the folder a title names, and may move one that an
+// earlier sync left at the space root.
+//
+// It takes dryRun because that move is a write, and it happens while the
+// ancestry is still being worked out -- long before the guard that decides
+// whether this run writes anything. A run that promises to write nothing was
+// reparenting a folder, and every page inside it with it.
 func resolveFolder(
 	api *confluence.API,
+	dryRun bool,
 	space, title, underID string,
 	anchorPageID *string,
 ) (*confluence.FolderInfo, error) {
@@ -96,6 +104,17 @@ func resolveFolder(
 			return nil, nil
 		}
 		if folder.ParentID != *anchorPageID {
+			if dryRun {
+				// Reported rather than done, and the folder is given back as it
+				// actually is: saying where it would end up is the dry run's
+				// job, and moving it there is not.
+				log.Info().Msgf(
+					"folder %q would be moved under the page named by --parents", title,
+				)
+
+				return folder, nil
+			}
+
 			if err := api.MoveContentAppend(folder.ID, *anchorPageID); err != nil {
 				return nil, fmt.Errorf("move folder %q under MARK_PARENTS page: %w", title, err)
 			}
@@ -207,7 +226,7 @@ func EnsureFolderAncestry(
 		if id, ok := cachedFolderID(space, underID, title); ok {
 			folder, err = api.GetFolderByID(id)
 		} else {
-			folder, err = resolveFolder(api, space, title, underID, anchorPageID)
+			folder, err = resolveFolder(api, dryRun, space, title, underID, anchorPageID)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
@@ -326,7 +345,7 @@ func EnsureFolderAncestry(
 				if id, ok := cachedFolderID(space, underID, title); ok {
 					folder, err = api.GetFolderByID(id)
 				} else {
-					folder, err = resolveFolder(api, space, title, underID, anchorPageID)
+					folder, err = resolveFolder(api, dryRun, space, title, underID, anchorPageID)
 				}
 				if err != nil || folder == nil {
 					return nil, fmt.Errorf(
