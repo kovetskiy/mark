@@ -86,3 +86,63 @@ func TestMermanReportsWhatIsMissingByName(t *testing.T) {
 	assert.Contains(t, err.Error(), "--mermaid-engine")
 	assert.Contains(t, err.Error(), "merman")
 }
+
+// TestVersionFloor covers the version merman reports, which is the only thing
+// separating a binary that draws what mark expects from one that draws
+// something else. An older one answers the capability probe perfectly well.
+func TestVersionFloor(t *testing.T) {
+	for _, version := range []string{"0.7.0", "0.8.0-alpha.5"} {
+		require.Error(t, checkMermanVersion(version), "%s is older than %s", version, MinimumMermanVersion)
+	}
+
+	for _, version := range []string{MinimumMermanVersion, "0.8.0-alpha.7", "0.8.0", "0.9.0", "1.0.0", "v0.8.0"} {
+		require.NoError(t, checkMermanVersion(version), "%s is new enough", version)
+	}
+
+	// Not a refusal: a version nobody can parse is more likely somebody's own
+	// build than an old release, and declining to publish over a version string
+	// would be the wrong way round.
+	assert.NoError(t, checkMermanVersion(""))
+	assert.NoError(t, checkMermanVersion("built-from-source"))
+}
+
+// TestBothEnginesDrawTheSameDiagram runs what mark actually does through each
+// engine in turn.
+//
+// The point is not that the two agree pixel for pixel -- they are different
+// implementations and will not -- but that a diagram published through either
+// is a diagram: an attachment with content, a size the page can lay out, and a
+// checksum that does not move between runs.
+//
+// Skipped where merman is not installed, which is every machine until somebody
+// installs it, and not skipped in CI, where it is.
+func TestBothEnginesDrawTheSameDiagram(t *testing.T) {
+	if _, err := lookMerman(); err != nil {
+		t.Skip("merman is not installed here")
+	}
+
+	diagram := []byte("graph TD;\n A-->B;")
+
+	for _, kind := range []string{EngineChrome, EngineMerman} {
+		t.Run(kind, func(t *testing.T) {
+			useEngine(t, kind)
+
+			png, err := ProcessMermaidLocally("both", diagram, 1.0)
+			require.NoError(t, err)
+
+			assert.NotEmpty(t, png.FileBytes)
+			assert.Equal(t, "both.png", png.Filename)
+			assertPixelSize(t, png.Width, png.Height)
+
+			again, err := ProcessMermaidLocally("both", diagram, 1.0)
+			require.NoError(t, err)
+			assert.Equal(t, png.Checksum, again.Checksum, "the same diagram is the same attachment")
+
+			svg, err := ProcessMermaidSVG("both", diagram)
+			require.NoError(t, err)
+
+			assert.True(t, hasSVGRoot(string(svg.FileBytes)))
+			assertPixelSize(t, svg.Width, svg.Height)
+		})
+	}
+}
