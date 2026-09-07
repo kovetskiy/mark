@@ -19,10 +19,18 @@ import (
 // the body out of the macro and leaking a literal </details> into the output --
 // which Confluence then rejects with "Unexpected close tag </details>".
 // Detecting the imbalance lets us rewrite such fragments tag-by-tag instead.
-func detailsBalance(raw []byte) int {
+//
+// The lowest depth reached along the way is reported with it, because the net
+// change alone cannot tell a self-contained element from a fragment that closes
+// one and opens another. "</details><details>" nets to zero and is nothing of
+// the sort: html.Parse drops the closer it has nothing to match, and the two
+// sections telescope, the second ending up empty and inside the first. A
+// fragment whose depth ever goes below where it started has closed something
+// opened before it, whatever it does afterwards.
+func detailsBalance(raw []byte) (balance, lowest int) {
 	lower := bytes.ToLower(raw)
 	if !bytes.Contains(lower, []byte("<details")) && !bytes.Contains(lower, []byte("</details")) {
-		return 0
+		return 0, 0
 	}
 
 	depth := 0
@@ -30,7 +38,7 @@ func detailsBalance(raw []byte) int {
 	for {
 		switch z.Next() {
 		case html.ErrorToken:
-			return depth
+			return depth, lowest
 		case html.StartTagToken:
 			if name, _ := z.TagName(); string(name) == "details" {
 				depth++
@@ -38,6 +46,7 @@ func detailsBalance(raw []byte) int {
 		case html.EndTagToken:
 			if name, _ := z.TagName(); string(name) == "details" {
 				depth--
+				lowest = min(lowest, depth)
 			}
 		}
 	}
