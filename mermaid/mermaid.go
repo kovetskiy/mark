@@ -37,6 +37,24 @@ var renderTimeout = 120 * time.Second
 // second attempt runs on a new one: see the crash case in renderPNG.
 const renderAttempts = 2
 
+// uncapDiagramWidth stops mermaid.js from drawing a diagram as width="100%"
+// under a max-width style, and has it state the size it actually drew instead.
+//
+// That style is a page's answer to a diagram wider than its column, and a page
+// is not where these end up: the drawing is uploaded as an attachment and shown
+// at the size mark asks for, which the cap then silently overrides. It also
+// leaves the file with no width or height of its own, so the size has to be
+// recovered from the viewBox.
+//
+// useMaxWidth is set for each kind of diagram separately -- twenty-seven of
+// them at the time of writing, and more with every mermaid release -- so the
+// list is taken from mermaid's own defaults rather than written out here, where
+// it would silently go stale.
+const uncapDiagramWidth = `mermaid.initialize(Object.assign({startOnLoad: false},
+	Object.fromEntries(Object.entries(mermaid.mermaidAPI.defaultConfig)
+		.filter(([, section]) => section && typeof section === "object" && "useMaxWidth" in section)
+		.map(([name]) => [name, {useMaxWidth: false}]))))`
+
 func getMermaidEngine() (*mermaid.RenderEngine, error) {
 	mermaidMutex.Lock()
 	defer mermaidMutex.Unlock()
@@ -55,7 +73,7 @@ func getMermaidEngine() (*mermaid.RenderEngine, error) {
 	// startup, so it deliberately carries no deadline: mermaid.go bounds loading
 	// the embedded bundle with DefaultStartupTimeout by itself, whereas a
 	// deadline here would close the browser mid-run.
-	engine, err := mermaid.NewRenderEngine(context.Background(), nil, chrome.AllocatorOptions()...)
+	engine, err := mermaid.NewRenderEngine(context.Background(), []string{uncapDiagramWidth}, chrome.AllocatorOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -223,18 +241,18 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 // ProcessMermaidSVG publishes a diagram as the SVG it was drawn as: one file at
 // every zoom, and text that stays text. MermaidScale has nothing to multiply
 // here and does not apply.
-func ProcessMermaidSVG(title string, mermaidDiagram []byte) (attachment.Attachment, error) {
-	return processMermaidSVG(title, mermaidDiagram, false)
+func ProcessMermaidSVG(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
+	return processMermaidSVG(title, mermaidDiagram, false, scale)
 }
 
 // ProcessMermaidWithBundle does the same and keeps the diagram's source inside
 // the SVG, in its <desc> element, so that what was published can be opened and
 // edited again without the document it came from.
-func ProcessMermaidWithBundle(title string, mermaidDiagram []byte) (attachment.Attachment, error) {
-	return processMermaidSVG(title, mermaidDiagram, true)
+func ProcessMermaidWithBundle(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
+	return processMermaidSVG(title, mermaidDiagram, true, scale)
 }
 
-func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool) (attachment.Attachment, error) {
+func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool, scale float64) (attachment.Attachment, error) {
 	log.Debug().Msgf("Rendering SVG (bundle=%v): %q", bundle, title)
 
 	svg, err := renderSVG(title, string(mermaidDiagram), bundle)
@@ -261,7 +279,14 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool) (attach
 		title = checkSum
 	}
 
+	// The scale multiplies the size the page shows the diagram at, not anything
+	// in the file: an SVG is the same drawing however large it is displayed,
+	// which is why the scale is no part of the checksum above.
 	width, height := extractSVGDimensions(svg)
+	if scale > 0 {
+		width *= scale
+		height *= scale
+	}
 
 	return attachment.Attachment{
 		ID:        "",
@@ -270,8 +295,8 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool) (attach
 		FileBytes: []byte(svg),
 		Checksum:  checkSum,
 		Replace:   title,
-		Width:     width,
-		Height:    height,
+		Width:     pixels(width),
+		Height:    pixels(height),
 	}, nil
 }
 
@@ -290,7 +315,7 @@ func boolByte(b bool) byte {
 // fallback for either of them -- mermaid draws a diagram wide enough to need
 // one as width="100%", which is not a number of pixels and would otherwise be
 // read as 100 of them, laying out a wide diagram as a narrow one.
-func extractSVGDimensions(svg string) (width, height string) {
+func extractSVGDimensions(svg string) (width, height float64) {
 	var attrWidth, attrHeight, attrViewBox string
 
 	decoder := xml.NewDecoder(strings.NewReader(svg))
@@ -323,15 +348,17 @@ func extractSVGDimensions(svg string) (width, height string) {
 	width = absoluteLength(attrWidth)
 	height = absoluteLength(attrHeight)
 
-	// "minX minY width height", separated by whitespace or commas.
-	if (width == "" || height == "") && attrViewBox != "" {
+	// "minX minY width height", separated by whitespace or commas. Kept as the
+	// fallback even though mermaid now states a width and a height of its own:
+	// a diagram rendered before that, or by anything else, still may not.
+	if (width == 0 || height == 0) && attrViewBox != "" {
 		fields := strings.Fields(strings.ReplaceAll(attrViewBox, ",", " "))
 		if len(fields) == 4 {
-			if width == "" {
+			if width == 0 {
 				width = absoluteLength(fields[2])
 			}
 
-			if height == "" {
+			if height == 0 {
 				height = absoluteLength(fields[3])
 			}
 		}
@@ -344,24 +371,36 @@ func extractSVGDimensions(svg string) (width, height string) {
 // with px -- and returns it rounded, or "" for anything else. A relative unit
 // (%, em, rem, vw, vh) is not a size on its own, so it is reported as unknown
 // rather than as the number in front of it.
-func absoluteLength(value string) string {
+func absoluteLength(value string) float64 {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return ""
+		return 0
 	}
 
 	if suffix := strings.TrimSuffix(value, "px"); suffix != value {
 		value = strings.TrimSpace(suffix)
 	} else if last := value[len(value)-1]; last < '0' || last > '9' {
+		return 0
+	}
+
+	length, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(length) || math.IsInf(length, 0) {
+		return 0
+	}
+
+	return length
+}
+
+// pixels renders a length as the whole number of them an attachment is measured
+// in, or "" for a length that was never known. Rounded once, after the scale
+// has been applied, since rounding before it would scale a number that had
+// already lost the fraction.
+func pixels(length float64) string {
+	if length == 0 {
 		return ""
 	}
 
-	pixels, err := strconv.ParseFloat(value, 64)
-	if err != nil || math.IsNaN(pixels) || math.IsInf(pixels, 0) {
-		return ""
-	}
-
-	return strconv.Itoa(int(math.Round(pixels)))
+	return strconv.Itoa(int(math.Round(length)))
 }
 
 func Cleanup() {

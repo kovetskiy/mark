@@ -313,13 +313,26 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 		switch {
 		case r.MarkConfig.MermaidOutput == "svg" && r.MarkConfig.MermaidBundle:
-			att, err = mermaid.ProcessMermaidWithBundle(title, lval)
+			att, err = mermaid.ProcessMermaidWithBundle(title, lval, r.MarkConfig.MermaidScale)
 
 		case r.MarkConfig.MermaidOutput == "svg":
-			att, err = mermaid.ProcessMermaidSVG(title, lval)
+			att, err = mermaid.ProcessMermaidSVG(title, lval, r.MarkConfig.MermaidScale)
+
+		case r.MarkConfig.MermaidOutput == "png", r.MarkConfig.MermaidOutput == "":
+			att, err = mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
 
 		default:
-			att, err = mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
+			// Run checks this, but CompileMarkdown takes a types.MarkConfig
+			// straight from a caller and never passes through it. Publishing a
+			// PNG for a format nobody asked for is the one answer that says
+			// nothing, so it is refused here too -- the same backstop the d2
+			// branch above keeps.
+			line, col := GetLineCol(source, node.Pos())
+
+			return ast.WalkStop, fmt.Errorf(
+				"line %d, col %d: unknown mermaid-output %q: expected png or svg",
+				line, col, r.MarkConfig.MermaidOutput,
+			)
 		}
 
 		if err != nil {

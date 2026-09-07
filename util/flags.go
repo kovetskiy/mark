@@ -225,7 +225,7 @@ var Flags = []cli.Flag{
 	&cli.FloatFlag{
 		Name:    "mermaid-scale",
 		Value:   1.0,
-		Usage:   "defines the scaling factor for mermaid PNG renderings; not accepted when mermaid-output is svg.",
+		Usage:   "defines the scaling factor for mermaid renderings: the pixels of a png, and the size the page displays an svg at.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
@@ -513,21 +513,14 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		}
 	}
 
-	// A scale that does nothing and a bundle that goes nowhere are both worth
-	// saying out loud rather than dropping: each was asked for on purpose, and
-	// each silently does not happen.
+	// A bundle that goes nowhere is worth saying out loud rather than dropping:
+	// it was asked for on purpose, and it silently does not happen. Asked of its
+	// value rather than of IsSet, because false is exactly what a bundle nobody
+	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
+	// way at all.
 	//
-	// The scale is asked of IsSet, since 1.0 is a scale like any other and
-	// there is nothing else to tell a default from a value somebody chose. The
-	// bundle is asked of its value instead, because false is exactly what a
-	// bundle nobody asked for looks like -- so mermaid-bundle = false, or
-	// --mermaid-bundle=false, contradicts a PNG in no way at all.
-	if mermaidOutput == "svg" && command.IsSet("mermaid-scale") {
-		return context, errors.New(
-			"--mermaid-scale does not apply to --mermaid-output=svg: an SVG is the same drawing at every size",
-		)
-	}
-
+	// The scale is not checked against the format any more: it applies to both,
+	// multiplying the pixels of a PNG and the size the page shows an SVG at.
 	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
 		return context, errors.New(
 			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
