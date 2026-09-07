@@ -297,6 +297,28 @@ with the same path:
 An attached link is [here](<path-to-image>)
 ```
 
+A path may be a pattern, in the same syntax `--files` uses, which uploads every
+file it matches:
+
+```markdown
+<!-- Attachment: images/*.png -->
+<!-- Attachment: media/**/*.svg -->
+```
+
+Each match is attached under the path it was found at, so a link or image in the
+page refers to it exactly as it would have without the pattern —
+`![](images/logo.png)`. A pattern is not reported as an unused attachment when
+the page does not link to all of it, since uploading a directory is the point of
+writing one.
+
+A name with no pattern characters in it is a path, exactly as before. So is one
+whose pattern matches nothing: a file really called `report[2024].pdf` still
+attaches, and a pattern that was meant to match something reports the path as
+written when nothing is there.
+
+A pattern reaches no further than a path does — the document's own directory or
+the one mark is running in — so `../../*.pem` is refused rather than swept up.
+
 **NOTE**: Be careful with `Attachment`! If your path string is a subset of
 another longer string or referenced in text, you may get undesired behavior.
 

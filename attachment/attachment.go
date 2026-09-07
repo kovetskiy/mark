@@ -15,9 +15,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
@@ -37,6 +39,12 @@ type Attachment struct {
 	Width     string
 	Height    string
 	Replace   string
+
+	// Matched marks an attachment that a pattern found rather than a document
+	// naming it outright. Somebody who wrote "images/*.png" asked for the set,
+	// so being able to say which of them the page never referred to is not
+	// worth a warning per file on every run.
+	Matched bool
 }
 
 type Attacher interface {
@@ -213,16 +221,80 @@ func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []stri
 // prepareAttachements creates an array of attachement objects based on an array of filepaths
 func prepareAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
 	attachments := []Attachment{}
+
 	for _, name := range replacements {
-		attachment, err := prepareAttachment(opener, base, name)
+		matches, matched, err := expand(base, name)
 		if err != nil {
 			return nil, err
 		}
 
-		attachments = append(attachments, attachment)
+		for _, match := range matches {
+			attachment, err := prepareAttachment(opener, base, match)
+			if err != nil {
+				return nil, err
+			}
+
+			attachment.Matched = matched
+			attachments = append(attachments, attachment)
+		}
 	}
 
 	return attachments, nil
+}
+
+// expand turns what a document declared into the files it names, and reports
+// whether a pattern did the naming.
+//
+// A name with nothing to match on is left exactly as it was, so that every
+// document that worked before this still works and still fails in the same
+// words when the file is not there. That matters beyond compatibility: a file
+// really called "report[2024].pdf" is an ordinary name, and reading it as a
+// pattern would turn a document that publishes into one that does not.
+//
+// Which is also why a pattern matching nothing falls back to the literal name.
+// The two cases cannot be told apart from the outside -- a bracket is a
+// character and a syntax at once -- so the answer that keeps working is the
+// right one, and the file that is genuinely missing is reported by the open
+// that follows, naming the path the author wrote.
+func expand(base, name string) (matches []string, matched bool, err error) {
+	if !hasPattern(name) {
+		return []string{name}, false, nil
+	}
+
+	found, err := doublestar.FilepathGlob(filepath.Join(base, name))
+	if err != nil {
+		return nil, false, fmt.Errorf("unable to expand attachment pattern %q: %w", name, err)
+	}
+
+	if len(found) == 0 {
+		return []string{name}, false, nil
+	}
+
+	// Named the way the document would name them, since that is what a link in
+	// it says and what the upload is keyed by.
+	matches = make([]string, 0, len(found))
+
+	for _, path := range found {
+		relative, err := filepath.Rel(base, path)
+		if err != nil {
+			// Outside the base, which prepareAttachment refuses by itself. Kept
+			// as it is so that it is refused by name rather than dropped here.
+			relative = path
+		}
+
+		matches = append(matches, filepath.ToSlash(relative))
+	}
+
+	// The order the files are uploaded in should not depend on how the
+	// directory happens to be laid out.
+	slices.Sort(matches)
+
+	return matches, true, nil
+}
+
+// hasPattern reports whether a declared name is a pattern rather than a path.
+func hasPattern(name string) bool {
+	return strings.ContainsAny(name, "*?[{")
 }
 
 // ErrOutsideProject reports an attachment that resolves outside the directories
@@ -451,6 +523,14 @@ func (r *Resolver) Unused(attachments []Attachment) []string {
 
 	var unused []string
 	for _, attachment := range attachments {
+		// A pattern was asked for the set, not for each file in it: "upload
+		// this directory" is a whole intention, and reporting every file the
+		// page did not happen to link to would be a warning per file, on every
+		// run, for doing what was asked.
+		if attachment.Matched {
+			continue
+		}
+
 		if !r.used[attachment.Replace] {
 			unused = append(unused, attachment.Replace)
 		}
