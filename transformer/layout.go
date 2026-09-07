@@ -35,6 +35,17 @@ func (t *LayoutTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 
 		switch n := node.(type) {
 		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *ast.String:
+			// Only where the pair can survive. A layout directive opens an
+			// element that the next directive closes, and both have to end up
+			// side by side in the output: inside a list item, a blockquote, a
+			// table cell or a paragraph, whatever contains it closes first and
+			// the page is no longer well-formed XML, which Confluence rejects
+			// whole. mark then refuses its own output with an error naming XML
+			// and never the directive, leaving the author nothing to go on.
+			if !atDocumentLevel(node) {
+				return ast.WalkContinue, nil
+			}
+
 			// Text inside an inline code span is literal: `<!-- ac:layout -->` in
 			// prose documents the directive, it does not open a layout. Rewriting
 			// it also destroyed the text outright, because the replacement Text
@@ -70,6 +81,20 @@ func (t *LayoutTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 			parent.RemoveChild(parent, item.node)
 		}
 	}
+}
+
+// atDocumentLevel reports whether a node stands on its own in the document
+// rather than inside something that will close around it.
+//
+// Nothing between it and the document, not even a paragraph: a directive with
+// prose beside it on the same line is held by one, and "text <!-- ac:layout-cell
+// --> more" would open an element that </p> closes. A directive meant to build
+// a layout stands alone on its line, which is how it becomes a block of its own
+// and how it has always had to be written for the pair to work.
+func atDocumentLevel(node ast.Node) bool {
+	parent := node.Parent()
+
+	return parent != nil && parent.Kind() == ast.KindDocument
 }
 
 func (t *LayoutTransformer) transformLayoutComments(raw []byte) ([]byte, bool) {
