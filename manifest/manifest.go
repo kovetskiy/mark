@@ -652,7 +652,26 @@ func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
 		return nil
 	}
 
-	sh.pages[path] = Entry{PageID: pageID, Title: title, Hash: hash, Glob: s.runGlob}
+	entry := Entry{PageID: pageID, Title: title, Hash: hash, Glob: s.runGlob}
+
+	// The version is carried across rather than rebuilt away. It is written by
+	// RecordVersion alone, and this rebuilds the entry from its arguments --
+	// none of which is the version -- so recording anything about a page
+	// silently forgot which version of it mark had written.
+	//
+	// What that cost is --no-overwrite: the run that finds a page edited in
+	// Confluence records the document as seen, so it is not mistaken for an
+	// orphan, and by doing so erased the very baseline it had just reported
+	// against. The next run read a zero, concluded nothing had drifted, and
+	// overwrote the edit it had refused to touch the run before.
+	//
+	// Zeroed only when the page id changes, where a version belonging to a
+	// different page would mean nothing.
+	if ok && existing.PageID == pageID {
+		entry.Version = existing.Version
+	}
+
+	sh.pages[path] = entry
 	state.byPage[pageID] = path
 	sh.dirty = true
 	return nil
