@@ -24,6 +24,11 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Stdlib      *stdlib.Lib
 	MarkConfig  types.MarkConfig
 	Attachments attachment.Attacher
+	// Path is the document the block was written in, which is what a local
+	// image referenced by a d2 diagram is relative to. Empty is allowed: d2
+	// reads "-" as a diagram that came from nowhere on disk, and resolves
+	// nothing local against it.
+	Path string
 }
 
 var reBlockDetails = regexp.MustCompile(
@@ -122,12 +127,13 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		MarkConfig:  cfg,
 		Attachments: attachments,
+		Path:        path,
 	}
 }
 
@@ -220,7 +226,38 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	}
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
-		attachment, err := d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+		var (
+			attachment attachment.Attachment
+			err        error
+		)
+
+		switch r.MarkConfig.D2Output {
+		case "svg":
+			// The document's own path, empty and all: a diagram that came from
+			// nowhere on disk has nothing for a relative reference to be
+			// relative to, and d2 resolves one against the working directory
+			// rather than refusing it. ProcessD2SVG reads an empty path and
+			// d2's own "-" alike, so neither reaches the bundler.
+			attachment, err = d2.ProcessD2SVG(
+				title, lval, r.Path, r.MarkConfig.D2Scale, r.MarkConfig.D2BundleRemote,
+			)
+
+		case "png", "":
+			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+
+		default:
+			// Run checks this, but CompileMarkdown takes a types.MarkConfig
+			// straight from a caller and never passes through it. Publishing a
+			// PNG for a format nobody asked for is the one answer that says
+			// nothing, so it is refused here too.
+			line, col := GetLineCol(source, node.Pos())
+
+			return ast.WalkStop, fmt.Errorf(
+				"line %d, col %d: unknown d2-output %q: expected png or svg",
+				line, col, r.MarkConfig.D2Output,
+			)
+		}
+
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %w", line, col, err)
