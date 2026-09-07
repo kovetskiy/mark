@@ -1663,7 +1663,7 @@ GLOBAL OPTIONS:
    --parents string                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string                     The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
    --content-appearance string                    default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default. [$MARK_CONTENT_APPEARANCE]
-   --mermaid-scale float                          defines the scaling factor for mermaid PNG renderings; not accepted when mermaid-output is svg. (default: 1) [$MARK_MERMAID_SCALE]
+   --mermaid-scale float                          defines the scaling factor for mermaid renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_MERMAID_SCALE]
    --mermaid-output string                        image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MERMAID_OUTPUT]
    --mermaid-bundle                               keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg. [$MARK_MERMAID_BUNDLE]
    --math-format string                           image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]

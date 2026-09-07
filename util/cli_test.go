@@ -156,8 +156,10 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", " svg "}))
 	})
 
-	t.Run("a scale does not apply to an svg", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-scale", "2"}))
+	// The scale applies to both formats now: it multiplies the pixels of a PNG
+	// and the size the page shows an SVG at.
+	t.Run("a scale applies to an svg too", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-scale", "2"}))
 	})
 
 	t.Run("a bundle needs an svg to go in", func(t *testing.T) {
