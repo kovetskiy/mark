@@ -12,8 +12,6 @@ on:
 
 env:
   GO_VERSION: "1.27.0"
-  # The oldest merman mark draws with, and so the one its tests run against.
-  MERMAN_VERSION: "0.8.0-alpha.6"
 
 # Least privilege by default. No job in this workflow writes to the repository;
 # the Docker Hub push authenticates with its own secrets, not GITHUB_TOKEN.
@@ -67,6 +65,9 @@ jobs:
     - name: Install merman
       run: |
         set -eux
+        # The version mark requires, read from the file the binary embeds, so
+        # that the runner cannot test against a merman the code would refuse.
+        MERMAN_VERSION="$(cat mermaid/merman-version.txt)"
         base="https://github.com/Latias94/merman/releases/download/v${MERMAN_VERSION}"
         archive="merman-cli-x86_64-unknown-linux-gnu.tar.xz"
         curl -fsSL -o "$archive" "$base/$archive"

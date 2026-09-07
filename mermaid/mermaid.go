@@ -3,6 +3,7 @@ package mermaid
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
@@ -164,14 +165,24 @@ func getMermaidEngine() (mermaid.Renderer, error) {
 // The binary is looked for and asked what it is while the engine is being
 // built, so a merman that is missing or too old is reported here -- naming the
 // setting that asked for it -- rather than as a diagram that would not draw.
+//
+//go:embed merman-version.txt
+var minimumMermanVersion string
+
 // MinimumMermanVersion is the oldest merman mark will draw with.
 //
-// 0.8.0-alpha.6 is where merman's operations were unified across its bindings,
-// which its own notes call a deliberately breaking change. An older binary
-// answers the capability probe and then draws differently, which is the failure
-// worth catching early: a diagram that is wrong is harder to notice than one
-// that does not appear.
-const MinimumMermanVersion = "0.8.0-alpha.6"
+// There is a floor at all because merman has changed how its operations work
+// across a release boundary, and a binary from before that answers the
+// capability probe perfectly well and then lays diagrams out differently. That
+// is the failure worth catching early: a diagram that is wrong is harder to
+// notice than one that does not appear.
+//
+// Read from merman-version.txt, which the Dockerfile and the CI workflow read
+// too, so that raising it is one edit. One version written down three times is
+// one that will be updated twice -- the image would install a merman the code
+// then refuses, and the failure would be a published diagram rather than a
+// build that stopped.
+var MinimumMermanVersion = strings.TrimSpace(minimumMermanVersion)
 
 // checkMermanVersion refuses a binary older than mark can rely on.
 //

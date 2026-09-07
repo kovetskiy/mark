@@ -1338,7 +1338,7 @@ a PNG has nowhere to keep it.
 Diagrams are drawn by a headless browser running mermaid.js, which is what
 mermaid.js is built for and what mark has always done.
 
-`--mermaid-engine=merman` draws them with [merman](https://github.com/dreampuf/merman)
+`--mermaid-engine=merman` draws them with [merman](https://github.com/Latias94/merman)
 instead, a native implementation that needs no browser -- useful where starting
 Chrome is awkward or slow, such as a minimal CI image. It is installed
 separately, and mark reports it by name if it is missing.
@@ -1348,11 +1348,15 @@ diagram may come out differently, or not at all, and which diagrams those are is
 not written down anywhere. mark says so once per run when it is selected. The
 default is unchanged.
 
-merman `0.8.0-alpha.6` or later is required, and an older binary is refused by
-name rather than left to draw something else: that release changed how merman's
-operations work, and a version before it answers for itself perfectly well and
-then draws differently. The published Docker image carries it on `amd64`, which
-is where merman publishes a Linux build; an `arm64` image draws with Chrome.
+A minimum merman version is required, and an older binary is refused by name
+rather than left to draw something else: merman changed how its operations work
+across a release, and a version from before that answers for itself perfectly
+well and then draws differently. The version is in `mermaid/merman-version.txt`,
+which mark embeds and which the Dockerfile and CI both read, so it is written
+down once.
+
+The published Docker image carries merman on `amd64`, which is where it
+publishes a Linux build; an `arm64` image draws with Chrome.
 
 ### Render D2 Diagram
 
@@ -1732,6 +1736,7 @@ GLOBAL OPTIONS:
    --parents-delimiter string                     The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
    --content-appearance string                    default content appearance for pages without a Content-Appearance header. Possible values: full-width, fixed, default. [$MARK_CONTENT_APPEARANCE]
    --mermaid-scale float                          defines the scaling factor for mermaid renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_MERMAID_SCALE]
+   --mermaid-engine string                        what mermaid diagrams are drawn by: chrome (the default, a headless browser running mermaid.js) or merman (experimental, a native reimplementation that needs no browser and must be installed separately). (default: "chrome") [$MARK_MERMAID_ENGINE]
    --mermaid-output string                        image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MERMAID_OUTPUT]
    --mermaid-bundle                               keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg. [$MARK_MERMAID_BUNDLE]
    --math-format string                           image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
