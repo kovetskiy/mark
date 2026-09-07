@@ -124,3 +124,36 @@ func TestNoOverwriteRequiresTrackPages(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--track-pages")
 }
+
+// TestNoOverwriteSurvivesTheRunThatReportsIt covers the run after the warning,
+// which is where the protection used to end.
+//
+// Reporting drift records the document as seen, so it is not mistaken for an
+// orphan and deleted -- and recording it rebuilt the entry without the version,
+// erasing the very baseline just reported against. The next run read a zero,
+// concluded nothing had drifted, and overwrote the edit it had refused to touch
+// the run before.
+//
+// The file has to change between the runs: an unchanged one takes an early
+// return that never records, which is why the existing tests never saw this.
+func TestNoOverwriteSurvivesTheRunThatReportsIt(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	// The run that reports the drift, with the document edited too.
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nSecond version.\n")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the page must be left alone on the run that reports it")
+
+	// And the run after that, which had the baseline it needed taken away.
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nThird version.\n")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the hand-written page must still be there")
+}
