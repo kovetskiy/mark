@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -259,4 +260,64 @@ func TestCheckLinksWarnOnlyRequiresCheckLinks(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--check-links")
+}
+
+// TestCheckLinksWarnOnlyIsAnnotated covers what --check-links-warn-only is for
+// in CI: told about a link that does not resolve, without the run failing.
+//
+// The warning has to reach the report and not only the log. A line in the build
+// output is one nobody scrolls to; an annotation appears against the file in the
+// pull request, which is where somebody is already looking.
+func TestCheckLinksWarnOnlyIsAnnotated(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "guide"), 0o755))
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [guide](guide).\n")
+
+	var out bytes.Buffer
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files:              filepath.Join(dir, "doc.md"),
+		CheckLinks:         []string{"internal"},
+		CheckLinksWarnOnly: true,
+		OutputFormat:       "github",
+		Output:             &out,
+	})
+	require.NoError(t, err, "warn-only must not fail the run")
+
+	assert.Contains(t, out.String(), "::notice", "the document still published")
+	assert.Contains(t, out.String(), "::warning", "and the link is still worth saying")
+	assert.Contains(t, out.String(), "it is a directory, not a document")
+}
+
+// TestCheckLinksFailureIsAnnotatedAsAnError is the other half, and the reason
+// the two are told apart: without warn-only the run fails, and the annotation
+// says so rather than being a warning beside a page that never published.
+func TestCheckLinksFailureIsAnnotatedAsAnError(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
+
+	var out bytes.Buffer
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files:        filepath.Join(dir, "doc.md"),
+		CheckLinks:   []string{"internal"},
+		OutputFormat: "github",
+		Output:       &out,
+	})
+	require.Error(t, err)
+
+	assert.Contains(t, out.String(), "::error")
+	assert.NotContains(t, out.String(), "::warning")
 }

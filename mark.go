@@ -976,7 +976,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
-	if err := reportBrokenLinks(resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
+	// Kept for the report as well as the log. Reaching this line with any of
+	// them means the run was told to warn rather than fail, since otherwise
+	// reportBrokenLinks has already ended it.
+	brokenLinks := resolver.Broken()
+	if err := reportBrokenLinks(brokenLinks, file, config.CheckLinksWarnOnly); err != nil {
 		return nil, nil, err
 	}
 
@@ -1087,6 +1091,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		File: file, Status: status,
 		Space: spaceOf(meta), Title: target.Title,
 		PageID: target.ID, URL: api.BaseURL + target.Links.Full,
+		Warnings: brokenLinks,
 	})
 
 	if shouldUpdatePage {

@@ -1177,6 +1177,18 @@ Pages still publish exactly as they would have. It is a separate flag from
 the run at the end: use `--check-links-warn-only` to not fail at all, and
 `--continue-on-error` to attempt every file before failing.
 
+With `--output-format github` each warning is annotated against the file and the
+line-less document it came from, so it appears in the pull request rather than
+only in the build log:
+
+```console
+::notice file=docs/doc.md::published "Doc" to https://confluence.example.com/display/DOCS/1003
+::warning file=docs/doc.md::link "guide" does not resolve: it is a directory, not a document
+```
+
+Without the flag the same link fails the run and is annotated as an `::error`
+instead.
+
 ### Upload and included inline images
 
 ```markdown
