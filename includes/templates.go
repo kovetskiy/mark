@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
@@ -135,6 +136,37 @@ func resolveTemplatePath(base, includePath, path string) string {
 	return absolute(candidate)
 }
 
+// allowedTemplatePath reports whether a document may include the file it named.
+//
+// The document's own directory, or the one mark is running in -- which for a
+// run at the root of a repository is the repository -- and --include-path
+// besides. That directory is a permitted root because the operator chose it and
+// the document did not: it is the one place a document is invited to reach that
+// is not its own.
+func allowedTemplatePath(base, includePath, resolved string) error {
+	err := attachment.CheckReadable(base, resolved)
+	if err == nil {
+		return nil
+	}
+
+	if includePath != "" && attachment.CheckReadable(includePath, resolved) == nil {
+		return nil
+	}
+
+	// Reported in the words of what was asked for. The check is the one
+	// attachments use and says so in its own message, which names an attachment
+	// nobody wrote: what this document wrote was an include.
+	where := fmt.Sprintf("%q", base)
+	if includePath != "" {
+		where = fmt.Sprintf("%q, %q", base, includePath)
+	}
+
+	return fmt.Errorf(
+		"%w: %s is outside %s and the directory mark is running in, so it is not this document's to include",
+		attachment.ErrOutsideProject, resolved, where,
+	)
+}
+
 // absolute makes a path the key of exactly one file, whatever directory the
 // run was started from. A path that cannot be made absolute is returned as it
 // was: it is still a better key than the bare name, and the read that follows
@@ -183,6 +215,14 @@ func LoadTemplate(
 
 	if template := templates.Lookup(cacheName); template != nil {
 		return template, nil
+	}
+
+	// Held to the boundary an attachment is held to, and for the same reason.
+	// A directive names a file and the file becomes page content, so
+	// "../../../../etc/hostname" publishes it -- while the same path written as
+	// an image is refused, which is the asymmetry rather than the decision.
+	if err := allowedTemplatePath(base, includePath, resolved); err != nil {
+		return nil, err
 	}
 
 	body, err := os.ReadFile(resolved)

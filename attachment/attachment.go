@@ -227,7 +227,9 @@ func prepareAttachments(opener vfs.Opener, base string, replacements []string) (
 
 // ErrOutsideProject reports an attachment that resolves outside the directories
 // mark is publishing from.
-var ErrOutsideProject = errors.New("attachment is outside the project")
+// Named for the boundary rather than for attachments: an include is held to it
+// too, and a file a document may not read is a file a document may not read.
+var ErrOutsideProject = errors.New("outside the project")
 
 // checkAttachmentPath refuses an attachment that resolves outside both the
 // document's own directory and the directory mark is running in.
