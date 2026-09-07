@@ -18,6 +18,7 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/mod/semver"
 )
 
 // The engines a diagram can be drawn by.
@@ -163,6 +164,45 @@ func getMermaidEngine() (mermaid.Renderer, error) {
 // The binary is looked for and asked what it is while the engine is being
 // built, so a merman that is missing or too old is reported here -- naming the
 // setting that asked for it -- rather than as a diagram that would not draw.
+// MinimumMermanVersion is the oldest merman mark will draw with.
+//
+// 0.8.0-alpha.6 is where merman's operations were unified across its bindings,
+// which its own notes call a deliberately breaking change. An older binary
+// answers the capability probe and then draws differently, which is the failure
+// worth catching early: a diagram that is wrong is harder to notice than one
+// that does not appear.
+const MinimumMermanVersion = "0.8.0-alpha.6"
+
+// checkMermanVersion refuses a binary older than mark can rely on.
+//
+// A version merman reports in a shape semver cannot read is let through with a
+// word rather than refused: it is more likely a build of its own than an old
+// release, and refusing to publish over a version string nobody can parse would
+// be the wrong way round.
+func checkMermanVersion(version string) error {
+	if version == "" {
+		log.Warn().Msg("merman did not say which version it is; drawing with it anyway")
+
+		return nil
+	}
+
+	reported := "v" + strings.TrimPrefix(version, "v")
+	if !semver.IsValid(reported) {
+		log.Warn().Msgf("merman reports version %q, which is not a version mark can compare; drawing with it anyway", version)
+
+		return nil
+	}
+
+	if semver.Compare(reported, "v"+MinimumMermanVersion) < 0 {
+		return fmt.Errorf(
+			"merman %s is older than %s, which is the oldest mark draws with; upgrade it or use --mermaid-engine=chrome",
+			version, MinimumMermanVersion,
+		)
+	}
+
+	return nil
+}
+
 func startMerman() (mermaid.Renderer, error) {
 	log.Debug().Msg("Setting up global Mermaid renderer (merman)")
 
@@ -172,6 +212,14 @@ func startMerman() (mermaid.Renderer, error) {
 			"unable to start the merman render engine asked for by --mermaid-engine: %w", err,
 		)
 	}
+
+	if err := checkMermanVersion(engine.Version()); err != nil {
+		engine.Cancel()
+
+		return nil, err
+	}
+
+	log.Debug().Msgf("merman %s, drawing mermaid %s", engine.Version(), engine.MermaidVersion())
 
 	engine.SetRenderTimeout(renderTimeout)
 
@@ -496,8 +544,20 @@ func Cleanup() {
 	}
 }
 
-// lookMerman reports whether the merman binary can be found, which is what
-// decides whether a test has anything to say about it missing.
+// lookMerman finds the merman binary, under either name the library accepts:
+// merman-cli is what its releases are called, and merman is what a locally
+// built or renamed copy often is.
 func lookMerman() (string, error) {
-	return exec.LookPath("merman")
+	var err error
+
+	for _, name := range mermaid.MermanBinaries {
+		path, lookErr := exec.LookPath(name)
+		if lookErr == nil {
+			return path, nil
+		}
+
+		err = lookErr
+	}
+
+	return "", err
 }

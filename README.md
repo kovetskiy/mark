@@ -1333,6 +1333,27 @@ is refused rather than quietly ignored.
 attachment without the document it came from. It needs `--mermaid-output=svg`:
 a PNG has nowhere to keep it.
 
+#### Drawing without a browser
+
+Diagrams are drawn by a headless browser running mermaid.js, which is what
+mermaid.js is built for and what mark has always done.
+
+`--mermaid-engine=merman` draws them with [merman](https://github.com/dreampuf/merman)
+instead, a native implementation that needs no browser -- useful where starting
+Chrome is awkward or slow, such as a minimal CI image. It is installed
+separately, and mark reports it by name if it is missing.
+
+**Experimental.** merman is a reimplementation rather than mermaid.js, so a
+diagram may come out differently, or not at all, and which diagrams those are is
+not written down anywhere. mark says so once per run when it is selected. The
+default is unchanged.
+
+merman `0.8.0-alpha.6` or later is required, and an older binary is refused by
+name rather than left to draw something else: that release changed how merman's
+operations work, and a version before it answers for itself perfectly well and
+then draws differently. The published Docker image carries it on `amd64`, which
+is where merman publishes a Linux build; an `arm64` image draws with Chrome.
+
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
