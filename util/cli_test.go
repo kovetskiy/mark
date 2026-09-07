@@ -15,6 +15,8 @@ func runWithArgs(args []string) error {
 			&cli.BoolFlag{Name: "title-from-h1"},
 			&cli.BoolFlag{Name: "title-from-filename"},
 			&cli.StringFlag{Name: "content-appearance"},
+			&cli.StringFlag{Name: "d2-output", Value: "png"},
+			&cli.FloatFlag{Name: "d2-scale", Value: 1.0},
 			&cli.StringFlag{Name: "mermaid-output", Value: "png"},
 			&cli.BoolFlag{Name: "mermaid-bundle"},
 			&cli.FloatFlag{Name: "mermaid-scale", Value: 1.0},
@@ -172,4 +174,48 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 	t.Run("and a bundle in an svg is the point", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-bundle"}))
 	})
+}
+
+// TestD2OutputFlagValidation covers the format a d2 diagram is published as.
+// The renderer knows two, and anything else falls to its PNG branch: a diagram
+// published as the wrong thing, with nothing said about the SVG that was asked
+// for.
+func TestD2OutputFlagValidation(t *testing.T) {
+	t.Run("png is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--d2-output", "png"}))
+	})
+
+	t.Run("svg is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--d2-output", "svg"}))
+	})
+
+	t.Run("anything else is rejected", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", "jpeg"}))
+	})
+
+	t.Run("emptied on purpose is rejected", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", ""}))
+	})
+
+	// The value goes into the configuration whole and the renderer compares it
+	// literally, so what is checked has to be what is used.
+	t.Run("a padded value is not the value it is padding", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", " svg "}))
+	})
+}
+
+// TestD2ScaleFlagValidation covers the numbers that are not a scale. Zero
+// renders nothing and a negative one renders nonsense; NaN and an infinity are
+// worse, because a check written as "not <= 0" lets them both through and they
+// reach Chrome as a screenshot scale it cannot use.
+func TestD2ScaleFlagValidation(t *testing.T) {
+	t.Run("a positive scale is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--d2-scale", "2"}))
+	})
+
+	for _, scale := range []string{"0", "-1", "NaN", "Inf", "+Inf"} {
+		t.Run(scale+" is rejected", func(t *testing.T) {
+			assert.Error(t, runWithArgs([]string{"cmd", "--d2-scale", scale}))
+		})
+	}
 }

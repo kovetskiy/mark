@@ -2,6 +2,7 @@ package mark
 
 import (
 	"io"
+	"math"
 	"path/filepath"
 	"testing"
 
@@ -94,4 +95,53 @@ func TestMermaidScaleThatScalesNothingIsLeftAlone(t *testing.T) {
 
 		assert.NoError(t, Run(config), "a scale of %v scales nothing", scale)
 	}
+}
+
+// TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:
+// Config is a public API, so a library caller arrives with no command line to
+// have been checked, and a format the renderer does not know falls to its PNG
+// branch without a word.
+func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
+	config := mermaidFixture(t)
+	config.D2Output = "jpeg"
+
+	err := Run(config)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "D2Output")
+}
+
+// TestD2DefaultsPublishAsBefore is its control: a caller that never heard of
+// the field leaves it zero, and has always got a PNG.
+func TestD2DefaultsPublishAsBefore(t *testing.T) {
+	config := mermaidFixture(t)
+	config.D2Output = ""
+
+	require.NoError(t, Run(config))
+}
+
+// TestD2ScaleRejectsWhatIsNotAScale covers the public API for the same numbers.
+// NaN fails every comparison it is given, so a check phrased as "not <= 0" lets
+// it through; an infinity passes one outright. Both then multiply a diagram's
+// size into something that is not a number of pixels.
+func TestD2ScaleRejectsWhatIsNotAScale(t *testing.T) {
+	for _, scale := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		config := mermaidFixture(t)
+		config.Features = []string{"d2"}
+		config.D2Scale = scale
+
+		err := Run(config)
+		require.Error(t, err, "a scale of %v is not one", scale)
+		assert.Contains(t, err.Error(), "D2Scale")
+	}
+}
+
+// TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn is the boundary: a run that
+// never turns d2 on carries the field past every path that reads it, so the
+// zero value of a caller who never heard of it is not an error.
+func TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn(t *testing.T) {
+	config := mermaidFixture(t)
+	config.D2Scale = 0
+
+	require.NoError(t, Run(config))
 }

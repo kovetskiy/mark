@@ -246,8 +246,37 @@ var ErrOutsideProject = errors.New("attachment is outside the project")
 // repository is as good as a path for reaching outside it -- and since the
 // roots have to be resolved too, or a repository reached through a symlinked
 // path would put every file in it outside itself.
+// CheckReadable reports whether a file a document points at may be read for it,
+// by the boundary an attachment is held to: the document's own directory or the
+// one mark is running in, with both sides resolved through their symlinks.
+//
+// Exported for the diagram renderers, which reach files the same way a document
+// does -- a d2 diagram naming an icon beside itself -- and should not each grow
+// their own idea of how far out of a repository a name may reach.
+//
+// An absolute reference is judged as itself rather than joined to the base,
+// because that is how whatever reads it will read it. Joining one instead
+// buries it under the directory it was supposed to be compared against --
+// "/etc/id_rsa" becomes "<base>/etc/id_rsa", which is inside the project and
+// does not exist, so the check passes and the read still happens somewhere
+// else entirely.
+func CheckReadable(base, reference string) error {
+	path := reference
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(base, path)
+	}
+
+	return checkPath(base, path, reference)
+}
+
 func checkAttachmentPath(base, name string) error {
-	path := resolveDeepest(filepath.Join(base, name))
+	return checkPath(base, filepath.Join(base, name), name)
+}
+
+// checkPath holds a resolved path to the project boundary. named is what the
+// document actually wrote, which is what the reader has to go and look at.
+func checkPath(base, resolved, named string) error {
+	path := resolveDeepest(resolved)
 
 	roots := []string{resolveDeepest(base)}
 	if cwd, err := os.Getwd(); err == nil {
@@ -264,7 +293,7 @@ func checkAttachmentPath(base, name string) error {
 	return fmt.Errorf(
 		"%w: %q resolves to %s, which is outside both %q and the directory mark is "+
 			"running in; publish from a directory that contains it",
-		ErrOutsideProject, name, path, base,
+		ErrOutsideProject, named, path, base,
 	)
 }
 

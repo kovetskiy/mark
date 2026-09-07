@@ -1296,6 +1296,27 @@ All you need is a codeblock marked as "d2".
 X -> Y
 ```
 
+`--d2-output=svg` attaches the drawing itself instead: one file that is sharp at
+any zoom and whose text stays text, on an instance that displays an SVG
+attachment. `--d2-scale` applies to either -- it multiplies the pixels of a PNG,
+and the size the page displays an SVG at.
+
+An image the diagram references is inlined into the SVG, the way d2's own
+`--bundle` does it, because Confluence serves the attachment from its own host
+where a path relative to the document resolves to nothing. A reference that
+cannot be read fails the run rather than publishing a diagram with a hole in it.
+
+Because the file carries what it points at, what it may point at is limited:
+
+* A **file** must be inside the diagram's own directory or the one mark is
+  running in, the same boundary an attachment is held to. One elsewhere is
+  refused, so a diagram naming `/etc/id_rsa` cannot publish it.
+* A **URL** is not fetched unless `--d2-bundle-remote` says so. The request is
+  made by the document rather than by you, to any address it names -- a loopback
+  or cloud metadata one included -- and the answer is published inside the
+  drawing. Set it for documents whose diagrams you trust; without it a remote
+  image stays a URL, which Confluence will not resolve.
+
 ### Render PlantUML Diagrams
 
 Optionally you can enable [PlantUML](https://plantuml.com/) diagram rendering via `--features="plantuml"`.
@@ -1650,7 +1671,9 @@ GLOBAL OPTIONS:
    --no-overwrite                           Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                            Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --preserve-comments                      Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
-   --d2-scale float                         defines the scaling factor for d2 renderings. (default: 1) [$MARK_D2_SCALE]
+   --d2-output string                       image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment). (default: "png") [$MARK_D2_OUTPUT]
+   --d2-bundle-remote                       let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default: the request is made by the document rather than by you, to any address it likes. [$MARK_D2_BUNDLE_REMOTE]
+   --d2-scale float                         defines the scaling factor for d2 renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_D2_SCALE]
    --math-format string                     image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
    --math-scale float                       defines the scaling factor for PNG formula renderings; ignored when math-format is svg. (default: 2) [$MARK_MATH_SCALE]
    --features string [ --features string ]  Enables optional features. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
