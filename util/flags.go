@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kovetskiy/mark/v16/mermaid"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -227,6 +228,13 @@ var Flags = []cli.Flag{
 		Value:   1.0,
 		Usage:   "defines the scaling factor for mermaid renderings: the pixels of a png, and the size the page displays an svg at.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_SCALE"), altsrctoml.TOML("mermaid-scale", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:  "mermaid-engine",
+		Value: "chrome",
+		Usage: "what mermaid diagrams are drawn by: chrome (the default, a headless browser running mermaid.js) or merman (experimental, a native reimplementation that needs no browser and must be installed separately).",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_ENGINE"),
+			altsrctoml.TOML("mermaid-engine", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
 		Name:    "mermaid-output",
@@ -532,6 +540,21 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		return context, errors.New(
 			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
 		)
+	}
+
+	// Checked as written, and asked of IsSet as well, so that a value somebody
+	// emptied is not read as one nobody set.
+	mermaidEngine := command.String("mermaid-engine")
+	if mermaidEngine != "" || command.IsSet("mermaid-engine") {
+		switch mermaidEngine {
+		case mermaid.EngineChrome, mermaid.EngineMerman:
+			// ok
+		default:
+			return context, fmt.Errorf(
+				"invalid value for --mermaid-engine: %q (expected: %s or %s)",
+				mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
+			)
+		}
 	}
 
 	mathFormat := strings.TrimSpace(command.String("math-format"))
