@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,10 +20,63 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// The engines a diagram can be drawn by.
+const (
+	// EngineChrome renders in a headless browser, which is what mark has always
+	// done and what mermaid.js itself is built for.
+	EngineChrome = "chrome"
+
+	// EngineMerman shells out to the merman CLI, which lays a diagram out
+	// natively and needs no browser at all. Experimental: it is a reimplementation
+	// rather than mermaid.js, so a diagram may come out differently or not at
+	// all, and the ones it cannot draw are not the ones anybody has written down.
+	EngineMerman = "merman"
+)
+
 var (
-	mermaidEngine *mermaid.RenderEngine
+	mermaidEngine mermaid.Renderer
+	mermaidKind   = EngineChrome
 	mermaidMutex  sync.Mutex
 )
+
+// UseEngine chooses what diagrams are drawn by, for the rest of the run.
+//
+// Set once, before anything is published, because the engine is built lazily
+// and shared: a diagram already drawn is not drawn again to match. Changing it
+// closes whatever was open, so that a run cannot end up with two.
+func UseEngine(kind string) error {
+	switch kind {
+	case "", EngineChrome:
+		kind = EngineChrome
+
+	case EngineMerman:
+		log.Warn().Msg(
+			"the merman render engine is experimental: it is not mermaid.js, " +
+				"so a diagram may be drawn differently or not at all",
+		)
+
+	default:
+		return fmt.Errorf(
+			"unknown mermaid engine %q: expected %q or %q", kind, EngineChrome, EngineMerman,
+		)
+	}
+
+	mermaidMutex.Lock()
+	defer mermaidMutex.Unlock()
+
+	if mermaidKind == kind {
+		return nil
+	}
+
+	if mermaidEngine != nil {
+		mermaidEngine.Cancel()
+		mermaidEngine = nil
+	}
+
+	mermaidKind = kind
+
+	return nil
+}
 
 // renderTimeout bounds a single diagram: the wait for any render already
 // occupying the engine's one page, plus the render itself.
@@ -55,12 +109,16 @@ const uncapDiagramWidth = `mermaid.initialize(Object.assign({startOnLoad: false}
 		.filter(([, section]) => section && typeof section === "object" && "useMaxWidth" in section)
 		.map(([name]) => [name, {useMaxWidth: false}]))))`
 
-func getMermaidEngine() (*mermaid.RenderEngine, error) {
+func getMermaidEngine() (mermaid.Renderer, error) {
 	mermaidMutex.Lock()
 	defer mermaidMutex.Unlock()
 
 	if mermaidEngine != nil {
 		return mermaidEngine, nil
+	}
+
+	if mermaidKind == EngineMerman {
+		return startMerman()
 	}
 
 	log.Debug().Msg("Setting up global Mermaid renderer")
@@ -85,6 +143,9 @@ func getMermaidEngine() (*mermaid.RenderEngine, error) {
 	// until the next diagram fails. The handler runs on chromedp's event
 	// goroutine, so it may only log: calling back into the engine from there
 	// deadlocks.
+	//
+	// Chrome's own, and not on the Renderer interface: merman starts no browser,
+	// so it has nothing that can crash between diagrams.
 	engine.SetTargetCrashedHandler(func(err error) {
 		log.Error().Err(err).Msg("Chrome crashed while rendering Mermaid diagrams")
 	})
@@ -97,7 +158,29 @@ func getMermaidEngine() (*mermaid.RenderEngine, error) {
 // next diagram launches a new browser. It is a no-op when the slot has already
 // moved on, so that a second diagram failing against the same dead engine
 // cannot tear down the replacement the first one built.
-func discardEngine(engine *mermaid.RenderEngine) {
+// startMerman builds the CLI-backed engine. Called with the mutex held.
+//
+// The binary is looked for and asked what it is while the engine is being
+// built, so a merman that is missing or too old is reported here -- naming the
+// setting that asked for it -- rather than as a diagram that would not draw.
+func startMerman() (mermaid.Renderer, error) {
+	log.Debug().Msg("Setting up global Mermaid renderer (merman)")
+
+	engine, err := mermaid.NewMermanEngine(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf(
+			"unable to start the merman render engine asked for by --mermaid-engine: %w", err,
+		)
+	}
+
+	engine.SetRenderTimeout(renderTimeout)
+
+	mermaidEngine = engine
+
+	return mermaidEngine, nil
+}
+
+func discardEngine(engine mermaid.Renderer) {
 	mermaidMutex.Lock()
 	if mermaidEngine == engine {
 		mermaidEngine = nil
@@ -111,7 +194,7 @@ func discardEngine(engine *mermaid.RenderEngine) {
 // sentinel errors whether the engine survived the failure and whether another
 // attempt is worth making. What to render with it is left to the caller, since
 // a PNG and an SVG differ in nothing else.
-func render(title string, once func(ctx context.Context, engine *mermaid.RenderEngine) error) error {
+func render(title string, once func(ctx context.Context, engine mermaid.Renderer) error) error {
 	for attempt := 1; ; attempt++ {
 		engine, err := getMermaidEngine()
 		if err != nil {
@@ -170,7 +253,7 @@ func renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel,
 		boxModel *mermaid.BoxModel
 	)
 
-	err := render(title, func(ctx context.Context, engine *mermaid.RenderEngine) error {
+	err := render(title, func(ctx context.Context, engine mermaid.Renderer) error {
 		var err error
 		pngBytes, boxModel, err = engine.RenderAsScaledPngContext(ctx, diagram, scale)
 
@@ -186,7 +269,7 @@ func renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel,
 func renderSVG(title, diagram string, bundle bool) (string, error) {
 	var svg string
 
-	err := render(title, func(ctx context.Context, engine *mermaid.RenderEngine) error {
+	err := render(title, func(ctx context.Context, engine mermaid.Renderer) error {
 		var err error
 		if bundle {
 			svg, err = engine.RenderContext(ctx, diagram, mermaid.WithBundle())
@@ -411,4 +494,10 @@ func Cleanup() {
 		mermaidEngine.Cancel()
 		mermaidEngine = nil
 	}
+}
+
+// lookMerman reports whether the merman binary can be found, which is what
+// decides whether a test has anything to say about it missing.
+func lookMerman() (string, error) {
+	return exec.LookPath("merman")
 }
