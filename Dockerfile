@@ -7,10 +7,6 @@ RUN make get \
 
 FROM chromedp/headless-shell:latest
 
-# The optional native mermaid renderer, selected with --mermaid-engine=merman.
-# Pinned, because it decides how diagrams are drawn: 0.8.0-alpha.6 is the oldest
-# mark accepts, and the checksum is the release's own.
-ARG MERMAN_VERSION=0.8.0-alpha.6
 ARG TARGETARCH
 
 RUN apt-get update \
@@ -19,11 +15,18 @@ RUN apt-get update \
 && apt-get clean \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# The version mark itself requires, rather than one written down again here: the
+# same file is embedded in the binary, so the image cannot install a merman the
+# code then refuses. Copied after the apt step above, which clears /tmp.
+COPY --from=builder /go/src/github.com/kovetskiy/mark/mermaid/merman-version.txt /etc/merman-version
+
+# The optional native mermaid renderer, selected with --mermaid-engine=merman.
 # amd64 only, which is where merman publishes a Linux build. An arm64 image goes
 # without it and draws with Chrome, which is the default anyway -- and mark says
 # so plainly if merman is asked for and is not there.
 RUN set -eux; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
+        MERMAN_VERSION="$(cat /etc/merman-version)"; \
         base="https://github.com/Latias94/merman/releases/download/v${MERMAN_VERSION}"; \
         archive="merman-cli-x86_64-unknown-linux-gnu.tar.xz"; \
         cd /tmp; \
