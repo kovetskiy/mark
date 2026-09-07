@@ -58,6 +58,18 @@ When both formats are present, HTML headers override matching scalar front
 matter values. Repeatable parents, folders, attachments, and labels are
 appended to the values from front matter.
 
+Note that the front matter keys are plural where the HTML headers are singular:
+`attachments`, `parents`, `folders`, `labels` and `properties`. A key mark does
+not read is ignored, and warned about:
+
+```console
+WARNING doc.md: front matter key "attachment" is not read by mark and was ignored
+```
+
+Front matter shared with another tool -- a static site generator's `date` and
+`draft` in the same block -- is reported the same way, since mark cannot tell a
+key meant for something else from one meant for mark and misspelled.
+
 ```markdown
 <!-- Space: <space key> -->
 <!-- Parent: <parent 1> -->

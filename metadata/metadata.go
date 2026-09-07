@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -298,6 +299,43 @@ func setContentAppearance(meta *Meta, value string) {
 	}
 }
 
+// normaliseFrontMatterKey is how a key written in a document is matched against
+// the ones mark reads: a title is a Title is a TITLE, and image-align,
+// image_align and imagealign are one setting.
+func normaliseFrontMatterKey(key string) string {
+	key = strings.ToLower(key)
+	key = strings.ReplaceAll(key, "-", "")
+
+	return strings.ReplaceAll(key, "_", "")
+}
+
+// warnAboutUnknownKeys says so about every front matter key that was ignored.
+//
+// Front matter is shared with whatever else reads the file, so some of these
+// belong to somebody else and are meant to be passed over. They are still
+// reported: mark cannot tell a key written for another tool from one written
+// for mark and misspelled, and the second kind is a setting that silently did
+// not happen -- the HTML headers are singular where front matter is plural, so
+// attachment for attachments is a mistake mark's own documentation invites.
+func warnAboutUnknownKeys(keys []string, filename string) {
+	slices.Sort(keys)
+
+	// A caller with nothing to call the document -- ExtractMeta takes the name
+	// for the title and a library caller need not have one -- would otherwise
+	// be told about a key in a file called ": ".
+	where := filename + ": "
+	if filename == "" {
+		where = ""
+	}
+
+	for _, key := range keys {
+		log.Warn().Msgf(
+			"%sfront matter key %q is not read by mark and was ignored",
+			where, key,
+		)
+	}
+}
+
 func stripFrontMatter(data []byte) ([]byte, error) {
 	delimiter, rest, ok := bytes.Cut(data, []byte("\n"))
 	if !ok {
@@ -339,10 +377,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		meta = &Meta{}
 		meta.Type = "page" // Default type
 
+		var unknown []string
+
 		for k, v := range parsed {
-			normKey := strings.ToLower(k)
-			normKey = strings.ReplaceAll(normKey, "-", "")
-			normKey = strings.ReplaceAll(normKey, "_", "")
+			normKey := normaliseFrontMatterKey(k)
 
 			switch normKey {
 			case "parents":
@@ -392,8 +430,13 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					}
 					meta.Properties[key] = value
 				}
+
+			default:
+				unknown = append(unknown, k)
 			}
 		}
+
+		warnAboutUnknownKeys(unknown, filename)
 
 		// Presence of a non-empty sidebar forces the article layout, regardless of map key iteration order.
 		if meta.Sidebar != "" {
