@@ -61,6 +61,74 @@ func TestGitHubAnnotatesTheFile(t *testing.T) {
 	assert.Equal(t, "::warning file=docs/c.md::the document is not synchronized", lines[2])
 }
 
+// TestGitHubAnnotatesAWarningAgainstAPageThatPublished covers a document that
+// was published with something wrong in it, which is what --check-links-warn-only
+// asks for: told about a link that does not resolve, without the run failing.
+//
+// The warning has to be an annotation of its own. Written only to the log it is
+// a line in the build output that nobody scrolls to, which is the opposite of
+// what asking to be warned was for.
+func TestGitHubAnnotatesAWarningAgainstAPageThatPublished(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "docs/a.md", Status: StatusPublished, Title: "A", URL: "https://example/x/1",
+		Warnings: []string{`link "guide" does not resolve: it is a directory, not a document`},
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 2)
+	assert.Equal(t, `::notice file=docs/a.md::published "A" to https://example/x/1`, lines[0])
+	assert.Equal(t,
+		`::warning file=docs/a.md::link "guide" does not resolve: it is a directory, not a document`,
+		lines[1])
+}
+
+// TestGitHubAnnotatesAWarningOnAPageWithNoLineOfItsOwn is the case that would
+// otherwise disappear entirely: a document nothing was written for, because it
+// had not changed, still carrying a link that does not resolve.
+func TestGitHubAnnotatesAWarningOnAPageWithNoLineOfItsOwn(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "docs/a.md", Status: StatusUnchanged, Title: "A",
+		Warnings: []string{"link \"guide\" does not resolve: there is no such file"},
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	got := strings.TrimSpace(out.String())
+	assert.Equal(t,
+		`::warning file=docs/a.md::link "guide" does not resolve: there is no such file`, got)
+}
+
+// TestJSONCarriesWarnings covers the other machine-readable format, so that
+// what a run warned about can be read without parsing the log.
+func TestJSONCarriesWarnings(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "docs/a.md", Status: StatusPublished, Warnings: []string{"a warning"}})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatJSON))
+
+	assert.Contains(t, out.String(), `"warnings"`)
+	assert.Contains(t, out.String(), `"a warning"`)
+}
+
+// TestGitHubSaysNothingExtraWithoutWarnings is the boundary: the field is
+// absent for almost every document, and must add nothing when it is.
+func TestGitHubSaysNothingExtraWithoutWarnings(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "docs/a.md", Status: StatusUnchanged, Title: "A"})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Empty(t, strings.TrimSpace(out.String()))
+}
+
 // TestGitHubEscapes covers the characters that would otherwise end a command
 // early or start another one.
 func TestGitHubEscapes(t *testing.T) {

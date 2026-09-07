@@ -65,6 +65,15 @@ type Page struct {
 	// Reason says why a page was skipped or how it failed, in the words a
 	// person would want to read.
 	Reason string `json:"reason,omitempty"`
+
+	// Warnings are what was wrong with a document that was published anyway --
+	// a link that does not resolve, when the run was told to warn about those
+	// rather than fail on them.
+	//
+	// Kept apart from Reason because they do not say what became of the page:
+	// a document can carry them and still have published perfectly well, which
+	// is the whole reason for warning instead of failing.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Orphan is a tracked page whose document is gone, and what was done about it.
@@ -199,6 +208,16 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		case StatusPublished:
 			if err := command(w, "notice", page.File,
 				fmt.Sprintf("published %q to %s", page.Title, page.URL)); err != nil {
+				return err
+			}
+		}
+
+		// Whatever became of the document. A warning is worth showing against
+		// a page that published and against one that was left unchanged, which
+		// has no line of its own at all -- the point of it is to be seen in the
+		// diff by somebody who is not reading the build log.
+		for _, warning := range page.Warnings {
+			if err := command(w, "warning", page.File, warning); err != nil {
 				return err
 			}
 		}
