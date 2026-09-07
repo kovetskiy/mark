@@ -84,19 +84,20 @@ type Config struct {
 	OrphanUnder        string
 
 	// Rendering
-	DropH1          bool
-	StripLinebreaks bool
-	MermaidScale    float64
-	MermaidOutput   string
-	MermaidBundle   bool
-	D2Output        string
-	D2Scale         float64
-	D2BundleRemote  bool
-	MathFormat      string
-	MathScale       float64
-	Features        []string
-	ImageAlign      string
-	IncludePath     string
+	DropH1           bool
+	StripLinebreaks  bool
+	MermaidScale     float64
+	MermaidOutput    string
+	MermaidBundle    bool
+	D2Output         string
+	D2Scale          float64
+	D2BundleRemote   bool
+	MathFormat       string
+	MathScale        float64
+	Features         []string
+	ImageAlign       string
+	AttachReferenced bool
+	IncludePath      string
 
 	// Output is the writer used for result output (e.g. published page URLs,
 	// compiled HTML). If nil, output is discarded; the CLI sets this to
@@ -758,20 +759,21 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 
 		cfg := types.MarkConfig{
-			MermaidScale:   config.MermaidScale,
-			MermaidOutput:  config.MermaidOutput,
-			MermaidBundle:  config.MermaidBundle,
-			D2Output:       config.D2Output,
-			D2Scale:        config.D2Scale,
-			D2BundleRemote: config.D2BundleRemote,
-			MathFormat:     config.MathFormat,
-			MathScale:      config.MathScale,
-			DropFirstH1:    config.DropH1,
-			StripNewlines:  config.StripLinebreaks,
-			Features:       config.Features,
-			ImageAlign:     imageAlign,
-			IncludePath:    config.IncludePath,
-			ResolveLink:    resolveLink,
+			MermaidScale:     config.MermaidScale,
+			MermaidOutput:    config.MermaidOutput,
+			MermaidBundle:    config.MermaidBundle,
+			D2Output:         config.D2Output,
+			D2Scale:          config.D2Scale,
+			D2BundleRemote:   config.D2BundleRemote,
+			MathFormat:       config.MathFormat,
+			MathScale:        config.MathScale,
+			DropFirstH1:      config.DropH1,
+			StripNewlines:    config.StripLinebreaks,
+			Features:         config.Features,
+			ImageAlign:       imageAlign,
+			AttachReferenced: config.AttachReferenced,
+			IncludePath:      config.IncludePath,
+			ResolveLink:      resolveLink,
 		}
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 		if err != nil {
@@ -992,20 +994,21 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	cfg := types.MarkConfig{
-		MermaidScale:   config.MermaidScale,
-		MermaidOutput:  config.MermaidOutput,
-		MermaidBundle:  config.MermaidBundle,
-		D2Output:       config.D2Output,
-		D2Scale:        config.D2Scale,
-		D2BundleRemote: config.D2BundleRemote,
-		MathFormat:     config.MathFormat,
-		MathScale:      config.MathScale,
-		DropFirstH1:    config.DropH1,
-		StripNewlines:  config.StripLinebreaks,
-		Features:       config.Features,
-		ImageAlign:     imageAlign,
-		IncludePath:    config.IncludePath,
-		ResolveLink:    resolveLink,
+		MermaidScale:     config.MermaidScale,
+		MermaidOutput:    config.MermaidOutput,
+		MermaidBundle:    config.MermaidBundle,
+		D2Output:         config.D2Output,
+		D2Scale:          config.D2Scale,
+		D2BundleRemote:   config.D2BundleRemote,
+		MathFormat:       config.MathFormat,
+		MathScale:        config.MathScale,
+		DropFirstH1:      config.DropH1,
+		StripNewlines:    config.StripLinebreaks,
+		Features:         config.Features,
+		ImageAlign:       imageAlign,
+		AttachReferenced: config.AttachReferenced,
+		IncludePath:      config.IncludePath,
+		ResolveLink:      resolveLink,
 
 		ResolveAttachment: attachmentLinks.Resolve,
 	}

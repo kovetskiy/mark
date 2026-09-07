@@ -519,6 +519,16 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:parameter ac:name="autoplay">{{ or .AutoPlay "false" | xmlesc }}</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
+		/* A link to a file attached to the page, as opposed to a link to
+		   another page. The body is the words the document put between the
+		   brackets. */
+		`ac:link:attachment`: text(
+			`<ac:link>`,
+			/**/ `<ri:attachment ri:filename="{{ .Name | convertAttachment }}"/>`,
+			/**/ `<ac:plain-text-link-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-link-body>`,
+			`</ac:link>`,
+		),
+
 		/* https://confluence.atlassian.com/conf59/view-file-macro-792499226.html */
 		`ac:view-file`: text(
 			`<ac:structured-macro ac:name="view-file">`,

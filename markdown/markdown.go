@@ -63,7 +63,7 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1), 100),
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib), 100),
+		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
 	))
@@ -431,7 +431,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1), 100),
 		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
 		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib), 100),
+		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
 	))
