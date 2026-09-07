@@ -232,17 +232,24 @@ func (t *DetailsTransformer) transformDetailsMarkup(rawContent []byte, depth *in
 		return rawContent, false
 	}
 
-	balance := detailsBalance(rawContent)
+	balance, lowest := detailsBalance(rawContent)
 
 	// A fragment with unmatched <details> tags cannot survive html.Parse, which
 	// would auto-close the dangling element and strand the body outside the
 	// macro. This happens whenever the body contains a blank line, since that
 	// ends the HTML block and splits the element across sibling AST nodes.
 	// Rewrite those fragments token-by-token instead.
-	if balance != 0 {
+	// Decided on nesting rather than on the net change. A fragment that closes
+	// one element and opens another nets to zero while being no more
+	// self-contained than one that only closes: html.Parse drops the closer it
+	// cannot match, and the sections telescope -- the second published empty,
+	// inside the first, with the content that belonged to it landing in the
+	// first as well. That output is well-formed, so nothing downstream objects
+	// and the wrong page is published in silence.
+	if balance != 0 || lowest < 0 {
 		// A closing tag with nothing open is stray markup, not part of a split
 		// element. Leave it untouched so we never invent an unmatched macro end.
-		if balance < 0 && *depth+balance < 0 {
+		if *depth+lowest < 0 {
 			return rawContent, false
 		}
 		out, changed := rewriteUnbalancedDetails(rawContent)
