@@ -1313,6 +1313,13 @@ An image the diagram references is inlined into the SVG, the way d2's own
 where a path relative to the document resolves to nothing. A reference that
 cannot be read fails the run rather than publishing a diagram with a hole in it.
 
+A `|md |` label is passed into the drawing as markup, and mark both renders that
+drawing through a browser and uploads it for other people to open. A diagram
+that would run something rather than depict something -- a `<script>`, an
+`<iframe>`, an event handler, a `javascript:` link -- is refused rather than
+published. Everything a label is written for, from bold text to links and
+images, is unaffected.
+
 Because the file carries what it points at, what it may point at is limited:
 
 * A **file** must be inside the diagram's own directory or the one mark is

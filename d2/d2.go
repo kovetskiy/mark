@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	"html"
+	stdhtml "html"
 	"math"
 	"net/url"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/html"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/chrome"
@@ -28,6 +31,10 @@ import (
 	"github.com/d2lang/d2/lib/textmeasure"
 	"github.com/d2lang/util-go/go2"
 )
+
+// ErrUnsafeDiagram is returned for a diagram that would do something when it is
+// rendered or opened, rather than depict something.
+var ErrUnsafeDiagram = errors.New("diagram is not safe to publish")
 
 var renderTimeout = 120 * time.Second
 
@@ -68,6 +75,15 @@ func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height
 
 	out, err = d2svg.Render(diagram, renderOpts)
 	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	// Before anything is done with the drawing, because both things done with
+	// it are dangerous. The PNG is taken by navigating a browser to this as a
+	// document, so a script in it runs here, on the machine publishing -- in a
+	// browser started with --no-sandbox. The SVG is uploaded whole, so the same
+	// script is served to whoever opens the page.
+	if err := checkDrawingIsSafe(out); err != nil {
 		return nil, 0, 0, err
 	}
 
@@ -232,7 +248,7 @@ var image = regexp.MustCompile(`<image href="([^"]+)"`)
 // is published inside the drawing.
 func references(svg []byte, inputPath string, bundleRemote bool) (local, remote bool, err error) {
 	for _, match := range image.FindAllSubmatch(svg, -1) {
-		href := html.UnescapeString(string(match[1]))
+		href := stdhtml.UnescapeString(string(match[1]))
 
 		// Already carried by the drawing rather than pointed at by it.
 		if strings.HasPrefix(href, "data:") {
@@ -293,6 +309,105 @@ func displayed(length int, scale float64) string {
 	}
 
 	return strconv.FormatFloat(math.Max(1, math.Round(size)), 'f', -1, 64)
+}
+
+// executable are the elements that run or fetch something of their own, rather
+// than drawing. d2 puts a |md | label into the SVG as the author wrote it, so
+// what a diagram says here is what ends up in the document.
+var executable = map[string]bool{
+	"script": true,
+	"iframe": true,
+	"object": true,
+	"embed":  true,
+}
+
+// checkDrawingIsSafe refuses a rendered diagram that would do something rather
+// than depict something.
+//
+// A d2 label written as |md | is passed through as markup, and both things mark
+// does with the result execute it: the PNG is a screenshot taken by navigating
+// a browser to the drawing as a document, and the SVG is uploaded to Confluence
+// for other people's browsers to open. A diagram in a pull request could
+// therefore read a cloud metadata endpoint from the CI runner, or wait to be
+// opened by a colleague.
+//
+// Refused rather than stripped. A diagram that asked to run something is not a
+// diagram somebody drew by accident, and quietly publishing a different one
+// than was written is its own kind of wrong.
+//
+// Read with the lenient HTML tokenizer rather than an XML parser: the drawing
+// carries xhtml inside foreignObject, which is how a markdown label is
+// represented at all, and strict parsing of somebody else's markup is a way to
+// fail on documents that were fine.
+func checkDrawingIsSafe(svg []byte) error {
+	tokenizer := html.NewTokenizer(bytes.NewReader(svg))
+
+	for {
+		switch tokenizer.Next() {
+		case html.ErrorToken:
+			// Including io.EOF, which is how a document that held nothing
+			// objectionable ends.
+			return nil
+
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, hasAttributes := tokenizer.TagName()
+			if executable[strings.ToLower(string(name))] {
+				return fmt.Errorf(
+					"%w: it contains <%s>, which would run when the diagram is rendered or opened",
+					ErrUnsafeDiagram, name,
+				)
+			}
+
+			for hasAttributes {
+				var key, value []byte
+
+				key, value, hasAttributes = tokenizer.TagAttr()
+				if err := checkAttribute(string(key), string(value)); err != nil {
+					return err
+				}
+			}
+		}
+	}
+}
+
+// checkAttribute refuses the two ways an attribute runs something: by being an
+// event handler, and by naming a URL that is code rather than a picture.
+func checkAttribute(key, value string) error {
+	key = strings.ToLower(strings.TrimSpace(key))
+
+	if strings.HasPrefix(key, "on") {
+		return fmt.Errorf(
+			"%w: it sets %s, which would run when the diagram is rendered or opened",
+			ErrUnsafeDiagram, key,
+		)
+	}
+
+	if key != "href" && key != "src" && key != "xlink:href" {
+		return nil
+	}
+
+	scheme, _, found := strings.Cut(strings.ToLower(strings.TrimSpace(value)), ":")
+	if !found {
+		// A relative reference, which the bundler decides about separately.
+		return nil
+	}
+
+	switch scheme {
+	case "http", "https", "mailto", "#":
+		return nil
+
+	case "data":
+		// An image the bundler inlined. Anything else a data: URL can carry is
+		// a document, which is to say a way to run something.
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "data:image/") {
+			return nil
+		}
+
+		return fmt.Errorf("%w: it points at %.40s, which is not a picture", ErrUnsafeDiagram, value)
+
+	default:
+		return fmt.Errorf("%w: it points at a %s: address", ErrUnsafeDiagram, scheme)
+	}
 }
 
 // bundleLogger hands what d2's bundler has to say to mark's own log.
