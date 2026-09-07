@@ -24,7 +24,13 @@ type MarkConfig struct {
 	StripNewlines bool
 	Features      []string
 	ImageAlign    string
-	IncludePath   string
+
+	// AttachReferenced uploads a file a link points at, rather than leaving the
+	// link pointing at a path that means nothing once the page is published.
+	// Images are attached whether this is set or not, since an image left as a
+	// path is visibly broken where a link merely leads nowhere.
+	AttachReferenced bool
+	IncludePath      string
 
 	// ResolveLink turns a link target written in the document -- a relative
 	// path, optionally with a #fragment -- into the Confluence link it should

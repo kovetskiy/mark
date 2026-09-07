@@ -363,6 +363,13 @@ var Flags = []cli.Flag{
 		Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), altsrctoml.TOML("insecure-skip-tls-verify", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.BoolFlag{
+		Name:  "attach-referenced",
+		Value: false,
+		Usage: "upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ATTACH_REFERENCED"),
+			altsrctoml.TOML("attach-referenced", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.StringFlag{
 		Name:    "image-align",
 		Value:   "",

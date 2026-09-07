@@ -12,7 +12,7 @@ func linkRenderers(t *testing.T) []renderer.NodeRenderer {
 	t.Helper()
 
 	return []renderer.NodeRenderer{
-		crenderer.NewConfluenceLinkRenderer(newStdlib(t)),
+		crenderer.NewConfluenceLinkRenderer(newStdlib(t), nil, "", false),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextLegacyRenderer(false),
 	}

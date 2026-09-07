@@ -319,6 +319,24 @@ written when nothing is there.
 A pattern reaches no further than a path does — the document's own directory or
 the one mark is running in — so `../../*.pem` is refused rather than swept up.
 
+An image is uploaded whether or not it is declared: `![](images/logo.png)`
+attaches the file and shows it. A **link** to a file is not, and is published as
+the path the document wrote -- which means nothing once the page is on
+Confluence, so the reader gets a link that leads nowhere.
+
+`--attach-referenced` uploads those too, and links to the attachment:
+
+```markdown
+See [the report](files/report.pdf).
+```
+
+Only a file that is there, beside the document, and only what a document may
+read anyway: the same boundary an attachment is held to, so a link reaching out
+of the project is refused rather than published. A URL, an anchor, a mail
+address, a rooted path, a name with nothing behind it, and a link to another
+document are all left exactly as they are -- the last of those because linking
+to a page is not asking to publish its source as a download.
+
 **NOTE**: Be careful with `Attachment`! If your path string is a subset of
 another longer string or referenced in text, you may get undesired behavior.
 
@@ -1714,6 +1732,7 @@ GLOBAL OPTIONS:
    --d2-scale float                               defines the scaling factor for d2 renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_D2_SCALE]
    --features string [ --features string ]        Enables optional features, replacing the defaults (mermaid, mention) rather than adding to them. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify                     skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
+   --attach-referenced                            upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way. [$MARK_ATTACH_REFERENCED]
    --image-align string                           set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                                     show help
    --version, -v                                  print the version

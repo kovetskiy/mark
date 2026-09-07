@@ -1,10 +1,17 @@
 package renderer
 
 import (
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"errors"
+	"fmt"
 	stdhtml "html"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -15,13 +22,34 @@ import (
 type ConfluenceLinkRenderer struct {
 	html.Config
 	Stdlib *stdlib.Lib
+
+	// Attachments collects a file a link points at, when this run attaches
+	// what its documents refer to.
+	Attachments attachment.Attacher
+
+	// Path is the document the link was written in, which is what a relative
+	// destination is relative to.
+	Path string
+
+	// AttachReferenced turns the whole of that on. Off, a link to a file is
+	// published as the path the document wrote.
+	AttachReferenced bool
 }
 
 // NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
-func NewConfluenceLinkRenderer(lib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceLinkRenderer(
+	lib *stdlib.Lib,
+	attachments attachment.Attacher,
+	path string,
+	attachReferenced bool,
+	opts ...html.Option,
+) renderer.NodeRenderer {
 	return &ConfluenceLinkRenderer{
-		Config: html.NewConfig(),
-		Stdlib: lib,
+		Config:           html.NewConfig(),
+		Stdlib:           lib,
+		Attachments:      attachments,
+		Path:             path,
+		AttachReferenced: attachReferenced,
 	}
 }
 
@@ -138,6 +166,22 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 		}
 		return ast.WalkSkipChildren, nil
 	}
+	// A file beside the document, which is published with it rather than left
+	// as a path that means nothing once the page is on Confluence.
+	//
+	// Decided the same way on the way in and on the way out, as the ac: branch
+	// above is: the renderer is called twice for one link, and a decision made
+	// only on the way in leaves the closing </a> of a tag that was never opened.
+	if r.AttachReferenced && r.attachable(string(n.Destination)) {
+		if entering {
+			if err := r.attachReferencedFile(writer, source, node, n); err != nil {
+				return ast.WalkStop, err
+			}
+		}
+
+		return ast.WalkSkipChildren, nil
+	}
+
 	if entering {
 		_, _ = writer.WriteString("<a href=\"")
 		if r.Unsafe || !html.IsDangerousURL(n.Destination) {
@@ -157,6 +201,98 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 		_, _ = writer.WriteString("</a>")
 	}
 	return ast.WalkContinue, nil
+}
+
+// attachable reports whether a destination names a file this run should publish
+// alongside the document.
+//
+// Cheap on purpose, and asked on both halves of the render: it decides which
+// element is written, so it has to give the same answer each time. Existence is
+// part of the question -- a path to nothing is left as the document wrote it,
+// which is what happens without the flag at all -- but the file is not read
+// here, and whether it may be read is decided where it is.
+func (r *ConfluenceLinkRenderer) attachable(destination string) bool {
+	if r.Attachments == nil || r.Stdlib == nil || r.Path == "" {
+		return false
+	}
+
+	if !isLocalFileReference(destination) {
+		return false
+	}
+
+	info, err := os.Stat(filepath.Join(filepath.Dir(r.Path), destination))
+
+	return err == nil && !info.IsDir()
+}
+
+// attachReferencedFile uploads what a link points at, and writes a link to the
+// attachment in place of the path.
+func (r *ConfluenceLinkRenderer) attachReferencedFile(
+	writer util.BufWriter,
+	source []byte,
+	node ast.Node,
+	link *ast.Link,
+) error {
+	attachments, err := attachment.ResolveLocalAttachments(
+		vfs.LocalOS, filepath.Dir(r.Path), []string{string(link.Destination)},
+	)
+
+	// Refused rather than published as a link to somewhere it should not have
+	// reached, and said so where the image renderer says the same thing.
+	if errors.Is(err, attachment.ErrOutsideProject) {
+		line, col := GetLineCol(source, node.Pos())
+
+		return fmt.Errorf("line %d, col %d: %w", line, col, err)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if len(attachments) == 0 {
+		line, col := GetLineCol(source, node.Pos())
+
+		return fmt.Errorf("line %d, col %d: no attachment resolved for %q",
+			line, col, string(link.Destination))
+	}
+
+	r.Attachments.Attach(attachments[0])
+
+	//nolint:staticcheck
+	text := string(node.Text(source))
+
+	return r.Stdlib.Templates.ExecuteTemplate(writer, "ac:link:attachment", struct {
+		Name string
+		Text string
+	}{attachments[0].Filename, text})
+}
+
+// isLocalFileReference reports whether a destination names a file next to the
+// document rather than something else entirely.
+//
+// A document is one of those things: a link to another .md is how one page
+// refers to another, and it is resolved into a page link long before this. One
+// that resolved into nothing is still not an attachment -- publishing a
+// colleague's source as a download is not what was meant by linking to it.
+func isLocalFileReference(destination string) bool {
+	if destination == "" {
+		return false
+	}
+
+	if strings.HasPrefix(destination, "#") || strings.HasPrefix(destination, "/") {
+		return false
+	}
+
+	if strings.Contains(destination, "://") || strings.HasPrefix(destination, "mailto:") {
+		return false
+	}
+
+	switch strings.ToLower(filepath.Ext(destination)) {
+	case ".md", ".markdown", "":
+		return false
+	}
+
+	return true
 }
 
 // xmlAttrEscape makes a document-derived string safe to interpolate into an XML
