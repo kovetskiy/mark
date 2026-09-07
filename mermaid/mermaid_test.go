@@ -12,6 +12,7 @@ import (
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -384,12 +385,34 @@ func TestSVGScaleMultipliesWhatThePageShowsAndNotTheFile(t *testing.T) {
 // outputs share one engine and one configuration, and the PNG is a screenshot of
 // the same drawing: whatever the cap is worth for an SVG, it must not move a
 // picture that people are already publishing.
+//
+// Rendered both ways and compared, rather than measured against numbers written
+// down here. What a diagram comes out as depends on the fonts the machine has,
+// so a size that is right on one is wrong on another -- and the question is not
+// how large the picture is, it is whether the configuration changed it.
 func TestPNGIsUnaffectedByTheUncapping(t *testing.T) {
-	got, err := ProcessMermaidLocally("png", []byte("graph TD;\n A-->B;"), 1.0)
-	require.NoError(t, err)
+	diagram := "graph TD;\n A-->B;"
 
-	assert.Equal(t, "85", got.Width, "the picture is the size it has always been")
-	assert.Equal(t, "174", got.Height)
+	render := func(t *testing.T, statements []string) ([]byte, *mermaid.BoxModel) {
+		t.Helper()
+
+		engine, err := mermaid.NewRenderEngine(context.Background(), statements, chrome.AllocatorOptions()...)
+		require.NoError(t, err)
+
+		defer engine.Cancel()
+
+		png, box, err := engine.RenderAsScaledPngContext(context.Background(), diagram, 1.0)
+		require.NoError(t, err)
+
+		return png, box
+	}
+
+	before, beforeBox := render(t, nil)
+	after, afterBox := render(t, []string{uncapDiagramWidth})
+
+	assert.Equal(t, beforeBox.Width, afterBox.Width, "the picture is the width it was")
+	assert.Equal(t, beforeBox.Height, afterBox.Height, "and the height")
+	assert.Equal(t, before, after, "and the same bytes altogether")
 }
 
 // svgRootElement returns the opening <svg ...> tag, which is where a drawing
