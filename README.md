@@ -1125,6 +1125,13 @@ ERR unable to compile markdown: link "./architecure.md" does not resolve:
     there is no such file
 ```
 
+It reports in every mode, including `--compile-only` and `--dry-run`, so a pull
+request gate can check links without Confluence credentials:
+
+```bash
+mark --compile-only --check-links all --files "docs/**/*.md"
+```
+
 | Value | Checks |
 | --- | --- |
 | `internal` | relative links to other Markdown files in the repository |

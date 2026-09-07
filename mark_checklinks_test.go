@@ -321,3 +321,83 @@ func TestCheckLinksFailureIsAnnotatedAsAnError(t *testing.T) {
 	assert.Contains(t, out.String(), "::error")
 	assert.NotContains(t, out.String(), "::warning")
 }
+
+// TestCheckLinksUnderCompileOnly covers the invocation the flag is most likely
+// to be used with, and the one where it did nothing at all.
+//
+// --compile-only is what validates documents in CI without Confluence
+// credentials, so a pull request gate reading "mark --compile-only
+// --check-links all" is the ordinary way to ask for this. The links were
+// resolved either way; the branch simply returned before anything read what
+// that found, and the run said nothing and exited 0.
+func TestCheckLinksUnderCompileOnly(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
+
+	err := Run(Config{
+		BaseURL: "https://confluence.example.invalid", Username: "user", Password: "token",
+		Files:       filepath.Join(dir, "doc.md"),
+		CompileOnly: true,
+		CheckLinks:  []string{"internal"},
+		Output:      io.Discard,
+	})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "./missing.md")
+	assert.Contains(t, err.Error(), "there is no such file")
+}
+
+// TestCheckLinksUnderDryRunReportsToo covers the other half of the same branch.
+func TestCheckLinksUnderDryRunReportsToo(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files:      filepath.Join(dir, "doc.md"),
+		DryRun:     true,
+		CheckLinks: []string{"internal"},
+		Output:     io.Discard,
+	})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "./missing.md")
+}
+
+// TestCompileOnlyWithoutCheckLinksIsSilent is the boundary: a broken link is
+// only an error when the run asked about links, whichever mode it is in.
+func TestCompileOnlyWithoutCheckLinksIsSilent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
+
+	require.NoError(t, Run(Config{
+		BaseURL: "https://confluence.example.invalid", Username: "user", Password: "token",
+		Files:       filepath.Join(dir, "doc.md"),
+		CompileOnly: true,
+		Output:      io.Discard,
+	}))
+}
+
+// TestCompileOnlyWarnOnlyDoesNotFail covers the third combination, since
+// warn-only is how a team adopts the check before the build starts failing.
+func TestCompileOnlyWarnOnlyDoesNotFail(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
+
+	require.NoError(t, Run(Config{
+		BaseURL: "https://confluence.example.invalid", Username: "user", Password: "token",
+		Files:              filepath.Join(dir, "doc.md"),
+		CompileOnly:        true,
+		CheckLinks:         []string{"internal"},
+		CheckLinksWarnOnly: true,
+		Output:             io.Discard,
+	}))
+}

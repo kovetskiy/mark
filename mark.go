@@ -808,6 +808,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, err
 		}
 
+		// Said here too, and for the same reason the check above is. The links
+		// were resolved while the document was walked either way; this branch
+		// simply returned without ever reading what that found, so a run told
+		// to check them reported nothing and exited 0 -- on precisely the
+		// credential-free invocation --compile-only exists for, and the one a
+		// pull request gate is most likely to use.
+		if err := reportBrokenLinks(resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
+			return nil, nil, err
+		}
+
 		return nil, nil, nil
 	}
 
