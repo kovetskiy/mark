@@ -177,6 +177,98 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 	return propertyWriteResult(request, key, "space "+spaceID, existing == nil)
 }
 
+// ListPageProperties returns every property stored against a page, through v2.
+//
+// The v1 form of this is ListContentProperties, which is the one to use
+// everywhere v1 answers: it exists on Server and Data Center too. This one is
+// for the scoped-token path, where v1 is refused and the properties a page
+// update carries -- content appearance, emoji title -- have nowhere else to go.
+func (api *API) ListPageProperties(pageID string) ([]Property, error) {
+	var all []Property
+	var cursor string
+
+	for {
+		var result struct {
+			Results []Property `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+
+		query := map[string]string{"limit": strconv.Itoa(propertyPageSize)}
+		if cursor != "" {
+			query["cursor"] = cursor
+		}
+
+		request, err := api.v2().
+			Res("pages").
+			Res(pageID).
+			Res("properties", &result).
+			Get(query)
+		if err != nil {
+			return nil, newTransportError(request, "read properties of page "+pageID, err)
+		}
+
+		// As with a space: a page with no properties may answer 404 rather than
+		// an empty collection, and only the first page of the listing may read
+		// it that way.
+		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+			return nil, nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Results...)
+
+		next := nextCursor(result.Links.Next)
+		// A server that hands back the cursor it was given would otherwise
+		// keep this loop going for as long as it keeps answering.
+		if next == "" || next == cursor {
+			break
+		}
+		cursor = next
+	}
+
+	return all, nil
+}
+
+// SetPageProperty writes value to a page property through v2, creating it if
+// absent. See ListPageProperties for when this is the right API to use.
+func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Property) error {
+	payload := map[string]any{
+		"key":   key,
+		"value": json.RawMessage(value),
+	}
+
+	var (
+		result  Property
+		request *gopencils.Resource
+		err     error
+	)
+
+	page := api.v2().Res("pages").Res(pageID)
+
+	if existing == nil {
+		// The result pointer goes on the collection resource itself: routing it
+		// through a further Res("") would append a trailing slash, which this
+		// API is not reliably forgiving about.
+		request, err = page.Res("properties", &result).Post(payload)
+	} else {
+		// v2 addresses an update by property id.
+		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
+		request, err = page.Res("properties").Res(existing.ID, &result).Put(payload)
+	}
+	if err != nil {
+		return newTransportError(
+			request, fmt.Sprintf("write property %q of page %s", key, pageID), err,
+		)
+	}
+
+	return propertyWriteResult(request, key, "page "+pageID, existing == nil)
+}
+
 // ListContentProperties returns every property stored against a page.
 //
 // Unlike space properties this is a v1 endpoint, present on Server and Data
