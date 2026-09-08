@@ -43,7 +43,7 @@ func TestFindHomePageCachesFailures(t *testing.T) {
 	}
 
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/space/NOPE"))
-	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"))
+	assert.Equal(t, 1, server.CountRequestsMatching("GET", "/api/v2/spaces", "keys=NOPE"))
 }
 
 // TestGetSpaceIDIsCached is the same property for the other space lookup, which

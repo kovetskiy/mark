@@ -178,6 +178,22 @@ func (s *Server) CountRequests(method, substr string) int {
 	return n
 }
 
+// CountRequestsMatching is CountRequests narrowed by the query string as well,
+// which is what tells two requests to the same endpoint apart -- the Cloud
+// probe and the space lookup both go to /api/v2/spaces.
+func (s *Server) CountRequestsMatching(method, pathSubstr, querySubstr string) int {
+	var n int
+	for _, r := range s.Requests() {
+		if r.Method == method &&
+			strings.Contains(r.Path, pathSubstr) &&
+			strings.Contains(r.Query, querySubstr) {
+			n++
+		}
+	}
+
+	return n
+}
+
 // ResetRequests clears the recorded request log.
 func (s *Server) ResetRequests() {
 	s.mu.Lock()

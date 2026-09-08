@@ -332,7 +332,7 @@ func TestFindPageV2LooksUpTheSpaceOnce(t *testing.T) {
 		require.NotNil(t, page)
 	}
 
-	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"),
+	assert.Equal(t, 1, server.CountRequestsMatching("GET", "/api/v2/spaces", "keys=DOCS"),
 		"the space id is cached for the life of the API value")
 }
 
@@ -372,4 +372,95 @@ func TestGetPageLabelsFallsBackToV2(t *testing.T) {
 	require.Len(t, labels.Labels, 1)
 	assert.Equal(t, "from-mark", labels.Labels[0].Name)
 	assert.Equal(t, "global", labels.Labels[0].Prefix)
+}
+
+// dataCenter answers the way Confluence Server and Data Center do: v1 is the
+// only API there is, and every /api/v2 path is a 404 from a route that was
+// never going to exist.
+func dataCenter(v1Status int, v1Path string) confluencetest.FailFunc {
+	return func(r *http.Request) (int, string, bool) {
+		if strings.HasPrefix(r.URL.Path, "/api/v2") {
+			return http.StatusNotFound, `<html>404 Not Found</html>`, true
+		}
+		if v1Path != "" && strings.Contains(r.URL.Path, v1Path) {
+			return v1Status, `{"message":"no"}`, true
+		}
+		return 0, "", false
+	}
+}
+
+// TestDataCenterKeepsTheV1Failure is the reason the fallback is gated rather
+// than merely attempted. A 403 and a 404 mean different things, and mark acts
+// on the difference: page/orphan reads ErrNotFound as "the page is gone", which
+// --on-orphan archives or trashes. Pairing v1's 403 with the 404 that any
+// /api/v2 path answers on Data Center made a permission failure say exactly
+// that.
+func TestDataCenterKeepsTheV1Failure(t *testing.T) {
+	api, server := newAPI(t)
+	page := server.AddPage("DOCS", "Doc", "page", "")
+	server.SetFail(dataCenter(http.StatusForbidden, "/rest/api/content/"+page.ID))
+
+	_, err := api.GetPageByID(page.ID)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, confluence.ErrNotFound,
+		"a page mark may not read is not a page that is gone")
+	assert.Contains(t, err.Error(), "403")
+	assert.NotContains(t, err.Error(), "/api/v2",
+		"a deployment without v2 should not be told about a path it does not have")
+}
+
+// TestDataCenterProbesForV2Once: the probe that settles whether a deployment
+// has a v2 API at all is made once for the life of the API value, however many
+// calls are refused afterwards.
+func TestDataCenterProbesForV2Once(t *testing.T) {
+	api, server := newAPI(t)
+	page := server.AddPage("DOCS", "Doc", "page", "")
+	server.SetFail(dataCenter(http.StatusForbidden, "/rest/api/content/"))
+
+	for range 5 {
+		_, err := api.GetPageByID(page.ID)
+		require.Error(t, err)
+	}
+
+	assert.Equal(t, 1, server.CountRequestsMatching("GET", "/api/v2/spaces", "limit=1"),
+		"one probe decides it, and the answer is remembered")
+	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/pages"),
+		"and no fallback is attempted against an API that is not there")
+}
+
+// TestDataCenterLookupStillReportsAbsence: the ordinary v1 answers have to go on
+// meaning what they meant, gate or no gate.
+func TestDataCenterLookupStillReportsAbsence(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	server.SetFail(dataCenter(0, ""))
+
+	page, err := api.FindPage("DOCS", "Nope", "page")
+	require.NoError(t, err)
+	assert.Nil(t, page)
+
+	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/pages"),
+		"v1 answered, and there is no v2 to ask anyway")
+}
+
+// TestDataCenterPublishes walks a whole publish on a deployment that has no v2:
+// the fallbacks must be invisible there.
+func TestDataCenterPublishes(t *testing.T) {
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.SetFail(dataCenter(0, ""))
+
+	root, err := api.FindHomePage("DOCS")
+	require.NoError(t, err)
+	require.NotNil(t, root)
+
+	created, err := api.CreatePage("DOCS", "page", root, "Guide", "")
+	require.NoError(t, err)
+	require.NoError(t, api.UpdatePage(created, "<p>guide</p>", false, "", "full-width", ""))
+
+	stored := server.Page(created.ID)
+	require.NotNil(t, stored)
+	assert.Equal(t, "<p>guide</p>", stored.Body)
+	assert.Equal(t, home.ID, stored.ParentID)
 }

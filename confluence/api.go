@@ -530,6 +530,17 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// v1 space endpoint answers 404 and every run aborted here. The fallback is
 	// deliberately not narrowed to 404: a token with partial scopes can also
 	// draw 401/403 from v1 while v2 still answers.
+	//
+	// Server and Data Center have no v2 at all, so there is nothing there to
+	// fall through to and v1's answer is the whole story.
+	if !api.v2Available() {
+		if v1Err == nil {
+			v1Err = newErrorStatusNotOK(v1Request)
+		}
+
+		return nil, v1Err
+	}
+
 	v2Result := struct {
 		Results []struct {
 			ID         string `json:"id"`
@@ -553,7 +564,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		if v1Err == nil {
 			v1Err = newErrorStatusNotOK(v1Request)
 		}
-		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %w)", v1Err, v2Err)
+		return nil, v1FailedAndSoDidV2(v1Err, v2Err)
 	}
 
 	if len(v2Result.Results) == 0 {
@@ -629,10 +640,11 @@ func (api *API) FindPage(
 			}
 		}
 
-	case v1Refused(request):
+	case v1Refused(request) && api.v2Available():
 		// A scoped API token is not entitled to /rest/api/content, and this is
 		// where a run using one used to end. v2 answers the same question; see
-		// v2fallback.go for why v1 is still asked first.
+		// v2fallback.go for why v1 is still asked first, and why a deployment
+		// without a v2 API is not asked at all.
 		page, v2Err := api.findContentV2(space, title, pageType, "current")
 		if v2Err == nil {
 			found = page
@@ -642,9 +654,7 @@ func (api *API) FindPage(
 		// allow 404 because it's fine if page is not found,
 		// the function will return nil, nil
 		if request.Raw.StatusCode != http.StatusNotFound {
-			return nil, fmt.Errorf(
-				"v1 API: %w (v2 fallback also failed: %w)", newErrorStatusNotOK(request), v2Err,
-			)
+			return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 		}
 
 	default:
@@ -729,7 +739,7 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 	// A scoped API token draws 401 here rather than an answer; v2 can filter by
 	// status too. A 404 keeps its old meaning -- no such page -- when v2 cannot
 	// answer either, since this only ever improves an error message.
-	if v1Refused(request) {
+	if v1Refused(request) && api.v2Available() {
 		page, v2Err := api.findContentV2(space, title, pageType, status)
 		if v2Err == nil {
 			if page != nil && page.Status == "" {
@@ -1013,15 +1023,13 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		// every document -- so a token that cannot read this listing cannot
 		// publish anything at all. v2 has the listing; it does not have the
 		// upload, which stays on v1.
-		if start == 0 && v1Refused(request) {
+		if start == 0 && v1Refused(request) && api.v2Available() {
 			attachments, v2Err := api.getAttachmentsV2(pageID)
 			if v2Err == nil {
 				return attachments, nil
 			}
 
-			return nil, fmt.Errorf(
-				"v1 API: %w (v2 fallback also failed: %w)", newErrorStatusNotOK(request), v2Err,
-			)
+			return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -1069,15 +1077,13 @@ func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, er
 	// What v1 expands in one request, v2 needs several for -- the body comes
 	// from a format parameter and the ancestors from a walk -- so only what the
 	// caller asked to expand is fetched.
-	if v1Refused(request) {
+	if v1Refused(request) && api.v2Available() {
 		page, v2Err := api.getPageByIDV2(pageID, expand)
 		if v2Err == nil {
 			return page, nil
 		}
 
-		return nil, fmt.Errorf(
-			"v1 API: %w (v2 fallback also failed: %w)", newErrorStatusNotOK(request), v2Err,
-		)
+		return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1180,7 +1186,7 @@ func (api *API) CreatePage(
 	case request.Raw.StatusCode == http.StatusOK:
 		page = request.Response.(*PageInfo)
 
-	case v1Refused(request):
+	case v1Refused(request) && api.v2Available():
 		// A scoped API token may create through v2 and not through v1. The
 		// refusal statuses are the ones no page is created by, so there is
 		// nothing here for a second attempt to duplicate.
@@ -1326,13 +1332,11 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	switch {
 	case request.Raw.StatusCode == http.StatusOK:
 
-	case v1Refused(request):
+	case v1Refused(request) && api.v2Available():
 		if v2Err := api.updateContentV2(
 			page, newContent, minorEdit, versionMessage, nextPageVersion,
 		); v2Err != nil {
-			return fmt.Errorf(
-				"v1 API: %w (v2 fallback also failed: %w)", newErrorStatusNotOK(request), v2Err,
-			)
+			return v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 		}
 
 		// Reported once the version this run just wrote has been recorded: the
@@ -1472,15 +1476,13 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 		// document declares any, so this listing is on the critical path of a
 		// scoped-token run in the same way the attachment listing is. Adding
 		// and removing labels stays on v1, which has no v2 counterpart.
-		if start == 0 && v1Refused(request) {
+		if start == 0 && v1Refused(request) && api.v2Available() {
 			labels, v2Err := api.getPageLabelsV2(page.ID, prefix)
 			if v2Err == nil {
 				return labels, nil
 			}
 
-			return nil, fmt.Errorf(
-				"v1 API: %w (v2 fallback also failed: %w)", newErrorStatusNotOK(request), v2Err,
-			)
+			return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -1878,6 +1880,19 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	request, err := api.v1().Res("space/"+spaceKey, &v1Result).Get()
 	if err == nil && request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
 		return strconv.Itoa(v1Result.ID), nil
+	}
+
+	// Server and Data Center have no v2 spaces endpoint to fall back to, so
+	// whatever v1 said is the answer.
+	if !api.v2Available() {
+		switch {
+		case err != nil:
+			return "", newTransportError(request, "resolve space "+spaceKey, err)
+		case request.Raw.StatusCode == http.StatusOK:
+			return "", fmt.Errorf("space %s: the v1 API answered without an id", spaceKey)
+		default:
+			return "", newErrorStatusNotOK(request)
+		}
 	}
 
 	// Fallback to v2 API with query parameter

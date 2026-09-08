@@ -29,10 +29,11 @@ import (
 // issue #917: FindHomePage already fell back to v2 (#341), so the run got past
 // the space lookup and then died on the very next call.
 //
-// v1 stays the first choice everywhere. It is the only API Server and Data
-// Center have, its answers carry ancestors and a body without extra round
-// trips, and a classic token is entitled to it. v2 is asked only once v1 has
-// refused, so nothing changes for anybody whose token v1 accepts.
+// v1 stays the first choice everywhere. Its answers carry ancestors and a body
+// without extra round trips, and a classic token is entitled to it. v2 is asked
+// only once v1 has refused, and only where a v2 exists to ask -- Server and
+// Data Center have none, so nothing changes there at all, nor for anybody whose
+// token v1 accepts.
 
 // maxAncestorDepth bounds the parent walk that rebuilds a v2 ancestor chain.
 //
@@ -62,6 +63,35 @@ func v1Refused(request *gopencils.Resource) bool {
 	}
 
 	return false
+}
+
+// v2Available reports whether this deployment has a v2 API to fall back to.
+//
+// Server and Data Center do not. Every /api/v2 path there is a 404 from a route
+// that was never going to exist, so asking costs a request per call and buries
+// the v1 answer that actually explains the failure underneath one from a path
+// nobody asked about -- which is worse than useless when the two disagree about
+// what kind of failure it was: a v1 403 paired with a v2 404 reads as
+// ErrNotFound, and "this page is gone" is a conclusion --on-orphan acts on.
+//
+// IsCloud is the test mark already applies to its other Cloud-only features. It
+// answers without a request at all for the hosts a scoped API token goes
+// through, and otherwise probes once for the life of the API value.
+func (api *API) v2Available() bool {
+	return api.IsCloud()
+}
+
+// v1FailedAndSoDidV2 reports a v1 failure together with the v2 attempt that
+// followed it.
+//
+// Only the v1 error is wrapped. The v2 one contributes its text and nothing
+// else, deliberately: a fallback that answers 404 -- which is what any /api/v2
+// path does on a deployment that has none -- would otherwise make
+// errors.Is(err, ErrNotFound) true for a v1 failure that was nothing of the
+// kind, and "this page is gone" is a conclusion --on-orphan acts on.
+func v1FailedAndSoDidV2(v1Err, v2Err error) error {
+	//nolint:errorlint // the v2 error is rendered rather than wrapped on purpose; see above.
+	return fmt.Errorf("v1 API: %w (v2 fallback also failed: %s)", v1Err, v2Err)
 }
 
 // ancestorRef is the shape PageInfo.Ancestors holds. It is an alias rather than

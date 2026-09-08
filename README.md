@@ -1752,9 +1752,12 @@ with, and the older v1 ones check `read:content-details:confluence` and
 
 out of the first page lookup of the run.
 
-Mark asks v1 first everywhere -- it is the only API Server and Data Center have,
-and it answers in one request what v2 needs several for -- and asks v2 instead
-wherever v1 refuses. Publishing a page through the gateway needs:
+Mark asks v1 first everywhere -- it answers in one request what v2 needs several
+for -- and asks v2 instead wherever v1 refuses. Only on Cloud: Server and Data
+Center have no v2 API at all, and mark settles which it is talking to before
+falling back to anything, so a self-hosted instance is never sent to a path it
+does not have and keeps the v1 error that explains the failure. Publishing a
+page through the gateway needs:
 
 | scope | what it is for |
 | --- | --- |
