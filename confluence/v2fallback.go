@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -92,6 +93,28 @@ func (api *API) v2Available() bool {
 func v1FailedAndSoDidV2(v1Err, v2Err error) error {
 	//nolint:errorlint // the v2 error is rendered rather than wrapped on purpose; see above.
 	return fmt.Errorf("v1 API: %w (v2 fallback also failed: %s)", v1Err, v2Err)
+}
+
+// fallbackV2 answers a refused v1 request with whatever v2 says, and reports
+// whether it took the call over at all.
+//
+// ok is false when v1's answer is v1's to keep -- it was not a refusal, or this
+// deployment has no v2 to ask -- and the caller carries on with the answer it
+// already has. When ok is true the call is settled either way: err is nil and
+// the result is v2's, or err names both failures.
+func fallbackV2[T any](api *API, request *gopencils.Resource, v2 func() (T, error)) (T, bool, error) {
+	var zero T
+
+	if !v1Refused(request) || !api.v2Available() {
+		return zero, false, nil
+	}
+
+	result, err := v2()
+	if err != nil {
+		return zero, true, v1FailedAndSoDidV2(newErrorStatusNotOK(request), err)
+	}
+
+	return result, true, nil
 }
 
 // ancestorRef is the shape PageInfo.Ancestors holds. It is an alias rather than
@@ -218,36 +241,45 @@ func (api *API) findContentV2(space, title, pageType, status string) (*PageInfo,
 // say, a 404 from pages is retried against blogposts -- the same two-step v1
 // spared everybody by having a single /content collection.
 func (api *API) getContentV2(contentID string, withBody bool) (*contentV2, string, error) {
-	for _, collection := range []string{"pages", "blogposts"} {
-		var result contentV2
-
-		query := map[string]string{}
-		if withBody {
-			query["body-format"] = "storage"
-		}
-
-		request, err := api.v2().Res(collection+"/"+contentID, &result).Get(query)
-		if err != nil {
-			return nil, "", newTransportError(request, "read page "+contentID, err)
-		}
-
-		if request.Raw.StatusCode == http.StatusNotFound && collection == "pages" {
-			continue
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, "", newErrorStatusNotOK(request)
-		}
-
-		pageType := "page"
-		if collection == "blogposts" {
-			pageType = "blogpost"
-		}
-
-		return &result, pageType, nil
+	content, err := api.readContentV2("pages", contentID, withBody)
+	if err == nil {
+		return content, "page", nil
 	}
 
-	return nil, "", fmt.Errorf("no content with id %s: %w", contentID, ErrNotFound)
+	if !errors.Is(err, ErrNotFound) {
+		return nil, "", err
+	}
+
+	content, err = api.readContentV2("blogposts", contentID, withBody)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return content, "blogpost", nil
+}
+
+// readContentV2 reads one object out of a named v2 collection.
+//
+// A 404 comes back wrapping ErrNotFound, which is what lets getContentV2 tell
+// "not in this collection" apart from a failure worth reporting.
+func (api *API) readContentV2(collection, contentID string, withBody bool) (*contentV2, error) {
+	var result contentV2
+
+	query := map[string]string{}
+	if withBody {
+		query["body-format"] = "storage"
+	}
+
+	request, err := api.v2().Res(collection+"/"+contentID, &result).Get(query)
+	if err != nil {
+		return nil, newTransportError(request, "read page "+contentID, err)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return &result, nil
 }
 
 // getPageByIDV2 is GetPageByIDExpanded against v2.
@@ -298,7 +330,9 @@ func (api *API) ancestorsV2(content contentV2) ([]ancestorRef, error) {
 		}
 		seen[parentID] = true
 
-		parent, _, err := api.getContentV2(parentID, false)
+		// A page, never a blogpost -- so this asks the one collection rather
+		// than paying getContentV2's 404-then-retry for every level.
+		parent, err := api.readContentV2("pages", parentID, false)
 		if err != nil {
 			// An ancestor that cannot be read at all is reported: answering
 			// with a chain known to be short would tell the caller the page
@@ -333,61 +367,38 @@ const cloudContextPath = "/wiki"
 // scopes in its documentation rather than pretending v2 is enough for
 // everything.
 func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
-	const pageSize = 100
-
-	var all []AttachmentInfo
-	var cursor string
-
-	for {
-		var result struct {
-			Results []struct {
-				ID           string `json:"id"`
-				Title        string `json:"title"`
-				Comment      string `json:"comment"`
-				DownloadLink string `json:"downloadLink"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res("pages/"+pageID+"/attachments", &result).Get(query)
-		if err != nil {
-			return nil, newTransportError(request, "list attachments of page "+pageID, err)
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
-		}
-
-		for _, attachment := range result.Results {
-			info := AttachmentInfo{Filename: attachment.Title, ID: attachment.ID}
-			// The checksum mark recognises an unchanged attachment by lives in
-			// the comment, which v2 keeps at the top level rather than under
-			// metadata.
-			info.Metadata.Comment = attachment.Comment
-			info.Links.Context = cloudContextPath
-			info.Links.Download = attachment.DownloadLink
-
-			all = append(all, info)
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			break
-		}
-		cursor = next
+	type attachmentV2 struct {
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		Comment      string `json:"comment"`
+		DownloadLink string `json:"downloadLink"`
 	}
 
-	return all, nil
+	found, err := collectPagedV2[attachmentV2](
+		api,
+		"pages/"+pageID+"/attachments",
+		"list attachments of page "+pageID,
+		map[string]string{"limit": "100"},
+		missingIsFailure,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var attachments []AttachmentInfo
+
+	for _, attachment := range found {
+		info := AttachmentInfo{Filename: attachment.Title, ID: attachment.ID}
+		// The checksum mark recognises an unchanged attachment by lives in the
+		// comment, which v2 keeps at the top level rather than under metadata.
+		info.Metadata.Comment = attachment.Comment
+		info.Links.Context = cloudContextPath
+		info.Links.Download = attachment.DownloadLink
+
+		attachments = append(attachments, info)
+	}
+
+	return attachments, nil
 }
 
 // getPageLabelsV2 is GetPageLabels against v2.
@@ -396,59 +407,38 @@ func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
 // over with a string id and v2 with an integer one, and everything downstream
 // reads the name rather than the id.
 func (api *API) getPageLabelsV2(pageID, prefix string) (*LabelInfo, error) {
-	const pageSize = 50
-
-	var all []Label
-	var cursor string
-
-	for {
-		var result struct {
-			Results []struct {
-				ID     json.Number `json:"id"`
-				Name   string      `json:"name"`
-				Prefix string      `json:"prefix"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
-		if prefix != "" {
-			query["prefix"] = prefix
-		}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res("pages/"+pageID+"/labels", &result).Get(query)
-		if err != nil {
-			return nil, newTransportError(request, "read labels of page "+pageID, err)
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
-		}
-
-		for _, label := range result.Results {
-			all = append(all, Label{
-				ID:     label.ID.String(),
-				Name:   label.Name,
-				Prefix: label.Prefix,
-			})
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			break
-		}
-		cursor = next
+	type labelV2 struct {
+		ID     json.Number `json:"id"`
+		Name   string      `json:"name"`
+		Prefix string      `json:"prefix"`
 	}
 
-	return &LabelInfo{Labels: all, Size: len(all)}, nil
+	query := map[string]string{"limit": "50"}
+	if prefix != "" {
+		query["prefix"] = prefix
+	}
+
+	found, err := collectPagedV2[labelV2](
+		api,
+		"pages/"+pageID+"/labels",
+		"read labels of page "+pageID,
+		query,
+		missingIsFailure,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := make([]Label, 0, len(found))
+	for _, label := range found {
+		labels = append(labels, Label{
+			ID:     label.ID.String(),
+			Name:   label.Name,
+			Prefix: label.Prefix,
+		})
+	}
+
+	return &LabelInfo{Labels: labels, Size: len(labels)}, nil
 }
 
 // createContentV2 is CreatePage against v2.

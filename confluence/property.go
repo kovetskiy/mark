@@ -71,55 +71,7 @@ var ErrPropertyUnseen = errors.New("property already exists but was not listed")
 // key. A space with none is not an error: the first run of anything that stores
 // state this way finds nothing, and that is the normal case.
 func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
-	var all []Property
-	var cursor string
-
-	for {
-		var result struct {
-			Results []Property `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		query := map[string]string{"limit": strconv.Itoa(propertyPageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().
-			Res("spaces").
-			Res(spaceID).
-			Res("properties", &result).
-			Get(query)
-		if err != nil {
-			return nil, newTransportError(request, "read properties of space "+spaceID, err)
-		}
-
-		// A space with no properties at all answers 404 rather than an empty
-		// collection, so both shapes have to mean "none set". First page only:
-		// a 404 partway through is a real failure, and reading it as "none"
-		// would throw away the pages already in hand.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return nil, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
-		}
-
-		all = append(all, result.Results...)
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise
-		// keep this loop going for as long as it keeps answering.
-		if next == "" || next == cursor {
-			break
-		}
-		cursor = next
-	}
-
-	return all, nil
+	return api.listPropertiesV2("spaces", spaceID, "space "+spaceID)
 }
 
 // nextCursor pulls the cursor out of a v2 _links.next.
@@ -143,8 +95,120 @@ func nextCursor(next string) string {
 	return parsed.Query().Get("cursor")
 }
 
-// SetSpaceProperty writes value to a space property, creating it if absent.
-func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Property) error {
+// missingIsEmpty and missingIsFailure name the two readings of a 404 on the
+// first page of a v2 listing.
+const (
+	// A collection that has never held anything answers 404 rather than an
+	// empty page -- what a space or a page with no properties does.
+	missingIsEmpty = true
+	// A 404 is the object itself being absent, which is worth reporting.
+	missingIsFailure = false
+)
+
+// listPagedV2 walks a cursor-paged v2 collection, handing each page of results
+// to visit. visit returns false to stop before the collection is exhausted.
+//
+// Every v2 listing pages the same way and carries the same three hazards, which
+// is why they are dealt with here rather than once per caller: the collection
+// may answer 404 instead of coming back empty, a 404 partway through is a real
+// failure that must not be read as "none", and a server that hands back the
+// cursor it was given would otherwise keep the loop going for as long as it
+// keeps answering.
+func listPagedV2[T any](
+	api *API,
+	path string,
+	describe string,
+	query map[string]string,
+	absentIsEmpty bool,
+	visit func([]T) bool,
+) error {
+	var cursor string
+
+	for {
+		var result struct {
+			Results []T `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+
+		page := make(map[string]string, len(query)+1)
+		for key, value := range query {
+			page[key] = value
+		}
+		if cursor != "" {
+			page["cursor"] = cursor
+		}
+
+		request, err := api.v2().Res(path, &result).Get(page)
+		if err != nil {
+			return newTransportError(request, describe, err)
+		}
+
+		// First page only: reading a later 404 as "none" would throw away the
+		// pages already in hand.
+		if absentIsEmpty && cursor == "" && request.Raw.StatusCode == http.StatusNotFound {
+			return nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return newErrorStatusNotOK(request)
+		}
+
+		if !visit(result.Results) {
+			return nil
+		}
+
+		next := nextCursor(result.Links.Next)
+		if next == "" || next == cursor || len(result.Results) == 0 {
+			return nil
+		}
+		cursor = next
+	}
+}
+
+// collectPagedV2 is listPagedV2 for a caller that wants the whole collection.
+func collectPagedV2[T any](
+	api *API,
+	path string,
+	describe string,
+	query map[string]string,
+	absentIsEmpty bool,
+) ([]T, error) {
+	var all []T
+
+	err := listPagedV2(api, path, describe, query, absentIsEmpty, func(page []T) bool {
+		all = append(all, page...)
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return all, nil
+}
+
+// listPropertiesV2 returns every property stored against one v2 object.
+//
+// owner names it for an error message -- "space 123", "page 456" -- since the
+// collection and the id read as an URL rather than as English.
+func (api *API) listPropertiesV2(collection, ownerID, owner string) ([]Property, error) {
+	return collectPagedV2[Property](
+		api,
+		collection+"/"+ownerID+"/properties",
+		"read properties of "+owner,
+		map[string]string{"limit": strconv.Itoa(propertyPageSize)},
+		missingIsEmpty,
+	)
+}
+
+// setPropertyV2 writes value to a property of one v2 object, creating it if
+// absent.
+func (api *API) setPropertyV2(
+	collection, ownerID, owner, key string,
+	value []byte,
+	existing *Property,
+) error {
 	payload := map[string]any{
 		"key":   key,
 		"value": json.RawMessage(value),
@@ -156,25 +220,30 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 		err     error
 	)
 
-	space := api.v2().Res("spaces").Res(spaceID)
+	object := api.v2().Res(collection).Res(ownerID)
 
 	if existing == nil {
 		// The result pointer goes on the collection resource itself: routing it
 		// through a further Res("") would append a trailing slash, which this
 		// API is not reliably forgiving about.
-		request, err = space.Res("properties", &result).Post(payload)
+		request, err = object.Res("properties", &result).Post(payload)
 	} else {
 		// v2 addresses an update by property id.
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = space.Res("properties").Res(existing.ID, &result).Put(payload)
+		request, err = object.Res("properties").Res(existing.ID, &result).Put(payload)
 	}
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("write property %q of space %s", key, spaceID), err,
+			request, fmt.Sprintf("write property %q of %s", key, owner), err,
 		)
 	}
 
-	return propertyWriteResult(request, key, "space "+spaceID, existing == nil)
+	return propertyWriteResult(request, key, owner, existing == nil)
+}
+
+// SetSpaceProperty writes value to a space property, creating it if absent.
+func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2("spaces", spaceID, "space "+spaceID, key, value, existing)
 }
 
 // ListPageProperties returns every property stored against a page, through v2.
@@ -184,89 +253,13 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 // for the scoped-token path, where v1 is refused and the properties a page
 // update carries -- content appearance, emoji title -- have nowhere else to go.
 func (api *API) ListPageProperties(pageID string) ([]Property, error) {
-	var all []Property
-	var cursor string
-
-	for {
-		var result struct {
-			Results []Property `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		query := map[string]string{"limit": strconv.Itoa(propertyPageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().
-			Res("pages").
-			Res(pageID).
-			Res("properties", &result).
-			Get(query)
-		if err != nil {
-			return nil, newTransportError(request, "read properties of page "+pageID, err)
-		}
-
-		// As with a space: a page with no properties may answer 404 rather than
-		// an empty collection, and only the first page of the listing may read
-		// it that way.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return nil, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
-		}
-
-		all = append(all, result.Results...)
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise
-		// keep this loop going for as long as it keeps answering.
-		if next == "" || next == cursor {
-			break
-		}
-		cursor = next
-	}
-
-	return all, nil
+	return api.listPropertiesV2("pages", pageID, "page "+pageID)
 }
 
 // SetPageProperty writes value to a page property through v2, creating it if
 // absent. See ListPageProperties for when this is the right API to use.
 func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Property) error {
-	payload := map[string]any{
-		"key":   key,
-		"value": json.RawMessage(value),
-	}
-
-	var (
-		result  Property
-		request *gopencils.Resource
-		err     error
-	)
-
-	page := api.v2().Res("pages").Res(pageID)
-
-	if existing == nil {
-		// The result pointer goes on the collection resource itself: routing it
-		// through a further Res("") would append a trailing slash, which this
-		// API is not reliably forgiving about.
-		request, err = page.Res("properties", &result).Post(payload)
-	} else {
-		// v2 addresses an update by property id.
-		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = page.Res("properties").Res(existing.ID, &result).Put(payload)
-	}
-	if err != nil {
-		return newTransportError(
-			request, fmt.Sprintf("write property %q of page %s", key, pageID), err,
-		)
-	}
-
-	return propertyWriteResult(request, key, "page "+pageID, existing == nil)
+	return api.setPropertyV2("pages", pageID, "page "+pageID, key, value, existing)
 }
 
 // ListContentProperties returns every property stored against a page.

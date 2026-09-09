@@ -739,20 +739,22 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 	// A scoped API token draws 401 here rather than an answer; v2 can filter by
 	// status too. A 404 keeps its old meaning -- no such page -- when v2 cannot
 	// answer either, since this only ever improves an error message.
-	if v1Refused(request) && api.v2Available() {
-		page, v2Err := api.findContentV2(space, title, pageType, status)
-		if v2Err == nil {
-			if page != nil && page.Status == "" {
-				page.Status = status
+	if page, ok, err := fallbackV2(api, request, func() (*PageInfo, error) {
+		return api.findContentV2(space, title, pageType, status)
+	}); ok {
+		if err != nil {
+			if request.Raw.StatusCode == http.StatusNotFound {
+				return nil, nil
 			}
-			return page, nil
+
+			return nil, err
 		}
 
-		if request.Raw.StatusCode == http.StatusNotFound {
-			return nil, nil
+		if page != nil && page.Status == "" {
+			page.Status = status
 		}
 
-		return nil, newErrorStatusNotOK(request)
+		return page, nil
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1023,13 +1025,12 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		// every document -- so a token that cannot read this listing cannot
 		// publish anything at all. v2 has the listing; it does not have the
 		// upload, which stays on v1.
-		if start == 0 && v1Refused(request) && api.v2Available() {
-			attachments, v2Err := api.getAttachmentsV2(pageID)
-			if v2Err == nil {
-				return attachments, nil
+		if start == 0 {
+			if attachments, ok, err := fallbackV2(api, request, func() ([]AttachmentInfo, error) {
+				return api.getAttachmentsV2(pageID)
+			}); ok {
+				return attachments, err
 			}
-
-			return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -1077,13 +1078,10 @@ func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, er
 	// What v1 expands in one request, v2 needs several for -- the body comes
 	// from a format parameter and the ancestors from a walk -- so only what the
 	// caller asked to expand is fetched.
-	if v1Refused(request) && api.v2Available() {
-		page, v2Err := api.getPageByIDV2(pageID, expand)
-		if v2Err == nil {
-			return page, nil
-		}
-
-		return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
+	if page, ok, err := fallbackV2(api, request, func() (*PageInfo, error) {
+		return api.getPageByIDV2(pageID, expand)
+	}); ok {
+		return page, err
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1476,13 +1474,12 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 		// document declares any, so this listing is on the critical path of a
 		// scoped-token run in the same way the attachment listing is. Adding
 		// and removing labels stays on v1, which has no v2 counterpart.
-		if start == 0 && v1Refused(request) && api.v2Available() {
-			labels, v2Err := api.getPageLabelsV2(page.ID, prefix)
-			if v2Err == nil {
-				return labels, nil
+		if start == 0 {
+			if labels, ok, err := fallbackV2(api, request, func() (*LabelInfo, error) {
+				return api.getPageLabelsV2(page.ID, prefix)
+			}); ok {
+				return labels, err
 			}
-
-			return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -2060,57 +2057,36 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 // Stops at the first folder it sees. The answer is a yes or a no, and the rest
 // of the listing cannot change it.
 func (api *API) HasChildFolders(parentID string) (bool, error) {
-	const pageSize = 100
-
-	var cursor string
-	for {
-		result := struct {
-			Results []struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
-		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res(
-			"pages/"+parentID+"/direct-children", &result,
-		).Get(query)
-		if err != nil {
-			return false, fmt.Errorf("unable to list children of %s: %w", parentID, err)
-		}
-
-		// First page only: a 404 partway through is a real failure, and reading
-		// it as "none" would answer from a listing already known to be partial.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return false, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return false, newErrorStatusNotOK(request)
-		}
-
-		for _, child := range result.Results {
-			if child.Type == "folder" {
-				return true, nil
-			}
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			return false, nil
-		}
-		cursor = next
+	type childV2 struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
 	}
+
+	var found bool
+
+	err := listPagedV2(
+		api,
+		"pages/"+parentID+"/direct-children",
+		"list children of "+parentID,
+		map[string]string{"limit": "100"},
+		missingIsEmpty,
+		func(children []childV2) bool {
+			for _, child := range children {
+				if child.Type == "folder" {
+					found = true
+
+					return false
+				}
+			}
+
+			return true
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return found, nil
 }
 
 // MoveContentAfter places a page immediately after one of its siblings.
