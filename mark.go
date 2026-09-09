@@ -169,8 +169,9 @@ func run(ctx context.Context, config Config) error {
 	// from silence, and silence is exactly what these produce on their own. A
 	// combination that merely does nothing, and that nobody would read anything
 	// into, is a warning.
-	// Chosen before anything is published, because the engine is built lazily
-	// and shared: a diagram already drawn is not drawn again to match.
+
+	// The engine is chosen before anything is published, because it is built
+	// lazily and shared: a diagram already drawn is not drawn again to match.
 	if err := mermaid.UseEngine(config.MermaidEngine); err != nil {
 		return err
 	}
