@@ -156,15 +156,8 @@ func getMermaidEngine() (mermaid.Renderer, error) {
 	return mermaidEngine, nil
 }
 
-// discardEngine drops engine from the global slot and closes it, so that the
-// next diagram launches a new browser. It is a no-op when the slot has already
-// moved on, so that a second diagram failing against the same dead engine
-// cannot tear down the replacement the first one built.
-// startMerman builds the CLI-backed engine. Called with the mutex held.
-//
-// The binary is looked for and asked what it is while the engine is being
-// built, so a merman that is missing or too old is reported here -- naming the
-// setting that asked for it -- rather than as a diagram that would not draw.
+// minimumMermanVersion is merman-version.txt as the binary carries it. Read
+// through MinimumMermanVersion, which is the same thing without the newline.
 //
 //go:embed merman-version.txt
 var minimumMermanVersion string
@@ -214,6 +207,11 @@ func checkMermanVersion(version string) error {
 	return nil
 }
 
+// startMerman builds the CLI-backed engine. Called with the mutex held.
+//
+// The binary is looked for and asked what it is while the engine is being
+// built, so a merman that is missing or too old is reported here -- naming the
+// setting that asked for it -- rather than as a diagram that would not draw.
 func startMerman() (mermaid.Renderer, error) {
 	log.Debug().Msg("Setting up global Mermaid renderer (merman)")
 
@@ -239,6 +237,10 @@ func startMerman() (mermaid.Renderer, error) {
 	return mermaidEngine, nil
 }
 
+// discardEngine drops engine from the global slot and closes it, so that the
+// next diagram launches a new one. It is a no-op when the slot has already
+// moved on, so that a second diagram failing against the same dead engine
+// cannot tear down the replacement the first one built.
 func discardEngine(engine mermaid.Renderer) {
 	mermaidMutex.Lock()
 	if mermaidEngine == engine {
@@ -559,7 +561,9 @@ func Cleanup() {
 // merman-cli is what its releases are called, and merman is what a locally
 // built or renamed copy often is.
 func lookMerman() (string, error) {
-	var err error
+	// Not nil to begin with: a library that named no binary at all would
+	// otherwise be reported as a merman found at the empty path.
+	err := exec.ErrNotFound
 
 	for _, name := range mermaid.MermanBinaries {
 		path, lookErr := exec.LookPath(name)
