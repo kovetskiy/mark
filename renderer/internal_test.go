@@ -66,3 +66,36 @@ func TestFootnoteAnchorNames(t *testing.T) {
 	assert.Equal(t, "footnote-ref-3-1", footnoteRefAnchor(3, 1))
 	assert.Equal(t, "footnote-ref-3-2", footnoteRefAnchor(3, 2))
 }
+
+// TestIsLocalFileReference pins which destinations --attach-referenced will
+// offer to publish, including the ones whose answer cannot be observed on the
+// machine this test runs on: a Windows path is a Windows path from Linux too,
+// and reading one as a relative file would join it onto the document's
+// directory and refuse it as outside the project instead of leaving the link
+// exactly as the author wrote it.
+func TestIsLocalFileReference(t *testing.T) {
+	tests := map[string]bool{
+		"files/report.pdf":           true,
+		"report.pdf":                 true,
+		"files/report[2024].pdf":     true,
+		"":                           false,
+		"#a-heading":                 false,
+		"/files/report.pdf":          false,
+		"C:/docs/report.pdf":         false,
+		`C:\docs\report.pdf`:         false,
+		`c:\docs\report.pdf`:         false,
+		`\docs\report.pdf`:           false,
+		`\\server\share\report.pdf`:  false,
+		"https://example.com/a.pdf":  false,
+		"mailto:someone@example.com": false,
+		"other.md":                   false,
+		"NOTES.markdown":             false,
+		"CHANGELOG":                  false,
+	}
+
+	for destination, want := range tests {
+		t.Run(destination, func(t *testing.T) {
+			assert.Equal(t, want, isLocalFileReference(destination))
+		})
+	}
+}

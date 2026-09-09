@@ -233,8 +233,10 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 	node ast.Node,
 	link *ast.Link,
 ) error {
-	attachments, err := attachment.ResolveLocalAttachments(
-		vfs.LocalOS, filepath.Dir(r.Path), []string{string(link.Destination)},
+	// Resolved as written rather than as a pattern: a link names one file, and
+	// the one it names is the one the reader was promised.
+	attached, err := attachment.ResolveLocalAttachment(
+		vfs.LocalOS, filepath.Dir(r.Path), string(link.Destination),
 	)
 
 	// Refused rather than published as a link to somewhere it should not have
@@ -249,14 +251,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 		return err
 	}
 
-	if len(attachments) == 0 {
-		line, col := GetLineCol(source, node.Pos())
-
-		return fmt.Errorf("line %d, col %d: no attachment resolved for %q",
-			line, col, string(link.Destination))
-	}
-
-	r.Attachments.Attach(attachments[0])
+	r.Attachments.Attach(attached)
 
 	//nolint:staticcheck
 	text := string(node.Text(source))
@@ -264,7 +259,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 	return r.Stdlib.Templates.ExecuteTemplate(writer, "ac:link:attachment", struct {
 		Name string
 		Text string
-	}{attachments[0].Filename, text})
+	}{attached.Filename, text})
 }
 
 // isLocalFileReference reports whether a destination names a file next to the
@@ -279,7 +274,7 @@ func isLocalFileReference(destination string) bool {
 		return false
 	}
 
-	if strings.HasPrefix(destination, "#") || strings.HasPrefix(destination, "/") {
+	if strings.HasPrefix(destination, "#") || isRooted(destination) {
 		return false
 	}
 
@@ -293,6 +288,33 @@ func isLocalFileReference(destination string) bool {
 	}
 
 	return true
+}
+
+// isRooted reports whether a destination names a place from the root of a
+// filesystem rather than one beside the document.
+//
+// Answered by shape rather than by filepath.IsAbs, which answers for the OS
+// this happens to be running on. A document naming C:\docs\report.pdf names an
+// absolute path whether it is published from Windows or from CI on Linux, and
+// either way it is not a file beside the document. Left alone it keeps the link
+// the author wrote, rather than being joined onto the document's directory and
+// refused as "outside the project" -- an error about a path that was never
+// going to be attached.
+func isRooted(destination string) bool {
+	// A leading backslash covers both the Windows root and the "\\server\share"
+	// of a UNC path.
+	if strings.HasPrefix(destination, "/") || strings.HasPrefix(destination, `\`) {
+		return true
+	}
+
+	// A drive letter -- "C:/docs/report.pdf", "c:\docs\report.pdf".
+	if len(destination) >= 2 && destination[1] == ':' {
+		letter := destination[0]
+
+		return (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z')
+	}
+
+	return false
 }
 
 // xmlAttrEscape makes a document-derived string safe to interpolate into an XML

@@ -181,3 +181,39 @@ func onePixelPNG() []byte {
 		0x89,
 	}
 }
+
+// TestAFilenameWithBracketsIsNotAPattern covers the destination that reads as a
+// glob and is not one. A file really called report[2024].pdf is an ordinary
+// name; expanded as a pattern it names one of report2.pdf, report0.pdf and
+// report4.pdf instead, so the page would carry a link that reads as the report
+// and downloads whatever else happened to be sitting beside it. A link points
+// at one file, and it is the one it names.
+func TestAFilenameWithBracketsIsNotAPattern(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "files"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "files", "report[2024].pdf"), []byte("the one linked to\n"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "files", "report2.pdf"), []byte("what the glob would match\n"), 0o600))
+
+	file := writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\n"+
+			"See [the report](<files/report[2024].pdf>).\n")
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	target, err := ProcessFile(file, api, Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, AttachReferenced: true, Output: io.Discard,
+	})
+	require.NoError(t, err)
+
+	stored := server.Attachments(target.ID)
+	require.Len(t, stored, 1)
+	assert.Equal(t, "files_report[2024].pdf", stored[0].Filename)
+	assert.Contains(t, server.Page(target.ID).Body, `ri:filename="files_report[2024].pdf"`)
+}

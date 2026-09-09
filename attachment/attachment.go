@@ -208,14 +208,46 @@ func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []stri
 	}
 
 	for i := range attachments {
-		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
-		if err != nil {
-			return nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
+		if err := setChecksum(&attachments[i]); err != nil {
+			return nil, err
 		}
-
-		attachments[i].Checksum = checksum
 	}
-	return attachments, err
+
+	return attachments, nil
+}
+
+// ResolveLocalAttachment resolves one path exactly as it was written.
+//
+// Nothing in it is read as a pattern, which is what separates this from
+// ResolveLocalAttachments: a declared attachment may name several files on
+// purpose, while a link points at one. "report[2024].pdf" is an ordinary
+// filename, and globbing it would publish whichever of report2.pdf,
+// report0.pdf or report4.pdf happens to sit beside it -- a different file from
+// the one the link names, under a link that reads as if it were right.
+func ResolveLocalAttachment(opener vfs.Opener, base, name string) (Attachment, error) {
+	attachment, err := prepareAttachment(opener, base, name)
+	if err != nil {
+		return Attachment{}, err
+	}
+
+	if err := setChecksum(&attachment); err != nil {
+		return Attachment{}, err
+	}
+
+	return attachment, nil
+}
+
+// setChecksum records what the file hashes to, which is how a later run
+// recognises an attachment it does not need to upload again.
+func setChecksum(attachment *Attachment) error {
+	checksum, err := GetChecksum(bytes.NewReader(attachment.FileBytes))
+	if err != nil {
+		return fmt.Errorf("unable to get checksum for attachment %q: %w", attachment.Name, err)
+	}
+
+	attachment.Checksum = checksum
+
+	return nil
 }
 
 // prepareAttachements creates an array of attachement objects based on an array of filepaths
