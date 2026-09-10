@@ -161,10 +161,10 @@ restrictions:
 
 	restrictionIndex, contentIndex := -1, -1
 	for i, request := range server.Requests() {
-		if request.Method == "PUT" && strings.HasSuffix(request.Path, "/restriction") {
+		if request.Method == http.MethodPut && strings.HasSuffix(request.Path, "/restriction") {
 			restrictionIndex = i
 		}
-		if request.Method == "PUT" && strings.HasSuffix(request.Path, "/content/"+target.ID) {
+		if request.Method == http.MethodPut && strings.HasSuffix(request.Path, "/content/"+target.ID) {
 			contentIndex = i
 		}
 	}
