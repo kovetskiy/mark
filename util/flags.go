@@ -36,6 +36,7 @@ var KnownFeatures = []string{
 	"mention",
 	"mermaid",
 	"mkdocsadmonitions",
+	"page-restrictions",
 	"plantuml",
 }
 

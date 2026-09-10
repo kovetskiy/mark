@@ -45,12 +45,36 @@ attachments:
 labels:
   - <label 1>
   - <label 2>
+restrictions:
+  read:
+    users:
+      - <user name>
+    groups:
+      - <group name>
+  update:
+    users:
+      - <user name>
+    groups:
+      - <group name>
 image-align: <left|center|right>
 order: <whole number>
 ---
 
 <page contents>
 ```
+
+Page restrictions work only through YAML front matter and require both the
+`frontmatter` and `page-restrictions` features:
+
+```shell
+mark --features=mermaid --features=mention --features=frontmatter \
+  --features=page-restrictions
+```
+
+Each operation replaces its existing restrictions; omit the whole mapping to
+leave page restrictions unchanged. An empty operation removes its restrictions.
+Confluence requires anyone named under `update` to also be able to read the
+page.
 
 The legacy HTML header format is also supported:
 
