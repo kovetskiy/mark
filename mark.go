@@ -666,6 +666,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		meta = nil
 	}
 
+	if meta != nil && meta.Restrictions != nil &&
+		!slices.Contains(config.Features, "page-restrictions") {
+		return nil, nil, fmt.Errorf(
+			"page restrictions in %q require --features=page-restrictions", file,
+		)
+	}
+
 	// Before anything is asked of Confluence: a document that has opted out
 	// should cost nothing, not a page lookup and an attachment upload it will
 	// not use.
@@ -956,6 +963,25 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			}
 
 			return target, nil, nil
+		}
+	}
+
+	// Apply access controls before uploading attachments or page content so a
+	// newly created restricted page is never populated while still unrestricted.
+	if meta != nil && meta.Restrictions != nil {
+		var restrictions []confluence.PageRestriction
+		if subjects := meta.Restrictions.Read; subjects != nil {
+			restrictions = append(restrictions, confluence.PageRestriction{
+				Operation: "read", Users: subjects.Users, Groups: subjects.Groups,
+			})
+		}
+		if subjects := meta.Restrictions.Update; subjects != nil {
+			restrictions = append(restrictions, confluence.PageRestriction{
+				Operation: "update", Users: subjects.Users, Groups: subjects.Groups,
+			})
+		}
+		if err := api.SetPageRestrictions(target, restrictions); err != nil {
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
 		}
 	}
 

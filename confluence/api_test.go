@@ -1,13 +1,43 @@
 package confluence
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestSetPageRestrictions(t *testing.T) {
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/spaces" {
+			http.NotFound(w, r)
+			return
+		}
+		var err error
+		body, err = io.ReadAll(r.Body)
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	api := NewAPI(server.URL, "username", "password", true)
+	err := api.SetPageRestrictions(&PageInfo{ID: "123"}, []PageRestriction{
+		{Operation: "read", Groups: []string{"docs-readers"}},
+		{Operation: "update", Users: []string{"jdoe"}},
+	})
+	require.NoError(t, err)
+
+	require.JSONEq(t, `[
+		{"operation":"read","restrictions":{"user":[],"group":[{"type":"group","name":"docs-readers"}]}},
+		{"operation":"update","restrictions":{"user":[{"type":"known","username":"jdoe"}],"group":[]}}
+	]`, string(body))
+}
 
 func TestPageCache(t *testing.T) {
 	api := &API{

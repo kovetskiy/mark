@@ -168,6 +168,7 @@ type Meta struct {
 	Attachments       []string
 	Labels            []string
 	ContentAppearance string
+	Restrictions      *Restrictions
 
 	// Synchronized is whether the document is published at all. Nil means it
 	// said nothing, which is not the same as false: a pointer keeps the
@@ -190,6 +191,18 @@ type Meta struct {
 	// sorting them to the front.
 	Order      *int
 	ImageAlign string
+}
+
+// Restrictions declares who may read or update a Confluence page.
+// A nil operation leaves that operation unchanged; an empty operation clears it.
+type Restrictions struct {
+	Read   *RestrictionSubjects
+	Update *RestrictionSubjects
+}
+
+type RestrictionSubjects struct {
+	Users  []string
+	Groups []string
 }
 
 const (
@@ -276,6 +289,80 @@ func toStringMap(val any) map[string]any {
 	default:
 		return nil
 	}
+}
+
+func restrictionSubjects(operation string, val any) (*RestrictionSubjects, error) {
+	values := toStringMap(val)
+	if values == nil {
+		return nil, fmt.Errorf("restrictions.%s must be a mapping", operation)
+	}
+
+	subjects := &RestrictionSubjects{}
+	for key, value := range values {
+		items, ok := value.([]any)
+		if !ok {
+			return nil, fmt.Errorf("restrictions.%s.%s must be a list", operation, key)
+		}
+
+		parsed := make([]string, 0, len(items))
+		for _, item := range items {
+			name, ok := item.(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				return nil, fmt.Errorf(
+					"restrictions.%s.%s entries must be non-empty strings",
+					operation, key,
+				)
+			}
+			parsed = append(parsed, strings.TrimSpace(name))
+		}
+
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "users":
+			subjects.Users = parsed
+		case "groups":
+			subjects.Groups = parsed
+		default:
+			return nil, fmt.Errorf(
+				"restrictions.%s supports only users and groups, got %q",
+				operation, key,
+			)
+		}
+	}
+
+	return subjects, nil
+}
+
+func parseRestrictions(val any) (*Restrictions, error) {
+	values := toStringMap(val)
+	if values == nil {
+		return nil, fmt.Errorf("restrictions must be a mapping")
+	}
+
+	restrictions := &Restrictions{}
+	for key, value := range values {
+		operation := strings.ToLower(strings.TrimSpace(key))
+		subjects, err := restrictionSubjects(operation, value)
+		if err != nil {
+			return nil, err
+		}
+
+		switch operation {
+		case "read":
+			restrictions.Read = subjects
+		case "update":
+			restrictions.Update = subjects
+		default:
+			return nil, fmt.Errorf(
+				"restrictions supports only read and update, got %q", key,
+			)
+		}
+	}
+
+	if restrictions.Read == nil && restrictions.Update == nil {
+		return nil, fmt.Errorf("restrictions must include read or update")
+	}
+
+	return restrictions, nil
 }
 
 func toString(val any) string {
@@ -430,6 +517,12 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					}
 					meta.Properties[key] = value
 				}
+			case "restrictions":
+				restrictions, err := parseRestrictions(v)
+				if err != nil {
+					return nil, nil, err
+				}
+				meta.Restrictions = restrictions
 
 			default:
 				unknown = append(unknown, k)
