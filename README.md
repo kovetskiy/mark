@@ -1810,6 +1810,58 @@ a warning and not an error, because `--compile-only` has to keep validating
 documents on a machine -- a CI image, typically -- that has no password manager
 on it.
 
+### Scoped API tokens
+
+An Atlassian scoped API token does not authenticate against your site's own
+address at all. It goes through the gateway, which is what the base URL has to
+name:
+
+```toml
+base-url = "https://api.atlassian.com/ex/confluence/<cloud-id>"
+```
+
+The gateway checks the token's granular scopes against the endpoint being
+called, and Confluence's two REST APIs check different scopes for the same
+thing: the v2 endpoints check the page scopes a scoped token is usually minted
+with, and the older v1 ones check `read:content-details:confluence` and
+`write:content:confluence`. A token holding `read:page:confluence` and
+`write:page:confluence` therefore used to get
+
+```text
+401 {"code":401,"message":"Unauthorized; scope does not match"}
+```
+
+out of the first page lookup of the run.
+
+Mark asks v1 first everywhere -- it answers in one request what v2 needs several
+for -- and asks v2 instead wherever v1 refuses. Only on Cloud: Server and Data
+Center have no v2 API at all, and mark settles which it is talking to before
+falling back to anything, so a self-hosted instance is never sent to a path it
+does not have and keeps the v1 error that explains the failure. Publishing a
+page through the gateway needs:
+
+| scope | what it is for |
+| --- | --- |
+| `read:space:confluence` | resolving a space key, and finding its home page |
+| `read:page:confluence` | finding a page by title, and reading one by id |
+| `write:page:confluence` | creating and updating pages |
+| `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page, and the `--track-pages` mapping |
+| `read:attachment:confluence` | listing what is attached to a page, which happens on every run whether or not the document has attachments |
+| `read:label:confluence` | reading the labels a page carries, likewise |
+
+The rest of what mark does has no v2 endpoint to fall back to and stays on v1:
+uploading attachments -- so any image, diagram or formula -- applying `Label`
+headers, `--preserve-comments`, `--on-orphan`, page restrictions, mentions, and
+moving a page among its siblings. Those need the scope Atlassian documents for
+the v1 endpoint behind them, which is the feature's own scope
+(`write:attachment:confluence`, `write:label:confluence`,
+`read:comment:confluence`, `read:user:confluence`) together with the content
+scopes above. Granting `read:content-details:confluence` and
+`write:content:confluence` alongside the page scopes is the simplest way to have
+everything work, and costs a scoped token none of the point of being scoped: it
+is still confined to Confluence, and still to what the account behind it may
+see.
+
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
 **NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.

@@ -530,6 +530,17 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// v1 space endpoint answers 404 and every run aborted here. The fallback is
 	// deliberately not narrowed to 404: a token with partial scopes can also
 	// draw 401/403 from v1 while v2 still answers.
+	//
+	// Server and Data Center have no v2 at all, so there is nothing there to
+	// fall through to and v1's answer is the whole story.
+	if !api.v2Available() {
+		if v1Err == nil {
+			v1Err = newErrorStatusNotOK(v1Request)
+		}
+
+		return nil, v1Err
+	}
+
 	v2Result := struct {
 		Results []struct {
 			ID         string `json:"id"`
@@ -553,7 +564,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		if v1Err == nil {
 			v1Err = newErrorStatusNotOK(v1Request)
 		}
-		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %w)", v1Err, v2Err)
+		return nil, v1FailedAndSoDidV2(v1Err, v2Err)
 	}
 
 	if len(v2Result.Results) == 0 {
@@ -613,9 +624,40 @@ func (api *API) FindPage(
 		return nil, newTransportError(request, fmt.Sprintf("find page %q in space %s", title, space), err)
 	}
 
-	// allow 404 because it's fine if page is not found,
-	// the function will return nil, nil
-	if request.Raw.StatusCode != http.StatusNotFound && request.Raw.StatusCode != http.StatusOK {
+	// found is nil for "no such page", which is not an error: the caller is
+	// asking whether a title is taken, and both APIs may answer that it is not.
+	var found *PageInfo
+
+	switch {
+	case request.Raw.StatusCode == http.StatusOK:
+		if len(result.Results) > 0 {
+			found = &result.Results[0]
+			// Populate the base URL from the response _links.base or fallback to BaseURL
+			if result.Links.Base != "" {
+				found.Links.Base = result.Links.Base
+			} else if found.Links.Base == "" {
+				found.Links.Base = api.BaseURL
+			}
+		}
+
+	case v1Refused(request) && api.v2Available():
+		// A scoped API token is not entitled to /rest/api/content, and this is
+		// where a run using one used to end. v2 answers the same question; see
+		// v2fallback.go for why v1 is still asked first, and why a deployment
+		// without a v2 API is not asked at all.
+		page, v2Err := api.findContentV2(space, title, pageType, "current")
+		if v2Err == nil {
+			found = page
+			break
+		}
+
+		// allow 404 because it's fine if page is not found,
+		// the function will return nil, nil
+		if request.Raw.StatusCode != http.StatusNotFound {
+			return nil, v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
+		}
+
+	default:
 		return nil, newErrorStatusNotOK(request)
 	}
 
@@ -628,18 +670,12 @@ func (api *API) FindPage(
 		return clonePageInfo(cachedPage), nil
 	}
 
-	if len(result.Results) == 0 {
+	if found == nil {
 		api.setCacheEntry(key, nil)
 		return nil, nil
 	}
 
-	page := result.Results[0]
-	// Populate the base URL from the response _links.base or fallback to BaseURL
-	if result.Links.Base != "" {
-		page.Links.Base = result.Links.Base
-	} else if page.Links.Base == "" {
-		page.Links.Base = api.BaseURL
-	}
+	page := *found
 
 	cacheTitle := title
 	if page.Title != "" {
@@ -700,8 +736,25 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 		)
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound {
-		return nil, nil
+	// A scoped API token draws 401 here rather than an answer; v2 can filter by
+	// status too. A 404 keeps its old meaning -- no such page -- when v2 cannot
+	// answer either, since this only ever improves an error message.
+	if page, ok, err := fallbackV2(api, request, func() (*PageInfo, error) {
+		return api.findContentV2(space, title, pageType, status)
+	}); ok {
+		if err != nil {
+			if request.Raw.StatusCode == http.StatusNotFound {
+				return nil, nil
+			}
+
+			return nil, err
+		}
+
+		if page != nil && page.Status == "" {
+			page.Status = status
+		}
+
+		return page, nil
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -968,6 +1021,18 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 			return nil, newTransportError(request, "list attachments of page "+pageID, err)
 		}
 
+		// A page with no attachments still gets listed here, on every run, for
+		// every document -- so a token that cannot read this listing cannot
+		// publish anything at all. v2 has the listing; it does not have the
+		// upload, which stays on v1.
+		if start == 0 {
+			if attachments, ok, err := fallbackV2(api, request, func() ([]AttachmentInfo, error) {
+				return api.getAttachmentsV2(pageID)
+			}); ok {
+				return attachments, err
+			}
+		}
+
 		if request.Raw.StatusCode != http.StatusOK {
 			return nil, newErrorStatusNotOK(request)
 		}
@@ -1007,6 +1072,16 @@ func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, er
 	).Get(map[string]string{"expand": expand})
 	if err != nil {
 		return nil, newTransportError(request, "read page "+pageID, err)
+	}
+
+	// A scoped API token cannot read /rest/api/content; v2 holds the same page.
+	// What v1 expands in one request, v2 needs several for -- the body comes
+	// from a format parameter and the ancestors from a walk -- so only what the
+	// caller asked to expand is fetched.
+	if page, ok, err := fallbackV2(api, request, func() (*PageInfo, error) {
+		return api.getPageByIDV2(pageID, expand)
+	}); ok {
+		return page, err
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1103,11 +1178,25 @@ func (api *API) CreatePage(
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
+	var page *PageInfo
+
+	switch {
+	case request.Raw.StatusCode == http.StatusOK:
+		page = request.Response.(*PageInfo)
+
+	case v1Refused(request) && api.v2Available():
+		// A scoped API token may create through v2 and not through v1. The
+		// refusal statuses are the ones no page is created by, so there is
+		// nothing here for a second attempt to duplicate.
+		created, v2Err := api.createContentV2(space, pageType, parent, title, body)
+		if v2Err != nil {
+			return nil, api.explainCreateFailure(space, title, pageType, v2Err)
+		}
+		page = created
+
+	default:
 		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
 	}
-
-	page := request.Response.(*PageInfo)
 
 	if parent != nil {
 		ancestors := make([]struct {
@@ -1233,7 +1322,27 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
+	// A scoped API token cannot write through /rest/api/content. v2 takes the
+	// content, and the metadata properties above -- which v1 carries inside the
+	// same request -- have to be written separately afterwards.
+	var propertyErr error
+
+	switch {
+	case request.Raw.StatusCode == http.StatusOK:
+
+	case v1Refused(request) && api.v2Available():
+		if v2Err := api.updateContentV2(
+			page, newContent, minorEdit, versionMessage, nextPageVersion,
+		); v2Err != nil {
+			return v1FailedAndSoDidV2(newErrorStatusNotOK(request), v2Err)
+		}
+
+		// Reported once the version this run just wrote has been recorded: the
+		// content is published, and a caller told only that the update failed
+		// would try again against a version number that has already moved.
+		propertyErr = api.setContentPropertiesV2(page.ID, propertyValues(properties))
+
+	default:
 		return newErrorStatusNotOK(request)
 	}
 
@@ -1247,6 +1356,14 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	// one, which Confluence rejects as a duplicate title. Dropping the entry
 	// costs one lookup and keeps the cache from asserting something untrue.
 	api.forgetMissesForTitle(page.Title, page.Type)
+
+	if propertyErr != nil {
+		return fmt.Errorf(
+			"page %q (%s) was updated, but its page properties were not: %w",
+			page.Title, page.ID, propertyErr,
+		)
+	}
+
 	return nil
 }
 
@@ -1351,6 +1468,18 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 		})
 		if err != nil {
 			return nil, newTransportError(request, "read labels of page "+page.ID, err)
+		}
+
+		// Labels are read for every page mark publishes, whether or not the
+		// document declares any, so this listing is on the critical path of a
+		// scoped-token run in the same way the attachment listing is. Adding
+		// and removing labels stays on v1, which has no v2 counterpart.
+		if start == 0 {
+			if labels, ok, err := fallbackV2(api, request, func() (*LabelInfo, error) {
+				return api.getPageLabelsV2(page.ID, prefix)
+			}); ok {
+				return labels, err
+			}
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -1750,6 +1879,19 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 		return strconv.Itoa(v1Result.ID), nil
 	}
 
+	// Server and Data Center have no v2 spaces endpoint to fall back to, so
+	// whatever v1 said is the answer.
+	if !api.v2Available() {
+		switch {
+		case err != nil:
+			return "", newTransportError(request, "resolve space "+spaceKey, err)
+		case request.Raw.StatusCode == http.StatusOK:
+			return "", fmt.Errorf("space %s: the v1 API answered without an id", spaceKey)
+		default:
+			return "", newErrorStatusNotOK(request)
+		}
+	}
+
 	// Fallback to v2 API with query parameter
 	v2Result := struct {
 		Results []struct {
@@ -1915,57 +2057,36 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 // Stops at the first folder it sees. The answer is a yes or a no, and the rest
 // of the listing cannot change it.
 func (api *API) HasChildFolders(parentID string) (bool, error) {
-	const pageSize = 100
-
-	var cursor string
-	for {
-		result := struct {
-			Results []struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
-		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res(
-			"pages/"+parentID+"/direct-children", &result,
-		).Get(query)
-		if err != nil {
-			return false, fmt.Errorf("unable to list children of %s: %w", parentID, err)
-		}
-
-		// First page only: a 404 partway through is a real failure, and reading
-		// it as "none" would answer from a listing already known to be partial.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return false, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return false, newErrorStatusNotOK(request)
-		}
-
-		for _, child := range result.Results {
-			if child.Type == "folder" {
-				return true, nil
-			}
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			return false, nil
-		}
-		cursor = next
+	type childV2 struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
 	}
+
+	var found bool
+
+	err := listPagedV2(
+		api,
+		"pages/"+parentID+"/direct-children",
+		"list children of "+parentID,
+		map[string]string{"limit": "100"},
+		missingIsEmpty,
+		func(children []childV2) bool {
+			for _, child := range children {
+				if child.Type == "folder" {
+					found = true
+
+					return false
+				}
+			}
+
+			return true
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return found, nil
 }
 
 // MoveContentAfter places a page immediately after one of its siblings.

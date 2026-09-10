@@ -178,6 +178,22 @@ func (s *Server) CountRequests(method, substr string) int {
 	return n
 }
 
+// CountRequestsMatching is CountRequests narrowed by the query string as well,
+// which is what tells two requests to the same endpoint apart -- the Cloud
+// probe and the space lookup both go to /api/v2/spaces.
+func (s *Server) CountRequestsMatching(method, pathSubstr, querySubstr string) int {
+	var n int
+	for _, r := range s.Requests() {
+		if r.Method == method &&
+			strings.Contains(r.Path, pathSubstr) &&
+			strings.Contains(r.Query, querySubstr) {
+			n++
+		}
+	}
+
+	return n
+}
+
 // ResetRequests clears the recorded request log.
 func (s *Server) ResetRequests() {
 	s.mu.Lock()
@@ -652,8 +668,19 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 	case "/folders":
 		s.createFolder(w, r)
 
-	case "/pages":
-		s.createPageV2(w, r)
+	case "/pages", "/blogposts":
+		pageType := "page"
+		if path == "/blogposts" {
+			pageType = "blogpost"
+		}
+		switch r.Method {
+		case http.MethodGet:
+			s.listContentV2(w, r, pageType)
+		case http.MethodPost:
+			s.createPageV2(w, r, pageType)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 
 	default:
 		if folderID, ok := strings.CutPrefix(path, "/folders/"); ok && r.Method == http.MethodGet {
@@ -663,16 +690,34 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		// /pages/{id}/direct-children -- children of every type, which is what
 		// separates it from the v1 child/page listing.
 		if rest, ok := strings.CutPrefix(path, "/pages/"); ok {
-			if pageID, sub, found := strings.Cut(rest, "/"); found && sub == "direct-children" {
+			pageID, sub, _ := strings.Cut(rest, "/")
+			switch {
+			case sub == "direct-children":
 				s.directChildren(w, r, pageID)
 				return
+			case sub == "labels":
+				s.labelsV2(w, r, pageID)
+				return
+			case sub == "attachments":
+				s.attachmentsV2(w, r, pageID)
+				return
+			case sub == "properties" || strings.HasPrefix(sub, "properties/"):
+				s.spaceProperties(w, r, "pages", pageID, strings.TrimPrefix(strings.TrimPrefix(sub, "properties"), "/"))
+				return
+			case sub == "":
+				s.contentV2ByID(w, r, pageID, "page")
+				return
 			}
+		}
+		if contentID, ok := strings.CutPrefix(path, "/blogposts/"); ok && !strings.Contains(contentID, "/") {
+			s.contentV2ByID(w, r, contentID, "blogpost")
+			return
 		}
 		// /spaces/{id}/properties and /spaces/{id}/properties/{propertyID}
 		if rest, ok := strings.CutPrefix(path, "/spaces/"); ok {
 			spaceID, sub, _ := strings.Cut(rest, "/")
 			if propertyID, ok := strings.CutPrefix(sub, "properties"); ok {
-				s.spaceProperties(w, r, spaceID, strings.TrimPrefix(propertyID, "/"))
+				s.spaceProperties(w, r, "spaces", spaceID, strings.TrimPrefix(propertyID, "/"))
 				return
 			}
 		}
@@ -890,7 +935,7 @@ func (s *Server) contentProperties(w http.ResponseWriter, r *http.Request, conte
 	}
 }
 
-func (s *Server) spaceProperties(w http.ResponseWriter, r *http.Request, ownerID, propertyID string) {
+func (s *Server) spaceProperties(w http.ResponseWriter, r *http.Request, collection, ownerID, propertyID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -922,8 +967,8 @@ func (s *Server) spaceProperties(w http.ResponseWriter, r *http.Request, ownerID
 		links := map[string]any{}
 		if next != "" {
 			links["next"] = fmt.Sprintf(
-				"/api/v2/spaces/%s/properties?cursor=%s&limit=%s",
-				ownerID, next, r.URL.Query().Get("limit"),
+				"/api/v2/%s/%s/properties?cursor=%s&limit=%s",
+				collection, ownerID, next, r.URL.Query().Get("limit"),
 			)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
@@ -1632,20 +1677,250 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.folderJSON(f))
 }
 
-// createPageV2 serves the v2 page create mark uses when the parent is a folder.
-func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+// contentJSONV2 renders a page or blogpost the way v2 does.
+//
+// The differences from the v1 shape are the ones a client has to cope with: the
+// space is an id, the parent is a single id with its type beside it rather than
+// an ancestor chain, and the body arrives only when a format was asked for.
+//
+// Callers must hold s.mu.
+func (s *Server) contentJSONV2(p *Page, withBody bool) map[string]any {
+	spaceID := ""
+	if sp, ok := s.spaces[p.SpaceKey]; ok {
+		spaceID = sp.ID
+	}
+
+	parentType := ""
+	if p.ParentID != "" {
+		parentType = "page"
+		for _, f := range s.folders {
+			if f.ID == p.ParentID {
+				parentType = "folder"
+			}
+		}
+	}
+
+	out := map[string]any{
+		"id":         p.ID,
+		"status":     p.Status(),
+		"title":      p.Title,
+		"spaceId":    spaceID,
+		"parentId":   p.ParentID,
+		"parentType": parentType,
+		"version": map[string]any{
+			"number":  p.Version,
+			"message": p.Message,
+		},
+		"_links": map[string]any{"webui": "/display/" + p.SpaceKey + "/" + p.ID},
+	}
+
+	if withBody {
+		out["body"] = map[string]any{"storage": map[string]any{"value": p.Body}}
+	}
+
+	return out
+}
+
+// labelsV2 serves the v2 label listing, which pages by cursor and hands the
+// label id over as a number where v1 makes it a string.
+func (s *Server) labelsV2(w http.ResponseWriter, r *http.Request, pageID string) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	page, next := cursorPage(r, p.Labels)
+
+	results := []map[string]any{}
+	for i, label := range page {
+		results = append(results, map[string]any{
+			"id":     i + 1,
+			"name":   label,
+			"prefix": "global",
+		})
+	}
+
+	links := map[string]any{}
+	if next != "" {
+		links["next"] = fmt.Sprintf("/api/v2/pages/%s/labels?cursor=%s", pageID, next)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
+}
+
+// attachmentsV2 serves the v2 attachment listing, which names the comment and
+// the download link at the top level where v1 nests them.
+func (s *Server) attachmentsV2(w http.ResponseWriter, r *http.Request, pageID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var owned []*Attachment
+	for _, a := range s.attachments {
+		if a.PageID == pageID {
+			owned = append(owned, a)
+		}
+	}
+
+	page, next := cursorPage(r, owned)
+
+	results := []map[string]any{}
+	for _, a := range page {
+		results = append(results, map[string]any{
+			"id":           a.ID,
+			"title":        a.Filename,
+			"comment":      a.Comment,
+			"downloadLink": "/download/attachments/" + a.PageID + "/" + a.Filename,
+		})
+	}
+
+	links := map[string]any{}
+	if next != "" {
+		links["next"] = fmt.Sprintf("/api/v2/pages/%s/attachments?cursor=%s", pageID, next)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
+}
+
+// listContentV2 serves GET /pages and GET /blogposts: a space, a title and a
+// status, where v1 takes a space key and a type.
+func (s *Server) listContentV2(w http.ResponseWriter, r *http.Request, pageType string) {
+	q := r.URL.Query()
+	spaceID, title := q.Get("space-id"), q.Get("title")
+
+	wanted := map[string]bool{}
+	for _, status := range strings.Split(q.Get("status"), ",") {
+		status = strings.TrimSpace(status)
+		if status != "" {
+			wanted[status] = true
+		}
+	}
+	if len(wanted) == 0 {
+		wanted["current"] = true
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var matches []*Page
+	for _, p := range s.pages {
+		if p.Type != pageType {
+			continue
+		}
+		if spaceID != "" {
+			sp, ok := s.spaces[p.SpaceKey]
+			if !ok || sp.ID != spaceID {
+				continue
+			}
+		}
+		if title != "" && p.Title != title {
+			continue
+		}
+		if !wanted[p.Status()] {
+			continue
+		}
+		matches = append(matches, p)
+	}
+	// Deterministic ordering: the client takes results[0].
+	sort.Slice(matches, func(i, j int) bool { return matches[i].ID < matches[j].ID })
+
+	page, next := cursorPage(r, matches)
+
+	results := []map[string]any{}
+	for _, p := range page {
+		results = append(results, s.contentJSONV2(p, false))
+	}
+
+	links := map[string]any{}
+	if next != "" {
+		links["next"] = fmt.Sprintf("/api/v2/%ss?cursor=%s", pageType, next)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
+}
+
+// contentV2ByID serves GET and PUT of a single page or blogpost.
+//
+// A page id and a blogpost id come from the same sequence here, as they do in
+// Confluence, so the type is checked rather than assumed: asking /blogposts for
+// a page id has to answer 404, which is what makes a client's fall through from
+// one collection to the other worth having.
+func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageType string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[id]
+	if !ok || p.Type != pageType {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + id})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.contentJSONV2(p, r.URL.Query().Get("body-format") != ""))
+
+	case http.MethodPut:
+		var payload struct {
+			Title    string `json:"title"`
+			Status   string `json:"status"`
+			ParentID string `json:"parentId"`
+			Version  struct {
+				Number  int64  `json:"number"`
+				Message string `json:"message"`
+			} `json:"version"`
+			Body struct {
+				Value string `json:"value"`
+			} `json:"body"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad payload"})
+			return
+		}
+		if payload.Version.Number != p.Version+1 {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"message": fmt.Sprintf(
+					"version conflict: expected %d, got %d", p.Version+1, payload.Version.Number,
+				),
+			})
+			return
+		}
+		p.Version = payload.Version.Number
+		p.Message = payload.Version.Message
+		p.Body = payload.Body.Value
+		if payload.Title != "" {
+			p.Title = payload.Title
+		}
+		// v2 names the parent directly, and only a real change of parent
+		// re-places the page among its siblings.
+		if payload.ParentID != "" && payload.ParentID != p.ParentID {
+			p.ParentID = payload.ParentID
+			s.placeChild(payload.ParentID, p.ID, "")
+		}
+		writeJSON(w, http.StatusOK, s.contentJSONV2(p, false))
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// createPageV2 serves the v2 page create mark uses when the parent is a folder.
+func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request, pageType string) {
 	var payload struct {
 		SpaceID  string `json:"spaceId"`
 		Title    string `json:"title"`
 		ParentID string `json:"parentId"`
 		Body     struct {
-			Storage struct {
-				Value string `json:"value"`
-			} `json:"storage"`
+			Value string `json:"value"`
 		} `json:"body"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -1666,23 +1941,17 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request) {
 	p := &Page{
 		ID:       s.newID(),
 		Title:    payload.Title,
-		Type:     "page",
+		Type:     pageType,
 		SpaceKey: spaceKey,
 		ParentID: payload.ParentID,
 		Version:  1,
-		Body:     payload.Body.Storage.Value,
+		Body:     payload.Body.Value,
 	}
 	s.pages[p.ID] = p
 	s.placeChild(p.ParentID, p.ID, "")
 	// The version has to come back. Without it the caller computes the version
 	// it is superseding from zero, and its first update is rejected as stale.
-	writeJSON(w, http.StatusOK, map[string]any{
-		"id":      p.ID,
-		"title":   p.Title,
-		"type":    "page",
-		"version": map[string]any{"number": p.Version},
-		"_links":  map[string]any{"webui": "/display/" + spaceKey + "/" + p.ID},
-	})
+	writeJSON(w, http.StatusOK, s.contentJSONV2(p, false))
 }
 
 func (s *Server) searchUser(w http.ResponseWriter, r *http.Request) {
