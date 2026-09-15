@@ -39,14 +39,20 @@ const (
 	idleConnTimeout       = 90 * time.Second
 )
 
-// newHTTPClient builds the client used for every Confluence call.
+// NewHTTPClient builds the client used for every Confluence call.
+//
+// Exported for the browser package, whose login probe has to speak to the same
+// instance under the same TLS, proxy and retry settings. A second client built
+// beside this one would drift from it -- most visibly for
+// --insecure-skip-tls-verify, where the probe would reject a certificate the
+// rest of the run accepts.
 //
 // A cookie jar is always installed. Confluence Server hands out a session
 // cookie on the first authenticated call and expects it back; previously the
 // jar was only present in the default case, because gopencils creates one only
 // when it is not given a client, so --insecure-skip-tls-verify silently
 // dropped session affinity.
-func newHTTPClient(insecureSkipVerify bool) *http.Client {
+func NewHTTPClient(insecureSkipVerify bool) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
