@@ -63,6 +63,21 @@ func TestTraceRedactsASetCookieResponse(t *testing.T) {
 	assert.Contains(t, out, "Set-Cookie: <redacted>")
 }
 
+// TestRedactHeadersRedactsARequestCookie holds the --login side of the
+// redaction. The existing tests cover Authorization and Set-Cookie; a session
+// cookie travels on the request, in a header nothing else in mark sends.
+func TestRedactHeadersRedactsARequestCookie(t *testing.T) {
+	dump := "GET /rest/api/user/current HTTP/1.1\r\n" +
+		"Host: confluence.example.com\r\n" +
+		"Cookie: JSESSIONID=supersecret\r\n\r\n"
+
+	got := redactHeaders(dump)
+
+	assert.NotContains(t, got, "supersecret")
+	assert.Contains(t, got, "Cookie: <redacted>")
+	assert.Contains(t, got, "Host: confluence.example.com")
+}
+
 // TestTraceLeavesABodyPercentAlone: a dump is arbitrary bytes, not a format
 // string.
 func TestTraceLeavesABodyPercentAlone(t *testing.T) {
