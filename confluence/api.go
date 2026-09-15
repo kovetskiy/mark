@@ -356,7 +356,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	httpClient := newHTTPClient(insecureSkipVerify)
+	httpClient := NewHTTPClient(insecureSkipVerify)
 
 	// gopencils is given 0 retries: its own retry loop only runs when the very
 	// first Client.Do returns a transport error, so a 429 or 503 -- which come
