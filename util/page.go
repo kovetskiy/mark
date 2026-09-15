@@ -214,6 +214,7 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 			"",
 			baseURL,
 			false,
+			cmd.Bool("login"),
 		)
 		if err != nil {
 			return err
