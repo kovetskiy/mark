@@ -25,6 +25,12 @@ type User struct {
 	Username  string `json:"username,omitempty"`
 }
 
+type PageRestriction struct {
+	Operation string
+	Users     []string
+	Groups    []string
+}
+
 type API struct {
 	rest *gopencils.Resource
 	// v2 API for newer endpoints like folders
@@ -1572,6 +1578,59 @@ func (api *API) RestrictPageUpdates(
 		if !api.IsCloud() && (request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode == http.StatusMethodNotAllowed) {
 			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", request.Raw.StatusCode)
 		}
+		return newErrorStatusNotOK(request)
+	}
+
+	return nil
+}
+
+// SetPageRestrictions replaces the named read or update restrictions on a page.
+func (api *API) SetPageRestrictions(page *PageInfo, restrictions []PageRestriction) error {
+	payload := make([]map[string]any, 0, len(restrictions))
+
+	for _, restriction := range restrictions {
+		users := make([]map[string]any, 0, len(restriction.Users))
+		for _, name := range restriction.Users {
+			user := map[string]any{"type": "known"}
+			if api.IsCloud() {
+				resolved, err := api.GetUserByName(name)
+				if err != nil {
+					return fmt.Errorf("unable to resolve restricted user %q: %w", name, err)
+				}
+				if resolved.AccountID == "" {
+					return fmt.Errorf("resolved restricted user %q has no accountId", name)
+				}
+				user["accountId"] = resolved.AccountID
+			} else {
+				user["username"] = name
+			}
+			users = append(users, user)
+		}
+
+		groups := make([]map[string]any, 0, len(restriction.Groups))
+		for _, name := range restriction.Groups {
+			groups = append(groups, map[string]any{"type": "group", "name": name})
+		}
+
+		payload = append(payload, map[string]any{
+			"operation": restriction.Operation,
+			"restrictions": map[string]any{
+				"user":  users,
+				"group": groups,
+			},
+		})
+	}
+
+	var result any
+	request, err := api.v1().
+		Res("content").
+		Id(page.ID).
+		Res("restriction", &result).
+		Put(payload)
+	if err != nil {
+		return newTransportError(request, "set restrictions on page "+page.ID, err)
+	}
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
 		return newErrorStatusNotOK(request)
 	}
 

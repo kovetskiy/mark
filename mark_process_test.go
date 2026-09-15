@@ -133,6 +133,64 @@ Some **content**.
 	assert.Equal(t, parent.ID, stored.ParentID)
 }
 
+func TestProcessFileAppliesFrontMatterRestrictions(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	file := writeFile(t, t.TempDir(), "doc.md", `---
+space: DOCS
+parents: [Parent]
+title: Restricted
+restrictions:
+  read:
+    groups: [docs-readers]
+---
+
+# Restricted
+`)
+
+	target, err := ProcessFile(file, api, Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"frontmatter", "page-restrictions"}, Output: io.Discard,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, server.CountRequests("PUT", "/restriction"))
+
+	restrictionIndex, contentIndex := -1, -1
+	for i, request := range server.Requests() {
+		if request.Method == http.MethodPut && strings.HasSuffix(request.Path, "/restriction") {
+			restrictionIndex = i
+		}
+		if request.Method == http.MethodPut && strings.HasSuffix(request.Path, "/content/"+target.ID) {
+			contentIndex = i
+		}
+	}
+	assert.Less(t, restrictionIndex, contentIndex,
+		"restrictions must be set before content is uploaded")
+}
+
+func TestProcessFileRequiresPageRestrictionsFeature(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	file := writeFile(t, t.TempDir(), "doc.md", `---
+space: DOCS
+title: Restricted
+restrictions:
+  read: {}
+---
+`)
+
+	_, err := ProcessFile(file, api, Config{
+		Features: []string{"frontmatter"}, Output: io.Discard,
+	})
+	require.EqualError(t, err,
+		`page restrictions in "`+file+`" require --features=page-restrictions`)
+	assert.Empty(t, server.Requests())
+}
+
 // markdownWithTitle is the document under test, parameterised on its title.
 func markdownWithTitle(title string) string {
 	return `<!-- Space: DOCS -->
