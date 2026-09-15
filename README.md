@@ -364,6 +364,31 @@ On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specificati
 Where none of these is set, as in a minimal container or a systemd unit, there is
 no default file, and one is read only if `--config` or `MARK_CONFIG` names it.
 
+### Authenticating with a browser session
+
+Where an instance sits behind SSO and no password or personal access token can
+be used, `--login` authenticates by opening a browser:
+
+```shell
+mark publish --login -b https://confluence.example.com -f README.md
+```
+
+The first run opens a browser window at the Confluence URL. Log in as you
+normally would; mark detects the session, caches it, and publishes. Later runs
+reuse the cached session and open nothing. When the session stops working it is
+discarded and the browser opens once more, before any page is touched.
+
+`--login` is a global flag, so `mark export` and the other commands that talk to
+Confluence take it too, and share the same cached session.
+
+The session is cached in `cookies.json` under your user cache directory
+(`~/.cache/mark` on Linux, `~/Library/Caches/mark` on macOS), readable only by
+you. Delete that file to forget the session.
+
+`--login` needs a browser window, so it cannot be used in CI; use `--password`
+with a personal access token there. It cannot be combined with `--username`,
+`--password` or `--password-command`.
+
 ## Issues, Bugs & Contributions
 
 I've started the project to solve my own problem and open sourced the solution so anyone who has a problem like me can solve it too.

@@ -275,17 +275,55 @@ func SetUpLogging(cmd *cli.Command) error {
 	return nil
 }
 
-// RunPublish is the action of "mark publish".
-func RunPublish(ctx context.Context, cmd *cli.Command) error {
+// resolveCredentials is GetCredentials plus, under --login, the browser
+// session that stands in for a password. Every command that talks to
+// Confluence asks for its credentials here, so that --login means the same
+// thing to all of them rather than working for publish and silently sending
+// nothing for the others.
+func resolveCredentials(
+	ctx context.Context,
+	cmd *cli.Command,
+	targetURL string,
+	baseURL string,
+	compileOnly bool,
+) (*Credentials, error) {
 	creds, err := GetCredentials(
 		ctx,
 		cmd.String("username"),
 		cmd.String("password"),
 		cmd.String("password-command"),
+		targetURL,
+		baseURL,
+		compileOnly,
+		cmd.Bool("login"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if cmd.Bool("login") {
+		// dry-run and ci are publish's flags; for the other commands they
+		// read as false, which is what those commands are.
+		creds.Cookies, err = ResolveBrowserAuth(ctx, creds.BaseURL, BrowserAuth{
+			CompileOnly:           compileOnly,
+			DryRun:                cmd.Bool("dry-run"),
+			CI:                    cmd.Bool("ci"),
+			InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return creds, nil
+}
+
+// RunPublish is the action of "mark publish".
+func RunPublish(ctx context.Context, cmd *cli.Command) error {
+	creds, err := resolveCredentials(ctx, cmd,
 		cmd.String("target-url"),
 		cmd.String("base-url"),
 		cmd.Bool("compile-only"),
-		cmd.Bool("login"),
 	)
 	if err != nil {
 		return err
@@ -301,6 +339,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		Password:              creds.Password,
 		PageID:                creds.PageID,
 		InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		Cookies:               creds.Cookies,
 
 		Files: cmd.String("files"),
 
@@ -389,16 +428,7 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		return errors.New("confluence base URL should be specified using --base-url, or come with --url")
 	}
 
-	creds, err := GetCredentials(
-		ctx,
-		cmd.String("username"),
-		cmd.String("password"),
-		cmd.String("password-command"),
-		"",
-		baseURL,
-		false,
-		cmd.Bool("login"),
-	)
+	creds, err := resolveCredentials(ctx, cmd, "", baseURL, false)
 	if err != nil {
 		return err
 	}
@@ -410,6 +440,7 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		Username:              creds.Username,
 		Password:              creds.Password,
 		InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		Cookies:               creds.Cookies,
 
 		PageID: pageID,
 		Space:  space,
