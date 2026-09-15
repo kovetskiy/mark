@@ -1727,6 +1727,7 @@ GLOBAL OPTIONS:
    --log-level string                             set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
    --username string, -u string                   use specified username for updating Confluence page. [$MARK_USERNAME]
    --password string, -p string                   use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
+   --login                                        authenticate by logging in through a browser window, and reuse the session cookie it produces. For instances behind SSO where no password or personal access token can be used. Cannot be combined with --username, --password or --password-command, and needs a browser: not for CI. [$MARK_LOGIN]
    --password-command string                      run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
    --target-url string, -l string                 edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
    --base-url string, -b string                   base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
@@ -1818,6 +1819,28 @@ on it.
 <https://pkg.go.dev/os#UserConfigDir>.
 Currently, these are:
 On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html if non-empty, else $HOME/.config. On Darwin, it returns $HOME/Library/Application Support. On Windows, it returns %AppData%. On Plan 9, it returns $home/lib.
+
+### Authenticating with a browser session
+
+Where an instance sits behind SSO and no password or personal access token can
+be used, `--login` authenticates by opening a browser:
+
+```shell
+mark --login -b https://confluence.example.com README.md
+```
+
+The first run opens a browser window at the Confluence URL. Log in as you
+normally would; mark detects the session, caches it, and publishes. Later runs
+reuse the cached session and open nothing. When the session stops working it is
+discarded and the browser opens once more, before any page is touched.
+
+The session is cached in `cookies.json` under your user cache directory
+(`~/.cache/mark` on Linux, `~/Library/Caches/mark` on macOS), readable only by
+you. Delete that file to forget the session.
+
+`--login` needs a browser window, so it cannot be used in CI; use `--password`
+with a personal access token there. It cannot be combined with `--username`,
+`--password` or `--password-command`.
 
 ## Tricks
 

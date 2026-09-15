@@ -174,7 +174,7 @@ var Flags = []cli.Flag{
 		Value: false,
 		Usage: "authenticate by logging in through a browser window, and reuse the session cookie it produces. " +
 			"For instances behind SSO where no password or personal access token can be used. " +
-			"Cannot be combined with --username or --password, and needs a browser: not for CI.",
+			"Cannot be combined with --username, --password or --password-command, and needs a browser: not for CI.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LOGIN"),
 			altsrctoml.TOML("login", altsrc.NewStringPtrSourcer(&filename))),
 	},
