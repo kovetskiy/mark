@@ -169,6 +169,15 @@ var Flags = []cli.Flag{
 		Usage:   "use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD"), altsrctoml.TOML("password", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.BoolFlag{
+		Name:  "login",
+		Value: false,
+		Usage: "authenticate by logging in through a browser window, and reuse the session cookie it produces. " +
+			"For instances behind SSO where no password or personal access token can be used. " +
+			"Cannot be combined with --username or --password, and needs a browser: not for CI.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LOGIN"),
+			altsrctoml.TOML("login", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.StringFlag{
 		Name:    "password-command",
 		Value:   "",

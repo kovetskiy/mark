@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -30,6 +31,10 @@ type Credentials struct {
 	Password string
 	BaseURL  string
 	PageID   string
+
+	// Cookies is a browser session captured by --login, and is empty for
+	// every other authentication method.
+	Cookies []*http.Cookie
 }
 
 func GetCredentials(
@@ -40,17 +45,31 @@ func GetCredentials(
 	targetURL string,
 	baseURL string,
 	compileOnly bool,
-
+	login bool,
 ) (*Credentials, error) {
-	// Two answers to one question, and no way to tell which is meant: a
-	// password left in the configuration file from before the command was set
-	// up looks exactly like one somebody wants used. Either resolves through
-	// its own chain -- command line, then environment, then configuration file
-	// -- so preferring one of them by value cannot tell a token typed just now
-	// from one that has sat in a file for a year, and preferring one by layer
-	// only moves the guess. Say so instead, the way mark says it about every
-	// other pair of settings that contradict each other.
-	if password != "" && passwordCommand != "" {
+	var err error
+
+	if login {
+		// Rejected rather than resolved by precedence: a password left in a
+		// configuration file would otherwise make --login look ignored. The
+		// same reasoning covers password-command: it is one more way to
+		// arrive at a password, and --login is a different way to
+		// authenticate than any of them.
+		if username != "" || password != "" || passwordCommand != "" {
+			return nil, errors.New(
+				"--login is a different way to authenticate than " +
+					"--username, --password or --password-command; pass one",
+			)
+		}
+	} else if password != "" && passwordCommand != "" {
+		// Two answers to one question, and no way to tell which is meant: a
+		// password left in the configuration file from before the command was set
+		// up looks exactly like one somebody wants used. Either resolves through
+		// its own chain -- command line, then environment, then configuration file
+		// -- so preferring one of them by value cannot tell a token typed just now
+		// from one that has sat in a file for a year, and preferring one by layer
+		// only moves the guess. Say so instead, the way mark says it about every
+		// other pair of settings that contradict each other.
 		return nil, errors.New(
 			"password and password-command are mutually exclusive. Please specify only one, " +
 				"whether by flag, environment variable or configuration file",
@@ -83,63 +102,69 @@ func GetCredentials(
 
 	baseURL = strings.TrimRight(baseURL, `/`)
 
-	// Ahead of the empty check and not after it. "-p -" does not carry a token,
-	// it says where the token is, so whether one was given at all is only known
-	// once standard input has been read. Checked first, the check passed on the
-	// "-" itself and a run with nothing piped in went on to authenticate with
-	// an empty password -- reported by Confluence as a 401, which reads as the
-	// wrong credential rather than as a missing one.
-	if password == "-" {
-		stdin, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read password from stdin: %w", err)
+	// None of this applies under --login: there is no password to read from
+	// stdin or a command, and the empty string it stays at is not "no
+	// credential given" but "authenticate with the browser session instead",
+	// which ResolveBrowserAuth fills in later.
+	if !login {
+		// Ahead of the empty check and not after it. "-p -" does not carry a token,
+		// it says where the token is, so whether one was given at all is only known
+		// once standard input has been read. Checked first, the check passed on the
+		// "-" itself and a run with nothing piped in went on to authenticate with
+		// an empty password -- reported by Confluence as a 401, which reads as the
+		// wrong credential rather than as a missing one.
+		if password == "-" {
+			stdin, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return nil, fmt.Errorf("unable to read password from stdin: %w", err)
+			}
+
+			password = strings.TrimSpace(string(stdin))
 		}
 
-		password = strings.TrimSpace(string(stdin))
-	}
+		// Ahead of the empty-password check below, otherwise supplying only a command errors out before the command ever runs.
+		//
+		// A compile-only run is not exempt. It looks like one that never
+		// authenticates, and it is not: a relative link to another document is
+		// resolved by looking that page up, so compiling one file that links to
+		// another makes two authenticated requests before it prints anything.
+		// Skipping the command there left the password at "none" and 401'd them --
+		// while the same configuration with password= set worked. --check-links
+		// confluence is the same shape. What a compile does not do is fail when the
+		// helper is unavailable; see below.
+		if password == "" && passwordCommand != "" {
+			password, err = runPasswordCommand(ctx, passwordCommand)
 
-	// Ahead of the empty-password check below, otherwise supplying only a command errors out before the command ever runs.
-	//
-	// A compile-only run is not exempt. It looks like one that never
-	// authenticates, and it is not: a relative link to another document is
-	// resolved by looking that page up, so compiling one file that links to
-	// another makes two authenticated requests before it prints anything.
-	// Skipping the command there left the password at "none" and 401'd them --
-	// while the same configuration with password= set worked. --check-links
-	// confluence is the same shape. What a compile does not do is fail when the
-	// helper is unavailable; see below.
-	if password == "" && passwordCommand != "" {
-		password, err = runPasswordCommand(ctx, passwordCommand)
+			switch {
+			case err == nil:
+				// What it printed is the password.
 
-		switch {
-		case err == nil:
-			// What it printed is the password.
+			case compileOnly:
+				// Validating documents without Confluence credentials is the whole
+				// of what --compile-only is for, and a helper that is absent -- a
+				// CI image without the password manager, a configuration file
+				// shared with a workstation -- must not take that offline. The
+				// command is still resolved whenever it can be, which is what the
+				// links a compile follows need.
+				log.Warn().Msgf(
+					"unable to read password from command: %s; continuing without a token, as --compile-only is set",
+					err,
+				)
 
-		case compileOnly:
-			// Validating documents without Confluence credentials is the whole
-			// of what --compile-only is for, and a helper that is absent -- a
-			// CI image without the password manager, a configuration file
-			// shared with a workstation -- must not take that offline. The
-			// command is still resolved whenever it can be, which is what the
-			// links a compile follows need.
-			log.Warn().Msgf(
-				"unable to read password from command: %s; continuing without a token, as --compile-only is set",
-				err,
-			)
-
-		default:
-			return nil, fmt.Errorf("unable to read password from command: %w", err)
+			default:
+				return nil, fmt.Errorf("unable to read password from command: %w", err)
+			}
 		}
-	}
 
-	if password == "" {
-		if !compileOnly {
-			return nil, errors.New(
-				"confluence password should be specified using -p " +
-					"flag or be stored in configuration file",
-			)
+		if password == "" {
+			if !compileOnly {
+				return nil, errors.New(
+					"confluence password should be specified using -p " +
+						"flag or be stored in configuration file",
+				)
+			}
+			password = "none"
 		}
-		password = "none"
 	}
 
 	creds := &Credentials{

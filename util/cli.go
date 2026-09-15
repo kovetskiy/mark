@@ -75,6 +75,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		cmd.String("target-url"),
 		cmd.String("base-url"),
 		cmd.Bool("compile-only"),
+		cmd.Bool("login"),
 	)
 	if err != nil {
 		return err
