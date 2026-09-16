@@ -80,9 +80,9 @@ func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height
 
 	// Before anything is done with the drawing, because both things done with
 	// it are dangerous. The PNG is taken by navigating a browser to this as a
-	// document, so a script in it runs here, on the machine publishing -- in a
-	// browser started with --no-sandbox. The SVG is uploaded whole, so the same
-	// script is served to whoever opens the page.
+	// document, so anything the drawing runs runs here, on the machine
+	// publishing -- in a browser started with --no-sandbox. The SVG is uploaded
+	// whole, so the same thing is served to whoever opens the page.
 	if err := checkDrawingIsSafe(out); err != nil {
 		return nil, 0, 0, err
 	}
@@ -312,8 +312,10 @@ func displayed(length int, scale float64) string {
 }
 
 // executable are the elements that run or fetch something of their own, rather
-// than drawing. d2 puts a |md | label into the SVG as the author wrote it, so
-// what a diagram says here is what ends up in the document.
+// than drawing. d2 draws a |md | label as SVG of its own rather than passing
+// the author's markup through, so nothing should reach these -- which is the
+// reason to keep them: the check should not depend on a renderer continuing to
+// be careful on mark's behalf.
 var executable = map[string]bool{
 	"script": true,
 	"iframe": true,
@@ -324,21 +326,24 @@ var executable = map[string]bool{
 // checkDrawingIsSafe refuses a rendered diagram that would do something rather
 // than depict something.
 //
-// A d2 label written as |md | is passed through as markup, and both things mark
-// does with the result execute it: the PNG is a screenshot taken by navigating
-// a browser to the drawing as a document, and the SVG is uploaded to Confluence
-// for other people's browsers to open. A diagram in a pull request could
-// therefore read a cloud metadata endpoint from the CI runner, or wait to be
-// opened by a colleague.
+// Both things mark does with a drawing execute it: the PNG is a screenshot
+// taken by navigating a browser to the drawing as a document, and the SVG is
+// uploaded to Confluence for other people's browsers to open. A diagram in a
+// pull request could therefore read a cloud metadata endpoint from the CI
+// runner, or wait to be opened by a colleague.
+//
+// What a diagram has to say for itself is mostly drawn rather than passed
+// through -- but not all of it: a d2 link is an address, and it goes into the
+// drawing as the anchor it was written as, whether it names a page or names
+// code.
 //
 // Refused rather than stripped. A diagram that asked to run something is not a
 // diagram somebody drew by accident, and quietly publishing a different one
 // than was written is its own kind of wrong.
 //
-// Read with the lenient HTML tokenizer rather than an XML parser: the drawing
-// carries xhtml inside foreignObject, which is how a markdown label is
-// represented at all, and strict parsing of somebody else's markup is a way to
-// fail on documents that were fine.
+// Read with the lenient HTML tokenizer rather than an XML parser: this is
+// somebody else's markup being read for what it would do, and failing to parse
+// it strictly is a way to fail on drawings that were fine.
 func checkDrawingIsSafe(svg []byte) error {
 	tokenizer := html.NewTokenizer(bytes.NewReader(svg))
 
