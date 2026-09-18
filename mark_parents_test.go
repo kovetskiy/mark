@@ -2,6 +2,7 @@ package mark
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -13,16 +14,26 @@ import (
 // answer every later one normally, which is what a network blip looks like from
 // here.
 func failOnceLookingUp(server *confluencetest.Server, title string) {
-	failed := false
+	// Once per API: a page lookup that v1 refuses is retried against v2, for
+	// the sake of scoped API tokens, so failing only the v1 half is a blip the
+	// run recovers from rather than the failure this is about.
+	failed := map[string]bool{}
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if failed || r.Method != http.MethodGet {
+		if r.Method != http.MethodGet {
 			return 0, "", false
 		}
 		if r.URL.Query().Get("title") != title {
 			return 0, "", false
 		}
 
-		failed = true
+		api := "v1"
+		if strings.HasPrefix(r.URL.Path, "/api/v2") {
+			api = "v2"
+		}
+		if failed[api] {
+			return 0, "", false
+		}
+		failed[api] = true
 
 		return http.StatusForbidden, `{"message":"nope"}`, true
 	})

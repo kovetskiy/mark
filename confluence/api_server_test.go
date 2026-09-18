@@ -372,7 +372,7 @@ func TestGetSpaceIDFallsBackToV2(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, space.ID, id)
 
-	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"),
+	assert.Equal(t, 1, server.CountRequestsMatching("GET", "/api/v2/spaces", "keys=DOCS"),
 		"v2 answers once v1 refuses")
 }
 
@@ -617,7 +617,7 @@ func TestFindHomePageFallsBackToV2(t *testing.T) {
 
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/space/DOCS"),
 		"v1 is still tried first")
-	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"),
+	assert.Equal(t, 1, server.CountRequestsMatching("GET", "/api/v2/spaces", "keys=DOCS"),
 		"and v2 resolves the space once v1 refuses")
 }
 

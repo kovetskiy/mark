@@ -38,8 +38,12 @@ func TestInScopeReportsARealFailure(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	page := server.AddPage("DOCS", "Doc", "page", home.ID)
 
+	// Both APIs, because a v1 read that is refused falls back to v2 for the
+	// sake of scoped API tokens: a page a caller may not read is refused by
+	// whichever one it asks.
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.Contains(r.URL.Path, "/content/"+page.ID) {
+		if strings.Contains(r.URL.Path, "/content/"+page.ID) ||
+			strings.Contains(r.URL.Path, "/pages/"+page.ID) {
 			return http.StatusForbidden, `{"message":"no"}`, true
 		}
 
