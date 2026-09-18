@@ -212,7 +212,11 @@ type PageInfo struct {
 
 	Links struct {
 		Full string `json:"webui"`
-		Base string `json:"-"` // Not from JSON; populated from response _links.base
+		// Base is the canonical site URL from the response's `_links.base`
+		// (e.g. https://tenant.atlassian.net/wiki). CreatePage used to skip
+		// this field (`json:"-"`), so same-run tiny links fell back to
+		// api.BaseURL and became dead api.atlassian.com URLs.
+		Base string `json:"base,omitempty"`
 	} `json:"_links"`
 }
 

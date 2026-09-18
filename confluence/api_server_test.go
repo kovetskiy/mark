@@ -104,6 +104,41 @@ func TestCreatePage(t *testing.T) {
 	assert.Equal(t, "<p>hi</p>", stored.Body)
 }
 
+// TestCreatePageReadsLinksBaseFromResponse is the #1019 property: a page
+// created through the api.atlassian.com gateway still gets the tenant wiki
+// URL from the create response's `_links.base`, so same-run tiny links are
+// browsable. Falling back to api.BaseURL is what produced dead
+// api.atlassian.com/ex/confluence/.../x/... URLs.
+func TestCreatePageReadsLinksBaseFromResponse(t *testing.T) {
+	const site = "https://tenant.atlassian.net/wiki"
+	api, server := newAPI(t)
+	server.SiteBase = site
+	server.AddSpace("DOCS")
+
+	created, err := api.CreatePage("DOCS", "page", nil, "New", "<p/>")
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Equal(t, site, created.Links.Base)
+	assert.NotEqual(t, api.BaseURL, created.Links.Base)
+
+	// Same-run lookup is served from the cache populated by CreatePage, so
+	// it must keep the tenant URL rather than the gateway.
+	cached, err := api.FindPage("DOCS", "New", "page")
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+	assert.Equal(t, site, cached.Links.Base)
+}
+
+func TestCreatePageFallsBackToAPIBaseURL(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+
+	created, err := api.CreatePage("DOCS", "page", nil, "No Base", "<p/>")
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Equal(t, api.BaseURL, created.Links.Base)
+}
+
 func TestCreatePageDuplicateTitleIsAnError(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Taken", "page", "")
