@@ -128,6 +128,12 @@ type Server struct {
 	// pagination set the page count by adding more items than the client's
 	// page size rather than by changing this.
 	fail FailFunc
+
+	// SiteBase is echoed as `_links.base` on content create/search responses
+	// when set. Empty omits the field so tests can still exercise the client's
+	// api.BaseURL fallback. Real Confluence Cloud puts the tenant wiki URL
+	// here even when the request went through api.atlassian.com.
+	SiteBase string
 }
 
 // New starts a fake Confluence and registers cleanup with t.
@@ -450,8 +456,16 @@ func (s *Server) pageJSON(p *Page) map[string]any {
 		"body": map[string]any{
 			"storage": map[string]any{"value": p.Body},
 		},
-		"_links": map[string]any{"webui": "/display/" + p.SpaceKey + "/" + p.ID},
+		"_links": s.pageLinks(p),
 	}
+}
+
+func (s *Server) pageLinks(p *Page) map[string]any {
+	links := map[string]any{"webui": "/display/" + p.SpaceKey + "/" + p.ID}
+	if s.SiteBase != "" {
+		links["base"] = s.SiteBase
+	}
+	return links
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -1034,9 +1048,13 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 	for _, p := range page {
 		results = append(results, s.pageJSON(p))
 	}
+	links := linksWithNext(hasNext)
+	if s.SiteBase != "" {
+		links["base"] = s.SiteBase
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results": results,
-		"_links":  linksWithNext(hasNext),
+		"_links":  links,
 	})
 }
 
@@ -1681,7 +1699,7 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request) {
 		"title":   p.Title,
 		"type":    "page",
 		"version": map[string]any{"number": p.Version},
-		"_links":  map[string]any{"webui": "/display/" + spaceKey + "/" + p.ID},
+		"_links":  s.pageLinks(p),
 	})
 }
 
