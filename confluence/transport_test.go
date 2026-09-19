@@ -344,13 +344,13 @@ func TestRoundTripDoesNotRetryTransportErrorOnPost(t *testing.T) {
 // only creates a jar when it is not handed a client.
 func TestNewHTTPClientHasCookieJar(t *testing.T) {
 	for _, insecure := range []bool{false, true} {
-		client := newHTTPClient(insecure)
+		client := NewHTTPClient(insecure)
 		assert.NotNil(t, client.Jar, "insecure=%v should still retain session cookies", insecure)
 	}
 }
 
 func TestNewHTTPClientSetsTimeouts(t *testing.T) {
-	client := newHTTPClient(false)
+	client := NewHTTPClient(false)
 
 	retry, ok := client.Transport.(*retryTransport)
 	require.True(t, ok)

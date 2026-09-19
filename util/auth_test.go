@@ -117,7 +117,7 @@ func feedStdin(t *testing.T, value string) {
 // id out of it.
 func TestGetCredentialsBaseURLFromTargetURL(t *testing.T) {
 	creds, err := GetCredentials(context.Background(), "user", "secret", "",
-		"https://confluence.example.com/pages/viewpage.action?pageId=12345", "", false)
+		"https://confluence.example.com/pages/viewpage.action?pageId=12345", "", false, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://confluence.example.com", creds.BaseURL)
@@ -130,7 +130,7 @@ func TestGetCredentialsBaseURLFromTargetURL(t *testing.T) {
 // is the instance, and the URL only supplies the page id.
 func TestGetCredentialsExplicitBaseURLWins(t *testing.T) {
 	creds, err := GetCredentials(context.Background(), "user", "secret", "",
-		"https://old.example.com/pages/viewpage.action?pageId=7", "https://new.example.com/wiki", false)
+		"https://old.example.com/pages/viewpage.action?pageId=7", "https://new.example.com/wiki", false, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://new.example.com/wiki", creds.BaseURL)
@@ -142,7 +142,7 @@ func TestGetCredentialsExplicitBaseURLWins(t *testing.T) {
 // trailing slash would produce "//rest/api" and a 404 that says nothing about
 // its cause.
 func TestGetCredentialsTrimsTrailingSlashes(t *testing.T) {
-	creds, err := GetCredentials(context.Background(), "user", "secret", "", "", "https://confluence.example.com/wiki///", false)
+	creds, err := GetCredentials(context.Background(), "user", "secret", "", "", "https://confluence.example.com/wiki///", false, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://confluence.example.com/wiki", creds.BaseURL)
@@ -152,7 +152,7 @@ func TestGetCredentialsTrimsTrailingSlashes(t *testing.T) {
 // It names the flag, because the alternative -- a 401 from Confluence -- sends
 // them looking at their account instead of at their invocation.
 func TestGetCredentialsRequiresAPassword(t *testing.T) {
-	_, err := GetCredentials(context.Background(), "user", "", "", "", "https://confluence.example.com", false)
+	_, err := GetCredentials(context.Background(), "user", "", "", "", "https://confluence.example.com", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "-p")
@@ -161,7 +161,7 @@ func TestGetCredentialsRequiresAPassword(t *testing.T) {
 // TestGetCredentialsRequiresABaseURL covers the same for the instance: with
 // neither a target URL to derive it from nor -l, there is nothing to talk to.
 func TestGetCredentialsRequiresABaseURL(t *testing.T) {
-	_, err := GetCredentials(context.Background(), "user", "secret", "", "", "", false)
+	_, err := GetCredentials(context.Background(), "user", "secret", "", "", "", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "-l")
@@ -171,7 +171,7 @@ func TestGetCredentialsRequiresABaseURL(t *testing.T) {
 // reaches Confluence. Requiring credentials to render Markdown locally would
 // make the flag useless in CI, so both are filled in with placeholders.
 func TestGetCredentialsCompileOnlyNeedsNothing(t *testing.T) {
-	creds, err := GetCredentials(context.Background(), "", "", "", "", "", true)
+	creds, err := GetCredentials(context.Background(), "", "", "", "", "", true, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "none", creds.Password)
@@ -182,7 +182,7 @@ func TestGetCredentialsCompileOnlyNeedsNothing(t *testing.T) {
 // TestGetCredentialsCompileOnlyKeepsRealValues is the boundary of that rule:
 // the placeholders fill gaps, they do not override what was given.
 func TestGetCredentialsCompileOnlyKeepsRealValues(t *testing.T) {
-	creds, err := GetCredentials(context.Background(), "user", "secret", "", "", "https://confluence.example.com", true)
+	creds, err := GetCredentials(context.Background(), "user", "secret", "", "", "https://confluence.example.com", true, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "secret", creds.Password)
@@ -199,7 +199,7 @@ func TestGetCredentialsCompileOnlyKeepsRealValues(t *testing.T) {
 func TestGetCredentialsChecksTheURLBeforeRunningTheCommand(t *testing.T) {
 	command := helperCommand(t, "print", "s3cret")
 
-	_, err := GetCredentials(context.Background(), "user", "", command, "", "", false)
+	_, err := GetCredentials(context.Background(), "user", "", command, "", "", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "-l", "the base URL is what is missing, not the token")
@@ -212,7 +212,7 @@ func TestGetCredentialsChecksTheURLBeforeRunningTheCommand(t *testing.T) {
 func TestGetCredentialsPasswordFromStdin(t *testing.T) {
 	feedStdin(t, "token-from-stdin\n")
 
-	creds, err := GetCredentials(context.Background(), "user", "-", "", "", "https://confluence.example.com", false)
+	creds, err := GetCredentials(context.Background(), "user", "-", "", "", "https://confluence.example.com", false, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "token-from-stdin", creds.Password)
@@ -236,7 +236,7 @@ func TestGetCredentialsRejectsAnEmptyPasswordOnStdin(t *testing.T) {
 
 	defer func() { os.Stdin = original }()
 
-	_, err = GetCredentials(context.Background(), "user", "-", "", "", "https://confluence.example.com", false)
+	_, err = GetCredentials(context.Background(), "user", "-", "", "", "https://confluence.example.com", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "-p")
@@ -246,7 +246,7 @@ func TestGetCredentialsRejectsAnEmptyPasswordOnStdin(t *testing.T) {
 // one at all, which is worth an error naming the value rather than a request to
 // an empty host.
 func TestGetCredentialsRejectsAnUnparseableURL(t *testing.T) {
-	_, err := GetCredentials(context.Background(), "user", "secret", "", "https://exam ple.com/x", "", false)
+	_, err := GetCredentials(context.Background(), "user", "secret", "", "https://exam ple.com/x", "", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "as url")
@@ -379,7 +379,7 @@ func TestRunPasswordCommandStopsAHelperThatHangs(t *testing.T) {
 func TestGetCredentialsResolvesThePasswordFromACommand(t *testing.T) {
 	command := helperCommand(t, "print", "from-command")
 
-	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false)
+	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "from-command", creds.Password)
@@ -396,7 +396,7 @@ func TestGetCredentialsResolvesThePasswordFromACommand(t *testing.T) {
 func TestGetCredentialsRefusesBothAtOnce(t *testing.T) {
 	command := helperCommand(t, "print", "from-command")
 
-	_, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false)
+	_, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "mutually exclusive")
@@ -408,7 +408,7 @@ func TestGetCredentialsRefusesBothAtOnce(t *testing.T) {
 func TestGetCredentialsRefusesBothBeforeRunningEither(t *testing.T) {
 	command := helperCommand(t, "fail", "")
 
-	_, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false)
+	_, err := GetCredentials(context.Background(), "user", "from-flag", command, "https://confluence.example.com", "", false, false)
 	require.Error(t, err)
 
 	assert.NotContains(t, err.Error(), "command failed",
@@ -420,7 +420,7 @@ func TestGetCredentialsRefusesBothBeforeRunningEither(t *testing.T) {
 func TestGetCredentialsSurfacesAFailingCommand(t *testing.T) {
 	command := helperCommand(t, "fail", "")
 
-	_, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false)
+	_, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "unable to read password from command: command failed")
@@ -432,7 +432,7 @@ func TestGetCredentialsTreatsACommandsDashAsTheToken(t *testing.T) {
 	command := helperCommand(t, "print", "-")
 	feedStdin(t, "token-from-stdin\n")
 
-	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false)
+	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "-", creds.Password)
@@ -451,7 +451,7 @@ func TestGetCredentialsTreatsACommandsDashAsTheToken(t *testing.T) {
 func TestGetCredentialsResolvesTheCommandWhenCompilingOnly(t *testing.T) {
 	command := helperCommand(t, "print", "s3cret")
 
-	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", true)
+	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", true, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "s3cret", creds.Password)
@@ -460,7 +460,7 @@ func TestGetCredentialsResolvesTheCommandWhenCompilingOnly(t *testing.T) {
 // TestGetCredentialsCompileOnlyStillNeedsNoPassword is the boundary: a compile
 // with nothing to run still gets its placeholder rather than an error.
 func TestGetCredentialsCompileOnlyStillNeedsNoPassword(t *testing.T) {
-	creds, err := GetCredentials(context.Background(), "user", "", "", "https://confluence.example.com", "", true)
+	creds, err := GetCredentials(context.Background(), "user", "", "", "https://confluence.example.com", "", true, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "none", creds.Password)
@@ -478,7 +478,7 @@ func TestGetCredentialsCompileOnlyWarnsAboutAFailingCommand(t *testing.T) {
 	command := helperCommand(t, "fail", "")
 	logged := captureLogs(t)
 
-	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", true)
+	creds, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", true, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "none", creds.Password)
@@ -492,7 +492,7 @@ func TestGetCredentialsCompileOnlyWarnsAboutAFailingCommand(t *testing.T) {
 func TestGetCredentialsFailsOnAFailingCommandWithoutCompileOnly(t *testing.T) {
 	command := helperCommand(t, "fail", "")
 
-	_, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false)
+	_, err := GetCredentials(context.Background(), "user", "", command, "https://confluence.example.com", "", false, false)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "command failed")
@@ -617,4 +617,45 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 	assert.Contains(t, string(logged), "password-command: ******")
 	assert.NotContains(t, string(logged), command,
 		"the command must not reach the log in full")
+}
+
+// TestGetCredentialsLoginNeedsNoPassword covers --login: the browser supplies
+// the credential, so demanding a password would make the flag unusable.
+func TestGetCredentialsLoginNeedsNoPassword(t *testing.T) {
+	creds, err := GetCredentials(context.Background(), "", "", "", "", "https://confluence.example.com", false, true)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://confluence.example.com", creds.BaseURL)
+	assert.Empty(t, creds.Password)
+}
+
+// TestGetCredentialsLoginRejectsAPassword covers a config file with a stale
+// password key beside --login: preferring one silently would make the flag
+// appear to be ignored.
+func TestGetCredentialsLoginRejectsAPassword(t *testing.T) {
+	_, err := GetCredentials(context.Background(), "", "secret", "", "", "https://confluence.example.com", false, true)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--login")
+}
+
+// TestGetCredentialsLoginRejectsAUsername mirrors the password case for the
+// username flag.
+func TestGetCredentialsLoginRejectsAUsername(t *testing.T) {
+	_, err := GetCredentials(context.Background(), "user", "", "", "", "https://confluence.example.com", false, true)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--login")
+}
+
+// TestGetCredentialsLoginRejectsAPasswordCommand covers the third way to
+// arrive at a password: --login is a different way to authenticate than any
+// of --username, --password or --password-command.
+func TestGetCredentialsLoginRejectsAPasswordCommand(t *testing.T) {
+	command := helperCommand(t, "print", "s3cret")
+
+	_, err := GetCredentials(context.Background(), "", "", command, "", "https://confluence.example.com", false, true)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--login")
 }

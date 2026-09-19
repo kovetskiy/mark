@@ -14,6 +14,7 @@ import (
 	stdhtml "html"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,9 @@ type Config struct {
 	Password              string
 	PageID                string
 	InsecureSkipTLSVerify bool
+
+	// Cookies is a browser session captured by --login, empty otherwise.
+	Cookies []*http.Cookie
 
 	// File selection
 	Files string
@@ -266,7 +270,13 @@ func run(ctx context.Context, config Config) error {
 		return err
 	}
 
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := confluence.NewAPI(
+		config.BaseURL,
+		config.Username,
+		config.Password,
+		config.InsecureSkipTLSVerify,
+		confluence.WithCookies(config.Cookies),
+	)
 
 	// Folder resolutions are cached in a package-level map that outlives this
 	// call, so a second run in the same process -- against another instance,
