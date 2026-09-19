@@ -160,6 +160,13 @@ attachments:
 labels:
   - alpha
   - beta
+restrictions:
+  read:
+    groups:
+      - docs-readers
+  update:
+    users:
+      - Jane Doe
 content-appearance: default
 image-align: center
 ---
@@ -169,20 +176,35 @@ image-align: center
 	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
 	assert.NoError(t, err)
 	assert.Equal(t, &Meta{
-		Parents:           []string{"Parent 1", "Parent 2"},
-		Folders:           []string{"Folder 1", "Folder 2"},
-		Space:             "DOCS",
-		Type:              "page",
-		Title:             "Test Page",
-		Layout:            "article",
-		Sidebar:           "<p>Side</p>",
-		Emoji:             "rocket",
-		Attachments:       []string{"image.png"},
-		Labels:            []string{"alpha", "beta"},
+		Parents:     []string{"Parent 1", "Parent 2"},
+		Folders:     []string{"Folder 1", "Folder 2"},
+		Space:       "DOCS",
+		Type:        "page",
+		Title:       "Test Page",
+		Layout:      "article",
+		Sidebar:     "<p>Side</p>",
+		Emoji:       "rocket",
+		Attachments: []string{"image.png"},
+		Labels:      []string{"alpha", "beta"},
+		Restrictions: &Restrictions{
+			Read: &RestrictionSubjects{
+				Groups: []string{"docs-readers"},
+			},
+			Update: &RestrictionSubjects{
+				Users: []string{"Jane Doe"},
+			},
+		},
 		ContentAppearance: DefaultContentAppearance,
 		ImageAlign:        "center",
 	}, meta)
 	assert.Equal(t, "# Content\n", string(body))
+}
+
+func TestExtractMetaYAMLFrontMatterRejectsInvalidRestrictions(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  write:\n    users: [Jane Doe]\n---\n"
+
+	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.EqualError(t, err, `restrictions supports only read and update, got "write"`)
 }
 
 func TestExtractMetaYAMLFrontMatterScalarAliases(t *testing.T) {
