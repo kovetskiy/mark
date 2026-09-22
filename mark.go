@@ -191,11 +191,11 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// alongside it down with it. An empty value is not that: it is a caller
 	// that never set the field, and it means the PNG mark has always published.
 	switch c.MermaidOutput {
-	case "", "png", "svg":
+	case "", "png", "svg", "macro":
 		// ok
 	default:
 		return page.LinkChecks{}, fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
+			"invalid MermaidOutput %q: expected \"png\", \"svg\", \"macro\", or \"\" for the default",
 			c.MermaidOutput,
 		)
 	}

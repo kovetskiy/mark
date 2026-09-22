@@ -251,7 +251,7 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "mermaid-output",
 		Value:   "png",
-		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark).",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
@@ -549,11 +549,11 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	mermaidOutput := command.String("mermaid-output")
 	if mermaidOutput != "" || command.IsSet("mermaid-output") {
 		switch mermaidOutput {
-		case "png", "svg":
+		case "png", "svg", "macro":
 			// ok
 		default:
 			return context, fmt.Errorf(
-				"invalid value for --mermaid-output: %q (expected: png or svg)",
+				"invalid value for --mermaid-output: %q (expected: png, svg or macro)",
 				mermaidOutput,
 			)
 		}
