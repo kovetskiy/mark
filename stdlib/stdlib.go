@@ -548,6 +548,12 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		`ac:mermaid-macro`: text(
+			`<ac:structured-macro ac:name="mermaid-macro">`,
+			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
+			`</ac:structured-macro>`,
+		),
+
 		// TODO(seletskiy): more templates here
 	} {
 		templates, err = templates.New(name).Parse(body)
