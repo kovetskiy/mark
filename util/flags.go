@@ -370,7 +370,7 @@ var Flags = []cli.Flag{
 	&cli.BoolFlag{
 		Name:  "d2-bundle-remote",
 		Value: false,
-		Usage: "let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default: the request is made by the document rather than by you, to any address it likes.",
+		Usage: "let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default, which refuses a diagram that names a URL: the request is made by the document rather than by you, to any address it likes.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_D2_BUNDLE_REMOTE"),
 			altsrctoml.TOML("d2-bundle-remote", altsrc.NewStringPtrSourcer(&filename))),
 	},
