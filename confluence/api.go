@@ -563,7 +563,10 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	v2Request, v2Err := api.v2().Res(
 		"spaces", &v2Result,
 	).Get(map[string]string{"keys": space})
-	if v2Err == nil && v2Request.Raw.StatusCode != http.StatusOK {
+	switch {
+	case v2Err != nil:
+		v2Err = newTransportError(v2Request, "look up space "+space, v2Err)
+	case v2Request.Raw.StatusCode != http.StatusOK:
 		v2Err = newErrorStatusNotOK(v2Request)
 	}
 
@@ -578,6 +581,8 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		}
 		if v1Err == nil {
 			v1Err = newErrorStatusNotOK(v1Request)
+		} else {
+			v1Err = newTransportError(v1Request, "read space "+space, v1Err)
 		}
 		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %w)", v1Err, v2Err)
 	}
@@ -1718,7 +1723,9 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 		"folders", &FolderInfo{},
 	).Post(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create folder %s in space %s: %w", title, spaceID, err)
+		return nil, newTransportError(
+			request, fmt.Sprintf("create folder %q in space %s", title, spaceID), err,
+		)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
@@ -1757,7 +1764,7 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 		"search", &result,
 	).Get(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search for folder %s: %w", title, err)
+		return nil, newTransportError(request, fmt.Sprintf("search for folder %q", title), err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1782,7 +1789,7 @@ func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
 		"folders/"+folderID, &FolderInfo{},
 	).Get()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get folder by ID %s: %w", folderID, err)
+		return nil, newTransportError(request, "read folder "+folderID, err)
 	}
 
 	if request.Raw.StatusCode == http.StatusNotFound {
@@ -1874,7 +1881,7 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 		"spaces", &v2Result,
 	).Get(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to get space ID for key %s (tried both v1 and v2 APIs): %w", spaceKey, err)
+		return "", newTransportError(request, "look up the id of space "+spaceKey, err)
 	}
 
 	if request.Raw.StatusCode != http.StatusOK {
@@ -1984,7 +1991,7 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 			"start": fmt.Sprintf("%d", start),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("unable to list children of %s: %w", parentID, err)
+			return nil, newTransportError(request, "list child pages of "+parentID, err)
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
@@ -2049,7 +2056,7 @@ func (api *API) HasChildFolders(parentID string) (bool, error) {
 			"pages/"+parentID+"/direct-children", &result,
 		).Get(query)
 		if err != nil {
-			return false, fmt.Errorf("unable to list children of %s: %w", parentID, err)
+			return false, newTransportError(request, "list direct children of "+parentID, err)
 		}
 
 		// First page only: a 404 partway through is a real failure, and reading
@@ -2093,7 +2100,7 @@ func (api *API) HasChildFolders(parentID string) (bool, error) {
 func (api *API) DeletePage(contentID string) error {
 	request, err := api.v1().Res("content").Id(contentID, &struct{}{}).Delete()
 	if err != nil {
-		return fmt.Errorf("unable to delete content %s: %w", contentID, err)
+		return newTransportError(request, "delete content "+contentID, err)
 	}
 
 	// 204 is the documented answer; 200 is accepted because some versions send
@@ -2134,7 +2141,7 @@ func (api *API) ArchivePage(contentID string) error {
 
 	request, err := api.v1().Res("content").Res("archive", &struct{}{}).Post(payload)
 	if err != nil {
-		return fmt.Errorf("unable to archive content %s: %w", contentID, err)
+		return newTransportError(request, "archive content "+contentID, err)
 	}
 
 	switch request.Raw.StatusCode {
@@ -2164,7 +2171,9 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 	var result map[string]any
 	request, err := api.v1().Res(path, &result).Put(map[string]interface{}{})
 	if err != nil {
-		return fmt.Errorf("failed to move content %s %s %s: %w", contentID, position, targetID, err)
+		return newTransportError(
+			request, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
+		)
 	}
 
 	switch request.Raw.StatusCode {
@@ -2243,14 +2252,27 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		)
 	}
 
-	output, _ := io.ReadAll(request.Raw.Body)
+	// Bounded: the body goes into an error message, and what answers with an
+	// error is not always Confluence. A proxy's HTML error page or a Server
+	// stack trace can run to megabytes, all of which used to be read into
+	// memory and printed.
+	output, _ := io.ReadAll(io.LimitReader(request.Raw.Body, maxErrorBody+1))
+	truncated := ""
+	if len(output) > maxErrorBody {
+		output = output[:maxErrorBody]
+		truncated = " (truncated)"
+	}
 
 	return fmt.Errorf(
 		"the Confluence API returned unexpected status: %v for %s, "+
-			"output: %q",
-		request.Raw.Status, target, output,
+			"output: %q%s",
+		request.Raw.Status, target, output, truncated,
 	)
 }
+
+// maxErrorBody caps how much of a failed response's body newErrorStatusNotOK
+// quotes. Confluence's own JSON errors are a few hundred bytes.
+const maxErrorBody = 4096
 
 // requestTarget names the URL a request was made to, with any credentials in
 // it redacted.
