@@ -211,3 +211,157 @@ func TestGatewayLinksFallBackToTheBaseURL(t *testing.T) {
 	require.NotNil(t, found)
 	assert.Equal(t, api.BaseURL, found.Links.Base)
 }
+
+// requestsUnder counts the requests of any method whose path contains substr.
+func requestsUnder(server *confluencetest.Server, substr string) int {
+	var n int
+	for _, r := range server.Requests() {
+		if strings.Contains(r.Path, substr) {
+			n++
+		}
+	}
+	return n
+}
+
+// A blogpost lives under /blogposts on v2, and so do its properties,
+// attachments and labels: /pages answers 404 for a blogpost id, and the
+// update used to fail on its properties after the body had gone in.
+func TestGatewayUpdateBlogpost(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	post := server.AddPage("DOCS", "Post", "blogpost", "")
+
+	page, err := api.FindPage("DOCS", "Post", "blogpost")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	require.NoError(t, api.UpdatePage(page, "<p>two</p>", false, "second", "full-width", "🚀"))
+	assert.Equal(t, int64(2), page.Version.Number)
+
+	stored := server.Page(post.ID)
+	assert.Equal(t, int64(2), stored.Version)
+	assert.Equal(t, "<p>two</p>", stored.Body)
+
+	appearance := server.SpaceProperty(post.ID, "content-appearance-published")
+	require.NotNil(t, appearance)
+	assert.JSONEq(t, `"full-width"`, string(appearance.Value))
+	emoji := server.SpaceProperty(post.ID, "emoji-title-published")
+	require.NotNil(t, emoji)
+	assert.JSONEq(t, `"1f680"`, string(emoji.Value))
+
+	assert.Equal(t, 0, requestsUnder(server, "/api/v2/pages/"+post.ID),
+		"a blogpost is never addressed as a page")
+}
+
+// The content is in once the PUT succeeds, and the version with it: a failed
+// property write must not leave the caller holding the old number, or its next
+// update is refused as a conflict.
+func TestGatewayUpdateBumpsTheVersionBeforeProperties(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.AddPage("DOCS", "Doc", "page", "")
+
+	page, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") {
+			return http.StatusUnauthorized,
+				`{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		if strings.Contains(r.URL.Path, "/properties") {
+			return http.StatusBadRequest, `{"message":"refused"}`, true
+		}
+		return 0, "", false
+	})
+
+	require.Error(t, api.UpdatePage(page, "<p>two</p>", false, "second", "full-width", ""))
+	assert.Equal(t, int64(2), page.Version.Number)
+
+	cached, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+	assert.Equal(t, int64(2), cached.Version.Number)
+}
+
+func TestGatewayBlogpostAttachmentsAndLabels(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	post := server.AddPage("DOCS", "Post", "blogpost", "")
+	server.AddAttachment(post.ID, "diagram.png", "[mark] abc123")
+	server.AddLabel(post.ID, "from-mark")
+
+	page, err := api.FindPage("DOCS", "Post", "blogpost")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	attachments, err := api.GetAttachments(page.ID)
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+	assert.Equal(t, "diagram.png", attachments[0].Filename)
+
+	labels, err := api.GetPageLabels(page, "global")
+	require.NoError(t, err)
+	require.Len(t, labels.Labels, 1)
+	assert.Equal(t, "from-mark", labels.Labels[0].Name)
+
+	assert.Equal(t, 0, requestsUnder(server, "/api/v2/pages/"+post.ID))
+}
+
+// GetAttachments is handed an id alone. One not seen yet is looked up rather
+// than assumed to be a page, since a listing under the wrong collection reads
+// as empty and would have every attachment uploaded again.
+func TestGatewayAttachmentsOfAnUnseenBlogpost(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	post := server.AddPage("DOCS", "Post", "blogpost", "")
+	server.AddAttachment(post.ID, "diagram.png", "[mark] abc123")
+
+	attachments, err := api.GetAttachments(post.ID)
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+	assert.Equal(t, "diagram.png", attachments[0].Filename)
+}
+
+// --page-id and --preserve-comments read by id, and the id may be a blogpost's.
+func TestGatewayGetBlogpostByID(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	post := server.AddPage("DOCS", "Post", "blogpost", "")
+	server.EditPage(post.ID, "<p>stored</p>")
+
+	page, err := api.GetPageByIDExpanded(post.ID, "ancestors,version,body.storage")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+	assert.Equal(t, post.ID, page.ID)
+	assert.Equal(t, "Post", page.Title)
+	assert.Equal(t, "blogpost", page.Type)
+	assert.Equal(t, int64(2), page.Version.Number)
+	assert.Equal(t, "<p>stored</p>", page.Body.Storage.Value)
+	assert.Empty(t, page.Ancestors)
+
+	// Once known to be a blogpost, it is asked of /blogposts straight away.
+	server.ResetRequests()
+	_, err = api.GetPageByID(post.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, requestsUnder(server, "/api/v2/pages/"+post.ID))
+
+	// An id in neither collection is still reported as gone.
+	_, err = api.GetPageByID("does-not-exist")
+	require.ErrorIs(t, err, confluence.ErrNotFound)
+}
+
+// A token granted the page scopes and not the blogpost ones is refused
+// /blogposts. Looking there for a page that has gone must not turn the 404
+// into that refusal: --track-pages recreates a page it is told is gone, and
+// stops the run on any other failure.
+func TestGatewayGetPageByIDWithoutBlogpostScopes(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.AddSpace("DOCS")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") || strings.Contains(r.URL.Path, "/api/v2/blogposts") {
+			return http.StatusUnauthorized,
+				`{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.GetPageByID("deleted")
+	require.ErrorIs(t, err, confluence.ErrNotFound)
+}

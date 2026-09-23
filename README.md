@@ -1925,6 +1925,7 @@ pages with the v2 API, which needs:
 | --- | --- |
 | `read:space:confluence` | resolving a space key and finding its home page |
 | `read:page:confluence`, `write:page:confluence` | finding, reading, creating and updating pages |
+| `read:blogpost:confluence`, `write:blogpost:confluence` | the same for blog posts (`Type: blogpost`) |
 | `read:attachment:confluence` | listing what is attached to a page |
 | `read:label:confluence` | reading the labels a page carries |
 | `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
