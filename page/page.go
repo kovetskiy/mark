@@ -27,7 +27,7 @@ func ResolvePage(
 		return nil, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
 
-	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && !pageUnderParents(page, meta.Parents) {
+	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && offAnchor(api, meta.Space, page, meta.Parents) {
 		log.Warn().Msgf(
 			"page %q exists outside MARK_PARENTS %q; will create or relocate under folder hierarchy",
 			meta.Title,

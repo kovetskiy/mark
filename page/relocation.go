@@ -46,6 +46,31 @@ func UnderDeclaredParents(pg *confluence.PageInfo, parents []string) bool {
 	return pageUnderParents(pg, parents)
 }
 
+// offAnchor reports whether a page that a document with folders found by title
+// sits somewhere other than under the document's MARK_PARENTS, and so is a
+// different page that happens to share the title.
+//
+// An empty ancestor chain is no evidence of that. It is what v1 answers for a
+// page whose parent is a folder -- folders never appear in the chain -- which is
+// exactly what the page this document published last time looks like. Reading
+// it as off-anchor sent every run without --track-pages to create the page a
+// second time, and Confluence refuses that: a title is unique within a space.
+// The one parentless page that is certainly not the document's is the space
+// home page, and that is still passed over, as is any page when the home page
+// cannot be looked up to tell.
+func offAnchor(api *confluence.API, space string, pg *confluence.PageInfo, parents []string) bool {
+	if len(pg.Ancestors) > 0 {
+		return !pageUnderParents(pg, parents)
+	}
+
+	homepage, err := api.FindHomePage(space)
+	if err != nil || homepage == nil {
+		return true
+	}
+
+	return homepage.ID == pg.ID
+}
+
 // pageUnderParents reports whether any ancestor title matches one of the MARK_PARENTS chain.
 func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 	if pg == nil || len(parents) == 0 {
