@@ -65,3 +65,28 @@ func TestIncludeTransformerUnsafeHTML(t *testing.T) {
 	assert.Contains(t, output, "<ac:structured-macro ac:name=\"info\">")
 	assert.NotContains(t, output, "&lt;ac:structured-macro")
 }
+
+// A fragment spliced in after parsing is rendered against the outer document's
+// bytes. A fenced block reads its language and lines as offsets into whatever
+// source it is handed, so it came out as slices of the outer page -- garbage,
+// but well-formed garbage that nothing downstream caught. There is no way to
+// move it, so the transformer must refuse rather than publish that.
+func TestIncludeTransformerRefusesCodeItCannotMove(t *testing.T) {
+	tempDir := t.TempDir()
+	fragment := "```go\nfunc main() {}\n```\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "inc.md"), []byte(fragment), 0o600))
+
+	transformer := ctransformer.NewIncludeTransformer("test.md", tempDir, "", template.New("test"))
+
+	gm := goldmark.New(
+		goldmark.WithParserOptions(
+			parser.WithASTTransformers(util.Prioritized(transformer, 100)),
+		),
+	)
+
+	var buf bytes.Buffer
+	require.NoError(t, gm.Convert([]byte("Some text before the directive.\n\n<!-- Include: inc.md -->\n"), &buf))
+
+	require.Error(t, transformer.GetError())
+	assert.Contains(t, transformer.GetError().Error(), "FencedCodeBlock")
+}

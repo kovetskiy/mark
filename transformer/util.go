@@ -2,6 +2,8 @@ package transformer
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/yuin/goldmark/ast"
@@ -164,7 +166,51 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	return nil
 }
 
-func convertSegmentsToStrings(doc ast.Node, source []byte) {
+// errUnmovableNode reports a node from a parsed sub-document that cannot be
+// spliced into the document being transformed.
+var errUnmovableNode = errors.New("cannot be carried into the document it was expanded into")
+
+// unmovableNode names the first node under doc that renders straight from
+// segments into its own source, which convertSegmentsToStrings has no way to
+// rebase, or returns nil when there is none.
+//
+// The sub-document is parsed from the expanded bytes and rendered against the
+// outer document's: a code block reads its lines, and a fenced one its info
+// string too, as offsets into whatever source it is handed, and an autolink its
+// URL. Spliced in as they were, a fenced block in an included fragment came out
+// with its language and body sliced from the middle of the outer page -- still
+// well-formed, so nothing downstream noticed. There is no node to put in their
+// place that the code block renderer would read from elsewhere, so the caller
+// fails instead.
+func unmovableNode(doc ast.Node) ast.Node {
+	var found ast.Node
+
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		switch n.(type) {
+		case *ast.FencedCodeBlock, *ast.CodeBlock, *ast.AutoLink:
+			found = n
+			return ast.WalkStop, nil
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	return found
+}
+
+// convertSegmentsToStrings detaches a parsed sub-document from the bytes it was
+// parsed out of, so that its nodes can be moved into another document. It
+// refuses, before changing anything, a sub-document holding a node it cannot
+// detach.
+func convertSegmentsToStrings(doc ast.Node, source []byte) error {
+	if n := unmovableNode(doc); n != nil {
+		return fmt.Errorf("%s %w", n.Kind(), errUnmovableNode)
+	}
+
 	type replaceItem struct {
 		node     ast.Node
 		val      []byte
@@ -231,4 +277,6 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) {
 			parent.RemoveChild(parent, item.node)
 		}
 	}
+
+	return nil
 }

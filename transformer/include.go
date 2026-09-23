@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"bytes"
+	"fmt"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/includes"
@@ -137,7 +138,15 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 			),
 		).Parser()
 		subDoc := p.Parse(text.NewReader(expanded))
-		convertSegmentsToStrings(subDoc, expanded)
+		if err := convertSegmentsToStrings(subDoc, expanded); err != nil {
+			t.Err = fmt.Errorf("unable to process include at line %d: %w", target.lineNum, err)
+			log.Error().
+				Str("file", t.FilePath).
+				Int("line", target.lineNum).
+				Err(err).
+				Msg("unable to process include")
+			return false
+		}
 
 		parent := target.startNode.Parent()
 		if parent == nil {
