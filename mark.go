@@ -163,7 +163,10 @@ func RunContext(ctx context.Context, config Config) (err error) {
 	return run(ctx, config)
 }
 
-func run(ctx context.Context, config Config) error {
+// The error result is named so the deferred report write below can see, and
+// replace, what the run is returning. Without it the closure assigned to a
+// local err that no return statement read, and a failed write went unheard.
+func run(ctx context.Context, config Config) (err error) {
 	// Settings are checked before anything else happens. A value that cannot be
 	// acted on should be said so plainly, not after a glob has been resolved
 	// and a connection opened -- and least of all part way through publishing.
