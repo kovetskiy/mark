@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -290,6 +289,11 @@ func run(ctx context.Context, config Config) (err error) {
 	}
 
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	// An update refused as a conflict is retried against the page's current
+	// version, which overwrites whatever changed it. --no-overwrite exists to
+	// stop exactly that, so under it the retry goes ahead only when nobody else
+	// has written to the page.
+	api.KeepConcurrentEdits = config.NoOverwrite
 
 	// Folder resolutions are cached in a package-level map that outlives this
 	// call, so a second run in the same process -- against another instance,
@@ -956,10 +960,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			if err != nil {
 				return nil, nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
 			}
-			// A delay between the create and update call helps mitigate a 409
-			// conflict that can occur when attempting to update a page just
-			// after it was created. See issues/139.
-			time.Sleep(1 * time.Second)
 			pageCreated = true
 		} else if parent != nil && parent.Type == "folder-parent" {
 			if err := page.EnsurePageUnderFolderParent(api, pg, parent.ID); err != nil {

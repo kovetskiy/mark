@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/gopencils"
@@ -68,6 +69,18 @@ type API struct {
 	homePageCache   map[string]homePageCacheEntry
 	spaceIDCache    map[string]spaceIDCacheEntry
 	spaceCacheMutex sync.RWMutex
+
+	// KeepConcurrentEdits stops UpdatePage from overwriting a page that was
+	// written by someone else after mark read it. An update refused as a
+	// conflict is then retried only when the page is still at the version mark
+	// read, and fails otherwise. --no-overwrite sets it: that flag promises
+	// an edit made in Confluence is not silently replaced, and the window
+	// between its check and the update is where one could land.
+	KeepConcurrentEdits bool
+
+	// conflictRetryDelay is how long UpdatePage waits after a conflict before
+	// reading the page again; see retryConflictingUpdate. Tests set it to zero.
+	conflictRetryDelay time.Duration
 }
 
 // userCacheEntry records the outcome of a user lookup, including a failed one:
@@ -396,6 +409,8 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		gateway:       isGatewayURL(baseURL),
 		pageCache:     make(map[string]*PageInfo),
 		pageCacheByID: make(map[string]*PageInfo),
+
+		conflictRetryDelay: time.Second,
 	}
 
 	// A Personal Access Token arrives as the password with no username. It is
@@ -1312,11 +1327,16 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		}
 	}
 
-	var err error
-	if api.gateway {
-		err = api.updatePageV2(page, newContent, minorEdit, versionMessage, nextPageVersion)
-	} else {
-		err = api.updatePageV1(page, newContent, minorEdit, versionMessage, nextPageVersion, properties)
+	put := func(version int64) error {
+		if api.gateway {
+			return api.updatePageV2(page, newContent, minorEdit, versionMessage, version)
+		}
+		return api.updatePageV1(page, newContent, minorEdit, versionMessage, version, properties)
+	}
+
+	err := put(nextPageVersion)
+	if errors.Is(err, errConflict) {
+		nextPageVersion, err = api.retryConflictingUpdate(page, nextPageVersion, err, put)
 	}
 	if err != nil {
 		return err
@@ -1343,6 +1363,89 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	return nil
+}
+
+// retryConflictingUpdate recovers from an update Confluence refused with 409.
+//
+// UpdatePage sends the version after the one the page had when it was read,
+// and that number goes stale whenever something else writes to the page in
+// the meantime: a person in the web UI, another mark run, or a page resolved
+// twice in one run through two copies. Confluence Cloud has also been seen to
+// refuse the first update of a page created a moment earlier, with an
+// OptimisticLockException and a version that was in fact right (issue #139) --
+// a race inside Confluence rather than a stale number. Both clear the same
+// way: wait a moment, read the version the page has now, and send once more.
+//
+// mark's content is authoritative for the pages it publishes, so the retry
+// overwrites whatever the other writer left, unless KeepConcurrentEdits says
+// otherwise. There is exactly one retry: a page that conflicts twice is being
+// written to by something else continuously, and racing it is not a fix.
+//
+// It returns the version the update created.
+func (api *API) retryConflictingUpdate(
+	page *PageInfo,
+	attempted int64,
+	conflict error,
+	put func(version int64) error,
+) (int64, error) {
+	if api.conflictRetryDelay > 0 {
+		time.Sleep(api.conflictRetryDelay)
+	}
+
+	current, err := api.currentPageVersion(page)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"update of page %q (%s) conflicted (%w), and its current version could not be read to retry: %w",
+			page.Title, page.ID, conflict, err,
+		)
+	}
+
+	if api.KeepConcurrentEdits && current != page.Version.Number {
+		return 0, fmt.Errorf(
+			"page %q (%s) was edited in Confluence while mark was "+
+				"publishing it (now at version %d, mark read version %d), and "+
+				"--no-overwrite leaves such a page alone: %w",
+			page.Title, page.ID, current, page.Version.Number, conflict,
+		)
+	}
+
+	log.Debug().Msgf(
+		"update of page %q (%s) as version %d conflicted; retrying as version %d",
+		page.Title, page.ID, attempted, current+1,
+	)
+
+	if err := put(current + 1); err != nil {
+		if errors.Is(err, errConflict) {
+			return 0, fmt.Errorf(
+				"version %d of page %q (%s) was refused as a "+
+					"conflict, and version %d again after reading the page afresh; "+
+					"something else is writing to the page at the same time, so run "+
+					"mark again once it has stopped: %w",
+				attempted, page.Title, page.ID, current+1, err,
+			)
+		}
+		return 0, err
+	}
+
+	return current + 1, nil
+}
+
+// currentPageVersion reads the version a page has right now, bypassing the
+// cache, with the cheapest request that returns it.
+func (api *API) currentPageVersion(page *PageInfo) (int64, error) {
+	if api.gateway {
+		content, err := api.readContentV2(v2Collection(page.Type), page.ID, false)
+		if err != nil {
+			return 0, err
+		}
+		return content.Version.Number, nil
+	}
+
+	current, err := api.GetPageByIDExpanded(page.ID, "version")
+	if err != nil {
+		return 0, err
+	}
+	return current.Version.Number, nil
 }
 
 // updatePageV1 is the request behind UpdatePage. properties travel inside it,
@@ -2279,6 +2382,10 @@ func (api *API) describeContent(contentID string) string {
 // state rather than a failure -- from every other way a request can go wrong.
 var ErrNotFound = errors.New("404 (Not Found)")
 
+// errConflict reports that Confluence answered 409: for a page update, that
+// the version sent is not the one after the page's current version.
+var errConflict = errors.New("409 (Conflict)")
+
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	defer func() {
 		_ = request.Raw.Body.Close()
@@ -2313,6 +2420,15 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	if len(output) > maxErrorBody {
 		output = output[:maxErrorBody]
 		truncated = " (truncated)"
+	}
+
+	if request.Raw.StatusCode == http.StatusConflict {
+		// Wrapped for UpdatePage, which recovers from a conflict on its own
+		// write. The body is kept: Confluence says there which kind it was.
+		return fmt.Errorf(
+			"the Confluence API returned unexpected status: %w for %s, output: %q",
+			errConflict, target, output,
+		)
 	}
 
 	return fmt.Errorf(
