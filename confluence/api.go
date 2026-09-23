@@ -37,6 +37,11 @@ type API struct {
 	// resource derived from them; see resource().
 	bearerToken string
 
+	// gateway is set when the base URL is the api.atlassian.com gateway, the
+	// route a scoped API token takes. The page calls go to v2 there, since a
+	// scoped token is not entitled to v1; see v2pages.go.
+	gateway bool
+
 	isCloudFlag bool
 	isCloudOnce sync.Once
 
@@ -378,6 +383,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		rest:          rest,
 		restV2:        restV2,
 		BaseURL:       baseURL,
+		gateway:       isGatewayURL(baseURL),
 		pageCache:     make(map[string]*PageInfo),
 		pageCacheByID: make(map[string]*PageInfo),
 	}
@@ -505,27 +511,32 @@ func (api *API) cachedHomePage(space string) (homePageCacheEntry, bool) {
 }
 
 func (api *API) fetchHomePage(space string) (*PageInfo, error) {
-	payload := map[string]string{
-		"expand": "homepage",
-	}
+	var (
+		v1Request *gopencils.Resource
+		v1Err     error
+	)
 
-	v1Request, v1Err := api.v1().Res(
-		"space/"+space, &SpaceInfo{},
-	).Get(payload)
-	if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK {
-		homepage := &v1Request.Response.(*SpaceInfo).Homepage
+	// Through the gateway v1 is not asked at all: a scoped token is refused
+	// there, and v2 answers either kind of token.
+	if !api.gateway {
+		v1Request, v1Err = api.v1().Res(
+			"space/"+space, &SpaceInfo{},
+		).Get(map[string]string{"expand": "homepage"})
+		if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK {
+			homepage := &v1Request.Response.(*SpaceInfo).Homepage
 
-		// A 200 does not guarantee a homepage came with it. Returning the zero
-		// PageInfo handed the caller an empty id, which then went out as a
-		// content id -- a page published under nothing at all. v2 already tells
-		// "space has no homepage" apart from "no such space"; v1 says the same
-		// thing here rather than falling through to a v2 that does not exist on
-		// Server or Data Center.
-		if homepage.ID == "" {
-			return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
+			// A 200 does not guarantee a homepage came with it. Returning the
+			// zero PageInfo handed the caller an empty id, which then went out
+			// as a content id -- a page published under nothing at all. v2
+			// already tells "space has no homepage" apart from "no such space";
+			// v1 says the same thing here rather than falling through to a v2
+			// that does not exist on Server or Data Center.
+			if homepage.ID == "" {
+				return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
+			}
+
+			return homepage, nil
 		}
-
-		return homepage, nil
 	}
 
 	// Any non-OK v1 answer falls through to v2, mirroring GetSpaceID. The case
@@ -554,6 +565,9 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// of v1's answer turns a clear "401 (Unauthorized)" -- the error a Server
 	// user with bad credentials should see -- into a misleading "404".
 	if v2Err != nil {
+		if v1Request == nil {
+			return nil, v2Err
+		}
 		if v1Err == nil {
 			v1Err = newErrorStatusNotOK(v1Request)
 		}
@@ -589,6 +603,54 @@ func (api *API) FindPage(
 	}
 	api.pageCacheMutex.RUnlock()
 
+	var (
+		found *PageInfo
+		err   error
+	)
+	if api.gateway {
+		found, err = api.findPageV2(space, title, pageType, "current")
+	} else {
+		found, err = api.findPageV1(space, title, pageType)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	api.pageCacheMutex.Lock()
+	defer api.pageCacheMutex.Unlock()
+
+	// Double-checked locking: check if the cache was populated by another goroutine
+	// while the network request was in-flight.
+	if cachedPage, ok := api.pageCache[key]; ok {
+		return clonePageInfo(cachedPage), nil
+	}
+
+	if found == nil {
+		api.setCacheEntry(key, nil)
+		return nil, nil
+	}
+
+	page := *found
+
+	cacheTitle := title
+	if page.Title != "" {
+		cacheTitle = page.Title
+	}
+	cacheType := pageType
+	if page.Type != "" {
+		cacheType = page.Type
+	}
+	canonicalKey := pageCacheKey(space, cacheTitle, cacheType)
+
+	api.setCacheEntry(key, &page)
+	if canonicalKey != key {
+		api.setCacheEntry(canonicalKey, &page)
+	}
+	return clonePageInfo(&page), nil
+}
+
+// findPageV1 is the lookup behind FindPage: a live page by title, or nil.
+func (api *API) findPageV1(space, title, pageType string) (*PageInfo, error) {
 	result := struct {
 		Results []PageInfo `json:"results"`
 		Links   struct {
@@ -623,17 +685,7 @@ func (api *API) FindPage(
 		return nil, newErrorStatusNotOK(request)
 	}
 
-	api.pageCacheMutex.Lock()
-	defer api.pageCacheMutex.Unlock()
-
-	// Double-checked locking: check if the cache was populated by another goroutine
-	// while the network request was in-flight.
-	if cachedPage, ok := api.pageCache[key]; ok {
-		return clonePageInfo(cachedPage), nil
-	}
-
 	if len(result.Results) == 0 {
-		api.setCacheEntry(key, nil)
 		return nil, nil
 	}
 
@@ -645,21 +697,7 @@ func (api *API) FindPage(
 		page.Links.Base = api.BaseURL
 	}
 
-	cacheTitle := title
-	if page.Title != "" {
-		cacheTitle = page.Title
-	}
-	cacheType := pageType
-	if page.Type != "" {
-		cacheType = page.Type
-	}
-	canonicalKey := pageCacheKey(space, cacheTitle, cacheType)
-
-	api.setCacheEntry(key, &page)
-	if canonicalKey != key {
-		api.setCacheEntry(canonicalKey, &page)
-	}
-	return clonePageInfo(&page), nil
+	return &page, nil
 }
 
 // statusesHoldingTitle are the states in which a page is invisible to an
@@ -680,6 +718,10 @@ var statusesHoldingTitle = []string{"archived", "trashed"}
 // caching at all. This is made only after a create has failed, so paying for it
 // each time is fine.
 func (api *API) findPageWithStatus(space, title, pageType, status string) (*PageInfo, error) {
+	if api.gateway {
+		return api.findPageV2(space, title, pageType, status)
+	}
+
 	result := struct {
 		Results []PageInfo `json:"results"`
 	}{}
@@ -944,6 +986,10 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 }
 
 func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
+	if api.gateway {
+		return api.getAttachmentsV2(pageID)
+	}
+
 	type page struct {
 		Links struct {
 			Context string `json:"context"`
@@ -1006,6 +1052,10 @@ func (api *API) GetPageByID(pageID string) (*PageInfo, error) {
 }
 
 func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, error) {
+	if api.gateway {
+		return api.getPageByIDV2(pageID, expand)
+	}
+
 	request, err := api.v1().Res(
 		"content/"+pageID, &PageInfo{},
 	).Get(map[string]string{"expand": expand})
@@ -1071,47 +1121,18 @@ func (api *API) CreatePage(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	payload := map[string]any{
-		"type":  pageType,
-		"title": title,
-		"space": map[string]any{
-			"key": space,
-		},
-		"body": map[string]any{
-			"storage": map[string]any{
-				"representation": "storage",
-				"value":          body,
-			},
-		},
-		"metadata": map[string]any{
-			"properties": map[string]any{
-				"editor": map[string]any{
-					"value": "v2",
-				},
-			},
-		},
+	var (
+		page *PageInfo
+		err  error
+	)
+	if api.gateway {
+		page, err = api.createPageV2(space, pageType, parent, title, body)
+	} else {
+		page, err = api.createPageV1(space, pageType, parent, title, body)
 	}
-
-	if parent != nil {
-		payload["ancestors"] = []map[string]any{
-			{"id": parent.ID},
-		}
-	}
-
-	request, err := api.v1().Res(
-		"content/", &PageInfo{},
-	).Post(payload)
 	if err != nil {
-		return nil, newTransportError(
-			request, fmt.Sprintf("create page %q in space %s", title, space), err,
-		)
+		return nil, err
 	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
-	}
-
-	page := request.Response.(*PageInfo)
 
 	if parent != nil {
 		ancestors := make([]struct {
@@ -1160,17 +1181,53 @@ func (api *API) CreatePage(
 	return page, nil
 }
 
-func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
-	nextPageVersion := page.Version.Number + 1
+// createPageV1 is the request behind CreatePage.
+func (api *API) createPageV1(space, pageType string, parent *PageInfo, title, body string) (*PageInfo, error) {
+	payload := map[string]any{
+		"type":  pageType,
+		"title": title,
+		"space": map[string]any{
+			"key": space,
+		},
+		"body": map[string]any{
+			"storage": map[string]any{
+				"representation": "storage",
+				"value":          body,
+			},
+		},
+		"metadata": map[string]any{
+			"properties": map[string]any{
+				"editor": map[string]any{
+					"value": "v2",
+				},
+			},
+		},
+	}
 
-	var oldAncestors []map[string]any
-
-	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
-		// picking only the last one, which is required by confluence
-		oldAncestors = []map[string]any{
-			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
+	if parent != nil {
+		payload["ancestors"] = []map[string]any{
+			{"id": parent.ID},
 		}
 	}
+
+	request, err := api.v1().Res(
+		"content/", &PageInfo{},
+	).Post(payload)
+	if err != nil {
+		return nil, newTransportError(
+			request, fmt.Sprintf("create page %q in space %s", title, space), err,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
+	}
+
+	return request.Response.(*PageInfo), nil
+}
+
+func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
+	nextPageVersion := page.Version.Number + 1
 
 	properties := map[string]any{
 		// Fix to set full-width as has changed on Confluence APIs again.
@@ -1198,12 +1255,45 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		}
 	}
 
+	var err error
+	if api.gateway {
+		err = api.updatePageV2(page, newContent, minorEdit, versionMessage, nextPageVersion, properties)
+	} else {
+		err = api.updatePageV1(page, newContent, minorEdit, versionMessage, nextPageVersion, properties)
+	}
+	if err != nil {
+		return err
+	}
+
+	page.Version.Number = nextPageVersion
+	api.updateCachedPageVersion(page.ID, nextPageVersion)
+
+	// An update can carry a new title, and the cache is keyed by title. A
+	// lookup of the new title earlier in the same run -- before the page wore
+	// it -- cached a miss, and that miss now outlives the fact that produced
+	// it: the next caller is told the page does not exist and tries to create
+	// one, which Confluence rejects as a duplicate title. Dropping the entry
+	// costs one lookup and keeps the cache from asserting something untrue.
+	api.forgetMissesForTitle(page.Title, page.Type)
+	return nil
+}
+
+// updatePageV1 is the request behind UpdatePage. properties travel inside it,
+// as metadata; nextVersion is the version this update creates.
+func (api *API) updatePageV1(
+	page *PageInfo,
+	newContent string,
+	minorEdit bool,
+	versionMessage string,
+	nextVersion int64,
+	properties map[string]any,
+) error {
 	payload := map[string]any{
 		"id":    page.ID,
 		"type":  page.Type,
 		"title": page.Title,
 		"version": map[string]any{
-			"number":    nextPageVersion,
+			"number":    nextVersion,
 			"minorEdit": minorEdit,
 			"message":   versionMessage,
 		},
@@ -1224,8 +1314,11 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	// not ancestors -- and the update a moment later used to send
 	// "ancestors": [], which is at best ignored and at worst read as a request
 	// to reparent the page to the space root.
-	if len(oldAncestors) > 0 {
-		payload["ancestors"] = oldAncestors
+	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
+		// picking only the last one, which is required by confluence
+		payload["ancestors"] = []map[string]any{
+			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
+		}
 	}
 
 	request, err := api.v1().Res(
@@ -1241,16 +1334,6 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		return newErrorStatusNotOK(request)
 	}
 
-	page.Version.Number = nextPageVersion
-	api.updateCachedPageVersion(page.ID, nextPageVersion)
-
-	// An update can carry a new title, and the cache is keyed by title. A
-	// lookup of the new title earlier in the same run -- before the page wore
-	// it -- cached a miss, and that miss now outlives the fact that produced
-	// it: the next caller is told the page does not exist and tries to create
-	// one, which Confluence rejects as a duplicate title. Dropping the entry
-	// costs one lookup and keeps the cache from asserting something untrue.
-	api.forgetMissesForTitle(page.Title, page.Type)
 	return nil
 }
 
@@ -1331,6 +1414,10 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
+	if api.gateway {
+		return api.getPageLabelsV2(page.ID, prefix)
+	}
+
 	type labelPage struct {
 		Links struct {
 			Next string `json:"next"`
@@ -1508,7 +1595,7 @@ func isCloudHost(host string) bool {
 func (api *API) IsCloud() bool {
 	api.isCloudOnce.Do(func() {
 		// 1. Fast path: check for a known Cloud host
-		if isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
+		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
@@ -1749,9 +1836,13 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// about this field, which is what made the mismatch easy to miss.
 	var v1Result SpaceInfo
 
-	request, err := api.v1().Res("space/"+spaceKey, &v1Result).Get()
-	if err == nil && request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
-		return strconv.Itoa(v1Result.ID), nil
+	// Through the gateway v1 is not asked at all: a scoped token is refused
+	// there, and v2 answers either kind of token.
+	if !api.gateway {
+		request, err := api.v1().Res("space/"+spaceKey, &v1Result).Get()
+		if err == nil && request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
+			return strconv.Itoa(v1Result.ID), nil
+		}
 	}
 
 	// Fallback to v2 API with query parameter
@@ -1766,7 +1857,7 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 		"keys": spaceKey,
 	}
 
-	request, err = api.v2().Res(
+	request, err := api.v2().Res(
 		"spaces", &v2Result,
 	).Get(payload)
 	if err != nil {
