@@ -13,6 +13,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -669,37 +670,55 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
-	markdown, err := os.ReadFile(file)
+// readSource reads a document the way everything that looks at its headers
+// has to see it. It returns the source, normalised but otherwise as written,
+// which is what the file's fingerprint is taken from, and the markdown with its
+// ignored regions removed, which is what the headers are read from.
+//
+// Publishing is not the only reader: --parents-from-path reads a directory's
+// document for its title, and a title read from bytes publishing never sees --
+// a byte-order mark in front of the header, a header inside an ignored region
+// -- is a different title from the one the page is published under.
+func readSource(file string) ([]byte, []byte, error) {
+	source, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
-	markdown = bytes.ReplaceAll(markdown, []byte("\r\n"), []byte("\n"))
+	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
 
 	// A byte-order mark is not content, and leaving it in front of the first
 	// header comment makes the file look to every parser here like one with no
 	// metadata at all -- reported as "doesn't contain metadata", which is not
 	// where the author would look. Windows editors write one routinely.
-	markdown = bytes.TrimPrefix(markdown, []byte{0xEF, 0xBB, 0xBF})
-
-	// Fingerprint the source as read, before metadata is stripped and links are
-	// substituted. Both of those depend on state outside the file -- what is
-	// already published, what other files resolve to -- and a fingerprint that
-	// moves with the remote would not survive the round trip it exists for.
-	sourceHash := sha1Hash(string(markdown))
-
-	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
+	source = bytes.TrimPrefix(source, []byte{0xEF, 0xBB, 0xBF})
 
 	// Before the headers are read, so that the line numbers in any complaint
 	// are the ones in the file the author is looking at rather than offsets
 	// into what is left after the header block is taken off. It also means an
 	// ignored region is ignored entirely, headers and all, which is what the
 	// markers say on the tin.
-	markdown, err = metadata.StripIgnoredBlocks(markdown)
+	markdown, err := metadata.StripIgnoredBlocks(source)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to process %q: %w", file, err)
 	}
+
+	return source, markdown, nil
+}
+
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
+	source, markdown, err := readSource(file)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Fingerprint the source as read, before metadata is stripped and links are
+	// substituted. Both of those depend on state outside the file -- what is
+	// already published, what other files resolve to -- and a fingerprint that
+	// moves with the remote would not survive the round trip it exists for.
+	sourceHash := sha1Hash(string(source))
+
+	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
 
 	meta, markdown, err := metadata.ExtractMeta(
 		markdown,
@@ -2402,9 +2421,9 @@ func directoryHash(key string) string {
 func directoryTitleReader(config Config) page.TitleResolver {
 	return func(directory, indexFile string) (string, error) {
 		if indexFile != "" {
-			source, err := os.ReadFile(indexFile)
+			_, source, err := readSource(indexFile)
 			if err != nil {
-				return "", fmt.Errorf("unable to read %q: %w", indexFile, err)
+				return "", err
 			}
 
 			meta, _, err := metadata.ExtractMeta(
@@ -2428,8 +2447,12 @@ func directoryTitleReader(config Config) page.TitleResolver {
 // others already use for naming a directory.
 func directoryTitleFromPagesFile(directory string) (string, error) {
 	source, err := os.ReadFile(filepath.Join(directory, ".pages"))
+	if errors.Is(err, fs.ErrNotExist) {
+		// Absence is the ordinary case.
+		return "", nil
+	}
 	if err != nil {
-		return "", nil //nolint:nilerr // absence is the ordinary case
+		return "", fmt.Errorf("unable to read %s: %w", filepath.Join(directory, ".pages"), err)
 	}
 
 	var pages struct {
