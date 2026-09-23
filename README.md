@@ -1230,7 +1230,11 @@ mark --output-format json --files "docs/**/*.md" | jq -r '.pages[] | select(.sta
 
 A page is `published`, `unchanged` (`--changes-only` found nothing to do),
 `skipped` (not synchronized, or edited in Confluence under `--no-overwrite`) or
-`failed`, with `reason` saying which in the last two cases.
+`failed`, with `reason` saying which in the last two cases. A page is only
+`published` once everything the run had to do to it -- its body, labels and
+properties -- has been done. Each document appears once, with what finally
+became of it, so one [published again](#links-between-pages-published-together)
+whose second publish failed is `failed`.
 
 `orphans` lists the [tracked pages whose source file is
 gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the

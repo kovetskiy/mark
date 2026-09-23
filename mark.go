@@ -522,6 +522,12 @@ func run(ctx context.Context, config Config) (err error) {
 			if _, _, err := processFile(
 				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
 			); err != nil {
+				// Over what the first pass recorded: the document published
+				// then, but the page now holds whatever this pass left it with.
+				results.AddPage(report.Page{
+					File: file, Status: report.StatusFailed, Reason: err.Error(),
+				})
+
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
 					hasErrors = true
@@ -1216,17 +1222,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
-	status := report.StatusPublished
-	if !shouldUpdatePage {
-		status = report.StatusUnchanged
-	}
-	results.AddPage(report.Page{
-		File: file, Status: status,
-		Space: spaceOf(meta), Title: target.Title,
-		PageID: target.ID, URL: api.BaseURL + target.Links.Full,
-		Warnings: brokenLinks,
-	})
-
 	if shouldUpdatePage {
 		// Checked here rather than anywhere earlier because this is the body
 		// that is actually sent: after the layout wrap, and after any inline
@@ -1319,6 +1314,22 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, fmt.Errorf("unable to restrict page updates: %w", err)
 		}
 	}
+
+	// Recorded last, once everything asked of the page has been done. It used
+	// to be recorded before the body was even checked for being well-formed,
+	// so a page whose update, labels or properties then failed was reported
+	// as published -- and in the second pass, where nothing recorded the
+	// failure over it, that is what the report went on saying.
+	status := report.StatusPublished
+	if !shouldUpdatePage {
+		status = report.StatusUnchanged
+	}
+	results.AddPage(report.Page{
+		File: file, Status: status,
+		Space: spaceOf(meta), Title: target.Title,
+		PageID: target.ID, URL: api.BaseURL + target.Links.Full,
+		Warnings: brokenLinks,
+	})
 
 	return target, placement, nil
 }
