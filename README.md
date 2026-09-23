@@ -1483,8 +1483,11 @@ Because the file carries what it points at, what it may point at is limited:
 * A **URL** is not fetched unless `--d2-bundle-remote` says so. The request is
   made by the document rather than by you, to any address it names -- a loopback
   or cloud metadata one included -- and the answer is published inside the
-  drawing. Set it for documents whose diagrams you trust; without it a remote
-  image stays a URL, which Confluence will not resolve.
+  drawing. Set it for documents whose diagrams you trust. Without it, a diagram
+  whose icon or `shape: image` names an `http` or `https` URL is refused, and the
+  file fails with an error that names the URL and the flag, since Confluence
+  would not resolve the URL from inside the SVG either. The flag changes nothing
+  for a PNG.
 
 ### Render PlantUML Diagrams
 
@@ -1848,7 +1851,7 @@ GLOBAL OPTIONS:
    --manifest-prefix string                       name the --track-pages mapping's properties under this prefix, so that two projects publishing into one space keep manifests of their own instead of sharing, and reporting each other's files as gone. Letters, digits, '_', '-' and dots. Requires --track-pages. (default: "mark.manifest") [$MARK_MANIFEST_PREFIX]
    --preserve-comments                            Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-output string                             image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment). (default: "png") [$MARK_D2_OUTPUT]
-   --d2-bundle-remote                             let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default: the request is made by the document rather than by you, to any address it likes. [$MARK_D2_BUNDLE_REMOTE]
+   --d2-bundle-remote                             let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default, which refuses a diagram that names a URL: the request is made by the document rather than by you, to any address it likes. [$MARK_D2_BUNDLE_REMOTE]
    --d2-scale float                               defines the scaling factor for d2 renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_D2_SCALE]
    --features string [ --features string ]        Enables optional features, replacing the defaults (mermaid, mention) rather than adding to them. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify                     skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
