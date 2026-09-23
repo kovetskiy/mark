@@ -398,6 +398,60 @@ func TestDocumentBeatsPagesFile(t *testing.T) {
 	assert.Equal(t, []string{"Home", "From The Document"}, ancestryOf(t, api, "Setup"))
 }
 
+// TestIndexWithByteOrderMarkNamesItsDirectory: the directory's title is read
+// from the same bytes publishing reads. A byte-order mark in front of the Title
+// header used to hide it from the directory's reader, which named the page
+// after the directory -- and publishing then gave the document that name in
+// place of the one it gave itself.
+func TestIndexWithByteOrderMarkNamesItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", "\uFEFF"+space+"<!-- Title: Custom -->\n\nIntro.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, nil)
+
+	assert.Equal(t, []string{"Home", "Custom"}, ancestryOf(t, api, "Setup"))
+
+	named, err := api.FindPage("DOCS", "Guides", "page")
+	require.NoError(t, err)
+	assert.Nil(t, named, "the document's own title is kept, not the directory's")
+}
+
+// TestIgnoredTitleDoesNotNameItsDirectory: a header inside an ignored region is
+// not published, so it cannot name the directory either.
+func TestIgnoredTitleDoesNotNameItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md",
+		"<!-- ac:ignore -->\n<!-- Title: Hidden -->\n<!-- ac:ignore end -->\n"+space+"\nIntro.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, nil)
+
+	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
+
+	hidden, err := api.FindPage("DOCS", "Hidden", "page")
+	require.NoError(t, err)
+	assert.Nil(t, hidden, "an ignored header names nothing")
+}
+
+// TestUnreadablePagesFileIsAnError: only a missing .pages file is the ordinary
+// case. One that is there and cannot be read used to be taken for absent, and
+// the directory quietly named after itself.
+func TestUnreadablePagesFileIsAnError(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "guides", ".pages"), 0o755))
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
+		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ".pages")
+}
+
 // TestFilenameNeverNamesADirectory: --title-from-filename would call every
 // directory's page "Readme", which is a name for a file rather than a page.
 func TestFilenameNeverNamesADirectory(t *testing.T) {
