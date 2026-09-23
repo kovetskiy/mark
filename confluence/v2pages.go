@@ -3,6 +3,7 @@ package confluence
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -68,12 +69,13 @@ type contentV2 struct {
 
 	Links struct {
 		WebUI string `json:"webui"`
+		Base  string `json:"base"`
 	} `json:"_links"`
 }
 
-// pageInfo converts a v2 object into the shape the rest of mark reads. The type
-// comes from the caller: v2 tells pages and blogposts apart by collection.
-func (content contentV2) pageInfo(pageType, baseURL string) *PageInfo {
+// pageInfoV2 converts a v2 object into the shape the rest of mark reads. The
+// type comes from the caller: v2 tells pages and blogposts apart by collection.
+func (api *API) pageInfoV2(content contentV2, pageType string) *PageInfo {
 	page := &PageInfo{
 		ID:     content.ID,
 		Title:  content.Title,
@@ -84,9 +86,40 @@ func (content contentV2) pageInfo(pageType, baseURL string) *PageInfo {
 	page.Version.Message = content.Version.Message
 	page.Body.Storage.Value = content.Body.Storage.Value
 	page.Links.Full = content.Links.WebUI
-	page.Links.Base = baseURL
+
+	api.learnSiteBase(content.Links.Base)
+	page.Links.Base = api.siteBaseURL()
 
 	return page
+}
+
+// learnSiteBase records the site URL a v2 response named in _links.base.
+func (api *API) learnSiteBase(base string) {
+	if base == "" {
+		return
+	}
+
+	api.siteBaseMutex.Lock()
+	api.siteBase = strings.TrimSuffix(base, "/")
+	api.siteBaseMutex.Unlock()
+}
+
+// siteBaseURL is what a link to a page should start with.
+//
+// Through the gateway the configured base URL is an API host, and a tiny link
+// built from it is one a browser cannot open (#1019). Confluence names the
+// site's own URL in the _links.base of its v2 listings -- the space lookup
+// that opens every run among them -- and that is what is used once it has
+// been seen. Until then the configured URL stands, as it does on v1.
+func (api *API) siteBaseURL() string {
+	api.siteBaseMutex.RLock()
+	defer api.siteBaseMutex.RUnlock()
+
+	if api.siteBase != "" {
+		return api.siteBase
+	}
+
+	return api.BaseURL
 }
 
 // v2Collection names the v2 collection holding a v1 content type.
@@ -162,30 +195,42 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 	query := map[string]string{
 		"space-id": spaceID,
 		"status":   status,
-		"limit":    "250",
 	}
 	if title != "" {
 		query["title"] = title
 	}
 
-	found, err := listV2[contentV2](
-		api, v2Collection(pageType), query,
-		fmt.Sprintf("find page %q in space %s", title, space),
-	)
-	if err != nil {
-		return nil, err
+	// One request, not a paged walk: as on v1, the first result is the answer.
+	var result struct {
+		Results []contentV2 `json:"results"`
+		Links   struct {
+			Base string `json:"base"`
+		} `json:"_links"`
 	}
 
-	if len(found) == 0 {
+	request, err := api.v2().Res(v2Collection(pageType), &result).Get(query)
+	if err != nil {
+		return nil, newTransportError(
+			request, fmt.Sprintf("find page %q in space %s", title, space), err,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	api.learnSiteBase(result.Links.Base)
+
+	if len(result.Results) == 0 {
 		return nil, nil
 	}
 
-	page := found[0].pageInfo(pageType, api.BaseURL)
+	page := api.pageInfoV2(result.Results[0], pageType)
 	if page.Status == "" {
 		page.Status = status
 	}
 
-	page.Ancestors, err = api.ancestorsV2(found[0])
+	page.Ancestors, err = api.ancestorsV2(result.Results[0])
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +269,7 @@ func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
 		return nil, err
 	}
 
-	page := content.pageInfo("page", api.BaseURL)
+	page := api.pageInfoV2(*content, "page")
 
 	if strings.Contains(expand, "ancestors") {
 		page.Ancestors, err = api.ancestorsV2(*content)
@@ -307,7 +352,7 @@ func (api *API) createPageV2(space, pageType string, parent *PageInfo, title, bo
 		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
 	}
 
-	return result.pageInfo(pageType, api.BaseURL), nil
+	return api.pageInfoV2(result, pageType), nil
 }
 
 // updatePageV2 is UpdatePage against v2.
@@ -371,8 +416,10 @@ func (api *API) setPagePropertiesV2(pageID string, properties map[string]any) er
 		byKey[existing[i].Key] = &existing[i]
 	}
 
-	for key, wrapper := range properties {
-		value, err := json.Marshal(wrapper.(map[string]any)["value"])
+	// In key order, so that a failure part way through leaves the page in the
+	// same state every time.
+	for _, key := range slices.Sorted(maps.Keys(properties)) {
+		value, err := json.Marshal(properties[key].(map[string]any)["value"])
 		if err != nil {
 			return fmt.Errorf("unable to encode property %q of page %s: %w", key, pageID, err)
 		}

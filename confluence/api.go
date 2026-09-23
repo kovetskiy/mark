@@ -42,6 +42,11 @@ type API struct {
 	// scoped token is not entitled to v1; see v2pages.go.
 	gateway bool
 
+	// siteBase is the site's own URL as v2 reports it in _links.base, learned
+	// from the first v2 listing of the run; see siteBaseURL.
+	siteBase      string
+	siteBaseMutex sync.RWMutex
+
 	isCloudFlag bool
 	isCloudOnce sync.Once
 
@@ -550,6 +555,9 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 			ID         string `json:"id"`
 			HomepageID string `json:"homepageId"`
 		} `json:"results"`
+		Links struct {
+			Base string `json:"base"`
+		} `json:"_links"`
 	}{}
 
 	v2Request, v2Err := api.v2().Res(
@@ -573,6 +581,8 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		}
 		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %w)", v1Err, v2Err)
 	}
+
+	api.learnSiteBase(v2Result.Links.Base)
 
 	if len(v2Result.Results) == 0 {
 		return nil, fmt.Errorf("space with key %s not found: %w", space, ErrNotFound)
@@ -1851,6 +1861,9 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 			ID  string `json:"id"`
 			Key string `json:"key"`
 		} `json:"results"`
+		Links struct {
+			Base string `json:"base"`
+		} `json:"_links"`
 	}{}
 
 	payload := map[string]string{
@@ -1867,6 +1880,8 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	if request.Raw.StatusCode != http.StatusOK {
 		return "", newErrorStatusNotOK(request)
 	}
+
+	api.learnSiteBase(v2Result.Links.Base)
 
 	if len(v2Result.Results) == 0 {
 		return "", fmt.Errorf("space with key %s not found", spaceKey)
