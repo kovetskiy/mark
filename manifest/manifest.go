@@ -60,6 +60,7 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,25 +106,54 @@ func Key(path string) string {
 }
 
 // PropertyKeyPrefix is the common prefix of the properties the manifest is
-// stored under. Each shard is this plus a dot and its index.
+// stored under unless a run asks for another; see SetPropertyKeyPrefix. Each
+// shard is the prefix plus a dot and its index.
 const PropertyKeyPrefix = "mark.manifest"
 
-// FolderPropertyKey holds the folder mapping.
+// FolderPropertyKey holds the folder mapping, under the default prefix.
 //
 // Kept apart from the page shards rather than mixed in: folders are keyed by
 // the titles declared in a header rather than by a source path, they are few
 // enough that splitting them buys nothing, and a folder key appearing among the
 // page keys would be reported as a source file that had gone missing.
-const FolderPropertyKey = PropertyKeyPrefix + ".folders"
+const FolderPropertyKey = PropertyKeyPrefix + folderSuffix
 
-// ParentPropertyKey holds the parent mapping.
+// ParentPropertyKey holds the parent mapping, under the default prefix.
 //
 // Kept apart from the page shards for the reasons the folder mapping is: it is
 // keyed by the chain of titles a document declares rather than by a source
 // path, there are few enough of them that splitting them buys nothing, and a
 // parent key among the page keys would be reported as a source file that had
 // gone missing.
-const ParentPropertyKey = PropertyKeyPrefix + ".parents"
+const ParentPropertyKey = PropertyKeyPrefix + parentSuffix
+
+const (
+	folderSuffix = ".folders"
+	parentSuffix = ".parents"
+)
+
+// FolderPropertyKeyFor and ParentPropertyKeyFor name the folder and parent
+// mappings under a prefix of the caller's choosing.
+func FolderPropertyKeyFor(prefix string) string { return prefix + folderSuffix }
+func ParentPropertyKeyFor(prefix string) string { return prefix + parentSuffix }
+
+// validPrefix is what a property key prefix may be made of: the characters
+// the default is made of. Confluence is not forthcoming about what a key may
+// contain, and a prefix that reads as a key nobody would mistake for another
+// program's is the point of choosing one.
+var validPrefix = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$`)
+
+// ValidatePropertyKeyPrefix reports whether prefix can name a manifest.
+func ValidatePropertyKeyPrefix(prefix string) error {
+	if !validPrefix.MatchString(prefix) {
+		return fmt.Errorf(
+			"%q cannot prefix a property key: use letters, digits, '_', '-' and single dots, as in %q",
+			prefix, PropertyKeyPrefix,
+		)
+	}
+
+	return nil
+}
 
 // ShardCount is how many properties the mapping is spread over.
 //
@@ -143,16 +173,23 @@ const ShardCount = 16
 // a boundary that is enforced.
 const shardSizeWarning = 24 * 1024
 
-// PropertyKey returns the property key for a shard index.
+// PropertyKey returns the property key for a shard index under the default
+// prefix.
 func PropertyKey(shard int) string {
-	return fmt.Sprintf("%s.%d", PropertyKeyPrefix, shard)
+	return PropertyKeyFor(PropertyKeyPrefix, shard)
+}
+
+// PropertyKeyFor returns the property key for a shard index under prefix.
+func PropertyKeyFor(prefix string, shard int) string {
+	return fmt.Sprintf("%s.%d", prefix, shard)
 }
 
 // shardIndex recovers a shard number from a property key, reporting false for
 // any key that is not one of ours -- a space or page may hold properties put
-// there by something else entirely.
-func shardIndex(key string) (int, bool) {
-	suffix, ok := strings.CutPrefix(key, PropertyKeyPrefix+".")
+// there by something else entirely, or by a run keeping its manifest under
+// another prefix in the same place.
+func shardIndex(prefix, key string) (int, bool) {
+	suffix, ok := strings.CutPrefix(key, prefix+".")
 	if !ok {
 		return 0, false
 	}
@@ -273,6 +310,10 @@ type Store struct {
 	// content properties instead of where the deployment would otherwise put
 	// it. Empty means the default backend; see SetManifestPage.
 	manifestPage string
+
+	// prefix is what every property of this manifest is named under; see
+	// SetPropertyKeyPrefix.
+	prefix string
 }
 
 // backend is where a space's manifest lives.
@@ -294,6 +335,10 @@ type spaceState struct {
 	backend   backend
 	spaceID   string
 	contentID string
+
+	// prefix is what this space's properties were read under, and so what
+	// they are written back under.
+	prefix string
 
 	shards [ShardCount]shard
 
@@ -349,7 +394,36 @@ type shard struct {
 
 // NewStore returns a Store that reads and writes through api.
 func NewStore(api *confluence.API) *Store {
-	return &Store{api: api, spaces: map[string]*spaceState{}, runFiles: map[string]bool{}}
+	return &Store{
+		api:      api,
+		spaces:   map[string]*spaceState{},
+		runFiles: map[string]bool{},
+		prefix:   PropertyKeyPrefix,
+	}
+}
+
+// SetPropertyKeyPrefix names the manifest's properties under prefix instead of
+// the default, so that two projects publishing into one space -- which is not
+// always avoidable -- keep manifests of their own rather than reading and
+// rewriting each other's, and reporting each other's files as gone.
+//
+// Set before the first space is loaded: what has been read under one prefix
+// would otherwise be written back under another.
+func (s *Store) SetPropertyKeyPrefix(prefix string) error {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = PropertyKeyPrefix
+	}
+
+	if err := ValidatePropertyKeyPrefix(prefix); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prefix = prefix
+
+	return nil
 }
 
 // NewReadOnlyStore returns a Store that answers every question the writing one
@@ -503,7 +577,7 @@ func (state *spaceState) list(api *confluence.API) ([]confluence.Property, error
 
 // write stores one shard in whichever backend holds this space's manifest.
 func (state *spaceState) write(api *confluence.API, index int, value []byte) error {
-	return state.writeProperty(api, PropertyKey(index), value, state.shards[index].property)
+	return state.writeProperty(api, PropertyKeyFor(state.prefix, index), value, state.shards[index].property)
 }
 
 // writeProperty stores one property in whichever backend holds this space's
@@ -561,6 +635,7 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 	}
 
 	state := &spaceState{
+		prefix:  s.prefix,
 		byPage:  map[string]string{},
 		titles:  map[string]string{},
 		folders: map[string]string{},
@@ -606,13 +681,13 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 	}
 
 	for i := range properties {
-		if properties[i].Key == FolderPropertyKey {
+		if properties[i].Key == FolderPropertyKeyFor(s.prefix) {
 			state.folderProperty = &properties[i]
 			var doc folderDocument
 			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
 				log.Warn().Err(err).Msgf(
 					"ignoring unreadable %s property of space %q; folders are no longer tracked",
-					FolderPropertyKey, spaceKey,
+					FolderPropertyKeyFor(s.prefix), spaceKey,
 				)
 			} else if doc.Version <= formatVersion && doc.Folders != nil {
 				state.folders = doc.Folders
@@ -620,13 +695,13 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 			continue
 		}
 
-		if properties[i].Key == ParentPropertyKey {
+		if properties[i].Key == ParentPropertyKeyFor(s.prefix) {
 			state.parentProperty = &properties[i]
 			var doc parentDocument
 			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
 				log.Warn().Err(err).Msgf(
 					"ignoring unreadable %s property of space %q; parents are no longer tracked",
-					ParentPropertyKey, spaceKey,
+					ParentPropertyKeyFor(s.prefix), spaceKey,
 				)
 			} else if doc.Version <= formatVersion && doc.Parents != nil {
 				state.parents = doc.Parents
@@ -634,7 +709,7 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 			continue
 		}
 
-		index, ok := shardIndex(properties[i].Key)
+		index, ok := shardIndex(s.prefix, properties[i].Key)
 		if !ok {
 			// Some other property of the same space or page. Not ours.
 			continue
@@ -1147,7 +1222,7 @@ func (s *Store) Save() error {
 			}
 
 			written, err := state.writeMapping(
-				s.api, spaceKey, FolderPropertyKey, value, state.folderProperty, "folder mapping",
+				s.api, spaceKey, FolderPropertyKeyFor(s.prefix), value, state.folderProperty, "folder mapping",
 			)
 			if err != nil {
 				return err
@@ -1165,7 +1240,7 @@ func (s *Store) Save() error {
 			}
 
 			written, err := state.writeMapping(
-				s.api, spaceKey, ParentPropertyKey, value, state.parentProperty, "parent mapping",
+				s.api, spaceKey, ParentPropertyKeyFor(s.prefix), value, state.parentProperty, "parent mapping",
 			)
 			if err != nil {
 				return err
@@ -1193,7 +1268,7 @@ func (s *Store) Save() error {
 				log.Warn().Msgf(
 					"manifest shard %s of space %q is %d bytes and holds %d pages; "+
 						"it may be approaching the property size Confluence will accept",
-					PropertyKey(i), spaceKey, len(value), len(state.shards[i].pages),
+					PropertyKeyFor(s.prefix, i), spaceKey, len(value), len(state.shards[i].pages),
 				)
 			}
 
@@ -1204,7 +1279,7 @@ func (s *Store) Save() error {
 					// nothing about, and abandoning them helps nobody.
 					log.Warn().Err(err).Msgf(
 						"manifest shard %s of space %q was not saved",
-						PropertyKey(i), spaceKey,
+						PropertyKeyFor(s.prefix, i), spaceKey,
 					)
 					continue
 				}
@@ -1216,7 +1291,7 @@ func (s *Store) Save() error {
 					log.Warn().Msgf(
 						"manifest shard %s of space %q was updated by a concurrent run; "+
 							"those mappings were not saved",
-						PropertyKey(i), spaceKey,
+						PropertyKeyFor(s.prefix, i), spaceKey,
 					)
 					continue
 				}

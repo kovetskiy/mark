@@ -916,3 +916,59 @@ func TestManifestPageOnServer(t *testing.T) {
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/content/"+handbook.ID+"/property"),
 		"read through v1, which is all Server has")
 }
+
+// TestPrefixKeepsTwoProjectsApart is issue #1016: two projects publishing into
+// one space each keep a manifest of their own, and neither reads the other's
+// entries nor reports the other's files as gone.
+func TestPrefixKeepsTwoProjectsApart(t *testing.T) {
+	server := confluencetest.New(t)
+	docsWithHomepage(t, server)
+	id := spaceID(t, server, "DOCS")
+
+	api := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	require.NoError(t, api.SetPropertyKeyPrefix("mark.manifest.api"))
+	api.SetRunFiles("api/*.md", []string{"api/a.md"})
+	require.NoError(t, api.Record("DOCS", "api/a.md", "1", "A", ""))
+	require.NoError(t, api.RecordFolder("DOCS", "API Folder", "f1"))
+	require.NoError(t, api.Save())
+
+	sdk := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	require.NoError(t, sdk.SetPropertyKeyPrefix("mark.manifest.sdk"))
+	sdk.SetRunFiles("sdk/*.md", []string{"sdk/b.md"})
+	require.NoError(t, sdk.Record("DOCS", "sdk/b.md", "2", "B", ""))
+	require.NoError(t, sdk.Save())
+
+	// Each under its own keys.
+	assert.NotNil(t, server.SpaceProperty(id, manifest.PropertyKeyFor("mark.manifest.api", manifest.ShardFor("api/a.md"))))
+	assert.NotNil(t, server.SpaceProperty(id, manifest.FolderPropertyKeyFor("mark.manifest.api")))
+	assert.NotNil(t, server.SpaceProperty(id, manifest.PropertyKeyFor("mark.manifest.sdk", manifest.ShardFor("sdk/b.md"))))
+	assert.Nil(t, server.SpaceProperty(id, manifest.PropertyKey(manifest.ShardFor("api/a.md"))),
+		"nothing under the default prefix")
+
+	// The SDK's next run knows nothing of the API's files.
+	next := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	require.NoError(t, next.SetPropertyKeyPrefix("mark.manifest.sdk"))
+	next.SetRunFiles("sdk/*.md", []string{"sdk/b.md"})
+	_, ok, err := next.Lookup("DOCS", "api/a.md")
+	require.NoError(t, err)
+	assert.False(t, ok, "the API project's entry is not the SDK project's to see")
+	_, ok, err = next.Lookup("DOCS", "sdk/b.md")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Empty(t, next.Orphans("DOCS"), "and its files are not the SDK project's to report")
+}
+
+// TestPrefixIsValidated: a prefix that could not name a property is refused
+// before anything is read, and an empty one means the default.
+func TestPrefixIsValidated(t *testing.T) {
+	store, _ := newStore(t)
+
+	for _, bad := range []string{"has space", "trailing.", ".leading", "a..b", "semi;colon"} {
+		assert.Error(t, store.SetPropertyKeyPrefix(bad), bad)
+	}
+	for _, good := range []string{"mark.manifest", "team-docs", "api_v2.manifest", "x"} {
+		assert.NoError(t, store.SetPropertyKeyPrefix(good), good)
+	}
+
+	require.NoError(t, store.SetPropertyKeyPrefix(""), "empty means the default")
+}
