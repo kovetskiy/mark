@@ -163,6 +163,82 @@ func RunContext(ctx context.Context, config Config) (err error) {
 	return run(ctx, config)
 }
 
+// prepare checks the settings that decide how a document is rendered and what
+// is done about its links, and sets up the mermaid engine they name. Run and
+// ProcessFile both start here, so that a library caller publishing one file is
+// held to the same settings, and told the same thing about them, as a run is:
+// before this was shared, ProcessFile checked none of it, drew diagrams with
+// whatever engine happened to be current rather than the one asked for, and
+// published a PNG for a MermaidOutput it did not recognise.
+func (c Config) prepare() (page.LinkChecks, error) {
+	// The engine is chosen before anything is published, because it is built
+	// lazily and shared: a diagram already drawn is not drawn again to match.
+	if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
+		return page.LinkChecks{}, err
+	}
+
+	// Checked here as well as in the CLI, because Config is a public API and a
+	// library caller reaches this without passing a flag at all. A value the
+	// renderer does not know falls to its default branch, so an unrecognised
+	// format publishes a PNG without a word -- taking a bundle asked for
+	// alongside it down with it. An empty value is not that: it is a caller
+	// that never set the field, and it means the PNG mark has always published.
+	switch c.MermaidOutput {
+	case "", "png", "svg":
+		// ok
+	default:
+		return page.LinkChecks{}, fmt.Errorf(
+			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
+			c.MermaidOutput,
+		)
+	}
+
+	if c.MermaidBundle && c.MermaidOutput != "svg" {
+		return page.LinkChecks{}, errors.New(
+			"MermaidBundle needs MermaidOutput \"svg\": " +
+				"there is nowhere in a PNG to keep the diagram's source",
+		)
+	}
+
+	// The same for d2, and for the same reason: an unrecognised format falls to
+	// the renderer's PNG branch, publishing one without a word about the SVG
+	// that was asked for. An empty value is a caller that never set the field,
+	// and means the PNG mark has always published.
+	switch c.D2Output {
+	case "", "png", "svg":
+		// ok
+	default:
+		return page.LinkChecks{}, fmt.Errorf(
+			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
+			c.D2Output,
+		)
+	}
+
+	// Zero is the field a caller never set, which for a scale is not a default
+	// but a diagram rendered at nothing. Only checked where diagrams are drawn
+	// at all, since a configuration that never turns d2 on carries the field
+	// past every code path that reads it.
+	// Not a plain "> 0": NaN fails every comparison, so NaN <= 0 is false and it
+	// would pass a check written that way, and an infinite scale passes one
+	// outright. Either reaches Chrome as a screenshot scale it cannot use, or
+	// multiplies an SVG's size into something that is not a number of pixels.
+	if slices.Contains(c.Features, "d2") && !isPositiveScale(c.D2Scale) {
+		return page.LinkChecks{}, fmt.Errorf(
+			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
+			c.D2Scale,
+		)
+	}
+
+	if c.CheckLinksWarnOnly && len(c.CheckLinks) == 0 {
+		return page.LinkChecks{}, fmt.Errorf(
+			"--check-links-warn-only requires --check-links: " +
+				"on its own no links are checked, so the silence means nothing",
+		)
+	}
+
+	return page.ParseLinkChecks(c.CheckLinks)
+}
+
 // The error result is named so the deferred report write below can see, and
 // replace, what the run is returning. Without it the closure assigned to a
 // local err that no return statement read, and a failed write went unheard.
@@ -178,12 +254,14 @@ func run(ctx context.Context, config Config) (err error) {
 	// combination that merely does nothing, and that nobody would read anything
 	// into, is a warning.
 
-	// The engine is chosen before anything is published, because it is built
-	// lazily and shared: a diagram already drawn is not drawn again to match.
-	if err := mermaid.UseEngine(config.MermaidEngine); err != nil {
+	linkChecks, err := config.prepare()
+	if err != nil {
 		return err
 	}
 
+	// The rest is about the run as a whole -- the report written at the end of
+	// it and the manifest kept across runs -- so ProcessFile, which has
+	// neither, does not ask.
 	outputFormat, err := report.ParseFormat(config.OutputFormat)
 	if err != nil {
 		return err
@@ -205,65 +283,6 @@ func run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	// The same for d2, and for the same reason: an unrecognised format falls to
-	// the renderer's PNG branch, publishing one without a word about the SVG
-	// that was asked for. An empty value is a caller that never set the field,
-	// and means the PNG mark has always published.
-	switch config.D2Output {
-	case "", "png", "svg":
-		// ok
-	default:
-		return fmt.Errorf(
-			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
-			config.D2Output,
-		)
-	}
-
-	// Zero is the field a caller never set, which for a scale is not a default
-	// but a diagram rendered at nothing. Only checked where diagrams are drawn
-	// at all, since a configuration that never turns d2 on carries the field
-	// past every code path that reads it.
-	// Not a plain "> 0": NaN fails every comparison, so NaN <= 0 is false and it
-	// would pass a check written that way, and an infinite scale passes one
-	// outright. Either reaches Chrome as a screenshot scale it cannot use, or
-	// multiplies an SVG's size into something that is not a number of pixels.
-	if slices.Contains(config.Features, "d2") && !isPositiveScale(config.D2Scale) {
-		return fmt.Errorf(
-			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
-			config.D2Scale,
-		)
-	}
-
-	// Checked here as well as in the CLI, because Config is a public API and a
-	// library caller reaches this without passing a flag at all. A value the
-	// renderer does not know falls to its default branch, so an unrecognised
-	// format publishes a PNG without a word -- taking a bundle asked for
-	// alongside it down with it. An empty value is not that: it is a caller
-	// that never set the field, and it means the PNG mark has always published.
-	switch config.MermaidOutput {
-	case "", "png", "svg":
-		// ok
-	default:
-		return fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			config.MermaidOutput,
-		)
-	}
-
-	if config.MermaidBundle && config.MermaidOutput != "svg" {
-		return errors.New(
-			"MermaidBundle needs MermaidOutput \"svg\": " +
-				"there is nowhere in a PNG to keep the diagram's source",
-		)
-	}
-
-	if config.CheckLinksWarnOnly && len(config.CheckLinks) == 0 {
-		return fmt.Errorf(
-			"--check-links-warn-only requires --check-links: " +
-				"on its own no links are checked, so the silence means nothing",
-		)
-	}
-
 	if config.NoOverwrite && !config.TrackPages {
 		return fmt.Errorf("--no-overwrite requires --track-pages: " +
 			"the version mark last published is remembered in the page manifest")
@@ -282,11 +301,6 @@ func run(ctx context.Context, config Config) (err error) {
 		if err := manifest.ValidatePropertyKeyPrefix(config.ManifestPrefix); err != nil {
 			return fmt.Errorf("--manifest-prefix: %w", err)
 		}
-	}
-
-	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
-	if err != nil {
-		return err
 	}
 
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
@@ -572,11 +586,10 @@ func run(ctx context.Context, config Config) (err error) {
 	// After the manifest is written: an unresolved link says nothing about
 	// whether the pages that did publish are recorded correctly, and throwing
 	// the mapping away over it would be a far worse outcome than the link.
-	if len(missingPages) > 0 && !config.CheckLinksWarnOnly {
-		return fmt.Errorf(
-			"%s:\n  %s",
-			pluraliseLinks(len(missingPages)), strings.Join(missingPages, "\n  "),
-		)
+	if !config.CheckLinksWarnOnly {
+		if err := unresolvedLinks(missingPages); err != nil {
+			return err
+		}
 	}
 
 	if hasErrors {
@@ -618,14 +631,14 @@ func ProcessFileContext(ctx context.Context, file string, api *confluence.API, c
 }
 
 func processOneFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	linkChecks, err := config.prepare()
+	if err != nil {
+		return nil, err
+	}
+
 	std, err := stdlib.New(api)
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
-	}
-
-	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
-	if err != nil {
-		return nil, err
 	}
 
 	globalProperties, err := page.LoadGlobalProperties(config.GlobalProperties)
@@ -644,11 +657,13 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 	if err != nil {
 		return target, err
 	}
-	if len(missing) > 0 && !config.CheckLinksWarnOnly {
-		return target, fmt.Errorf("%s", strings.Join(missing, "\n  "))
-	}
+
 	for _, item := range missing {
 		log.Warn().Msg(item)
+	}
+
+	if !config.CheckLinksWarnOnly {
+		return target, unresolvedLinks(missing)
 	}
 
 	return target, nil
@@ -2093,12 +2108,19 @@ func reportBrokenLinks(broken []string, file string, warnOnly bool) error {
 		return nil
 	}
 
-	summary := fmt.Sprintf("%d links do not resolve", len(broken))
-	if len(broken) == 1 {
-		summary = "1 link does not resolve"
+	return unresolvedLinks(broken)
+}
+
+// unresolvedLinks is the error a failed link check ends with, or nil when
+// every link resolved. One wording for all of them: a file's broken links, the
+// ac: links a run left unresolved, and the ones ProcessFile did, which used to
+// be the bare list with no count and no sentence in front of it.
+func unresolvedLinks(links []string) error {
+	if len(links) == 0 {
+		return nil
 	}
 
-	return fmt.Errorf("%s:\n  %s", summary, strings.Join(broken, "\n  "))
+	return fmt.Errorf("%s:\n  %s", pluraliseLinks(len(links)), strings.Join(links, "\n  "))
 }
 
 // includeSearchDirs reports the directories of the files a document includes.
