@@ -265,3 +265,28 @@ func TestLoadTemplateDistinguishesDelims(t *testing.T) {
 	require.NoError(t, rendered.Execute(&rb, map[string]any{"Var": "second"}))
 	assert.Equal(t, `VAL=second`, rb.String(), "the second Delims set must take effect")
 }
+
+// A "<!--" quoted in code opens nothing, but it was paired with the next "-->"
+// in the document and the scan resumed after that closer -- so when the closer
+// belonged to a real directive further on, the directive was passed over and
+// never expanded.
+func TestIncludeDirectiveAfterStrayOpener(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "inc.md"), []byte("FRAGMENT"), 0o600))
+
+	for name, doc := range map[string]string{
+		"in a code span": "Write `<!--` to open a comment.\n\n<!-- Include: inc.md -->\n",
+		"in a fence":     "```\n<!--\n```\n\n<!-- Include: inc.md -->\n",
+		"two of them":    "`<!--` and `<!--`\n\n<!-- Include: inc.md -->\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, []string{"inc.md"}, DirectiveTargets([]byte(doc)))
+
+			_, out, modified, err := ProcessIncludes(dir, "", []byte(doc), template.New("test"))
+			require.NoError(t, err)
+			assert.True(t, modified)
+			assert.Contains(t, string(out), "FRAGMENT")
+			assert.NotContains(t, string(out), "Include:")
+		})
+	}
+}
