@@ -3,6 +3,7 @@ package mark
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/report"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,4 +120,70 @@ func TestUnresolvedLinkNamesTheDocument(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "guilty.md", "the message names the file to open")
 	assert.NotContains(t, err.Error(), "innocent.md")
+}
+
+// failingWriter refuses every write, as a closed pipe or a full disk would.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+// TestReportWriteFailureFailsTheRun: the deferred write assigned its error to a
+// local the function never returned, so a run whose report could not be
+// written exited zero, and whatever was waiting on the JSON got nothing.
+func TestReportWriteFailureFailsTheRun(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nFine.\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files:        filepath.Join(dir, "doc.md"),
+		Features:     []string{"mention"},
+		OutputFormat: report.FormatJSON,
+		Output:       failingWriter{},
+	})
+
+	require.Error(t, err, "a report that could not be written fails the run")
+	assert.Contains(t, err.Error(), "unable to write the run report")
+	assert.Contains(t, err.Error(), "disk full")
+}
+
+// TestReportWriteFailureDoesNotDisplaceTheRunsOwnError: when the run has
+// already failed, that failure is the one worth hearing about; the write error
+// is logged beside it rather than put in its place.
+func TestReportWriteFailureDoesNotDisplaceTheRunsOwnError(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nSee [it](ac:Nowhere).\n")
+
+	var logged bytes.Buffer
+	restore := log.Logger
+	log.Logger = zerolog.New(&logged)
+	defer func() { log.Logger = restore }()
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files:        filepath.Join(dir, "doc.md"),
+		Features:     []string{"mention"},
+		CheckLinks:   []string{"confluence"},
+		OutputFormat: report.FormatJSON,
+		Output:       failingWriter{},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Nowhere", "the unresolved link is still the complaint")
+	assert.NotContains(t, err.Error(), "unable to write the run report")
+	assert.Contains(t, logged.String(), "unable to write the run report",
+		"the failed write is still said, in the log")
+	assert.Contains(t, logged.String(), "disk full")
 }
