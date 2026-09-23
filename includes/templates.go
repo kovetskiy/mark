@@ -38,6 +38,16 @@ func findIncludeDirective(s string, skip func(offset int) bool) (startIdx int, e
 		}
 		startIdx = searchFrom + start
 
+		// An opener inside code opens nothing, so it is stepped over on its
+		// own rather than paired with a closer. Paired, a "<!--" quoted in a
+		// code span took the next "-->" in the document -- the one closing a
+		// real directive further on -- and the scan resumed past it, so the
+		// directive was never expanded.
+		if skip != nil && skip(startIdx) {
+			searchFrom = startIdx + 4
+			continue
+		}
+
 		// Search past the opener: starting at startIdx lets the closer overlap it,
 		// so "<!-->" matches a "-->" at offset 2 and yields a 5-byte comment whose
 		// body slice comment[4:2] panics.
@@ -49,10 +59,13 @@ func findIncludeDirective(s string, skip func(offset int) bool) (startIdx int, e
 
 		comment := s[startIdx:endIdx]
 		trimmed := strings.TrimSpace(comment[4 : len(comment)-3])
-		if strings.HasPrefix(trimmed, "Include:") && (skip == nil || !skip(startIdx)) {
+		if strings.HasPrefix(trimmed, "Include:") {
 			return startIdx, endIdx
 		}
 
+		// A real comment is passed over whole: what it holds is not the
+		// document's, and a macro written with an Include in its body is
+		// expanded when the macro is used, not where it is defined.
 		searchFrom = endIdx
 	}
 }
