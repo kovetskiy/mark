@@ -711,9 +711,15 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		return nil, data, nil
 	}
 
-	// Prepend parent pages that are defined via the cli flag
+	// Prepend parent pages that are defined via the cli flag.
+	//
+	// Into a new slice: appending to parents writes into its spare capacity,
+	// and parents is the caller's, shared by every document in the run and by
+	// every linked document resolved along the way. Two documents then held
+	// the same backing array, and the second one's own Parent header, or a
+	// renamed parent written back into the chain, overwrote the first's.
 	if len(parents) > 0 && parents[0] != "" {
-		meta.Parents = append(parents, meta.Parents...)
+		meta.Parents = slices.Concat(parents, meta.Parents)
 	}
 
 	if titleAppendGeneratedHash {

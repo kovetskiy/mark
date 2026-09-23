@@ -3,6 +3,7 @@ package page
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -72,9 +73,9 @@ func ResolvePage(
 
 	if len(meta.Folders) > 0 {
 
-		// Build the complete path for logging
-		fullPath := append(meta.Folders, meta.Parents...)
-		fullPath = append(fullPath, meta.Title)
+		// Build the complete path for logging. A new slice, since appending
+		// to meta.Folders would write into whatever spare capacity it has.
+		fullPath := slices.Concat(meta.Folders, meta.Parents, []string{meta.Title})
 
 		log.Debug().
 			Msgf(
@@ -100,7 +101,10 @@ func ResolvePage(
 	} else {
 		// Traditional page-only ancestry
 		misplaced := false
-		ancestry := meta.Parents
+		// Copied rather than appended to: meta.Parents may have spare
+		// capacity, and the path below would then write its title into the
+		// same slot this puts the page's.
+		ancestry := slices.Clone(meta.Parents)
 		if page != nil && !skipHomeAncestry {
 			ancestry = append(ancestry, page.Title)
 		}
@@ -138,8 +142,7 @@ func ResolvePage(
 					)
 			}
 
-			path := meta.Parents
-			path = append(path, meta.Title)
+			path := slices.Concat(meta.Parents, []string{meta.Title})
 
 			log.Debug().
 				Msgf(

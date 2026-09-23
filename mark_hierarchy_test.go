@@ -132,6 +132,44 @@ func TestParentsFlagStillPrefixes(t *testing.T) {
 	assert.Equal(t, []string{"Home", "Docs Root", "Guides"}, ancestryOf(t, api, "Setup"))
 }
 
+// TestParentsFlagIsNotWrittenThrough: the --parents prefix was prepended by
+// appending onto the flag's own slice, so every document's meta.Parents shared
+// its backing array -- the very array, for a document declaring no Parent of
+// its own. Following a renamed parent writes the new title into meta.Parents,
+// which wrote it into Config.Parents: the caller's value changed under it, and
+// every later document in the run started from a chain it had not declared.
+func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	for _, name := range []string{"One", "Two", "Three"} {
+		writeAt(t, dir, strings.ToLower(name)+".md", space+"<!-- Title: "+name+" -->\n\nx.\n")
+	}
+
+	// The capacity splitParents leaves three parents with, and room to spare.
+	parents := append(make([]string, 0, 4), "Root", "Section", "Chapter")
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Parents = parents
+	require.NoError(t, Run(config))
+
+	chapter, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", "Chapter", "page")
+	require.NoError(t, err)
+	require.NotNil(t, chapter)
+
+	server.RenamePage(chapter.ID, "Chapter Renamed")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, []string{"Root", "Section", "Chapter"}, parents,
+		"the caller's --parents must come back as it was given")
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	for _, name := range []string{"One", "Two", "Three"} {
+		assert.Equal(t, []string{"Home", "Root", "Section", "Chapter Renamed"}, ancestryOf(t, api, name),
+			"%s still sits under the renamed parent", name)
+	}
+}
+
 // TestWithoutTheFlagNothingChanges guards the default.
 func TestWithoutTheFlagNothingChanges(t *testing.T) {
 	dir := t.TempDir()

@@ -554,3 +554,38 @@ func TestExtractMetaYAMLFrontMatterOrderRejectsNonNumbers(t *testing.T) {
 		})
 	}
 }
+
+// TestCLIParentsAreNotShared: the --parents prefix was prepended with
+// append(parents, meta.Parents...), which writes into the caller's slice when
+// it has spare capacity -- and the flag is split with append, so three parents
+// come with room for a fourth. Every document in a run, and every linked
+// document resolved while publishing one, shared that one array: the second
+// document's own Parent header overwrote the first's.
+func TestCLIParentsAreNotShared(t *testing.T) {
+	// The capacity splitParents leaves three parents with.
+	parents := append(make([]string, 0, 4), "A", "B", "C")
+
+	extract := func(parent string) *Meta {
+		t.Helper()
+		document := "<!-- Space: TEST -->\n<!-- Parent: " + parent + " -->\n<!-- Title: " + parent + " child -->\n\nBody.\n"
+		meta, _, err := ExtractMeta([]byte(document), "", false, false, "", parents, false, "", false)
+		require.NoError(t, err)
+		require.NotNil(t, meta)
+
+		return meta
+	}
+
+	first := extract("X")
+	second := extract("Y")
+	third := extract("Z")
+
+	assert.Equal(t, []string{"A", "B", "C", "X"}, first.Parents, "a later document must not rewrite this one's chain")
+	assert.Equal(t, []string{"A", "B", "C", "Y"}, second.Parents)
+	assert.Equal(t, []string{"A", "B", "C", "Z"}, third.Parents)
+
+	// A renamed parent is written back into meta.Parents in place, which must
+	// reach neither the flag nor the documents that follow.
+	first.Parents[0] = "Renamed"
+	assert.Equal(t, []string{"A", "B", "C"}, parents)
+	assert.Equal(t, "A", second.Parents[0])
+}
