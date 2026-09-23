@@ -373,7 +373,18 @@ follows the `Include` and `Delims` tag, if present:
      <yaml-data> -->
 ```
 
-Includes can be nested inside other included templates. Furthermore, included files can define page metadata (such as `Title`, `Space`, `Parent`, etc.) or macro definitions. Circular inclusion loops are automatically detected and reported as an error.
+Includes can be nested inside other included templates. A directive inside an
+included file is resolved relative to that file's own directory first, the way
+the links it holds are, so `sub/a.md` can include `b.md` to mean `sub/b.md`. If
+nothing of that name is there, it is looked for relative to the document and
+then in `--include-path`, as it always was, so a nested include written from
+the document's directory keeps working. Where both exist, the file beside the
+fragment is used and Mark logs a warning naming the one it did not use. Either
+way the file has to be inside the document's directory, the directory Mark is
+running in, or `--include-path`; a `../` that climbs out of those is refused.
+Includes produced by a macro, and the `Template` of a macro defined in an
+included file, are resolved relative to the document, since macros are
+expanded over the whole document. Furthermore, included files can define page metadata (such as `Title`, `Space`, `Parent`, etc.) or macro definitions. Circular inclusion loops are automatically detected and reported as an error.
 
 Mark also supports attachments. The standard way involves declaring an
 `Attachment` along with the other items in the header, then have any links
