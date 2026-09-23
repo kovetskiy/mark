@@ -20,8 +20,9 @@ markdownlint-cli2          # config in .markdownlint-cli2.jsonc; CI runs this on
 Go 1.27. The module path is `github.com/kovetskiy/mark/v16` — the major version is part
 of the path, so a major bump means rewriting every internal import.
 
-`d2` and `mermaid` tests launch headless Chrome and take ~4s each; a full `go test ./...`
-is dominated by them. There is currently no `-short` skip.
+`d2`, `mermaid`, `math` and `chrome` tests launch headless Chrome and take a few seconds
+each. A full `go test ./...` is nonetheless dominated by the root package's end-to-end
+tests, which take minutes. There is currently no `-short` skip.
 
 ## Layout
 
@@ -101,10 +102,14 @@ compared against each other in `markdown/transformer_comparison_test.go`.
 **7. Attachment checksums are content-addressed, but rendered ones are source-addressed.**
 Checksums live in the remote attachment's comment behind the `AttachmentChecksumPrefix`
 (`mark:checksum:` followed by a space).
-Mermaid and d2 attachments set `Checksum` from the *diagram source*, not the rendered PNG
-bytes, because Chrome's output is not byte-stable across environments; `math/` does the
-same with the formula, plus the format and — for a PNG — the scale, since anything that
-changes the bytes has to change the name or the page keeps the attachment it had.
+Mermaid attachments and d2 PNGs set `Checksum` from the *diagram source* (plus the scale
+for a PNG, and the bundle flag for a mermaid SVG), not the rendered bytes, because Chrome's
+output is not byte-stable across environments; `math/` does the same with the formula,
+plus the format and — for a PNG — the scale, since anything that changes the bytes has to
+change the name or the page keeps the attachment it had. The exception is a d2 SVG, whose
+checksum is taken over the rendered, bundled drawing (`ProcessD2SVG` in `d2/d2.go`): an
+image it inlines can change without the source changing, and d2's SVG output is
+deterministic.
 `ResolveAttachments` skips checksum computation when `Checksum` is already set — preserve
 that.
 
@@ -135,10 +140,12 @@ Adding a `.md` fixture without its matching `.html` panics the test — the load
 both unconditionally. There is no `-update` flag; golden files are written by hand.
 
 Coverage is uneven, and where it is thin matters more than the number. Measured with
-`go test -cover ./...`: `markdown/` 82%, `renderer/` 74%, `confluence/` 61%, `stdlib/` 68%,
-`util/` 52%, `page/` 31%, `attachment/` 32%, and the root package 84%. `cmd/mark/`, `vfs/` and
-`chrome/` are at 0% on purpose: a thin `main`, a 19-line `os.Open` wrapper, and a package
-that needs a browser and is exercised through `d2/` and `mermaid/`.
+`go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
+`util/` 89%, `page/` 52%, `attachment/` 53%, `parser/` 36%, `chrome/` 54%, and the root
+package 87%. `cmd/mark/` and `vfs/` are at 0% on purpose: a thin `main` and a 19-line
+`os.Open` wrapper. `chrome/` has tests of its own for the raster bounds and the shared
+browser, and is otherwise exercised through its callers: `PNGFromSVG` by `d2/` and
+`math/`, and the allocator options by `mermaid/`.
 
 Two things to know before reading those numbers. `make test` passes no `-coverpkg`, so a
 package's figure counts only what its *own* tests exercise — renderer code driven by the
