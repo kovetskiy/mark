@@ -149,6 +149,48 @@ func resolveTemplatePath(base, includePath, path string) string {
 	return absolute(candidate)
 }
 
+// resolveNestedTemplatePath names the file a directive inside an included
+// fragment refers to.
+//
+// A fragment reads as a document in its own right, so a name it writes is
+// looked for beside the fragment first -- the way the links it holds already
+// are. Nested includes used to be resolved against the root document's
+// directory only, and a fragment that works that way is not something anyone
+// should have to rewrite, so that is still tried when nothing is beside the
+// fragment. A name that matches nothing resolves beside the fragment, so the
+// failure to read it names the place the author would look first.
+func resolveNestedTemplatePath(base, from, includePath, path string) string {
+	candidate := absolute(filepath.Join(from, path))
+	rootRelative := resolveTemplatePath(base, includePath, path)
+
+	_, rootErr := os.Stat(rootRelative)
+
+	if _, err := os.Stat(candidate); err == nil {
+		// Only worth saying when the old rule would have picked a different
+		// file: that is the one case where what a page publishes has changed.
+		if rootErr == nil && rootRelative != candidate {
+			log.Warn().Msgf(
+				"include %q resolves beside the fragment that names it, to %s rather than %s; "+
+					"write the path from the fragment's directory to include the other one",
+				path, candidate, rootRelative,
+			)
+		}
+
+		return candidate
+	}
+
+	if rootErr == nil {
+		log.Debug().Msgf(
+			"include %q is not beside the fragment in %s, using %s found relative to the document",
+			path, from, rootRelative,
+		)
+
+		return rootRelative
+	}
+
+	return candidate
+}
+
 // allowedTemplatePath reports whether a document may include the file it named.
 //
 // The document's own directory, or the one mark is running in -- which for a
@@ -200,16 +242,6 @@ func LoadTemplate(
 	right string,
 	templates *template.Template,
 ) (*template.Template, error) {
-	cleanPath := filepath.ToSlash(filepath.Clean(path))
-	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
-
-	// A stdlib template (ac:box, ac:status, ...) is pre-registered under its plain
-	// name and has no delimiters of its own, so it must always be found by that
-	// name.
-	if template := templates.Lookup(name); template != nil {
-		return template, nil
-	}
-
 	// Which file this is, decided before the cache is consulted rather than
 	// after. One template set is shared by every document in a run, so keying
 	// on the name a directive wrote made "partial.md" beside one document the
@@ -217,6 +249,32 @@ func LoadTemplate(
 	// served to every document that asked for that name, publishing one page's
 	// fragment onto another's, silently and with no error anywhere.
 	resolved := resolveTemplatePath(base, includePath, path)
+
+	loaded, _, err := loadTemplate(base, includePath, resolved, path, left, right, templates)
+
+	return loaded, err
+}
+
+// loadTemplate loads what a directive named, already resolved to a file, and
+// reports whether it was that file rather than a stdlib template of the name.
+func loadTemplate(
+	base string,
+	includePath string,
+	resolved string,
+	path string,
+	left string,
+	right string,
+	templates *template.Template,
+) (*template.Template, bool, error) {
+	cleanPath := filepath.ToSlash(filepath.Clean(path))
+	name := strings.TrimSuffix(cleanPath, filepath.Ext(cleanPath))
+
+	// A stdlib template (ac:box, ac:status, ...) is pre-registered under its plain
+	// name and has no delimiters of its own, so it must always be found by that
+	// name.
+	if template := templates.Lookup(name); template != nil {
+		return template, false, nil
+	}
 
 	// The delimiters are part of what makes the parse, so they belong in the
 	// key too. Without them a file included twice with different Delims: reused
@@ -227,7 +285,7 @@ func LoadTemplate(
 	}
 
 	if template := templates.Lookup(cacheName); template != nil {
-		return template, nil
+		return template, true, nil
 	}
 
 	// Held to the boundary an attachment is held to, and for the same reason.
@@ -235,12 +293,12 @@ func LoadTemplate(
 	// "../../../../etc/hostname" publishes it -- while the same path written as
 	// an image is refused, which is the asymmetry rather than the decision.
 	if err := allowedTemplatePath(base, includePath, resolved); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	body, err := os.ReadFile(resolved)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read template file %q: %w", path, err)
+		return nil, false, fmt.Errorf("unable to read template file %q: %w", path, err)
 	}
 
 	body = bytes.ReplaceAll(
@@ -257,15 +315,15 @@ func LoadTemplate(
 	// reads well on its own, which is as true of a fragment as of a page.
 	body, err = metadata.StripIgnoredBlocks(body)
 	if err != nil {
-		return nil, fmt.Errorf("unable to process template file %q: %w", path, err)
+		return nil, false, fmt.Errorf("unable to process template file %q: %w", path, err)
 	}
 
 	templates, err = templates.New(cacheName).Delims(left, right).Parse(string(body))
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse template %q: %w", name, err)
+		return nil, false, fmt.Errorf("unable to parse template %q: %w", name, err)
 	}
 
-	return templates, nil
+	return templates, true, nil
 }
 
 // maxDirectivesPerLevel bounds how many directives a single level of a document
@@ -283,6 +341,9 @@ func ProcessIncludes(
 	return ProcessIncludesWithStack(base, includePath, contents, templates, nil)
 }
 
+// ProcessIncludesWithStack expands the directives in contents as if they were
+// found inside the chain of includes named by stack, each written relative to
+// base as a directive in the document would be.
 func ProcessIncludesWithStack(
 	base string,
 	includePath string,
@@ -290,6 +351,46 @@ func ProcessIncludesWithStack(
 	templates *template.Template,
 	stack []string,
 ) (*template.Template, []byte, bool, error) {
+	frames := make([]includeFrame, 0, len(stack))
+	for _, name := range stack {
+		frames = append(frames, includeFrame{
+			name: name,
+			file: resolveTemplatePath(base, includePath, name),
+		})
+	}
+
+	return processIncludes(base, base, includePath, contents, templates, frames)
+}
+
+// includeFrame is one include being expanded: the name the directive wrote,
+// which is what an error reports, and the file it resolved to, which is what a
+// cycle is detected by. Two fragments may each include a "b.md" of their own,
+// and one fragment may reach the same file by two different spellings.
+type includeFrame struct {
+	name string
+	file string
+}
+
+// processIncludes expands every directive in contents, which was read from a
+// file in from. The document's own directory, base, is what the containment
+// check is held to however deep the nesting, so a fragment cannot widen what a
+// document may read by including something from further out.
+func processIncludes(
+	base string,
+	from string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+	stack []includeFrame,
+) (*template.Template, []byte, bool, error) {
+	names := func() string {
+		parts := make([]string, 0, len(stack))
+		for _, frame := range stack {
+			parts = append(parts, frame.name)
+		}
+		return strings.Join(parts, " -> ")
+	}
+
 	formatVardump := func(data map[string]any) string {
 		var parts []string
 		for key, value := range data {
@@ -310,7 +411,7 @@ func ProcessIncludesWithStack(
 			return templates, contents, false, fmt.Errorf(
 				"more than %d include directives expanded at one level (stack: %s), giving up",
 				maxDirectivesPerLevel,
-				strings.Join(stack, " -> "),
+				names(),
 			)
 		}
 
@@ -336,25 +437,39 @@ func ProcessIncludesWithStack(
 			return templates, contents, modified, nil
 		}
 
+		// A directive in the document names a file from the document's
+		// directory; one inside an included fragment names it from the
+		// fragment's, with the document's still tried after it.
+		resolved := resolveTemplatePath(base, includePath, dir.Template)
+		if from != base {
+			resolved = resolveNestedTemplatePath(base, from, includePath, dir.Template)
+		}
+
 		// Detect circular include loops
-		cleanTmpl := filepath.Clean(dir.Template)
-		for _, item := range stack {
-			if filepath.Clean(item) == cleanTmpl {
-				return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", strings.Join(stack, " -> "), dir.Template)
+		for _, frame := range stack {
+			if frame.file == resolved {
+				return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", names(), dir.Template)
 			}
 		}
 
 		log.Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
 
-		// LoadTemplate returns the specific template it loaded, whose name encodes the
+		// loadTemplate returns the specific template it loaded, whose name encodes the
 		// delimiters. Execute it directly rather than looking it up by path again,
 		// which would find the wrong parse when the same file is included twice with
 		// different Delims:.
-		loaded, err := LoadTemplate(base, includePath, dir.Template, dir.Left, dir.Right, templates)
+		loaded, isFile, err := loadTemplate(base, includePath, resolved, dir.Template, dir.Left, dir.Right, templates)
 		if err != nil {
 			return templates, contents, false, fmt.Errorf("unable to load template %q: %w", dir.Template, err)
 		}
 		templates = loaded
+
+		// What the fragment includes in turn is written from where it lives. A
+		// stdlib template lives nowhere, so its output is read from here.
+		nested := from
+		if isFile {
+			nested = filepath.Dir(resolved)
+		}
 
 		var buffer bytes.Buffer
 		err = loaded.Execute(&buffer, dir.Data)
@@ -369,11 +484,11 @@ func ProcessIncludesWithStack(
 		// Recursively process nested includes with updated stack. The stack is
 		// copied rather than appended in place: every branch off this level
 		// would otherwise share -- and overwrite -- the same backing array.
-		newStack := make([]string, 0, len(stack)+1)
+		newStack := make([]includeFrame, 0, len(stack)+1)
 		newStack = append(newStack, stack...)
-		newStack = append(newStack, dir.Template)
+		newStack = append(newStack, includeFrame{name: dir.Template, file: resolved})
 
-		subTemplates, subBytes, _, subErr := ProcessIncludesWithStack(base, includePath, expanded, templates, newStack)
+		subTemplates, subBytes, _, subErr := processIncludes(base, nested, includePath, expanded, templates, newStack)
 		if subErr != nil {
 			return templates, contents, false, subErr
 		}
