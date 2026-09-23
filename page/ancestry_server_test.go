@@ -79,7 +79,8 @@ func TestEnsureAncestryDryRunCreatesNothing(t *testing.T) {
 }
 
 // TestEnsureAncestryFallsBackToRootPage covers the branch where none of the
-// requested ancestors exist yet, so the space's first page anchors the chain.
+// requested ancestors exist yet in a space that has no home page, so the
+// space's first page anchors the chain.
 func TestEnsureAncestryFallsBackToRootPage(t *testing.T) {
 	api, server := newAPI(t)
 	existing := server.AddPage("DOCS", "Existing", "page", "")
@@ -94,6 +95,55 @@ func TestEnsureAncestryFallsBackToRootPage(t *testing.T) {
 	require.NotNil(t, created)
 	require.NotEmpty(t, created.Ancestors)
 	assert.Equal(t, existing.ID, created.Ancestors[len(created.Ancestors)-1].ID)
+}
+
+// TestEnsureAncestryCreatesMissingParentsUnderTheHomePage is the case the root
+// lookup used to get wrong: a space with a second page at its root, listed
+// ahead of the home page. Missing parents belong under the home page -- the
+// page ValidateAncestry measures against -- not under whatever the space
+// listing returns first.
+func TestEnsureAncestryCreatesMissingParentsUnderTheHomePage(t *testing.T) {
+	api, server := newAPI(t)
+	other := server.AddPage("DOCS", "Archive", "page", "")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	first, err := api.FindPage("DOCS", "", "page")
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.Equal(t, other.ID, first.ID,
+		"the test needs the other root page listed first to mean anything")
+
+	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Team", "Guides"}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+	assert.Equal(t, "Guides", parent.Title)
+
+	assert.Equal(t, []string{"Home"}, ancestorTitles(t, api, "Team"))
+	assert.Equal(t, []string{"Home", "Team"}, ancestorTitles(t, api, "Guides"))
+
+	_, err = page.ValidateAncestry(api, "DOCS", []string{"Team", "Guides"})
+	assert.NoError(t, err, "what was just created must validate against the home page")
+}
+
+// ancestorTitles reports the titles a page sits under, outermost first, as the
+// server stores them.
+func ancestorTitles(t *testing.T, api *confluence.API, title string) []string {
+	t.Helper()
+
+	found, err := api.FindPage("DOCS", title, "page")
+	require.NoError(t, err)
+	require.NotNil(t, found, "page %q should exist", title)
+
+	stored, err := api.GetPageByIDExpanded(found.ID, "ancestors")
+	require.NoError(t, err)
+
+	var titles []string
+	for _, ancestor := range stored.Ancestors {
+		titles = append(titles, ancestor.Title)
+	}
+
+	return titles
 }
 
 func TestValidateAncestryMatchingChain(t *testing.T) {
