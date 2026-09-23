@@ -132,7 +132,11 @@ Directory names are titled the way filenames are, so `getting-started` becomes
 "Getting Started".
 
 An `index.md` or `README.md` **is** its directory's page rather than a page
-inside it. So `docs/guides/README.md` is the page that `setup.md` sits under.
+inside it, whatever the case of its name. So `docs/guides/README.md` is the
+page that `setup.md` sits under. Only a document the run publishes counts: a
+README the `--files` pattern leaves out neither names its directory's page nor
+stands for it. The document standing for the root itself is titled after the
+root directory, there being no directory above it.
 
 What that page is called is decided once, and the documents beneath it look for
 the same name, so the two cannot disagree:
@@ -147,9 +151,10 @@ The filename is never used. It is `README` in every directory that has one,
 which names a file rather than a page.
 
 The root is everything in `--files` before the first wildcard, and
-`--parents-from-path-root` overrides that where the guess is wrong. A document
-that names its own `Parent` is left where it asks to be, and `--parents` still
-prefixes everything.
+`--parents-from-path-root` overrides that where the guess is wrong. A root given
+by hand that none of the files lie under is refused, and a file outside it is
+reported and published without derived parents. A document that names its own
+`Parent` is left where it asks to be, and `--parents` still prefixes everything.
 
 ### One page per title
 
@@ -159,7 +164,8 @@ own parents. Deriving parents from the path makes that likely rather than
 unlucky -- every directory tends to hold a README, and several will want an
 "Overview".
 
-Mark refuses before publishing the second one:
+Mark refuses before publishing the second one, comparing titles the way
+Confluence does, without regard to case:
 
 ```text
 docs/api/overview.md already publishes "Overview" in space "DOCS", and a space
@@ -168,8 +174,9 @@ holds one page of a title: rename one of them, or use
 ```
 
 `--title-append-generated-hash` is the way to keep both titles as they are: it
-appends a short hash of the page's parents, space and title, which differs
-between two documents in different directories.
+appends a short hash of the page's parents, space and title, taken once the
+path has supplied the parents, so it differs between two documents in
+different directories.
 
 ### Directories are remembered too
 
@@ -186,7 +193,9 @@ children is always left alone. So a directory and everything in it takes two
 runs to disappear: the documents first, then the page that held them.
 
 A directory holding its own `index.md` or `README.md` is not remembered this
-way, that document's own entry having the page already.
+way, that document's own entry having the page already. Directories are
+remembered by their path as the run names it, so as with the files themselves,
+the working directory is part of what the manifest matches on.
 
 ### Turning it on for pages that already exist
 

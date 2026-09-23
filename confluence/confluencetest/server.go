@@ -1065,11 +1065,6 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 
 	var matches []*Page
 	for _, p := range s.pages {
-		// A page in the trash is not found by a search, the way it is not in
-		// the space any more as far as anything else is concerned.
-		if p.Trashed {
-			continue
-		}
 		if spaceKey != "" && p.SpaceKey != spaceKey {
 			continue
 		}
