@@ -10,13 +10,12 @@ version:
 	@echo $(VERSION)
 
 get:
-	go get -v -d
+	go mod download
 
 build:
 	@echo :: building go binary $(VERSION)
-	CGO_ENABLED=0 go build \
+	CGO_ENABLED=0 go build -trimpath \
 		-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
-		-gcflags "-trimpath $(GOPATH)/src" \
 		-o $(NAME) \
 		./cmd/mark
 

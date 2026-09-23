@@ -6,8 +6,8 @@ builds:
 - main: ./cmd/mark
   env:
   - CGO_ENABLED=0
-  gcflags:
-    - all=-trimpath={{.Env.GOPATH}}
+  flags:
+    - -trimpath
   goos:
   - darwin
   - linux

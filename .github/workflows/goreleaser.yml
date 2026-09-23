@@ -29,5 +29,4 @@ jobs:
         version: "~> 2"
         args: release --clean
       env:
-        GOPATH: /home/runner/work/
         GITHUB_TOKEN: ${{ secrets.TOKEN }}
