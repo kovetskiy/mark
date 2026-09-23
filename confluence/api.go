@@ -443,14 +443,51 @@ func (api *API) resource(root *gopencils.Resource) *gopencils.Resource {
 	}
 }
 
+// FindRootPage returns the page a chain of parents is created under when no
+// member of it exists yet: the space's home page.
+//
+// It used to be whichever page a title-less content listing happened to put
+// first, climbed to its outermost ancestor. That is the home page only in a
+// space with a single tree. With any other page at the root of the space -- a
+// second top-level page, a page moved out from under the home page -- listed
+// first, every missing parent was created under that page instead, where
+// ValidateAncestry, which compares against the home page, went on to report
+// what had just been built as misplaced.
+//
+// The listing survives only for a space that exists and has no home page,
+// where there is nothing better to anchor on and refusing would stop documents
+// that published before.
 func (api *API) FindRootPage(space string) (*PageInfo, error) {
+	home, err := api.FindHomePage(space)
+	if err == nil {
+		return &PageInfo{
+			ID:    home.ID,
+			Title: home.Title,
+		}, nil
+	}
+	if !errors.Is(err, errNoHomePage) {
+		return nil, fmt.Errorf("can't obtain home page of space %q: %w", space, err)
+	}
+
+	log.Warn().Msgf(
+		"space %q has no home page; creating missing parents under its first listed root page",
+		space,
+	)
+
+	return api.firstRootPage(space)
+}
+
+// firstRootPage is FindRootPage's answer for a space without a home page: the
+// outermost ancestor of whichever page the space listing returns first.
+func (api *API) firstRootPage(space string) (*PageInfo, error) {
 	page, err := api.FindPage(space, ``, "page")
 	if err != nil {
 		return nil, fmt.Errorf("can't obtain first page from space %q: %w", space, err)
 	}
 
 	if page == nil {
-		return nil, errors.New("no such space")
+		// The space exists -- FindHomePage said so -- it is simply empty.
+		return nil, fmt.Errorf("space %q has neither a home page nor any page to create parents under", space)
 	}
 
 	if len(page.Ancestors) == 0 {

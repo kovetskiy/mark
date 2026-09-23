@@ -325,6 +325,45 @@ func TestFindRootPage(t *testing.T) {
 	assert.Equal(t, "Root", page.Title)
 }
 
+// TestFindRootPageIsTheHomePage: with a second page at the root of the space,
+// listed ahead of the home page, the root is still the home page rather than
+// whatever the space listing returns first.
+func TestFindRootPageIsTheHomePage(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Archive", "page", "")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	page, err := api.FindRootPage("DOCS")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+	assert.Equal(t, home.ID, page.ID)
+	assert.Equal(t, "Home", page.Title)
+}
+
+func TestGatewayFindRootPageIsTheHomePage(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.AddPage("DOCS", "Archive", "page", "")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	page, err := api.FindRootPage("DOCS")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+	assert.Equal(t, home.ID, page.ID)
+	assert.Equal(t, "Home", page.Title)
+}
+
+// TestFindRootPageMissingSpace: the listing fallback is for a space without a
+// home page, not for one that does not exist.
+func TestFindRootPageMissingSpace(t *testing.T) {
+	api, _ := newAPI(t)
+
+	_, err := api.FindRootPage("NOPE")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, confluence.ErrNotFound)
+}
+
 func TestGetUserByName(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddUser(confluencetest.User{
