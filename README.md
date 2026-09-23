@@ -480,6 +480,13 @@ The key's value must be a string which defines the template's content.
   </tblbox>
 ```
 
+An inline template can use everything a file template can: the `xmlesc` and
+`cdata` functions, and the built-in templates by name, such as
+`{{ template "ac:status" . }}`. A `${<number>}` written in an inline template
+is replaced by the matched text as text, never as template code, so a match
+holding `{{ ... }}` is published as written. Inside an action, write it within
+a quoted string, as in `{{ "${1}" | xmlesc }}`.
+
 Macro templates can also output `<!-- Include: ... -->` directives, allowing macros to dynamically load external template files or include other documents.
 
 ## Automatic Page Title
