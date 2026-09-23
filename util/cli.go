@@ -156,10 +156,18 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 	return mark.Run(config)
 }
 
+// ConfigFilePath is the default for --config, or "" when there is none.
+//
+// It is evaluated while the flags are declared, at package initialisation, so
+// failing here fails every invocation -- --version and --help included -- and
+// before any flag could say where the file is. That is exactly the environment
+// in which the user config directory is unknown: a minimal container or a
+// systemd unit with neither $XDG_CONFIG_HOME nor $HOME. Having no default file
+// is the honest answer there; --config and MARK_CONFIG still name one.
 func ConfigFilePath() string {
 	fp, err := os.UserConfigDir()
 	if err != nil {
-		log.Fatal().Err(err).Send()
+		return ""
 	}
 	return filepath.Join(fp, "mark.toml")
 }

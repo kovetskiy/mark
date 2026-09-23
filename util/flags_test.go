@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -197,6 +198,57 @@ func TestConfigOnTheCommandLineStillWins(t *testing.T) {
 
 	assert.Equal(t, "flag", resolved["username"])
 	assert.Equal(t, fromFlag, resolved["config"])
+}
+
+// withoutConfigDir is an environment in which os.UserConfigDir has no answer:
+// a minimal container, or a systemd unit, with neither variable set.
+var withoutConfigDir = map[string]string{"HOME": "", "XDG_CONFIG_HOME": ""}
+
+func skipWithoutUnixConfigDir(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+		t.Skip("the user config directory does not come from $HOME here")
+	}
+}
+
+// TestConfigFilePathWithoutAConfigDir: the default is evaluated while the flags
+// are declared, so it used to log.Fatal during package initialisation and take
+// every invocation down with it -- --version and --help included.
+func TestConfigFilePathWithoutAConfigDir(t *testing.T) {
+	skipWithoutUnixConfigDir(t)
+	for name, value := range withoutConfigDir {
+		t.Setenv(name, value)
+	}
+
+	assert.Empty(t, ConfigFilePath())
+}
+
+// TestFlagsResolveWithoutAConfigDir drives the same thing through a fresh
+// process, which is the only place it ever failed: before the fix the worker
+// exited with status 1 before a single flag was read.
+func TestFlagsResolveWithoutAConfigDir(t *testing.T) {
+	skipWithoutUnixConfigDir(t)
+
+	t.Run("there is no default file", func(t *testing.T) {
+		resolved := resolveFlags(t, withoutConfigDir, []string{"config"})
+		assert.Empty(t, resolved["config"])
+	})
+
+	t.Run("a named file is still read", func(t *testing.T) {
+		path := writeConfig(t, t.TempDir(), "mark.toml", "username = \"cfguser\"\n")
+		resolved := resolveFlags(t, withoutConfigDir, []string{"config", "username"}, "--config", path)
+		assert.Equal(t, path, resolved["config"])
+		assert.Equal(t, "cfguser", resolved["username"])
+	})
+}
+
+// TestCheckConfigFileAcceptsNoDefault: with no default, having no file at all
+// is still the ordinary case and must not be reported.
+func TestCheckConfigFileAcceptsNoDefault(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: []cli.Flag{&cli.StringFlag{Name: "config"}},
+	}
+	assert.NoError(t, CheckConfigFile(mustParse(t, cmd, "mark")))
 }
 
 // TestFeaturesRejectsAnUnknownName: every feature is read with a plain
