@@ -83,9 +83,10 @@ type API struct {
 	conflictRetryDelay time.Duration
 }
 
-// userCacheEntry records the outcome of a user lookup, including a failed one:
-// a document that mentions an unknown name would otherwise re-query for every
-// occurrence, which is the case the cache is least able to afford.
+// userCacheEntry records the outcome of a user lookup, including a name that
+// matched nobody: a document that mentions an unknown name would otherwise
+// re-query for every occurrence, which is the case the cache is least able to
+// afford. A lookup that failed for any other reason is not recorded.
 type userCacheEntry struct {
 	user *User
 	err  error
@@ -539,12 +540,18 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 func worthCaching(err error) bool {
 	return err == nil ||
 		errors.Is(err, ErrNotFound) ||
-		errors.Is(err, errNoHomePage)
+		errors.Is(err, errNoHomePage) ||
+		errors.Is(err, errNoSuchUser)
 }
 
 // errNoHomePage is the answer for a space that exists and has no home page.
 // A conclusion rather than a hiccup, so it is remembered like a success.
 var errNoHomePage = errors.New("space has no home page")
+
+// errNoSuchUser is the answer for a user search that succeeded and matched
+// nobody. Not ErrNotFound: nothing answered 404, and saying so would send
+// people looking for a missing endpoint rather than a misspelt name.
+var errNoSuchUser = errors.New("no user matches that name")
 
 func (api *API) FindHomePage(space string) (*PageInfo, error) {
 	if entry, ok := api.cachedHomePage(space); ok {
@@ -1654,14 +1661,24 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 // document renders through the "user" stdlib template func, so an uncached
 // lookup meant one CQL search per occurrence -- a document naming the same
 // person twenty times issued twenty searches, multiplied by every file in the
-// run. Names do not change mid-run, so the lookup is memoised, failures
-// included.
+// run. Names do not change mid-run, so the lookup is memoised, and so is a
+// search that matched nobody.
+//
+// A search that failed is not: the same rule as the space lookups, through
+// worthCaching. A throttling burst or a gateway error while resolving the first
+// mention of someone otherwise left every later mention of them, in every
+// remaining file, failing with an error Confluence had long since stopped
+// giving.
 func (api *API) GetUserByName(name string) (*User, error) {
 	if entry, ok := api.cachedUser(name); ok {
 		return entry.user, entry.err
 	}
 
 	user, err := api.fetchUserByName(name)
+
+	if !worthCaching(err) {
+		return user, err
+	}
 
 	api.userCacheMutex.Lock()
 	if api.userCache == nil {
@@ -1715,7 +1732,7 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 
 	if len(response.Results) == 0 {
 
-		return nil, fmt.Errorf("user with name %q is not found", name)
+		return nil, fmt.Errorf("user with name %q is not found: %w", name, errNoSuchUser)
 	}
 
 	return &response.Results[0].User, nil
@@ -2018,13 +2035,17 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	//
 	// v2 keeps its own string-typed struct: the two APIs genuinely disagree
 	// about this field, which is what made the mismatch easy to miss.
-	var v1Result SpaceInfo
+	var (
+		v1Result  SpaceInfo
+		v1Request *gopencils.Resource
+		v1Err     error
+	)
 
 	// Through the gateway v1 is not asked at all: a scoped token is refused
 	// there, and v2 answers either kind of token.
 	if !api.gateway {
-		request, err := api.v1().Res("space/"+spaceKey, &v1Result).Get()
-		if err == nil && request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
+		v1Request, v1Err = api.v1().Res("space/"+spaceKey, &v1Result).Get()
+		if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
 			return strconv.Itoa(v1Result.ID), nil
 		}
 	}
@@ -2048,17 +2069,32 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 		"spaces", &v2Result,
 	).Get(payload)
 	if err != nil {
-		return "", newTransportError(request, "look up the id of space "+spaceKey, err)
+		err = newTransportError(request, "look up the id of space "+spaceKey, err)
+	} else if request.Raw.StatusCode != http.StatusOK {
+		err = newErrorStatusNotOK(request)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return "", newErrorStatusNotOK(request)
+	// When v2 cannot answer either, report why v1 refused, as FindHomePage
+	// does. Server and Data Center have no /api/v2, so there v2's 404 says
+	// nothing about the space: it replaced a 401 with a misleading 404, and,
+	// being a 404, got a v1 outage cached for the rest of the run. v1's answer
+	// is the one that decides, so v2's is kept for the message only.
+	if err != nil {
+		if v1Err == nil && v1Request != nil && v1Request.Raw.StatusCode != http.StatusOK {
+			v1Err = newErrorStatusNotOK(v1Request)
+		}
+		if v1Err == nil {
+			return "", err
+		}
+		return "", fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, err) //nolint:errorlint // v2's 404 must not reach errors.Is(ErrNotFound)
 	}
 
 	api.learnSiteBase(v2Result.Links.Base)
 
+	// v2 answered, and knows of no such space: a conclusion, so wrapped in the
+	// sentinel that lets GetSpaceID remember it.
 	if len(v2Result.Results) == 0 {
-		return "", fmt.Errorf("space with key %s not found", spaceKey)
+		return "", fmt.Errorf("space with key %s not found: %w", spaceKey, ErrNotFound)
 	}
 
 	return v2Result.Results[0].ID, nil
