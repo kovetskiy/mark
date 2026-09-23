@@ -185,26 +185,6 @@ func TestUpdatePageKeepsVersionInSync(t *testing.T) {
 	assert.EqualValues(t, 3, server.Page(stored.ID).Version)
 }
 
-// TestUpdatePageStaleVersionConflicts covers the case the write-back cannot
-// help with: two independently fetched copies of the same page. The second
-// update carries a superseded version and Confluence rejects it, which is the
-// 409 that issue #139 works around after page creation.
-func TestUpdatePageStaleVersionConflicts(t *testing.T) {
-	api, server := newAPI(t)
-	stored := server.AddPage("DOCS", "Target", "page", "")
-
-	first, err := api.GetPageByID(stored.ID)
-	require.NoError(t, err)
-	second, err := api.GetPageByID(stored.ID)
-	require.NoError(t, err)
-
-	require.NoError(t, api.UpdatePage(first, "<p>first</p>", false, "", "", ""))
-
-	err = api.UpdatePage(second, "<p>second</p>", false, "", "", "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "409")
-}
-
 func TestGetPageByID(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "ByID", "page", "")

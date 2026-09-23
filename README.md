@@ -2405,6 +2405,10 @@ pages nobody had touched.
   frozen on the suspicion that it might have changed.
 * Anything that creates a version counts as an edit, including a comment added
   in the web UI.
+* An edit that lands while Mark is publishing the page -- after the check,
+  before the update -- makes the update fail rather than be retried over it.
+  Without the flag, Mark retries such an update once against the page's
+  current version, which overwrites the edit.
 
 ## Issues, Bugs & Contributions
 

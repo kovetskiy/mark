@@ -2,7 +2,9 @@ package mark
 
 import (
 	"io"
+	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -156,4 +158,31 @@ func TestNoOverwriteSurvivesTheRunThatReportsIt(t *testing.T) {
 
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
 		"the hand-written page must still be there")
+}
+
+// TestNoOverwriteDoesNotRetryOverAnEditMadeMidRun: an update refused as a
+// conflict is retried against the page's current version, which overwrites
+// whatever caused the conflict. An edit that lands after the drift check and
+// before the update is the one --no-overwrite is there for, so the retry must
+// not go over it.
+func TestNoOverwriteDoesNotRetryOverAnEditMadeMidRun(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nSecond version.\n")
+
+	edited := false
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/content/"+id) && !edited {
+			edited = true
+			server.EditPage(id, "<p>Written by a person.</p>")
+		}
+		return 0, "", false
+	})
+
+	err := Run(config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the edit made during the run must survive it")
 }
