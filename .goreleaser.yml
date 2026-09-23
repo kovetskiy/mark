@@ -59,4 +59,4 @@ brews:
     generate_completions_from_executable(bin/"mark", "completion")
 
   test: |
-    system "#{bin}/mark", "version"
+    system "#{bin}/mark", "--version"
