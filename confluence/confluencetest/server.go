@@ -700,27 +700,41 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		// separates it from the v1 child/page listing.
 		if rest, ok := strings.CutPrefix(path, "/pages/"); ok {
 			pageID, sub, _ := strings.Cut(rest, "/")
-			switch {
-			case sub == "direct-children":
+			if sub == "direct-children" {
 				s.directChildren(w, r, pageID)
-				return
-			case sub == "labels":
-				s.labelsV2(w, r, pageID)
-				return
-			case sub == "attachments":
-				s.attachmentsV2(w, r, pageID)
-				return
-			case sub == "properties" || strings.HasPrefix(sub, "properties/"):
-				s.spaceProperties(w, r, "pages", pageID, strings.TrimPrefix(strings.TrimPrefix(sub, "properties"), "/"))
-				return
-			case sub == "":
-				s.contentV2ByID(w, r, pageID, "page")
 				return
 			}
 		}
-		if contentID, ok := strings.CutPrefix(path, "/blogposts/"); ok && !strings.Contains(contentID, "/") {
-			s.contentV2ByID(w, r, contentID, "blogpost")
-			return
+		for _, collection := range []string{"pages", "blogposts"} {
+			rest, ok := strings.CutPrefix(path, "/"+collection+"/")
+			if !ok {
+				continue
+			}
+			contentID, sub, _ := strings.Cut(rest, "/")
+			pageType := strings.TrimSuffix(collection, "s")
+			if sub == "" {
+				s.contentV2ByID(w, r, contentID, pageType)
+				return
+			}
+			// As with the object itself, a page's and a blogpost's labels,
+			// attachments and properties are only found under their own
+			// collection: Confluence answers 404 for a blogpost id under
+			// /pages, and so does this.
+			if !s.isContentOfType(contentID, pageType) {
+				writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + contentID})
+				return
+			}
+			switch {
+			case sub == "labels":
+				s.labelsV2(w, r, collection, contentID)
+				return
+			case sub == "attachments":
+				s.attachmentsV2(w, r, collection, contentID)
+				return
+			case sub == "properties" || strings.HasPrefix(sub, "properties/"):
+				s.spaceProperties(w, r, collection, contentID, strings.TrimPrefix(strings.TrimPrefix(sub, "properties"), "/"))
+				return
+			}
 		}
 		// /spaces/{id}/properties and /spaces/{id}/properties/{propertyID}
 		if rest, ok := strings.CutPrefix(path, "/spaces/"); ok {
@@ -732,6 +746,14 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		}
 		http.NotFound(w, r)
 	}
+}
+
+// isContentOfType reports whether id names content of the given type.
+func (s *Server) isContentOfType(id, pageType string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.pages[id]
+	return ok && p.Type == pageType
 }
 
 // SpaceProperty is a key/value pair held against a space (v2) or a page (v1).
@@ -1737,7 +1759,7 @@ func (s *Server) contentJSONV2(p *Page, withBody bool) map[string]any {
 
 // labelsV2 serves the v2 label listing, which pages by cursor and hands the
 // label id over as a number where v1 makes it a string.
-func (s *Server) labelsV2(w http.ResponseWriter, r *http.Request, pageID string) {
+func (s *Server) labelsV2(w http.ResponseWriter, r *http.Request, collection, pageID string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1765,14 +1787,14 @@ func (s *Server) labelsV2(w http.ResponseWriter, r *http.Request, pageID string)
 
 	links := map[string]any{}
 	if next != "" {
-		links["next"] = fmt.Sprintf("/api/v2/pages/%s/labels?cursor=%s", pageID, next)
+		links["next"] = fmt.Sprintf("/api/v2/%s/%s/labels?cursor=%s", collection, pageID, next)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
 }
 
 // attachmentsV2 serves the v2 attachment listing, which names the comment and
 // the download link at the top level where v1 nests them.
-func (s *Server) attachmentsV2(w http.ResponseWriter, r *http.Request, pageID string) {
+func (s *Server) attachmentsV2(w http.ResponseWriter, r *http.Request, collection, pageID string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1802,7 +1824,7 @@ func (s *Server) attachmentsV2(w http.ResponseWriter, r *http.Request, pageID st
 
 	links := map[string]any{}
 	if next != "" {
-		links["next"] = fmt.Sprintf("/api/v2/pages/%s/attachments?cursor=%s", pageID, next)
+		links["next"] = fmt.Sprintf("/api/v2/%s/%s/attachments?cursor=%s", collection, pageID, next)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
 }

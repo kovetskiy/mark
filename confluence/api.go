@@ -47,6 +47,11 @@ type API struct {
 	siteBase      string
 	siteBaseMutex sync.RWMutex
 
+	// contentTypesV2 maps a content id to "page" or "blogpost" for every
+	// object v2 has handed over, so that a call given only an id can address
+	// the right collection; see collectionOfV2.
+	contentTypesV2 sync.Map
+
 	isCloudFlag bool
 	isCloudOnce sync.Once
 
@@ -1267,7 +1272,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 
 	var err error
 	if api.gateway {
-		err = api.updatePageV2(page, newContent, minorEdit, versionMessage, nextPageVersion, properties)
+		err = api.updatePageV2(page, newContent, minorEdit, versionMessage, nextPageVersion)
 	} else {
 		err = api.updatePageV1(page, newContent, minorEdit, versionMessage, nextPageVersion, properties)
 	}
@@ -1285,6 +1290,16 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	// one, which Confluence rejects as a duplicate title. Dropping the entry
 	// costs one lookup and keeps the cache from asserting something untrue.
 	api.forgetMissesForTitle(page.Title, page.Type)
+
+	// v2 keeps properties on an endpoint of their own, so they are written
+	// only once the content is. The version is bumped first: the new one
+	// exists the moment the content is in, and a caller holding the old
+	// number after a failed property write would have its next update refused
+	// as a conflict.
+	if api.gateway {
+		return api.setPagePropertiesV2(page, properties)
+	}
+
 	return nil
 }
 
@@ -1425,7 +1440,7 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
 	if api.gateway {
-		return api.getPageLabelsV2(page.ID, prefix)
+		return api.getPageLabelsV2(page, prefix)
 	}
 
 	type labelPage struct {
