@@ -181,7 +181,7 @@ image-align: center
 		Labels:            []string{"alpha", "beta"},
 		ContentAppearance: DefaultContentAppearance,
 		ImageAlign:        "center",
-	}, meta)
+		DeclaredTitle:     true, DeclaredParents: true}, meta)
 	assert.Equal(t, "# Content\n", string(body))
 }
 
@@ -342,7 +342,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 				Title:             "Authentication",
 				Type:              "page",
 				ContentAppearance: "full-width",
-			},
+				DeclaredTitle:     true},
 		},
 		{
 			name: "multiple folder headers",
@@ -359,7 +359,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 				Title:             "Password Reset",
 				Type:              "page",
 				ContentAppearance: "full-width",
-			},
+				DeclaredTitle:     true},
 		},
 		{
 			name: "folder and parent headers mixed",
@@ -377,7 +377,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 				Title:             "Password Reset",
 				Type:              "page",
 				ContentAppearance: "full-width",
-			},
+				DeclaredTitle:     true, DeclaredParents: true},
 		},
 		{
 			name: "no folder headers",
@@ -392,7 +392,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 				Title:             "Password Reset",
 				Type:              "page",
 				ContentAppearance: "full-width",
-			},
+				DeclaredTitle:     true, DeclaredParents: true},
 		},
 		{
 			name: "folder headers with spaces and special characters",
@@ -408,7 +408,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 				Title:             "Getting Started",
 				Type:              "page",
 				ContentAppearance: "full-width",
-			},
+				DeclaredTitle:     true},
 		},
 	}
 
