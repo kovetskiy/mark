@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"bytes"
+	"fmt"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/macro"
@@ -200,7 +201,15 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				),
 			).Parser()
 			subDoc := p.Parse(text.NewReader(expanded))
-			convertSegmentsToStrings(subDoc, expanded)
+			if err := convertSegmentsToStrings(subDoc, expanded); err != nil {
+				t.Err = fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+				log.Error().
+					Str("file", t.FilePath).
+					Int("line", item.lineNum).
+					Err(err).
+					Msg("unable to apply macro")
+				return false
+			}
 
 			parent := item.node.Parent()
 			if parent == nil {
