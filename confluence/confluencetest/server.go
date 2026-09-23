@@ -39,6 +39,10 @@ type Page struct {
 	// "moved to the trash" from "gone" and from "archived".
 	Trashed  bool
 	Archived bool
+
+	// UpdateRestrictedTo is who the last update restriction named: the
+	// accountId on Cloud, the username on Server.
+	UpdateRestrictedTo []string
 }
 
 // Status is what v1 reports for the page and, more to the point, what it
@@ -96,6 +100,7 @@ type User struct {
 	UserKey   string
 	Username  string
 	FullName  string
+	Email     string
 }
 
 // Request is a single recorded inbound request.
@@ -359,6 +364,13 @@ func (s *Server) AddUser(u User) {
 	s.users = append(s.users, u)
 }
 
+// SetCurrentUser replaces the user the current-user endpoint answers with.
+func (s *Server) SetCurrentUser(u User) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentUser = u
+}
+
 // Page returns the stored page with the given ID, or nil.
 func (s *Server) Page(id string) *Page {
 	s.mu.Lock()
@@ -366,6 +378,7 @@ func (s *Server) Page(id string) *Page {
 	if p, ok := s.pages[id]; ok {
 		cp := *p
 		cp.Labels = append([]string(nil), p.Labels...)
+		cp.UpdateRestrictedTo = append([]string(nil), p.UpdateRestrictedTo...)
 		return &cp
 	}
 	return nil
@@ -663,9 +676,12 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		u := s.currentUser
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"accountId": u.AccountID,
-			"userKey":   u.UserKey,
-			"username":  u.Username,
+			"accountId":   u.AccountID,
+			"userKey":     u.UserKey,
+			"username":    u.Username,
+			"email":       u.Email,
+			"displayName": u.FullName,
+			"publicName":  u.FullName,
 		})
 
 	case path == "/search/user" || path == "/search":
@@ -715,7 +731,7 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		case strings.HasPrefix(sub, "property/"):
 			s.contentProperties(w, r, id, strings.TrimPrefix(sub, "property/"))
 		case sub == "restriction" || strings.HasPrefix(sub, "restriction"):
-			writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+			s.restriction(w, r, id)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1706,6 +1722,45 @@ func (s *Server) childComment(w http.ResponseWriter, r *http.Request, pageID str
 		"results": results,
 		"_links":  linksWithNext(hasNext),
 	})
+}
+
+// restriction records who a POSTed update restriction names on the page.
+func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID string) {
+	if r.Method == http.MethodPost {
+		var payload []struct {
+			Operation    string `json:"operation"`
+			Restrictions struct {
+				User []struct {
+					AccountID string `json:"accountId"`
+					Username  string `json:"username"`
+				} `json:"user"`
+			} `json:"restrictions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "bad payload", http.StatusBadRequest)
+			return
+		}
+
+		s.mu.Lock()
+		if p, ok := s.pages[pageID]; ok {
+			for _, entry := range payload {
+				if entry.Operation != "update" {
+					continue
+				}
+				p.UpdateRestrictedTo = nil
+				for _, u := range entry.Restrictions.User {
+					if u.AccountID != "" {
+						p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, u.AccountID)
+					} else {
+						p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, u.Username)
+					}
+				}
+			}
+		}
+		s.mu.Unlock()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
 }
 
 func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {

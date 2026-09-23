@@ -24,6 +24,22 @@ type User struct {
 	AccountID string `json:"accountId,omitempty"`
 	UserKey   string `json:"userKey,omitempty"`
 	Username  string `json:"username,omitempty"`
+
+	// Email, PublicName and DisplayName are how Cloud names a user now that
+	// usernames are gone; the current-user endpoint returns them.
+	Email       string `json:"email,omitempty"`
+	PublicName  string `json:"publicName,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+}
+
+// isNamed reports whether name is one of the identifiers the user goes by.
+func (user *User) isNamed(name string) bool {
+	for _, id := range []string{user.Email, user.Username, user.PublicName, user.DisplayName} {
+		if id != "" && strings.EqualFold(id, name) {
+			return true
+		}
+	}
+	return false
 }
 
 type API struct {
@@ -1817,6 +1833,39 @@ func (api *API) IsCloud() bool {
 	return api.isCloudFlag
 }
 
+// restrictionUserCloud resolves the user a Cloud page is restricted to.
+//
+// Cloud restrictions take an accountId, so the name has to be looked up. The
+// authenticated user is checked first: --edit-lock passes the configured
+// username, which on Cloud is the account's email, and the user search matches
+// full names, so it would not find it. Anyone else goes through the search, and
+// a name that resolves to nobody is an error. It used to fall back to the
+// authenticated user, which quietly locked the page against the very person it
+// was meant to leave editable.
+func (api *API) restrictionUserCloud(name string) (*User, error) {
+	current, currentErr := api.GetCurrentUser()
+	if currentErr == nil && (name == "" || current.isNamed(name)) {
+		return current, nil
+	}
+	if name == "" {
+		return nil, fmt.Errorf("unable to resolve the current user: %w", currentErr)
+	}
+
+	user, err := api.GetUserByName(name)
+	if err != nil {
+		if currentErr != nil {
+			return nil, fmt.Errorf("unable to resolve user %q: %w", name, err)
+		}
+		return nil, fmt.Errorf(
+			"unable to resolve user %q, and it is not the authenticated user; "+
+				"refusing to restrict the page to anyone else: %w",
+			name, err,
+		)
+	}
+
+	return user, nil
+}
+
 func (api *API) RestrictPageUpdates(
 	page *PageInfo,
 	allowedUser string,
@@ -1826,15 +1875,9 @@ func (api *API) RestrictPageUpdates(
 	}
 
 	if api.IsCloud() {
-		user, err := api.GetUserByName(allowedUser)
+		user, err := api.restrictionUserCloud(allowedUser)
 		if err != nil {
-			// Fall back to the currently authenticated user if the specified
-			// user cannot be resolved by name.
-			currentUser, currentErr := api.GetCurrentUser()
-			if currentErr != nil {
-				return fmt.Errorf("unable to resolve user %q: %w", allowedUser, err)
-			}
-			user = currentUser
+			return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
 		}
 
 		if user.AccountID == "" {
