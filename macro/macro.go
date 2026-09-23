@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"text/template"
+	"text/template/parse"
 
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/metadata"
@@ -92,49 +95,151 @@ func (macro *Macro) Apply(
 	content = replaceAllOutsideCode(
 		macro.Regexp, content, code,
 		func(match []byte) []byte {
-			config := map[string]any{}
-
-			if strings.TrimSpace(macro.Config) != "" {
-				err = yaml.Unmarshal([]byte(macro.Config), &config)
-				if err != nil {
-					err = fmt.Errorf("unable to unmarshal macros config template: %w", err)
-					return match
-				}
-			}
-
-			cfgData := macro.configure(
-				config,
-				macro.Regexp.FindSubmatch(match),
-			)
-
-			tmpl := macro.Template
-			if mData, ok := cfgData.(map[string]any); ok && macro.Name != "" {
-				if body, ok := mData[macro.Name].(string); ok {
-					var errTmpl error
-					tmpl, errTmpl = template.New(macro.Name).Parse(body)
-					if errTmpl != nil {
-						err = fmt.Errorf("unable to parse inline template: %w", errTmpl)
-						return match
-					}
-				}
-			}
-
-			var buf bytes.Buffer
-
-			err = tmpl.Execute(&buf, cfgData)
+			// The first failure is the one reported. Each match used to
+			// assign the shared error afresh, so a later match that succeeded
+			// reset it to nil and the failure was published as the match's
+			// own unexpanded text, with nothing said.
 			if err != nil {
-				err = fmt.Errorf("unable to execute template: %w", err)
 				return match
 			}
 
-			// Same reason as for an include: a parameter holding an element
-			// must hold nothing else, and a readable template does not
-			// naturally produce that.
-			return includes.TrimElementParameters(buf.Bytes())
+			var expanded []byte
+
+			expanded, err = macro.expand(match)
+			if err != nil {
+				return match
+			}
+
+			return expanded
 		},
 	)
 
 	return content, err
+}
+
+// expand renders the macro's template for one match.
+func (macro *Macro) expand(match []byte) ([]byte, error) {
+	config := map[string]any{}
+
+	if strings.TrimSpace(macro.Config) != "" {
+		err := yaml.Unmarshal([]byte(macro.Config), &config)
+		if err != nil {
+			return nil, fmt.Errorf("unable to unmarshal macros config template: %w", err)
+		}
+	}
+
+	groups := macro.Regexp.FindSubmatch(match)
+	cfgData := macro.configure(config, groups)
+
+	tmpl := macro.Template
+	if macro.Name != "" {
+		var err error
+
+		tmpl, err = macro.inlineTemplate(groups)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var buf bytes.Buffer
+
+	err := tmpl.Execute(&buf, cfgData)
+	if err != nil {
+		return nil, fmt.Errorf("unable to execute template: %w", err)
+	}
+
+	// Same reason as for an include: a parameter holding an element
+	// must hold nothing else, and a readable template does not
+	// naturally produce that.
+	return includes.TrimElementParameters(buf.Bytes()), nil
+}
+
+// inlineTemplate is an inline macro's template with the match's captures put
+// in place of ${n}.
+//
+// The template was parsed once, when the macro was defined, in the set the
+// document is compiled with, so the stdlib's functions and templates are
+// there: xmlesc and {{ template "ac:status" . }} were "not defined" when the
+// body was parsed again, per match, into a set of its own. The captures go
+// into a copy of the parsed tree rather than into the source before parsing,
+// so matched text is only ever text: "helm uses {{ .Values.x }}" is published
+// as written, rather than run as template code, which failed the page or, with
+// a field that happened to exist, published something else in its place.
+func (macro *Macro) inlineTemplate(groups [][]byte) (*template.Template, error) {
+	tmpl, err := macro.Template.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("unable to clone inline template: %w", err)
+	}
+
+	tree := macro.Template.Copy()
+	substituteCaptures(tree.Root, func(s string) string {
+		return replaceCaptures(s, groups)
+	})
+
+	tmpl, err = tmpl.AddParseTree(tmpl.Name(), tree)
+	if err != nil {
+		return nil, fmt.Errorf("unable to prepare inline template: %w", err)
+	}
+
+	return tmpl, nil
+}
+
+// substituteCaptures applies replace to the places a capture may stand in a
+// parsed template: the text between actions, and string literals and template
+// names within them. Anywhere else a ${n} would not have parsed in the first
+// place.
+func substituteCaptures(node parse.Node, replace func(string) string) {
+	switch node := node.(type) {
+	case *parse.ListNode:
+		if node == nil {
+			return
+		}
+		for _, n := range node.Nodes {
+			substituteCaptures(n, replace)
+		}
+	case *parse.TextNode:
+		node.Text = []byte(replace(string(node.Text)))
+	case *parse.StringNode:
+		node.Text = replace(node.Text)
+		node.Quoted = strconv.Quote(node.Text)
+	case *parse.ActionNode:
+		substituteCaptures(node.Pipe, replace)
+	case *parse.PipeNode:
+		if node == nil {
+			return
+		}
+		for _, cmd := range node.Cmds {
+			substituteCaptures(cmd, replace)
+		}
+	case *parse.CommandNode:
+		for _, arg := range node.Args {
+			substituteCaptures(arg, replace)
+		}
+	case *parse.ChainNode:
+		substituteCaptures(node.Node, replace)
+	case *parse.IfNode:
+		substituteCaptures(&node.BranchNode, replace)
+	case *parse.RangeNode:
+		substituteCaptures(&node.BranchNode, replace)
+	case *parse.WithNode:
+		substituteCaptures(&node.BranchNode, replace)
+	case *parse.BranchNode:
+		substituteCaptures(node.Pipe, replace)
+		substituteCaptures(node.List, replace)
+		substituteCaptures(node.ElseList, replace)
+	case *parse.TemplateNode:
+		node.Name = replace(node.Name)
+		substituteCaptures(node.Pipe, replace)
+	}
+}
+
+// replaceCaptures puts each capture group in place of its ${n}.
+func replaceCaptures(s string, groups [][]byte) string {
+	for i, group := range groups {
+		s = strings.ReplaceAll(s, fmt.Sprintf("${%d}", i), string(group))
+	}
+
+	return s
 }
 
 // replaceAllOutsideCode is regexp.ReplaceAllFunc with the matches that begin
@@ -189,15 +294,7 @@ func (macro *Macro) configure(node any, groups [][]byte) any {
 
 		return node
 	case string:
-		for i, group := range groups {
-			node = strings.ReplaceAll(
-				node,
-				fmt.Sprintf("${%d}", i),
-				string(group),
-			)
-		}
-
-		return node
+		return replaceCaptures(node, groups)
 	}
 
 	return node
@@ -374,7 +471,10 @@ func ExtractMacros(
 
 		extracted = append(extracted, m)
 
-		remaining = append(remaining[:startIdx], remaining[endIdx:]...)
+		// A new slice, not an append onto remaining[:startIdx]: that writes
+		// into the caller's buffer, which is the document CompileMarkdown was
+		// handed.
+		remaining = slices.Concat(remaining[:startIdx], remaining[endIdx:])
 		searchOffset = startIdx
 
 		// Every offset after the splice has moved, so the regions have to be
