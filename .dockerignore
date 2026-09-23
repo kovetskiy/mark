@@ -1,1 +1,34 @@
+# Only what the builder stage needs goes into the build context. Docker does not
+# read .gitignore, so everything below would otherwise be sent on every build and
+# bust the `COPY / .` layer whenever it changed.
+
+# Kept on purpose: the Makefile stamps the binary with `git describe --tags` and
+# `git rev-parse HEAD`, which need the repository. Excluding .git would build an
+# image whose `mark --version` reports no version.
+# .git
+
+# Build output and test leftovers.
+/mark
+/mark.test
+/profile.cov
+*.cov
+*.out
 /docker
+
+# Chrome dumps core wherever a test was driving it; hundreds of megabytes each.
+core.*
+**/core.*
+
+# Editors and local tooling.
+.idea/
+.vscode/
+.claude/
+*.swp
+*~
+.DS_Store
+
+# Not used by the image build.
+.github/
+docker-compose.yaml
+Dockerfile
+.dockerignore
