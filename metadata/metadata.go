@@ -169,12 +169,11 @@ type Meta struct {
 	Labels            []string
 	ContentAppearance string
 
-	// DeclaredParents and DeclaredTitle record what the document said about
-	// itself, as against what a command line flag supplied. Deriving either
-	// from the file's path has to give way to an author who wrote it down, and
-	// by the time Parents and Title are assembled the two are indistinguishable.
+	// DeclaredParents records that the document named its own parents, as
+	// against a command line flag supplying them. Deriving parents from the
+	// file's path has to give way to an author who wrote them down, and by the
+	// time Parents is assembled the two are indistinguishable.
 	DeclaredParents bool
-	DeclaredTitle   bool
 
 	// Synchronized is whether the document is published at all. Nil means it
 	// said nothing, which is not the same as false: a pointer keeps the
@@ -401,7 +400,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				meta.Type = toString(v)
 			case "title":
 				meta.Title = toString(v)
-				meta.DeclaredTitle = true
 			case "layout":
 				meta.Layout = toString(v)
 			case "sidebar":
@@ -571,7 +569,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 				case HeaderTitle:
 					meta.Title = strings.TrimSpace(value)
-					meta.DeclaredTitle = true
 
 				case HeaderLayout:
 					meta.Layout = strings.TrimSpace(value)
@@ -719,13 +716,8 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		meta.Parents = append(parents, meta.Parents...)
 	}
 
-	// deterministically generate a hash from the page's parents, space, and title
 	if titleAppendGeneratedHash {
-		path := strings.Join(append(meta.Parents, meta.Space, meta.Title), "/")
-		pathHash := sha256.Sum256([]byte(path))
-		// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
-		meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
-		log.Debug().Msgf("appended hash to page title: %s", meta.Title)
+		AppendGeneratedHash(meta)
 	}
 
 	// Remove trailing spaces from title
@@ -800,6 +792,21 @@ func warnStrandedHeaders(body []byte) {
 func setTitleFromFilename(meta *Meta, filename string) {
 	base := filepath.Base(filename)
 	meta.Title = TitleFromName(strings.TrimSuffix(base, filepath.Ext(base)))
+}
+
+// AppendGeneratedHash makes a title unique to the page's place in the tree by
+// appending a short hash of its parents, space and title.
+//
+// It is deterministic, so a page keeps its title from run to run, and it is
+// what tells two documents of the same title apart when they sit under
+// different parents. It has to run once the parents are final: a caller that
+// derives parents after ExtractMeta asks for it separately, afterwards.
+func AppendGeneratedHash(meta *Meta) {
+	path := strings.Join(append(slices.Clone(meta.Parents), meta.Space, meta.Title), "/")
+	pathHash := sha256.Sum256([]byte(path))
+	// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
+	meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
+	log.Debug().Msgf("appended hash to page title: %s", meta.Title)
 }
 
 // TitleFromName turns a file or directory name into a page title, so that

@@ -4,11 +4,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/manifest"
+	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -372,4 +374,109 @@ func TestFilenameNeverNamesADirectory(t *testing.T) {
 	readme, err := api.FindPage("DOCS", "Readme", "page")
 	require.NoError(t, err)
 	assert.Nil(t, readme, "no page should be called Readme")
+}
+
+// TestHashTellsSameTitlesApart: --title-append-generated-hash is the way to
+// keep two documents of one title in different directories, and it only works
+// if the hash is taken once the derived parents are in. Taken before, the two
+// hashed the same and were refused all the same.
+func TestHashTellsSameTitlesApart(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "api/overview.md", space+"<!-- Title: Overview -->\n\nAPI.\n")
+	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: Overview -->\n\nSDK.\n")
+
+	api := runHierarchy(t, dir, func(c *Config) { c.TitleAppendGeneratedHash = true })
+
+	var titles []string
+	for _, p := range serverPages(t, api) {
+		if strings.HasPrefix(p.Title, "Overview - ") {
+			titles = append(titles, p.Title)
+		}
+	}
+	require.Len(t, titles, 2, "both documents publish, under titles the hash tells apart")
+	assert.NotEqual(t, titles[0], titles[1])
+}
+
+// serverPages lists every page in DOCS by title, through the API the run used.
+func serverPages(t *testing.T, api *confluence.API) []*confluence.PageInfo {
+	t.Helper()
+
+	home, err := api.FindHomePage("DOCS")
+	require.NoError(t, err)
+
+	var all []*confluence.PageInfo
+	var walk func(parentID string)
+	walk = func(parentID string) {
+		children, err := api.GetChildPages(parentID)
+		require.NoError(t, err)
+		for i := range children {
+			all = append(all, &children[i])
+			walk(children[i].ID)
+		}
+	}
+	walk(home.ID)
+
+	return all
+}
+
+// TestTitleCollisionIgnoresCase: Confluence compares titles without regard to
+// case, so "Overview" and "overview" want the same page too.
+func TestTitleCollisionIgnoresCase(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "api/overview.md", space+"<!-- Title: Overview -->\n\nOne.\n")
+	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: overview -->\n\nTwo.\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
+		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already publishes")
+}
+
+// TestRootCoveringNothingIsRefused: a --parents-from-path-root the files do not
+// lie under used to derive no parents at all, silently.
+func TestRootCoveringNothingIsRefused(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
+		ParentsFromPath: true, ParentsFromPathRoot: filepath.Join(dir, "elsewhere"),
+		Output: io.Discard,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "covers none of the files")
+}
+
+// TestReadmeOutsideTheRunDoesNotNameItsDirectory: only a document the run
+// publishes stands for its directory. One the pattern leaves out would
+// otherwise name a page that never gets published.
+func TestReadmeOutsideTheRunDoesNotNameItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", space+"<!-- Title: Not Published -->\n\nx.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, func(c *Config) {
+		c.Files = filepath.Join(dir, "**", "setup.md")
+	})
+
+	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
+}
+
+// TestRootReadmeIsTitledByTheRoot: the document standing for the root has no
+// directory above it to be named after, and "Readme" is a name for a file.
+func TestRootReadmeIsTitledByTheRoot(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "README.md", space+"\nThe docs.\n")
+
+	api := runHierarchy(t, dir, nil)
+
+	page, err := api.FindPage("DOCS", metadata.TitleFromName(filepath.Base(dir)), "page")
+	require.NoError(t, err)
+	assert.NotNil(t, page, "the root's document is titled after the root directory")
 }

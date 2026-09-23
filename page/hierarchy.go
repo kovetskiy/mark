@@ -1,7 +1,6 @@
 package page
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,10 +10,18 @@ import (
 
 // indexNames are the files that stand for the directory they are in rather than
 // sitting inside it, which is the convention every static site generator and
-// code host already uses.
+// code host already uses. Matched without regard to case, so README.md,
+// readme.md and Readme.md are the same thing everywhere this package looks.
 var indexNames = map[string]bool{
 	"index":  true,
 	"readme": true,
+}
+
+// isIndexFile reports whether a file stands for its directory.
+func isIndexFile(file string) bool {
+	base := filepath.Base(file)
+
+	return indexNames[strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))]
 }
 
 // GlobRoot reports the directory a --files pattern starts from.
@@ -46,244 +53,251 @@ func GlobRoot(pattern string) string {
 	return strings.Join(fixed, "/")
 }
 
-// PathHierarchy reports the parent titles a document's location implies, and
-// the title to give it if it has none of its own.
+// TitleResolver says what the page standing for a directory is called, given
+// the directory and the document in the run that stands for it, if any. An
+// empty answer leaves the directory named after itself.
+type TitleResolver func(directory, indexFile string) (string, error)
+
+// Hierarchy is what a run's file layout says about where its pages go: the
+// parents a document's directories imply, the title a directory's own document
+// takes, and the pages standing for directories, which are worth remembering.
 //
-// A document is placed under a page for each directory between the root and
-// itself. An index file is not placed under a page named after its own
-// directory -- it is that page, which is what makes a directory's own document
-// its landing page rather than a child of an empty one.
-//
-// The returned title is only a suggestion, and only for an index file: every
-// other document keeps whatever title it would have had.
-func PathHierarchy(root, file string, titles *DirectoryTitles) (parents []string, title string, err error) {
-	file = filepath.ToSlash(file)
-	root = strings.TrimSuffix(filepath.ToSlash(root), "/")
+// It is built once from the files of the run, so every question is answered
+// from the same list. Asking the filesystem instead would let a README the
+// pattern does not select name its directory's page, or stop that directory
+// from being tracked, without ever being published.
+type Hierarchy struct {
+	root    string
+	index   map[string]string
+	outside []string
+	resolve TitleResolver
 
-	relative := file
-	if root != "" {
-		trimmed, ok := strings.CutPrefix(file, root+"/")
-		if !ok {
-			// Outside the root the path says nothing about where the page goes.
-			return nil, "", nil
-		}
-		relative = trimmed
-	}
-
-	directory := filepath.ToSlash(filepath.Dir(relative))
-	if directory == "." {
-		directory = ""
-	}
-
-	var segments []string
-	if directory != "" {
-		segments = strings.Split(directory, "/")
-	}
-
-	base := filepath.Base(relative)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
-
-	if indexNames[strings.ToLower(name)] {
-		// The document is its directory's page, so its parents are the
-		// directories above it and its title is the directory's own.
-		if len(segments) == 0 {
-			return nil, "", nil
-		}
-
-		parents, err = resolveTitles(root, segments[:len(segments)-1], titles)
-		if err != nil {
-			return nil, "", err
-		}
-
-		own, err := titles.Title(joinPath(root, segments))
-		if err != nil {
-			return nil, "", err
-		}
-
-		return parents, own, nil
-	}
-
-	parents, err = resolveTitles(root, segments, titles)
-
-	return parents, "", err
-}
-
-func joinPath(root string, segments []string) string {
-	path := strings.Join(segments, "/")
-	if root != "" {
-		return root + "/" + path
-	}
-
-	return path
-}
-
-// resolveTitles names each directory on the way down.
-func resolveTitles(root string, segments []string, titles *DirectoryTitles) ([]string, error) {
-	if len(segments) == 0 {
-		return nil, nil
-	}
-
-	out := make([]string, 0, len(segments))
-	for i := range segments {
-		title, err := titles.Title(joinPath(root, segments[:i+1]))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, title)
-	}
-
-	return out, nil
-}
-
-// TitleClaims remembers which document laid claim to which page title.
-//
-// Confluence allows one page of a given title per space, so two documents
-// wanting the same title want the same page: the second overwrites the first
-// and moves it under its own parents, leaving one page where two were meant and
-// no sign that anything was lost.
-//
-// Deriving parents from the path makes that likely rather than unlucky. Every
-// directory tends to hold a README, and "Overview" is a thing several of them
-// will call a page. The claim is taken before anything is published, so the
-// second document fails and the first keeps the page it already had.
-type TitleClaims struct {
 	mu     sync.Mutex
+	titles map[string]string
 	claims map[string]string
 }
 
-// NewTitleClaims returns an empty register.
-func NewTitleClaims() *TitleClaims {
-	return &TitleClaims{claims: map[string]string{}}
-}
-
-// Claim records that file publishes title in space, and reports the document
-// that got there first, if any.
-func (c *TitleClaims) Claim(space, title, file string) (string, bool) {
-	if c == nil || title == "" {
-		return "", false
+// NewHierarchy lays out files under root. Paths are compared cleaned, so "docs",
+// "./docs" and "docs/" name the same root.
+func NewHierarchy(root string, files []string, resolve TitleResolver) *Hierarchy {
+	h := &Hierarchy{
+		root:    cleanPath(root),
+		index:   map[string]string{},
+		resolve: resolve,
+		titles:  map[string]string{},
+		claims:  map[string]string{},
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	key := space + "\x00" + title
-	if previous, taken := c.claims[key]; taken && previous != file {
-		return previous, true
-	}
-
-	c.claims[key] = file
-
-	return "", false
-}
-
-// DirectoryKeys reports the directories a document's derived parents stand for,
-// outermost first, as paths rather than titles.
-//
-// "docs/guides/deep/setup.md" under root "docs" gives docs/guides and
-// docs/guides/deep, which are the pages mark creates on the way to it. They are
-// worth remembering: nothing else does, so when the last document under a
-// directory goes, the page standing for that directory would otherwise be left
-// behind with no one aware it was ever mark's.
-//
-// An index file is not counted as its own directory, having a page of its own
-// under its own name already.
-func DirectoryKeys(root, file string) []string {
-	file = filepath.ToSlash(file)
-	root = strings.TrimSuffix(filepath.ToSlash(root), "/")
-
-	relative := file
-	if root != "" {
-		trimmed, ok := strings.CutPrefix(file, root+"/")
+	for _, file := range files {
+		relative, ok := h.relative(file)
 		if !ok {
-			return nil
+			h.outside = append(h.outside, file)
+			continue
 		}
-		relative = trimmed
+
+		if isIndexFile(relative) {
+			h.index[h.key(filepath.Dir(relative))] = file
+		}
 	}
 
-	directory := filepath.ToSlash(filepath.Dir(relative))
-	if directory == "." {
-		return nil
+	return h
+}
+
+// Outside lists the files of the run that the root does not cover. The path of
+// such a file says nothing about where its page goes, which is worth knowing
+// when the root was given by hand.
+func (h *Hierarchy) Outside() []string {
+	return h.outside
+}
+
+// cleanPath normalises a path for comparison. An empty result means no root.
+func cleanPath(path string) string {
+	if path == "" {
+		return ""
 	}
 
-	segments := strings.Split(directory, "/")
+	cleaned := filepath.ToSlash(filepath.Clean(path))
+	if cleaned == "." {
+		return ""
+	}
 
-	base := filepath.Base(relative)
-	if indexNames[strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))] {
+	return cleaned
+}
+
+// relative reports file's path under the root, or false when the root does not
+// cover it.
+func (h *Hierarchy) relative(file string) (string, bool) {
+	file = cleanPath(file)
+	if h.root == "" {
+		return file, true
+	}
+
+	return strings.CutPrefix(file, h.root+"/")
+}
+
+// key names a root-relative directory the way the run names it -- root and all
+// -- which is what the manifest records and what the resolver is asked about.
+// The root itself is "." relative, and its key is the root.
+func (h *Hierarchy) key(relativeDir string) string {
+	relativeDir = filepath.ToSlash(relativeDir)
+	if relativeDir == "." || relativeDir == "" {
+		return h.root
+	}
+
+	if h.root == "" {
+		return relativeDir
+	}
+
+	return h.root + "/" + relativeDir
+}
+
+// directories names the directories between the root and a document, outermost
+// first, as keys. A document standing for its directory is not under it.
+func (h *Hierarchy) directories(file string) ([]string, bool) {
+	relative, ok := h.relative(file)
+	if !ok {
+		return nil, false
+	}
+
+	dir := filepath.ToSlash(filepath.Dir(relative))
+
+	var segments []string
+	if dir != "." {
+		segments = strings.Split(dir, "/")
+	}
+
+	if isIndexFile(relative) && len(segments) > 0 {
 		segments = segments[:len(segments)-1]
 	}
 
 	keys := make([]string, 0, len(segments))
 	for i := range segments {
-		path := strings.Join(segments[:i+1], "/")
-		if root != "" {
-			path = root + "/" + path
-		}
-		keys = append(keys, path)
+		keys = append(keys, h.key(strings.Join(segments[:i+1], "/")))
 	}
+
+	return keys, true
+}
+
+// Parents reports the titles of the pages a document sits under, outermost
+// first, as its directories imply them. A file outside the root has none.
+func (h *Hierarchy) Parents(file string) ([]string, error) {
+	keys, ok := h.directories(file)
+	if !ok || len(keys) == 0 {
+		return nil, nil
+	}
+
+	parents := make([]string, 0, len(keys))
+	for _, key := range keys {
+		title, err := h.title(key)
+		if err != nil {
+			return nil, err
+		}
+		parents = append(parents, title)
+	}
+
+	return parents, nil
+}
+
+// Title reports what a document standing for its directory is called: the
+// directory's own title, which is also what the documents beneath it look for.
+// Any other document, and one outside the root, gets "" and keeps its own.
+//
+// A document standing for the root itself is titled by the root directory. The
+// only alternative was the filename, which is "Readme" wherever it applies.
+func (h *Hierarchy) Title(file string) (string, error) {
+	relative, ok := h.relative(file)
+	if !ok || !isIndexFile(relative) {
+		return "", nil
+	}
+
+	key := h.key(filepath.Dir(relative))
+	if key == "" {
+		return "", nil
+	}
+
+	return h.title(key)
+}
+
+// Directories reports the directories between the root and a document,
+// outermost first, one for each parent Parents reports. They are the pages
+// mark creates on the way to the document, and worth remembering: nothing else
+// does, so when the last document under a directory goes, the page standing for
+// it would otherwise be left behind with no one aware it was ever mark's.
+func (h *Hierarchy) Directories(file string) []string {
+	keys, _ := h.directories(file)
 
 	return keys
 }
 
-// HasIndexFile reports whether a directory holds a document of its own.
-//
-// One that does owns the directory's page under its own path, and recording the
-// directory as well would leave two entries claiming a single page.
-func HasIndexFile(directory string) bool {
-	for _, name := range []string{"index.md", "README.md", "readme.md", "Index.md"} {
-		if _, err := os.Stat(filepath.Join(directory, name)); err == nil {
-			return true
-		}
-	}
+// HasIndex reports whether a document in the run stands for the directory. Its
+// page is that document's, recorded under the document's own path.
+func (h *Hierarchy) HasIndex(directory string) bool {
+	_, ok := h.index[directory]
 
-	return false
+	return ok
 }
 
-// DirectoryTitles answers what the page standing for a directory is called.
+// title reports what the page standing for a directory is called, asking the
+// resolver once per directory and falling back to the directory's own name.
 //
 // One answer, asked for in two places: by the document that is the directory's
 // page, and by every document underneath it that has to name its parent. Worked
-// out separately they disagreed, and a README that titled itself ended up beside
-// an empty page named after its directory rather than being it.
-type DirectoryTitles struct {
-	resolve func(directory string) (string, error)
-
-	mu     sync.Mutex
-	cached map[string]string
-}
-
-// NewDirectoryTitles returns a register that asks resolve once per directory.
-func NewDirectoryTitles(resolve func(directory string) (string, error)) *DirectoryTitles {
-	return &DirectoryTitles{resolve: resolve, cached: map[string]string{}}
-}
-
-// Title reports what the directory's page is called, falling back to the
-// directory's own name.
-func (d *DirectoryTitles) Title(directory string) (string, error) {
-	name := metadata.TitleFromName(filepath.Base(directory))
-
-	if d == nil || d.resolve == nil {
-		return name, nil
-	}
-
-	d.mu.Lock()
-	if title, ok := d.cached[directory]; ok {
-		d.mu.Unlock()
-
+// out separately they disagreed, and a README that titled itself ended up
+// beside an empty page named after its directory rather than being it.
+func (h *Hierarchy) title(key string) (string, error) {
+	h.mu.Lock()
+	title, ok := h.titles[key]
+	h.mu.Unlock()
+	if ok {
 		return title, nil
 	}
-	d.mu.Unlock()
 
-	title, err := d.resolve(directory)
-	if err != nil {
-		return "", err
+	if h.resolve != nil {
+		var err error
+		title, err = h.resolve(key, h.index[key])
+		if err != nil {
+			return "", err
+		}
 	}
+
 	if title == "" {
-		title = name
+		title = metadata.TitleFromName(filepath.Base(key))
 	}
 
-	d.mu.Lock()
-	d.cached[directory] = title
-	d.mu.Unlock()
+	h.mu.Lock()
+	h.titles[key] = title
+	h.mu.Unlock()
 
 	return title, nil
+}
+
+// Claim records that file publishes title in space, and reports the document
+// that got there first, if any.
+//
+// Confluence allows one page of a given title per space, so two documents
+// wanting the same title want the same page: the second overwrites the first
+// and moves it under its own parents, leaving one page where two were meant
+// and no sign that anything was lost. Deriving parents from the path makes that
+// likely rather than unlucky -- every directory tends to hold a README, and
+// "Overview" is a thing several of them will call a page -- so the claim is
+// taken before anything is published, and the second document fails while the
+// first keeps the page it already had.
+//
+// Titles are compared without regard to case, as Confluence compares them.
+func (h *Hierarchy) Claim(space, title, file string) (string, bool) {
+	if h == nil || title == "" {
+		return "", false
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	key := space + "\x00" + strings.ToLower(title)
+	if previous, taken := h.claims[key]; taken && previous != file {
+		return previous, true
+	}
+
+	h.claims[key] = file
+
+	return "", false
 }

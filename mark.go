@@ -398,15 +398,15 @@ func run(ctx context.Context, config Config) error {
 		}
 	}()
 
-	// Only when the path decides where pages go: that is what turns a title
-	// two documents share from bad luck into the ordinary case.
-	var (
-		titles          *page.TitleClaims
-		directoryTitles *page.DirectoryTitles
-	)
+	// Where the files sit says where the pages go, when asked. Laid out once
+	// from the run's own files, so that every document's parents, a directory's
+	// title and the pages standing for directories all come from the one list.
+	var hierarchy *page.Hierarchy
 	if config.ParentsFromPath {
-		titles = page.NewTitleClaims()
-		directoryTitles = page.NewDirectoryTitles(directoryTitleReader(config))
+		hierarchy, err = newHierarchy(config, files)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Pages that asked for a position among their siblings, collected as they
@@ -422,7 +422,7 @@ func run(ctx context.Context, config Config) error {
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results, titles, directoryTitles)
+		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -491,7 +491,7 @@ func run(ctx context.Context, config Config) error {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results, titles, directoryTitles,
+				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
 			); err != nil {
 				if config.ContinueOnError {
 					log.Error().Err(err).Msgf("processing %s", file)
@@ -606,7 +606,7 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil, nil)
+	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -625,7 +625,7 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 	return target, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, titles *page.TitleClaims, directoryTitles *page.DirectoryTitles) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
@@ -664,7 +664,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		config.TitleFromFilename,
 		file,
 		config.Parents,
-		config.TitleAppendGeneratedHash,
+		// Deferred until the path has had its say about the parents, when it
+		// has one; see below.
+		config.TitleAppendGeneratedHash && hierarchy == nil,
 		config.ContentAppearance,
 		frontMatterEnabled,
 	)
@@ -674,13 +676,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	// Where the file sits says where the page goes, unless the document says
 	// otherwise. An author who wrote a Parent header meant it.
-	pathRoot := config.ParentsFromPathRoot
-	if config.ParentsFromPath && pathRoot == "" {
-		pathRoot = page.GlobRoot(config.Files)
-	}
-
-	if config.ParentsFromPath && meta != nil {
-		derived, title, err := page.PathHierarchy(pathRoot, file, directoryTitles)
+	if hierarchy != nil && meta != nil {
+		derived, err := hierarchy.Parents(file)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -693,13 +690,24 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// filename would have said -- "Readme" on every page that has one. The
 		// title comes from the same place its children's parent does, so the
 		// two cannot disagree.
+		title, err := hierarchy.Title(file)
+		if err != nil {
+			return nil, nil, err
+		}
 		if title != "" {
 			meta.Title = title
+		}
+
+		// Only now, with the parents final: hashed before they were, two
+		// documents of one title in different directories hashed the same,
+		// and the hash was the very thing meant to tell them apart.
+		if config.TitleAppendGeneratedHash {
+			metadata.AppendGeneratedHash(meta)
 		}
 	}
 
 	if meta != nil {
-		if previous, taken := titles.Claim(meta.Space, meta.Title, file); taken {
+		if previous, taken := hierarchy.Claim(meta.Space, meta.Title, file); taken {
 			return nil, nil, fmt.Errorf(
 				"%s already publishes %q in space %q, and a space holds one page of a title: "+
 					"rename one of them, or use --title-append-generated-hash",
@@ -1227,8 +1235,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 
-		if config.ParentsFromPath && !meta.DeclaredParents {
-			if err := recordDirectoryPages(tracker, target, pathRoot, file, meta.Space); err != nil {
+		if hierarchy != nil && !meta.DeclaredParents {
+			if err := recordDirectoryPages(tracker, target, hierarchy, file, meta.Space); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -2260,20 +2268,23 @@ func handleOrphans(
 func recordDirectoryPages(
 	tracker *manifest.Store,
 	target *confluence.PageInfo,
-	root, file, space string,
+	hierarchy *page.Hierarchy,
+	file, space string,
 ) error {
-	keys := page.DirectoryKeys(root, file)
-	if len(keys) == 0 || len(target.Ancestors) < len(keys) {
+	directories := hierarchy.Directories(file)
+	if len(directories) == 0 || len(target.Ancestors) < len(directories) {
 		return nil
 	}
 
-	tail := target.Ancestors[len(target.Ancestors)-len(keys):]
+	// One ancestor per directory, at the end of the chain: whatever --parents
+	// put above them comes first.
+	tail := target.Ancestors[len(target.Ancestors)-len(directories):]
 
-	for i, key := range keys {
+	for i, key := range directories {
 		// A directory holding a document of its own has that document's entry
 		// for its page already, and two entries claiming one page is the thing
 		// the manifest complains about.
-		if page.HasIndexFile(key) {
+		if hierarchy.HasIndex(key) {
 			continue
 		}
 
@@ -2285,6 +2296,35 @@ func recordDirectoryPages(
 	}
 
 	return nil
+}
+
+// newHierarchy lays the run's files out under the root the flags name, or the
+// one the --files pattern implies.
+func newHierarchy(config Config, files []string) (*page.Hierarchy, error) {
+	root := config.ParentsFromPathRoot
+	if root == "" {
+		root = page.GlobRoot(config.Files)
+	}
+
+	hierarchy := page.NewHierarchy(root, files, directoryTitleReader(config))
+
+	// A root given by hand that covers none of the files is a mistake, and
+	// quietly deriving no parents at all is the wrong way to find out. One it
+	// covers only partly is said once per file, since the rest of the run
+	// carries on.
+	outside := hierarchy.Outside()
+	if config.ParentsFromPathRoot != "" && len(files) > 0 && len(outside) == len(files) {
+		return nil, fmt.Errorf(
+			"--parents-from-path-root %q covers none of the files: it has to be a directory the --files pattern lies under",
+			config.ParentsFromPathRoot,
+		)
+	}
+
+	for _, file := range outside {
+		log.Warn().Msgf("%s is outside --parents-from-path-root %q; its path says nothing about its parents", file, root)
+	}
+
+	return hierarchy, nil
 }
 
 // directoryHash gives a directory entry a fingerprint of its own.
@@ -2305,29 +2345,25 @@ func directoryHash(key string) string {
 //
 // The filename is deliberately not consulted. It is "README" in every directory
 // that has one, which is a name for a file rather than for a page.
-func directoryTitleReader(config Config) func(string) (string, error) {
-	return func(directory string) (string, error) {
-		for _, name := range []string{"index.md", "README.md", "readme.md", "Index.md"} {
-			path := filepath.Join(directory, name)
-
-			source, err := os.ReadFile(path)
+func directoryTitleReader(config Config) page.TitleResolver {
+	return func(directory, indexFile string) (string, error) {
+		if indexFile != "" {
+			source, err := os.ReadFile(indexFile)
 			if err != nil {
-				continue
+				return "", fmt.Errorf("unable to read %q: %w", indexFile, err)
 			}
 
 			meta, _, err := metadata.ExtractMeta(
-				source, "", config.TitleFromH1, false, path, nil, false, "",
+				source, "", config.TitleFromH1, false, indexFile, nil, false, "",
 				slices.Contains(config.Features, "frontmatter"),
 			)
 			if err != nil {
-				return "", fmt.Errorf("unable to read the title of %q: %w", path, err)
+				return "", fmt.Errorf("unable to read the title of %q: %w", indexFile, err)
 			}
 
 			if meta != nil && meta.Title != "" {
 				return meta.Title, nil
 			}
-
-			break
 		}
 
 		return directoryTitleFromPagesFile(directory)
