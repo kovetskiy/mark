@@ -1810,6 +1810,34 @@ a warning and not an error, because `--compile-only` has to keep validating
 documents on a machine -- a CI image, typically -- that has no password manager
 on it.
 
+### Scoped API tokens
+
+An Atlassian scoped API token only works through the `api.atlassian.com`
+gateway, so that is what the base URL has to name:
+
+```toml
+base-url = "https://api.atlassian.com/ex/confluence/<cloud-id>"
+```
+
+The gateway checks the token's scopes against the endpoint being called, and
+the older v1 endpoints check content scopes a scoped token is not usually
+minted with. Through the gateway mark therefore reads, creates and updates
+pages with the v2 API, which needs:
+
+| scope | what it is for |
+| --- | --- |
+| `read:space:confluence` | resolving a space key and finding its home page |
+| `read:page:confluence`, `write:page:confluence` | finding, reading, creating and updating pages |
+| `read:attachment:confluence` | listing what is attached to a page |
+| `read:label:confluence` | reading the labels a page carries |
+| `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page, and `--track-pages` |
+
+Uploading attachments, applying `Label` headers, `--preserve-comments`,
+`--on-orphan`, page restrictions, mentions and moving a page among its siblings
+have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
+classic scopes (`read:confluence-content.all`, `write:confluence-content`,
+`read:confluence-user`) alongside the granular ones.
+
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
 **NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.

@@ -205,3 +205,20 @@ func TestIsCloudHost(t *testing.T) {
 		assert.False(t, isCloudHost(host), "%q should not be recognised as Cloud", host)
 	}
 }
+
+func TestIsGatewayURL(t *testing.T) {
+	for _, baseURL := range []string{
+		"https://api.atlassian.com/ex/confluence/0f1e2d3c",
+		"https://API.atlassian.com/ex/confluence/0f1e2d3c/wiki",
+		"http://127.0.0.1:8080/ex/confluence/cloud-id",
+	} {
+		assert.True(t, isGatewayURL(baseURL), baseURL)
+	}
+
+	for _, baseURL := range []string{
+		"https://example.atlassian.net/wiki",
+		"https://confluence.example.com",
+	} {
+		assert.False(t, isGatewayURL(baseURL), baseURL)
+	}
+}

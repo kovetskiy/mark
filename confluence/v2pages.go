@@ -1,0 +1,450 @@
+package confluence
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+)
+
+// This file is the v2 form of the page calls that mark otherwise makes against
+// v1. It exists for Atlassian's scoped API tokens.
+//
+// A scoped token only works through the api.atlassian.com gateway, and the
+// gateway checks the token's granular scopes against the endpoint being
+// called. The v2 endpoints check the page scopes such a token is minted with
+// (read:page:confluence, write:page:confluence); the v1 endpoints check the
+// older content ones, which the token does not have. So /rest/api/content
+// answers
+//
+//	401 {"code":401,"message":"Unauthorized; scope does not match"}
+//
+// while /api/v2/pages answers perfectly well. That is issue #917.
+//
+// Rather than try v1 and fall back on a refusal, the choice is made once from
+// the base URL: through the gateway, the page calls go to v2 and nowhere else.
+// Every other deployment keeps v1 exactly as it was -- v1 answers in one
+// request what v2 needs several for -- and a classic token through the gateway
+// is entitled to v2 as well, so nothing is lost by not asking v1 there.
+
+// isGatewayURL reports whether baseURL points at the api.atlassian.com gateway
+// (https://api.atlassian.com/ex/confluence/<cloudId>), which is the only route
+// a scoped API token can take to Confluence.
+func isGatewayURL(baseURL string) bool {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(parsed.Hostname(), "api.atlassian.com") ||
+		strings.HasPrefix(parsed.Path, "/ex/confluence/")
+}
+
+// maxAncestorDepth bounds the parent walk in ancestorsV2, so that a server
+// answering with a cycle cannot keep it going forever.
+const maxAncestorDepth = 100
+
+// contentV2 is a page or blogpost as v2 returns it: the parent is a single id
+// rather than an ancestor chain, and the body only comes when asked for.
+type contentV2 struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	Title      string `json:"title"`
+	ParentID   string `json:"parentId"`
+	ParentType string `json:"parentType"`
+
+	Version struct {
+		Number  int64  `json:"number"`
+		Message string `json:"message"`
+	} `json:"version"`
+
+	Body struct {
+		Storage struct {
+			Value string `json:"value"`
+		} `json:"storage"`
+	} `json:"body"`
+
+	Links struct {
+		WebUI string `json:"webui"`
+	} `json:"_links"`
+}
+
+// pageInfo converts a v2 object into the shape the rest of mark reads. The type
+// comes from the caller: v2 tells pages and blogposts apart by collection.
+func (content contentV2) pageInfo(pageType, baseURL string) *PageInfo {
+	page := &PageInfo{
+		ID:     content.ID,
+		Title:  content.Title,
+		Type:   pageType,
+		Status: content.Status,
+	}
+	page.Version.Number = content.Version.Number
+	page.Version.Message = content.Version.Message
+	page.Body.Storage.Value = content.Body.Storage.Value
+	page.Links.Full = content.Links.WebUI
+	page.Links.Base = baseURL
+
+	return page
+}
+
+// v2Collection names the v2 collection holding a v1 content type.
+func v2Collection(pageType string) string {
+	if pageType == "blogpost" {
+		return "blogposts"
+	}
+
+	return "pages"
+}
+
+// listV2 collects every result of a cursor-paged v2 listing.
+//
+// A 404 on the first page is read as an empty collection: that is how v2
+// answers for a space or page that has never had a property. Later on, a 404
+// is a failure like any other, since the results already in hand would
+// otherwise be thrown away.
+func listV2[T any](api *API, path string, query map[string]string, describe string) ([]T, error) {
+	var (
+		all    []T
+		cursor string
+	)
+
+	for {
+		var result struct {
+			Results []T `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+
+		page := make(map[string]string, len(query)+1)
+		for key, value := range query {
+			page[key] = value
+		}
+		if cursor != "" {
+			page["cursor"] = cursor
+		}
+
+		request, err := api.v2().Res(path, &result).Get(page)
+		if err != nil {
+			return nil, newTransportError(request, describe, err)
+		}
+
+		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+			return nil, nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		all = append(all, result.Results...)
+
+		next := nextCursor(result.Links.Next)
+		// A server that hands back the cursor it was given would otherwise
+		// keep this loop going for as long as it keeps answering.
+		if next == "" || next == cursor || len(result.Results) == 0 {
+			return all, nil
+		}
+		cursor = next
+	}
+}
+
+// findPageV2 is FindPage and findPageWithStatus against v2: a title within a
+// space, in one status. v2 filters by space id where v1 filters by key.
+func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, error) {
+	spaceID, err := api.GetSpaceID(space)
+	if err != nil {
+		return nil, err
+	}
+
+	query := map[string]string{
+		"space-id": spaceID,
+		"status":   status,
+		"limit":    "250",
+	}
+	if title != "" {
+		query["title"] = title
+	}
+
+	found, err := listV2[contentV2](
+		api, v2Collection(pageType), query,
+		fmt.Sprintf("find page %q in space %s", title, space),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(found) == 0 {
+		return nil, nil
+	}
+
+	page := found[0].pageInfo(pageType, api.BaseURL)
+	if page.Status == "" {
+		page.Status = status
+	}
+
+	page.Ancestors, err = api.ancestorsV2(found[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return page, nil
+}
+
+// readContentV2 reads one object out of a v2 collection.
+func (api *API) readContentV2(collection, id string, withBody bool) (*contentV2, error) {
+	var result contentV2
+
+	query := map[string]string{}
+	if withBody {
+		query["body-format"] = "storage"
+	}
+
+	request, err := api.v2().Res(collection+"/"+id, &result).Get(query)
+	if err != nil {
+		return nil, newTransportError(request, "read "+collection+" "+id, err)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(request)
+	}
+
+	return &result, nil
+}
+
+// getPageByIDV2 is GetPageByIDExpanded against v2.
+//
+// The expand list is honoured: v2 charges for both of the things it names, the
+// body by a wider response and the ancestors by a request per level.
+func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
+	content, err := api.readContentV2("pages", pageID, strings.Contains(expand, "body.storage"))
+	if err != nil {
+		return nil, err
+	}
+
+	page := content.pageInfo("page", api.BaseURL)
+
+	if strings.Contains(expand, "ancestors") {
+		page.Ancestors, err = api.ancestorsV2(*content)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return page, nil
+}
+
+// ancestorsV2 rebuilds the ancestor chain v1 hands over for free: v2 names the
+// immediate parent only, so the chain is walked a level at a time.
+//
+// It has to be rebuilt rather than left empty, because mark decides where a
+// page belongs by comparing its ancestors' titles against the ancestry the
+// document declares, and a page with no ancestors reads as one sitting at the
+// root of its space. A parent that is not a page ends the walk: folders are not
+// ancestors, which is also how the v1 path behaves.
+func (api *API) ancestorsV2(content contentV2) ([]ancestor, error) {
+	var chain []ancestor
+
+	parentID, parentType := content.ParentID, content.ParentType
+	for parentID != "" && (parentType == "" || parentType == "page") && len(chain) < maxAncestorDepth {
+		parent, err := api.readContentV2("pages", parentID, false)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read ancestor %s of page %s: %w", parentID, content.ID, err)
+		}
+
+		chain = append(chain, ancestor{ID: parent.ID, Title: parent.Title})
+		parentID, parentType = parent.ParentID, parent.ParentType
+	}
+
+	// Walked leaf-first; Confluence lists ancestors root-first, and everything
+	// reading the chain takes the last entry as the parent.
+	slices.Reverse(chain)
+
+	return chain, nil
+}
+
+// ancestor is the element type of PageInfo.Ancestors. An alias, so that a slice
+// of it is assignable to that field.
+type ancestor = struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// createPageV2 is CreatePage against v2.
+func (api *API) createPageV2(space, pageType string, parent *PageInfo, title, body string) (*PageInfo, error) {
+	spaceID, err := api.GetSpaceID(space)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]any{
+		"spaceId": spaceID,
+		"status":  "current",
+		"title":   title,
+		"body": map[string]any{
+			"representation": "storage",
+			"value":          body,
+		},
+	}
+
+	// A blogpost has no parent, and naming one is rejected rather than ignored.
+	if parent != nil && pageType != "blogpost" {
+		payload["parentId"] = parent.ID
+	}
+
+	var result contentV2
+
+	request, err := api.v2().Res(v2Collection(pageType), &result).Post(payload)
+	if err != nil {
+		return nil, newTransportError(
+			request, fmt.Sprintf("create page %q in space %s", title, space), err,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
+	}
+
+	return result.pageInfo(pageType, api.BaseURL), nil
+}
+
+// updatePageV2 is UpdatePage against v2.
+//
+// v1 carries the content appearance and the emoji title inside the update, as
+// metadata properties. v2 keeps properties on an endpoint of their own, so they
+// are written after the content, one request each.
+func (api *API) updatePageV2(
+	page *PageInfo,
+	newContent string,
+	minorEdit bool,
+	versionMessage string,
+	nextVersion int64,
+	properties map[string]any,
+) error {
+	payload := map[string]any{
+		"id":     page.ID,
+		"status": "current",
+		"title":  page.Title,
+		"body": map[string]any{
+			"representation": "storage",
+			"value":          newContent,
+		},
+		"version": map[string]any{
+			"number":    nextVersion,
+			"minorEdit": minorEdit,
+			"message":   versionMessage,
+		},
+	}
+
+	// As on v1, the parent goes in only when there is one to name: naming none
+	// is how v2 is asked to move a page to the root of its space.
+	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
+		payload["parentId"] = page.Ancestors[len(page.Ancestors)-1].ID
+	}
+
+	request, err := api.v2().Res(v2Collection(page.Type)+"/"+page.ID, &map[string]any{}).Put(payload)
+	if err != nil {
+		return newTransportError(
+			request, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return newErrorStatusNotOK(request)
+	}
+
+	return api.setPagePropertiesV2(page.ID, properties)
+}
+
+// setPagePropertiesV2 writes the properties v1 would have carried inside the
+// page update: a map of key to {"value": ...}, as UpdatePage builds it.
+func (api *API) setPagePropertiesV2(pageID string, properties map[string]any) error {
+	existing, err := api.listPropertiesV2("pages", pageID)
+	if err != nil {
+		return fmt.Errorf("unable to read properties of page %s: %w", pageID, err)
+	}
+
+	byKey := map[string]*Property{}
+	for i := range existing {
+		byKey[existing[i].Key] = &existing[i]
+	}
+
+	for key, wrapper := range properties {
+		value, err := json.Marshal(wrapper.(map[string]any)["value"])
+		if err != nil {
+			return fmt.Errorf("unable to encode property %q of page %s: %w", key, pageID, err)
+		}
+
+		if err := api.setPropertyV2("pages", pageID, key, value, byKey[key]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// getAttachmentsV2 is GetAttachments against v2. Only the listing has a v2
+// form; uploading stays on v1, which has the only endpoint for it.
+func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
+	type attachmentV2 struct {
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		Comment      string `json:"comment"`
+		DownloadLink string `json:"downloadLink"`
+	}
+
+	found, err := listV2[attachmentV2](
+		api, "pages/"+pageID+"/attachments", map[string]string{"limit": "250"},
+		"list attachments of page "+pageID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	attachments := make([]AttachmentInfo, 0, len(found))
+	for _, attachment := range found {
+		info := AttachmentInfo{Filename: attachment.Title, ID: attachment.ID}
+		// The checksum that tells an unchanged attachment apart lives in the
+		// comment, which v2 keeps at the top level rather than under metadata.
+		info.Metadata.Comment = attachment.Comment
+		// v2 gives the download link without its context; Cloud, which is all
+		// the gateway ever fronts, always serves under /wiki.
+		info.Links.Context = "/wiki"
+		info.Links.Download = attachment.DownloadLink
+
+		attachments = append(attachments, info)
+	}
+
+	return attachments, nil
+}
+
+// getPageLabelsV2 is GetPageLabels against v2, which hands the label id over as
+// a number where v1 makes it a string.
+func (api *API) getPageLabelsV2(pageID, prefix string) (*LabelInfo, error) {
+	type labelV2 struct {
+		ID     json.Number `json:"id"`
+		Name   string      `json:"name"`
+		Prefix string      `json:"prefix"`
+	}
+
+	query := map[string]string{"limit": "250"}
+	if prefix != "" {
+		query["prefix"] = prefix
+	}
+
+	found, err := listV2[labelV2](
+		api, "pages/"+pageID+"/labels", query, "read labels of page "+pageID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := make([]Label, 0, len(found))
+	for _, label := range found {
+		labels = append(labels, Label{ID: label.ID.String(), Name: label.Name, Prefix: label.Prefix})
+	}
+
+	return &LabelInfo{Labels: labels, Size: len(labels)}, nil
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/kovetskiy/gopencils"
 )
@@ -71,55 +72,18 @@ var ErrPropertyUnseen = errors.New("property already exists but was not listed")
 // key. A space with none is not an error: the first run of anything that stores
 // state this way finds nothing, and that is the normal case.
 func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
-	var all []Property
-	var cursor string
+	return api.listPropertiesV2("spaces", spaceID)
+}
 
-	for {
-		var result struct {
-			Results []Property `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		query := map[string]string{"limit": strconv.Itoa(propertyPageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().
-			Res("spaces").
-			Res(spaceID).
-			Res("properties", &result).
-			Get(query)
-		if err != nil {
-			return nil, newTransportError(request, "read properties of space "+spaceID, err)
-		}
-
-		// A space with no properties at all answers 404 rather than an empty
-		// collection, so both shapes have to mean "none set". First page only:
-		// a 404 partway through is a real failure, and reading it as "none"
-		// would throw away the pages already in hand.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return nil, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
-		}
-
-		all = append(all, result.Results...)
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise
-		// keep this loop going for as long as it keeps answering.
-		if next == "" || next == cursor {
-			break
-		}
-		cursor = next
-	}
-
-	return all, nil
+// listPropertiesV2 returns every property stored against one v2 object -- a
+// space or, on the scoped-token path, a page. A 404 means none are set.
+func (api *API) listPropertiesV2(collection, ownerID string) ([]Property, error) {
+	return listV2[Property](
+		api,
+		collection+"/"+ownerID+"/properties",
+		map[string]string{"limit": strconv.Itoa(propertyPageSize)},
+		fmt.Sprintf("read properties of %s %s", strings.TrimSuffix(collection, "s"), ownerID),
+	)
 }
 
 // nextCursor pulls the cursor out of a v2 _links.next.
@@ -145,6 +109,12 @@ func nextCursor(next string) string {
 
 // SetSpaceProperty writes value to a space property, creating it if absent.
 func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2("spaces", spaceID, key, value, existing)
+}
+
+// setPropertyV2 writes value to a property of one v2 object, creating it if
+// absent. existing is the property as listed, or nil.
+func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, existing *Property) error {
 	payload := map[string]any{
 		"key":   key,
 		"value": json.RawMessage(value),
@@ -156,25 +126,26 @@ func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Pr
 		err     error
 	)
 
-	space := api.v2().Res("spaces").Res(spaceID)
+	owner := strings.TrimSuffix(collection, "s") + " " + ownerID
+	object := api.v2().Res(collection).Res(ownerID)
 
 	if existing == nil {
 		// The result pointer goes on the collection resource itself: routing it
 		// through a further Res("") would append a trailing slash, which this
 		// API is not reliably forgiving about.
-		request, err = space.Res("properties", &result).Post(payload)
+		request, err = object.Res("properties", &result).Post(payload)
 	} else {
 		// v2 addresses an update by property id.
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = space.Res("properties").Res(existing.ID, &result).Put(payload)
+		request, err = object.Res("properties").Res(existing.ID, &result).Put(payload)
 	}
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("write property %q of space %s", key, spaceID), err,
+			request, fmt.Sprintf("write property %q of %s", key, owner), err,
 		)
 	}
 
-	return propertyWriteResult(request, key, "space "+spaceID, existing == nil)
+	return propertyWriteResult(request, key, owner, existing == nil)
 }
 
 // ListContentProperties returns every property stored against a page.
