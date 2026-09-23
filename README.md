@@ -1845,6 +1845,7 @@ GLOBAL OPTIONS:
    --no-overwrite                                 Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
    --track-pages                                  Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center, or the page --manifest-page names); nothing is written to the repository. [$MARK_TRACK_PAGES]
    --manifest-page string                         keep the --track-pages mapping as content properties of this page, given by title or id, instead of as space properties. Needs only the right to edit that page where a space property needs space administration, and works with a scoped API token. Requires --track-pages. [$MARK_MANIFEST_PAGE]
+   --manifest-prefix string                       name the --track-pages mapping's properties under this prefix, so that two projects publishing into one space keep manifests of their own instead of sharing, and reporting each other's files as gone. Letters, digits, '_', '-' and dots. Requires --track-pages. (default: "mark.manifest") [$MARK_MANIFEST_PREFIX]
    --preserve-comments                            Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-output string                             image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment). (default: "png") [$MARK_D2_OUTPUT]
    --d2-bundle-remote                             let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default: the request is made by the document rather than by you, to any address it likes. [$MARK_D2_BUNDLE_REMOTE]
@@ -2233,6 +2234,24 @@ independent mirrors can give each its own manifest this way. A title is looked
 up in each space the run publishes to; an id is used as it is, and so suits a
 run confined to one space. The page has to exist already: Mark refuses to start
 rather than quietly keep the mapping somewhere else.
+
+#### Two projects in one space
+
+Two projects publishing into the same space would otherwise read and rewrite
+one mapping between them, and each would report the other's files as gone.
+`--manifest-prefix` names the properties differently for each:
+
+```bash
+mark --track-pages --manifest-prefix mark.manifest.api --files "api/**/*.md"
+mark --track-pages --manifest-prefix mark.manifest.sdk --files "sdk/**/*.md"
+```
+
+Each keeps its own `<prefix>.0` … `<prefix>.15`, `<prefix>.folders` and
+`<prefix>.parents`, and sees nothing of the other's. The prefix is made of
+letters, digits, `_`, `-` and dots, like the default. Changing it on a project
+that has already published starts that project's mapping afresh: the old
+properties stay where they were and nothing reads them, so the next run finds
+every page by title as a run without `--track-pages` would.
 
 It is split over sixteen properties rather than held in one because Confluence
 bounds how large a single property value may be, and one blob would cap how many

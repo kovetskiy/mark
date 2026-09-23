@@ -78,6 +78,7 @@ type Config struct {
 	PreserveComments   bool
 	TrackPages         bool
 	ManifestPage       string
+	ManifestPrefix     string
 	NoOverwrite        bool
 	CheckLinks         []string
 	CheckLinksWarnOnly bool
@@ -270,6 +271,16 @@ func run(ctx context.Context, config Config) error {
 			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
+	if config.ManifestPrefix != "" && config.ManifestPrefix != manifest.PropertyKeyPrefix {
+		if !config.TrackPages {
+			return fmt.Errorf("--manifest-prefix requires --track-pages: " +
+				"it names the page manifest's properties, and nothing else keeps one")
+		}
+		if err := manifest.ValidatePropertyKeyPrefix(config.ManifestPrefix); err != nil {
+			return fmt.Errorf("--manifest-prefix: %w", err)
+		}
+	}
+
 	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
 	if err != nil {
 		return err
@@ -329,6 +340,9 @@ func run(ctx context.Context, config Config) error {
 			tracker = manifest.NewStore(api)
 		}
 		tracker.SetManifestPage(config.ManifestPage)
+		if err := tracker.SetPropertyKeyPrefix(config.ManifestPrefix); err != nil {
+			return fmt.Errorf("--manifest-prefix: %w", err)
+		}
 		if config.PageID != "" {
 			// The mapping is keyed on a source path within a space, and neither
 			// is known when publishing straight to a page id. Better said once

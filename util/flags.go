@@ -349,6 +349,12 @@ var Flags = []cli.Flag{
 		Usage:   "keep the --track-pages mapping as content properties of this page, given by title or id, instead of as space properties. Needs only the right to edit that page where a space property needs space administration, and works with a scoped API token. Requires --track-pages.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MANIFEST_PAGE"), altsrctoml.TOML("manifest-page", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:    "manifest-prefix",
+		Value:   "mark.manifest",
+		Usage:   "name the --track-pages mapping's properties under this prefix, so that two projects publishing into one space keep manifests of their own instead of sharing, and reporting each other's files as gone. Letters, digits, '_', '-' and dots. Requires --track-pages.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MANIFEST_PREFIX"), altsrctoml.TOML("manifest-prefix", altsrc.NewStringPtrSourcer(&filename))),
+	},
 	&cli.BoolFlag{
 		Name:    "preserve-comments",
 		Value:   false,
