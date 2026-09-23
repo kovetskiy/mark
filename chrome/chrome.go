@@ -1,7 +1,9 @@
 // Package chrome centralises the headless Chrome configuration shared by the
-// diagram renderers. Both the d2 and mermaid renderers drive Chrome through
-// chromedp, and they previously configured their allocators independently,
-// which let the two launch paths drift apart.
+// diagram and formula renderers. The d2, mermaid and math renderers all drive
+// Chrome through chromedp -- d2 and math through PNGFromSVG, mermaid through
+// its own engine started with AllocatorOptions -- and they previously
+// configured their allocators independently, which let the launch paths drift
+// apart.
 package chrome
 
 import (

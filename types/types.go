@@ -3,9 +3,9 @@ package types
 type MarkConfig struct {
 	MermaidScale float64
 	// MermaidOutput is the image a diagram is published as, "png" or "svg".
-	// MermaidScale multiplies the pixels of a PNG one, and does not apply to an
-	// SVG. MermaidBundle keeps the diagram's source inside the SVG it is
-	// published as, and applies to nothing else.
+	// MermaidScale multiplies the pixels of a PNG one and the size the page
+	// displays an SVG one at. MermaidBundle keeps the diagram's source inside
+	// the SVG it is published as, and applies to nothing else.
 	MermaidOutput string
 	MermaidBundle bool
 	// D2Output is the image a diagram is published as, "png" or "svg".

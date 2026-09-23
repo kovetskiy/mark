@@ -383,8 +383,8 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 }
 
 // ProcessMermaidSVG publishes a diagram as the SVG it was drawn as: one file at
-// every zoom, and text that stays text. MermaidScale has nothing to multiply
-// here and does not apply.
+// every zoom, and text that stays text. The scale multiplies the size the page
+// displays it at, and leaves the file itself alone.
 func ProcessMermaidSVG(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
 	return processMermaidSVG(title, mermaidDiagram, false, scale)
 }

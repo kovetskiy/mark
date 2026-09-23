@@ -1430,8 +1430,8 @@ A-->B;
 A diagram is published as a PNG by default, scaled by `--mermaid-scale`.
 `--mermaid-output=svg` publishes the drawing itself instead: one file that is
 sharp at any zoom and whose text stays text, on an instance that displays an SVG
-attachment. A scale has nothing to multiply there, so setting one alongside it
-is refused rather than quietly ignored.
+attachment. `--mermaid-scale` applies to either -- it multiplies the pixels of a
+PNG, and the size the page displays an SVG at.
 
 `--mermaid-bundle` keeps the diagram's own source inside that SVG, in its
 `<desc>` element, so what was published can be opened and edited again from the
@@ -1838,8 +1838,8 @@ GLOBAL OPTIONS:
    --username string, -u string                   use specified username for updating Confluence page. [$MARK_USERNAME]
    --password string, -p string                   use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --password-command string                      run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
-   --target-url string, -l string                 edit specified Confluence page. If -l is not specified, file should contain metadata (see above). [$MARK_TARGET_URL]
-   --base-url string, -b string                   base URL for Confluence. Alternative option for base_url config field. [$MARK_BASE_URL]
+   --target-url string, -l string                 edit the Confluence page at this URL. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
+   --base-url string, -b string                   base URL for Confluence. Alternative to the base-url config file key. [$MARK_BASE_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
    --space string                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
@@ -1884,7 +1884,7 @@ username = "your-email"
 password = "password-or-api-key-for-confluence-cloud"
 # Or name a command that prints the token, instead of storing it here:
 # password-command = "pass show confluence/api-token"
-# If you are using Confluence Cloud add the /wiki suffix to base_url
+# If you are using Confluence Cloud add the /wiki suffix to base-url
 base-url = "http://confluence.local"
 title-from-h1 = true
 drop-h1 = true
