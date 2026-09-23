@@ -1,8 +1,10 @@
 package mark
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,4 +229,112 @@ func TestOutputFormatGitHubNamesOrphans(t *testing.T) {
 			assert.True(t, strings.HasSuffix(line, "::"+want), line)
 		})
 	}
+}
+
+// reportedPages runs mark with --output-format json and returns each document's
+// entries in the report, by file name.
+func reportedPages(t *testing.T, config Config) (map[string][]report.Page, error) {
+	t.Helper()
+
+	var out strings.Builder
+	config.OutputFormat = report.FormatJSON
+	config.Output = &out
+	runErr := Run(config)
+
+	var parsed report.Report
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &parsed), "the output must parse as JSON")
+
+	byFile := map[string][]report.Page{}
+	for _, page := range parsed.Pages {
+		name := filepath.Base(page.File)
+		byFile[name] = append(byFile[name], page)
+	}
+
+	return byFile, runErr
+}
+
+// failUpdatesCarrying makes the fake refuse a page update whose body fails
+// says so, reading the body without taking it from the handler.
+func failUpdatesCarrying(server *confluencetest.Server, fails func(body string) bool) {
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method != http.MethodPut || !strings.Contains(r.URL.Path, "/content/") {
+			return 0, "", false
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return 0, "", false
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
+		if !fails(string(body)) {
+			return 0, "", false
+		}
+
+		return http.StatusBadRequest, `{"message":"refused"}`, true
+	})
+}
+
+// TestReportDoesNotCallAFailedUpdatePublished: a document was recorded as
+// published before its body was even checked, let alone sent, so the report's
+// word for it depended on something else recording the failure over it.
+func TestReportDoesNotCallAFailedUpdatePublished(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "good.md", outHeader+"<!-- Title: Good -->\n\nFine.\n")
+	writeFile(t, dir, "bad.md", outHeader+"<!-- Title: Bad -->\n\nRefused.\n")
+
+	failUpdatesCarrying(server, func(body string) bool {
+		return strings.Contains(body, "Refused.")
+	})
+
+	byFile, err := reportedPages(t, Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		ContinueOnError: true,
+	})
+	require.Error(t, err)
+
+	require.Len(t, byFile["bad.md"], 1, "one entry per document")
+	assert.Equal(t, report.StatusFailed, byFile["bad.md"][0].Status)
+	assert.Contains(t, byFile["bad.md"][0].Reason, "unable to update page")
+
+	require.Len(t, byFile["good.md"], 1)
+	assert.Equal(t, report.StatusPublished, byFile["good.md"][0].Status)
+}
+
+// TestReportRecordsAFailureInTheSecondPass: a document published again once the
+// pages it links to exist was reported as published even when that second
+// publish failed, since only the first pass recorded failures.
+func TestReportRecordsAFailureInTheSecondPass(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "a-doc.md", outHeader+"<!-- Title: A -->\n\nSee [B](./b-doc.md).\n")
+	writeFile(t, dir, "b-doc.md", outHeader+"<!-- Title: B -->\n\nB.\n")
+
+	// A is written once in the first pass and again in the second; only the
+	// second is refused.
+	updatesOfA := 0
+	failUpdatesCarrying(server, func(body string) bool {
+		if !strings.Contains(body, `"title":"A"`) {
+			return false
+		}
+		updatesOfA++
+
+		return updatesOfA > 1
+	})
+
+	byFile, err := reportedPages(t, Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+	})
+	require.Error(t, err)
+	require.Equal(t, 2, updatesOfA, "the document should have been published twice")
+
+	require.Len(t, byFile["a-doc.md"], 1, "one entry per document, not published and failed")
+	assert.Equal(t, report.StatusFailed, byFile["a-doc.md"][0].Status)
+	assert.Contains(t, byFile["a-doc.md"][0].Reason, "unable to update page")
+
+	require.Len(t, byFile["b-doc.md"], 1)
+	assert.Equal(t, report.StatusPublished, byFile["b-doc.md"][0].Status)
 }
