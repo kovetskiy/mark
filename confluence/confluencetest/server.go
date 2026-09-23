@@ -100,6 +100,10 @@ type Request struct {
 	Method string
 	Path   string
 	Query  string
+
+	// Header is a copy of the request headers, for tests that assert on what
+	// the client sent rather than on what it asked for.
+	Header http.Header
 }
 
 // FailFunc can fail a request before the fake handles it. Returning handled
@@ -540,6 +544,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		Method: r.Method,
 		Path:   r.URL.Path,
 		Query:  r.URL.RawQuery,
+		Header: r.Header.Clone(),
 	})
 	fail := s.fail
 	s.mu.Unlock()

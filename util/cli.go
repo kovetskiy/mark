@@ -75,9 +75,22 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		cmd.String("target-url"),
 		cmd.String("base-url"),
 		cmd.Bool("compile-only"),
+		cmd.Bool("login"),
 	)
 	if err != nil {
 		return err
+	}
+
+	if cmd.Bool("login") {
+		creds.Cookies, err = ResolveBrowserAuth(ctx, creds.BaseURL, BrowserAuth{
+			CompileOnly:           cmd.Bool("compile-only"),
+			DryRun:                cmd.Bool("dry-run"),
+			CI:                    cmd.Bool("ci"),
+			InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Debug().Msg("config:")
@@ -99,6 +112,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		Password:              creds.Password,
 		PageID:                creds.PageID,
 		InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		Cookies:               creds.Cookies,
 
 		Files: cmd.String("files"),
 

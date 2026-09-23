@@ -53,3 +53,14 @@ func AllocatorOptions() []chromedp.ExecAllocatorOption {
 		chromedp.WSURLReadTimeout(wsURLReadTimeout),
 	}
 }
+
+// HeadfulAllocatorOptions returns the options for a browser the user is meant
+// to see and interact with, which is what --login needs: an SSO login cannot
+// be completed in a window nobody can reach.
+//
+// It is the headless configuration plus the flag that undoes headless, rather
+// than a separate list, so that the two launch paths cannot drift apart --
+// which is the drift this package exists to prevent.
+func HeadfulAllocatorOptions() []chromedp.ExecAllocatorOption {
+	return append(AllocatorOptions(), chromedp.Flag("headless", false))
+}
