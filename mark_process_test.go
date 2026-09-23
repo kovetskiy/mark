@@ -762,6 +762,45 @@ func TestRenamedFolderDuplicatesWithoutTracking(t *testing.T) {
 		"without tracking the renamed folder is not recognised and a second appears")
 }
 
+// TestFolderRepublishWithoutTrackingUpdatesInPlace publishes a document into a
+// folder twice with tracking off. v1 reports no ancestors for a page whose
+// parent is a folder, and the page found by title was read as one somewhere
+// else in the space, so the second run created it again -- which Confluence
+// refuses, a title being unique within a space.
+func TestFolderRepublishWithoutTrackingUpdatesInPlace(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	config := trackingConfig(server, "")
+	config.TrackPages = false
+	config.Files = writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
+
+	require.NoError(t, Run(config))
+	require.NoError(t, Run(config), "the second run must update the page it published")
+
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/api/v2/pages"),
+		"the page is created once and updated after that")
+}
+
+// TestFolderDocumentLeavesHomePageAlone is the limit on the above: the home
+// page has no ancestors either, and a document that happens to share its title
+// must not move it into a folder.
+func TestFolderDocumentLeavesHomePageAlone(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	config := trackingConfig(server, "")
+	config.TrackPages = false
+	config.Files = writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Home"))
+
+	// The create that follows fails on the duplicate title; what matters is
+	// that nothing was moved on the way there.
+	_ = Run(config)
+
+	assert.Zero(t, server.CountRequests(http.MethodPut, "/move/"),
+		"the home page must stay where it is")
+}
+
 // TestDryRunDoesNotRecordFolders covers the other defect the missing endpoints
 // hid: resolving a hierarchy records what it finds, a recording marks the
 // manifest dirty, and Save writes it -- so --dry-run wrote to Confluence.
