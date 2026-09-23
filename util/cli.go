@@ -121,6 +121,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		EditLock:           cmd.Bool("edit-lock"),
 		ChangesOnly:        cmd.Bool("changes-only"),
 		TrackPages:         cmd.Bool("track-pages"),
+		ManifestPage:       cmd.String("manifest-page"),
 		NoOverwrite:        cmd.Bool("no-overwrite"),
 		CheckLinks:         cmd.StringSlice("check-links"),
 		CheckLinksWarnOnly: cmd.Bool("check-links-warn-only"),

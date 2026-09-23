@@ -842,3 +842,77 @@ func TestUnseenPropertyDoesNotAbandonTheRestOfTheSave(t *testing.T) {
 	assert.Equal(t, map[string]string{"a.md": "1"}, manifestPages(t, server, id),
 		"the page shards are written even though the folder mapping collided")
 }
+
+// TestManifestPageOnCloud is issue #1020: creating a space property takes
+// space administration, and a scoped API token is refused it outright, so the
+// mapping can be kept as content properties of a page instead -- through v2,
+// which such a token can reach.
+func TestManifestPageOnCloud(t *testing.T) {
+	store, server := newStore(t)
+	homeID := docsWithHomepage(t, server)
+	handbook := server.AddPage("DOCS", "Team Handbook", "page", homeID)
+	store.SetManifestPage("Team Handbook")
+
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "T", ""))
+	require.NoError(t, store.Save())
+
+	assert.NotNil(t, shardOf(server, handbook.ID, "a.md"), "the manifest lives on the page named")
+	assert.Nil(t, shardOf(server, spaceID(t, server, "DOCS"), "a.md"), "and not on the space")
+	assert.Nil(t, shardOf(server, homeID, "a.md"), "nor on the homepage")
+
+	assert.Equal(t, 0, server.CountRequests("GET", "/rest/api/content/"+handbook.ID+"/property"),
+		"read through v2, which a scoped token can reach")
+	assert.Equal(t, 0, server.CountRequests("POST", "/rest/api/content/"+handbook.ID+"/property"),
+		"written through v2 too")
+
+	next := newStoreOn(t, server)
+	next.SetManifestPage("Team Handbook")
+	entry, ok, err := next.Lookup("DOCS", "a.md")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "1", entry.PageID)
+}
+
+// TestManifestPageByID: an id is used as it is.
+func TestManifestPageByID(t *testing.T) {
+	store, server := newStore(t)
+	homeID := docsWithHomepage(t, server)
+	handbook := server.AddPage("DOCS", "Team Handbook", "page", homeID)
+	store.SetManifestPage(handbook.ID)
+
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "T", ""))
+	require.NoError(t, store.Save())
+
+	assert.NotNil(t, shardOf(server, handbook.ID, "a.md"))
+}
+
+// TestManifestPageMustExist: a page that cannot be found is refused rather
+// than the mapping being quietly kept somewhere else.
+func TestManifestPageMustExist(t *testing.T) {
+	store, server := newStore(t)
+	docsWithHomepage(t, server)
+	store.SetManifestPage("Nowhere")
+
+	err := store.Record("DOCS", "a.md", "1", "T", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--manifest-page")
+	assert.Contains(t, err.Error(), "Nowhere")
+}
+
+// TestManifestPageOnServer: the same choice on Server and Data Center moves the
+// mapping off the homepage, through the v1 endpoint that is all they have.
+func TestManifestPageOnServer(t *testing.T) {
+	store, server, api := serverInstance(t)
+	homeID := docsWithHomepage(t, server)
+	handbook := server.AddPage("DOCS", "Team Handbook", "page", homeID)
+	require.False(t, api.IsCloud())
+	store.SetManifestPage("Team Handbook")
+
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "T", ""))
+	require.NoError(t, store.Save())
+
+	assert.NotNil(t, shardOf(server, handbook.ID, "a.md"), "the manifest lives on the page named")
+	assert.Nil(t, shardOf(server, homeID, "a.md"), "and not on the homepage")
+	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/content/"+handbook.ID+"/property"),
+		"read through v1, which is all Server has")
+}

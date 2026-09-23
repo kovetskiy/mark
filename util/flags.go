@@ -340,8 +340,14 @@ var Flags = []cli.Flag{
 	&cli.BoolFlag{
 		Name:    "track-pages",
 		Value:   false,
-		Usage:   "Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository.",
+		Usage:   "Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center, or the page --manifest-page names); nothing is written to the repository.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TRACK_PAGES"), altsrctoml.TOML("track-pages", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "manifest-page",
+		Value:   "",
+		Usage:   "keep the --track-pages mapping as content properties of this page, given by title or id, instead of as space properties. Needs only the right to edit that page where a space property needs space administration, and works with a scoped API token. Requires --track-pages.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MANIFEST_PAGE"), altsrctoml.TOML("manifest-page", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
 		Name:    "preserve-comments",

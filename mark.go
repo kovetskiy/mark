@@ -77,6 +77,7 @@ type Config struct {
 	ChangesOnly        bool
 	PreserveComments   bool
 	TrackPages         bool
+	ManifestPage       string
 	NoOverwrite        bool
 	CheckLinks         []string
 	CheckLinksWarnOnly bool
@@ -264,6 +265,11 @@ func run(ctx context.Context, config Config) error {
 			"the version mark last published is remembered in the page manifest")
 	}
 
+	if config.ManifestPage != "" && !config.TrackPages {
+		return fmt.Errorf("--manifest-page requires --track-pages: " +
+			"it says where the page manifest is kept, and nothing else keeps one")
+	}
+
 	linkChecks, err := page.ParseLinkChecks(config.CheckLinks)
 	if err != nil {
 		return err
@@ -322,6 +328,7 @@ func run(ctx context.Context, config Config) error {
 		} else {
 			tracker = manifest.NewStore(api)
 		}
+		tracker.SetManifestPage(config.ManifestPage)
 		if config.PageID != "" {
 			// The mapping is keyed on a source path within a space, and neither
 			// is known when publishing straight to a page id. Better said once

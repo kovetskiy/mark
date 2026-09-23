@@ -268,13 +268,30 @@ type Store struct {
 	// the property it was read from -- the version in that property is what a
 	// write has to supersede.
 	spaces map[string]*spaceState
+
+	// manifestPage names a page, by id or by title, to keep the manifest on as
+	// content properties instead of where the deployment would otherwise put
+	// it. Empty means the default backend; see SetManifestPage.
+	manifestPage string
 }
 
+// backend is where a space's manifest lives.
+type backend int
+
+const (
+	// spaceProperties are the Cloud default: properties of the space itself,
+	// addressed by spaceID.
+	spaceProperties backend = iota
+	// pageProperties are content properties of the page contentID names,
+	// written through the v2 API. Cloud, when a page was asked for.
+	pageProperties
+	// contentProperties are the same properties written through v1, which is
+	// all Server and Data Center have.
+	contentProperties
+)
+
 type spaceState struct {
-	// backend is where this space's manifest lives. cloud reads and writes
-	// space properties addressed by spaceID; otherwise they are content
-	// properties on the homepage addressed by contentID.
-	cloud     bool
+	backend   backend
 	spaceID   string
 	contentID string
 
@@ -341,6 +358,24 @@ func NewReadOnlyStore(api *confluence.API) *Store {
 	store := NewStore(api)
 	store.readOnly = true
 	return store
+}
+
+// SetManifestPage keeps the manifest as content properties of one page, named
+// by id or by title, instead of where the deployment would otherwise put it.
+//
+// On Cloud the default is a space property, and creating one takes space
+// administration -- a lot to grant a publisher for the sake of a bookkeeping
+// record, and something a scoped API token is refused outright. A content
+// property needs only the right to edit the page it sits on, which a publisher
+// has by definition, and on Cloud it is written through the v2 API, which a
+// scoped token can reach. A space holding several independent mirrors can also
+// give each its own manifest this way.
+//
+// A title is looked up in each space the run touches; an id is used as it is.
+func (s *Store) SetManifestPage(page string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.manifestPage = strings.TrimSpace(page)
 }
 
 // SetRunFiles tells the store every path this run intends to publish.
@@ -418,13 +453,52 @@ func (state *spaceState) buildIndexes() {
 	}
 }
 
+// resolveManifestPage finds the page the manifest was asked to live on: by id
+// when it looks like one and something is there, by title in the space
+// otherwise. A page that cannot be found is an error rather than a fallback,
+// since the alternative is a manifest quietly kept somewhere else.
+func (s *Store) resolveManifestPage(spaceKey string) (string, error) {
+	if isNumeric(s.manifestPage) {
+		if found, err := s.api.GetPageByID(s.manifestPage); err == nil && found != nil {
+			return found.ID, nil
+		}
+	}
+
+	found, err := s.api.FindPage(spaceKey, s.manifestPage, "page")
+	if err != nil {
+		return "", fmt.Errorf("unable to find the manifest page %q in space %q: %w", s.manifestPage, spaceKey, err)
+	}
+	if found == nil {
+		return "", fmt.Errorf(
+			"--manifest-page names %q, which is not a page in space %q",
+			s.manifestPage, spaceKey,
+		)
+	}
+
+	return found.ID, nil
+}
+
+func isNumeric(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return s != ""
+}
+
 // list fetches every property from whichever backend holds this space's
 // manifest. One request covers all shards.
 func (state *spaceState) list(api *confluence.API) ([]confluence.Property, error) {
-	if state.cloud {
+	switch state.backend {
+	case spaceProperties:
 		return api.ListSpaceProperties(state.spaceID)
+	case pageProperties:
+		return api.ListPageProperties(state.contentID)
+	default:
+		return api.ListContentProperties(state.contentID)
 	}
-	return api.ListContentProperties(state.contentID)
 }
 
 // write stores one shard in whichever backend holds this space's manifest.
@@ -437,10 +511,14 @@ func (state *spaceState) write(api *confluence.API, index int, value []byte) err
 func (state *spaceState) writeProperty(
 	api *confluence.API, key string, value []byte, existing *confluence.Property,
 ) error {
-	if state.cloud {
+	switch state.backend {
+	case spaceProperties:
 		return api.SetSpaceProperty(state.spaceID, key, value, existing)
+	case pageProperties:
+		return api.SetPageProperty(state.contentID, key, value, existing)
+	default:
+		return api.SetContentProperty(state.contentID, key, value, existing)
 	}
-	return api.SetContentProperty(state.contentID, key, value, existing)
 }
 
 // writeMapping stores one of the mappings that covers the whole space -- the
@@ -483,7 +561,6 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 	}
 
 	state := &spaceState{
-		cloud:   s.api.IsCloud(),
 		byPage:  map[string]string{},
 		titles:  map[string]string{},
 		folders: map[string]string{},
@@ -496,12 +573,26 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 	}
 
 	var err error
-	if state.cloud {
+	switch {
+	case s.manifestPage != "":
+		state.contentID, err = s.resolveManifestPage(spaceKey)
+		if err != nil {
+			return nil, err
+		}
+		state.backend = contentProperties
+		if s.api.IsCloud() {
+			state.backend = pageProperties
+		}
+
+	case s.api.IsCloud():
+		state.backend = spaceProperties
 		state.spaceID, err = s.api.GetSpaceID(spaceKey)
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve space %q: %w", spaceKey, err)
 		}
-	} else {
+
+	default:
+		state.backend = contentProperties
 		homepage, err := s.api.FindHomePage(spaceKey)
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve home page of space %q: %w", spaceKey, err)
