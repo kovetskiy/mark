@@ -148,6 +148,22 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 	return propertyWriteResult(request, key, owner, existing == nil)
 }
 
+// ListPageProperties returns every property stored against a page, through the
+// v2 API.
+//
+// The same properties ListContentProperties reads through v1, reached the way
+// a scoped API token can: v2 checks the page scopes such a token is minted
+// with, where v1 refuses it. Cloud only, like the rest of v2.
+func (api *API) ListPageProperties(pageID string) ([]Property, error) {
+	return api.listPropertiesV2("pages", pageID)
+}
+
+// SetPageProperty writes value to a page property through the v2 API, creating
+// it if absent. See ListPageProperties for when this is the API to use.
+func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2("pages", pageID, key, value, existing)
+}
+
 // ListContentProperties returns every property stored against a page.
 //
 // Unlike space properties this is a v1 endpoint, present on Server and Data

@@ -1843,7 +1843,8 @@ GLOBAL OPTIONS:
    --append-labels                                add the labels a document asks for without removing any others, so that labels applied in Confluence survive a publish. Without it, a page ends up with exactly the labels its Label headers name. [$MARK_APPEND_LABELS]
    --check-links-warn-only                        report links that do not resolve without failing the run. Only meaningful together with --check-links. [$MARK_CHECK_LINKS_WARN_ONLY]
    --no-overwrite                                 Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered. [$MARK_NO_OVERWRITE]
-   --track-pages                                  Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center); nothing is written to the repository. [$MARK_TRACK_PAGES]
+   --track-pages                                  Remember which page each file publishes to, so renaming a file or changing its title updates the existing page instead of creating a second one. Stores the mapping in Confluence (a space property on Cloud, a homepage content property on Server/Data Center, or the page --manifest-page names); nothing is written to the repository. [$MARK_TRACK_PAGES]
+   --manifest-page string                         keep the --track-pages mapping as content properties of this page, given by title or id, instead of as space properties. Needs only the right to edit that page where a space property needs space administration, and works with a scoped API token. Requires --track-pages. [$MARK_MANIFEST_PAGE]
    --preserve-comments                            Fetch and preserve inline comments on existing Confluence pages. [$MARK_PRESERVE_COMMENTS]
    --d2-output string                             image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment). (default: "png") [$MARK_D2_OUTPUT]
    --d2-bundle-remote                             let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default: the request is made by the document rather than by you, to any address it likes. [$MARK_D2_BUNDLE_REMOTE]
@@ -1922,7 +1923,8 @@ pages with the v2 API, which needs:
 | `read:page:confluence`, `write:page:confluence` | finding, reading, creating and updating pages |
 | `read:attachment:confluence` | listing what is attached to a page |
 | `read:label:confluence` | reading the labels a page carries |
-| `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page, and `--track-pages` |
+| `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
+| `read:page:confluence`, `write:page:confluence` | `--track-pages` with `--manifest-page`; without it the mapping is a space property, whose creation a scoped token is refused |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
 `--on-orphan`, page restrictions, mentions and moving a page among its siblings
@@ -2210,11 +2212,27 @@ writes nothing at all -- neither to Confluence nor to the mapping.
 | --- | --- |
 | Cloud | space properties `mark.manifest.0` … `mark.manifest.15`, `mark.manifest.folders` and `mark.manifest.parents` |
 | Server / Data Center | content properties of the same names, on the space homepage |
+| `--manifest-page`, anywhere | content properties of the same names, on the page it names |
 
 Space properties exist only in the v2 API, so Server and Data Center anchor to
-the space homepage instead. Cloud keeps the space property rather than using the
-homepage for both, because content properties are a v1 endpoint and v1 is what a
-scoped API token cannot reach.
+the space homepage instead.
+
+Creating a space property on Cloud takes space administration, which is a lot
+to grant a publisher for the sake of a bookkeeping record, and a scoped API
+token is refused it outright. `--manifest-page` keeps the mapping as content
+properties of a page of your choosing instead, given by title or by id:
+
+```bash
+mark --track-pages --manifest-page "Team Handbook" --files "docs/**/*.md"
+```
+
+A content property needs only the right to edit the page it sits on, which a
+publisher has by definition, and on Cloud it is written through the v2 API, so
+a scoped token holding the page scopes is enough. A space holding several
+independent mirrors can give each its own manifest this way. A title is looked
+up in each space the run publishes to; an id is used as it is, and so suits a
+run confined to one space. The page has to exist already: Mark refuses to start
+rather than quietly keep the mapping somewhere else.
 
 It is split over sixteen properties rather than held in one because Confluence
 bounds how large a single property value may be, and one blob would cap how many
