@@ -669,7 +669,11 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		sort.Slice(results, func(i, j int) bool {
 			return results[i]["key"].(string) < results[j]["key"].(string)
 		})
-		writeJSON(w, http.StatusOK, map[string]any{"results": results})
+		links := map[string]any{}
+		if s.SiteBase != "" {
+			links["base"] = s.SiteBase
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
 	case "/folders":
 		s.createFolder(w, r)
 
@@ -1720,7 +1724,7 @@ func (s *Server) contentJSONV2(p *Page, withBody bool) map[string]any {
 			"number":  p.Version,
 			"message": p.Message,
 		},
-		"_links": map[string]any{"webui": "/display/" + p.SpaceKey + "/" + p.ID},
+		"_links": s.pageLinks(p),
 	}
 
 	if withBody {
@@ -1854,6 +1858,9 @@ func (s *Server) listContentV2(w http.ResponseWriter, r *http.Request, pageType 
 	links := map[string]any{}
 	if next != "" {
 		links["next"] = fmt.Sprintf("/api/v2/%ss?cursor=%s", pageType, next)
+	}
+	if s.SiteBase != "" {
+		links["base"] = s.SiteBase
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
 }

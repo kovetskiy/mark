@@ -171,3 +171,43 @@ func TestFindPageOutsideTheGatewayStaysOnV1(t *testing.T) {
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/content"))
 	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/pages"))
 }
+
+// TestGatewayLinksUseTheSiteURL is #1019 on the v2 path: the configured base
+// URL is the gateway, an API host a browser cannot open, so a page's base link
+// has to be the site URL Confluence names in _links.base -- for a page found,
+// one created in the same run, and one read by id.
+func TestGatewayLinksUseTheSiteURL(t *testing.T) {
+	const site = "https://tenant.atlassian.net/wiki"
+	api, server := newGatewayAPI(t)
+	server.SiteBase = site
+	home := server.AddPage("DOCS", "Home", "page", "")
+
+	found, err := api.FindPage("DOCS", "Home", "page")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, site, found.Links.Base)
+
+	created, err := api.CreatePage("DOCS", "page", found, "New", "<p/>")
+	require.NoError(t, err)
+	assert.Equal(t, site, created.Links.Base)
+
+	cached, err := api.FindPage("DOCS", "New", "page")
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+	assert.Equal(t, site, cached.Links.Base, "the cache populated by CreatePage keeps the site URL")
+
+	byID, err := api.GetPageByID(home.ID)
+	require.NoError(t, err)
+	assert.Equal(t, site, byID.Links.Base)
+}
+
+// Without a site URL in the responses, the configured one stands, as on v1.
+func TestGatewayLinksFallBackToTheBaseURL(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.AddPage("DOCS", "Home", "page", "")
+
+	found, err := api.FindPage("DOCS", "Home", "page")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, api.BaseURL, found.Links.Base)
+}
