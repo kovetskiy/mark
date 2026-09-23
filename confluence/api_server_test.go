@@ -413,6 +413,37 @@ func TestCreateAttachment(t *testing.T) {
 	assert.Equal(t, "mark:checksum: abc", stored[0].Comment)
 }
 
+// TestAttachmentUploadsAreMinorEdits: without minorEdit Cloud announces every
+// uploaded file to the page's watchers, one notification per attachment on top
+// of the page's own, and --minor-edit could not silence them.
+func TestAttachmentUploadsAreMinorEdits(t *testing.T) {
+	api, server := newAPI(t)
+	page := server.AddPage("DOCS", "Attach", "page", "")
+
+	_, err := api.CreateAttachment(
+		page.ID, "new.png", "mark:checksum: abc", bytes.NewReader([]byte("v1")),
+	)
+	require.NoError(t, err)
+
+	// Put there by hand, so no upload of mark's has set the field on it yet.
+	existing := server.AddAttachment(page.ID, "existing.png", "mark:checksum: old")
+
+	_, err = api.UpdateAttachment(
+		page.ID, existing.ID, "existing.png", "mark:checksum: def", bytes.NewReader([]byte("v2")),
+	)
+	require.NoError(t, err)
+
+	stored := map[string]confluencetest.Attachment{}
+	for _, a := range server.Attachments(page.ID) {
+		stored[a.Filename] = a
+	}
+	require.Len(t, stored, 2)
+
+	assert.Equal(t, "true", stored["new.png"].MinorEdit, "on create")
+	assert.Equal(t, "mark:checksum: def", stored["existing.png"].Comment)
+	assert.Equal(t, "true", stored["existing.png"].MinorEdit, "on update")
+}
+
 // TestGetSpaceID pins the v1-first behaviour GetSpaceID has always claimed.
 //
 // The v1 struct used to decode `id` as a string while Confluence v1 returns a

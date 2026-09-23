@@ -61,6 +61,9 @@ type Attachment struct {
 	PageID   string
 	Filename string
 	Comment  string
+	// MinorEdit is the minorEdit form field of the latest upload, exactly as
+	// sent: empty when the field was missing.
+	MinorEdit string
 }
 
 // InlineComment is a comment returned by the child/comment endpoint.
@@ -1421,7 +1424,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 		if !checkXSRF(w, r) {
 			return
 		}
-		filename, comment, ok := parseMultipartAttachment(w, r)
+		filename, comment, minorEdit, ok := parseMultipartAttachment(w, r)
 		if !ok {
 			return
 		}
@@ -1437,7 +1440,9 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 				return
 			}
 		}
-		a := &Attachment{ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment}
+		a := &Attachment{
+			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit,
+		}
 		s.attachments = append(s.attachments, a)
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -1469,7 +1474,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 	if !checkXSRF(w, r) {
 		return
 	}
-	_, comment, ok := parseMultipartAttachment(w, r)
+	_, comment, minorEdit, ok := parseMultipartAttachment(w, r)
 	if !ok {
 		return
 	}
@@ -1484,6 +1489,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 	}
 	if found != nil {
 		found.Comment = comment
+		found.MinorEdit = minorEdit
 	}
 	s.mu.Unlock()
 
@@ -1515,21 +1521,22 @@ func checkXSRF(w http.ResponseWriter, r *http.Request) bool {
 
 // parseMultipartAttachment reads the file part and the comment of an upload,
 // and answers 400 itself when there is no file in it.
-func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename, comment string, ok bool) {
+func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename, comment, minorEdit string, ok bool) {
 	// Test fixtures are small; a tight cap keeps a runaway test from buffering
 	// to disk. Uploads larger than this are not something the fake supports.
 	const maxAttachmentBytes = 8 << 20
 	if err := r.ParseMultipartForm(maxAttachmentBytes); err == nil { //nolint:gosec // G120: bounded above, test-only fake
 		comment = r.FormValue("comment")
+		minorEdit = r.FormValue("minorEdit")
 		if headers := r.MultipartForm.File["file"]; len(headers) > 0 {
 			filename = headers[0].Filename
 		}
 	}
 	if filename == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "no file in the upload"})
-		return "", "", false
+		return "", "", "", false
 	}
-	return filename, comment, true
+	return filename, comment, minorEdit, true
 }
 
 // childPages lists a page's children in the order the tree shows them, which

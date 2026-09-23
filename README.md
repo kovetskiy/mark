@@ -1946,6 +1946,10 @@ classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 
 **NOTE**: Labels aren't supported when using `minor-edit`!
 
+**NOTE**: Attachments are always uploaded as minor edits, whether or not
+`--minor-edit` is set. Watchers are notified about the page update that carries
+them, which `--minor-edit` controls, rather than once more for every file.
+
 **NOTE**: See [Preserving Inline Comments](#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.
 
 **NOTE**: The system specific locations are described in here:

@@ -1031,6 +1031,18 @@ func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error)
 		return nil, fmt.Errorf("unable to write comment in form-field: %w", err)
 	}
 
+	// Always a minor edit. Without the field Cloud treats every upload as a
+	// change worth announcing, so a run that touched five diagrams sent
+	// watchers five notifications on top of the page's own -- and --minor-edit
+	// silenced only the page's. The page update is the change a watcher is
+	// told about, and --minor-edit is what decides whether they are; the files
+	// it carries are part of that change, not separate news. Server and Data
+	// Center document the same field.
+	err = writer.WriteField("minorEdit", "true")
+	if err != nil {
+		return nil, fmt.Errorf("unable to write minorEdit in form-field: %w", err)
+	}
+
 	err = writer.Close()
 	if err != nil {
 		return nil, fmt.Errorf("unable to close form-writer: %w", err)
