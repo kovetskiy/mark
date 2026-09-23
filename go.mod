@@ -1,10 +1,10 @@
 module github.com/kovetskiy/mark/v16
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/bmatcuk/doublestar/v4 v4.10.1
+	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
 	github.com/d2lang/d2 v0.9.0
@@ -16,7 +16,7 @@ require (
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
-	github.com/urfave/cli/v3 v3.12.0
+	github.com/urfave/cli/v3 v3.13.0
 	github.com/yuin/goldmark v1.8.6
 	github.com/yuin/goldmark-emoji v1.0.6
 	go.abhg.dev/goldmark/frontmatter v0.3.0
