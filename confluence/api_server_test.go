@@ -237,8 +237,8 @@ func TestGetAttachmentsPaginates(t *testing.T) {
 	attachments, err := api.GetAttachments(page.ID)
 	require.NoError(t, err)
 	assert.Len(t, attachments, total)
-	assert.Equal(t, 3, server.CountRequests("GET", "/child/attachment"),
-		"250 attachments at a page size of 100 should take three requests")
+	assert.Equal(t, 5, server.CountRequests("GET", "/child/attachment"),
+		"250 attachments, served 50 at a time however many are asked for, take five requests")
 }
 
 func TestGetPageLabelsPaginates(t *testing.T) {
@@ -299,7 +299,8 @@ func TestGetInlineCommentsPaginates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, comments)
 	assert.Len(t, comments.Results, total)
-	assert.Equal(t, 2, server.CountRequests("GET", "/child/comment"))
+	assert.Equal(t, 3, server.CountRequests("GET", "/child/comment"),
+		"150 comments, served 50 at a time however many are asked for, take three requests")
 }
 
 func TestFindHomePage(t *testing.T) {

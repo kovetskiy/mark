@@ -39,8 +39,8 @@ func TestListContentPropertiesReadsEveryPage(t *testing.T) {
 	}
 	assert.True(t, seen["key-249"], "the last property must survive the walk")
 
-	assert.Equal(t, 3, server.CountRequests("GET", "/content/"+page.ID+"/property"),
-		"250 properties at 100 per page is three requests")
+	assert.Equal(t, 5, server.CountRequests("GET", "/content/"+page.ID+"/property"),
+		"250 properties, served 50 at a time however many are asked for, is five requests")
 }
 
 // TestListSpacePropertiesFollowsTheCursor is the v2 half of the same bug. v2
