@@ -99,6 +99,13 @@ jobs:
   # Build and push Dockerimage
   ci-docker-build:
     name: ci-docker-build
+    # A tag publishes images, so it must not do so ahead of, or despite, a
+    # failing lint, test or build.
+    needs:
+    - ci-go-lint
+    - ci-markdown-lint
+    - ci-unit-tests
+    - ci-build
     runs-on: ubuntu-latest
     steps:
     - name: Set up QEMU
@@ -127,6 +134,8 @@ jobs:
       with:
         push: true
         platforms: linux/amd64,linux/arm64
+        # Only a release tag moves :latest; a pre-release (v1.2.3-rc.1) is
+        # pushed under its own tag alone. The empty line it leaves is ignored.
         tags: |
            kovetskiy/mark:${{ github.ref_name }}
-           kovetskiy/mark:latest
+           ${{ !contains(github.ref_name, '-') && 'kovetskiy/mark:latest' || '' }}
