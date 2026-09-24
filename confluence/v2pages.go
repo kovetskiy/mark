@@ -55,6 +55,7 @@ type contentV2 struct {
 	Title      string `json:"title"`
 	ParentID   string `json:"parentId"`
 	ParentType string `json:"parentType"`
+	SpaceID    string `json:"spaceId"`
 
 	Version struct {
 		Number  int64  `json:"number"`
@@ -344,7 +345,34 @@ func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
 		}
 	}
 
+	// v2 names the space by id; the key, which is what v1 expands and what a
+	// document names, costs a read of the space.
+	if strings.Contains(expand, "space") && content.SpaceID != "" {
+		page.Space.Key, err = api.spaceKeyV2(content.SpaceID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return page, nil
+}
+
+// spaceKeyV2 is the key of the space with this v2 id.
+func (api *API) spaceKeyV2(spaceID string) (string, error) {
+	var result struct {
+		Key string `json:"key"`
+	}
+
+	request, err := api.v2().Res("spaces/"+spaceID, &result).Get()
+	if err != nil {
+		return "", newTransportError(request, "read space "+spaceID, err)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return "", newErrorStatusNotOK(request)
+	}
+
+	return result.Key, nil
 }
 
 // ancestorsV2 rebuilds the ancestor chain v1 hands over for free: v2 names the

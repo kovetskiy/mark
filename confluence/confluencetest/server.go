@@ -14,6 +14,7 @@ package confluencetest
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -69,6 +70,8 @@ type Attachment struct {
 	// MinorEdit is the minorEdit form field of the latest upload, exactly as
 	// sent: empty when the field was missing.
 	MinorEdit string
+	// Data is the content of the latest upload, served at the download link.
+	Data []byte
 }
 
 // InlineComment is a comment returned by the child/comment endpoint.
@@ -351,6 +354,16 @@ func (s *Server) AddAttachment(pageID, filename, comment string) *Attachment {
 	return a
 }
 
+// AddAttachmentData attaches a file with content to a page, which its
+// download link then serves.
+func (s *Server) AddAttachmentData(pageID, filename string, data []byte) *Attachment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a := &Attachment{ID: s.newID(), PageID: pageID, Filename: filename, Data: append([]byte(nil), data...)}
+	s.attachments = append(s.attachments, a)
+	return a
+}
+
 // AddComment adds an inline comment to a page.
 func (s *Server) AddComment(pageID string, c InlineComment) {
 	s.mu.Lock()
@@ -526,6 +539,11 @@ func (s *Server) pageJSON(p *Page, expand map[string]bool) map[string]any {
 	} else {
 		expandable["body"] = ""
 	}
+	if expand["space"] {
+		out["space"] = map[string]any{"key": p.SpaceKey}
+	} else {
+		expandable["space"] = ""
+	}
 	if len(expandable) > 0 {
 		out["_expandable"] = expandable
 	}
@@ -648,6 +666,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if rest, ok := strings.CutPrefix(path, "/ex/confluence/"); ok {
 		_, rest, _ = strings.Cut(rest, "/")
 		path = "/" + rest
+	}
+
+	// Attachments are downloaded from the site rather than the API, under the
+	// context the listings name.
+	if rest, ok := strings.CutPrefix(strings.TrimPrefix(path, "/wiki"), "/download/attachments/"); ok {
+		s.download(w, r, rest)
+		return
 	}
 
 	switch {
@@ -844,9 +869,32 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 				s.spaceProperties(w, r, "spaces", spaceID, strings.TrimPrefix(propertyID, "/"))
 				return
 			}
+			if sub == "" && r.Method == http.MethodGet {
+				s.spaceV2ByID(w, spaceID)
+				return
+			}
 		}
 		http.NotFound(w, r)
 	}
+}
+
+// spaceV2ByID serves GET /spaces/{id}, which names a space by its v2 id.
+func (s *Server) spaceV2ByID(w http.ResponseWriter, spaceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, sp := range s.spaces {
+		if sp.ID == spaceID {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"id":         sp.ID,
+				"key":        sp.Key,
+				"homepageId": sp.HomepageID,
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with id " + spaceID})
 }
 
 // isContentOfType reports whether id names content of the given type.
@@ -1446,7 +1494,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 		if !checkXSRF(w, r) {
 			return
 		}
-		filename, comment, minorEdit, ok := parseMultipartAttachment(w, r)
+		filename, comment, minorEdit, data, ok := parseMultipartAttachment(w, r)
 		if !ok {
 			return
 		}
@@ -1463,7 +1511,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 			}
 		}
 		a := &Attachment{
-			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit,
+			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit, Data: data,
 		}
 		s.attachments = append(s.attachments, a)
 		s.mu.Unlock()
@@ -1496,7 +1544,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 	if !checkXSRF(w, r) {
 		return
 	}
-	_, comment, minorEdit, ok := parseMultipartAttachment(w, r)
+	_, comment, minorEdit, data, ok := parseMultipartAttachment(w, r)
 	if !ok {
 		return
 	}
@@ -1512,6 +1560,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 	if found != nil {
 		found.Comment = comment
 		found.MinorEdit = minorEdit
+		found.Data = data
 	}
 	s.mu.Unlock()
 
@@ -1543,7 +1592,7 @@ func checkXSRF(w http.ResponseWriter, r *http.Request) bool {
 
 // parseMultipartAttachment reads the file part and the comment of an upload,
 // and answers 400 itself when there is no file in it.
-func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename, comment, minorEdit string, ok bool) {
+func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename, comment, minorEdit string, data []byte, ok bool) {
 	// Test fixtures are small; a tight cap keeps a runaway test from buffering
 	// to disk. Uploads larger than this are not something the fake supports.
 	const maxAttachmentBytes = 8 << 20
@@ -1552,13 +1601,46 @@ func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename,
 		minorEdit = r.FormValue("minorEdit")
 		if headers := r.MultipartForm.File["file"]; len(headers) > 0 {
 			filename = headers[0].Filename
+			if file, err := headers[0].Open(); err == nil {
+				data, _ = io.ReadAll(file)
+				_ = file.Close()
+			}
 		}
 	}
 	if filename == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "no file in the upload"})
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
-	return filename, comment, minorEdit, true
+	return filename, comment, minorEdit, data, true
+}
+
+// download serves an attachment's content at the download link the listings
+// name, under the context and without it.
+func (s *Server) download(w http.ResponseWriter, r *http.Request, rest string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageID, escaped, _ := strings.Cut(rest, "/")
+	filename, err := url.PathUnescape(escaped)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, a := range s.attachments {
+		if a.PageID == pageID && a.Filename == filename {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(a.Data)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
 }
 
 // childPages lists a page's children in the order the tree shows them, which
