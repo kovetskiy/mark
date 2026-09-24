@@ -538,7 +538,17 @@ func (r *Resolver) Resolve(target string) string {
 
 	link, ok := r.links[target]
 	if !ok {
-		return ""
+		// A destination is a URL, so a file declared as a#b.png is linked as
+		// a%23b.png. The spelling as written wins, which keeps a file really
+		// called my%20file.png reachable.
+		decoded, escaped := DecodeDestination(target)
+		if !escaped {
+			return ""
+		}
+		if link, ok = r.links[decoded]; !ok {
+			return ""
+		}
+		target = decoded
 	}
 
 	r.used[strings.TrimPrefix(target, "attachment://")] = true
@@ -583,6 +593,12 @@ func GetChecksum(reader io.Reader) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+// parseAttachmentLink turns an attachment's download link into the URL a page
+// links to.
+//
+// The path stays escaped. Confluence percent-encodes the filename in the
+// link, and decoding it turned an attachment called a#b.png into a link to
+// a, with b.png as its fragment; a?b.png and a%b.png broke the same way.
 func parseAttachmentLink(attachLink string) string {
 	uri, err := url.ParseRequestURI(attachLink)
 	if err != nil {
@@ -590,8 +606,28 @@ func parseAttachmentLink(attachLink string) string {
 	} else {
 		query := uri.Query().Encode()
 		if query == "" {
-			return uri.Path
+			return uri.EscapedPath()
 		}
-		return uri.Path + "?" + query
+		return uri.EscapedPath() + "?" + query
 	}
+}
+
+// DecodeDestination reads a link or image destination as the URL path it is,
+// and reports the file it names when that differs from what was written.
+//
+// A local file called a#b.png has to be written a%23b.png, since a bare "#"
+// starts a fragment; "my%20file.png" is the usual spelling of "my file.png".
+// Callers try the destination as written first and fall back to this, so a
+// file whose name really contains "%20" still resolves to itself.
+func DecodeDestination(destination string) (string, bool) {
+	if !strings.Contains(destination, "%") {
+		return "", false
+	}
+
+	decoded, err := url.PathUnescape(destination)
+	if err != nil || decoded == destination {
+		return "", false
+	}
+
+	return decoded, true
 }

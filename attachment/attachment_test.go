@@ -115,6 +115,13 @@ func TestParseAttachmentLink(t *testing.T) {
 			expected:   "/download/attachments/12345/foo.png?modificationDate=123&version=1",
 		},
 		{
+			// Confluence encodes the filename in the link; decoding it made
+			// the # start a fragment and the ? a second query string.
+			name:       "escaped filename stays escaped",
+			attachLink: "/wiki/download/attachments/12345/a%23b%3Fc%25d%20e.png?version=1",
+			expected:   "/wiki/download/attachments/12345/a%23b%3Fc%25d%20e.png?version=1",
+		},
+		{
 			name:       "invalid URI with invalid port (triggers ParseRequestURI error)",
 			attachLink: "http://[::1]:foo/bar?version=1&modificationDate=123",
 			expected:   "http://[::1]:foo/bar?version=1&modificationDate=123",
@@ -173,6 +180,51 @@ func TestResolver(t *testing.T) {
 		assert.Equal(t, "/dl/1/logo.png?v=1", resolver.Resolve("logo.png"))
 		assert.Equal(t, "/dl/1/sub_logo.png?v=1", resolver.Resolve("sub/logo.png"))
 	})
+}
+
+// TestResolverEscapedDestination: a destination is a URL, so a file declared
+// as a#b.png is linked as a%23b.png, while a declaration that is itself
+// spelled with a percent sign still matches as written.
+func TestResolverEscapedDestination(t *testing.T) {
+	attachments := []Attachment{
+		{Replace: "a#b.png", Link: "/dl/1/a%23b.png?v=1"},
+		{Replace: "my%20file.png", Link: "/dl/1/my%2520file.png?v=1"},
+		{Replace: "my file.png", Link: "/dl/1/my%20file.png?v=1"},
+	}
+	resolver := NewResolver(attachments)
+
+	assert.Equal(t, "/dl/1/a%23b.png?v=1", resolver.Resolve("a%23b.png"))
+	assert.Equal(t, "/dl/1/a%23b.png?v=1", resolver.Resolve("attachment://a%23b.png"))
+	assert.Equal(t, "/dl/1/my%2520file.png?v=1", resolver.Resolve("my%20file.png"),
+		"the spelling as written wins over the decoded one")
+	assert.Empty(t, resolver.Resolve("c%23d.png"))
+	assert.Empty(t, resolver.Resolve("bad%zzescape.png"))
+
+	assert.Equal(t, []string{"my file.png"}, resolver.Unused(attachments),
+		"an attachment reached through its escaped spelling counts as used")
+}
+
+func TestDecodeDestination(t *testing.T) {
+	tests := []struct {
+		destination string
+		decoded     string
+		ok          bool
+	}{
+		{"a%23b.png", "a#b.png", true},
+		{"a%3Fb.png", "a?b.png", true},
+		{"100%25.png", "100%.png", true},
+		{"my%20file.png", "my file.png", true},
+		{"plain.png", "", false},
+		{"bad%zz.png", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.destination, func(t *testing.T) {
+			decoded, ok := DecodeDestination(tt.destination)
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.decoded, decoded)
+		})
+	}
 }
 
 func TestResolverUnused(t *testing.T) {
