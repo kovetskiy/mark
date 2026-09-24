@@ -87,10 +87,11 @@ func parseCommandLine(t *testing.T, args ...string) *cli.Command {
 	t.Helper()
 
 	var parsed *cli.Command
-	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
+	capture := func(_ context.Context, c *cli.Command) error {
 		parsed = c
 		return nil
-	})
+	}
+	cmd := buildCommand("test", capture, capture)
 
 	require.NoError(t, cmd.Run(context.Background(), args))
 	require.NotNil(t, parsed)

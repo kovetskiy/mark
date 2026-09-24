@@ -36,7 +36,7 @@ func TestFeaturesSubprocess(t *testing.T) {
 	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
 		parsed = c
 		return nil
-	})
+	}, nil)
 
 	if err := cmd.Run(context.Background(), append([]string{"mark", "publish"}, args...)); err != nil {
 		result.Err = err.Error()

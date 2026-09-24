@@ -455,6 +455,91 @@ func onRoot[T, C any, VC cli.ValueCreator[T, C]](flag *cli.FlagBase[T, C, VC], c
 	}
 }
 
+// exportFlags are the flags of "mark export". Like the publish flags, each
+// reads the configuration file the "config" flag names.
+//
+// "space" is the same setting as publish's: the space a page is looked up in by
+// title. A configuration file that names one for publishing therefore serves
+// both, and --page-id and --url, which say which space the page is in
+// themselves, leave it alone.
+func exportFlags(config *configFile) []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:    "page-id",
+			Value:   "",
+			Usage:   "export the page or blog post with this id.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_ID"), config.value("page-id")),
+		},
+		&cli.StringFlag{
+			Name:    "url",
+			Value:   "",
+			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_URL"), config.value("url")),
+		},
+		&cli.StringFlag{
+			Name:    "space",
+			Value:   "",
+			Usage:   "the space key --title looks the page up in.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), config.value("space")),
+		},
+		&cli.StringFlag{
+			Name:    "title",
+			Value:   "",
+			Usage:   "export the page or blog post with this title in --space.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE"), config.value("title")),
+		},
+		&cli.StringFlag{
+			Name:      "output",
+			Aliases:   []string{"o"},
+			Value:     "",
+			Usage:     "write the Markdown to this file rather than to standard output (\"-\").",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_OUTPUT"), config.value("output")),
+		},
+		&cli.StringFlag{
+			Name:      "attachments-dir",
+			Value:     "",
+			Usage:     "write the attachments the page shows or links to into this directory. Defaults to the directory of --output, or the working directory; a directory of their own changes their names when the document is published back, since mark names an attachment after its path.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_ATTACHMENTS_DIR"), config.value("attachments-dir")),
+		},
+		&cli.BoolFlag{
+			Name:    "overwrite",
+			Value:   false,
+			Usage:   "replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OVERWRITE"), config.value("overwrite")),
+		},
+		&cli.BoolFlag{
+			Name:    "no-attachments",
+			Value:   false,
+			Usage:   "write the Markdown only, and download no attachments. The document still refers to them where they would have been written.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_NO_ATTACHMENTS"), config.value("no-attachments")),
+		},
+	}
+}
+
+// CheckExportFlags validates the flags of "mark export": the page has to be
+// named exactly one way.
+func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Context, error) {
+	var named []string
+	for _, name := range []string{"page-id", "url", "title"} {
+		if command.String(name) != "" {
+			named = append(named, "--"+name)
+		}
+	}
+
+	switch {
+	case len(named) == 0:
+		return ctx, errors.New("name the page to export with --page-id, --url, or --space and --title")
+	case len(named) > 1:
+		return ctx, fmt.Errorf("%s each name a page; give only one of them", strings.Join(named, " and "))
+	case command.String("title") != "" && command.String("space") == "":
+		return ctx, errors.New("--title needs --space: a title names a page only within a space")
+	}
+
+	return ctx, nil
+}
+
 // CheckConfigFile reports a configuration file the command's "config" flag
 // names that cannot be used: one that does not parse, or a path somebody gave
 // that does not exist.
