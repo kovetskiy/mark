@@ -1877,6 +1877,9 @@ publishes them to Confluence:
 mark publish -u user -p token -b https://example.atlassian.net/wiki -f "docs/**/*.md"
 ```
 
+and `mark export` writes a Confluence page out as markdown that publishes back
+to it; see [Exporting a page](#exporting-a-page).
+
 The global options -- the configuration file, how to reach and authenticate
 against Confluence, and logging -- belong to every command, and can be given
 before or after its name: `mark -c ci.toml publish -f doc.md` and
@@ -1898,6 +1901,7 @@ DESCRIPTION:
 
 COMMANDS:
    publish  publish markdown files to Confluence
+   export   export a Confluence page to a markdown file
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
@@ -1973,6 +1977,40 @@ OPTIONS:
    --attach-referenced                            upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way. [$MARK_ATTACH_REFERENCED]
    --image-align string                           set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
    --help, -h                                     show help
+
+GLOBAL OPTIONS:
+   --config string, -c string    use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
+   --username string, -u string  use specified username to authenticate with Confluence. [$MARK_USERNAME]
+   --password string, -p string  use specified token to authenticate with Confluence. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
+   --password-command string     run the specified command and use the first line of its stdout as the token to authenticate with Confluence. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
+   --base-url string, -b string  base URL for Confluence. Alternative to the base-url config file key. [$MARK_BASE_URL]
+   --insecure-skip-tls-verify    skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
+   --log-level string            set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
+   --color string                display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]
+```
+
+### mark export
+
+```text
+NAME:
+   mark export - export a Confluence page to a markdown file
+
+USAGE:
+   mark export [options]
+
+DESCRIPTION:
+   Write the page --page-id, --url or --space and --title names as markdown, with the metadata headers that publish it back to the same page, and download the attachments it shows or links to.
+
+OPTIONS:
+   --page-id string            export the page or blog post with this id. [$MARK_PAGE_ID]
+   --url string                export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set. [$MARK_URL]
+   --space string              the space key --title looks the page up in. [$MARK_SPACE]
+   --title string              export the page or blog post with this title in --space. [$MARK_TITLE]
+   --output string, -o string  write the Markdown to this file rather than to standard output ("-"). [$MARK_OUTPUT]
+   --attachments-dir string    write the attachments the page shows or links to into this directory. Defaults to the directory of --output, or the working directory; a directory of their own changes their names when the document is published back, since mark names an attachment after its path. [$MARK_ATTACHMENTS_DIR]
+   --overwrite                 replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything. [$MARK_OVERWRITE]
+   --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
+   --help, -h                  show help
 
 GLOBAL OPTIONS:
    --config string, -c string    use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
@@ -2086,6 +2124,125 @@ Currently, these are:
 On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html if non-empty, else $HOME/.config. On Darwin, it returns $HOME/Library/Application Support. On Windows, it returns %AppData%. On Plan 9, it returns $home/lib.
 Where none of these is set, as in a minimal container or a systemd unit, there is
 no default file, and one is read only if `--config` or `MARK_CONFIG` names it.
+
+## Exporting a page
+
+`mark export` goes the other way: it reads a page from Confluence and writes it
+as a Markdown document that `mark publish` publishes back to the same page.
+Use it to move a page that was written in Confluence into a repository, or to
+see how mark would write something.
+
+```bash
+# By id, into a file; the attachments the page shows are written beside it.
+mark export -b https://example.atlassian.net/wiki --page-id 123456 -o docs/release.md
+
+# By the address a browser shows, which also gives the base URL.
+mark export --url https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Release -o docs/release.md
+
+# By space and title, to standard output.
+mark export -b https://confluence.example.com --space DOCS --title "Release process"
+```
+
+A page is named one way: `--page-id`, `--url`, or `--space` with `--title`.
+`--url` understands `/spaces/KEY/pages/ID/...` and
+`/spaces/KEY/blog/.../ID/...` on Cloud, and `/display/KEY/Title` and
+`/pages/viewpage.action?pageId=ID` on Server and Data Center; a short `/x/...`
+link has to be opened first. `--space` is the same setting publish uses, so a
+configuration file that names a space for publishing serves `--title` too.
+
+The document starts with the headers that name the page, followed by its body:
+
+```markdown
+<!-- Space: DOCS -->
+<!-- Parent: Guides -->
+<!-- Parent: Setup -->
+<!-- Title: Release process -->
+<!-- Label: how-to -->
+<!-- Content-Appearance: fixed -->
+<!-- Emoji: 🚀 -->
+
+# Release process
+...
+```
+
+`Parent` headers are the page's ancestry below the space's home page, where mark
+starts when it resolves them. A blog post gets `Type: blogpost` instead.
+`Content-Appearance` is left out for a full-width page, which is what mark
+publishes by default, and `Emoji` is there when the page has a title emoji.
+Labels are written in alphabetical order.
+
+The attachments the body shows or links to are downloaded into
+`--attachments-dir`, which defaults to the directory of `--output` (or the
+working directory when the document goes to standard output). Attachments the
+body does not refer to are not downloaded. Keep them beside the document if you
+mean to publish it back: mark names an attachment after its path, so
+`--attachments-dir files` turns `chart.png` into `files_chart.png` on the next
+publish, a new attachment next to the old one. The export fails before writing
+anything if a file it would write is already there, unless `--overwrite` is
+given, and `--no-attachments` writes the document alone.
+
+### What becomes Markdown
+
+* headings, paragraphs, emphasis, strong, strikethrough, inline code, line
+  breaks, rules, blockquotes, and lists, nested, ordered (with their start
+  number) and unordered;
+* task lists, as `- [ ]` and `- [x]`;
+* links, and autolinks where the text is the address;
+* links to another page in the same space as `[text](ac:Title)`, to a heading
+  on the page as `[text](#anchor)`, and to an attachment of the page as
+  `[text](file.pdf)`;
+* images, attached (downloaded, and shown from the file) or by URL, as
+  `![alt](path)`, or as `<img src width>` when the page shows them at a size of
+  their own;
+* tables with a header row and one line of inline content in each cell, as GFM
+  tables, with the column alignment;
+* code macros, as fenced code blocks whose info string carries the language,
+  `collapse`, the theme, line numbers, the first line and the title;
+* info, tip, note and warning macros with the title mark gives a GitHub alert,
+  as that alert (see [GitHub Alerts Support](#github-alerts-support));
+* expand macros, as `<details>` with a `<summary>`;
+* a page laid out in sections, with the [layout markers](#customizing-the-page-layout),
+  and the article layout, as `Layout` and `Sidebar` headers;
+* an anchor mark put into a heading for a link on the page, which mark puts back,
+  as nothing, or as a `{#id}` custom id.
+
+### What stays storage format
+
+Everything else is written as the storage format it is, which mark publishes as
+it was: other macros (a table of contents, Jira, status, anchors), user
+mentions, emoticons, dates, links to pages in other spaces, tables with merged
+cells or with lists or macros in them, and HTML that Markdown has no syntax for
+(`<u>`, `<sub>`, a coloured `<span>`). An info, tip, note or warning macro
+without mark's title -- the way Confluence's editor inserts them -- keeps its
+tags, with its body in Markdown between them, since as an alert it would come
+back with a title it did not have. A newline inside kept storage format is
+written as `&#10;`, and the body of a macro such as `noformat` as one CDATA
+section per line, because a blank line would end the Markdown block holding
+them. An attachment that storage format refers to is named in an
+`Attachment` header, since mark uploads images and linked files by itself but
+does not look inside markup.
+
+### Publishing an export back
+
+Publishing an export of a page mark published gives the page it came from; the
+tests do exactly that with mark's own fixtures. What does not come back the
+same:
+
+* A link to an attachment is published as a link to the attachment only with
+  `--attach-referenced`; without it, it is published as a link to the path.
+* A diagram mark drew from `mermaid`, `d2` or `plantuml` comes back as the image
+  mark attached, not as the diagram's source. A code macro in one of those
+  languages stays a macro, so that it is not drawn on the next publish.
+* An image loses its alignment and placement (`ac:align`, `ac:layout`), and a
+  code macro the parameters its info string cannot say (Cloud's breakout
+  width).
+* Inline comment markers are left out: the comments belong to Confluence, and
+  `--preserve-comments` puts them back on publish. So are XML comments.
+* A page in a folder, or not below its space's home page, is published below the
+  home page.
+* Inline content that stands without a paragraph around it, next to other
+  content, comes back inside one, and a paragraph in a table cell comes back as
+  the cell's text.
 
 ## Tricks
 

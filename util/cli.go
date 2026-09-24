@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	mark "github.com/kovetskiy/mark/v16"
+	"github.com/kovetskiy/mark/v16/export"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
@@ -21,6 +23,10 @@ const (
 	// PublishCommand is the name of the command that publishes markdown, and
 	// the one a command line naming no command at all is taken to mean.
 	PublishCommand = "publish"
+
+	// ExportCommand is the name of the command that writes a page out as
+	// markdown.
+	ExportCommand = "export"
 )
 
 // NewCommand builds mark's command line: the global flags on the root, and a
@@ -67,6 +73,15 @@ func NewCommand(version string) *cli.Command {
 				Flags:  publishFlags(&config),
 				Before: CheckFlags,
 				Action: RunPublish,
+			},
+			{
+				Name:  ExportCommand,
+				Usage: "export a Confluence page to a markdown file",
+				Description: "Write the page --page-id, --url or --space and --title names as markdown, with the " +
+					"metadata headers that publish it back to the same page, and download the attachments it shows or links to.",
+				Flags:  exportFlags(&config),
+				Before: CheckExportFlags,
+				Action: RunExport,
 			},
 		},
 	}
@@ -237,16 +252,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	log.Debug().Msg("config:")
-	for _, f := range append(slices.Clone(cmd.Root().Flags), cmd.Flags...) {
-		flag := f.Names()
-		// A command can name a token inline, so it leaks the same way the password would.
-		if flag[0] == "password" || flag[0] == "password-command" {
-			log.Debug().Msgf("%20s: %v", flag[0], "******")
-		} else {
-			log.Debug().Msgf("%20s: %v", flag[0], cmd.Value(flag[0]))
-		}
-	}
+	logFlags(cmd)
 
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
@@ -312,6 +318,86 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 	// RunContext shuts the shared browser down on the way out, however the run
 	// ends -- including when ctx is cancelled by a signal.
 	return mark.RunContext(ctx, config)
+}
+
+// RunExport is the action of "mark export".
+func RunExport(ctx context.Context, cmd *cli.Command) error {
+	pageID := cmd.String("page-id")
+	space := cmd.String("space")
+	title := cmd.String("title")
+	baseURL := cmd.String("base-url")
+
+	if address := cmd.String("url"); address != "" {
+		ref, err := export.ParsePageURL(address)
+		if err != nil {
+			return err
+		}
+
+		// A URL names its own page, in its own space, on its own instance --
+		// unless --base-url says where the API is, which is not always where
+		// the browser goes.
+		pageID, title = ref.PageID, ref.Title
+		if ref.Space != "" {
+			space = ref.Space
+		}
+		if baseURL == "" {
+			baseURL = ref.BaseURL
+		}
+	}
+
+	if baseURL == "" {
+		return errors.New("confluence base URL should be specified using --base-url, or come with --url")
+	}
+
+	creds, err := GetCredentials(
+		ctx,
+		cmd.String("username"),
+		cmd.String("password"),
+		cmd.String("password-command"),
+		"",
+		baseURL,
+		false,
+	)
+	if err != nil {
+		return err
+	}
+
+	logFlags(cmd)
+
+	_, err = mark.Export(ctx, mark.ExportConfig{
+		BaseURL:               creds.BaseURL,
+		Username:              creds.Username,
+		Password:              creds.Password,
+		InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+
+		PageID: pageID,
+		Space:  space,
+		Title:  title,
+
+		Output:         cmd.String("output"),
+		AttachmentsDir: cmd.String("attachments-dir"),
+		Overwrite:      cmd.Bool("overwrite"),
+		NoAttachments:  cmd.Bool("no-attachments"),
+
+		Stdout: os.Stdout,
+	})
+
+	return err
+}
+
+// logFlags logs every flag a command was run with, at debug level, with the
+// credentials masked.
+func logFlags(cmd *cli.Command) {
+	log.Debug().Msg("config:")
+	for _, f := range append(slices.Clone(cmd.Root().Flags), cmd.Flags...) {
+		flag := f.Names()
+		// A command can name a token inline, so it leaks the same way the password would.
+		if flag[0] == "password" || flag[0] == "password-command" {
+			log.Debug().Msgf("%20s: %v", flag[0], "******")
+		} else {
+			log.Debug().Msgf("%20s: %v", flag[0], cmd.Value(flag[0]))
+		}
+	}
 }
 
 // ConfigFilePath is the default for --config, or "" when there is none.

@@ -230,12 +230,14 @@ func helpOutput(t *testing.T, version string, args ...string) string {
 }
 
 // TestHelp: "mark --help" is about mark as a whole -- its commands and the
-// flags they share -- and "mark publish --help" about publishing.
+// flags they share -- and "mark publish --help" and "mark export --help"
+// about the one command.
 func TestHelp(t *testing.T) {
 	t.Run("mark --help", func(t *testing.T) {
 		help := helpOutput(t, "test", "--help")
 		assert.Contains(t, help, "COMMANDS:")
 		assert.Regexp(t, `(?m)^\s+publish\s`, help)
+		assert.Regexp(t, `(?m)^\s+export\s`, help)
 		assert.Contains(t, help, "--username")
 		assert.Contains(t, help, "--config")
 		assert.NotContains(t, help, "--files", "publish flags belong to publish's help")
@@ -247,6 +249,15 @@ func TestHelp(t *testing.T) {
 		assert.Contains(t, help, "--files")
 		assert.Contains(t, help, "--features")
 		assert.Contains(t, help, "GLOBAL OPTIONS:")
+		assert.Contains(t, help, "--username", "the global flags are listed with it")
+	})
+
+	t.Run("mark export --help", func(t *testing.T) {
+		help := helpOutput(t, "test", "export", "--help")
+		assert.Contains(t, help, "mark export")
+		assert.Contains(t, help, "--page-id")
+		assert.Contains(t, help, "--attachments-dir")
+		assert.NotContains(t, help, "--files", "publish flags belong to publish's help")
 		assert.Contains(t, help, "--username", "the global flags are listed with it")
 	})
 
@@ -286,4 +297,6 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 		"README.md's mark --help block has drifted from the binary")
 	assert.Equal(t, find("mark publish"), helpOutput(t, "v16.x.x", "publish", "--help"),
 		"README.md's mark publish --help block has drifted from the binary")
+	assert.Equal(t, find("mark export"), helpOutput(t, "v16.x.x", "export", "--help"),
+		"README.md's mark export --help block has drifted from the binary")
 }
