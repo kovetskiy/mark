@@ -617,6 +617,12 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// 404 from a path that was never going to exist, and surfacing that instead
 	// of v1's answer turns a clear "401 (Unauthorized)" -- the error a Server
 	// user with bad credentials should see -- into a misleading "404".
+	//
+	// v1's answer is also the only one that decides what the failure is. That
+	// 404 from a v2 that does not exist used to be wrapped too, so a v1 outage
+	// (503, 429) or a 401 matched ErrNotFound, and FindHomePage cached it as a
+	// space that is not there for the rest of the run. Through the gateway v1
+	// is never asked and v2's answer is the only one, so it stands as it is.
 	if v2Err != nil {
 		if v1Request == nil {
 			return nil, v2Err
@@ -626,7 +632,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		} else {
 			v1Err = newTransportError(v1Request, "read space "+space, v1Err)
 		}
-		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %w)", v1Err, v2Err)
+		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, v2Err) //nolint:errorlint // v2's 404 on Server must not reach errors.Is(ErrNotFound)
 	}
 
 	api.learnSiteBase(v2Result.Links.Base)
