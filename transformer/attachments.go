@@ -45,11 +45,18 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 		// Images as well as links: an attachment is as often shown inline as it
 		// is linked to, and the text this replaces matched both.
 		var destination *[]byte
+		var candidates []string
 		switch n := node.(type) {
 		case *ast.Link:
 			destination = &n.Destination
 		case *ast.Image:
 			destination = &n.Destination
+
+			// The same files the image renderer looks for, so that
+			// "my%20file.png" or "my\_file.png" is taken as the attachment a
+			// document declared as "my file.png" or "my_file.png" rather
+			// than uploaded a second time beside it and reported as unused.
+			candidates = LocalImagePaths(ImageDestination(n))
 		default:
 			return ast.WalkContinue, nil
 		}
@@ -59,8 +66,17 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 			return ast.WalkContinue, nil
 		}
 
-		if resolved := t.Resolve(target); resolved != "" {
-			*destination = []byte(resolved)
+		for _, candidate := range append([]string{target}, candidates...) {
+			if resolved := t.Resolve(candidate); resolved != "" {
+				*destination = []byte(resolved)
+
+				// A URL built here, not Markdown the document wrote.
+				if image, ok := node.(*ast.Image); ok {
+					image.SetAttribute(plainDestinationAttribute, true)
+				}
+
+				break
+			}
 		}
 
 		return ast.WalkContinue, nil

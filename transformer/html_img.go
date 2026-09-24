@@ -225,6 +225,7 @@ func (t *HTMLImgTransformer) parseHTMLImages(rawBytes []byte) []*ast.Image {
 
 		imgNode := ast.NewImage(ast.NewLink())
 		imgNode.Destination = []byte(src)
+		markPlain(imgNode)
 
 		if title != "" {
 			imgNode.Title = []byte(title)
