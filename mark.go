@@ -375,6 +375,43 @@ func run(ctx context.Context, config Config) (err error) {
 
 	checker := page.NewLinkChecker(linkChecks)
 
+	// What the run did, for whatever is reading the output rather than the log.
+	results := report.New()
+
+	// Failures the report already carries, so that they are not said twice: a
+	// document's own is recorded against that document, and a manifest save
+	// that failed is recorded where it failed.
+	var reported []error
+
+	// Written on the way out, whatever the way out is. It used to be written at
+	// the end of a successful run only, so --output-format json produced zero
+	// bytes whenever the run failed after publishing -- an unresolved link, a
+	// failed ordering pass, an orphan that could not be handled -- which is
+	// exactly when an account of what was published is worth having. A failed
+	// write still fails the run, but only when nothing worse already has.
+	//
+	// Deferred before the manifest's save below, so that it runs after it and
+	// a save that fails on the way out is in what it writes.
+	defer func() {
+		// A failure of the run as a whole belongs to no document, and was
+		// never recorded anywhere: the report of a run that stopped on an
+		// unresolved link listed its pages as published and said nothing of
+		// why the run had failed.
+		if err != nil && !slices.ContainsFunc(reported, func(known error) bool { return errors.Is(err, known) }) {
+			results.AddError(err.Error())
+		}
+
+		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
+			if err == nil {
+				err = fmt.Errorf("unable to write the run report: %w", writeErr)
+
+				return
+			}
+
+			log.Error().Err(writeErr).Msg("unable to write the run report")
+		}
+	}()
+
 	// The manifest is only consulted when asked for. It changes how an existing
 	// page is found, which is not something to switch on under anyone without
 	// their say-so.
@@ -416,12 +453,19 @@ func run(ctx context.Context, config Config) (err error) {
 	// of them and the next one added would miss it too. The explicit save at
 	// the end stays: it is the one whose failure the caller hears about, and
 	// once it succeeds this becomes a no-op.
+	var saveErr error
 	defer func() {
 		if tracker == nil {
 			return
 		}
 		if err := tracker.Save(); err != nil {
 			log.Error().Err(err).Msg("unable to save page manifest")
+
+			// Only when the explicit save did not already fail: that one is
+			// in the report, and this is the same failure a second time.
+			if saveErr == nil {
+				results.AddError(fmt.Sprintf("unable to save page manifest: %v", err))
+			}
 		}
 	}()
 
@@ -447,27 +491,6 @@ func run(ctx context.Context, config Config) (err error) {
 	if !config.DryRun && !config.CompileOnly {
 		deferrals = page.NewDeferrals()
 	}
-
-	// What the run did, for whatever is reading the output rather than the log.
-	results := report.New()
-
-	// Written on the way out, whatever the way out is. It used to be written at
-	// the end of a successful run only, so --output-format json produced zero
-	// bytes whenever the run failed after publishing -- an unresolved link, a
-	// failed ordering pass, an orphan that could not be handled -- which is
-	// exactly when an account of what was published is worth having. A failed
-	// write still fails the run, but only when nothing worse already has.
-	defer func() {
-		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
-			if err == nil {
-				err = fmt.Errorf("unable to write the run report: %w", writeErr)
-
-				return
-			}
-
-			log.Error().Err(writeErr).Msg("unable to write the run report")
-		}
-	}()
 
 	// Where the files sit says where the pages go, when asked. Laid out once
 	// from the run's own files, so that every document's parents, a directory's
@@ -507,6 +530,8 @@ func run(ctx context.Context, config Config) (err error) {
 				hasErrors = true
 				continue
 			}
+
+			reported = append(reported, err)
 
 			return err
 		}
@@ -577,6 +602,8 @@ func run(ctx context.Context, config Config) (err error) {
 					continue
 				}
 
+				reported = append(reported, err)
+
 				return err
 			}
 		}
@@ -607,13 +634,18 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	var saveErr error
 	if tracker != nil {
 		if err := handleOrphans(tracker, api, config, onOrphan, hasErrors, results); err != nil {
 			return err
 		}
 		if saveErr = tracker.Save(); saveErr != nil {
 			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)
+
+			// Recorded here rather than left to the return: two of the three
+			// ways out below return something else, and the manifest not
+			// being saved is worth knowing whichever it is.
+			results.AddError(saveErr.Error())
+			reported = append(reported, saveErr)
 		}
 	}
 
@@ -632,7 +664,13 @@ func run(ctx context.Context, config Config) (err error) {
 		if saveErr != nil {
 			log.Error().Err(saveErr).Msg("page manifest was not saved")
 		}
-		return fmt.Errorf("one or more files failed to process")
+
+		// Not a failure of its own: it sums up the ones recorded against
+		// each document that failed.
+		filesFailed := errors.New("one or more files failed to process")
+		reported = append(reported, filesFailed)
+
+		return filesFailed
 	}
 
 	return saveErr
