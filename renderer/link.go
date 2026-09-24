@@ -3,7 +3,6 @@ package renderer
 import (
 	"errors"
 	"fmt"
-	stdhtml "html"
 	"os"
 	"path/filepath"
 	"strings"
@@ -344,14 +343,14 @@ func isRooted(destination string) bool {
 }
 
 // xmlAttrEscape makes a document-derived string safe to interpolate into an XML
-// attribute value.
+// attribute value. It is the stdlib "xmlesc" template function.
 func xmlAttrEscape(s string) string {
-	return stdhtml.EscapeString(s)
+	return stdlib.XMLEscape(s)
 }
 
 // cdataEscape splits any "]]>" in s across two CDATA sections, which is the only
-// way to represent that sequence inside one. Mirrors the stdlib "cdata" template
+// way to represent that sequence inside one. It is the stdlib "cdata" template
 // function used by the ac:code and ac:plantuml macros.
 func cdataEscape(s string) string {
-	return strings.ReplaceAll(s, "]]>", "]]><![CDATA[]]]]><![CDATA[>")
+	return stdlib.CDATA(s)
 }
