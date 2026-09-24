@@ -12,6 +12,7 @@ package math
 import (
 	"fmt"
 	"html"
+	gomath "math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -75,8 +76,17 @@ func Process(tex string, display bool, format string, scale float64) (attachment
 		return attachment.Attachment{}, fmt.Errorf("unknown math format %q, expected %q or %q", format, FormatSVG, FormatPNG)
 	}
 
-	if scale <= 0 {
+	// Zero is a caller that never set the scale, and gets the default. Anything
+	// else that is not a finite number above zero is refused rather than
+	// quietly replaced: NaN fails every comparison, so "<= 0" let it through to
+	// the screenshot, and a negative scale is a mistake nobody means as "2".
+	switch {
+	case scale == 0:
 		scale = defaultScale
+	case !(scale > 0) || gomath.IsInf(scale, 0):
+		return attachment.Attachment{}, fmt.Errorf(
+			"invalid math scale %v: expected a finite number greater than 0, or 0 for the default", scale,
+		)
 	}
 
 	svg, err := mathjax.RenderWithOptions(tex, displayOptions(display))

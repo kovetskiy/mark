@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -75,6 +76,103 @@ func TestInvalidDiagramKeepsEngine(t *testing.T) {
 	after, err := getMermaidEngine()
 	require.NoError(t, err)
 	assert.Same(t, before, after)
+}
+
+// TestPNGBoundsAreMeasuredFromTheDrawing is the arithmetic of the guard, with
+// no browser: the SVG states the size the capture is taken at, and the scale
+// multiplies it.
+func TestPNGBoundsAreMeasuredFromTheDrawing(t *testing.T) {
+	svg := `<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="3000" viewBox="0 0 4000 3000"></svg>`
+
+	require.NoError(t, checkPNGBounds(svg, 1))
+	require.NoError(t, checkPNGBounds(svg, 2))
+
+	err := checkPNGBounds(svg, 5)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, chrome.ErrRasterRefused)
+	assert.Contains(t, err.Error(), "20000x15000")
+
+	// A size mermaid only states in its viewBox is still a size.
+	wide := `<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 30000 200"></svg>`
+	assert.ErrorIs(t, checkPNGBounds(wide, 1), chrome.ErrRasterRefused)
+}
+
+// TestPNGBoundsMeasureWhatIsCaptured: the guard measures the SVG, and the
+// capture is of the element the SVG becomes, so the two have to be the same
+// size or the bound is checked against the wrong picture.
+func TestPNGBoundsMeasureWhatIsCaptured(t *testing.T) {
+	diagram := "sequenceDiagram\n Alice->>Bob: Hello\n Bob-->>Alice: Hi back"
+
+	svg, err := renderSVG("measure", diagram, false)
+	require.NoError(t, err)
+
+	width, height := extractSVGDimensions(svg)
+
+	png, err := ProcessMermaidLocally("measure", []byte(diagram), 1)
+	require.NoError(t, err)
+
+	// Within a pixel: the box model is a whole number and the SVG's size need
+	// not be, and which way each is rounded is not the question.
+	capturedWidth, err := strconv.ParseFloat(png.Width, 64)
+	require.NoError(t, err)
+
+	capturedHeight, err := strconv.ParseFloat(png.Height, 64)
+	require.NoError(t, err)
+
+	assert.InDelta(t, capturedWidth, width, 1)
+	assert.InDelta(t, capturedHeight, height, 1)
+}
+
+// TestOversizedPNGIsRefusedAndKeepsEngine:mermaid.go draws and captures in one
+// call, so the capture skipped the bound d2 and math are held to, and a large
+// diagram at a large scale asked the browser for a screenshot it does not
+// survive. Refused before the capture, the browser never sees it, and is kept
+// for the next diagram. A small diagram at a large scale is the cheapest way to
+// ask for far too much.
+func TestOversizedPNGIsRefusedAndKeepsEngine(t *testing.T) {
+	before, err := getMermaidEngine()
+	require.NoError(t, err)
+
+	_, err = ProcessMermaidLocally("huge", []byte("graph TD;\n A-->B;"), 1000)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, chrome.ErrRasterRefused)
+	assert.Contains(t, err.Error(), "lower the scale")
+
+	after, err := getMermaidEngine()
+	require.NoError(t, err)
+	assert.Same(t, before, after)
+}
+
+// TestScaleZeroIsTheDefault: a Config that never set MermaidScale passes zero,
+// which reached the browser as a screenshot at scale 0 and waited out the
+// whole render timeout. Zero is the default instead: the same picture, under
+// the same checksum, as asking for 1.
+func TestScaleZeroIsTheDefault(t *testing.T) {
+	diagram := []byte("graph TD;\n A-->B;")
+
+	unset, err := ProcessMermaidLocally("unset", diagram, 0)
+	require.NoError(t, err)
+
+	one, err := ProcessMermaidLocally("one", diagram, 1)
+	require.NoError(t, err)
+
+	assert.Equal(t, one.Checksum, unset.Checksum)
+	assert.Equal(t, one.Width, unset.Width)
+}
+
+// TestScaleRefusesWhatIsNotAScale: a negative scale waited out the render
+// timeout, and NaN or an infinity could not even be encoded for the browser
+// and cost it its life. Refused before anything is drawn, for either output.
+func TestScaleRefusesWhatIsNotAScale(t *testing.T) {
+	for _, scale := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		_, err := ProcessMermaidLocally("png", []byte("graph TD;\n A-->B;"), scale)
+		require.Error(t, err, "a scale of %v is not one", scale)
+		assert.Contains(t, err.Error(), "invalid mermaid scale")
+
+		_, err = ProcessMermaidSVG("svg", []byte("graph TD;\n A-->B;"), scale)
+		require.Error(t, err, "a scale of %v is not one for an SVG either", scale)
+		assert.Contains(t, err.Error(), "invalid mermaid scale")
+	}
 }
 
 // A render that outruns renderTimeout also leaves the engine usable, because

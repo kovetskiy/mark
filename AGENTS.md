@@ -145,7 +145,7 @@ Coverage is uneven, and where it is thin matters more than the number. Measured 
 package 87%. `cmd/mark/` and `vfs/` are at 0% on purpose: a thin `main` and a 19-line
 `os.Open` wrapper. `chrome/` has tests of its own for the raster bounds and the shared
 browser, and is otherwise exercised through its callers: `PNGFromSVG` by `d2/` and
-`math/`, and the allocator options by `mermaid/`.
+`math/`, and the allocator options and `CheckRasterBounds` by `mermaid/`.
 
 Two things to know before reading those numbers. `make test` passes no `-coverpkg`, so a
 package's figure counts only what its *own* tests exercise — renderer code driven by the

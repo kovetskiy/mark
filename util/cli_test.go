@@ -24,6 +24,7 @@ func runWithArgs(args []string) error {
 			&cli.StringFlag{Name: "mermaid-output", Value: "png"},
 			&cli.BoolFlag{Name: "mermaid-bundle"},
 			&cli.FloatFlag{Name: "mermaid-scale", Value: 1.0},
+			&cli.FloatFlag{Name: "math-scale", Value: 2.0},
 		},
 		Before: CheckFlags,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -223,6 +224,26 @@ func TestD2ScaleFlagValidation(t *testing.T) {
 		t.Run(scale+" is rejected", func(t *testing.T) {
 			assert.Error(t, runWithArgs([]string{"cmd", "--d2-scale", scale}))
 		})
+	}
+}
+
+// TestMermaidAndMathScaleFlagValidation is the same for the other two scales.
+// Mermaid took any number to the browser, where zero and a negative one waited
+// out the render timeout and NaN or an infinity could not be sent at all; math
+// quietly drew zero and a negative scale at 2, and let NaN through.
+func TestMermaidAndMathScaleFlagValidation(t *testing.T) {
+	for _, flag := range []string{"--mermaid-scale", "--math-scale"} {
+		t.Run(flag+" accepts a positive scale", func(t *testing.T) {
+			assert.NoError(t, runWithArgs([]string{"cmd", flag, "1.5"}))
+		})
+
+		for _, scale := range []string{"0", "-1", "NaN", "Inf", "-Inf"} {
+			t.Run(flag+" rejects "+scale, func(t *testing.T) {
+				err := runWithArgs([]string{"cmd", flag, scale})
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), flag)
+			})
+		}
 	}
 }
 

@@ -137,6 +137,12 @@ func isPositiveScale(scale float64) bool {
 	return scale > 0 && !math.IsInf(scale, 0)
 }
 
+// isScaleOrDefault is isPositiveScale for a field whose zero value means the
+// renderer's default.
+func isScaleOrDefault(scale float64) bool {
+	return scale == 0 || isPositiveScale(scale)
+}
+
 // Run processes all files matching Config.Files and publishes them to
 // Confluence, and is RunContext with a context that is never cancelled.
 func Run(config Config) error {
@@ -227,6 +233,27 @@ func (c Config) prepare() (page.LinkChecks, error) {
 		return page.LinkChecks{}, fmt.Errorf(
 			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
 			c.D2Scale,
+		)
+	}
+
+	// Mermaid and math take the same numbers, with one difference: zero is
+	// their default rather than an error. Mermaid is on by default, so refusing
+	// zero would refuse every Config that never heard of the field; math has
+	// always drawn a zero scale at its default of 2, and a caller relying on
+	// that is not wrong. What neither has ever been able to draw is a negative,
+	// NaN or infinite scale, and those are refused here rather than part way
+	// through a run, when the first diagram reaches the browser.
+	if slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
+		return page.LinkChecks{}, fmt.Errorf(
+			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
+			c.MermaidScale,
+		)
+	}
+
+	if slices.Contains(c.Features, "math") && !isScaleOrDefault(c.MathScale) {
+		return page.LinkChecks{}, fmt.Errorf(
+			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
+			c.MathScale,
 		)
 	}
 
