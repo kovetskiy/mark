@@ -1963,10 +1963,11 @@ pages with the v2 API, which needs:
 | `read:label:confluence` | reading the labels a page carries |
 | `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
 | `read:page:confluence`, `write:page:confluence` | `--track-pages` with `--manifest-page`; without it the mapping is a space property, whose creation a scoped token is refused |
+| `read:folder:confluence`, `write:folder:confluence`, `read:hierarchical-content:confluence` | `Folder` headers: reading and creating folders, and finding one among its parent's direct children |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
-`--on-orphan`, page restrictions, mentions and moving a page among its siblings
-have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
+`--on-orphan`, page restrictions, mentions, moving a page among its siblings and
+finding a folder left at the space root have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
 classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 `read:confluence-user`) alongside the granular ones.
 

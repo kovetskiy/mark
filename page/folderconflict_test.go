@@ -23,12 +23,12 @@ func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 	root := server.AddPage("DOCS", "Root", "page", "")
 
 	// The folder another file in this run already created. It is hidden from
-	// the first search so that this run believes it has to create it.
+	// the first listing so that this run believes it has to create it.
 	server.AddFolder("DOCS", "Manuals", root.ID, "page")
 
 	searched := false
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if !searched && r.URL.Path == "/rest/api/search" {
+		if !searched && strings.HasSuffix(r.URL.Path, "/direct-children") {
 			searched = true
 
 			return http.StatusOK, `{"results":[]}`, true
