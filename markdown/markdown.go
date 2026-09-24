@@ -515,8 +515,13 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	// carry as written. Publishing one unconverted is how a page ends up
 	// malformed rather than how it ends up without a picture, so this is a
 	// correctness pass and not something to enable.
+	//
+	// After the <details> and layout transformers, which rewrite a block they
+	// own into a Text node of markup, so that an <img> inside one is found
+	// there. At the same number as <details> the order between the two was
+	// whatever the sort left it.
 	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewHTMLImgTransformer(), 110),
+		util.Prioritized(ctransformer.NewHTMLImgTransformer(), 115),
 	))
 
 	// Add mkdocsadmonitions support if requested
@@ -579,7 +584,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 
 	// Close the void elements and repair the comments an author may have
 	// written by hand, which Markdown allows and storage format does not.
-	// After everything at 110 that owns raw HTML of its own -- the <img> and
+	// After everything below it that owns raw HTML of its own -- the <img> and
 	// <details> transformers -- so that this only sees what they left behind,
 	// and never turns an <img> into storage format the <img> transformer would
 	// then fail to recognise.
