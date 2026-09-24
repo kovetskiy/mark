@@ -160,17 +160,20 @@ func listV2[T any](api *API, path string, query map[string]string, describe stri
 			page["cursor"] = cursor
 		}
 
-		request, err := api.v2().Res(path, &result).Get(page)
+		response, err := api.v2().
+			SetResult(&result).
+			SetQueryParams(page).
+			Get(path)
 		if err != nil {
-			return nil, newTransportError(request, describe, err)
+			return nil, newTransportError(response, describe, err)
 		}
 
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+		if response.StatusCode() == http.StatusNotFound && cursor == "" {
 			return nil, nil
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode() != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		all = append(all, result.Results...)
@@ -209,15 +212,18 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 		} `json:"_links"`
 	}
 
-	request, err := api.v2().Res(v2Collection(pageType), &result).Get(query)
+	response, err := api.v2().
+		SetResult(&result).
+		SetQueryParams(query).
+		Get(v2Collection(pageType))
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("find page %q in space %s", title, space), err,
+			response, fmt.Sprintf("find page %q in space %s", title, space), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode() != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
 	api.learnSiteBase(result.Links.Base)
@@ -255,20 +261,23 @@ func (api *API) readContentStatusV2(collection, id string, withBody bool) (*cont
 		query["body-format"] = "storage"
 	}
 
-	request, err := api.v2().Res(collection+"/"+id, &result).Get(query)
+	response, err := api.v2().
+		SetResult(&result).
+		SetQueryParams(query).
+		Get(collection + "/" + id)
 	if err != nil {
 		status := 0
-		if request != nil && request.Raw != nil {
-			status = request.Raw.StatusCode
+		if response != nil {
+			status = response.StatusCode()
 		}
-		return nil, status, newTransportError(request, "read "+collection+" "+id, err)
+		return nil, status, newTransportError(response, "read "+collection+" "+id, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, request.Raw.StatusCode, newErrorStatusNotOK(request)
+	if response.StatusCode() != http.StatusOK {
+		return nil, response.StatusCode(), newErrorStatusNotOK(response)
 	}
 
-	return &result, request.Raw.StatusCode, nil
+	return &result, response.StatusCode(), nil
 }
 
 // lookupContentV2 reads a page or blogpost known only by its id.
@@ -414,15 +423,18 @@ func (api *API) createPageV2(space, pageType, parentID, parentType, title, body 
 
 	var result contentV2
 
-	request, err := api.v2().Res(v2Collection(pageType), &result).Post(payload)
+	response, err := api.v2().
+		SetResult(&result).
+		SetBody(payload).
+		Post(v2Collection(pageType))
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("create page %q in space %s", title, space), err,
+			response, fmt.Sprintf("create page %q in space %s", title, space), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
+	if response.StatusCode() != http.StatusOK && response.StatusCode() != http.StatusCreated {
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(response))
 	}
 
 	return api.pageInfoV2(result, pageType), nil
@@ -461,15 +473,18 @@ func (api *API) updatePageV2(
 		payload["parentId"] = page.Ancestors[len(page.Ancestors)-1].ID
 	}
 
-	request, err := api.v2().Res(v2Collection(page.Type)+"/"+page.ID, &map[string]any{}).Put(payload)
+	response, err := api.v2().
+		SetResult(&map[string]any{}).
+		SetBody(payload).
+		Put(v2Collection(page.Type) + "/" + page.ID)
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
+			response, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if response.StatusCode() != http.StatusOK {
+		return newErrorStatusNotOK(response)
 	}
 
 	return nil
