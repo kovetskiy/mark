@@ -286,6 +286,12 @@ Note that giving Confluence explicit positions takes that branch of the tree out
 of its default alphabetical ordering, which is inherent to asking for a
 particular order.
 
+> [!NOTE]
+> Ordering needs the content move endpoint, which only Confluence Cloud serves.
+> On Server and Data Center a page that has to be repositioned is reported as
+> such and the run fails; moving a page to a different *parent* works there, and
+> is done with an update carrying the new ancestor instead.
+
 ```markdown
 <!-- Sidebar: <h2>Test</h2> -->
 ```
