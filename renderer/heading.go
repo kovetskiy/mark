@@ -17,11 +17,15 @@ type ConfluenceHeadingRenderer struct {
 
 // NewConfluenceHeadingRenderer creates a new instance of the ConfluenceHeadingRenderer.
 func NewConfluenceHeadingRenderer(lib *stdlib.Lib, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceHeadingRenderer{
+	r := &ConfluenceHeadingRenderer{
 		Stdlib:      lib,
 		Config:      html.NewConfig(),
 		DropFirstH1: dropFirstH1,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

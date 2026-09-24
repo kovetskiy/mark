@@ -15,9 +15,13 @@ type ConfluenceParagraphRenderer struct {
 
 // NewConfluenceParagraphRenderer creates a new instance of the ConfluenceParagraphRenderer.
 func NewConfluenceParagraphRenderer(opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceParagraphRenderer{
+	r := &ConfluenceParagraphRenderer{
 		Config: html.NewConfig(),
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

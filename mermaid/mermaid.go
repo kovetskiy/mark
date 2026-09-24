@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -621,24 +620,4 @@ func Cleanup() {
 		mermaidEngine.Cancel()
 		mermaidEngine = nil
 	}
-}
-
-// lookMerman finds the merman binary, under either name the library accepts:
-// merman-cli is what its releases are called, and merman is what a locally
-// built or renamed copy often is.
-func lookMerman() (string, error) {
-	// Not nil to begin with: a library that named no binary at all would
-	// otherwise be reported as a merman found at the empty path.
-	err := exec.ErrNotFound
-
-	for _, name := range mermaid.MermanBinaries {
-		path, lookErr := exec.LookPath(name)
-		if lookErr == nil {
-			return path, nil
-		}
-
-		err = lookErr
-	}
-
-	return "", err
 }

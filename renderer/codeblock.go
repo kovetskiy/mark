@@ -16,12 +16,16 @@ type ConfluenceCodeBlockRenderer struct {
 	Stdlib *stdlib.Lib
 }
 
-// NewConfluenceCodeBlockRenderer creates a new instance of the ConfluenceCodeBlockRenderer.
-func NewConfluenceCodeBlockRenderer(stdlib *stdlib.Lib, path string, opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceCodeBlockRenderer{
+// NewConfluenceCodeBlockRenderer creates a renderer for indented code blocks.
+func NewConfluenceCodeBlockRenderer(stdlib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
+	r := &ConfluenceCodeBlockRenderer{
 		Config: html.NewConfig(),
 		Stdlib: stdlib,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

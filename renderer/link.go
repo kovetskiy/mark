@@ -44,13 +44,17 @@ func NewConfluenceLinkRenderer(
 	attachReferenced bool,
 	opts ...html.Option,
 ) renderer.NodeRenderer {
-	return &ConfluenceLinkRenderer{
+	r := &ConfluenceLinkRenderer{
 		Config:           html.NewConfig(),
 		Stdlib:           lib,
 		Attachments:      attachments,
 		Path:             path,
 		AttachReferenced: attachReferenced,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

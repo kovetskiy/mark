@@ -128,49 +128,22 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
 func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceFencedCodeBlockRenderer{
+	r := &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		MarkConfig:  cfg,
 		Attachments: attachments,
 		Path:        path,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .
 func (r *ConfluenceFencedCodeBlockRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
-}
-
-func ParseLanguage(lang string) string {
-	// lang takes the following form: language? "collapse"? ("title"? <any string>*)?
-	// let's split it by spaces
-	paramlist := strings.Fields(lang)
-
-	// get the word in question, aka the first one
-	first := lang
-	if len(paramlist) > 0 {
-		first = paramlist[0]
-	}
-
-	if first == "collapse" || first == "title" {
-		// collapsing or including a title without a language
-		return ""
-	}
-	// the default case with language being the first one
-	return first
-}
-
-func ParseTitle(lang string) string {
-	index := strings.Index(lang, "title")
-	if index >= 0 {
-		// it's found, check if title is given and return it
-		start := index + 6
-		if len(lang) > start {
-			return strings.TrimSpace(lang[start:])
-		}
-	}
-	return ""
 }
 
 // renderFencedCodeBlock renders a FencedCodeBlock

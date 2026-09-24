@@ -15,7 +15,7 @@ func TestIndentedCodeBlockBecomesTheCodeMacro(t *testing.T) {
 	lib := newStdlib(t)
 
 	actual := render(t, "    package main\n    func main() {}\n", []renderer.NodeRenderer{
-		crenderer.NewConfluenceCodeBlockRenderer(lib, "test.md"),
+		crenderer.NewConfluenceCodeBlockRenderer(lib),
 	})
 	assertWellFormed(t, actual)
 
@@ -34,7 +34,7 @@ func TestIndentedCodeBlockEscapesTheCDATATerminator(t *testing.T) {
 	lib := newStdlib(t)
 
 	actual := render(t, "    <![CDATA[x]]>\n", []renderer.NodeRenderer{
-		crenderer.NewConfluenceCodeBlockRenderer(lib, "test.md"),
+		crenderer.NewConfluenceCodeBlockRenderer(lib),
 	})
 	assertWellFormed(t, actual)
 

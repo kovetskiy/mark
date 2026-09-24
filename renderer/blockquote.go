@@ -18,10 +18,14 @@ type ConfluenceBlockQuoteRenderer struct {
 
 // NewConfluenceBlockQuoteRenderer creates a new instance of the ConfluenceBlockQuoteRenderer.
 func NewConfluenceBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceBlockQuoteRenderer{
+	r := &ConfluenceBlockQuoteRenderer{
 		Config:   html.NewConfig(),
 		LevelMap: nil,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

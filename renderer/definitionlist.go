@@ -46,9 +46,13 @@ type listRow struct {
 }
 
 func NewConfluenceDefinitionListRenderer(opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceDefinitionListRenderer{
+	r := &ConfluenceDefinitionListRenderer{
 		Config: html.NewConfig(),
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 func (r *ConfluenceDefinitionListRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {

@@ -17,9 +17,13 @@ type ConfluenceTaskListRenderer struct {
 }
 
 func NewConfluenceTaskListRenderer(opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceTaskListRenderer{
+	r := &ConfluenceTaskListRenderer{
 		Config: html.NewConfig(),
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 func (r *ConfluenceTaskListRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {

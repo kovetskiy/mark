@@ -3,9 +3,11 @@ package mermaid
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
+	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -172,4 +174,24 @@ func TestMinimumVersionComesFromTheFile(t *testing.T) {
 	assert.NotEmpty(t, MinimumMermanVersion)
 	assert.True(t, semver.IsValid("v"+MinimumMermanVersion),
 		"the floor has to be a version the check can compare")
+}
+
+// lookMerman finds the merman binary, under either name the library accepts:
+// merman-cli is what its releases are called, and merman is what a locally
+// built or renamed copy often is.
+func lookMerman() (string, error) {
+	// Not nil to begin with: a library that named no binary at all would
+	// otherwise be reported as a merman found at the empty path.
+	err := exec.ErrNotFound
+
+	for _, name := range mermaid.MermanBinaries {
+		path, lookErr := exec.LookPath(name)
+		if lookErr == nil {
+			return path, nil
+		}
+
+		err = lookErr
+	}
+
+	return "", err
 }
