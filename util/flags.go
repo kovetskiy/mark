@@ -417,6 +417,91 @@ func publishFlags(config *string) []cli.Flag {
 	}
 }
 
+// exportFlags are the flags of "mark export". Like the publish flags, each
+// reads the configuration file through the pointer the "config" flag fills in.
+//
+// "space" is the same setting as publish's: the space a page is looked up in by
+// title. A configuration file that names one for publishing therefore serves
+// both, and --page-id and --url, which say which space the page is in
+// themselves, leave it alone.
+func exportFlags(config *string) []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:    "page-id",
+			Value:   "",
+			Usage:   "export the page or blog post with this id.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_ID"), altsrctoml.TOML("page-id", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.StringFlag{
+			Name:    "url",
+			Value:   "",
+			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_URL"), altsrctoml.TOML("url", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.StringFlag{
+			Name:    "space",
+			Value:   "",
+			Usage:   "the space key --title looks the page up in.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), altsrctoml.TOML("space", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.StringFlag{
+			Name:    "title",
+			Value:   "",
+			Usage:   "export the page or blog post with this title in --space.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE"), altsrctoml.TOML("title", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.StringFlag{
+			Name:      "output",
+			Aliases:   []string{"o"},
+			Value:     "",
+			Usage:     "write the Markdown to this file rather than to standard output (\"-\").",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_OUTPUT"), altsrctoml.TOML("output", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.StringFlag{
+			Name:      "attachments-dir",
+			Value:     "",
+			Usage:     "write the attachments the page shows or links to into this directory. Defaults to the directory of --output, or the working directory; a directory of their own changes their names when the document is published back, since mark names an attachment after its path.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_ATTACHMENTS_DIR"), altsrctoml.TOML("attachments-dir", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.BoolFlag{
+			Name:    "overwrite",
+			Value:   false,
+			Usage:   "replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OVERWRITE"), altsrctoml.TOML("overwrite", altsrc.NewStringPtrSourcer(config))),
+		},
+		&cli.BoolFlag{
+			Name:    "no-attachments",
+			Value:   false,
+			Usage:   "write the Markdown only, and download no attachments. The document still refers to them where they would have been written.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_NO_ATTACHMENTS"), altsrctoml.TOML("no-attachments", altsrc.NewStringPtrSourcer(config))),
+		},
+	}
+}
+
+// CheckExportFlags validates the flags of "mark export": the page has to be
+// named exactly one way.
+func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Context, error) {
+	var named []string
+	for _, name := range []string{"page-id", "url", "title"} {
+		if command.String(name) != "" {
+			named = append(named, "--"+name)
+		}
+	}
+
+	switch {
+	case len(named) == 0:
+		return ctx, errors.New("name the page to export with --page-id, --url, or --space and --title")
+	case len(named) > 1:
+		return ctx, fmt.Errorf("%s each name a page; give only one of them", strings.Join(named, " and "))
+	case command.String("title") != "" && command.String("space") == "":
+		return ctx, errors.New("--title needs --space: a title names a page only within a space")
+	}
+
+	return ctx, nil
+}
+
 // CheckConfigFile reports a configuration file that cannot be used.
 //
 // Settings are read from the file lazily, one flag at a time, and a file that
