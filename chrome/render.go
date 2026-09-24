@@ -3,7 +3,9 @@ package chrome
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -165,7 +167,7 @@ func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, 
 
 	// Not a browser fault, so the browser is kept: the next diagram in the
 	// document has done nothing wrong.
-	if err := checkRasterBounds(model.Width, model.Height, scale); err != nil {
+	if err := CheckRasterBounds(float64(model.Width), float64(model.Height), scale); err != nil {
 		return nil, 0, 0, err
 	}
 
@@ -182,31 +184,57 @@ func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, 
 	return result, model.Width, model.Height, nil
 }
 
-// checkRasterBounds refuses a capture too large for the browser to survive
-// being asked for.
+// ErrRasterRefused matches, through errors.Is, every capture CheckRasterBounds
+// refuses. It is there so that a caller can tell a diagram that asked for too
+// much from a browser that failed: the one is the document's fault and leaves
+// the browser fit for the next diagram, the other does not.
+var ErrRasterRefused = errors.New("capture refused")
+
+// refusal carries CheckRasterBounds' own message, which already says what to
+// do, while still matching ErrRasterRefused.
+type refusal struct{ error }
+
+func (refusal) Is(target error) bool { return target == ErrRasterRefused }
+
+// CheckRasterBounds refuses a capture too large for the browser to survive
+// being asked for. width and height are the element's layout size, before
+// scale.
 //
 // Reported against what was asked for rather than what came back, because
 // nothing comes back: the browser is gone, and so is every diagram after it.
-func checkRasterBounds(width, height int64, scale float64) error {
-	scaledWidth := float64(width) * scale
-	scaledHeight := float64(height) * scale
+//
+// Every number is checked for being one before it is compared. NaN fails every
+// comparison it is given, so a bound written as "more than the limit" lets a
+// NaN scale through to the screenshot, and a NaN size multiplied by anything
+// is NaN as well.
+func CheckRasterBounds(width, height, scale float64) error {
+	if !(scale > 0) || math.IsInf(scale, 0) {
+		return refusal{fmt.Errorf("scale %v is not a finite number greater than 0", scale)}
+	}
+
+	if !(width >= 0) || !(height >= 0) || math.IsInf(width, 0) || math.IsInf(height, 0) {
+		return refusal{fmt.Errorf("the diagram measures %vx%v, which is not a size in pixels", width, height)}
+	}
+
+	scaledWidth := width * scale
+	scaledHeight := height * scale
 
 	if scaledWidth > maxRasterSide || scaledHeight > maxRasterSide {
-		return fmt.Errorf(
+		return refusal{fmt.Errorf(
 			"the diagram is %.0fx%.0f pixels at scale %g, and no side may exceed %d; "+
 				"make the diagram smaller or lower the scale",
 			scaledWidth, scaledHeight, scale, maxRasterSide,
-		)
+		)}
 	}
 
 	if scaledWidth*scaledHeight > maxRasterPixels {
-		return fmt.Errorf(
+		return refusal{fmt.Errorf(
 			"the diagram is %.0fx%.0f pixels at scale %g, which is %.0f million pixels "+
 				"and more than the %.0f million a page may hold; "+
 				"make the diagram smaller or lower the scale",
 			scaledWidth, scaledHeight, scale,
 			scaledWidth*scaledHeight/1e6, float64(maxRasterPixels)/1e6,
-		)
+		)}
 	}
 
 	return nil
