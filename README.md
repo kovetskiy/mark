@@ -1528,6 +1528,17 @@ down once.
 The published Docker image carries merman on `amd64`, which is where it
 publishes a Linux build; an `arm64` image draws with Chrome.
 
+### Render Mermaid Diagrams via the Confluence Macro
+
+With `--mermaid-output=macro` and the `mermaid` feature, code blocks marked as "mermaid" are published as the Confluence macro named "mermaid-macro" instead of being drawn by mark.
+The source stays verbatim inside the macro, so the diagram is drawn by Confluence itself.
+This requires a Mermaid macro to be installed in your Confluence instance, and the `mermaid` feature to be enabled.
+
+```mermaid
+flowchart TD
+A[Start] --> B[End]
+```
+
 ### Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.

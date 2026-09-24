@@ -2,7 +2,8 @@ package types
 
 type MarkConfig struct {
 	MermaidScale float64
-	// MermaidOutput is the image a diagram is published as, "png" or "svg".
+	// MermaidOutput is how a diagram is published: "png" or "svg" as an image
+	// drawn by mark, or "macro" as a mermaid-macro macro drawn by Confluence.
 	// MermaidScale multiplies the pixels of a PNG one and the size the page
 	// displays an SVG one at. MermaidBundle keeps the diagram's source inside
 	// the SVG it is published as, and applies to nothing else.
