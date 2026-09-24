@@ -265,7 +265,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`<ac:structured-macro ac:name="iframe">`,
 			`<ac:parameter ac:name="src"><ri:url ri:value="{{ .URL | xmlesc }}" /></ac:parameter>`,
 			`{{ if .Frameborder }}<ac:parameter ac:name="frameborder">{{ .Frameborder | xmlesc }}</ac:parameter>{{ end }}`,
-			`{{ if .Scrolling }}<ac:parameter ac:name="id">{{ .Scrolling | xmlesc }}</ac:parameter>{{ end }}`,
+			`{{ if .Scrolling }}<ac:parameter ac:name="scrolling">{{ .Scrolling | xmlesc }}</ac:parameter>{{ end }}`,
 			`{{ if .Align }}<ac:parameter ac:name="align">{{ .Align | xmlesc }}</ac:parameter>{{ end }}`,
 			`<ac:parameter ac:name="width">{{ or .Width "640px" | xmlesc }}</ac:parameter>`,
 			`<ac:parameter ac:name="height">{{ or .Height "360px" | xmlesc }}</ac:parameter>`,
@@ -503,10 +503,13 @@ func templates(api *confluence.API) (*template.Template, error) {
 		// The body is separated from the wrapper tags by blank lines; see
 		// ac:details. A body ending in a list or table would otherwise absorb
 		// the closing tags as content.
+		//
+		// The body is rich text, as in ac:box and ac:panel, and so is not
+		// escaped: escaping it put any markup it held on the page as text.
 		`ac:column`: text(
 			`<ac:structured-macro ac:name="column">`,
 			`<ac:parameter ac:name="width">{{ or .Width "" | xmlesc }}</ac:parameter>`,
-			"<ac:rich-text-body>\n\n{{ or .Body \"\" | xmlesc }}\n\n</ac:rich-text-body>",
+			"<ac:rich-text-body>\n\n{{ or .Body \"\" }}\n\n</ac:rich-text-body>",
 			`</ac:structured-macro>`,
 		),
 		/* https://confluence.atlassian.com/conf59/multimedia-macro-792499140.html */

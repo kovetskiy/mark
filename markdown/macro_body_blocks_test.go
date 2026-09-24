@@ -45,3 +45,21 @@ func TestMacroRichTextBodyClosesOutsideBlockContent(t *testing.T) {
 		})
 	}
 }
+
+// A column's body is rich text like the other three's: markup in it reaches the
+// page as markup. ac:column alone escaped its body, so the tag below showed up
+// on the page as literal text.
+func TestColumnBodyKeepsItsMarkup(t *testing.T) {
+	src := "<!-- Macro: :m:\n     Template: ac:column\n     Width: 50%\n" +
+		"     Body: '<ac:emoticon ac:name=\"tick\"/> **done**'\n-->\n\n:m:\n"
+
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `<ac:emoticon ac:name="tick"/>`)
+	assert.Contains(t, out, "<strong>done</strong>")
+	assert.NotContains(t, out, "&lt;ac:emoticon")
+}
