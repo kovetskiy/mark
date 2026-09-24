@@ -293,10 +293,10 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 		return ""
 	}
 
-	assert.Equal(t, find("mark"), helpOutput(t, "v16.x.x", "--help"),
+	assert.Equal(t, find("mark"), helpOutput(t, "v17.x.x", "--help"),
 		"README.md's mark --help block has drifted from the binary")
-	assert.Equal(t, find("mark publish"), helpOutput(t, "v16.x.x", "publish", "--help"),
+	assert.Equal(t, find("mark publish"), helpOutput(t, "v17.x.x", "publish", "--help"),
 		"README.md's mark publish --help block has drifted from the binary")
-	assert.Equal(t, find("mark export"), helpOutput(t, "v16.x.x", "export", "--help"),
+	assert.Equal(t, find("mark export"), helpOutput(t, "v17.x.x", "export", "--help"),
 		"README.md's mark export --help block has drifted from the binary")
 }

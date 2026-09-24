@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v16/markdown"
-	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
-	"github.com/kovetskiy/mark/v16/util"
+	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
+	"github.com/kovetskiy/mark/v17/util"
 	"github.com/stretchr/testify/assert"
 )
 

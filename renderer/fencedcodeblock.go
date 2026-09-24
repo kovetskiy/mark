@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/d2"
-	"github.com/kovetskiy/mark/v16/mermaid"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/d2"
+	"github.com/kovetskiy/mark/v17/mermaid"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
