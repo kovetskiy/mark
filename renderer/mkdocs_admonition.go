@@ -34,40 +34,19 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) RegisterFuncs(reg renderer.NodeRend
 	reg.Register(parser.KindAdmonition, r.renderMkDocsAdmonition)
 }
 
-// MkDocsAdmonitionType is the kind of Confluence macro an admonition becomes,
-// or ANone when it becomes no macro.
-type MkDocsAdmonitionType int
-
-const (
-	AInfo MkDocsAdmonitionType = iota
-	ANote
-	AWarn
-	ATip
-	ANone
-)
-
-func (t MkDocsAdmonitionType) String() string {
-	return []string{"info", "note", "warning", "tip", "none"}[t]
-}
-
-func ParseMkDocsAdmonitionType(node ast.Node) MkDocsAdmonitionType {
+// ParseMkDocsAdmonitionType returns the macro an admonition node is published
+// as, or AdmonitionNone for a class Confluence has no macro for, or a node that
+// is not an admonition.
+func ParseMkDocsAdmonitionType(node ast.Node) AdmonitionType {
 	n, ok := node.(*parser.Admonition)
 	if !ok {
-		return ANone
+		return AdmonitionNone
 	}
 
-	switch string(n.AdmonitionClass) {
-	case "info":
-		return AInfo
-	case "note":
-		return ANote
-	case "warning":
-		return AWarn
-	case "tip":
-		return ATip
-	default:
-		return ANone
+	if t, ok := mkDocsAdmonitionTypes[string(n.AdmonitionClass)]; ok {
+		return t
 	}
+	return AdmonitionNone
 }
 
 // renderMkDocsAdmonition renders an admonition node as a Confluence structured macro.
@@ -76,7 +55,7 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 	n := node.(*parser.Admonition)
 	admonitionType := ParseMkDocsAdmonitionType(node)
 
-	if entering && admonitionType != ANone {
+	if entering && admonitionType != AdmonitionNone {
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", admonitionType)
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
@@ -92,7 +71,7 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 
 		return ast.WalkContinue, nil
 	}
-	if !entering && admonitionType != ANone {
+	if !entering && admonitionType != AdmonitionNone {
 		suffix := "</ac:rich-text-body></ac:structured-macro>\n"
 		if _, err := writer.Write([]byte(suffix)); err != nil {
 			return ast.WalkStop, err

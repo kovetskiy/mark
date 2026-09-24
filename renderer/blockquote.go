@@ -29,22 +29,6 @@ func (r *ConfluenceBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFu
 	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
 }
 
-// BlockQuoteType is the kind of Confluence macro a blockquote becomes, or None
-// when it becomes no macro.
-type BlockQuoteType int
-
-const (
-	Info BlockQuoteType = iota
-	Note
-	Warn
-	Tip
-	None
-)
-
-func (t BlockQuoteType) String() string {
-	return []string{"info", "note", "warning", "tip", "none"}[t]
-}
-
 type BlockQuoteLevelMap map[ast.Node]int
 
 func (m BlockQuoteLevelMap) Level(node ast.Node) int {
@@ -105,26 +89,26 @@ func markerOf(literal string) string {
 	return found
 }
 
-// ClassifyingBlockQuote compares a string against a set of patterns and returns a BlockQuoteType
+// ClassifyingBlockQuote compares a string against a set of patterns and returns its AdmonitionType
 // Note: GitHub Alerts ([!NOTE], [!TIP], etc.) are now handled by the superior transformer approach
 // in the GitHub Alerts extension, not by this legacy blockquote renderer
-func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) BlockQuoteType {
+func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) AdmonitionType {
 
 	marker := markerOf(literal)
 	if marker == "" {
-		return None
+		return AdmonitionNone
 	}
 
-	var t = None
+	var t = AdmonitionNone
 	switch {
 	case classifier.patternMap["info"].MatchString(marker):
-		t = Info
+		t = AdmonitionInfo
 	case classifier.patternMap["note"].MatchString(marker):
-		t = Note
+		t = AdmonitionNote
 	case classifier.patternMap["warn"].MatchString(marker):
-		t = Warn
+		t = AdmonitionWarning
 	case classifier.patternMap["tip"].MatchString(marker):
-		t = Tip
+		t = AdmonitionTip
 	}
 	return t
 }
@@ -132,8 +116,8 @@ func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) Blo
 // ParseBlockQuoteType parses the first line of a blockquote and returns its type
 // Note: This legacy function only handles traditional "info:", "note:", etc. syntax
 // GitHub Alerts ([!NOTE], [!TIP], etc.) are handled by the GitHub Alerts transformer
-func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
-	var t = None
+func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
+	var t = AdmonitionNone
 	var legacyClassifier = LegacyBlockQuoteClassifier()
 
 	countParagraphs := 0
@@ -155,7 +139,7 @@ func ParseBlockQuoteType(node ast.Node, source []byte) BlockQuoteType {
 				for i := 0; i < n.BaseBlock.Lines().Len(); i++ {
 					line := n.BaseBlock.Lines().At(i)
 					t = legacyClassifier.ClassifyingBlockQuote(string(line.Value(source)))
-					if t != None {
+					if t != AdmonitionNone {
 						break
 					}
 				}
@@ -204,14 +188,14 @@ func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, s
 	quoteType := ParseBlockQuoteType(node, source)
 	quoteLevel := r.LevelMap.Level(node)
 
-	if quoteLevel == 0 && entering && quoteType != None {
+	if quoteLevel == 0 && entering && quoteType != AdmonitionNone {
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", quoteType)
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
 		}
 		return ast.WalkContinue, nil
 	}
-	if quoteLevel == 0 && !entering && quoteType != None {
+	if quoteLevel == 0 && !entering && quoteType != AdmonitionNone {
 		suffix := "</ac:rich-text-body></ac:structured-macro>\n"
 		if _, err := writer.Write([]byte(suffix)); err != nil {
 			return ast.WalkStop, err

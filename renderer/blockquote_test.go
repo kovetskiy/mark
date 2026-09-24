@@ -148,9 +148,9 @@ func TestBlockQuoteNestedStaysAQuote(t *testing.T) {
 // TestParseBlockQuoteTypeString covers the names the enum prints, which are
 // interpolated straight into ac:name.
 func TestParseBlockQuoteTypeString(t *testing.T) {
-	assert.Equal(t, "info", crenderer.Info.String())
-	assert.Equal(t, "note", crenderer.Note.String())
-	assert.Equal(t, "warning", crenderer.Warn.String())
-	assert.Equal(t, "tip", crenderer.Tip.String())
-	assert.Equal(t, "none", crenderer.None.String())
+	assert.Equal(t, "info", crenderer.AdmonitionInfo.String())
+	assert.Equal(t, "note", crenderer.AdmonitionNote.String())
+	assert.Equal(t, "warning", crenderer.AdmonitionWarning.String())
+	assert.Equal(t, "tip", crenderer.AdmonitionTip.String())
+	assert.Equal(t, "none", crenderer.AdmonitionNone.String())
 }
