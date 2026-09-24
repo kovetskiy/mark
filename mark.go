@@ -147,17 +147,18 @@ func Run(config Config) error {
 //
 // Cancellation is checked between files and before the second pass, so a run
 // stops at the next boundary rather than part way through publishing a page --
-// which is the one place stopping would leave a page half written. It does not
-// abort a request already in flight: the Confluence client builds its own
-// requests, so the context reaches the retry backoff and no further.
+// which is the one place stopping would leave a page half written. Nothing
+// inside a file sees it: the Confluence client builds its own requests without
+// it, so neither a request in flight nor the backoff before retrying one is cut
+// short, and neither is a diagram being drawn.
 //
 // Whatever the run did before it stopped stands, including the page manifest,
 // which is saved on the way out as it is for any other ending.
 func RunContext(ctx context.Context, config Config) (err error) {
 	// The browser is shared for the life of the process and is started lazily
 	// by the first diagram or formula. A library caller has no other way to
-	// know it exists, so a run that started one shuts it down; the CLI's own
-	// call is harmless, since closing it twice is.
+	// know it exists, so a run that started one shuts it down -- the CLI
+	// included, which relies on this rather than calling Cleanup itself.
 	defer Cleanup()
 
 	return run(ctx, config)

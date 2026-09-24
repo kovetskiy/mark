@@ -2,10 +2,14 @@ package util
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 )
 
@@ -220,4 +224,39 @@ func TestD2ScaleFlagValidation(t *testing.T) {
 			assert.Error(t, runWithArgs([]string{"cmd", "--d2-scale", scale}))
 		})
 	}
+}
+
+// TestRunMarkStopsWhenCancelled: RunMark called mark.Run, which runs under a
+// context of its own, so a cancelled one -- which is what Ctrl-C now produces --
+// went unnoticed and every file was processed anyway. Cancelled before the first
+// file, nothing is compiled and the run says why it stopped.
+func TestRunMarkStopsWhenCancelled(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "mark.toml")
+	require.NoError(t, os.WriteFile(config, nil, 0o600))
+
+	document := filepath.Join(dir, "page.md")
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
+
+	restore := log.Logger
+	t.Cleanup(func() { log.Logger = restore })
+
+	cmd := &cli.Command{
+		Flags:  Flags,
+		Before: CheckFlags,
+		Action: RunMark,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := cmd.Run(ctx, []string{
+		"mark",
+		"--config", config,
+		"--compile-only",
+		"--files", document,
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
 }
