@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,8 +64,17 @@ type API struct {
 	// the right collection; see collectionOfV2.
 	contentTypesV2 sync.Map
 
-	isCloudFlag bool
-	isCloudOnce sync.Once
+	// isCloudFlag is the answer IsCloud memoises once isCloudKnown is set.
+	// Both are guarded by isCloudMutex; see IsCloud.
+	isCloudFlag  bool
+	isCloudKnown bool
+	isCloudMutex sync.Mutex
+
+	// ctx is what every request carries; see SetContext. Nil means
+	// context.Background, which is what an API that was never given one --
+	// NewAPI's, or a zero value -- has always had.
+	ctx      context.Context
+	ctxMutex sync.RWMutex
 
 	pageCache      map[string]*PageInfo
 	pageCacheByID  map[string]*PageInfo
@@ -418,12 +428,53 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 // response header into a header map shared for the whole run, and sent the
 // first value ever recorded for a key -- so one odd Content-Type from an SSO
 // page or a proxy pinned itself on every later PUT and POST body.
+//
+// Each request also carries the API's context (see SetContext), set here and
+// not on the resty clients: resty hands a client-level context to its requests
+// through context.WithoutCancel, so cancelling it would reach none of them.
 func (api *API) v1() *resty.Request {
-	return api.rest.R()
+	return api.rest.R().SetContext(api.Context())
 }
 
 func (api *API) v2() *resty.Request {
-	return api.restV2.R()
+	return api.restV2.R().SetContext(api.Context())
+}
+
+// SetContext sets the context every later request made through api carries.
+//
+// Cancelling it cancels a request in flight, cuts short the backoff before a
+// retry, and fails every request made after it at once with an error that
+// errors.Is recognises as ctx.Err(). A request already sent is not undone:
+// cancelling one that was writing a page leaves whatever Confluence made of
+// it.
+//
+// The context is a property of the API value rather than a parameter of each
+// method, so that the methods keep their signatures and a caller that never
+// sets one is unaffected: its requests carry context.Background.
+func (api *API) SetContext(ctx context.Context) {
+	api.ctxMutex.Lock()
+	defer api.ctxMutex.Unlock()
+
+	api.ctx = ctx
+}
+
+// Context returns the context requests made through api carry: the one last
+// given to SetContext, or context.Background.
+func (api *API) Context() context.Context {
+	api.ctxMutex.RLock()
+	defer api.ctxMutex.RUnlock()
+
+	if api.ctx == nil {
+		return context.Background()
+	}
+
+	return api.ctx
+}
+
+// isCancellation reports whether err is, or wraps, a context ending: the
+// caller giving up rather than Confluence answering.
+func isCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // FindRootPage returns the page a chain of parents is created under when no
@@ -496,7 +547,16 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 // moment. The retry transport gives up after four attempts, so remembering one
 // of those made a few unlucky seconds fail every remaining file in the space --
 // where before the memoisation the next document would simply have asked again.
+//
+// A cancelled request is never one: it is the caller who stopped asking, and
+// an error that wraps a 404 from one call and a cancellation from the next --
+// the v1 refusal that sends a lookup on to v2 -- says nothing about the
+// answer either.
 func worthCaching(err error) bool {
+	if isCancellation(err) {
+		return false
+	}
+
 	return err == nil ||
 		errors.Is(err, ErrNotFound) ||
 		errors.Is(err, errNoHomePage) ||
@@ -1364,7 +1424,19 @@ func (api *API) retryConflictingUpdate(
 	put func(version int64) error,
 ) (int64, error) {
 	if api.conflictRetryDelay > 0 {
-		time.Sleep(api.conflictRetryDelay)
+		// A cancelled run does not sit out the delay only to have the read
+		// that follows it refused.
+		timer := time.NewTimer(api.conflictRetryDelay)
+		select {
+		case <-api.Context().Done():
+			timer.Stop()
+
+			return 0, fmt.Errorf(
+				"update of page %q (%s) conflicted (%w), and was not retried: %w",
+				page.Title, page.ID, conflict, api.Context().Err(),
+			)
+		case <-timer.C:
+		}
 	}
 
 	current, err := api.currentPageVersion(page)
@@ -1757,31 +1829,48 @@ func baseURLHost(baseURL string) string {
 // IsCloud reports whether the target is Confluence Cloud, probing at most once
 // per API value.
 //
-// The result is memoised through sync.Once rather than a plain bool pair: the
-// slow path issues an HTTP request, so two callers racing here would both probe
-// and would also write isCloudFlag concurrently. Once also guarantees that a
-// caller arriving while the probe is in flight waits for the answer instead of
-// reading a half-written one.
+// The result is memoised under a mutex held for the whole probe: the slow path
+// issues an HTTP request, so two callers racing here would both probe and
+// would also write isCloudFlag concurrently, and a caller arriving while the
+// probe is in flight waits for the answer instead of reading a half-written
+// one.
+//
+// It is not a sync.Once, because a probe cut short by the API's context is not
+// an answer. Once would have remembered it as "not Cloud" for the rest of the
+// API's life -- through the manifest save a cancelled run still makes on its
+// way out, under a context of its own. A cancelled probe answers false for that
+// call only, and the next call asks again.
 func (api *API) IsCloud() bool {
-	api.isCloudOnce.Do(func() {
-		// 1. Fast path: check for a known Cloud host. The host is read off
-		// BaseURL, which NewAPI normalised and both clients are rooted at.
-		if api.gateway || isCloudHost(baseURLHost(api.BaseURL)) {
-			api.isCloudFlag = true
-			return
-		}
+	api.isCloudMutex.Lock()
+	defer api.isCloudMutex.Unlock()
 
-		// 2. Slow path: probe Cloud-only v2 API endpoint
-		var result any
-		response, err := api.v2().
-			SetResult(&result).
-			SetQueryParams(map[string]string{
-				"limit": "1",
-			}).
-			Get("spaces")
-		api.isCloudFlag = err == nil &&
-			(response.StatusCode() == http.StatusOK || response.StatusCode() == http.StatusForbidden)
-	})
+	if api.isCloudKnown {
+		return api.isCloudFlag
+	}
+
+	// 1. Fast path: check for a known Cloud host. The host is read off
+	// BaseURL, which NewAPI normalised and both clients are rooted at.
+	if api.gateway || isCloudHost(baseURLHost(api.BaseURL)) {
+		api.isCloudFlag, api.isCloudKnown = true, true
+
+		return true
+	}
+
+	// 2. Slow path: probe Cloud-only v2 API endpoint
+	var result any
+	response, err := api.v2().
+		SetResult(&result).
+		SetQueryParams(map[string]string{
+			"limit": "1",
+		}).
+		Get("spaces")
+	if isCancellation(err) {
+		return false
+	}
+
+	api.isCloudFlag = err == nil &&
+		(response.StatusCode() == http.StatusOK || response.StatusCode() == http.StatusForbidden)
+	api.isCloudKnown = true
 
 	return api.isCloudFlag
 }
@@ -2686,7 +2775,11 @@ func requestTarget(response *resty.Response) string {
 func newTransportError(response *resty.Response, operation string, err error) error {
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
-	if response == nil || response.RawResponse == nil {
+	//
+	// Nor is there when the request was cancelled, even with a response in
+	// hand: a body cut short by its context does not decode, and blaming an
+	// SSO page for it would send someone looking for a proxy that is not there.
+	if response == nil || response.RawResponse == nil || isCancellation(err) {
 		return fmt.Errorf("unable to %s: %w", operation, err)
 	}
 
