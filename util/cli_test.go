@@ -247,11 +247,11 @@ func TestMermaidAndMathScaleFlagValidation(t *testing.T) {
 	}
 }
 
-// TestRunMarkStopsWhenCancelled: RunMark called mark.Run, which runs under a
+// TestRunPublishStopsWhenCancelled: the CLI called mark.Run, which runs under a
 // context of its own, so a cancelled one -- which is what Ctrl-C now produces --
 // went unnoticed and every file was processed anyway. Cancelled before the first
 // file, nothing is compiled and the run says why it stopped.
-func TestRunMarkStopsWhenCancelled(t *testing.T) {
+func TestRunPublishStopsWhenCancelled(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "mark.toml")
 	require.NoError(t, os.WriteFile(config, nil, 0o600))
@@ -263,17 +263,11 @@ func TestRunMarkStopsWhenCancelled(t *testing.T) {
 	restore := log.Logger
 	t.Cleanup(func() { log.Logger = restore })
 
-	cmd := &cli.Command{
-		Flags:  Flags,
-		Before: CheckFlags,
-		Action: RunMark,
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := cmd.Run(ctx, []string{
-		"mark",
+	err := Run(ctx, NewCommand("test"), []string{
+		"mark", "publish",
 		"--config", config,
 		"--compile-only",
 		"--files", document,

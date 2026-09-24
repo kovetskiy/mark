@@ -257,6 +257,12 @@ type PageInfo struct {
 		} `json:"storage"`
 	} `json:"body"`
 
+	// Space is the space the page belongs to. It is only there when it was
+	// asked for, with "space" in the expand list.
+	Space struct {
+		Key string `json:"key"`
+	} `json:"space"`
+
 	Links struct {
 		Full string `json:"webui"`
 		// Base is the canonical site URL from the response's `_links.base`
