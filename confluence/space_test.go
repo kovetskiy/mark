@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -142,4 +143,91 @@ func TestTransientFailureIsNotCached(t *testing.T) {
 	id, err := api.GetSpaceID("DOCS")
 	require.NoError(t, err)
 	assert.Equal(t, space.ID, id)
+}
+
+// serverWithV1 stands in for Server or Data Center, where there is no /api/v2
+// at all, with v1's space endpoint refusing with the status v1 gives while it
+// says to fail.
+func serverWithV1(v1 func() (int, bool)) func(r *http.Request) (int, string, bool) {
+	return func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/api/v2/") {
+			return http.StatusNotFound, `{"message":"null for uri"}`, true
+		}
+		if strings.HasPrefix(r.URL.Path, "/rest/api/space/") {
+			if status, fail := v1(); fail {
+				return status, `{"message":"v1 refused"}`, true
+			}
+		}
+		return 0, "", false
+	}
+}
+
+// TestFindHomePageServerOutageIsNotCachedAsMissing: on Server the v2 fallback
+// always 404s, and that 404 used to be wrapped alongside v1's error. A v1
+// outage then matched ErrNotFound, was cached as a missing space, and every
+// later file in the space failed long after v1 had recovered.
+func TestFindHomePageServerOutageIsNotCachedAsMissing(t *testing.T) {
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	failing := true
+	server.SetFail(serverWithV1(func() (int, bool) {
+		return http.StatusServiceUnavailable, failing
+	}))
+
+	_, err := api.FindHomePage("DOCS")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "503", "the outage is what is reported")
+	assert.NotErrorIs(t, err, confluence.ErrNotFound,
+		"v2's 404 on Server says nothing about the space")
+
+	failing = false
+
+	found, err := api.FindHomePage("DOCS")
+	require.NoError(t, err, "the next lookup must not inherit the outage")
+	require.NotNil(t, found)
+	assert.Equal(t, home.ID, found.ID)
+}
+
+// TestFindHomePageServerReportsUnauthorized: bad credentials on Server are a
+// 401 from v1, and are neither reported nor remembered as a missing space.
+func TestFindHomePageServerReportsUnauthorized(t *testing.T) {
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.SetFail(serverWithV1(func() (int, bool) {
+		return http.StatusUnauthorized, true
+	}))
+
+	for range 2 {
+		_, err := api.FindHomePage("DOCS")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "401 (Unauthorized)")
+		assert.NotErrorIs(t, err, confluence.ErrNotFound)
+	}
+
+	assert.Equal(t, 2, server.CountRequests("GET", "/rest/api/space/DOCS"),
+		"a refusal is not a conclusion about the space, so it is asked again")
+}
+
+// TestGatewayFindHomePageNotFoundIsCached: through the gateway v1 is never
+// asked, so v2's 404 is the answer, and is remembered as one.
+func TestGatewayFindHomePageNotFoundIsCached(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/api/v2/spaces") {
+			return http.StatusNotFound, `{"message":"no such space"}`, true
+		}
+		return 0, "", false
+	})
+
+	for range 2 {
+		_, err := api.FindHomePage("NOPE")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, confluence.ErrNotFound)
+	}
+
+	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"))
+	assert.Zero(t, server.CountRequests("GET", "/rest/api/space/"))
 }
