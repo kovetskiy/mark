@@ -24,9 +24,13 @@ type ConfluenceMkDocsAdmonitionRenderer struct {
 
 // NewConfluenceMkDocsAdmonitionRenderer creates a new instance of the ConfluenceMkDocsAdmonitionRenderer.
 func NewConfluenceMkDocsAdmonitionRenderer(opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceMkDocsAdmonitionRenderer{
+	r := &ConfluenceMkDocsAdmonitionRenderer{
 		Config: html.NewConfig(),
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs.

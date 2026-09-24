@@ -24,10 +24,14 @@ func NewConfluenceTextRenderer(stripNewlines bool, opts ...html.Option) renderer
 	if stripNewlines {
 		sb = ' '
 	}
-	return &ConfluenceTextRenderer{
+	r := &ConfluenceTextRenderer{
 		Config:    html.NewConfig(),
 		softBreak: sb,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs

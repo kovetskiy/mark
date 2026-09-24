@@ -31,10 +31,14 @@ func NewConfluenceTextLegacyRenderer(stripNL bool, opts ...html.Option) renderer
 	if stripNL {
 		sb = ' '
 	}
-	return &ConfluenceTextLegacyRenderer{
+	r := &ConfluenceTextLegacyRenderer{
 		Config:    html.NewConfig(),
 		softBreak: sb,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

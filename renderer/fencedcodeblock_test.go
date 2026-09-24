@@ -23,10 +23,7 @@ func (c *collectingAttacher) Attach(a attachment.Attachment) {
 
 // fencedCode renders one fenced block with the given info string.
 //
-// The info string is parsed by reBlockDetails in fencedcodeblock.go. Note that
-// the exported ParseLanguage and ParseTitle in the same file are not used by
-// the renderer and do not agree with it -- ParseLanguage("collapse") returns no
-// language, while the renderer takes "collapse" as the language name.
+// The info string is parsed by parseBlockDetails in fencedcodeblock.go.
 func fencedCode(t *testing.T, info string) string {
 	t.Helper()
 

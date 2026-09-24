@@ -108,13 +108,17 @@ type ConfluenceImageRenderer struct {
 
 // NewConfluenceImageRenderer creates a new instance of the ConfluenceImageRenderer
 func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceImageRenderer{
+	r := &ConfluenceImageRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
 		Attachments: attachments,
 		ImageAlign:  imageAlign,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs .

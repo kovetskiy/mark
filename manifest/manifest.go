@@ -200,9 +200,9 @@ func shardIndex(prefix, key string) (int, bool) {
 	return index, true
 }
 
-// ShardFor reports which shard holds a path. Exported so a caller -- in
-// practice a test -- can find the property a given path's mapping lives in
-// without duplicating the hash.
+// ShardFor reports which shard holds a path, so that a caller reading the
+// properties directly -- with PropertyKey -- can find the one a given path's
+// mapping lives in without duplicating the hash.
 func ShardFor(path string) int { return shardFor(path) }
 
 // shardFor picks the shard a path belongs to.
@@ -1156,30 +1156,6 @@ func (s *Store) orphans(spaceKey string) []string {
 	}
 	sort.Strings(orphans)
 	return orphans
-}
-
-// PruneOrphans drops the entries Orphans reports and returns what it dropped.
-//
-// Without this the mapping only ever grows, and a file deleted once is reported
-// as missing on every run thereafter -- which trains people to ignore the one
-// message that matters. Reporting a deletion once and then forgetting it is the
-// honest bookkeeping: mark never deleted the page and does not claim to know
-// what became of it.
-//
-// Only what orphans would report is dropped, so the same scoping applies: a run
-// that was not looking where a file used to be cannot forget it.
-func (s *Store) PruneOrphans(spaceKey string) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	pruned := s.orphans(spaceKey)
-	state := s.spaces[spaceKey]
-	for _, path := range pruned {
-		sh := &state.shards[shardFor(path)]
-		delete(sh.pages, path)
-		sh.dirty = true
-	}
-	return pruned
 }
 
 // Spaces returns the space keys this store has loaded, sorted.

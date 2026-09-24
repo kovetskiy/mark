@@ -18,11 +18,15 @@ type ConfluenceGHAlertsBlockQuoteRenderer struct {
 
 // NewConfluenceGHAlertsBlockQuoteRenderer creates a new instance of the renderer for GitHub Alerts
 func NewConfluenceGHAlertsBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
-	return &ConfluenceGHAlertsBlockQuoteRenderer{
+	r := &ConfluenceGHAlertsBlockQuoteRenderer{
 		Config:         html.NewConfig(),
 		LevelMap:       nil,
 		BlockQuoteNode: nil,
 	}
+	for _, opt := range opts {
+		opt.SetHTMLOption(&r.Config)
+	}
+	return r
 }
 
 // RegisterFuncs implements NodeRenderer.RegisterFuncs
