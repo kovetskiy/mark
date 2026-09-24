@@ -530,3 +530,87 @@ func TestActionErrorsReadsEveryShape(t *testing.T) {
 		})
 	}
 }
+
+// TestMovePageActionRedirectedToTheLoginPageIsGivenUp: Seraph can also turn
+// the request away by redirecting it to the login page. The action is then
+// judged by where the request ended up, which is the final response's
+// request, not the one that was sent.
+func TestMovePageActionRedirectedToTheLoginPageIsGivenUp(t *testing.T) {
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		switch r.URL.Path {
+		case "/pages/movepage.action":
+			return http.StatusFound, ``, true
+		case "/login.action":
+			return http.StatusOK, `<html><body>Log in</body></html>`, true
+		}
+		return 0, "", false
+	})
+	server.SetFailHeaders(http.Header{
+		"Content-Type": {"text/html"},
+		"Location":     {"/login.action?os_destination=%2Fpages%2Fmovepage.action"},
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", "")
+	second := server.AddPage("DOCS", "Second", "page", "")
+
+	require.NoError(t, api.MoveContentAppend(first.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(second.ID, parent.ID))
+
+	assert.Equal(t, parent.ID, server.Page(first.ID).ParentID)
+	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/pages/movepage.action"),
+		"a login page holds for every page, so the action is not asked again")
+}
+
+// TestMovePageActionIsSentAsTheMoveDialogSendsIt: the action is a web action
+// behind Seraph and its XSRF check rather than a REST resource, so what it is
+// sent matters: no body, the XSRF opt-out, a request for JSON back, and --
+// with a username and password -- os_authType=basic, without which Seraph
+// ignores the Authorization header. A token goes as a bearer token instead.
+func TestMovePageActionIsSentAsTheMoveDialogSendsIt(t *testing.T) {
+	for _, tc := range []struct {
+		name, username, password, authorization, authType string
+	}{
+		{"basic", "user", "token", "Basic dXNlcjp0b2tlbg==", "basic"},
+		{"token", "", "pat", "Bearer pat", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sent *http.Request
+
+			server := confluencetest.New(t)
+			server.SetFail(func(r *http.Request) (int, string, bool) {
+				if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+					return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+				}
+				if r.URL.Path == "/pages/movepage.action" {
+					sent = r.Clone(r.Context())
+				}
+				return 0, "", false
+			})
+			api := confluence.NewAPI(server.URL, tc.username, tc.password, false)
+			require.False(t, api.IsCloud())
+
+			parent := server.AddPage("DOCS", "Parent", "page", "")
+			page := server.AddPage("DOCS", "Page", "page", "")
+
+			require.NoError(t, api.MoveContentAppend(page.ID, parent.ID))
+			require.NotNil(t, sent)
+
+			assert.Equal(t, http.MethodPost, sent.Method)
+			assert.Zero(t, sent.ContentLength, "the dialog sends no body")
+			assert.Empty(t, sent.Header.Get("Content-Type"))
+			assert.Equal(t, "no-check", sent.Header.Get("X-Atlassian-Token"))
+			assert.Equal(t, "application/json", sent.Header.Get("Accept"))
+			assert.Equal(t, tc.authorization, sent.Header.Get("Authorization"))
+
+			query := sent.URL.Query()
+			assert.Equal(t, tc.authType, query.Get("os_authType"))
+			assert.Equal(t, page.ID, query.Get("pageId"))
+			assert.Equal(t, "append", query.Get("position"))
+			assert.Equal(t, parent.ID, query.Get("targetId"))
+			assert.Equal(t, "Parent", query.Get("targetTitle"))
+			assert.Equal(t, "DOCS", query.Get("spaceKey"))
+		})
+	}
+}

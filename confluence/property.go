@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/gopencils"
+	"resty.dev/v3"
 )
 
 // Property is a key/value pair Confluence stores against a space or a page.
@@ -121,31 +121,29 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 	}
 
 	var (
-		result  Property
-		request *gopencils.Resource
-		err     error
+		result   Property
+		response *resty.Response
+		err      error
 	)
 
 	owner := strings.TrimSuffix(collection, "s") + " " + ownerID
-	object := api.v2().Res(collection).Res(ownerID)
+	properties := collection + "/" + ownerID + "/properties"
 
 	if existing == nil {
-		// The result pointer goes on the collection resource itself: routing it
-		// through a further Res("") would append a trailing slash, which this
-		// API is not reliably forgiving about.
-		request, err = object.Res("properties", &result).Post(payload)
+		// No trailing slash: this API is not reliably forgiving about one.
+		response, err = api.v2().SetResult(&result).SetBody(payload).Post(properties)
 	} else {
 		// v2 addresses an update by property id.
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = object.Res("properties").Res(existing.ID, &result).Put(payload)
+		response, err = api.v2().SetResult(&result).SetBody(payload).Put(properties + "/" + existing.ID)
 	}
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("write property %q of %s", key, owner), err,
+			response, fmt.Sprintf("write property %q of %s", key, owner), err,
 		)
 	}
 
-	return propertyWriteResult(request, key, owner, existing == nil)
+	return propertyWriteResult(response, key, owner, existing == nil)
 }
 
 // ListPageProperties returns every property stored against a page, through the
@@ -181,26 +179,25 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 			} `json:"_links"`
 		}
 
-		request, err := api.v1().
-			Res("content").
-			Res(contentID).
-			Res("property", &result).
-			Get(map[string]string{
+		response, err := api.v1().
+			SetResult(&result).
+			SetQueryParams(map[string]string{
 				"limit": strconv.Itoa(propertyPageSize),
 				"start": strconv.Itoa(start),
-			})
+			}).
+			Get("content/" + contentID + "/property")
 		if err != nil {
-			return nil, newTransportError(request, "read properties of content "+contentID, err)
+			return nil, newTransportError(response, "read properties of content "+contentID, err)
 		}
 
 		// Only the first page may read 404 as "none set"; one partway through
 		// is a failure, and swallowing it would discard the pages already read.
-		if request.Raw.StatusCode == http.StatusNotFound && start == 0 {
+		if response.StatusCode() == http.StatusNotFound && start == 0 {
 			return nil, nil
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode() != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		all = append(all, result.Results...)
@@ -234,15 +231,15 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 	}
 
 	var (
-		result  Property
-		request *gopencils.Resource
-		err     error
+		result   Property
+		response *resty.Response
+		err      error
 	)
 
-	content := api.v1().Res("content").Res(contentID)
+	properties := "content/" + contentID + "/property"
 
 	if existing == nil {
-		request, err = content.Res("property", &result).Post(payload)
+		response, err = api.v1().SetResult(&result).SetBody(payload).Post(properties)
 	} else {
 		// v1 addresses an update by key in the path, but still wants the
 		// property id in the body, and the version being moved to rather than
@@ -251,15 +248,15 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		// instance will not.
 		payload["id"] = existing.ID
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = content.Res("property").Res(key, &result).Put(payload)
+		response, err = api.v1().SetResult(&result).SetBody(payload).Put(properties + "/" + key)
 	}
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("write property %q of content %s", key, contentID), err,
+			response, fmt.Sprintf("write property %q of content %s", key, contentID), err,
 		)
 	}
 
-	return propertyWriteResult(request, key, "content "+contentID, existing == nil)
+	return propertyWriteResult(response, key, "content "+contentID, existing == nil)
 }
 
 // propertyWriteResult turns a property write response into an error, singling
@@ -271,8 +268,8 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 // ordinary and survivable. Colliding with a key that was there the whole time
 // is neither: it means the listing this run worked from was incomplete, so
 // whatever that property held has already been treated as missing.
-func propertyWriteResult(request *gopencils.Resource, key, subject string, creating bool) error {
-	switch request.Raw.StatusCode {
+func propertyWriteResult(response *resty.Response, key, subject string, creating bool) error {
+	switch response.StatusCode() {
 	case http.StatusOK, http.StatusCreated:
 		return nil
 	case http.StatusConflict:
@@ -288,6 +285,6 @@ func propertyWriteResult(request *gopencils.Resource, key, subject string, creat
 			key, subject, ErrPropertyConflict,
 		)
 	default:
-		return newErrorStatusNotOK(request)
+		return newErrorStatusNotOK(response)
 	}
 }
