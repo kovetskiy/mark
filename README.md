@@ -1248,6 +1248,25 @@ gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the
 `--on-orphan` action taken: `report` for a page that was only reported and left
 where it is, `archive` or `delete` for one that was archived or trashed.
 
+`errors` lists what failed that was not one document's doing: `ac:` links that
+still resolve to no page once everything is published, a page manifest that
+could not be saved, a failed ordering pass, an orphan that could not be
+handled. The report is written however the run ends, so a run that fails still
+says which pages it published and why it failed. A document that fails is
+recorded against that document, as `failed` with its `reason`, and is not
+repeated here.
+
+```json
+{
+  "pages": [
+    {"file": "docs/guide.md", "status": "published", "title": "Guide", "pageId": "1009"}
+  ],
+  "errors": [
+    "1 link does not resolve:\n  docs/guide.md: link \"ac:Nowhere\" does not resolve: there is no page \"Nowhere\" in space \"DOCS\""
+  ]
+}
+```
+
 `github` prints [workflow
 commands](https://docs.github.com/actions/reference/workflow-commands-for-github-actions),
 so that a failure appears against the file that caused it in a pull request:
@@ -1257,7 +1276,11 @@ so that a failure appears against the file that caused it in a pull request:
 ::warning file=docs/draft.md::the document is not synchronized
 ::error file=docs/broken.md::unable to compile markdown: ...
 ::warning file=docs/old.md::page "Old" was deleted: its source file is gone
+::error::unable to save page manifest: ...
 ```
+
+An error that belongs to no one file, from `errors` above, is annotated without
+one, and appears in the run's summary rather than against a line of the diff.
 
 ```yaml
 - run: mark --output-format github --files "docs/**/*.md"
