@@ -69,6 +69,51 @@ func TestTemplatesEscapeInterpolatedValues(t *testing.T) {
 	)
 }
 
+// TestIframeScrollingIsNamedScrolling: the iframe macro's scrolling parameter
+// went out named "id", so Confluence never saw it and the frame scrolled or not
+// regardless of what the document asked for -- and gained an id it never asked
+// for.
+func TestIframeScrollingIsNamedScrolling(t *testing.T) {
+	lib, err := New(nil)
+	require.NoError(t, err)
+
+	var out strings.Builder
+	err = lib.Templates.ExecuteTemplate(&out, "ac:iframe", map[string]any{
+		"URL":       "https://example.com/?a=1&b=2",
+		"Scrolling": "no",
+	})
+	require.NoError(t, err)
+
+	rendered := out.String()
+	assert.Contains(t, rendered, `<ac:parameter ac:name="scrolling">no</ac:parameter>`)
+	assert.NotContains(t, rendered, `ac:name="id"`)
+	assert.Contains(t, rendered, `ri:value="https://example.com/?a=1&amp;b=2"`)
+}
+
+// TestColumnBodyIsRichText: a column's body is storage format, as ac:box's
+// and ac:panel's are. Escaping it, which it alone of the rich-text templates
+// did, put any markup in it on the page as literal text. The width is a plain
+// parameter and stays escaped.
+func TestColumnBodyIsRichText(t *testing.T) {
+	lib, err := New(nil)
+	require.NoError(t, err)
+
+	var out strings.Builder
+	err = lib.Templates.ExecuteTemplate(&out, "ac:column", map[string]any{
+		"Width": `50%" x="`,
+		"Body":  `<p><strong>bold</strong> &amp; <ac:emoticon ac:name="tick"/></p>`,
+	})
+	require.NoError(t, err)
+
+	rendered := out.String()
+	assert.Contains(t, rendered,
+		"<ac:rich-text-body>\n\n"+
+			`<p><strong>bold</strong> &amp; <ac:emoticon ac:name="tick"/></p>`+
+			"\n\n</ac:rich-text-body>")
+	assert.NotContains(t, rendered, "&lt;")
+	assert.Contains(t, rendered, `<ac:parameter ac:name="width">50%&#34; x=&#34;</ac:parameter>`)
+}
+
 // BenchmarkNew measures the cost of building the standard library. mark calls
 // New once per processed file, so this is the per-file floor for template
 // parsing.

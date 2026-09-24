@@ -887,7 +887,7 @@ By default, mark provides several built-in templates and macros:
 
 * template: `ac:column` To be used with the section macro to define the columns in a page.
   * Width: Width of the column
-  * Body: The content of the column
+  * Body: The content of the column, rich text as in `ac:box` and `ac:panel`: Markdown and storage-format markup are rendered, not shown as text
 
 * template: `ac:multimedia` to embedd an attached video, animation or other multimedia files in a Confluence page
   * Name: Name of the file
