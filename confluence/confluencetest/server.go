@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -1411,7 +1412,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 				"metadata": map[string]any{"comment": a.Comment},
 				"_links": map[string]any{
 					"context":  "/wiki",
-					"download": "/download/attachments/" + a.PageID + "/" + a.Filename,
+					"download": downloadLink(a.PageID, a.Filename),
 				},
 			})
 		}
@@ -1453,7 +1454,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 				"metadata": map[string]any{"comment": a.Comment},
 				"_links": map[string]any{
 					"context":  "/wiki",
-					"download": "/download/attachments/" + pageID + "/" + a.Filename,
+					"download": downloadLink(pageID, a.Filename),
 				},
 			}},
 		})
@@ -1502,7 +1503,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 		"title": found.Filename,
 		"_links": map[string]any{
 			"context":  "/wiki",
-			"download": "/download/attachments/" + pageID + "/" + found.Filename,
+			"download": downloadLink(pageID, found.Filename),
 		},
 	})
 }
@@ -1988,7 +1989,7 @@ func (s *Server) attachmentsV2(w http.ResponseWriter, r *http.Request, collectio
 			"id":           a.ID,
 			"title":        a.Filename,
 			"comment":      a.Comment,
-			"downloadLink": "/download/attachments/" + a.PageID + "/" + a.Filename,
+			"downloadLink": downloadLink(a.PageID, a.Filename),
 		})
 	}
 
@@ -2202,6 +2203,12 @@ func (s *Server) searchUser(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// downloadLink is an attachment's download path as Confluence writes it, with
+// the filename percent-encoded: a#b.png is served as a%23b.png.
+func downloadLink(pageID, filename string) string {
+	return "/download/attachments/" + pageID + "/" + url.PathEscape(filename)
 }
 
 func contains(items []string, want string) bool {

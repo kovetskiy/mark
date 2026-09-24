@@ -212,17 +212,38 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 // which is what happens without the flag at all -- but the file is not read
 // here, and whether it may be read is decided where it is.
 func (r *ConfluenceLinkRenderer) attachable(destination string) bool {
+	_, ok := r.localFile(destination)
+
+	return ok
+}
+
+// localFile reports the file beside the document that a destination names.
+//
+// Tried as written first and then as the URL a destination is, so that
+// "a%23b.png" finds a#b.png while a file really called my%20file.png still
+// finds itself.
+func (r *ConfluenceLinkRenderer) localFile(destination string) (string, bool) {
 	if r.Attachments == nil || r.Stdlib == nil || r.Path == "" {
-		return false
+		return "", false
 	}
 
 	if !isLocalFileReference(destination) {
-		return false
+		return "", false
 	}
 
-	info, err := os.Stat(filepath.Join(filepath.Dir(r.Path), destination))
+	names := []string{destination}
+	if decoded, ok := attachment.DecodeDestination(destination); ok {
+		names = append(names, decoded)
+	}
 
-	return err == nil && !info.IsDir()
+	for _, name := range names {
+		info, err := os.Stat(filepath.Join(filepath.Dir(r.Path), name))
+		if err == nil && !info.IsDir() {
+			return name, true
+		}
+	}
+
+	return "", false
 }
 
 // attachReferencedFile uploads what a link points at, and writes a link to the
@@ -235,8 +256,13 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 ) error {
 	// Resolved as written rather than as a pattern: a link names one file, and
 	// the one it names is the one the reader was promised.
+	name, ok := r.localFile(string(link.Destination))
+	if !ok {
+		name = string(link.Destination)
+	}
+
 	attached, err := attachment.ResolveLocalAttachment(
-		vfs.LocalOS, filepath.Dir(r.Path), string(link.Destination),
+		vfs.LocalOS, filepath.Dir(r.Path), name,
 	)
 
 	// Refused rather than published as a link to somewhere it should not have

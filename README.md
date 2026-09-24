@@ -420,6 +420,12 @@ written when nothing is there.
 A pattern reaches no further than a path does — the document's own directory or
 the one mark is running in — so `../../*.pem` is refused rather than swept up.
 
+A link or image destination is a URL, so a character that means something in
+one is written percent-encoded: `![](a%23b.png)` for a file called `a#b.png`,
+`[notes](100%25.pdf)` for `100%.pdf`, and `my%20file.png` or `<my file.png>` for
+`my file.png`. The destination is tried exactly as written first, so a file
+really called `my%20file.png` is still found under that name.
+
 An image is uploaded whether or not it is declared: `![](images/logo.png)`
 attaches the file and shows it. A **link** to a file is not, and is published as
 the path the document wrote -- which means nothing once the page is on
