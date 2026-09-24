@@ -41,7 +41,7 @@ func dispatch(t *testing.T, args ...string) (*published, string, error) {
 	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
 		got = &published{bare: c == c.Root(), files: c.String("files")}
 		return nil
-	})
+	}, nil)
 	var out bytes.Buffer
 	cmd.Writer, cmd.ErrWriter = &out, &out
 
@@ -385,12 +385,14 @@ func helpOutput(t *testing.T, version string, args ...string) string {
 }
 
 // TestHelp: "mark --help" is about mark as a whole -- its commands and the
-// flags they share -- and "mark publish --help" about publishing.
+// flags they share -- and "mark publish --help" and "mark export --help"
+// about the one command.
 func TestHelp(t *testing.T) {
 	t.Run("mark --help", func(t *testing.T) {
 		help := helpOutput(t, "test", "--help")
 		assert.Contains(t, help, "COMMANDS:")
 		assert.Regexp(t, `(?m)^\s+publish\s`, help)
+		assert.Regexp(t, `(?m)^\s+export\s`, help)
 		assert.Contains(t, help, "--username")
 		assert.Contains(t, help, "--config")
 		assert.NotContains(t, help, "--files", "publish flags belong to publish's help")
@@ -402,6 +404,15 @@ func TestHelp(t *testing.T) {
 		assert.Contains(t, help, "--files")
 		assert.Contains(t, help, "--features")
 		assert.Contains(t, help, "GLOBAL OPTIONS:")
+		assert.Contains(t, help, "--username", "the global flags are listed with it")
+	})
+
+	t.Run("mark export --help", func(t *testing.T) {
+		help := helpOutput(t, "test", "export", "--help")
+		assert.Contains(t, help, "mark export")
+		assert.Contains(t, help, "--page-id")
+		assert.Contains(t, help, "--attachments-dir")
+		assert.NotContains(t, help, "--files", "publish flags belong to publish's help")
 		assert.Contains(t, help, "--username", "the global flags are listed with it")
 	})
 
@@ -450,6 +461,7 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 	}{
 		{"mark", []string{"--help"}},
 		{"mark publish", []string{"publish", "--help"}},
+		{"mark export", []string{"export", "--help"}},
 	} {
 		pattern := regexp.MustCompile("(?s)```text\nNAME:\n   " + regexp.QuoteMeta(block.heading) + " - .*?```\n")
 		found := pattern.FindString(updated)
