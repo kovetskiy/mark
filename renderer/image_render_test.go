@@ -81,3 +81,18 @@ func TestImageWithUnresolvablePathIsTreatedAsAURL(t *testing.T) {
 	assert.Contains(t, actual, `<ri:url ri:value="no-such-file.png"/>`)
 	assert.Empty(t, attacher.attachments)
 }
+
+// TestImageFromEscapedLocalPathBecomesAnAttachment covers the spellings of a
+// local path that are not the file's name as written: a backslash escape and a
+// percent-encoding both name test.png.
+func TestImageFromEscapedLocalPathBecomesAnAttachment(t *testing.T) {
+	for _, markdown := range []string{"![a](test\\.png)\n", "![a](test%2Epng)\n"} {
+		attacher := &collectingAttacher{}
+
+		actual := render(t, markdown, imageRenderers(t, attacher))
+		assertWellFormed(t, actual)
+
+		assert.Contains(t, actual, `<ri:attachment ri:filename="test.png"/>`, markdown)
+		require.Len(t, attacher.attachments, 1, markdown)
+	}
+}

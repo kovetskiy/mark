@@ -32,8 +32,8 @@ func TestImageTitleAttributeIsEscaped(t *testing.T) {
 		"an unescaped quote closes the attribute early")
 }
 
-// The alt text is already escaped upstream by nodeToHTMLText; escaping it again
-// in the template would double-encode it.
+// The alt text is escaped once, by the template; escaping it in the renderer
+// as well would double-encode it.
 func TestImageAltAttributeIsNotDoubleEscaped(t *testing.T) {
 	out := compileEsc(t, "![a & b](https://x/a.png)\n")
 

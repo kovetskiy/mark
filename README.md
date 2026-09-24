@@ -1372,6 +1372,13 @@ instead.
 
 will automatically upload the inlined image as an attachment and inline the image using the `ac:image` template.
 
+The path is read the way Markdown defines it: `my%20file.png` and
+`<my file.png>` both name `my file.png`, and the backslash escape in
+`my\_file.png` names `my_file.png`. The name as written is tried
+first, so a file whose name really contains a `%` still resolves to itself. The alt text
+and title are read the same way: `"a \"quoted\" &amp; b"` is published as
+`a "quoted" & b`.
+
 If the file is not found, it will inline the image using the `ac:image` template and link to the image.
 
 ### Add width for an image

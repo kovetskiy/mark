@@ -1,9 +1,11 @@
 package renderer
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/ast"
@@ -126,7 +129,11 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 	}
 	n := node.(*ast.Image)
 
-	if !r.Unsafe && html.IsDangerousURL(n.Destination) {
+	// Read as CommonMark defines it before anything looks at it, which is
+	// also what goldmark's own renderer checks for a dangerous scheme.
+	destination := ctransformer.ImageDestination(n)
+
+	if !r.Unsafe && html.IsDangerousURL([]byte(destination)) {
 		return ast.WalkContinue, nil
 	}
 
@@ -152,7 +159,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 		align = explicitAlign
 	}
 
-	attachments, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{string(n.Destination)})
+	attachments, err := r.resolveLocalImage(destination)
 
 	// A path that reaches outside the project is refused rather than quietly
 	// treated as a URL. The file is not uploaded either way, but publishing a
@@ -192,16 +199,16 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				"",
 				displayWidth,
 				explicitHeight,
-				string(n.Title),
-				string(nodeToHTMLText(n, source)),
+				r.imageTitle(n),
+				r.imageAlt(n, source),
 				"",
-				string(n.Destination),
+				destination,
 			},
 		)
 	} else {
 		if len(attachments) == 0 {
 			line, col := GetLineCol(source, node.Pos())
-			return ast.WalkStop, fmt.Errorf("line %d, col %d: no attachment resolved for %q", line, col, string(n.Destination))
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: no attachment resolved for %q", line, col, destination)
 		}
 
 		r.Attachments.Attach(attachments[0])
@@ -232,8 +239,8 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				attachments[0].Height,
 				displayWidth,
 				explicitHeight,
-				string(n.Title),
-				string(nodeToHTMLText(n, source)),
+				r.imageTitle(n),
+				r.imageAlt(n, source),
 				attachments[0].Filename,
 				"",
 			},
@@ -247,28 +254,90 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 	return ast.WalkSkipChildren, nil
 }
 
-// https://github.com/yuin/goldmark/blob/c446c414ef3a41fb562da0ae5badd18f1502c42f/renderer/html/html.go
-func nodeToHTMLText(n ast.Node, source []byte) []byte {
+// resolveLocalImage finds the file an image destination names beside the
+// document, trying each spelling of it in turn.
+//
+// "my%20file.png" and "my\_file.png" name the same files as "<my file.png>" and
+// "my_file.png", and were published as a relative ri:url instead: a broken
+// image, with the file never uploaded. A path that reaches outside the project
+// stops the search, whichever spelling reached it.
+func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) ([]attachment.Attachment, error) {
+	err := errors.New("not a local file")
+
+	for _, path := range ctransformer.LocalImagePaths(destination) {
+		var attachments []attachment.Attachment
+
+		attachments, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{path})
+		if err == nil || errors.Is(err, attachment.ErrOutsideProject) {
+			return attachments, err
+		}
+	}
+
+	return nil, err
+}
+
+// imageTitle is the title as its text, ready to be escaped once by the
+// template. Written as Markdown it still carries its backslash escapes and
+// entity references, and passing those through put `\&#34;` and `&amp;amp;` on
+// the page where `"` and `&` were meant.
+func (r *ConfluenceImageRenderer) imageTitle(n *ast.Image) string {
+	if ctransformer.HasPlainTitle(n) {
+		return string(n.Title)
+	}
+
+	return r.plainText(n.Title)
+}
+
+// imageAlt is the alt text as its text, read the same way as the title.
+func (r *ConfluenceImageRenderer) imageAlt(n *ast.Image, source []byte) string {
 	var buf bytes.Buffer
+	r.writeAltText(&buf, n, source)
+
+	return buf.String()
+}
+
+// https://github.com/yuin/goldmark/blob/c446c414ef3a41fb562da0ae5badd18f1502c42f/renderer/html/html.go
+//
+// Nothing here is escaped: the result is interpolated into an attribute by the
+// ac:image template, which escapes it, and escaping here as well puts a literal
+// &amp;amp; on the page.
+func (r *ConfluenceImageRenderer) writeAltText(buf *bytes.Buffer, n ast.Node, source []byte) {
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
 		if s, ok := c.(*ast.String); ok {
 			// The <img> transformer hands the alt text over as a plain String,
 			// and only the IsCode branch existed, so every alt written as an
 			// HTML attribute was silently dropped while the Markdown spelling
-			// kept its own.
-			//
-			// Written out unescaped, like the Text branch below and for the
-			// same reason: the ac:image template escapes what it interpolates,
-			// and doing it here as well puts a literal &amp;amp; on the page.
+			// kept its own. It is already the text: the HTML parser decoded it.
 			buf.Write(s.Value)
 		} else if t, ok := c.(*ast.Text); ok {
-			// Not escaped here: every consumer interpolates the result into an
-			// attribute through a template that escapes, and escaping twice
-			// puts a literal &amp;amp; on the page.
-			buf.Write(t.Value(source))
+			// Raw text is a code span's, where a backslash is a backslash.
+			// Anything else is Markdown, read the way goldmark reads it.
+			if t.IsRaw() {
+				buf.Write(t.Value(source))
+			} else {
+				buf.WriteString(r.plainText(t.Value(source)))
+			}
 		} else {
-			buf.Write(nodeToHTMLText(c, source))
+			r.writeAltText(buf, c, source)
 		}
 	}
-	return buf.Bytes()
+}
+
+// plainText reads Markdown text the way goldmark's own HTML renderer does --
+// backslash escapes dropped, entity and numeric references resolved -- and
+// returns the text itself rather than HTML. Borrowing goldmark's writer keeps
+// the edge cases its own: "\&amp;" is the five characters "&amp;", not "&".
+// The writer's output is HTML with only &, <, > and " escaped, which is
+// exactly what html.UnescapeString undoes.
+func (r *ConfluenceImageRenderer) plainText(markdown []byte) string {
+	if len(markdown) == 0 {
+		return ""
+	}
+
+	var buf bytes.Buffer
+	w := bufio.NewWriter(&buf)
+	r.Writer.Write(w, markdown)
+	_ = w.Flush()
+
+	return stdhtml.UnescapeString(buf.String())
 }
