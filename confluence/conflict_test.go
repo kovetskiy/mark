@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
@@ -350,5 +352,79 @@ func TestReparentPersistentConflictFails(t *testing.T) {
 	assert.True(t, errors.Is(err, errConflict))
 	assert.Contains(t, err.Error(), "something else is writing to the page")
 	assert.Equal(t, 2, countContentPuts(server, pageID), "exactly one retry")
+	assert.Equal(t, oldParent.ID, server.Page(pageID).ParentID)
+}
+
+// The wait before a reparent's retry ends with the API's context, as
+// UpdatePage's does: a stopped run does not sit it out only to have the read
+// after it refused.
+func TestReparentConflictWaitEndsWithTheContext(t *testing.T) {
+	var (
+		server *confluencetest.Server
+		pageID string
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	api, server := newConflictDataCenterAPI(t, func(r *http.Request) (int, string, bool) {
+		if isContentPut(r, pageID) {
+			server.EditPage(pageID, "<p>edited meanwhile</p>")
+			// Once the 409 is on its way, so that it is the wait before the
+			// retry that has to notice, not the request.
+			time.AfterFunc(50*time.Millisecond, cancel)
+		}
+		return 0, "", false
+	})
+	api.conflictRetryDelay = time.Minute
+	api.SetContext(ctx)
+
+	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+	newParent := server.AddPage("DOCS", "New Parent", "page", "")
+	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
+
+	start := time.Now()
+	err := api.MoveContentAppend(pageID, newParent.ID)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.ErrorIs(t, err, errConflict)
+	assert.Less(t, time.Since(start), 5*time.Second, "the retry delay was sat out")
+	assert.Equal(t, 1, countContentPuts(server, pageID), "nothing was retried")
+}
+
+// The wait between reads of a movepage.action move that has not shown yet
+// ends with the API's context too, rather than being sat out read after read.
+func TestMoveSettleWaitEndsWithTheContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	api, server := newConflictAPI(t, false)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/"):
+			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+		case r.URL.Path == "/pages/movepage.action":
+			// A claimed success that never shows, so that the tree is read
+			// back until the settle attempts run out; cancelled once the
+			// answer is on its way.
+			time.AfterFunc(50*time.Millisecond, cancel)
+			return http.StatusOK, `{}`, true
+		}
+		return 0, "", false
+	})
+	require.False(t, api.IsCloud())
+	api.moveSettleDelay = time.Minute
+	api.SetContext(ctx)
+
+	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+	newParent := server.AddPage("DOCS", "New Parent", "page", "")
+	pageID := server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
+
+	start := time.Now()
+	err := api.MoveContentAppend(pageID, newParent.ID)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), 5*time.Second, "the settle delay was sat out")
+	assert.Zero(t, countContentPuts(server, pageID), "nothing was moved by update")
 	assert.Equal(t, oldParent.ID, server.Page(pageID).ParentID)
 }
