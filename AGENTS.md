@@ -29,7 +29,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | path | role |
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
-| `util/` | CLI flags, config file/env sourcing, credential resolution |
+| `util/` | the command tree (`NewCommand`, `Run`), flags, config file/env sourcing, credential resolution |
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
@@ -47,6 +47,18 @@ Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → reso
 links → resolve/create page + ancestry → resolve attachments → `CompileMarkdown` →
 resolve inline attachments → wrap in `ac:layout` → optionally merge inline comments →
 update page → sync labels.
+
+The command line is a root command carrying the global flags (config file,
+connection and credentials, logging) and one command per job, today `publish`.
+A new flag goes in `globalFlags` only if every command needs it; otherwise it
+belongs to its command. Global flags read the TOML file late, in the root's
+`Before` through `ApplyConfigFile`, because `mark publish --config X` names the
+file only after the root's flags have been resolved; command flags read it
+through their own altsrc `Sources`. A command line naming no command is
+rewritten to `mark publish` by `Run` (the deprecated bare form many pipelines
+still use). `util/command_test.go` fails when the help blocks in `README.md`
+drift from `mark --help` / `mark publish --help`, so regenerate them from the
+binary after touching a flag.
 
 ## Invariants
 
