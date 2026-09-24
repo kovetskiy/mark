@@ -125,8 +125,6 @@ func resolveFolder(
 	return nil, nil
 }
 
-// EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
-// Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
 // FolderTracker remembers which Confluence folder a declared folder path
 // resolved to.
 //
@@ -168,9 +166,6 @@ type AncestryTracker interface {
 	ParentTracker
 }
 
-// folderPathKey names a folder by the chain of titles leading to it, under the
-// anchor it hangs from. The anchor is part of the key because the same chain of
-// titles under a different anchor is a different folder.
 // ParentPathKey names a parent by the chain of titles leading to it.
 //
 // No anchor, unlike folderPathKey: a parent chain is resolved from the space
@@ -182,6 +177,9 @@ func ParentPathKey(chain []string) string {
 	return strings.Join(chain, "\x00")
 }
 
+// folderPathKey names a folder by the chain of titles leading to it, under the
+// anchor it hangs from. The anchor is part of the key because the same chain of
+// titles under a different anchor is a different folder.
 func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	anchor := ""
 	if anchorPageID != nil {
@@ -190,6 +188,8 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	return anchor + "\x00" + strings.Join(folders[:upto+1], "\x00")
 }
 
+// EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
+// Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
 func EnsureFolderAncestry(
 	dryRun bool,
 	api *confluence.API,

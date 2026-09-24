@@ -36,7 +36,7 @@ type ConfluenceLinkRenderer struct {
 	AttachReferenced bool
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceLinkRenderer creates a new instance of the ConfluenceLinkRenderer.
 func NewConfluenceLinkRenderer(
 	lib *stdlib.Lib,
 	attachments attachment.Attacher,

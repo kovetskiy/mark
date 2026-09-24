@@ -126,7 +126,7 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 	return lang, strings.Fields(groups[2]), title
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
 func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),

@@ -25,7 +25,7 @@ type ConfluenceTextLegacyRenderer struct {
 	softBreak byte
 }
 
-// NewConfluenceTextLegacyRenderer creates a new instance of the ConfluenceTextRenderer (legacy version)
+// NewConfluenceTextLegacyRenderer creates a new instance of the ConfluenceTextLegacyRenderer.
 func NewConfluenceTextLegacyRenderer(stripNL bool, opts ...html.Option) renderer.NodeRenderer {
 	sb := byte('\n')
 	if stripNL {

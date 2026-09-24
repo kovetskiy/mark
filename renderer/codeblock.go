@@ -16,7 +16,7 @@ type ConfluenceCodeBlockRenderer struct {
 	Stdlib *stdlib.Lib
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceCodeBlockRenderer creates a new instance of the ConfluenceCodeBlockRenderer.
 func NewConfluenceCodeBlockRenderer(stdlib *stdlib.Lib, path string, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceCodeBlockRenderer{
 		Config: html.NewConfig(),

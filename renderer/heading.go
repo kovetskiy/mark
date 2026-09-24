@@ -15,7 +15,7 @@ type ConfluenceHeadingRenderer struct {
 	DropFirstH1 bool
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceHeadingRenderer creates a new instance of the ConfluenceHeadingRenderer.
 func NewConfluenceHeadingRenderer(lib *stdlib.Lib, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceHeadingRenderer{
 		Stdlib:      lib,

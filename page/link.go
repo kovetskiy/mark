@@ -359,9 +359,6 @@ func resolveLink(
 	return result, nil, nil
 }
 
-// getConfluenceLink builds a stable Confluence tiny link for the given page or blog post.
-// Tiny links use the format {baseURL}/x/{encodedPageID} and are immune to
-// Cloud-specific URL variations like /ex/confluence/<cloudId>/wiki/...
 // findLinkTarget looks for the file a link names, in each base in turn.
 //
 // The first base is the document's own directory and wins where both would do,
@@ -396,6 +393,9 @@ func findLinkTarget(bases []string, name string) (string, *unresolved) {
 	return "", &unresolved{reason: "there is no such file"}
 }
 
+// getConfluenceLink builds a stable Confluence tiny link for the given page or blog post.
+// Tiny links use the format {baseURL}/x/{encodedPageID} and are immune to
+// Cloud-specific URL variations like /ex/confluence/<cloudId>/wiki/...
 func getConfluenceLink(
 	api *confluence.API,
 	space, title string,

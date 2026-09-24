@@ -410,7 +410,6 @@ var Flags = []cli.Flag{
 	},
 }
 
-// CheckFlags validates combinations and values of global flags.
 // CheckConfigFile reports a configuration file that cannot be used.
 //
 // Settings are read from the file lazily, one flag at a time, and a file that
@@ -452,6 +451,8 @@ func CheckConfigFile(command *cli.Command) error {
 	return nil
 }
 
+// CheckFlags validates combinations and values of global flags, after
+// CheckConfigFile has confirmed the configuration file they may come from.
 func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if err := CheckConfigFile(command); err != nil {
 		return context, err

@@ -1715,14 +1715,15 @@ func formatVersionMessage(message, contentHash string) string {
 	return tag + " " + message
 }
 
+// htmlTextReplacer is the replacer behind htmlEscapeText.
+var htmlTextReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // htmlEscapeText escapes only the characters that Confluence storage HTML
 // always encodes in text nodes (&, <, >). Unlike html.EscapeString it does NOT
 // escape single-quotes or double-quotes, because those are frequently left
 // unescaped inside text nodes by the Confluence editor and by mark's own
 // renderer, so escaping them would prevent the selection-search from finding
 // a valid match.
-var htmlTextReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
-
 func htmlEscapeText(s string) string {
 	return htmlTextReplacer.Replace(s)
 }
@@ -1813,15 +1814,9 @@ type commentContext struct {
 	after  string
 }
 
-// mergeComments re-embeds inline comment markers from the Confluence API into
-// newBody (the updated storage HTML about to be uploaded). It extracts context
-// from each existing marker in oldBody and uses Levenshtein distance to
-// relocate each marker to the best-matching position in newBody, so comment
-// threads survive page edits even when the surrounding text has shifted.
-//
-// At most maxCandidates occurrences of each selection are evaluated with
-// Levenshtein distance; further occurrences are ignored to bound CPU cost on
-// pages where a selection is short or very common.
+// maxCandidates is how many occurrences of each selection mergeComments
+// evaluates with Levenshtein distance; further occurrences are ignored to bound
+// CPU cost on pages where a selection is short or very common.
 const maxCandidates = 100
 
 // contextWindowBytes is the number of bytes of surrounding text captured as
@@ -1829,6 +1824,11 @@ const maxCandidates = 100
 // context from oldBody and when scoring candidates in newBody.
 const contextWindowBytes = 100
 
+// mergeComments re-embeds inline comment markers from the Confluence API into
+// newBody (the updated storage HTML about to be uploaded). It extracts context
+// from each existing marker in oldBody and uses Levenshtein distance to
+// relocate each marker to the best-matching position in newBody, so comment
+// threads survive page edits even when the surrounding text has shifted.
 func mergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
 	if comments == nil {
 		return newBody, nil

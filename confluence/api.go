@@ -535,14 +535,6 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 	}, nil
 }
 
-// FindHomePage returns a space's home page.
-//
-// Results are cached for the lifetime of the API value, failures included. The
-// call is made for every non-blogpost document, again for any page that turns
-// out to have no ancestors, and once more when the manifest loads -- and it
-// costs two requests rather than one on a scoped token, because the v1 refusal
-// is what sends it to v2. A space's home page cannot change mid-run, so asking
-// twice can only ever get the same answer.
 // worthCaching reports whether an outcome is one that cannot change during the
 // run, and so is safe to remember.
 //
@@ -569,6 +561,14 @@ var errNoHomePage = errors.New("space has no home page")
 // people looking for a missing endpoint rather than a misspelt name.
 var errNoSuchUser = errors.New("no user matches that name")
 
+// FindHomePage returns a space's home page.
+//
+// Results are cached for the lifetime of the API value, failures included. The
+// call is made for every non-blogpost document, again for any page that turns
+// out to have no ancestors, and once more when the manifest loads -- and it
+// costs two requests rather than one on a scoped token, because the v1 refusal
+// is what sends it to v2. A space's home page cannot change mid-run, so asking
+// twice can only ever get the same answer.
 func (api *API) FindHomePage(space string) (*PageInfo, error) {
 	if entry, ok := api.cachedHomePage(space); ok {
 		return clonePageInfo(entry.page), entry.err
@@ -1927,7 +1927,10 @@ func (api *API) RestrictPageUpdates(
 	return nil
 }
 
-// Folder API methods (Phase 2 implementation)
+// CreateFolder creates a folder called title through the v2 API, under
+// parentID when one is given. parentType names what parentID is and defaults
+// to "folder"; under a folder parent, the folder goes in that parent's space
+// rather than spaceID's.
 func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType string) (*FolderInfo, error) {
 	actualSpaceID := spaceID
 
@@ -2180,7 +2183,6 @@ func (api *API) CreatePageWithFolderParent(
 	return page, nil
 }
 
-// MoveContentAppend relocates any content (page, folder, etc.) under targetID using the v1 move API.
 // GetChildPages returns a page's children in the order Confluence shows them.
 //
 // The order of this response is the order of the tree in the UI, which is what
@@ -2307,12 +2309,6 @@ func (api *API) HasChildFolders(parentID string) (bool, error) {
 	}
 }
 
-// MoveContentAfter places a page immediately after one of its siblings.
-//
-// Unlike the append form, the target here is a sibling rather than the new
-// parent. Atlassian warn against using it when the target is a top-level page,
-// where it can move content to the root of the space; callers are expected not
-// to.
 // DeletePage moves a page to the space's trash.
 //
 // Trash, not oblivion: Confluence keeps a deleted page recoverable until
@@ -2374,6 +2370,12 @@ func (api *API) ArchivePage(contentID string) error {
 	}
 }
 
+// MoveContentAfter places a page immediately after one of its siblings.
+//
+// Unlike the append form, the target here is a sibling rather than the new
+// parent. Atlassian warn against using it when the target is a top-level page,
+// where it can move content to the root of the space; callers are expected not
+// to.
 func (api *API) MoveContentAfter(contentID, siblingID string) error {
 	return api.moveContent(contentID, "after", siblingID)
 }
@@ -2384,6 +2386,7 @@ func (api *API) MoveContentBefore(contentID, siblingID string) error {
 	return api.moveContent(contentID, "before", siblingID)
 }
 
+// MoveContentAppend relocates any content (page, folder, etc.) under targetID using the v1 move API.
 func (api *API) MoveContentAppend(contentID, targetID string) error {
 	return api.moveContent(contentID, "append", targetID)
 }
