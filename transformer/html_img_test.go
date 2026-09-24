@@ -176,3 +176,56 @@ func TestHTMLImgTransformer_StyleAttribute(t *testing.T) {
 		t.Errorf("align attribute = %v, want left", alignAttr)
 	}
 }
+
+// splitImages only ever takes the <img> tags out: put back in place of each
+// image, the pieces are the input byte for byte, including a tag left
+// unterminated at the end and a CDATA section the tokenizer would misread.
+func TestSplitImagesKeepsTheMarkupAroundTheTags(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{
+			raw:  "<p align=\"center\">\n  <img src=\"a.png\" width=\"200\">\n</p>\n",
+			want: "<p align=\"center\">\n  [a.png]\n</p>\n",
+		},
+		{
+			raw:  "<div><IMG SRC=\"a.png\"/><!-- <img src=\"c.png\"> --><img src=\"b.png\"></div>",
+			want: "<div>[a.png]<!-- <img src=\"c.png\"> -->[b.png]</div>",
+		},
+		{
+			raw:  "<div><![CDATA[ <img src=\"x.png\"> ]]><img src=\"a.png\"><img alt=\"no src\"><span",
+			want: "<div><![CDATA[ <img src=\"x.png\"> ]]>[a.png]<img alt=\"no src\"><span",
+		},
+		{
+			raw:  "<picture><img src=\"x.png\"></picture><img src=\"a.png\">",
+			want: "<picture><img src=\"x.png\"></picture>[a.png]",
+		},
+	}
+
+	for _, tt := range tests {
+		pieces := NewHTMLImgTransformer().splitImages([]byte(tt.raw))
+		if pieces == nil {
+			t.Fatalf("%q: no pieces", tt.raw)
+		}
+
+		var got []byte
+		for _, piece := range pieces {
+			if img, ok := piece.(*ast.Image); ok {
+				got = append(got, "["+string(img.Destination)+"]"...)
+				continue
+			}
+
+			markup, _ := piece.Attribute(replacementContent)
+			got = append(got, markup.([]byte)...)
+		}
+
+		if string(got) != tt.want {
+			t.Errorf("%q:\n got %q\nwant %q", tt.raw, got, tt.want)
+		}
+	}
+
+	if pieces := NewHTMLImgTransformer().splitImages([]byte("<div><img alt=\"x\"></div>")); pieces != nil {
+		t.Errorf("a block with no convertible <img> is left alone, got %d pieces", len(pieces))
+	}
+}

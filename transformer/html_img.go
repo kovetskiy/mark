@@ -12,7 +12,8 @@ import (
 )
 
 // HTMLImgTransformer walks the AST and transforms HTML <img> tags found in
-// ast.KindHTMLBlock and ast.KindRawHTML nodes into ast.KindImage nodes with
+// ast.KindHTMLBlock and ast.KindRawHTML nodes, and in the markup an earlier
+// transformer left as replacement content, into ast.KindImage nodes with
 // attributes (width, height, alt, title, align) so that the image renderer
 // can render them as Confluence <ac:image> macros uniformly.
 type HTMLImgTransformer struct{}
@@ -31,6 +32,7 @@ func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 	// which Confluence storage format has no element for.
 	var blocks []*ast.HTMLBlock
 	var inlines []*ast.RawHTML
+	var replaced []*ast.Text
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -42,6 +44,13 @@ func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 			blocks = append(blocks, n)
 		case *ast.RawHTML:
 			inlines = append(inlines, n)
+		case *ast.Text:
+			// The <details> and layout transformers run first and leave the
+			// block they rewrote as a Text node carrying the result. Whatever
+			// <img> the author wrote inside it is still there, still raw.
+			if _, ok := n.Attribute(replacementContent); ok {
+				replaced = append(replaced, n)
+			}
 		}
 
 		return ast.WalkContinue, nil
@@ -53,45 +62,186 @@ func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 	for _, n := range inlines {
 		t.transformRawHTML(n, reader)
 	}
+	for _, n := range replaced {
+		t.transformReplacedText(n)
+	}
 }
 
 func (t *HTMLImgTransformer) transformHTMLBlock(n *ast.HTMLBlock, reader text.Reader) {
-	var buf bytes.Buffer
-	l := n.Lines().Len()
-	for i := 0; i < l; i++ {
-		line := n.Lines().At(i)
-		buf.Write(line.Value(reader.Source()))
-	}
-	rawBytes := buf.Bytes()
-
-	imgNodes := t.parseHTMLImages(rawBytes)
-	if len(imgNodes) == 0 {
-		return
-	}
-
 	parent := n.Parent()
 	if parent == nil {
 		return
 	}
 
-	// Replacing the block with only its images discards everything else it
-	// contained. The common "centered image with caption" idiom
-	//
-	//	<div align="center"><img src="..."><b>caption</b></div>
-	//
-	// lost the div and the caption entirely, with no warning. Only take over the
-	// block when the images are all it holds; otherwise leave it to the raw-HTML
-	// path, which preserves the surrounding markup.
-	if !onlyImages(rawBytes) {
+	// The closure line too: a block that ends on one, such as a comment or a
+	// <pre>, holds its last line there rather than among the others.
+	rawBytes := ExtractNodeRawContent(n, reader.Source())
+
+	// A block holding nothing but images loses nothing by being replaced with
+	// them, and renders as the paragraph of images a Markdown image would.
+	if onlyImages(rawBytes) {
+		imgNodes := t.parseHTMLImages(rawBytes)
+		if len(imgNodes) == 0 {
+			return
+		}
+
+		p := ast.NewParagraph()
+		for _, imgNode := range imgNodes {
+			p.AppendChild(p, imgNode)
+		}
+
+		parent.ReplaceChild(parent, n, p)
+
 		return
 	}
 
-	p := ast.NewParagraph()
-	for _, imgNode := range imgNodes {
-		p.AppendChild(p, imgNode)
+	// Anything else is the author's markup around the images -- above all the
+	// README idiom
+	//
+	//	<p align="center">
+	//	  <img src="logo.png" width="200">
+	//	</p>
+	//
+	// An HTML block has no RawHTML children for the inline path to find, so the
+	// <img> was published as written: a relative <img> Confluence does not
+	// render, and a file that was never uploaded. Each tag is swapped for an
+	// image node where it stands and the markup around it kept as written.
+	pieces := t.splitImages(rawBytes)
+	if pieces == nil {
+		return
 	}
 
-	parent.ReplaceChild(parent, n, p)
+	block := ast.NewTextBlock()
+	for _, piece := range pieces {
+		block.AppendChild(block, piece)
+	}
+
+	parent.ReplaceChild(parent, n, block)
+}
+
+// transformReplacedText converts the <img> tags inside markup an earlier
+// transformer rewrote, the same way transformHTMLBlock does for a block.
+func (t *HTMLImgTransformer) transformReplacedText(n *ast.Text) {
+	parent := n.Parent()
+	if parent == nil {
+		return
+	}
+
+	existing, _ := n.Attribute(replacementContent)
+	raw, ok := existing.([]byte)
+	if !ok {
+		return
+	}
+
+	pieces := t.splitImages(raw)
+	if pieces == nil {
+		return
+	}
+
+	for _, piece := range pieces {
+		parent.InsertBefore(parent, n, piece)
+	}
+	parent.RemoveChild(parent, n)
+}
+
+// splitImages cuts raw at each <img> tag it can convert and returns the pieces
+// in order: an image node for every such tag, and a Text node carrying the
+// markup between them as replacement content, which the text renderer writes
+// out as it is and the well-formedness pass still repairs. It returns nil when
+// there is no tag to convert, and the caller then leaves raw alone.
+//
+// The markup is only ever cut at token boundaries, so every piece of it is
+// still whole tags, comments and text. CDATA sections are copied through
+// without looking inside: the tokenizer has no notion of them and would find
+// tags in a code sample. An <img> inside a <picture> is the fallback for the
+// <source> elements beside it, which have nothing to become, so that element
+// is left as it was.
+func (t *HTMLImgTransformer) splitImages(raw []byte) []ast.Node {
+	if !bytes.Contains(bytes.ToLower(raw), []byte("<img")) {
+		return nil
+	}
+
+	var pieces []ast.Node
+	var markup []byte
+	converted := false
+	picture := 0
+
+	flush := func() {
+		if len(markup) == 0 {
+			return
+		}
+
+		piece := ast.NewText()
+		piece.SetAttribute(replacementContent, markup)
+		pieces = append(pieces, piece)
+		markup = nil
+	}
+
+	tokenize := func(span []byte) {
+		z := html.NewTokenizer(bytes.NewReader(span))
+		for {
+			tokenType := z.Next()
+			// Raw is only valid until the next call to Next. At the end it is
+			// whatever an unterminated tag left unconsumed.
+			token := z.Raw()
+			if tokenType == html.ErrorToken {
+				markup = append(markup, token...)
+				return
+			}
+
+			name, _ := z.TagName()
+			switch {
+			case tokenType == html.StartTagToken && string(name) == "picture":
+				picture++
+			case tokenType == html.EndTagToken && string(name) == "picture" && picture > 0:
+				picture--
+			case (tokenType == html.StartTagToken || tokenType == html.SelfClosingTagToken) &&
+				string(name) == "img" && picture == 0:
+				// One tag is at most one image, and none without a src; that
+				// one is left as written, as the other paths leave it.
+				if images := t.parseHTMLImages(token); len(images) == 1 {
+					flush()
+					pieces = append(pieces, images[0])
+					converted = true
+
+					continue
+				}
+			}
+
+			markup = append(markup, token...)
+		}
+	}
+
+	rest := raw
+	for len(rest) > 0 {
+		start := bytes.Index(rest, cdataOpen)
+		if start == -1 {
+			tokenize(rest)
+
+			break
+		}
+
+		tokenize(rest[:start])
+
+		end := bytes.Index(rest[start:], cdataClose)
+		if end == -1 {
+			markup = append(markup, rest[start:]...)
+
+			break
+		}
+
+		stop := start + end + len(cdataClose)
+		markup = append(markup, rest[start:stop]...)
+		rest = rest[stop:]
+	}
+
+	if !converted {
+		return nil
+	}
+
+	flush()
+
+	return pieces
 }
 
 // onlyImages reports whether raw consists of nothing but <img> tags and
