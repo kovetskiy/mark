@@ -12,16 +12,17 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// HeadingAttributeFilter defines attribute names which heading elements can have
+// MkDocsAdmonitionAttributeFilter defines the attribute names kept on the
+// blockquote an admonition falls back to when it maps to no Confluence macro.
 var MkDocsAdmonitionAttributeFilter = html.GlobalAttributeFilter
 
-// A Renderer struct is an implementation of renderer.NodeRenderer that renders
-// nodes as (X)HTML.
+// ConfluenceMkDocsAdmonitionRenderer renders MkDocs admonitions as Confluence
+// storage format.
 type ConfluenceMkDocsAdmonitionRenderer struct {
 	html.Config
 }
 
-// NewConfluenceMkDocsAdmonitionRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceMkDocsAdmonitionRenderer creates a new instance of the ConfluenceMkDocsAdmonitionRenderer.
 func NewConfluenceMkDocsAdmonitionRenderer(opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceMkDocsAdmonitionRenderer{
 		Config: html.NewConfig(),
@@ -33,7 +34,8 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) RegisterFuncs(reg renderer.NodeRend
 	reg.Register(parser.KindAdmonition, r.renderMkDocsAdmonition)
 }
 
-// Define MkDocsAdmonitionType enum
+// MkDocsAdmonitionType is the kind of Confluence macro an admonition becomes,
+// or ANone when it becomes no macro.
 type MkDocsAdmonitionType int
 
 const (

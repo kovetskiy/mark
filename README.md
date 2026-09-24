@@ -872,6 +872,7 @@ By default, mark provides several built-in templates and macros:
   * TitleBGColor: Background color of the title bar
   * TitleColor: Text color of the title
   * BorderStyle: Style of the panel's border
+  * BorderColor: Color of the panel's border
 
 * template `ac:recently-updated` to display a list of most recently changed content
   * Spaces: List of Spaces to watch (optional, default is current Space)

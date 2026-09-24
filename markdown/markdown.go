@@ -37,7 +37,7 @@ type ConfluenceLegacyExtension struct {
 	Attachments []attachment.Attachment
 }
 
-// NewConfluenceLegacyExtension creates a new instance of the legacy ConfluenceRenderer
+// NewConfluenceLegacyExtension creates a new instance of the ConfluenceLegacyExtension.
 func NewConfluenceLegacyExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceLegacyExtension {
 	return &ConfluenceLegacyExtension{
 		Config:      html.NewConfig(),
@@ -385,8 +385,9 @@ type ConfluenceExtension struct {
 	AttachmentLinks *ctransformer.AttachmentTransformer
 }
 
-// NewConfluenceExtension creates a new instance of the GitHub Alerts extension
-// This is the improved standalone version that doesn't depend on feature flags
+// NewConfluenceExtension creates a new instance of the ConfluenceExtension, the
+// extension with GitHub Alerts support.
+// It is the standalone version that does not depend on feature flags.
 func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceExtension {
 	var tmpl *template.Template
 	if stdlib != nil {

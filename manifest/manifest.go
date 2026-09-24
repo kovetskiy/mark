@@ -970,11 +970,14 @@ func (s *Store) ResolveStaleTitle(spaceKey, title string) (string, bool, error) 
 	return pageID, ok && pageID != "", nil
 }
 
-// RecordVersion notes the page version mark has just written.
+// RecordVersion notes the version a page is at once mark is done with it: the
+// one mark has just written, or the one it found when there was nothing to
+// write. It is what --no-overwrite compares against on the next run.
 //
-// Separate from Record because the number is only known afterwards: Record runs
-// before the update so that a mapping survives a failed one, and the version
-// that update produces does not exist until it succeeds.
+// Separate from Record because not every Record should move it: a page skipped
+// for having been edited in Confluence is still recorded as seen, but keeps the
+// version mark last wrote, so that every run reports the difference again. It
+// only updates an existing entry, so it has to follow Record, not replace it.
 func (s *Store) RecordVersion(spaceKey, path string, version int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1074,14 +1077,6 @@ func (s *Store) LookupParent(spaceKey, parentPath string) (string, bool, error) 
 	return pageID, ok, nil
 }
 
-// Orphans returns the recorded paths this run was looking for and did not find.
-//
-// Only entries published by the same --files pattern count. A run narrowed to
-// one directory says nothing about any other, and reporting everything outside
-// it as missing -- which an unscoped version does -- buries the handful of
-// genuine deletions in a list of files that are perfectly present. Entries with
-// no recorded pattern predate this and are never reported, because there is no
-// way to know what they were in scope of.
 // Orphan is a tracked page whose source file was not seen in the run, together
 // with what is known about it.
 type Orphan struct {
@@ -1128,6 +1123,14 @@ func (s *Store) Published(spaceKey string) int {
 	return len(state.seen)
 }
 
+// Orphans returns the recorded paths this run was looking for and did not find.
+//
+// Only entries published by the same --files pattern count. A run narrowed to
+// one directory says nothing about any other, and reporting everything outside
+// it as missing -- which an unscoped version does -- buries the handful of
+// genuine deletions in a list of files that are perfectly present. Entries with
+// no recorded pattern predate this and are never reported, because there is no
+// way to know what they were in scope of.
 func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

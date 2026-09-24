@@ -13,7 +13,7 @@ type ConfluenceParagraphRenderer struct {
 	html.Config
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceParagraphRenderer creates a new instance of the ConfluenceParagraphRenderer.
 func NewConfluenceParagraphRenderer(opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceParagraphRenderer{
 		Config: html.NewConfig(),

@@ -899,10 +899,6 @@ func (s *Server) SetSpaceProperty(ownerID, key string, value []byte) *SpacePrope
 	return &cp
 }
 
-// contentProperties serves the v1 content property API, which differs from the
-// v2 space one in two ways that matter: a read of a single key returns the
-// property object directly rather than a collection, and an update addresses it
-// by key rather than by property id.
 // moveContent reparents a page, which is how mark puts an existing page inside
 // a folder.
 func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, position, targetID string) {
@@ -948,6 +944,10 @@ func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, 
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID})
 }
 
+// contentProperties serves the v1 content property API, which differs from the
+// v2 space one in two ways that matter: a read of a single key returns the
+// property object directly rather than a collection, and an update addresses it
+// by key rather than by property id.
 func (s *Server) contentProperties(w http.ResponseWriter, r *http.Request, contentID, key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

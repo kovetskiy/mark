@@ -16,7 +16,7 @@ type ConfluenceBlockQuoteRenderer struct {
 	LevelMap BlockQuoteLevelMap
 }
 
-// NewConfluenceRenderer creates a new instance of the ConfluenceRenderer
+// NewConfluenceBlockQuoteRenderer creates a new instance of the ConfluenceBlockQuoteRenderer.
 func NewConfluenceBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
 	return &ConfluenceBlockQuoteRenderer{
 		Config:   html.NewConfig(),
@@ -29,7 +29,8 @@ func (r *ConfluenceBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFu
 	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
 }
 
-// Define BlockQuoteType enum
+// BlockQuoteType is the kind of Confluence macro a blockquote becomes, or None
+// when it becomes no macro.
 type BlockQuoteType int
 
 const (

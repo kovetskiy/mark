@@ -88,8 +88,9 @@ func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 	return false
 }
 
-// EnsurePageUnderFolderParent moves an existing page under folderID when its
-// direct parent differs.
+// EnsurePageUnderFolderParent is EnsurePageUnderParent with folderID as the
+// parent; it does nothing folder-specific, since Confluence moves a page under
+// a folder the same way it moves one under a page.
 func EnsurePageUnderFolderParent(
 	api *confluence.API,
 	pg *confluence.PageInfo,

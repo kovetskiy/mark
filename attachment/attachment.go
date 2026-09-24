@@ -331,27 +331,11 @@ func hasPattern(name string) bool {
 
 // ErrOutsideProject reports an attachment that resolves outside the directories
 // mark is publishing from.
+//
 // Named for the boundary rather than for attachments: an include is held to it
 // too, and a file a document may not read is a file a document may not read.
 var ErrOutsideProject = errors.New("outside the project")
 
-// checkAttachmentPath refuses an attachment that resolves outside both the
-// document's own directory and the directory mark is running in.
-//
-// A document says which files to upload, and a document is content: on a
-// repository that takes pull requests, a contributor could point an image at
-// "../../../../home/runner/.aws/credentials" and have its contents published as
-// a page attachment, under a flattened filename that looks like anything else.
-//
-// Upward paths themselves are ordinary -- "../images/logo.png" is how a docs
-// directory refers to shared assets, and README documents it -- so the boundary
-// is not the document's directory. It is that directory or the one mark was run
-// in, which for a run at the root of a repository is the repository.
-//
-// Both sides are resolved before the comparison, since a link committed to the
-// repository is as good as a path for reaching outside it -- and since the
-// roots have to be resolved too, or a repository reached through a symlinked
-// path would put every file in it outside itself.
 // CheckReadable reports whether a file a document points at may be read for it,
 // by the boundary an attachment is held to: the document's own directory or the
 // one mark is running in, with both sides resolved through their symlinks.
@@ -375,6 +359,23 @@ func CheckReadable(base, reference string) error {
 	return checkPath(base, path, reference)
 }
 
+// checkAttachmentPath refuses an attachment that resolves outside both the
+// document's own directory and the directory mark is running in.
+//
+// A document says which files to upload, and a document is content: on a
+// repository that takes pull requests, a contributor could point an image at
+// "../../../../home/runner/.aws/credentials" and have its contents published as
+// a page attachment, under a flattened filename that looks like anything else.
+//
+// Upward paths themselves are ordinary -- "../images/logo.png" is how a docs
+// directory refers to shared assets, and README documents it -- so the boundary
+// is not the document's directory. It is that directory or the one mark was run
+// in, which for a run at the root of a repository is the repository.
+//
+// Both sides are resolved before the comparison, since a link committed to the
+// repository is as good as a path for reaching outside it -- and since the
+// roots have to be resolved too, or a repository reached through a symlinked
+// path would put every file in it outside itself.
 func checkAttachmentPath(base, name string) error {
 	return checkPath(base, filepath.Join(base, name), name)
 }
