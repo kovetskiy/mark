@@ -2223,8 +2223,10 @@ func handleOrphans(
 		}
 
 		paths := make([]string, 0, len(candidates))
+		byPath := make(map[string]page.Orphan, len(candidates))
 		for _, candidate := range candidates {
 			paths = append(paths, candidate.Path)
+			byPath[candidate.Path] = candidate
 		}
 
 		log.Info().Msgf(
@@ -2265,9 +2267,14 @@ func handleOrphans(
 		// holding children, or out of scope -- stays in the manifest so a later
 		// run finds it again instead of losing sight of it.
 		for _, path := range handled {
-			if action != page.OnOrphanReport {
-				results.AddOrphan(report.Orphan{File: path, Action: action})
-			}
+			// Reported whatever the action, "report" included: that is the
+			// one action whose whole point is to be heard, and it used to be
+			// the one left out. The page is named from the manifest, since
+			// the file that would have named it is the thing that is gone.
+			candidate := byPath[path]
+			results.AddOrphan(report.Orphan{
+				File: path, PageID: candidate.PageID, Title: candidate.Title, Action: action,
+			})
 
 			if err := tracker.Forget(space, path); err != nil {
 				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)

@@ -12,6 +12,8 @@ import (
 	"io"
 	"strings"
 	"sync"
+
+	"github.com/kovetskiy/mark/v16/page"
 )
 
 // The shapes a run's outcome can be written in.
@@ -81,6 +83,9 @@ type Orphan struct {
 	File   string `json:"file"`
 	PageID string `json:"pageId,omitempty"`
 	Title  string `json:"title,omitempty"`
+
+	// Action is the --on-orphan action taken, one of the page.OnOrphan
+	// values; page.OnOrphanReport means the page was left where it is.
 	Action string `json:"action"`
 }
 
@@ -225,7 +230,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 
 	for _, orphan := range r.Orphans {
 		message := fmt.Sprintf("page %q has no source file", orphan.Title)
-		if orphan.Action != "report" {
+		if orphan.Action != page.OnOrphanReport {
 			message = fmt.Sprintf("page %q was %sd: its source file is gone", orphan.Title, orphan.Action)
 		}
 
