@@ -2,7 +2,6 @@ package stdlib
 
 import (
 	"fmt"
-	"html"
 	"strings"
 	"text/template"
 
@@ -48,20 +47,15 @@ func templates(api *confluence.API) (*template.Template, error) {
 			},
 
 			// The only way to escape CDATA end marker ']]>' is to split it
-			// into two CDATA sections.
-			"cdata": func(data string) string {
-				return strings.ReplaceAll(
-					data,
-					"]]>",
-					"]]><![CDATA[]]]]><![CDATA[>",
-				)
-			},
+			// into two CDATA sections. A control character has no escape at
+			// all, and is replaced.
+			"cdata": CDATA,
 			// The result is always interpolated into an ri:filename attribute, so
 			// it has to be escaped as well as slash-flattened: a quote in a
 			// diagram title (```d2 title My "x" Diagram) otherwise closed the
 			// attribute early and produced malformed XML.
 			"convertAttachment": func(data string) string {
-				return html.EscapeString(
+				return XMLEscape(
 					strings.ReplaceAll(
 						data,
 						"/",
@@ -75,7 +69,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			// would make escaping those parameters impossible without
 			// rewriting every default as a string.
 			"xmlesc": func(v any) string {
-				return html.EscapeString(fmt.Sprint(v))
+				return XMLEscape(fmt.Sprint(v))
 			},
 		},
 	)

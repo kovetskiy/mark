@@ -341,6 +341,10 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	if err != nil {
 		return "", nil, err
 	}
+
+	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
+	warnIllegalXMLChars(path, markdown, replaced)
+
 	return htmlOutput, ghAlertsExtension.Attachments, nil
 }
 
@@ -367,6 +371,10 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 	if err != nil {
 		return "", nil, err
 	}
+
+	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
+	warnIllegalXMLChars(path, markdown, replaced)
+
 	return htmlOutput, confluenceExtension.Attachments, nil
 }
 
