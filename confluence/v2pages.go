@@ -383,8 +383,12 @@ type ancestor = struct {
 	Title string `json:"title"`
 }
 
-// createPageV2 is CreatePage against v2.
-func (api *API) createPageV2(space, pageType string, parent *PageInfo, title, body string) (*PageInfo, error) {
+// createPageV2 is CreatePage against v2, and CreatePageWithFolderParent always.
+//
+// parentType is sent only when given: "folder" for a folder parent, which is
+// what CreatePageWithFolderParent has always named, and nothing for a page,
+// v2's default.
+func (api *API) createPageV2(space, pageType, parentID, parentType, title, body string) (*PageInfo, error) {
 	spaceID, err := api.GetSpaceID(space)
 	if err != nil {
 		return nil, err
@@ -401,8 +405,11 @@ func (api *API) createPageV2(space, pageType string, parent *PageInfo, title, bo
 	}
 
 	// A blogpost has no parent, and naming one is rejected rather than ignored.
-	if parent != nil && pageType != "blogpost" {
-		payload["parentId"] = parent.ID
+	if parentID != "" && pageType != "blogpost" {
+		payload["parentId"] = parentID
+		if parentType != "" {
+			payload["parentType"] = parentType
+		}
 	}
 
 	var result contentV2

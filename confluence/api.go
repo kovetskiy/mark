@@ -1239,7 +1239,11 @@ func (api *API) CreatePage(
 		err  error
 	)
 	if api.gateway {
-		page, err = api.createPageV2(space, pageType, parent, title, body)
+		parentID := ""
+		if parent != nil {
+			parentID = parent.ID
+		}
+		page, err = api.createPageV2(space, pageType, parentID, "", title, body)
 	} else {
 		page, err = api.createPageV1(space, pageType, parent, title, body)
 	}
@@ -1272,6 +1276,14 @@ func (api *API) CreatePage(
 		page.Ancestors = ancestors
 	}
 
+	api.rememberCreatedPage(space, pageType, title, page)
+
+	return page, nil
+}
+
+// rememberCreatedPage puts a page just created into the page cache, so the
+// lookups later in the run find it without asking.
+func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInfo) {
 	cacheTitle := title
 	if page.Title != "" {
 		cacheTitle = page.Title
@@ -1290,8 +1302,6 @@ func (api *API) CreatePage(
 	api.pageCacheMutex.Lock()
 	api.setCacheEntry(key, page)
 	api.pageCacheMutex.Unlock()
-
-	return page, nil
 }
 
 // createPageV1 is the request behind CreatePage.
@@ -2149,7 +2159,10 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	return v2Result.Results[0].ID, nil
 }
 
-// CreatePageWithFolderParent creates a page with a folder as parent using REST API v2
+// CreatePageWithFolderParent creates a page with a folder as parent using REST API v2.
+//
+// Folders exist only in v2, so this is the v2 create CreatePage makes through
+// the gateway, with the folder named as the parent.
 func (api *API) CreatePageWithFolderParent(
 	space string,
 	pageType string,
@@ -2157,57 +2170,14 @@ func (api *API) CreatePageWithFolderParent(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	spaceID, err := api.GetSpaceID(space)
+	page, err := api.createPageV2(space, pageType, folderID, "folder", title, body)
 	if err != nil {
 		return nil, err
 	}
 
-	// Using REST API v2 for pages with folder parents
-	payload := map[string]interface{}{
-		"spaceId":    spaceID,
-		"status":     "current",
-		"type":       pageType,
-		"title":      title,
-		"parentId":   folderID,
-		"parentType": "folder",
-		"body": map[string]interface{}{
-			"representation": "storage",
-			"value":          body,
-		},
-	}
+	api.rememberCreatedPage(space, pageType, title, page)
 
-	result := &PageInfo{}
-	request, err := api.v2().Res("pages", result).Post(payload)
-	if err != nil {
-		return nil, newTransportError(
-			request, fmt.Sprintf("create page %q under folder %s", title, folderID), err,
-		)
-	}
-
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
-	}
-
-	result.Links.Full = "/pages/viewpage.action?pageId=" + result.ID
-	if result.Links.Base == "" {
-		result.Links.Base = api.BaseURL
-	}
-	cacheTitle := title
-	if result.Title != "" {
-		cacheTitle = result.Title
-	}
-	cacheType := pageType
-	if result.Type != "" {
-		cacheType = result.Type
-	}
-	key := pageCacheKey(space, cacheTitle, cacheType)
-
-	api.lazyInit()
-	api.pageCacheMutex.Lock()
-	api.setCacheEntry(key, result)
-	api.pageCacheMutex.Unlock()
-
-	return result, nil
+	return page, nil
 }
 
 // MoveContentAppend relocates any content (page, folder, etc.) under targetID using the v1 move API.
