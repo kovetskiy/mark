@@ -107,6 +107,51 @@ func TestD2ScaleRejectsWhatIsNotAScale(t *testing.T) {
 	}
 }
 
+// TestMermaidAndMathScaleRejectWhatIsNotAScale covers the public API for the
+// other two scales. Mermaid sent any number to the browser, where a negative
+// one waited out the render timeout and NaN or an infinity could not be sent at
+// all; math let NaN past the "<= 0" meant to catch it.
+func TestMermaidAndMathScaleRejectWhatIsNotAScale(t *testing.T) {
+	for _, scale := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		config := mermaidFixture(t)
+		config.Features = []string{"mermaid"}
+		config.MermaidScale = scale
+
+		err := Run(config)
+		require.Error(t, err, "a mermaid scale of %v is not one", scale)
+		assert.Contains(t, err.Error(), "MermaidScale")
+
+		config = mermaidFixture(t)
+		config.Features = []string{"math"}
+		config.MathScale = scale
+
+		err = Run(config)
+		require.Error(t, err, "a math scale of %v is not one", scale)
+		assert.Contains(t, err.Error(), "MathScale")
+	}
+}
+
+// TestMermaidAndMathScaleZeroIsTheDefault is where they part from d2: mermaid
+// is on by default, so refusing zero would refuse every Config that never heard
+// of the field, and math has always drawn a zero scale at its default.
+func TestMermaidAndMathScaleZeroIsTheDefault(t *testing.T) {
+	config := mermaidFixture(t)
+	config.Features = []string{"mermaid", "math"}
+
+	require.NoError(t, Run(config))
+}
+
+// TestMermaidAndMathScaleAreOnlyCheckedWhereTheyAreDrawn: a run with neither
+// feature carries both fields past every path that reads them.
+func TestMermaidAndMathScaleAreOnlyCheckedWhereTheyAreDrawn(t *testing.T) {
+	config := mermaidFixture(t)
+	config.Features = []string{"mention"}
+	config.MermaidScale = -1
+	config.MathScale = math.NaN()
+
+	require.NoError(t, Run(config))
+}
+
 // TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn is the boundary: a run that
 // never turns d2 on carries the field past every path that reads it, so the
 // zero value of a caller who never heard of it is not an error.

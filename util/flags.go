@@ -532,12 +532,18 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	// with nothing to point at the setting. Asked of IsSet as well, so that a
 	// command built without the flag -- which is what the tests around this one
 	// do -- is left alone.
-	if scale := command.Float("d2-scale"); command.IsSet("d2-scale") &&
-		(!(scale > 0) || math.IsInf(scale, 0)) {
-		return context, fmt.Errorf(
-			"invalid value for --d2-scale: %v (expected: a finite number greater than 0)",
-			scale,
-		)
+	//
+	// The same for mermaid and math. Zero is refused on the command line even
+	// though a library Config reads it as the default: a flag nobody set never
+	// reaches here, so a zero is one somebody typed, and it is no scale.
+	for _, name := range []string{"d2-scale", "mermaid-scale", "math-scale"} {
+		if scale := command.Float(name); command.IsSet(name) &&
+			(!(scale > 0) || math.IsInf(scale, 0)) {
+			return context, fmt.Errorf(
+				"invalid value for --%s: %v (expected: a finite number greater than 0)",
+				name, scale,
+			)
+		}
 	}
 
 	mermaidOutput := command.String("mermaid-output")

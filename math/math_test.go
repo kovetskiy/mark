@@ -3,6 +3,7 @@ package math
 import (
 	"bytes"
 	"image/png"
+	gomath "math"
 	"strings"
 	"testing"
 
@@ -174,4 +175,31 @@ func TestProcessFormats(t *testing.T) {
 	_, err = Process(`x`, false, "jpeg", 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "jpeg")
+}
+
+// TestProcessScaleZeroIsTheDefault: a caller that never set the scale gets the
+// default of 2, which is what a zero has always meant here -- and the same
+// picture, under the same name, as asking for 2 outright.
+func TestProcessScaleZeroIsTheDefault(t *testing.T) {
+	unset, err := Process(`E = mc^2`, false, FormatPNG, 0)
+	require.NoError(t, err)
+
+	two, err := Process(`E = mc^2`, false, FormatPNG, 2)
+	require.NoError(t, err)
+
+	assert.Equal(t, two.Filename, unset.Filename)
+}
+
+// TestProcessRefusesWhatIsNotAScale: a negative scale was quietly drawn at 2,
+// and NaN went straight to the screenshot, because it fails the "<= 0" that
+// was meant to catch it. Refused before anything is drawn, so no browser is
+// needed to see it.
+func TestProcessRefusesWhatIsNotAScale(t *testing.T) {
+	for _, scale := range []float64{-1, gomath.NaN(), gomath.Inf(1), gomath.Inf(-1)} {
+		for _, format := range []string{FormatPNG, FormatSVG} {
+			_, err := Process(`x`, false, format, scale)
+			require.Error(t, err, "a scale of %v is not one, for %s either", scale, format)
+			assert.Contains(t, err.Error(), "invalid math scale")
+		}
+	}
 }

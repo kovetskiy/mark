@@ -1470,7 +1470,10 @@ A diagram is published as a PNG by default, scaled by `--mermaid-scale`.
 `--mermaid-output=svg` publishes the drawing itself instead: one file that is
 sharp at any zoom and whose text stays text, on an instance that displays an SVG
 attachment. `--mermaid-scale` applies to either -- it multiplies the pixels of a
-PNG, and the size the page displays an SVG at.
+PNG, and the size the page displays an SVG at. It has to be a finite number
+greater than 0, and a PNG that would come out wider or taller than 16384 pixels,
+or larger than 64 million pixels in all, is refused rather than captured: make
+the diagram smaller or lower the scale.
 
 `--mermaid-bundle` keeps the diagram's own source inside that SVG, in its
 `<desc>` element, so what was published can be opened and edited again from the
@@ -1660,7 +1663,8 @@ mark --features=math --math-format=svg -f document.md
 `--math-scale` (2 by default) applies to PNG only, and multiplies the pixels
 rather than the size: the image still occupies the space the formula asked for,
 with more pixels in it for a display that can use them, because a formula
-rasterised 1:1 looks ragged beside the text it sits in.
+rasterised 1:1 looks ragged beside the text it sits in. It has to be a finite
+number greater than 0.
 
 #### Why an image
 

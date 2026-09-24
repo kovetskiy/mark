@@ -284,6 +284,11 @@ func render(title string, once func(ctx context.Context, engine mermaid.Renderer
 			}
 			return err
 
+		case errors.Is(err, chrome.ErrRasterRefused):
+			// Refused before the capture was asked for, so the browser never saw
+			// it and is kept; the same diagram would be refused again.
+			return err
+
 		case errors.Is(err, mermaid.ErrRenderException):
 			// The diagram is what failed, so the engine is still good and a
 			// retry would fail identically. mermaid.go keeps chrome's
@@ -315,6 +320,28 @@ func renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel,
 	)
 
 	err := render(title, func(ctx context.Context, engine mermaid.Renderer) error {
+		// Measured before it is captured, as chrome.PNGFromSVG does for d2 and
+		// math: a diagram's size comes from the document and is then multiplied
+		// by the scale, so a large diagram at a large scale asks the browser for
+		// a gigapixel screenshot, which it does not survive. mermaid.go draws
+		// and captures in one call with no measuring step between them, so the
+		// diagram is drawn as an SVG first to learn its size -- a second layout
+		// of the same diagram in a page that is already loaded, which is cheap
+		// next to losing the browser.
+		//
+		// Only for the browser engine: merman draws a PNG without one, so there
+		// is no browser for the capture to take down.
+		if _, inBrowser := engine.(*mermaid.RenderEngine); inBrowser {
+			svg, err := engine.RenderContext(ctx, diagram)
+			if err != nil {
+				return err
+			}
+
+			if err := checkPNGBounds(svg, scale); err != nil {
+				return err
+			}
+		}
+
 		var err error
 		pngBytes, boxModel, err = engine.RenderAsScaledPngContext(ctx, diagram, scale)
 
@@ -344,8 +371,44 @@ func renderSVG(title, diagram string, bundle bool) (string, error) {
 	return svg, err
 }
 
+// checkPNGBounds refuses a diagram whose PNG at scale would be larger than a
+// browser can capture. svg is the same diagram drawn as a vector, whose own
+// width and height are the size the capture is taken at before scale.
+func checkPNGBounds(svg string, scale float64) error {
+	width, height := extractSVGDimensions(svg)
+
+	return chrome.CheckRasterBounds(width, height, scale)
+}
+
+// defaultScale is what a diagram is drawn at when the caller never set a
+// scale: the same size as the one --mermaid-scale defaults to.
+const defaultScale = 1.0
+
+// normaliseScale gives the zero value its meaning and refuses what is not a
+// scale. Zero is a caller that never set the field, and is drawn at the default
+// rather than at nothing. Everything else has to be a finite number above
+// zero: NaN fails every comparison, so a check written as "<= 0" lets it
+// through to the screenshot, and an infinite scale passes one outright.
+func normaliseScale(scale float64) (float64, error) {
+	switch {
+	case scale == 0:
+		return defaultScale, nil
+	case !(scale > 0) || math.IsInf(scale, 0):
+		return 0, fmt.Errorf(
+			"invalid mermaid scale %v: expected a finite number greater than 0, or 0 for the default", scale,
+		)
+	}
+
+	return scale, nil
+}
+
 func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
 	log.Debug().Msgf("Rendering: %q", title)
+
+	scale, err := normaliseScale(scale)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
 
 	pngBytes, boxModel, err := renderPNG(title, string(mermaidDiagram), scale)
 	if err != nil {
@@ -399,6 +462,11 @@ func ProcessMermaidWithBundle(title string, mermaidDiagram []byte, scale float64
 func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool, scale float64) (attachment.Attachment, error) {
 	log.Debug().Msgf("Rendering SVG (bundle=%v): %q", bundle, title)
 
+	scale, err := normaliseScale(scale)
+	if err != nil {
+		return attachment.Attachment{}, err
+	}
+
 	svg, err := renderSVG(title, string(mermaidDiagram), bundle)
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -427,10 +495,8 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool, scale f
 	// in the file: an SVG is the same drawing however large it is displayed,
 	// which is why the scale is no part of the checksum above.
 	width, height := extractSVGDimensions(svg)
-	if scale > 0 {
-		width *= scale
-		height *= scale
-	}
+	width *= scale
+	height *= scale
 
 	return attachment.Attachment{
 		ID:        "",
