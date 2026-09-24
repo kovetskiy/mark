@@ -14,7 +14,7 @@ func linkRenderers(t *testing.T) []renderer.NodeRenderer {
 	return []renderer.NodeRenderer{
 		crenderer.NewConfluenceLinkRenderer(newStdlib(t), nil, "", false),
 		crenderer.NewConfluenceParagraphRenderer(),
-		crenderer.NewConfluenceTextLegacyRenderer(false),
+		crenderer.NewConfluenceTextRenderer(false),
 	}
 }
 

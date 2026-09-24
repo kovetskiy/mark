@@ -13,7 +13,7 @@ func legacyBlockQuoteRenderers() []renderer.NodeRenderer {
 	return []renderer.NodeRenderer{
 		crenderer.NewConfluenceBlockQuoteRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),
-		crenderer.NewConfluenceTextLegacyRenderer(false),
+		crenderer.NewConfluenceTextRenderer(false),
 	}
 }
 

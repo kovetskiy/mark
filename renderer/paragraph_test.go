@@ -14,7 +14,7 @@ import (
 func paragraphRenderers() []renderer.NodeRenderer {
 	return []renderer.NodeRenderer{
 		crenderer.NewConfluenceParagraphRenderer(),
-		crenderer.NewConfluenceTextLegacyRenderer(false),
+		crenderer.NewConfluenceTextRenderer(false),
 	}
 }
 
