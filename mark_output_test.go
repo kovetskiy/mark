@@ -2,12 +2,16 @@ package mark
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -143,4 +147,84 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 
 	assert.Contains(t, second.String(), "::warning")
 	assert.Contains(t, second.String(), "gone.md")
+}
+
+// orphanReport publishes keep.md and gone.md, removes gone.md, and returns what
+// the second run wrote in format together with the id of Gone's page.
+func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
+	t.Helper()
+
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "keep.md", outHeader+"<!-- Title: Keep -->\n\nKeep.\n")
+	writeFile(t, dir, "gone.md", outHeader+"<!-- Title: Gone -->\n\nGone.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, OnOrphan: onOrphan, OutputFormat: format, Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	gone, err := api.FindPage("DOCS", "Gone", "page")
+	require.NoError(t, err)
+	require.NotNil(t, gone)
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+
+	var out strings.Builder
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	return out.String(), gone.ID
+}
+
+// TestOutputFormatJSONNamesOrphans: an orphan was recorded with its file and
+// action only, so the report said a page had been deleted without saying which,
+// and a run that only reported orphans -- the default -- recorded none at all.
+func TestOutputFormatJSONNamesOrphans(t *testing.T) {
+	for _, action := range []string{page.OnOrphanReport, page.OnOrphanDelete, page.OnOrphanArchive} {
+		t.Run(action, func(t *testing.T) {
+			out, id := orphanReport(t, action, report.FormatJSON)
+
+			var parsed report.Report
+			require.NoError(t, json.Unmarshal([]byte(out), &parsed))
+			require.Len(t, parsed.Orphans, 1)
+
+			orphan := parsed.Orphans[0]
+			assert.Equal(t, "gone.md", filepath.Base(orphan.File))
+			assert.Equal(t, id, orphan.PageID)
+			assert.Equal(t, "Gone", orphan.Title)
+			assert.Equal(t, action, orphan.Action)
+		})
+	}
+}
+
+// TestOutputFormatGitHubNamesOrphans: the annotation read `page "" was
+// deleted`, and the line meant for an orphan that was only reported could not
+// be reached.
+func TestOutputFormatGitHubNamesOrphans(t *testing.T) {
+	cases := map[string]string{
+		page.OnOrphanReport:  `page "Gone" has no source file`,
+		page.OnOrphanDelete:  `page "Gone" was deleted: its source file is gone`,
+		page.OnOrphanArchive: `page "Gone" was archived: its source file is gone`,
+	}
+
+	for action, want := range cases {
+		t.Run(action, func(t *testing.T) {
+			out, _ := orphanReport(t, action, report.FormatGitHub)
+
+			var line string
+			for _, candidate := range strings.Split(out, "\n") {
+				if strings.Contains(candidate, "gone.md") {
+					line = candidate
+				}
+			}
+
+			require.NotEmpty(t, line, "the orphan must be annotated against its file")
+			assert.True(t, strings.HasPrefix(line, "::warning file="), line)
+			assert.True(t, strings.HasSuffix(line, "::"+want), line)
+		})
+	}
 }

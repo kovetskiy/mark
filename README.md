@@ -1211,13 +1211,20 @@ mark --output-format json --files "docs/**/*.md" | jq -r '.pages[] | select(.sta
       "reason": "the document is not synchronized"
     }
   ],
-  "orphans": [{"file": "docs/old.md", "action": "delete"}]
+  "orphans": [
+    {"file": "docs/old.md", "pageId": "1007", "title": "Old", "action": "delete"}
+  ]
 }
 ```
 
 A page is `published`, `unchanged` (`--changes-only` found nothing to do),
 `skipped` (not synchronized, or edited in Confluence under `--no-overwrite`) or
 `failed`, with `reason` saying which in the last two cases.
+
+`orphans` lists the [tracked pages whose source file is
+gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the
+`--on-orphan` action taken: `report` for a page that was only reported and left
+where it is, `archive` or `delete` for one that was archived or trashed.
 
 `github` prints [workflow
 commands](https://docs.github.com/actions/reference/workflow-commands-for-github-actions),
@@ -1227,6 +1234,7 @@ so that a failure appears against the file that caused it in a pull request:
 ::notice file=docs/architecture.md::published "Architecture" to https://...
 ::warning file=docs/draft.md::the document is not synchronized
 ::error file=docs/broken.md::unable to compile markdown: ...
+::warning file=docs/old.md::page "Old" was deleted: its source file is gone
 ```
 
 ```yaml
