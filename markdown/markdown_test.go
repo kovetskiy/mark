@@ -11,13 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v16/markdown"
-	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
-	"github.com/kovetskiy/mark/v16/util"
+	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
+	"github.com/kovetskiy/mark/v17/util"
 	"github.com/stretchr/testify/assert"
-	"github.com/urfave/cli/v3"
 )
 
 func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
@@ -382,17 +381,6 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 }
 
 func TestContinueOnError(t *testing.T) {
-	cmd := &cli.Command{
-		Name:                  "temp-mark",
-		Usage:                 "test usage",
-		Description:           "mark unit tests",
-		Version:               "TEST-VERSION",
-		Flags:                 util.Flags,
-		EnableShellCompletion: true,
-		HideHelpCommand:       true,
-		Action:                util.RunMark,
-	}
-
 	// The fixtures live in the repo root's testdata, not this package's
 	// directory. Deriving the path from this file rather than the working
 	// directory keeps the test independent of whether another test in the
@@ -403,14 +391,14 @@ func TestContinueOnError(t *testing.T) {
 	repoRoot := path.Join(path.Dir(thisFile), "..")
 	filePath := filepath.Join(repoRoot, "testdata", "batch-tests", "*.md")
 	argList := []string{
-		"",
+		"mark", "publish",
 		"--log-level", "INFO",
 		"--compile-only",
 		"--continue-on-error",
 		"--files", filePath,
 	}
 
-	err := cmd.Run(context.TODO(), argList)
+	err := util.Run(context.TODO(), util.NewCommand("TEST-VERSION"), argList)
 	// --continue-on-error processes all files even when some fail, but still
 	// returns an error to allow callers/CI to detect partial failures.
 	assert.Error(t, err, "App should report partial failure when continue-on-error is enabled and some files fail")

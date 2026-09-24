@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
 	mkDocsParser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/parser"

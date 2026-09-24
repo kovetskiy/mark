@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 )
 
 const (
@@ -535,7 +534,7 @@ func TestRunPasswordCommandRejectsATruncatedTokenFromAHelperThatLingered(t *test
 }
 
 // TestPasswordCommandFlagReachesCredentials drives the real flag set rather than calling GetCredentials directly.
-// RunMark forwards the flag with a single cmd.String("password-command"), and a name matching no registered flag yields "" instead of an error.
+// RunPublish forwards the flag with a single cmd.String("password-command"), and a name matching no registered flag yields "" instead of an error.
 // That would leave the setting silently inert, so the run has to stop at credential resolution, before any Confluence request.
 func TestPasswordCommandFlagReachesCredentials(t *testing.T) {
 	command := helperCommand(t, "fail", "")
@@ -546,14 +545,8 @@ func TestPasswordCommandFlagReachesCredentials(t *testing.T) {
 	restore := log.Logger
 	t.Cleanup(func() { log.Logger = restore })
 
-	cmd := &cli.Command{
-		Flags:  Flags,
-		Before: CheckFlags,
-		Action: RunMark,
-	}
-
-	err := cmd.Run(context.Background(), []string{
-		"mark",
+	err := Run(context.Background(), NewCommand("test"), []string{
+		"mark", "publish",
 		"--config", config,
 		"--username", "user",
 		"--base-url", "https://confluence.example.invalid",
@@ -593,14 +586,8 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 		zerolog.SetGlobalLevel(originalLevel)
 	})
 
-	cmd := &cli.Command{
-		Flags:  Flags,
-		Before: CheckFlags,
-		Action: RunMark,
-	}
-
-	_ = cmd.Run(context.Background(), []string{
-		"mark",
+	_ = Run(context.Background(), NewCommand("test"), []string{
+		"mark", "publish",
 		"--config", config,
 		"--log-level", "DEBUG",
 		"--color", "never",

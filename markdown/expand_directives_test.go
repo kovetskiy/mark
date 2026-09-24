@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v16/markdown"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
+	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

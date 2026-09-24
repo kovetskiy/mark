@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
+	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark"

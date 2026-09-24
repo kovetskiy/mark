@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/rs/zerolog/log"
 )
 
