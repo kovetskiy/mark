@@ -12,54 +12,26 @@ import (
 // turns a newline in the body into a visible line break.
 //
 // A document written one-sentence-per-line therefore publishes as a ragged
-// column unless the soft breaks are flattened to spaces. Both text renderers
-// have to agree on this: the legacy one and the GitHub Alerts one are separate
-// implementations of the same rule.
+// column unless the soft breaks are flattened to spaces.
 func TestTextSoftBreak(t *testing.T) {
 	const source = "first line\nsecond line\n"
 
 	tests := []struct {
-		name      string
-		renderers []renderer.NodeRenderer
-		want      string
+		name  string
+		strip bool
+		want  string
 	}{
-		{
-			name: "legacy keeps the newline",
-			renderers: []renderer.NodeRenderer{
-				crenderer.NewConfluenceTextLegacyRenderer(false),
-				crenderer.NewConfluenceParagraphRenderer(),
-			},
-			want: "<p>first line\nsecond line</p>",
-		},
-		{
-			name: "legacy strips the newline",
-			renderers: []renderer.NodeRenderer{
-				crenderer.NewConfluenceTextLegacyRenderer(true),
-				crenderer.NewConfluenceParagraphRenderer(),
-			},
-			want: "<p>first line second line</p>",
-		},
-		{
-			name: "alerts renderer keeps the newline",
-			renderers: []renderer.NodeRenderer{
-				crenderer.NewConfluenceTextRenderer(false),
-				crenderer.NewConfluenceParagraphRenderer(),
-			},
-			want: "<p>first line\nsecond line</p>",
-		},
-		{
-			name: "alerts renderer strips the newline",
-			renderers: []renderer.NodeRenderer{
-				crenderer.NewConfluenceTextRenderer(true),
-				crenderer.NewConfluenceParagraphRenderer(),
-			},
-			want: "<p>first line second line</p>",
-		},
+		{"keeps the newline", false, "<p>first line\nsecond line</p>"},
+		{"strips the newline", true, "<p>first line second line</p>"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Contains(t, render(t, source, tt.renderers), tt.want)
+			actual := render(t, source, []renderer.NodeRenderer{
+				crenderer.NewConfluenceTextRenderer(tt.strip),
+				crenderer.NewConfluenceParagraphRenderer(),
+			})
+			assert.Contains(t, actual, tt.want)
 		})
 	}
 }

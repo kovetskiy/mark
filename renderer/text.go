@@ -10,6 +10,15 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// ConfluenceTextRenderer slightly alters the default goldmark behaviour for
+// inline text. It allows for soft breaks
+// (c.f. https://spec.commonmark.org/0.30/#softbreak)
+// to be rendered as either '\n' (the goldmark default) or as ' '.
+// The latter is useful for Confluence, which inserts <br> tags into uploaded
+// HTML where it sees '\n'. See also https://sembr.org/ for partial motivation.
+//
+// It also writes out the replacement-content a transformer has left on a Text
+// node in place of the node's own text. Both compile paths use it.
 type ConfluenceTextRenderer struct {
 	html.Config
 	// softBreak is written verbatim with WriteByte and is only ever '\n' or
@@ -18,7 +27,7 @@ type ConfluenceTextRenderer struct {
 	softBreak byte
 }
 
-// NewConfluenceTextRenderer creates a new instance of the renderer with GitHub Alerts support
+// NewConfluenceTextRenderer creates a new instance of the text renderer
 func NewConfluenceTextRenderer(stripNewlines bool, opts ...html.Option) renderer.NodeRenderer {
 	sb := byte('\n')
 	if stripNewlines {
@@ -39,12 +48,16 @@ func (r *ConfluenceTextRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 	reg.Register(ast.KindText, r.renderText)
 }
 
-// renderText handles text rendering and supports GitHub Alerts replacement content.
-// This is an enhanced version of the default goldmark text renderer that checks
-// for replacement-content attributes before falling back to standard behavior.
-// Note: This logic is partially duplicated from ConfluenceTextLegacyRenderer.renderText
-// but includes additional GitHub Alerts support. We keep them separate to maintain
-// clean legacy vs enhanced implementation paths.
+// renderText is taken from
+// https://github.com/yuin/goldmark/blob/v1.6.0/renderer/html/html.go#L719
+// with the hardcoded '\n' for soft breaks swapped for the configurable
+// r.softBreak, and a check for replacement-content before any of it.
+//
+// replacement-content is how DetailsTransformer and LayoutTransformer hand
+// their rewritten markup to the renderer. The legacy compile path used to have
+// a copy of this renderer without the check, and since it runs
+// DetailsTransformer too, every <details> block on that path was published as
+// the empty node the transformer had left in its place.
 func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
@@ -52,7 +65,7 @@ func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, nod
 
 	n := node.(*ast.Text)
 
-	// Check if this text node has replacement content from the GHAlerts transformer
+	// Check if a transformer has left rewritten markup on this node
 	if replacementContent, hasAttribute := node.Attribute([]byte("replacement-content")); hasAttribute && replacementContent != nil {
 		if contentBytes, ok := replacementContent.([]byte); ok {
 			_, err := w.Write(contentBytes)
@@ -63,7 +76,7 @@ func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, nod
 		}
 	}
 
-	// Default text rendering behavior (same as original ConfluenceTextRenderer)
+	// Default text rendering behavior
 	segment := n.Segment
 	if n.IsRaw() {
 		r.Writer.RawWrite(w, segment.Value(source))

@@ -37,7 +37,6 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 		"paragraph":         crenderer.NewConfluenceParagraphRenderer(opts...),
 		"tasklist":          crenderer.NewConfluenceTaskListRenderer(opts...),
 		"text":              crenderer.NewConfluenceTextRenderer(false, opts...),
-		"text legacy":       crenderer.NewConfluenceTextLegacyRenderer(false, opts...),
 	}
 
 	for name, nodeRenderer := range constructors {
@@ -80,8 +79,6 @@ func htmlConfig(t *testing.T, nodeRenderer renderer.NodeRenderer) html.Config {
 	case *crenderer.ConfluenceTaskListRenderer:
 		return r.Config
 	case *crenderer.ConfluenceTextRenderer:
-		return r.Config
-	case *crenderer.ConfluenceTextLegacyRenderer:
 		return r.Config
 	}
 

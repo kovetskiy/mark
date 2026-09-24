@@ -15,7 +15,7 @@ func headingRenderers(t *testing.T, dropFirstH1 bool) []renderer.NodeRenderer {
 	return []renderer.NodeRenderer{
 		crenderer.NewConfluenceHeadingRenderer(newStdlib(t), dropFirstH1),
 		crenderer.NewConfluenceParagraphRenderer(),
-		crenderer.NewConfluenceTextLegacyRenderer(false),
+		crenderer.NewConfluenceTextRenderer(false),
 	}
 }
 

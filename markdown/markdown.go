@@ -55,7 +55,7 @@ func (c *ConfluenceLegacyExtension) Attach(a attachment.Attachment) {
 func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(crenderer.NewConfluenceTextLegacyRenderer(c.MarkConfig.StripNewlines), 100),
+		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 100),
 		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib), 100),
 		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path), 100),
