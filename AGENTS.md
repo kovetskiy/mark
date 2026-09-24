@@ -41,6 +41,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
 | `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
+| `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
@@ -49,7 +50,8 @@ resolve inline attachments → wrap in `ac:layout` → optionally merge inline c
 update page → sync labels.
 
 The command line is a root command carrying the global flags (config file,
-connection and credentials, logging) and one command per job, today `publish`.
+connection and credentials, logging) and one command per job: `publish` and
+`export`.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
 belongs to its command. Global flags read the TOML file late, in the root's
 `Before` through `ApplyConfigFile`, because `mark publish --config X` names the
@@ -57,8 +59,14 @@ file only after the root's flags have been resolved; command flags read it
 through their own altsrc `Sources`. A command line naming no command is
 rewritten to `mark publish` by `Run` (the deprecated bare form many pipelines
 still use). `util/command_test.go` fails when the help blocks in `README.md`
-drift from `mark --help` / `mark publish --help`, so regenerate them from the
-binary after touching a flag.
+drift from `mark --help` / `mark publish --help` / `mark export --help`, so
+regenerate them from the binary after touching a flag.
+
+`export/` is held to publishing: `export/roundtrip_test.go` exports every
+`testdata/*.html` fixture, compiles the Markdown that comes out, and requires
+the storage format it started from. A renderer change that alters what mark
+publishes for a construct export writes as Markdown shows up there as well as
+in the golden tests.
 
 ## Invariants
 
