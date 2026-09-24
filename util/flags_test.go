@@ -34,7 +34,7 @@ func TestCheckConfigFile(t *testing.T) {
 	run := func(t *testing.T, args ...string) error {
 		t.Helper()
 		cmd := &cli.Command{
-			Flags:  Flags,
+			Flags:  globalFlags(new(string)),
 			Action: func(context.Context, *cli.Command) error { return nil },
 		}
 		return CheckConfigFile(mustParse(t, cmd, args...))
@@ -80,10 +80,33 @@ func mustParse(t *testing.T, cmd *cli.Command, args ...string) *cli.Command {
 	return parsed
 }
 
-// The flag set is a package-level value and the TOML source behind it keeps the
-// file it first read, so a second cli.Command run in one process sees none of
-// it. Each case below therefore resolves its flags in a subprocess -- which is
-// also the only way mark itself ever resolves them.
+// parseCommandLine runs mark's own command line -- global flags, commands, the
+// configuration file and all -- far enough to resolve every flag, and returns
+// the command that would have run.
+func parseCommandLine(t *testing.T, args ...string) *cli.Command {
+	t.Helper()
+
+	cmd := NewCommand("test")
+
+	var parsed *cli.Command
+	capture := func(_ context.Context, c *cli.Command) error {
+		parsed = c
+		return nil
+	}
+	cmd.Action = capture
+	for _, command := range cmd.Commands {
+		command.Action = capture
+	}
+
+	require.NoError(t, Run(context.Background(), cmd, args))
+	require.NotNil(t, parsed)
+
+	return parsed
+}
+
+// The configuration file and the environment are read once per process, as
+// mark itself reads them, and a case changes both. Each case below therefore
+// resolves its flags in a subprocess.
 
 // TestConfigSubprocess is the worker for the cases below and does nothing
 // unless a parent names it.
@@ -100,11 +123,11 @@ func TestConfigSubprocess(t *testing.T) {
 		args = append(args, extraArgs...)
 	}
 
-	parsed := mustParse(t, &cli.Command{Flags: Flags}, args...)
+	parsed := parseCommandLine(t, args...)
 
 	resolved := map[string]string{}
 	for _, name := range strings.Split(wanted, ",") {
-		resolved[name] = parsed.String(name)
+		resolved[name] = fmt.Sprint(parsed.Value(name))
 	}
 
 	encoded, err := json.Marshal(resolved)
@@ -256,7 +279,7 @@ func TestCheckConfigFileAcceptsNoDefault(t *testing.T) {
 // from a feature deliberately left off -- "--features=mermaidd" published the
 // page with mermaid quietly not running, and said nothing.
 func TestFeaturesRejectsAnUnknownName(t *testing.T) {
-	cmd := &cli.Command{Flags: Flags}
+	cmd := &cli.Command{Flags: publishFlags(new(string))}
 	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "mermaidd"))
 
 	require.Error(t, err)
@@ -268,7 +291,7 @@ func TestFeaturesRejectsAnUnknownName(t *testing.T) {
 // second one over with its leading space still attached, and it goes
 // unrecognised where it is read. Saying so beats switching it off in silence.
 func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
-	cmd := &cli.Command{Flags: Flags}
+	cmd := &cli.Command{Flags: publishFlags(new(string))}
 	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "math, mermaid"))
 
 	require.Error(t, err)
@@ -280,7 +303,7 @@ func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
 func TestFeaturesAcceptsEveryKnownName(t *testing.T) {
 	for _, feature := range KnownFeatures {
 		t.Run(feature, func(t *testing.T) {
-			cmd := &cli.Command{Flags: Flags}
+			cmd := &cli.Command{Flags: publishFlags(new(string))}
 			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", feature))
 			assert.NoError(t, err)
 		})
@@ -326,7 +349,7 @@ func TestSplitParentsDropsEmptyFields(t *testing.T) {
 // gone up. A misspelling therefore left an empty page in Confluence and then
 // failed the run.
 func TestImageAlignIsCheckedBeforeAnythingIsCreated(t *testing.T) {
-	cmd := &cli.Command{Flags: Flags}
+	cmd := &cli.Command{Flags: publishFlags(new(string))}
 	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", "centre"))
 
 	require.Error(t, err)
@@ -337,7 +360,7 @@ func TestImageAlignIsCheckedBeforeAnythingIsCreated(t *testing.T) {
 func TestImageAlignAcceptsWhatItDocuments(t *testing.T) {
 	for _, align := range []string{"left", "center", "right", "CENTER", " right "} {
 		t.Run(align, func(t *testing.T) {
-			cmd := &cli.Command{Flags: Flags}
+			cmd := &cli.Command{Flags: publishFlags(new(string))}
 			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", align))
 			assert.NoError(t, err)
 		})

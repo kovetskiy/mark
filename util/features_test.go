@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -31,11 +32,21 @@ func TestFeaturesSubprocess(t *testing.T) {
 		Err      string
 	}
 
-	ctx, cmd := mustParseArgs(t, &cli.Command{Flags: Flags}, append([]string{"mark"}, args...)...)
-	if _, err := CheckFlags(ctx, cmd); err != nil {
+	cmd := NewCommand("test")
+	var parsed *cli.Command
+	capture := func(_ context.Context, c *cli.Command) error {
+		parsed = c
+		return nil
+	}
+	cmd.Action = capture
+	for _, command := range cmd.Commands {
+		command.Action = capture
+	}
+
+	if err := Run(context.Background(), cmd, append([]string{"mark", "publish"}, args...)); err != nil {
 		result.Err = err.Error()
 	} else {
-		result.Features = EnabledFeatures(cmd)
+		result.Features = EnabledFeatures(parsed)
 	}
 
 	encoded, err := json.Marshal(result)
