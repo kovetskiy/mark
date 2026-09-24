@@ -152,8 +152,9 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		Output: os.Stdout,
 	}
 
-	defer mark.Cleanup()
-	return mark.Run(config)
+	// RunContext shuts the shared browser down on the way out, however the run
+	// ends -- including when ctx is cancelled by a signal.
+	return mark.RunContext(ctx, config)
 }
 
 func ConfigFilePath() string {
