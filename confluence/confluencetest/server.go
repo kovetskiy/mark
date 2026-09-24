@@ -788,18 +788,23 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		}
 
 	default:
+		// /folders/{id}/direct-children and /pages/{id}/direct-children --
+		// children of every type, which is what separates them from the v1
+		// child/page listing.
+		for _, collection := range []string{"pages", "folders"} {
+			rest, ok := strings.CutPrefix(path, "/"+collection+"/")
+			if !ok {
+				continue
+			}
+			parentID, sub, _ := strings.Cut(rest, "/")
+			if sub == "direct-children" {
+				s.directChildren(w, r, collection, parentID)
+				return
+			}
+		}
 		if folderID, ok := strings.CutPrefix(path, "/folders/"); ok && r.Method == http.MethodGet {
 			s.getFolder(w, folderID)
 			return
-		}
-		// /pages/{id}/direct-children -- children of every type, which is what
-		// separates it from the v1 child/page listing.
-		if rest, ok := strings.CutPrefix(path, "/pages/"); ok {
-			pageID, sub, _ := strings.Cut(rest, "/")
-			if sub == "direct-children" {
-				s.directChildren(w, r, pageID)
-				return
-			}
 		}
 		for _, collection := range []string{"pages", "blogposts"} {
 			rest, ok := strings.CutPrefix(path, "/"+collection+"/")
@@ -1587,10 +1592,10 @@ func (s *Server) childPages(w http.ResponseWriter, r *http.Request, parentID str
 	})
 }
 
-// directChildren answers the v2 listing of a page's children of every type.
-// Only pages and folders exist in this fake; the type field is what a caller
-// telling them apart relies on.
-func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, parentID string) {
+// directChildren answers the v2 listing of a page's or a folder's children of
+// every type. Only pages and folders exist in this fake; the type field is
+// what a caller telling them apart relies on.
+func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, collection, parentID string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1598,6 +1603,11 @@ func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, parentID
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if collection == "folders" && s.folderByID(parentID) == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such folder"})
+		return
+	}
 
 	children := []map[string]any{}
 	for _, id := range s.childOrder[parentID] {
@@ -1621,7 +1631,7 @@ func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, parentID
 	}
 	links := map[string]any{}
 	if next != "" {
-		links["next"] = fmt.Sprintf("/api/v2/pages/%s/direct-children?cursor=%s", parentID, next)
+		links["next"] = fmt.Sprintf("/api/v2/%s/%s/direct-children?cursor=%s", collection, parentID, next)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results": results,
@@ -1851,20 +1861,67 @@ func (s *Server) searchFolder(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	results := []map[string]any{}
+	matches := []map[string]any{}
 	for _, f := range s.folders {
 		if f.Title != title || (spaceKey != "" && f.SpaceKey != spaceKey) {
 			continue
 		}
-		if ancestor != "" && f.ParentID != ancestor {
+		// ancestor= is any ancestor, as in Confluence, not only the parent.
+		if ancestor != "" && !s.hasAncestor(f.ParentID, ancestor) {
 			continue
 		}
-		results = append(results, map[string]any{
+		matches = append(matches, map[string]any{
 			"content": map[string]any{"id": f.ID, "type": "folder", "title": f.Title},
 		})
-		break
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+
+	// Cloud pages this search by a cursor in _links.next, and the next link
+	// repeats the query beside it.
+	results, next := cursorPage(r, matches)
+	if results == nil {
+		results = []map[string]any{}
+	}
+	links := map[string]any{}
+	if next != "" {
+		query := r.URL.Query()
+		query.Set("cursor", next)
+		query.Set("next", "true")
+		links["next"] = "/rest/api/search?" + query.Encode()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": links})
+}
+
+// hasAncestor reports whether ancestor is id or lies anywhere above it, going
+// up through folders and pages alike. Callers must hold s.mu.
+func (s *Server) hasAncestor(id, ancestor string) bool {
+	// Bounded by the number of objects, so that a cycle cannot hang the fake.
+	for range len(s.pages) + len(s.folders) + 1 {
+		if id == "" {
+			return false
+		}
+		if id == ancestor {
+			return true
+		}
+		if f := s.folderByID(id); f != nil {
+			id = f.ParentID
+		} else if p, ok := s.pages[id]; ok {
+			id = p.ParentID
+		} else {
+			return false
+		}
+	}
+	return false
+}
+
+// folderByID returns the stored folder with an id, or nil. Callers must hold
+// s.mu.
+func (s *Server) folderByID(id string) *Folder {
+	for _, f := range s.folders {
+		if f.ID == id {
+			return f
+		}
+	}
+	return nil
 }
 
 func (s *Server) folderJSON(f *Folder) map[string]any {

@@ -140,6 +140,22 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 			want: []string{"search for folder", "Guides"},
 			path: "/rest/api/search",
 		},
+		"FindChildFolder": {
+			call: func(api *confluence.API) error {
+				_, err := api.FindChildFolder("1004", "page", "Guides")
+				return err
+			},
+			want: []string{"look for folder", "Guides", "1004"},
+			path: "/api/v2/pages/1004/direct-children",
+		},
+		"FindRootFolder": {
+			call: func(api *confluence.API) error {
+				_, err := api.FindRootFolder("DOCS", "Guides")
+				return err
+			},
+			want: []string{"search for folder", "Guides"},
+			path: "/rest/api/search",
+		},
 		"GetFolderByID": {
 			call: func(api *confluence.API) error {
 				_, err := api.GetFolderByID("2001")

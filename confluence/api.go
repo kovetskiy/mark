@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -1981,6 +1983,12 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 	return request.Response.(*FolderInfo), nil
 }
 
+// FindFolder finds a folder with a title anywhere in a space, or anywhere
+// beneath underAncestorID when that is set.
+//
+// "Anywhere" is meant: CQL's ancestor= matches at any depth, and only the
+// first hit comes back. To find the folder directly beneath a parent, use
+// FindChildFolder; for one at the space root, FindRootFolder.
 func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo, error) {
 	// CQL folder search lives on /rest/api/search (not content/search).
 	result := struct {
@@ -2028,6 +2036,195 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 
 	// Found a folder, now get its full details using v2 API
 	return api.GetFolderByID(item.ID)
+}
+
+// FindChildFolder finds the folder with a title among the direct children of
+// a page or a folder, or answers (nil, nil) when there is none. parentType is
+// "page" or "folder", and picks the listing to read.
+//
+// Asked of the parent's own listing rather than of CQL. The search's ancestor=
+// matches at any depth, so with limit=1 a folder of the same title further down
+// the tree could come back in place of the one directly beneath the parent --
+// and the caller, rightly refusing it, went on to create the folder, which
+// Confluence refused as a duplicate. The listing is not index-lagged either, so
+// a folder created moments ago is already in it.
+//
+// An exact title wins; failing that, one differing only in case is taken, as
+// the search this replaces would have matched it.
+//
+// A 404 on the first page is read as "none", as HasChildFolders reads it: a
+// deployment that does not route the v2 listing has no folders to find.
+func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo, error) {
+	const pageSize = 100
+
+	collection := "pages"
+	if parentType == "folder" {
+		collection = "folders"
+	}
+
+	folded := ""
+	var cursor string
+	for {
+		result := struct {
+			Results []struct {
+				ID    string `json:"id"`
+				Type  string `json:"type"`
+				Title string `json:"title"`
+			} `json:"results"`
+
+			Links struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}{}
+
+		query := map[string]string{"limit": strconv.Itoa(pageSize)}
+		if cursor != "" {
+			query["cursor"] = cursor
+		}
+
+		request, err := api.v2().Res(
+			collection+"/"+parentID+"/direct-children", &result,
+		).Get(query)
+		if err != nil {
+			return nil, newTransportError(
+				request, fmt.Sprintf("look for folder %q under %s", title, parentID), err,
+			)
+		}
+
+		// First page only, as in HasChildFolders: a 404 partway through is a
+		// real failure.
+		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+			return nil, nil
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		for _, child := range result.Results {
+			if child.Type != "folder" {
+				continue
+			}
+			if child.Title == title {
+				return api.GetFolderByID(child.ID)
+			}
+			if folded == "" && strings.EqualFold(child.Title, title) {
+				folded = child.ID
+			}
+		}
+
+		next := nextCursor(result.Links.Next)
+		if next == "" || next == cursor || len(result.Results) == 0 {
+			break
+		}
+		cursor = next
+	}
+
+	if folded != "" {
+		return api.GetFolderByID(folded)
+	}
+
+	return nil, nil
+}
+
+// FindRootFolder finds the folder with a title at the root of a space --
+// beneath neither a page nor another folder -- or answers (nil, nil).
+//
+// There is no listing of a space's root folders, so this goes through CQL, but
+// it reads every folder of that title the search returns rather than only the
+// first: with limit=1, a same-titled folder nested anywhere in the space could
+// come first and hide the one at the root.
+func (api *API) FindRootFolder(spaceKey, title string) (*FolderInfo, error) {
+	var found *FolderInfo
+
+	err := api.searchFolders(spaceKey, title, func(id string) (bool, error) {
+		folder, err := api.GetFolderByID(id)
+		if err != nil {
+			return false, err
+		}
+		if folder == nil || folder.ParentType == "folder" || folder.ParentType == "page" {
+			return false, nil
+		}
+		found = folder
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return found, nil
+}
+
+// searchFolders runs the CQL search for the folders with a title in a space
+// and hands each id to visit, following the result's next link until visit is
+// done or the results run out.
+func (api *API) searchFolders(spaceKey, title string, visit func(id string) (bool, error)) error {
+	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
+	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
+
+	query := map[string]string{
+		"cql":    fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey),
+		"limit":  "25",
+		"expand": "content",
+	}
+
+	for {
+		result := struct {
+			Results []struct {
+				Content struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"content"`
+			} `json:"results"`
+
+			Links struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}{}
+
+		request, err := api.v1().Res("search", &result).Get(query)
+		if err != nil {
+			return newTransportError(request, fmt.Sprintf("search for folder %q", title), err)
+		}
+
+		if request.Raw.StatusCode != http.StatusOK {
+			return newErrorStatusNotOK(request)
+		}
+
+		for _, item := range result.Results {
+			if item.Content.ID == "" || item.Content.Type != "folder" {
+				continue
+			}
+
+			done, err := visit(item.Content.ID)
+			if err != nil || done {
+				return err
+			}
+		}
+
+		if result.Links.Next == "" || len(result.Results) == 0 {
+			return nil
+		}
+
+		// Cloud's next link carries a cursor, and may carry parameters of its
+		// own beside it, so the link is followed as given rather than by
+		// guessing which of them matter. A link that asks for what was just
+		// asked would never end.
+		next, err := url.Parse(result.Links.Next)
+		if err != nil {
+			return fmt.Errorf("unable to follow the folder search's next link: %w", err)
+		}
+		followed := maps.Clone(query)
+		for key, values := range next.Query() {
+			if len(values) > 0 {
+				followed[key] = values[0]
+			}
+		}
+		if maps.Equal(followed, query) {
+			return nil
+		}
+		query = followed
+	}
 }
 
 func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {

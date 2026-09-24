@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -32,4 +33,70 @@ func TestCreateFolderUnderAVanishedParent(t *testing.T) {
 	require.NoError(t, err, "a missing parent must not fail the call")
 	require.NotNil(t, folder)
 	assert.Equal(t, "Guides", folder.Title)
+}
+
+// TestFindChildFolderReadsEveryPage: the folder can be past the first page of
+// a parent's children, behind any number of pages.
+func TestFindChildFolderReadsEveryPage(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	for i := range 150 {
+		server.AddPage("DOCS", fmt.Sprintf("Child %d", i), "page", parent.ID)
+	}
+	want := server.AddFolder("DOCS", "Guides", parent.ID, "page")
+
+	folder, err := api.FindChildFolder(parent.ID, "page", "Guides")
+	require.NoError(t, err)
+	require.NotNil(t, folder)
+	assert.Equal(t, want.ID, folder.ID)
+
+	missing, err := api.FindChildFolder(parent.ID, "page", "Nothing")
+	require.NoError(t, err)
+	assert.Nil(t, missing)
+}
+
+// TestFindChildFolderUnderAFolder reads the folder listing, not the page one,
+// and only the folder's own children.
+func TestFindChildFolderUnderAFolder(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	top := server.AddFolder("DOCS", "Top", "", "")
+	middle := server.AddFolder("DOCS", "Middle", top.ID, "folder")
+	server.AddFolder("DOCS", "Guides", middle.ID, "folder")
+
+	folder, err := api.FindChildFolder(top.ID, "folder", "Guides")
+	require.NoError(t, err)
+	assert.Nil(t, folder, "a grandchild is not a child")
+
+	want := server.AddFolder("DOCS", "guides", top.ID, "folder")
+	folder, err = api.FindChildFolder(top.ID, "folder", "Guides")
+	require.NoError(t, err)
+	require.NotNil(t, folder, "a title differing only in case still matches")
+	assert.Equal(t, want.ID, folder.ID)
+}
+
+// TestFindRootFolderFollowsTheSearch: every same-titled folder nested in the
+// space can come before the one at the root, across more than one page of
+// search results.
+func TestFindRootFolderFollowsTheSearch(t *testing.T) {
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	for range 30 {
+		server.AddFolder("DOCS", "Guides", parent.ID, "page")
+	}
+	want := server.AddFolder("DOCS", "Guides", "", "")
+
+	folder, err := api.FindRootFolder("DOCS", "Guides")
+	require.NoError(t, err)
+	require.NotNil(t, folder)
+	assert.Equal(t, want.ID, folder.ID)
+
+	missing, err := api.FindRootFolder("DOCS", "Nothing")
+	require.NoError(t, err)
+	assert.Nil(t, missing)
 }

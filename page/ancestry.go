@@ -76,32 +76,29 @@ func resolveFolder(
 	space, title, underID string,
 	anchorPageID *string,
 ) (*confluence.FolderInfo, error) {
-	folder, err := api.FindFolder(space, title, underID)
-	if err != nil {
-		return nil, err
+	underAnchor := underID != "" && anchorPageID != nil && underID == *anchorPageID
+
+	var folder *confluence.FolderInfo
+	var err error
+	switch {
+	case underID == "":
+		folder, err = api.FindRootFolder(space, title)
+	case underAnchor:
+		folder, err = api.FindChildFolder(underID, "page", title)
+	default:
+		// Anything else beneath which a folder is looked for is a folder
+		// this resolution has already walked through.
+		folder, err = api.FindChildFolder(underID, "folder", title)
 	}
-	if folder != nil {
-		if underID == "" {
-			if folder.ParentType == "folder" || folder.ParentType == "page" {
-				return nil, nil
-			}
-		} else {
-			if folder.ParentID != underID {
-				return nil, nil
-			}
-		}
-		return folder, nil
+	if err != nil || folder != nil {
+		return folder, err
 	}
 
 	// Top-level wiki folder may exist at space root from an earlier sync; move it under MARK_PARENTS.
-	if underID != "" && anchorPageID != nil && underID == *anchorPageID {
-		folder, err = api.FindFolder(space, title, "")
+	if underAnchor {
+		folder, err = api.FindRootFolder(space, title)
 		if err != nil || folder == nil {
 			return folder, err
-		}
-		// Validate that the folder found at space root does not have any folder or page parent
-		if folder.ParentType == "folder" || folder.ParentType == "page" {
-			return nil, nil
 		}
 		if folder.ParentID != *anchorPageID {
 			if dryRun {
