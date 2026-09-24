@@ -51,24 +51,6 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) getConfluenceMacroTitle(alertType
 	}
 }
 
-// Define GitHub Alert to Confluence macro mapping
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) getConfluenceMacroName(alertType string) string {
-	switch alertType {
-	case "note":
-		return "info"
-	case "tip":
-		return "tip"
-	case "important":
-		return "info"
-	case "warning":
-		return "note"
-	case "caution":
-		return "warning"
-	default:
-		return "info"
-	}
-}
-
 func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if r.LevelMap == nil {
 		r.LevelMap = GenerateBlockQuoteLevel(node)
@@ -90,8 +72,8 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWrit
 
 	if quoteLevel == 0 && entering {
 		r.BlockQuoteNode = node
-		macroName := r.getConfluenceMacroName(alertType)
-		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter>", macroName)
+		macro := ghAlertType(alertType)
+		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter>", macro)
 		if title := r.getConfluenceMacroTitle(alertType); title != "" {
 			prefix += fmt.Sprintf("<ac:parameter ac:name=\"title\">%s</ac:parameter>", title)
 		}
@@ -142,7 +124,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer uti
 	quoteType := ParseBlockQuoteType(node, source)
 	quoteLevel := r.LevelMap.Level(node)
 
-	if quoteLevel == 0 && entering && quoteType != None {
+	if quoteLevel == 0 && entering && quoteType != AdmonitionNone {
 		r.BlockQuoteNode = node
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", quoteType)
 		if _, err := writer.Write([]byte(prefix)); err != nil {
@@ -160,7 +142,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer uti
 	}
 
 	// For nested blockquotes or regular blockquotes (at root level with no macro type)
-	if quoteLevel > 0 || (quoteLevel == 0 && quoteType == None) {
+	if quoteLevel > 0 || (quoteLevel == 0 && quoteType == AdmonitionNone) {
 		if entering {
 			if _, err := writer.WriteString("<blockquote>\n"); err != nil {
 				return ast.WalkStop, err
