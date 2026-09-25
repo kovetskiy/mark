@@ -81,6 +81,11 @@ type API struct {
 	// moveContent.
 	moveEndpointMissing atomic.Bool
 
+	// reparented maps a page id to the versions either side of a move this
+	// API made by update; see ReparentedFrom.
+	reparented      map[string]reparentedVersions
+	reparentedMutex sync.Mutex
+
 	pageCache      map[string]*PageInfo
 	pageCacheByID  map[string]*PageInfo
 	pageCacheMutex sync.RWMutex
@@ -2698,8 +2703,55 @@ func (api *API) reparentContent(contentID, parentID string) error {
 	}
 
 	api.updateCachedPageVersion(page.ID, page.Version.Number+1)
+	api.noteReparent(page.ID, page.Version.Number, page.Version.Number+1)
 
 	return nil
+}
+
+// reparentedVersions is the version a page was found at before a move by
+// update, and the version that move wrote.
+type reparentedVersions struct {
+	from, to int64
+}
+
+// noteReparent records that a move by update took a page from version from
+// to version to. A page moved twice in a run keeps the version it had before
+// the first move, since everything after that was written by mark.
+func (api *API) noteReparent(pageID string, from, to int64) {
+	api.reparentedMutex.Lock()
+	defer api.reparentedMutex.Unlock()
+
+	if api.reparented == nil {
+		api.reparented = map[string]reparentedVersions{}
+	}
+	if earlier, ok := api.reparented[pageID]; ok && earlier.to == from {
+		from = earlier.from
+	}
+	api.reparented[pageID] = reparentedVersions{from: from, to: to}
+}
+
+// ReparentedFrom reports the version a page was at before this API moved it,
+// when the page is still at the version the move wrote.
+//
+// On Server and Data Center a move is an update, and an update is a version.
+// That version is mark's own, but it is indistinguishable by number from an
+// edit made in Confluence, which is what --no-overwrite compares numbers to
+// find. A caller holding a page at current asks here which version to compare
+// instead. A page that has moved on since the move is answered false: what
+// came after it was not mark.
+//
+// The move endpoint Cloud uses writes no version, so only a move by update is
+// recorded; a page moved that way has nothing to discount.
+func (api *API) ReparentedFrom(pageID string, current int64) (int64, bool) {
+	api.reparentedMutex.Lock()
+	defer api.reparentedMutex.Unlock()
+
+	moved, ok := api.reparented[pageID]
+	if !ok || moved.to != current {
+		return 0, false
+	}
+
+	return moved.from, true
 }
 
 // readForReparent reads everything reparentContentV1 writes back, and reports
