@@ -1,6 +1,10 @@
 package confluence_test
 
 import (
+	"bytes"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -49,6 +53,56 @@ func TestRestrictPageUpdatesCurrentUserByEmail(t *testing.T) {
 
 	require.NoError(t, api.RestrictPageUpdates(page, "ME@example.com"))
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+}
+
+func TestSetPageRestrictionsCurrentUserByEmail(t *testing.T) {
+	api, server, page := newCloudRestrictAPI(t)
+	var body []byte
+	var readErr error
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/restriction") {
+			body, readErr = io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		return 0, "", false
+	})
+
+	require.NoError(t, api.SetPageRestrictions(page, []confluence.PageRestriction{
+		{Operation: "read", Users: []string{"ME@example.com"}},
+	}))
+	require.NoError(t, readErr)
+	require.JSONEq(t, `[{"operation":"read","restrictions":{"user":[{"type":"known","accountId":"acct-me"}],"group":[]}}]`, string(body))
+	assert.Zero(t, server.CountRequests(http.MethodGet, "/search"))
+}
+
+// newCloudRestrictAPIWithoutCurrentUser is a Cloud fake whose /user/current
+// refuses. It is addressed through the gateway, so the client knows it is
+// Cloud without asking for the current user and caching the answer.
+func newCloudRestrictAPIWithoutCurrentUser(t *testing.T) (*confluence.API, *confluencetest.Server, *confluence.PageInfo) {
+	t.Helper()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	stored := server.AddPage("DOCS", "Locked", "page", "")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.HasSuffix(r.URL.Path, "/rest/api/user/current") {
+			return http.StatusForbidden, `{"message":"forbidden"}`, true
+		}
+		return 0, "", false
+	})
+	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
+	require.True(t, api.IsCloud())
+	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
+}
+
+func TestSetPageRestrictionsRefusesUnknownCurrentUser(t *testing.T) {
+	api, server, page := newCloudRestrictAPIWithoutCurrentUser(t)
+	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
+
+	err := api.SetPageRestrictions(page, []confluence.PageRestriction{
+		{Operation: "read", Users: []string{"Alice Example"}},
+	})
+	require.ErrorContains(t, err, "could lock out Mark")
+	assert.Zero(t, server.CountRequests(http.MethodPut, "/restriction"))
 }
 
 // TestRestrictPageUpdatesNamedUser restricts to someone other than the
@@ -123,4 +177,12 @@ func TestRestrictPageUpdatesTokenWithoutUsername(t *testing.T) {
 	err := api.RestrictPageUpdates(page, "someone-else@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
+}
+
+func TestRestrictPageUpdatesNamedUserWhenCurrentUnavailable(t *testing.T) {
+	api, server, page := newCloudRestrictAPIWithoutCurrentUser(t)
+	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
+
+	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
+	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
 }
