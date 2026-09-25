@@ -45,12 +45,31 @@ attachments:
 labels:
   - <label 1>
   - <label 2>
+restrictions:
+  read:
+    users:
+      - <user name>
+    groups:
+      - <group name>
+  update:
+    users:
+      - <user name>
+    groups:
+      - <group name>
 image-align: <left|center|right>
 order: <whole number>
 ---
 
 <page contents>
 ```
+
+The optional `restrictions` mapping controls who may read or update the page.
+Each operation replaces its existing restrictions; omit the whole mapping to
+leave page restrictions unchanged. An empty operation removes its restrictions.
+Mark adds its authenticated user to non-empty operations so that publishing
+cannot lock itself out of the page.
+Restrictions have no dedicated feature flag. YAML metadata still requires the
+`frontmatter` feature; legacy restriction headers do not.
 
 The legacy HTML header format is also supported:
 
@@ -81,11 +100,26 @@ key meant for something else from one meant for mark and misspelled.
 <!-- Label: <label 1> -->
 <!-- Label: <label 2> -->
 <!-- Property: <key>=<value> -->
+<!-- Restriction: <read|update>.<user|group>=<name> -->
 <!-- Synchronized: <true|false> -->
 <!-- Image-Align: <left|center|right> -->
 
 <page contents>
 ```
+
+Repeat `Restriction` headers to add users and groups to the operation assembled
+from the document:
+
+```markdown
+<!-- Restriction: read.user=jdoe -->
+<!-- Restriction: read.group=docs-readers -->
+<!-- Restriction: update.user=jdoe -->
+<!-- Restriction: update.group=docs-editors -->
+```
+
+The singular headers append to any restrictions read from YAML front matter.
+Publishing replaces only the operations named by the document. Anyone named
+under `update` must also be able to read the page.
 
 Headers are read from the run of comments the document opens with, and only
 from there. Blank lines between them are fine, so headers may be grouped —
