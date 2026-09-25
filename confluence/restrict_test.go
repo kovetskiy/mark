@@ -1,6 +1,10 @@
 package confluence_test
 
 import (
+	"bytes"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -51,11 +55,45 @@ func TestRestrictPageUpdatesCurrentUserByEmail(t *testing.T) {
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
+func TestSetPageRestrictionsCurrentUserByEmail(t *testing.T) {
+	api, server, page := newCloudRestrictAPI(t)
+	var body []byte
+	var readErr error
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/restriction") {
+			body, readErr = io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		return 0, "", false
+	})
+
+	require.NoError(t, api.SetPageRestrictions(page, []confluence.PageRestriction{
+		{Operation: "read", Users: []string{"ME@example.com"}},
+	}))
+	require.NoError(t, readErr)
+	require.JSONEq(t, `[{"operation":"read","restrictions":{"user":[{"type":"known","accountId":"acct-me"}],"group":[]}}]`, string(body))
+	assert.Zero(t, server.CountRequests(http.MethodGet, "/search"))
+}
+
 // TestRestrictPageUpdatesNamedUser restricts to someone other than the
 // authenticated user, found through the user search.
 func TestRestrictPageUpdatesNamedUser(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
+
+	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
+	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
+}
+
+func TestRestrictPageUpdatesNamedUserWhenCurrentUnavailable(t *testing.T) {
+	api, server, page := newCloudRestrictAPI(t)
+	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/rest/api/user/current" {
+			return http.StatusForbidden, `{"message":"forbidden"}`, true
+		}
+		return 0, "", false
+	})
 
 	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
 	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)

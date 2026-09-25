@@ -44,6 +44,12 @@ func (user *User) isNamed(name string) bool {
 	return false
 }
 
+type PageRestriction struct {
+	Operation string
+	Users     []string
+	Groups    []string
+}
+
 type API struct {
 	rest *gopencils.Resource
 	// v2 API for newer endpoints like folders
@@ -1854,18 +1860,17 @@ func (api *API) IsCloud() bool {
 // a name that resolves to nobody is an error. It used to fall back to the
 // authenticated user, which quietly locked the page against the very person it
 // was meant to leave editable.
-func (api *API) restrictionUserCloud(name string) (*User, error) {
-	current, currentErr := api.GetCurrentUser()
-	if currentErr == nil && (name == "" || current.isNamed(name)) {
+func (api *API) restrictionUserCloud(name string, current *User) (*User, error) {
+	if current != nil && (name == "" || current.isNamed(name)) {
 		return current, nil
 	}
 	if name == "" {
-		return nil, fmt.Errorf("unable to resolve the current user: %w", currentErr)
+		return nil, errors.New("unable to resolve the current user")
 	}
 
 	user, err := api.GetUserByName(name)
 	if err != nil {
-		if currentErr != nil {
+		if current == nil {
 			return nil, fmt.Errorf("unable to resolve user %q: %w", name, err)
 		}
 		return nil, fmt.Errorf(
@@ -1887,7 +1892,15 @@ func (api *API) RestrictPageUpdates(
 	}
 
 	if api.IsCloud() {
-		user, err := api.restrictionUserCloud(allowedUser)
+		current, currentErr := api.GetCurrentUser()
+		if currentErr != nil && allowedUser == "" {
+			return fmt.Errorf(
+				"unable to restrict updates of page %s: "+
+					"unable to resolve the current user: %w",
+				page.ID, currentErr,
+			)
+		}
+		user, err := api.restrictionUserCloud(allowedUser, current)
 		if err != nil {
 			return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
 		}
@@ -1923,6 +1936,95 @@ func (api *API) RestrictPageUpdates(
 		if !api.IsCloud() && (request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode == http.StatusMethodNotAllowed) {
 			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", request.Raw.StatusCode)
 		}
+		return newErrorStatusNotOK(request)
+	}
+
+	return nil
+}
+
+// SetPageRestrictions replaces the named read or update restrictions on a page.
+func (api *API) SetPageRestrictions(page *PageInfo, restrictions []PageRestriction) error {
+	isCloud := api.IsCloud()
+	var currentUser *User
+	for _, restriction := range restrictions {
+		if len(restriction.Users) == 0 && len(restriction.Groups) == 0 {
+			continue
+		}
+
+		var err error
+		currentUser, err = api.GetCurrentUser()
+		if err != nil {
+			return fmt.Errorf("unable to resolve authenticated user: %w", err)
+		}
+		if isCloud && currentUser.AccountID == "" {
+			return fmt.Errorf("authenticated user has no accountId")
+		}
+		if !isCloud && currentUser.Username == "" {
+			return fmt.Errorf("authenticated user has no username")
+		}
+		break
+	}
+
+	payload := make([]map[string]any, 0, len(restrictions))
+
+	for _, restriction := range restrictions {
+		users := make([]map[string]any, 0, len(restriction.Users))
+		currentUserIncluded := false
+		for _, name := range restriction.Users {
+			user := map[string]any{"type": "known"}
+			if isCloud {
+				resolved, err := api.restrictionUserCloud(name, currentUser)
+				if err != nil {
+					return fmt.Errorf("unable to resolve restricted user %q: %w", name, err)
+				}
+				if resolved.AccountID == "" {
+					return fmt.Errorf("resolved restricted user %q has no accountId", name)
+				}
+				user["accountId"] = resolved.AccountID
+				currentUserIncluded = currentUserIncluded ||
+					(currentUser != nil && resolved.AccountID == currentUser.AccountID)
+			} else {
+				user["username"] = name
+				currentUserIncluded = currentUserIncluded ||
+					(currentUser != nil && strings.EqualFold(name, currentUser.Username))
+			}
+			users = append(users, user)
+		}
+		if currentUser != nil && !currentUserIncluded &&
+			(len(restriction.Users) > 0 || len(restriction.Groups) > 0) {
+			user := map[string]any{"type": "known"}
+			if isCloud {
+				user["accountId"] = currentUser.AccountID
+			} else {
+				user["username"] = currentUser.Username
+			}
+			users = append(users, user)
+		}
+
+		groups := make([]map[string]any, 0, len(restriction.Groups))
+		for _, name := range restriction.Groups {
+			groups = append(groups, map[string]any{"type": "group", "name": name})
+		}
+
+		payload = append(payload, map[string]any{
+			"operation": restriction.Operation,
+			"restrictions": map[string]any{
+				"user":  users,
+				"group": groups,
+			},
+		})
+	}
+
+	var result any
+	request, err := api.v1().
+		Res("content").
+		Id(page.ID).
+		Res("restriction", &result).
+		Put(payload)
+	if err != nil {
+		return newTransportError(request, "set restrictions on page "+page.ID, err)
+	}
+	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
 		return newErrorStatusNotOK(request)
 	}
 

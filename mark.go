@@ -1147,6 +1147,25 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
+	// Apply access controls before uploading attachments or page content so a
+	// newly created restricted page is never populated while still unrestricted.
+	if meta != nil && meta.Restrictions != nil {
+		var restrictions []confluence.PageRestriction
+		if subjects := meta.Restrictions.Read; subjects != nil {
+			restrictions = append(restrictions, confluence.PageRestriction{
+				Operation: "read", Users: subjects.Users, Groups: subjects.Groups,
+			})
+		}
+		if subjects := meta.Restrictions.Update; subjects != nil {
+			restrictions = append(restrictions, confluence.PageRestriction{
+				Operation: "update", Users: subjects.Users, Groups: subjects.Groups,
+			})
+		}
+		if err := api.SetPageRestrictions(target, restrictions); err != nil {
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+		}
+	}
+
 	// Collect attachments declared via <!-- Attachment: --> directives.
 	var declaredAttachments []string
 	if meta != nil {
