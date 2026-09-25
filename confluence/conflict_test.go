@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -259,4 +260,94 @@ func TestUpdatePageKeepConcurrentEditsRefusesToOverwrite(t *testing.T) {
 	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")
 	assert.Equal(t, "<p>by hand</p>", server.Page(stored.ID).Body)
 	assert.Equal(t, 1, countContentPuts(server, stored.ID))
+}
+
+// newConflictDataCenterAPI is newConflictAPI dressed as Server or Data Center,
+// so that a reparent takes the update fallback: no /api/v2, and no content
+// move endpoint. f sees every other request.
+func newConflictDataCenterAPI(
+	t *testing.T, f confluencetest.FailFunc,
+) (*API, *confluencetest.Server) {
+	t.Helper()
+
+	api, server := newConflictAPI(t, false)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+		}
+		return f(r)
+	})
+	require.False(t, api.IsCloud())
+
+	return api, server
+}
+
+// A reparent on Server/DC writes the page's body back, and it is the body it
+// read. Somebody saving the page between that read and the write used to have
+// their edit reverted: the retry re-read only the version number and sent the
+// old body as the version after theirs. A move is not allowed to cost a page
+// its content, and a concurrent edit is content -- with or without
+// --no-overwrite, since a move rebuilt from a fresh read overwrites nothing.
+func TestReparentConflictKeepsTheConcurrentEdit(t *testing.T) {
+	for _, keep := range []bool{false, true} {
+		t.Run(fmt.Sprintf("KeepConcurrentEdits=%v", keep), func(t *testing.T) {
+			var (
+				server *confluencetest.Server
+				pageID string
+				edited bool
+			)
+
+			api, server := newConflictDataCenterAPI(t, func(r *http.Request) (int, string, bool) {
+				if !edited && isContentPut(r, pageID) {
+					edited = true
+					server.EditPage(pageID, "<p>edited meanwhile</p>")
+				}
+				return 0, "", false
+			})
+			api.KeepConcurrentEdits = keep
+
+			oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+			newParent := server.AddPage("DOCS", "New Parent", "page", "")
+			pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
+			server.EditPage(pageID, "<p>as mark read it</p>")
+
+			require.NoError(t, api.MoveContentAppend(pageID, newParent.ID))
+
+			require.True(t, edited, "the edit has to land between the read and the write")
+			after := server.Page(pageID)
+			assert.Equal(t, newParent.ID, after.ParentID)
+			assert.Equal(t, "<p>edited meanwhile</p>", after.Body,
+				"the move must not put back the body it read before the edit")
+			assert.Equal(t, "edited by hand", after.Message,
+				"nor the version message, which is where --changes-only looks")
+			assert.Equal(t, 2, countContentPuts(server, pageID))
+		})
+	}
+}
+
+// The retry is bounded the way UpdatePage's is: a page that conflicts on the
+// fresh read as well is being written continuously, and the error says so.
+func TestReparentPersistentConflictFails(t *testing.T) {
+	var (
+		server *confluencetest.Server
+		pageID string
+	)
+
+	api, server := newConflictDataCenterAPI(t, func(r *http.Request) (int, string, bool) {
+		if isContentPut(r, pageID) {
+			server.EditPage(pageID, "<p>edited again</p>")
+		}
+		return 0, "", false
+	})
+
+	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+	newParent := server.AddPage("DOCS", "New Parent", "page", "")
+	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
+
+	err := api.MoveContentAppend(pageID, newParent.ID)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errConflict))
+	assert.Contains(t, err.Error(), "something else is writing to the page")
+	assert.Equal(t, 2, countContentPuts(server, pageID), "exactly one retry")
+	assert.Equal(t, oldParent.ID, server.Page(pageID).ParentID)
 }

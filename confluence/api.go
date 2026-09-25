@@ -2649,33 +2649,47 @@ func (api *API) orderContent(contentID, position, siblingID string) error {
 // there is the server's business, and a move is not allowed to cost a page its
 // content on the reading where it blanks it.
 func (api *API) reparentContent(contentID, parentID string) error {
-	page, err := api.GetPageByIDExpanded(contentID, "ancestors,version,body.storage")
-	if err != nil {
-		return fmt.Errorf(
-			"unable to read %s to move it under %s: %w",
-			api.describeContent(contentID), parentID, err,
-		)
-	}
-	if page == nil {
-		return fmt.Errorf(
-			"unable to move content %s under %s: no such content", contentID, parentID,
-		)
+	page, placed, err := api.readForReparent(contentID, parentID)
+	if err != nil || placed {
+		return err
 	}
 
-	// Already there. Confluence accepts an update that names the parent a page
-	// already has, but it costs the page a version for nothing.
-	if n := len(page.Ancestors); n > 0 && page.Ancestors[n-1].ID == parentID {
-		return nil
-	}
-
-	put := func(version int64) error {
-		return api.reparentContentV1(page, parentID, version)
-	}
-
-	next := page.Version.Number + 1
-	err = put(next)
+	err = api.reparentContentV1(page, parentID, page.Version.Number+1)
 	if errors.Is(err, errConflict) {
-		next, err = api.retryConflictingUpdate(page, next, err, put)
+		// Something wrote to the page between the read and the write. The
+		// payload carries the body and version message of that read, so
+		// sending it again at the next version -- which is what
+		// retryConflictingUpdate does for a publish, where mark's body is the
+		// point -- would put back what the page said before the edit and undo
+		// it. Here the body is only a passenger, so the whole page is read
+		// again and the move rebuilt from that. Nothing is overwritten this
+		// way, which is also why KeepConcurrentEdits has nothing to refuse.
+		if api.conflictRetryDelay > 0 {
+			time.Sleep(api.conflictRetryDelay)
+		}
+
+		attempted := page.Version.Number + 1
+
+		page, placed, err = api.readForReparent(contentID, parentID)
+		if err != nil || placed {
+			return err
+		}
+
+		log.Debug().Msgf(
+			"move of page %q (%s) as version %d conflicted; retrying as version %d",
+			page.Title, page.ID, attempted, page.Version.Number+1,
+		)
+
+		err = api.reparentContentV1(page, parentID, page.Version.Number+1)
+		if errors.Is(err, errConflict) {
+			err = fmt.Errorf(
+				"version %d was refused as a conflict, and version %d again "+
+					"after reading the page afresh; something else is writing to "+
+					"the page at the same time, so run mark again once it has "+
+					"stopped: %w",
+				attempted, page.Version.Number+1, err,
+			)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf(
@@ -2683,9 +2697,32 @@ func (api *API) reparentContent(contentID, parentID string) error {
 		)
 	}
 
-	api.updateCachedPageVersion(page.ID, next)
+	api.updateCachedPageVersion(page.ID, page.Version.Number+1)
 
 	return nil
+}
+
+// readForReparent reads everything reparentContentV1 writes back, and reports
+// placed when the page already sits under parentID: Confluence accepts an
+// update that names the parent a page already has, but it costs the page a
+// version for nothing.
+func (api *API) readForReparent(contentID, parentID string) (*PageInfo, bool, error) {
+	page, err := api.GetPageByIDExpanded(contentID, "ancestors,version,body.storage")
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"unable to read %s to move it under %s: %w",
+			api.describeContent(contentID), parentID, err,
+		)
+	}
+	if page == nil {
+		return nil, false, fmt.Errorf(
+			"unable to move content %s under %s: no such content", contentID, parentID,
+		)
+	}
+
+	n := len(page.Ancestors)
+
+	return page, n > 0 && page.Ancestors[n-1].ID == parentID, nil
 }
 
 // reparentContentV1 is the request behind reparentContent; nextVersion is the
