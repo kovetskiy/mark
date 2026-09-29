@@ -48,7 +48,10 @@ func (user *User) isNamed(name string) bool {
 type API struct {
 	rest *gopencils.Resource
 	// v2 API for newer endpoints like folders
-	restV2  *gopencils.Resource
+	restV2 *gopencils.Resource
+	// site is rooted at the base URL itself, for the one web action mark
+	// calls; see moveByAction.
+	site    *gopencils.Resource
 	BaseURL string
 
 	// bearerToken is the Personal Access Token used when no username was
@@ -75,11 +78,15 @@ type API struct {
 	isCloudFlag bool
 	isCloudOnce sync.Once
 
-	// moveEndpointMissing records that this Confluence answered the v1 content
-	// move endpoint with 404 or 405, so that a run reorganising a whole tree
-	// does not pay a doomed request per page before falling back; see
-	// moveContent.
-	moveEndpointMissing atomic.Bool
+	// moveEndpointMissing holds the error this Confluence's answer to the v1
+	// content move endpoint was reported as, so that a run reorganising a
+	// whole tree does not pay a doomed request per page before falling back;
+	// see moveContent.
+	moveEndpointMissing atomic.Pointer[error]
+
+	// moveActionMissing is the same for /pages/movepage.action; see
+	// moveByAction.
+	moveActionMissing atomic.Pointer[error]
 
 	// reparented maps a page id to the versions either side of a move this
 	// API made by update; see ReparentedFrom.
@@ -460,15 +467,18 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	// client handles both cases, and is the single place retries happen.
 	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 0)
 	restV2 := gopencils.Api(baseURL+"/api/v2", auth, httpClient, 0) // v2 API for folders and new features
+	site := gopencils.Api(baseURL, auth, httpClient, 0)
 
 	if zerolog.GlobalLevel() == zerolog.TraceLevel {
 		rest.Logger = &tracer{"rest:"}
 		restV2.Logger = &tracer{"rest-v2:"}
+		site.Logger = &tracer{"site:"}
 	}
 
 	api := &API{
 		rest:          rest,
 		restV2:        restV2,
+		site:          site,
 		BaseURL:       baseURL,
 		gateway:       isGatewayURL(baseURL),
 		pageCache:     make(map[string]*PageInfo),
@@ -2632,50 +2642,259 @@ func (api *API) MoveContentBefore(contentID, siblingID string) error {
 //
 // The v1 move endpoint is tried first, and on Cloud that is the whole of it.
 // A Server or Data Center instance answers it 404, and the page is then moved
-// the way those releases document a move: an update carrying the new ancestor.
-// Detecting the reparent and then refusing to perform it was the worst of both
-// -- mark knew exactly where the page belonged and made the user drag it there
-// by hand.
+// with /pages/movepage.action, the action Confluence's own Move dialog posts
+// to. Where that is not usable either, the page is moved the way those
+// releases document a move: an update carrying the new ancestor.
 //
 // Whether DC lacks the endpoint outright is still unverified from here; the
-// fallback does not depend on knowing. A 404 that is really a missing page
-// reaches it too, and the update then fails on the same page for the same
+// fallbacks do not depend on knowing. A 404 that is really a missing page
+// reaches them too, and the update then fails on the same page for the same
 // reason, saying so in terms of the page rather than the endpoint.
 func (api *API) MoveContentAppend(contentID, targetID string) error {
-	if !api.moveEndpointMissing.Load() {
-		err := api.moveContent(contentID, "append", targetID)
-		if !errors.Is(err, errNoMoveEndpoint) {
-			return err
-		}
-
-		log.Debug().Msgf(
-			"this Confluence does not serve the content move endpoint; "+
-				"reparenting %s under %s with an update instead",
-			api.describeContent(contentID), targetID,
-		)
+	err := api.moveContent(contentID, "append", targetID)
+	if !errors.Is(err, errNoMoveEndpoint) {
+		return err
 	}
+
+	moved, err := api.moveByAction(contentID, "append", targetID)
+	if moved {
+		return nil
+	}
+
+	log.Debug().Err(err).Msgf(
+		"this Confluence moved neither through the content move endpoint nor "+
+			"movepage.action; reparenting %s under %s with an update instead",
+		api.describeContent(contentID), targetID,
+	)
 
 	return api.reparentContent(contentID, targetID)
 }
 
 // orderContent places content before or after one of its siblings.
 //
-// Unlike a reparent this has no fallback. Position among siblings is not part
-// of what an update can carry, so outside Cloud it is the one thing the
-// missing endpoint really does cost, and saying so is all that is left.
+// Outside Cloud the only fallback is movepage.action: position among siblings
+// is not part of what an update can carry.
 func (api *API) orderContent(contentID, position, siblingID string) error {
 	err := api.moveContent(contentID, position, siblingID)
-	if errors.Is(err, errNoMoveEndpoint) {
-		return fmt.Errorf(
-			"unable to place %s %s %s: ordering pages needs the content move "+
-				"endpoint, and reparenting is the only part of it mark can do "+
-				"another way; drop the Order header for these pages, or arrange "+
-				"them in Confluence by hand: %w",
-			api.describeContent(contentID), position, siblingID, err,
+	if !errors.Is(err, errNoMoveEndpoint) {
+		return err
+	}
+
+	moved, actionErr := api.moveByAction(contentID, position, siblingID)
+	if moved {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"unable to place %s %s %s: ordering pages needs the content move "+
+			"endpoint or /pages/movepage.action, and neither worked; drop the "+
+			"Order header for these pages, or arrange them in Confluence by "+
+			"hand: %w",
+		api.describeContent(contentID), position, siblingID,
+		errors.Join(err, actionErr),
+	)
+}
+
+// actionPositions maps the REST move positions onto movepage.action's.
+var actionPositions = map[string]string{
+	"append": "append",
+	"before": "above",
+	"after":  "below",
+}
+
+// moveByAction moves content with /pages/movepage.action and reports whether
+// the content ended up where it was asked to go.
+//
+// The action is what the Move dialog of Server and Data Center posts to, not a
+// documented API, so its answer is not trusted either way: success is judged by
+// reading the tree back afterwards.
+func (api *API) moveByAction(contentID, position, targetID string) (bool, error) {
+	if missing := api.moveActionMissing.Load(); missing != nil {
+		return false, *missing
+	}
+
+	before, err := api.GetPageByID(contentID)
+	if err != nil {
+		return false, fmt.Errorf(
+			"unable to read %s to move it: %w", api.describeContent(contentID), err,
 		)
 	}
 
-	return err
+	var target struct {
+		Title string `json:"title"`
+		Space struct {
+			Key string `json:"key"`
+		} `json:"space"`
+		Ancestors []struct {
+			ID string `json:"id"`
+		} `json:"ancestors"`
+	}
+
+	request, err := api.v1().Res("content/"+targetID, &target).Get(
+		map[string]string{"expand": "space,ancestors"},
+	)
+	if err != nil {
+		return false, newTransportError(request, "read move target "+targetID, err)
+	}
+	if request.Raw.StatusCode != http.StatusOK {
+		return false, newErrorStatusNotOK(request)
+	}
+
+	// The parent the content has to end up under; for before and after that
+	// is the sibling's.
+	parentID := targetID
+	if position != "append" {
+		if len(target.Ancestors) == 0 {
+			return false, fmt.Errorf(
+				"unable to place content next to %s: it is at the root of its space", targetID,
+			)
+		}
+		parentID = target.Ancestors[len(target.Ancestors)-1].ID
+	}
+
+	if position == "append" && immediateParent(before) == parentID {
+		return true, nil
+	}
+
+	query := map[string]string{
+		"pageId":      contentID,
+		"position":    actionPositions[position],
+		"targetId":    targetID,
+		"targetTitle": target.Title,
+		"spaceKey":    target.Space.Key,
+	}
+	// Asks Seraph to authenticate a non-REST request from the basic auth header.
+	if api.site.Api.BasicAuth != nil {
+		query["os_authType"] = "basic"
+	}
+
+	var answer map[string]any
+	resource := api.resource(api.site).Res("pages/movepage.action", &answer)
+	resource.SetHeader("X-Atlassian-Token", "no-check")
+	resource.SetHeader("Accept", "application/json")
+
+	request, err = resource.SetQuery(query).Post()
+	if request == nil || request.Raw == nil {
+		return false, newTransportError(
+			request, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
+		)
+	}
+
+	// A 401 is about the credentials, not the page, so it too holds for the
+	// rest of the run.
+	switch status := request.Raw.StatusCode; {
+	case status == http.StatusNotFound || status == http.StatusMethodNotAllowed ||
+		status == http.StatusNotImplemented || status == http.StatusUnauthorized:
+		_ = request.Raw.Body.Close()
+		missing := fmt.Errorf("%w (status: %d)", errNoMoveAction, status)
+		api.moveActionMissing.Store(&missing)
+
+		return false, missing
+	case status >= http.StatusBadRequest:
+		return false, newErrorStatusNotOK(request)
+	}
+
+	// A body that does not decode is typically a login page: the action is
+	// unreachable with these credentials, and will be for every other page.
+	notJSON := err != nil
+
+	placed, verifyErr := api.placedAt(contentID, position, targetID, parentID, before)
+	if verifyErr != nil {
+		return false, verifyErr
+	}
+	if placed {
+		return true, nil
+	}
+
+	if notJSON {
+		missing := fmt.Errorf(
+			"%w: it answered with something other than JSON (status: %d)",
+			errNoMoveAction, request.Raw.StatusCode,
+		)
+		api.moveActionMissing.Store(&missing)
+
+		return false, missing
+	}
+
+	return false, fmt.Errorf(
+		"movepage.action left %s where it was%s",
+		api.describeContent(contentID), actionErrors(answer),
+	)
+}
+
+// placedAt reads the tree back after movepage.action and reports whether
+// contentID now sits where position and targetID put it.
+func (api *API) placedAt(
+	contentID, position, targetID, parentID string, before *PageInfo,
+) (bool, error) {
+	after, err := api.GetPageByID(contentID)
+	if err != nil {
+		return false, fmt.Errorf(
+			"unable to read %s after moving it: %w", api.describeContent(contentID), err,
+		)
+	}
+	if immediateParent(after) != parentID {
+		return false, nil
+	}
+
+	// Record a version the move wrote as mark's own, so that --no-overwrite
+	// does not take it for an edit.
+	if after.Version.Number != before.Version.Number {
+		api.updateCachedPageVersion(contentID, after.Version.Number)
+		api.noteReparent(contentID, before.Version.Number, after.Version.Number)
+	}
+
+	if position == "append" {
+		return true, nil
+	}
+
+	children, err := api.GetChildPages(parentID)
+	if err != nil {
+		return false, fmt.Errorf("unable to list children of %s after a move: %w", parentID, err)
+	}
+
+	at := slices.IndexFunc(children, func(p PageInfo) bool { return p.ID == contentID })
+	sibling := slices.IndexFunc(children, func(p PageInfo) bool { return p.ID == targetID })
+	if at < 0 || sibling < 0 {
+		return false, nil
+	}
+
+	if position == "before" {
+		return at == sibling-1, nil
+	}
+
+	return at == sibling+1, nil
+}
+
+func immediateParent(page *PageInfo) string {
+	if page == nil || len(page.Ancestors) == 0 {
+		return ""
+	}
+
+	return page.Ancestors[len(page.Ancestors)-1].ID
+}
+
+// actionErrors formats whatever errors movepage.action put in its answer.
+func actionErrors(answer map[string]any) string {
+	var messages []string
+	for _, key := range []string{"actionErrors", "validationErrors", "errorMessage"} {
+		switch value := answer[key].(type) {
+		case string:
+			if value != "" {
+				messages = append(messages, value)
+			}
+		case []any:
+			for _, item := range value {
+				messages = append(messages, fmt.Sprint(item))
+			}
+		}
+	}
+
+	if len(messages) == 0 {
+		return ""
+	}
+
+	return ": " + strings.Join(messages, "; ")
 }
 
 // reparentContent moves content under parentID through the update API.
@@ -2866,6 +3085,10 @@ func (api *API) reparentContentV1(page *PageInfo, parentID string, nextVersion i
 }
 
 func (api *API) moveContent(contentID, position, targetID string) error {
+	if missing := api.moveEndpointMissing.Load(); missing != nil {
+		return *missing
+	}
+
 	path := fmt.Sprintf("content/%s/move/%s/%s", contentID, position, targetID)
 	var result map[string]any
 	request, err := api.v1().Res(path, &result).Put(map[string]interface{}{})
@@ -2890,9 +3113,10 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		// here concludes anything about the content itself.
 		if !api.IsCloud() {
 			_ = request.Raw.Body.Close()
-			api.moveEndpointMissing.Store(true)
+			missing := fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, request.Raw.StatusCode)
+			api.moveEndpointMissing.Store(&missing)
 
-			return fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, request.Raw.StatusCode)
+			return missing
 		}
 		return newErrorStatusNotOK(request)
 	default:
@@ -2926,10 +3150,15 @@ var ErrNotFound = errors.New("404 (Not Found)")
 // the version sent is not the one after the page's current version.
 var errConflict = errors.New("409 (Conflict)")
 
+// errNoMoveAction reports that /pages/movepage.action is missing, refuses the
+// credentials, or answers them with something other than JSON.
+var errNoMoveAction = errors.New(
+	"this Confluence did not serve /pages/movepage.action to mark",
+)
+
 // errNoMoveEndpoint reports that a non-Cloud Confluence answered
-// content/{id}/move with 404, 405 or 501. It is a sentinel because the two
-// callers answer it differently: a reparent falls back to the update API,
-// which every release has, and an ordering has nothing to fall back to.
+// content/{id}/move with 404, 405 or 501, which sends both callers on to
+// movepage.action.
 var errNoMoveEndpoint = errors.New(
 	"this Confluence did not serve the content move endpoint, which is Cloud-only",
 )

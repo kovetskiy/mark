@@ -287,10 +287,12 @@ of its default alphabetical ordering, which is inherent to asking for a
 particular order.
 
 > [!NOTE]
-> Ordering needs the content move endpoint, which only Confluence Cloud serves.
-> On Server and Data Center a page that has to be repositioned is reported as
-> such and the run fails; moving a page to a different *parent* works there, and
-> is done with an update carrying the new ancestor instead.
+> The content move endpoint mark uses for ordering and reparenting is served
+> only by Confluence Cloud. On Server and Data Center mark moves pages through
+> `/pages/movepage.action`, the action behind the Move dialog, which needs the
+> credentials to be accepted outside `/rest`. Where it is not, a page moved to a
+> different *parent* is moved with an update carrying the new ancestor instead,
+> and a page that has to be repositioned among its siblings fails the run.
 
 ```markdown
 <!-- Sidebar: <h2>Test</h2> -->

@@ -14,15 +14,41 @@ import (
 
 // newDataCenterAPI is the fake dressed as Confluence Server or Data Center:
 // no /api/v2 at all, so IsCloud() is false, and no content move endpoint.
-// Everything else -- content read, content update, ancestors on an update --
-// is what those releases really do serve.
+// Everything else -- content read, content update, ancestors on an update,
+// /pages/movepage.action -- is what those releases really do serve.
 func newDataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
+	t.Helper()
+
+	return newDataCenterAPIWith(t, nil)
+}
+
+// newDataCenterAPIWithoutMoveAction is newDataCenterAPI where movepage.action
+// is not reachable either, which leaves a reparent only the update.
+func newDataCenterAPIWithoutMoveAction(t *testing.T) (*confluence.API, *confluencetest.Server) {
+	t.Helper()
+
+	return newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			return http.StatusNotFound, `{"message":"no such action"}`, true
+		}
+		return 0, "", false
+	})
+}
+
+// newDataCenterAPIWith is newDataCenterAPI with f consulted on every request
+// the fixture itself does not refuse.
+func newDataCenterAPIWith(
+	t *testing.T, f confluencetest.FailFunc,
+) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
 
 	api, server := newAPI(t)
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+		}
+		if f != nil {
+			return f(r)
 		}
 		return 0, "", false
 	})
@@ -39,7 +65,7 @@ func newDataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 // its headers, the move was attempted, Confluence answered 404, and the run
 // failed telling the user to drag the page across by hand.
 func TestReparentOnDataCenterFallsBackToAnUpdate(t *testing.T) {
-	api, server := newDataCenterAPI(t)
+	api, server := newDataCenterAPIWithoutMoveAction(t)
 
 	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
 	newParent := server.AddPage("DOCS", "New Parent", "page", "")
@@ -93,11 +119,10 @@ func TestReparentOnDataCenterLeavesAPageThatIsAlreadyThereAlone(t *testing.T) {
 }
 
 // TestOrderingOnDataCenterSaysWhatCannotBeDone: position among siblings is not
-// part of what an update can carry, so the one thing the missing endpoint
-// really costs has to be named as such -- and distinguished from reparenting,
-// which now works.
+// part of what an update can carry, so with movepage.action unreachable as well
+// ordering is the one thing that cannot be done, and has to be named as such.
 func TestOrderingOnDataCenterSaysWhatCannotBeDone(t *testing.T) {
-	api, server := newDataCenterAPI(t)
+	api, server := newDataCenterAPIWithoutMoveAction(t)
 
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 	first := server.AddPage("DOCS", "First", "page", parent.ID)
@@ -111,6 +136,7 @@ func TestOrderingOnDataCenterSaysWhatCannotBeDone(t *testing.T) {
 			err := order()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "ordering pages")
+			assert.Contains(t, err.Error(), "movepage.action")
 			assert.Contains(t, err.Error(), "404", "the status it was refused with")
 			assert.Contains(t, err.Error(), second.ID, "the page being ordered has to be named")
 		})
@@ -190,7 +216,7 @@ func TestReparentOnDataCenterReportsAMissingPage(t *testing.T) {
 // failure --changes-only exists to prevent, triggered by the one operation
 // that changes no content at all.
 func TestReparentOnDataCenterKeepsTheVersionMessage(t *testing.T) {
-	api, server := newDataCenterAPI(t)
+	api, server := newDataCenterAPIWithoutMoveAction(t)
 
 	old := server.AddPage("DOCS", "Old Parent", "page", "")
 	want := server.AddPage("DOCS", "New Parent", "page", "")
@@ -216,4 +242,132 @@ func TestReparentOnDataCenterKeepsTheVersionMessage(t *testing.T) {
 	assert.Equal(t, published, after.Message,
 		"the content fingerprint has to survive a move, which changes no content")
 	assert.Equal(t, "<p>the notes</p>", after.Body)
+}
+
+// TestReparentOnDataCenterUsesMovePageAction: the action moves a page the way
+// the Move dialog does, without writing a version of it.
+func TestReparentOnDataCenterUsesMovePageAction(t *testing.T) {
+	api, server := newDataCenterAPI(t)
+
+	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+	newParent := server.AddPage("DOCS", "New Parent", "page", "")
+	moved := server.AddPage("DOCS", "Release Notes", "page", oldParent.ID)
+	server.EditPage(moved.ID, "<p>the notes</p>")
+	before := server.Page(moved.ID).Version
+
+	require.NoError(t, api.MoveContentAppend(moved.ID, newParent.ID))
+
+	after := server.Page(moved.ID)
+	assert.Equal(t, newParent.ID, after.ParentID)
+	assert.Equal(t, before, after.Version)
+	assert.Equal(t, "<p>the notes</p>", after.Body)
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/pages/movepage.action"))
+	assert.Zero(t, countPuts(server, moved.ID),
+		"the update fallback is not needed when the action worked")
+}
+
+// TestOrderingOnDataCenterUsesMovePageAction: ordering has no other way round
+// outside Cloud, so the action is what makes the Order header work there.
+func TestOrderingOnDataCenterUsesMovePageAction(t *testing.T) {
+	api, server := newDataCenterAPI(t)
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	third := server.AddPage("DOCS", "Third", "page", parent.ID)
+
+	require.NoError(t, api.MoveContentBefore(third.ID, first.ID))
+	assert.Equal(t, []string{third.ID, first.ID, second.ID}, server.ChildOrder(parent.ID))
+
+	require.NoError(t, api.MoveContentAfter(third.ID, second.ID))
+	assert.Equal(t, []string{first.ID, second.ID, third.ID}, server.ChildOrder(parent.ID))
+}
+
+// TestMovePageActionRefusalIsReported: a 200 carrying actionErrors is a
+// refusal, which a reparent works around with an update and an ordering
+// reports in the action's own words.
+func TestMovePageActionRefusalIsReported(t *testing.T) {
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			return http.StatusOK, `{"actionErrors":["You cannot move this page."]}`, true
+		}
+		return 0, "", false
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	other := server.AddPage("DOCS", "Other", "page", "")
+
+	err := api.MoveContentBefore(second.ID, first.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "You cannot move this page.")
+	assert.Equal(t, []string{first.ID, second.ID}, server.ChildOrder(parent.ID))
+
+	require.NoError(t, api.MoveContentAppend(second.ID, other.ID))
+	assert.Equal(t, other.ID, server.Page(second.ID).ParentID)
+	assert.Equal(t, 1, countPuts(server, second.ID),
+		"the reparent has to have been done by update")
+}
+
+// TestMovePageActionBehindALoginPageIsGivenUp: an action that answers these
+// credentials with HTML answers every page the same way, so it is not asked
+// again for the rest of the run.
+func TestMovePageActionBehindALoginPageIsGivenUp(t *testing.T) {
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			return http.StatusOK, `<html><body>Log in</body></html>`, true
+		}
+		return 0, "", false
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", "")
+	second := server.AddPage("DOCS", "Second", "page", "")
+
+	require.NoError(t, api.MoveContentAppend(first.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(second.ID, parent.ID))
+
+	assert.Equal(t, parent.ID, server.Page(first.ID).ParentID)
+	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/pages/movepage.action"))
+}
+
+// TestMovePageActionVersionIsNotAnEdit: should the action write a version of
+// the page, that version is mark's, and --no-overwrite must be able to tell.
+func TestMovePageActionVersionIsNotAnEdit(t *testing.T) {
+	var (
+		server *confluencetest.Server
+		pageID string
+	)
+
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			server.EditPage(pageID, "<p>as moved</p>")
+		}
+		return 0, "", false
+	})
+
+	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+	newParent := server.AddPage("DOCS", "New Parent", "page", "")
+	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
+	before := server.Page(pageID).Version
+
+	require.NoError(t, api.MoveContentAppend(pageID, newParent.ID))
+
+	from, moved := api.ReparentedFrom(pageID, server.Page(pageID).Version)
+	require.True(t, moved)
+	assert.Equal(t, before, from)
+}
+
+// countPuts counts updates of the content itself, which a move endpoint
+// request under the same path is not.
+func countPuts(server *confluencetest.Server, id string) int {
+	n := 0
+	for _, r := range server.Requests() {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.Path, "/rest/api/content/"+id) {
+			n++
+		}
+	}
+	return n
 }

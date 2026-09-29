@@ -263,8 +263,8 @@ func TestUpdatePageKeepConcurrentEditsRefusesToOverwrite(t *testing.T) {
 }
 
 // newConflictDataCenterAPI is newConflictAPI dressed as Server or Data Center,
-// so that a reparent takes the update fallback: no /api/v2, and no content
-// move endpoint. f sees every other request.
+// so that a reparent takes the update fallback: no /api/v2, no content
+// move endpoint, and no movepage.action. f sees every other request.
 func newConflictDataCenterAPI(
 	t *testing.T, f confluencetest.FailFunc,
 ) (*API, *confluencetest.Server) {
@@ -272,7 +272,8 @@ func newConflictDataCenterAPI(
 
 	api, server := newConflictAPI(t, false)
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") ||
+			r.URL.Path == "/pages/movepage.action" {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
 		}
 		return f(r)

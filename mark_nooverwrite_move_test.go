@@ -17,18 +17,30 @@ import (
 )
 
 // dataCenterMoveFixture publishes one document under "Parent" on the fake
-// dressed as Server or Data Center -- no /api/v2 and no content move endpoint
-// -- so that moving it later takes the update fallback, which writes a version
-// of its own. It returns the server, the page's id, the "Other" parent's id and
-// the config, whose Output the caller replaces as it needs.
+// dressed as Server or Data Center -- no /api/v2, no content move endpoint and
+// no movepage.action -- so that moving it later takes the update fallback,
+// which writes a version of its own. It returns the server, the page's id, the
+// "Other" parent's id and the config, whose Output the caller replaces as it
+// needs.
 func dataCenterMoveFixture(
 	t *testing.T, configure func(*Config),
 ) (*confluencetest.Server, string, string, Config) {
 	t.Helper()
 
+	return dataCenterMoveFixtureWith(t, false, configure)
+}
+
+// dataCenterMoveFixtureWith is dataCenterMoveFixture, with movepage.action
+// served when withAction is set.
+func dataCenterMoveFixtureWith(
+	t *testing.T, withAction bool, configure func(*Config),
+) (*confluencetest.Server, string, string, Config) {
+	t.Helper()
+
 	server := confluencetest.New(t)
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") ||
+			(!withAction && r.URL.Path == "/pages/movepage.action") {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
 		}
 		return 0, "", false
@@ -169,4 +181,21 @@ func TestNoOverwriteStillSeesAnEditMadeBeforeAMove(t *testing.T) {
 
 	assert.Equal(t, report.StatusSkipped, after.Status, "and it is said again until resolved")
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+}
+
+// TestNoOverwriteAfterAMoveByAction: movepage.action moves the page without
+// an update, and the publish that follows is not taken for a conflict.
+func TestNoOverwriteAfterAMoveByAction(t *testing.T) {
+	server, id, other, config := dataCenterMoveFixtureWith(t, true, func(c *Config) {
+		c.NoOverwrite = true
+	})
+	dir := filepath.Dir(config.Files)
+
+	writeMovingDoc(t, dir, "Other", "Moved.")
+	moved := runReported(t, config)
+
+	assert.NotEqual(t, report.StatusSkipped, moved.Status, moved.Reason)
+	assert.Equal(t, other, server.Page(id).ParentID)
+	assert.Contains(t, server.Page(id).Body, "Moved.")
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/pages/movepage.action"))
 }
