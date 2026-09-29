@@ -408,6 +408,13 @@ var Flags = []cli.Flag{
 		Usage:   "set image alignment (left, center, right). Can be overridden per-file via the Image-Align header.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_IMAGE_ALIGN"), altsrctoml.TOML("image-align", altsrc.NewStringPtrSourcer(&filename))),
 	},
+	&cli.StringFlag{
+		Name:      "page-header",
+		Value:     "",
+		Usage:     "path to a template placed at the top of every page: Markdown if it ends in .md, Confluence storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space.",
+		TakesFile: true,
+		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_HEADER"), altsrctoml.TOML("page-header", altsrc.NewStringPtrSourcer(&filename))),
+	},
 }
 
 // CheckConfigFile reports a configuration file that cannot be used.
