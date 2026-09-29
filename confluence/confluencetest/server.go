@@ -397,6 +397,18 @@ func (s *Server) RenamePage(id, title string) {
 	}
 }
 
+// MovePage puts a page under a new parent without writing a version, as a
+// move made outside the API would.
+func (s *Server) MovePage(id, parentID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[id]; ok {
+		p.ParentID = parentID
+		s.placeChild(parentID, id, "")
+	}
+}
+
 // AddLabel stands in for somebody labelling a page in the Confluence web UI.
 func (s *Server) AddLabel(id, label string) {
 	s.mu.Lock()

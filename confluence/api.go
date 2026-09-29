@@ -118,6 +118,10 @@ type API struct {
 	// conflictRetryDelay is how long UpdatePage waits after a conflict before
 	// reading the page again; see retryConflictingUpdate. Tests set it to zero.
 	conflictRetryDelay time.Duration
+
+	// moveSettleDelay is how long moveByAction waits between reads of a tree
+	// that movepage.action said it changed but does not show it yet.
+	moveSettleDelay time.Duration
 }
 
 // userCacheEntry records the outcome of a user lookup, including a name that
@@ -452,6 +456,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		pageCacheByID: make(map[string]*PageInfo),
 
 		conflictRetryDelay: time.Second,
+		moveSettleDelay:    250 * time.Millisecond,
 	}
 
 	// A Personal Access Token arrives as the password with no username. It is
@@ -2662,6 +2667,10 @@ func (api *API) orderContent(contentID, position, siblingID string) error {
 	)
 }
 
+// moveSettleAttempts bounds how often a claimed movepage.action success is
+// read back before it is taken as having done nothing.
+const moveSettleAttempts = 8
+
 // actionPositions maps the REST move positions onto movepage.action's.
 var actionPositions = map[string]string{
 	"append": "append",
@@ -2765,12 +2774,25 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	// unreachable with these credentials, and will be for every other page.
 	notJSON := err != nil
 
-	placed, verifyErr := api.placedAt(contentID, position, targetID, parentID, before)
-	if verifyErr != nil {
-		return false, verifyErr
+	// Data Center can answer before a reparent shows in the REST view, so a
+	// claimed success is given a moment; a refusal or a login page is not.
+	attempts := 1
+	if !notJSON && actionErrors(answer) == "" {
+		attempts = moveSettleAttempts
 	}
-	if placed {
-		return true, nil
+
+	for attempt := range attempts {
+		if attempt > 0 {
+			time.Sleep(api.moveSettleDelay)
+		}
+
+		placed, verifyErr := api.placedAt(contentID, position, targetID, parentID, before)
+		if verifyErr != nil {
+			return false, verifyErr
+		}
+		if placed {
+			return true, nil
+		}
 	}
 
 	if notJSON {

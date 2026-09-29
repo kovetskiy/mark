@@ -371,3 +371,40 @@ func countPuts(server *confluencetest.Server, id string) int {
 	}
 	return n
 }
+
+// TestMovePageActionThatSettlesLateIsNotRedone: Data Center can answer the
+// action before the REST view shows the new parent. A claimed success is read
+// back again rather than taken for a no-op and redone with an update.
+func TestMovePageActionThatSettlesLateIsNotRedone(t *testing.T) {
+	var (
+		server        *confluencetest.Server
+		pageID, newID string
+		pending       bool
+		reads         int
+	)
+
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		switch {
+		case r.URL.Path == "/pages/movepage.action":
+			pending = true
+			return http.StatusOK, `{"page":{"id":"` + pageID + `"}}`, true
+		case pending && r.Method == http.MethodGet && r.URL.Path == "/rest/api/content/"+pageID:
+			reads++
+			if reads == 3 {
+				server.MovePage(pageID, newID)
+			}
+		}
+		return 0, "", false
+	})
+
+	oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
+	newID = server.AddPage("DOCS", "New Parent", "page", "").ID
+	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
+	before := server.Page(pageID).Version
+
+	require.NoError(t, api.MoveContentAppend(pageID, newID))
+
+	assert.Equal(t, newID, server.Page(pageID).ParentID)
+	assert.Equal(t, before, server.Page(pageID).Version)
+	assert.Zero(t, countPuts(server, pageID), "the move must not be redone by update")
+}
