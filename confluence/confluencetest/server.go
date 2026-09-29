@@ -519,6 +519,11 @@ func (s *Server) pageJSON(p *Page, expand map[string]bool) map[string]any {
 	} else {
 		expandable["version"] = ""
 	}
+	if expand["space"] {
+		out["space"] = map[string]any{"key": p.SpaceKey}
+	} else {
+		expandable["space"] = ""
+	}
 	if expand["body.storage"] {
 		out["body"] = map[string]any{
 			"storage": map[string]any{"value": p.Body},
@@ -655,6 +660,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleV1(w, r, strings.TrimPrefix(path, "/rest/api"))
 	case strings.HasPrefix(path, "/api/v2"):
 		s.handleV2(w, r, strings.TrimPrefix(path, "/api/v2"))
+	case path == "/pages/movepage.action":
+		s.movePageAction(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -948,6 +955,67 @@ func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID})
+}
+
+// movePageAction serves /pages/movepage.action the way the Move dialog of
+// Server and Data Center uses it: the target is found by space key and title,
+// the move writes no version, and a refusal is a 200 carrying actionErrors.
+func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !checkXSRF(w, r) {
+		return
+	}
+
+	query := r.URL.Query()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	refuse := func(message string) {
+		writeJSON(w, http.StatusOK, map[string]any{"actionErrors": []string{message}})
+	}
+
+	p, ok := s.pages[query.Get("pageId")]
+	if !ok {
+		refuse("page not found")
+		return
+	}
+
+	var target *Page
+	for _, candidate := range s.pages {
+		if candidate.SpaceKey == query.Get("spaceKey") &&
+			candidate.Title == query.Get("targetTitle") &&
+			!candidate.Trashed && !candidate.Archived {
+			target = candidate
+			break
+		}
+	}
+	if target == nil {
+		refuse("target page not found")
+		return
+	}
+
+	switch query.Get("position") {
+	case "append":
+		p.ParentID = target.ID
+		s.placeChild(target.ID, p.ID, "")
+	case "above":
+		p.ParentID = target.ParentID
+		s.placeBefore(target.ParentID, p.ID, target.ID)
+	case "below":
+		p.ParentID = target.ParentID
+		s.placeChild(target.ParentID, p.ID, target.ID)
+	default:
+		refuse("unknown position " + query.Get("position"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"page": map[string]any{"id": p.ID, "title": p.Title},
+	})
 }
 
 // contentProperties serves the v1 content property API, which differs from the

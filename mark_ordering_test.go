@@ -1,7 +1,9 @@
 package mark
 
 import (
+	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -86,4 +88,41 @@ Some content.
 	require.NotNil(t, parent)
 
 	assert.Equal(t, []string{"First", "Second"}, titlesInOrder(server, parent.ID))
+}
+
+// TestOrderIsAppliedOnDataCenter: without the content move endpoint the
+// Order header is carried out through movepage.action.
+func TestOrderIsAppliedOnDataCenter(t *testing.T) {
+	server, api := docsSpace(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+		}
+		return 0, "", false
+	})
+	dir := t.TempDir()
+
+	document := func(title, order string) string {
+		return `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: ` + title + ` -->
+<!-- Order: ` + order + ` -->
+
+# ` + title + `
+
+Some content.
+`
+	}
+
+	writeFile(t, dir, "a.md", document("Second", "2"))
+	writeFile(t, dir, "b.md", document("First", "1"))
+
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+
+	parent, err := api.FindPage("DOCS", "Parent", "page")
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+
+	assert.Equal(t, []string{"First", "Second"}, titlesInOrder(server, parent.ID))
+	assert.Positive(t, server.CountRequests(http.MethodPost, "/pages/movepage.action"))
 }
