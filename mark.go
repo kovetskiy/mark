@@ -26,6 +26,7 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/header"
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
@@ -104,6 +105,9 @@ type Config struct {
 	ImageAlign       string
 	AttachReferenced bool
 	IncludePath      string
+	// PageHeader is a template placed at the top of every page: Markdown
+	// when it ends in .md, storage format otherwise.
+	PageHeader string
 
 	// Output is the writer used for result output (e.g. published page URLs,
 	// compiled HTML). If nil, output is discarded; the CLI sets this to
@@ -373,6 +377,11 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
+	pageHeader, err := header.Load(config.PageHeader, std)
+	if err != nil {
+		return err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
 	// What the run did, for whatever is reading the output rather than the log.
@@ -516,7 +525,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
+		target, placement, err := processFile(file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -587,7 +596,7 @@ func run(ctx context.Context, config Config) (err error) {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
+				file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
 			); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
@@ -718,9 +727,14 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 		return nil, err
 	}
 
+	pageHeader, err := header.Load(config.PageHeader, std)
+	if err != nil {
+		return nil, err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil)
+	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -777,7 +791,7 @@ func readSource(file string) ([]byte, []byte, error) {
 	return source, markdown, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
 	source, markdown, err := readSource(file)
 	if err != nil {
 		return nil, nil, err
@@ -979,6 +993,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 		}
+		headerHTML, _, err := pageHeader.Render(file, titleOf(meta), spaceOf(meta), cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		html = headerHTML + html
 		if _, err := fmt.Fprintln(config.output(), html); err != nil {
 			return nil, nil, err
 		}
@@ -1213,6 +1232,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
+
+	headerHTML, headerAttachments, err := pageHeader.Render(file, titleOf(meta), spaceOf(meta), cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	html = headerHTML + html
+	inlineAttachments = append(inlineAttachments, headerAttachments...)
 
 	// Kept for the report as well as the log. Reaching this line with any of
 	// them means the run was told to warn rather than fail, since otherwise

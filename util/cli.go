@@ -148,6 +148,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		ImageAlign:       cmd.String("image-align"),
 		AttachReferenced: cmd.Bool("attach-referenced"),
 		IncludePath:      cmd.String("include-path"),
+		PageHeader:       cmd.String("page-header"),
 
 		Output: os.Stdout,
 	}
