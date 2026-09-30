@@ -114,3 +114,20 @@ func TestReferencedFileWithEscapedName(t *testing.T) {
 	assert.Equal(t, "q#1.pdf", stored[0].Filename)
 	assert.Contains(t, server.Page(pageID).Body, `ri:filename="q#1.pdf"`)
 }
+
+// TestInlineImageWithBracketsInItsName: an image was resolved as a pattern, so
+// ![x](<img[1].png>) matched img1.png beside it and published that in its
+// place -- a different picture under a name that reads as right. An image
+// names one file, as a link does.
+func TestInlineImageWithBracketsInItsName(t *testing.T) {
+	server, pageID := publishEscaped(t,
+		map[string]string{"img[1].png": "the one named\n", "img1.png": "what the glob matched\n"},
+		"\n![x](<img[1].png>)\n",
+		false,
+	)
+
+	stored := server.Attachments(pageID)
+	require.Len(t, stored, 1)
+	assert.Equal(t, "img[1].png", stored[0].Filename)
+	assert.Contains(t, server.Page(pageID).Body, `ri:filename="img[1].png"`)
+}
