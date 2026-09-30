@@ -589,3 +589,19 @@ func TestCLIParentsAreNotShared(t *testing.T) {
 	assert.Equal(t, []string{"A", "B", "C"}, parents)
 	assert.Equal(t, "A", second.Parents[0])
 }
+
+// TestAppendGeneratedHashNeedsATitle: with no Title header, no H1 and no
+// filename to take one from, the hash was appended to nothing and the page
+// was published as "- a159f529" -- a title, as far as the check for a missing
+// one could tell.
+func TestAppendGeneratedHashNeedsATitle(t *testing.T) {
+	meta, _, err := ExtractMeta([]byte("<!-- Space: DOCS -->\n\nbody\n"), "", false, false, "doc.md", nil, true, "", false)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	assert.Empty(t, meta.Title)
+
+	// A title still gets its hash.
+	meta, _, err = ExtractMeta([]byte("<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nbody\n"), "", false, false, "doc.md", nil, true, "", false)
+	require.NoError(t, err)
+	assert.Regexp(t, `^Doc - [0-9a-f]{8}$`, meta.Title)
+}

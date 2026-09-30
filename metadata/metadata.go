@@ -807,7 +807,15 @@ func setTitleFromFilename(meta *Meta, filename string) {
 // what tells two documents of the same title apart when they sit under
 // different parents. It has to run once the parents are final: a caller that
 // derives parents after ExtractMeta asks for it separately, afterwards.
+//
+// A page with no title is left without one. Given a hash it had the title
+// "- a159f529", which passed the check for a missing title and was published
+// under it; left empty, the check fires and says what is wrong.
 func AppendGeneratedHash(meta *Meta) {
+	if strings.TrimSpace(meta.Title) == "" {
+		return
+	}
+
 	path := strings.Join(append(slices.Clone(meta.Parents), meta.Space, meta.Title), "/")
 	pathHash := sha256.Sum256([]byte(path))
 	// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
