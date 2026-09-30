@@ -3,7 +3,7 @@ package page
 import (
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 )
 
 func TestImmediateParentID(t *testing.T) {

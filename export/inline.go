@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/transformer"
 )
 
 type inlineContext struct {
