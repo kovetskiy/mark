@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -310,15 +311,19 @@ func TestMovePageActionRefusalIsReported(t *testing.T) {
 		"the reparent has to have been done by update")
 }
 
-// TestMovePageActionBehindALoginPageIsGivenUp: an action that answers these
-// credentials with HTML answers every page the same way, so it is not asked
-// again for the rest of the run.
+// TestMovePageActionBehindALoginPageIsGivenUp: an action that turns these
+// credentials away with Seraph's login page does so for every page, so it is
+// not asked again for the rest of the run.
 func TestMovePageActionBehindALoginPageIsGivenUp(t *testing.T) {
 	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
 		if r.URL.Path == "/pages/movepage.action" {
 			return http.StatusOK, `<html><body>Log in</body></html>`, true
 		}
 		return 0, "", false
+	})
+	server.SetFailHeaders(http.Header{
+		"Content-Type":         {"text/html"},
+		"X-Seraph-Loginreason": {"AUTHENTICATED_FAILED"},
 	})
 
 	parent := server.AddPage("DOCS", "Parent", "page", "")
@@ -407,4 +412,121 @@ func TestMovePageActionThatSettlesLateIsNotRedone(t *testing.T) {
 	assert.Equal(t, newID, server.Page(pageID).ParentID)
 	assert.Equal(t, before, server.Page(pageID).Version)
 	assert.Zero(t, countPuts(server, pageID), "the move must not be redone by update")
+}
+
+// TestMovePageActionAnsweringHTMLAfterAMoveIsTrusted: the action may answer a
+// move that worked with a page rather than JSON -- the page it moved, after a
+// redirect -- and Data Center may not show the move in the REST view yet. The
+// tree is read back as for any answer that is not a refusal, rather than once,
+// and the action stays in use for the next page.
+func TestMovePageActionAnsweringHTMLAfterAMoveIsTrusted(t *testing.T) {
+	var (
+		server          *confluencetest.Server
+		pending, target string
+		reads           int
+	)
+
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		switch {
+		case r.URL.Path == "/pages/movepage.action":
+			pending, reads = r.URL.Query().Get("pageId"), 0
+			return http.StatusOK, `<html><body>Release Notes</body></html>`, true
+		case pending != "" && r.Method == http.MethodGet && r.URL.Path == "/rest/api/content/"+pending:
+			reads++
+			if reads == 3 {
+				server.MovePage(pending, target)
+				pending = ""
+			}
+		}
+		return 0, "", false
+	})
+	server.SetFailHeaders(http.Header{"Content-Type": {"text/html"}})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	target = parent.ID
+	first := server.AddPage("DOCS", "First", "page", "")
+	second := server.AddPage("DOCS", "Second", "page", "")
+
+	require.NoError(t, api.MoveContentAppend(first.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(second.ID, parent.ID))
+
+	assert.Equal(t, parent.ID, server.Page(first.ID).ParentID)
+	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
+	assert.Equal(t, 2, server.CountRequests(http.MethodPost, "/pages/movepage.action"),
+		"an HTML answer that is not a login page must not give the action up")
+	assert.Zero(t, countPuts(server, first.ID)+countPuts(server, second.ID),
+		"a move the action did is not redone by update")
+}
+
+// TestMovePageActionHTMLRefusalOfOnePageIsNotGivenUp: an HTML answer that
+// left one page where it was -- a restricted page, a proxy's error for that
+// request -- is about that page. The next is still moved with the action, and
+// ordering on the rest of the run still works.
+func TestMovePageActionHTMLRefusalOfOnePageIsNotGivenUp(t *testing.T) {
+	var (
+		server     *confluencetest.Server
+		restricted string
+	)
+
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" && r.URL.Query().Get("pageId") == restricted {
+			return http.StatusOK, `<html><body>Not permitted</body></html>`, true
+		}
+		return 0, "", false
+	})
+	server.SetFailHeaders(http.Header{"Content-Type": {"text/html"}})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	restricted = server.AddPage("DOCS", "Restricted", "page", "").ID
+
+	require.NoError(t, api.MoveContentAppend(restricted, parent.ID))
+	assert.Equal(t, parent.ID, server.Page(restricted).ParentID)
+	assert.Equal(t, 1, countPuts(server, restricted), "that one page is reparented by update")
+
+	require.NoError(t, api.MoveContentBefore(second.ID, first.ID))
+	assert.Equal(t, second.ID, server.ChildOrder(parent.ID)[0],
+		"ordering has to go on working through the action")
+}
+
+// TestMovePageActionFieldErrorsAreARefusal: XWork reports a refusal under
+// fieldErrors too, keyed by field. Read as success, it was waited on and then
+// reported without the reason Confluence gave.
+func TestMovePageActionFieldErrorsAreARefusal(t *testing.T) {
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			return http.StatusOK, `{"fieldErrors":{"targetId":["The target is not a valid parent."]}}`, true
+		}
+		return 0, "", false
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	err := api.MoveContentBefore(second.ID, first.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "targetId: The target is not a valid parent.")
+}
+
+// TestActionErrorsReadsEveryShape covers the forms XWork puts an error in.
+func TestActionErrorsReadsEveryShape(t *testing.T) {
+	for name, testcase := range map[string]struct {
+		answer string
+		want   string
+	}{
+		"action errors":         {`{"actionErrors":["no"]}`, ": no"},
+		"field errors":          {`{"fieldErrors":{"b":["second"],"a":"first"}}`, ": a: first; b: second"},
+		"validation errors map": {`{"validationErrors":{"title":"taken"}}`, ": title: taken"},
+		"error message":         {`{"errorMessage":"denied"}`, ": denied"},
+		"empty lists":           {`{"actionErrors":[],"fieldErrors":{}}`, ""},
+		"a success":             {`{"page":{"id":"1"}}`, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var answer map[string]any
+			require.NoError(t, json.Unmarshal([]byte(testcase.answer), &answer))
+			assert.Equal(t, testcase.want, confluence.ActionErrors(answer))
+		})
+	}
 }

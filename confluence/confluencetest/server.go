@@ -138,6 +138,9 @@ type Server struct {
 	// page size rather than by changing this.
 	fail FailFunc
 
+	// failHeaders are added to every response a FailFunc handles.
+	failHeaders http.Header
+
 	// SiteBase is echoed as `_links.base` on content create/search responses
 	// when set. Empty omits the field so tests can still exercise the client's
 	// api.BaseURL fallback. Real Confluence Cloud puts the tenant wiki URL
@@ -170,6 +173,15 @@ func (s *Server) SetFail(f FailFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.fail = f
+}
+
+// SetFailHeaders sets headers added to every response a FailFunc handles,
+// over the JSON Content-Type such a response gets otherwise -- what a real
+// server says around an answer, such as Seraph naming why a login failed.
+func (s *Server) SetFailHeaders(h http.Header) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failHeaders = h.Clone()
 }
 
 // Requests returns a copy of every request the fake has received, in order.
@@ -646,12 +658,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		Path:   r.URL.Path,
 		Query:  r.URL.RawQuery,
 	})
-	fail := s.fail
+	fail, failHeaders := s.fail, s.failHeaders
 	s.mu.Unlock()
 
 	if fail != nil {
 		if status, body, handled := fail(r); handled {
 			w.Header().Set("Content-Type", "application/json")
+			for name, values := range failHeaders {
+				w.Header()[name] = values
+			}
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(body))
 			return
