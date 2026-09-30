@@ -263,6 +263,14 @@ type PageInfo struct {
 		Title string `json:"title"`
 	} `json:"ancestors"`
 
+	// ParentID and ParentType are the direct parent as v2 names it, and empty
+	// for a page read through v1. They exist for the one parent the ancestors
+	// cannot show: a folder is not a page, so it is never among them, and a
+	// page in a folder looks parentless there. Never sent: v1 has no such
+	// fields to read or write.
+	ParentID   string `json:"-"`
+	ParentType string `json:"-"`
+
 	Body struct {
 		Storage struct {
 			Value string `json:"value"`

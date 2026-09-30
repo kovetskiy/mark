@@ -77,10 +77,12 @@ type contentV2 struct {
 // type comes from the caller: v2 tells pages and blogposts apart by collection.
 func (api *API) pageInfoV2(content contentV2, pageType string) *PageInfo {
 	page := &PageInfo{
-		ID:     content.ID,
-		Title:  content.Title,
-		Type:   pageType,
-		Status: content.Status,
+		ID:         content.ID,
+		Title:      content.Title,
+		Type:       pageType,
+		Status:     content.Status,
+		ParentID:   content.ParentID,
+		ParentType: content.ParentType,
 	}
 	page.Version.Number = content.Version.Number
 	page.Version.Message = content.Version.Message
@@ -345,6 +347,21 @@ func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
 	}
 
 	return page, nil
+}
+
+// ParentOfV2 reads the direct parent of a page or blogpost from v2: its id and
+// whether it is a page or a folder.
+//
+// It is the one way to see a folder parent from a page read through v1, whose
+// ancestors leave folders out. Cloud only: Server and Data Center serve no v2.
+func (api *API) ParentOfV2(id string) (string, string, error) {
+	content, pageType, err := api.lookupContentV2(id, false)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to read the parent of %s: %w", id, err)
+	}
+	api.contentTypesV2.Store(id, pageType)
+
+	return content.ParentID, content.ParentType, nil
 }
 
 // ancestorsV2 rebuilds the ancestor chain v1 hands over for free: v2 names the
