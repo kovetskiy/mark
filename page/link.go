@@ -15,6 +15,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v16/renderer"
 	"github.com/rs/zerolog/log"
 )
 
@@ -197,13 +198,15 @@ const confluenceLinkPrefix = "ac:"
 //
 // The title is read the same way the renderer reads it, since a disagreement
 // between the two would mean checking one link and publishing another: what
-// follows the colon, or the link text when nothing does.
+// follows the colon, or the link text when nothing does -- less any #anchor
+// after it, which names a section of the page rather than part of its title.
 func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 	if r.Checker == nil || !r.Checker.Checks.Confluence {
 		return nil
 	}
 
-	title := strings.TrimSpace(strings.TrimPrefix(target, confluenceLinkPrefix))
+	title, _ := renderer.SplitPageAnchor(strings.TrimPrefix(target, confluenceLinkPrefix))
+	title = strings.TrimSpace(title)
 	if title == "" {
 		title = strings.TrimSpace(text)
 	}

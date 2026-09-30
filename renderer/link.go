@@ -61,7 +61,10 @@ func (r *ConfluenceLinkRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 	reg.Register(ast.KindLink, r.renderLink)
 }
 
-// splitPageAnchor separates a page title from the anchor written after it.
+// SplitPageAnchor separates a page title from the anchor written after it.
+//
+// Exported for the link checker in page/, which has to look up the same title
+// the renderer links to.
 //
 // A "#" alone is not enough to split on: "ac:C# Guide" is a page whose title
 // contains one, and reading it as a page called "C" with an anchor called
@@ -71,7 +74,7 @@ func (r *ConfluenceLinkRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 //
 // The last "#" rather than the first, so a title containing one can still be
 // given an anchor.
-func splitPageAnchor(destination string) (title, anchor string) {
+func SplitPageAnchor(destination string) (title, anchor string) {
 	at := strings.LastIndex(destination, "#")
 	if at <= 0 || at == len(destination)-1 {
 		return destination, ""
@@ -121,7 +124,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 			// page called "Other Page#Setup". Storage format says so with the
 			// same ac:anchor a same-page link uses, alongside the ri:page that
 			// says which page.
-			title, anchor := splitPageAnchor(string(n.Destination[min(3, len(n.Destination)):]))
+			title, anchor := SplitPageAnchor(string(n.Destination[min(3, len(n.Destination)):]))
 
 			opening := "<ac:link>"
 			if anchor != "" {
