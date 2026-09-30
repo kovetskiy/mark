@@ -57,10 +57,7 @@ func TestAdmonitionMacroMapping(t *testing.T) {
 // for -- MkDocs has a dozen of them. It has to degrade to a blockquote rather
 // than pick a macro at random or drop the content.
 //
-// The quote keeps the attributes the admonition parser put on it, and one of
-// them is a randomly generated data-admonition id. That makes the published
-// body differ between two runs over an unchanged document, so an unknown class
-// is worth avoiding for anything published repeatedly.
+// The quote keeps the class the admonition parser put on it.
 func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
 	actual := render(t, "!!! danger\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
 	assertWellFormed(t, actual)
@@ -69,6 +66,23 @@ func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
 	assert.Contains(t, actual, `class="admonition adm-danger"`)
 	assert.Contains(t, actual, "Mind the gap.")
 	assert.NotContains(t, actual, "ac:structured-macro")
+}
+
+// TestAdmonitionUnknownClassIsDeterministic: the parser also tags every
+// admonition with a data-admonition id of 24 random letters, and the quote
+// carried it into the page. Two compiles of an unchanged document then
+// differed, and --changes-only, which compares a hash of the body, republished
+// the page on every run.
+func TestAdmonitionUnknownClassIsDeterministic(t *testing.T) {
+	const doc = "!!! danger \"D\"\n    body\n"
+
+	first := render(t, doc, admonitionRenderers(), admonitionParserOptions()...)
+	second := render(t, doc, admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, first)
+
+	assert.Equal(t, first, second)
+	assert.NotContains(t, first, "data-admonition")
+	assert.Contains(t, first, `class="admonition adm-danger"`)
 }
 
 // TestAdmonitionTitle covers the quoted title, which Confluence's macros have
