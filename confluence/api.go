@@ -376,7 +376,10 @@ func (tracer *tracer) Printf(format string, args ...any) {
 	// Formatted here and passed on as a message rather than as another format
 	// string: a dump is arbitrary bytes, and a body containing a percent sign
 	// would otherwise come out mangled.
-	log.Trace().Msg(tracer.prefix + " " + boundTraceDump(redactHeaders(fmt.Sprintf(format, args...))))
+	//
+	// The line is bounded as a whole as well as body by body (see
+	// boundDebugBodies), so that nothing resty logs can run away.
+	log.Trace().Msg(tracer.prefix + " " + boundTrace(redactHeaders(fmt.Sprintf(format, args...)), traceLineLimit))
 }
 
 // traceDumpLimit is how much of one request or response dump is traced.
@@ -389,19 +392,29 @@ func (tracer *tracer) Printf(format string, args ...any) {
 // of the body, are what a trace is read for.
 const traceDumpLimit = 64 << 10
 
-// boundTraceDump cuts a dump down to traceDumpLimit, on a character boundary,
-// and says how much was left out.
+// traceLineLimit is how much of one line the tracer writes at most. Resty
+// logs a request and its response as one entry, so it has room for a bounded
+// body in each direction and for the headers around them.
+const traceLineLimit = 3 * traceDumpLimit
+
+// boundTraceDump cuts a request or response body down to traceDumpLimit.
 func boundTraceDump(dump string) string {
-	if len(dump) <= traceDumpLimit {
-		return dump
+	return boundTrace(dump, traceDumpLimit)
+}
+
+// boundTrace cuts s down to limit bytes, on a character boundary, and says how
+// much was left out.
+func boundTrace(s string, limit int) string {
+	if len(s) <= limit {
+		return s
 	}
 
-	cut := traceDumpLimit
-	for cut > 0 && !utf8.RuneStart(dump[cut]) {
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
 
-	return fmt.Sprintf("%s... (%d more bytes not traced)", dump[:cut], len(dump)-cut)
+	return fmt.Sprintf("%s... (%d more bytes not traced)", s[:cut], len(s)-cut)
 }
 
 // sensitiveHeaders name the values that are credentials rather than metadata.

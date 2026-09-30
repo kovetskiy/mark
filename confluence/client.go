@@ -50,13 +50,34 @@ func newRestClient(httpClient *http.Client, baseURL, username, password, prefix 
 		client.SetAuthToken(password)
 	}
 
-	// The whole request and response, bodies included, as the trace always
-	// had them. tracer redacts the credentials on the way out.
+	// The whole request and response, as the trace always had them, with each
+	// body cut to its start by boundDebugBodies. tracer redacts the
+	// credentials on the way out.
 	if zerolog.GlobalLevel() == zerolog.TraceLevel {
-		client.SetDebug(true)
+		client.SetDebug(true).OnDebugLog(boundDebugBodies)
 	}
 
 	return client
+}
+
+// boundDebugBodies cuts the request and the response body of a debug log entry
+// to traceDumpLimit each, keeping their start.
+//
+// Resty writes an exchange as one entry, and its own debug body limit, which
+// defaults to math.MaxInt32, replaces a body over the limit with a note of its
+// size rather than shortening it -- losing the start of the body, which is
+// what a trace is read for. Bounding each body on its own, rather than only
+// the line they end up in, also keeps the response in the line when the
+// request body alone would have filled it: the dumps used to be two lines,
+// one per direction, each with a bound of its own.
+func boundDebugBodies(entry *resty.DebugLog) {
+	if entry.Request != nil {
+		entry.Request.Body = boundTraceDump(entry.Request.Body)
+	}
+
+	if entry.Response != nil {
+		entry.Response.Body = boundTraceDump(entry.Response.Body)
+	}
 }
 
 // prepareRequest runs before resty builds the http.Request, and gives it the
