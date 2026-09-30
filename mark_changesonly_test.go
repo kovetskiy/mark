@@ -68,9 +68,14 @@ func TestChangesOnlySeesPagePropertyHeaders(t *testing.T) {
 func TestContentFingerprintOfAPlainPageIsTheBodyHash(t *testing.T) {
 	const body = "<p>body</p>"
 
-	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "", ""))
-	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "full-width", ""))
-	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "fixed", ""))
-	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "full-width", "🚀"))
-	assert.NotEqual(t, contentFingerprint(body, "fixed", "🚀"), contentFingerprint(body, "default", "🚀"))
+	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "", "full-width", ""))
+	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "full-width", "full-width", ""))
+	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "fixed", "full-width", ""))
+	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "full-width", "full-width", "🚀"))
+	assert.NotEqual(t, contentFingerprint(body, "fixed", "full-width", "🚀"), contentFingerprint(body, "default", "full-width", "🚀"))
+
+	// --content-appearance fixed gives every page without the header a fixed
+	// appearance: that is the default, and changes nothing about the hash.
+	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "fixed", "fixed", ""))
+	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "full-width", "fixed", ""))
 }
