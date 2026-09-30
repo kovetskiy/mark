@@ -3,6 +3,7 @@ package mark
 import (
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func TestVoidElementsAreClosedAtBlockLevel(t *testing.T) {
 func TestVoidElementsWithNoTransformerAreClosed(t *testing.T) {
 	out := compileRawHTMLDoc(t, `<input type="checkbox" checked>`+"\n")
 
-	assert.Contains(t, out, `<input type="checkbox" checked />`)
+	assert.Contains(t, out, `<input type="checkbox" checked="checked" />`)
 	assert.NotContains(t, out, `checked>`)
 }
 
@@ -125,4 +126,31 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 	assert.Contains(t, out, "<br />")
 	assert.NotContains(t, out, "<br>")
 	require.NoError(t, CheckWellFormed(out))
+}
+
+// TestRawHTMLValidOnlyAsHTMLIsRepaired: a bare "&" and an unquoted attribute
+// are ordinary HTML, and each made the page not well-formed XML, so it could
+// not be published at all. Through both compile paths, since both carry raw
+// HTML to the page.
+func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	for name, src := range map[string]string{
+		"ampersand in an href":    "see <a href=\"https://x.com/?a=1&b=2\">link</a>\n",
+		"ampersand in a block":    "<div>AT&T</div>\n",
+		"unquoted attribute":      "<p align=center>centred</p>\n",
+		"attribute with no value": "<table><tr><td nowrap>x</td></tr></table>\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			for compiler, compile := range map[string]func([]byte, *stdlib.Lib, string, types.MarkConfig) (string, []attachment.Attachment, error){
+				"default": CompileMarkdown,
+				"legacy":  CompileMarkdownLegacy,
+			} {
+				out, _, err := compile([]byte(src), std, "test.md", types.MarkConfig{})
+				require.NoError(t, err, compiler)
+				assert.NoError(t, CheckWellFormed(out), "%s: %s", compiler, out)
+			}
+		})
+	}
 }
