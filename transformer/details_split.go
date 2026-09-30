@@ -85,38 +85,51 @@ func tokenizeFragment(raw []byte) []detailsToken {
 	}
 }
 
-// rewriteUnbalancedDetails converts <details>/<summary>/</details> in an
-// unbalanced fragment into the corresponding Confluence expand markup, passing
-// every other token through verbatim.
+// rewriteDetails converts <details>/<summary>/</details> in a fragment into the
+// corresponding Confluence expand markup, passing every other token through
+// verbatim.
 //
-// Unlike transformDetailsAt's balanced path this never builds a DOM, so it does
-// not require the fragment to be well-formed -- which is the point: the
-// fragments produced by a blank-line split are well-formed only once
-// concatenated.
-func rewriteUnbalancedDetails(raw []byte) ([]byte, bool) {
+// It never builds a DOM, so it does not require the fragment to be
+// well-formed -- the fragments produced by a blank-line split are well-formed
+// only once concatenated -- and it cannot rearrange storage-format markup the
+// way an HTML5 parser does.
+func rewriteDetails(raw []byte) ([]byte, bool) {
 	toks := tokenizeFragment(raw)
 
 	var buf bytes.Buffer
 	var changed bool
 
+	// A <summary> written after other content in its <details>, already
+	// emitted as the macro's title, is dropped from the body when reached.
+	lateSummaries := map[int]int{}
+
 	for i := 0; i < len(toks); i++ {
+		if end, ok := lateSummaries[i]; ok {
+			i = end
+			continue
+		}
+
 		tok := toks[i]
 
 		if tok.kind == html.StartTagToken && tok.name == "details" {
 			changed = true
 			buf.WriteString(`<ac:structured-macro ac:name="expand">`)
 
-			// Emit the title before opening the body, so element order matches
-			// what the balanced DOM path produces. The <summary> normally sits in
-			// the same fragment as its <details>; if it does not, the expand
-			// simply renders without a title.
-			if title, end, ok := summaryAt(toks, i+1); ok {
+			// Emit the title before opening the body, as the macro requires. The
+			// <summary> normally sits in the same fragment as its <details>; if it
+			// does not, the expand simply renders without a title.
+			title, start, end, ok := summaryAt(toks, i+1)
+			if ok {
 				if title != "" {
 					buf.WriteString(`<ac:parameter ac:name="title">`)
 					buf.WriteString(html.EscapeString(title))
 					buf.WriteString(`</ac:parameter>`)
 				}
-				i = end
+				if leadingWhitespace(toks, i+1, start) {
+					i = end
+				} else {
+					lateSummaries[start] = end
+				}
 			}
 
 			buf.WriteString(`<ac:rich-text-body>`)
@@ -138,32 +151,52 @@ func rewriteUnbalancedDetails(raw []byte) ([]byte, bool) {
 	return buf.Bytes(), true
 }
 
-// summaryAt looks for a <summary> element starting at toks[from], skipping only
-// whitespace. It returns the summary's text and the index of its </summary>.
-// Anything else in between means this <details> has no leading summary.
-func summaryAt(toks []detailsToken, from int) (title string, end int, ok bool) {
-	i := from
-	for i < len(toks) && toks[i].kind == html.TextToken && len(bytes.TrimSpace(toks[i].text)) == 0 {
-		i++
+// summaryAt looks for the <summary> belonging to a <details> whose content
+// starts at toks[from]: the first one before any <details> opens or closes, so
+// that one belonging to a nested element is never taken. It returns the
+// summary's text and the indexes of its <summary> and </summary>.
+//
+// HTML wants the summary first, and it nearly always is, but a browser takes it
+// from anywhere among the element's children and so does this.
+func summaryAt(toks []detailsToken, from int) (title string, start, end int, ok bool) {
+	start = -1
+	for i := from; i < len(toks); i++ {
+		if toks[i].name == "details" {
+			return "", 0, 0, false
+		}
+		if toks[i].kind == html.StartTagToken && toks[i].name == "summary" {
+			start = i
+			break
+		}
 	}
-	if i >= len(toks) || toks[i].kind != html.StartTagToken || toks[i].name != "summary" {
-		return "", 0, false
+	if start == -1 {
+		return "", 0, 0, false
 	}
 
 	var sb strings.Builder
-	for j := i + 1; j < len(toks); j++ {
+	for j := start + 1; j < len(toks); j++ {
 		switch {
 		case toks[j].kind == html.EndTagToken && toks[j].name == "summary":
-			return strings.TrimSpace(sb.String()), j, true
+			return strings.TrimSpace(sb.String()), start, j, true
 		case toks[j].kind == html.TextToken:
 			sb.Write(toks[j].text)
-		case toks[j].kind == html.StartTagToken && toks[j].name == "details":
+		case toks[j].name == "details":
 			// Malformed: a nested <details> opened before </summary> closed.
 			// Leave the whole thing alone rather than swallow it.
-			return "", 0, false
+			return "", 0, 0, false
 		}
 	}
-	return "", 0, false
+	return "", 0, 0, false
+}
+
+// leadingWhitespace reports whether toks[from:to] is only whitespace text.
+func leadingWhitespace(toks []detailsToken, from, to int) bool {
+	for _, tok := range toks[from:to] {
+		if tok.kind != html.TextToken || len(bytes.TrimSpace(tok.text)) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // coalesceInlineDetails folds the inline siblings that follow node into its raw
