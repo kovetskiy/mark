@@ -3,6 +3,7 @@ package export
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -329,14 +330,44 @@ func without(nodes []*node, skip *node) []*node {
 	return out
 }
 
+// listContent is one item of a list: the element that opens it, and what it
+// holds.
+type listContent struct {
+	item    *node
+	content []*node
+}
+
+// listItems groups the children of a list into its items, by the element
+// that opens each -- li in a list, ac:task in a task list.
+//
+// Anything else directly inside the list belongs to the item before it. A
+// list nested straight in a list, rather than in one of its items, is how
+// older editors and a good deal of pasted HTML write a sublist, and it is
+// the item before it that a reader sees it under. What comes before the first
+// item opens an item of its own.
+func listItems(n *node, opens string) []listContent {
+	var items []listContent
+
+	for _, child := range n.children {
+		if child.kind == elementNode && child.is(opens) {
+			items = append(items, listContent{item: child})
+			continue
+		}
+		if child.isBlank() {
+			continue
+		}
+		if len(items) == 0 {
+			items = append(items, listContent{})
+		}
+		items[len(items)-1].content = append(items[len(items)-1].content, child)
+	}
+
+	return items
+}
+
 // list renders ul and ol.
 func (c *converter) list(n *node, marker string, ordered bool) string {
-	var items []*node
-	for _, child := range n.elements() {
-		if child.is("li") {
-			items = append(items, child)
-		}
-	}
+	items := listItems(n, "li")
 
 	start := 1
 	if value, err := strconv.Atoi(n.attr("start")); ordered && err == nil && value >= 0 {
@@ -345,7 +376,7 @@ func (c *converter) list(n *node, marker string, ordered bool) string {
 
 	loose := false
 	for _, item := range items {
-		if item.child("p") != nil {
+		if item.item != nil && item.item.child("p") != nil {
 			loose = true
 		}
 	}
@@ -356,7 +387,12 @@ func (c *converter) list(n *node, marker string, ordered bool) string {
 		if ordered {
 			prefix = strconv.Itoa(start+i) + marker
 		}
-		rendered = append(rendered, listItem(prefix, c.itemBlocks(item.children, loose)))
+		var nodes []*node
+		if item.item != nil {
+			nodes = item.item.children
+		}
+		nodes = append(slices.Clone(nodes), item.content...)
+		rendered = append(rendered, listItem(prefix, c.itemBlocks(nodes, loose)))
 	}
 
 	if loose {
@@ -370,22 +406,28 @@ func (c *converter) list(n *node, marker string, ordered bool) string {
 func (c *converter) taskList(n *node, marker string) string {
 	var rendered []string
 
-	for _, task := range n.elements() {
-		if !task.is("ac:task") {
-			continue
-		}
-
+	for _, item := range listItems(n, "ac:task") {
 		box := "[ ]"
-		if status := task.child("ac:task-status"); status != nil && strings.TrimSpace(status.textContent()) == "complete" {
-			box = "[x]"
+		var nodes []*node
+		if task := item.item; task != nil {
+			if status := task.child("ac:task-status"); status != nil && strings.TrimSpace(status.textContent()) == "complete" {
+				box = "[x]"
+			}
+			if body := task.child("ac:task-body"); body != nil {
+				nodes = body.children
+			}
 		}
+		nodes = append(slices.Clone(nodes), item.content...)
+		content := c.itemBlocks(nodes, false)
 
-		var content string
-		if body := task.child("ac:task-body"); body != nil {
-			content = c.itemBlocks(body.children, false)
+		// The box is the start of the item's text, not part of its marker:
+		// what the item holds past its first line lines up under the box.
+		if content == "" {
+			content = box
+		} else {
+			content = box + " " + content
 		}
-
-		rendered = append(rendered, listItem(marker+" "+box, content))
+		rendered = append(rendered, listItem(marker, content))
 	}
 
 	return strings.Join(rendered, "\n")
