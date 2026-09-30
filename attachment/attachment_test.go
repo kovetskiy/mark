@@ -248,3 +248,15 @@ func TestResolverNil(t *testing.T) {
 	assert.Empty(t, resolver.Resolve("a.png"))
 	assert.Nil(t, resolver.Unused([]Attachment{{Replace: "a.png"}}))
 }
+
+// TestDifferentFilesUnderOneFilenameAreRefused covers two files that flatten to
+// the same name: uploading one would serve it under both links.
+func TestDifferentFilesUnderOneFilenameAreRefused(t *testing.T) {
+	_, _, err := splitByFilename([]Attachment{
+		{Name: "a/b_c.txt", Filename: "a_b_c.txt", Checksum: "1"},
+		{Name: "a_b/c.txt", Filename: "a_b_c.txt", Checksum: "2"},
+	})
+	if err == nil {
+		t.Fatal("expected an error for two different files under one filename")
+	}
+}
