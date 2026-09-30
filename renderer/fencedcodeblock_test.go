@@ -152,6 +152,39 @@ func TestFencedCodeBlockDashLanguage(t *testing.T) {
 		"and the options after it are still read")
 }
 
+// TestFencedCodeBlockDashOptions: the first word after the marker was taken
+// for a language, and so lost, whether an option or the "title" keyword.
+func TestFencedCodeBlockDashOptions(t *testing.T) {
+	for _, test := range []struct {
+		info string
+		want []string
+	}{
+		{"- collapse", []string{`<ac:parameter ac:name="collapse">true</ac:parameter>`}},
+		{"- 5", []string{
+			`<ac:parameter ac:name="linenumbers">true</ac:parameter>`,
+			`<ac:parameter ac:name="firstline">5</ac:parameter>`,
+		}},
+		{"- title Some code", []string{`<ac:parameter ac:name="title">Some code</ac:parameter>`}},
+		{"- 1 collapse midnight title Some code", []string{
+			`<ac:parameter ac:name="linenumbers">true</ac:parameter>`,
+			`<ac:parameter ac:name="firstline">1</ac:parameter>`,
+			`<ac:parameter ac:name="collapse">true</ac:parameter>`,
+			`<ac:parameter ac:name="theme">midnight</ac:parameter>`,
+			`<ac:parameter ac:name="title">Some code</ac:parameter>`,
+		}},
+	} {
+		t.Run(test.info, func(t *testing.T) {
+			actual := fencedCode(t, test.info)
+			assertWellFormed(t, actual)
+
+			assert.Contains(t, actual, `<ac:parameter ac:name="language"></ac:parameter>`)
+			for _, want := range test.want {
+				assert.Contains(t, actual, want)
+			}
+		})
+	}
+}
+
 // TestFencedCodeBlockDashAlone is the marker with nothing after it.
 func TestFencedCodeBlockDashAlone(t *testing.T) {
 	actual := fencedCode(t, "-")
