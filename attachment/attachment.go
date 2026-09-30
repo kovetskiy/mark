@@ -29,6 +29,15 @@ const (
 	AttachmentChecksumPrefix = `mark:checksum: `
 )
 
+// FlattenFilename returns the name an attachment called name is uploaded and
+// referred to by. An attachment has no directory, so a "/" -- in a path, or in a
+// diagram's title -- becomes "_". The ac:image and ac:link templates flatten the
+// name the same way, through this function, so what a page names is always
+// what was uploaded.
+func FlattenFilename(name string) string {
+	return strings.ReplaceAll(name, "/", "_")
+}
+
 type Attachment struct {
 	ID        string
 	Name      string
@@ -489,7 +498,7 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 
 	attachment := Attachment{
 		Name:      name,
-		Filename:  strings.ReplaceAll(name, "/", "_"),
+		Filename:  FlattenFilename(name),
 		FileBytes: fileBytes,
 		Replace:   name,
 	}

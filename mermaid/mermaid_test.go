@@ -539,3 +539,16 @@ func svgRootElement(t *testing.T, document []byte) string {
 		return rendered.String()
 	}
 }
+
+// TestProcessMermaidFlattensASlashInTheTitle: the page refers to an attachment
+// by its filename with any "/" flattened, so the file has to be uploaded under
+// that name too, or a diagram titled Auth/Login is a broken image.
+func TestProcessMermaidFlattensASlashInTheTitle(t *testing.T) {
+	svg, err := ProcessMermaidSVG("Auth/Login", []byte("graph TD;\n A-->B;"), 1.0)
+	require.NoError(t, err)
+	assert.Equal(t, "Auth_Login.svg", svg.Filename)
+
+	png, err := ProcessMermaidLocally("Auth/Login", []byte("graph TD;\n A-->B;"), 1.0)
+	require.NoError(t, err)
+	assert.Equal(t, "Auth_Login.png", png.Filename)
+}

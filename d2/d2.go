@@ -130,7 +130,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 		title = checkSum
 	}
 
-	fileName := title + ".png"
+	fileName := attachment.FlattenFilename(title) + ".png"
 
 	return attachment.Attachment{
 		ID:        "",
@@ -217,7 +217,7 @@ func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float6
 	return attachment.Attachment{
 		ID:        "",
 		Name:      title,
-		Filename:  title + ".svg",
+		Filename:  attachment.FlattenFilename(title) + ".svg",
 		FileBytes: out,
 		Checksum:  checkSum,
 		Replace:   title,

@@ -430,7 +430,7 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 		title = checkSum
 	}
 
-	fileName := title + ".png"
+	fileName := attachment.FlattenFilename(title) + ".png"
 
 	return attachment.Attachment{
 		ID:        "",
@@ -500,7 +500,7 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool, scale f
 	return attachment.Attachment{
 		ID:        "",
 		Name:      title,
-		Filename:  title + ".svg",
+		Filename:  attachment.FlattenFilename(title) + ".svg",
 		FileBytes: []byte(svg),
 		Checksum:  checkSum,
 		Replace:   title,

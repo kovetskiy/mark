@@ -327,3 +327,13 @@ func TestProcessD2SVGWillNotReadOutsideTheProject(t *testing.T) {
 		assert.Contains(t, err.Error(), "outside")
 	}
 }
+
+// TestProcessD2FlattensASlashInTheTitle: the page refers to an attachment by
+// its filename with any "/" flattened, so the file has to be uploaded under
+// that name too, or a diagram titled Auth/Login is a broken image.
+func TestProcessD2FlattensASlashInTheTitle(t *testing.T) {
+	got, err := ProcessD2SVG("Auth/Login", []byte(diagram), "-", 1.0, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Auth_Login.svg", got.Filename)
+}

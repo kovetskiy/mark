@@ -5,6 +5,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
 )
@@ -55,13 +56,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			// diagram title (```d2 title My "x" Diagram) otherwise closed the
 			// attribute early and produced malformed XML.
 			"convertAttachment": func(data string) string {
-				return XMLEscape(
-					strings.ReplaceAll(
-						data,
-						"/",
-						"_",
-					),
-				)
+				return XMLEscape(attachment.FlattenFilename(data))
 			},
 			// Takes any so that a template may pipe a parameter with a
 			// non-string default through it. A bool or a number reaching
