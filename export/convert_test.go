@@ -291,3 +291,19 @@ func TestConvertNestedListNumberedFromElsewhere(t *testing.T) {
 	assert.Equal(t, "- a\n  1. c\n", md)
 	assert.Equal(t, canonical(t, `<ul><li>a<ol><li>c</li></ol></li></ul>`), published)
 }
+
+// TestConvertParagraphLikeATable: a line of a paragraph that reads as a
+// table's delimiter row turns the paragraph into a table, so it is escaped.
+func TestConvertParagraphLikeATable(t *testing.T) {
+	for _, storage := range []string{
+		"<p>a | b<br/>\n--- | ---</p>",
+		"<p>a | b<br/>\n|:--|--:|</p>",
+		"<p>a<br/>\n:-</p>",
+		"<p>a | b\n--- | ---</p>",
+	} {
+		t.Run(storage, func(t *testing.T) {
+			md, published := republish(t, storage)
+			assert.Equal(t, canonical(t, storage), published, "exported Markdown:\n%s", md)
+		})
+	}
+}
