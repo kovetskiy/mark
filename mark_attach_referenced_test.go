@@ -59,6 +59,52 @@ func TestLinkedFileIsAttached(t *testing.T) {
 	assert.NotContains(t, body, `href="files/report.pdf"`)
 }
 
+// TestAFileLinkedTwiceIsAttachedOnce covers the page that does not have the file
+// yet. Each link hands the file over again, and every copy used to be created,
+// so Confluence refused the second one for a name the first had just taken, and
+// the run failed on its first publish only.
+func TestAFileLinkedTwiceIsAttachedOnce(t *testing.T) {
+	for name, body := range map[string]string{
+		"inline":    "See [one](files/report.pdf) and [two](files/report.pdf).\n",
+		"reference": "See [one](files/report.pdf), [two][r] and [three][r].\n\n[r]: files/report.pdf\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, id, page := attachFixture(t, body, true)
+
+			stored := server.Attachments(id)
+			require.Len(t, stored, 1)
+			assert.Equal(t, "files_report.pdf", stored[0].Filename)
+			assert.Equal(t, 1, server.CountRequests("POST", "/child/attachment"))
+			assert.NotContains(t, page, `href="files/report.pdf"`)
+		})
+	}
+}
+
+// TestAnImageEmbeddedTwiceIsAttachedOnce is the same for an image, which takes
+// the same way in without the flag.
+func TestAnImageEmbeddedTwiceIsAttachedOnce(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), onePixelPNG(), 0o600))
+
+	file := writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\n![logo](logo.png)\n\n![again](logo.png)\n")
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	target, err := ProcessFile(file, api, Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Output: io.Discard,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, server.Attachments(target.ID), 1)
+	assert.Equal(t, 1, server.CountRequests("POST", "/child/attachment"))
+}
+
 // TestLinkedFileIsLeftAloneByDefault is the boundary: this changes what a
 // published page contains, so nothing happens without being asked.
 func TestLinkedFileIsLeftAloneByDefault(t *testing.T) {
