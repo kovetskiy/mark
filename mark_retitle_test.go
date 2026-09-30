@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"io"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -52,4 +53,21 @@ func TestPreserveCommentsLeavesAnUnchangedTitleAlone(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Steady"))
+}
+
+// TestGeneratedHashDoesNotStandInForATitle: a document with no title of any
+// kind, under --title-append-generated-hash, was published as "- a159f529"
+// instead of failing on the missing title.
+func TestGeneratedHashDoesNotStandInForATitle(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nbody\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		TitleAppendGeneratedHash: true,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "page title is not set")
 }
