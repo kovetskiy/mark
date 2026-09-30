@@ -1915,7 +1915,7 @@ GLOBAL OPTIONS:
    --username string, -u string                   use specified username for updating Confluence page. [$MARK_USERNAME]
    --password string, -p string                   use specified token for updating Confluence page. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --password-command string                      run the specified command and use the first line of its stdout as the token for updating Confluence page. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
-   --target-url string, -l string                 edit the Confluence page at this URL. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
+   --target-url string, -l string                 edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
    --base-url string, -b string                   base URL for Confluence. Alternative to the base-url config file key. [$MARK_BASE_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
    --space string                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
