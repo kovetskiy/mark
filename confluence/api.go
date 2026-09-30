@@ -2770,14 +2770,27 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		return false, newErrorStatusNotOK(request)
 	}
 
-	// A body that does not decode is typically a login page: the action is
-	// unreachable with these credentials, and will be for every other page.
+	// A body that does not decode is no answer from the action. Seraph's login
+	// page means the action is closed to these credentials, for this page and
+	// every other, so it is not asked again this run. Anything else -- the page
+	// the move redirected to, a proxy's page for this one request -- says
+	// nothing about the next page, and may even follow a move that worked.
 	notJSON := err != nil
+	if notJSON && loginPage(request.Raw) {
+		_ = request.Raw.Body.Close()
+		missing := fmt.Errorf(
+			"%w: it answered with a login page (status: %d)",
+			errNoMoveAction, request.Raw.StatusCode,
+		)
+		api.moveActionMissing.Store(&missing)
 
-	// Data Center can answer before a reparent shows in the REST view, so a
-	// claimed success is given a moment; a refusal or a login page is not.
+		return false, missing
+	}
+
+	// Data Center can answer before a reparent shows in the REST view, so an
+	// answer that is not a refusal is given a moment to show; a refusal is not.
 	attempts := 1
-	if !notJSON && actionErrors(answer) == "" {
+	if notJSON || actionErrors(answer) == "" {
 		attempts = moveSettleAttempts
 	}
 
@@ -2796,19 +2809,32 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	}
 
 	if notJSON {
-		missing := fmt.Errorf(
-			"%w: it answered with something other than JSON (status: %d)",
-			errNoMoveAction, request.Raw.StatusCode,
+		return false, fmt.Errorf(
+			"movepage.action answered with something other than JSON (status: %d) "+
+				"and left %s where it was",
+			request.Raw.StatusCode, api.describeContent(contentID),
 		)
-		api.moveActionMissing.Store(&missing)
-
-		return false, missing
 	}
 
 	return false, fmt.Errorf(
 		"movepage.action left %s where it was%s",
 		api.describeContent(contentID), actionErrors(answer),
 	)
+}
+
+// loginPage reports whether a response is Seraph turning the request away
+// rather than the action answering it: a login reason other than OK, an
+// anonymous user, or a redirect that ended on the login page.
+func loginPage(response *http.Response) bool {
+	if reason := response.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
+		return true
+	}
+	if response.Header.Get("X-AUSERNAME") == "anonymous" {
+		return true
+	}
+
+	return response.Request != nil && response.Request.URL != nil &&
+		strings.HasSuffix(response.Request.URL.Path, "/login.action")
 }
 
 // placedAt reads the tree back after movepage.action and reports whether
@@ -2864,19 +2890,15 @@ func immediateParent(page *PageInfo) string {
 }
 
 // actionErrors formats whatever errors movepage.action put in its answer.
+//
+// The action is XWork's, which reports a refusal under actionErrors, under
+// fieldErrors keyed by field, or in validationErrors or errorMessage, as a
+// string, a list, or a map of either. A refusal it could not read would be
+// taken for success, waited on, and then reported without its reason.
 func actionErrors(answer map[string]any) string {
 	var messages []string
-	for _, key := range []string{"actionErrors", "validationErrors", "errorMessage"} {
-		switch value := answer[key].(type) {
-		case string:
-			if value != "" {
-				messages = append(messages, value)
-			}
-		case []any:
-			for _, item := range value {
-				messages = append(messages, fmt.Sprint(item))
-			}
-		}
+	for _, key := range []string{"actionErrors", "fieldErrors", "validationErrors", "errorMessage"} {
+		messages = appendMessages(messages, "", answer[key])
 	}
 
 	if len(messages) == 0 {
@@ -2884,6 +2906,35 @@ func actionErrors(answer map[string]any) string {
 	}
 
 	return ": " + strings.Join(messages, "; ")
+}
+
+// appendMessages collects the text of an error value, naming the field a map
+// keyed it by.
+func appendMessages(messages []string, field string, value any) []string {
+	prefix := ""
+	if field != "" {
+		prefix = field + ": "
+	}
+
+	switch value := value.(type) {
+	case string:
+		if value != "" {
+			messages = append(messages, prefix+value)
+		}
+	case []any:
+		for _, item := range value {
+			messages = appendMessages(messages, field, item)
+		}
+	case map[string]any:
+		for _, name := range slices.Sorted(maps.Keys(value)) {
+			messages = appendMessages(messages, name, value[name])
+		}
+	case nil:
+	default:
+		messages = append(messages, prefix+fmt.Sprint(value))
+	}
+
+	return messages
 }
 
 // reparentContent moves content under parentID through the update API.
