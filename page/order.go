@@ -124,13 +124,12 @@ func orderUnder(api *confluence.API, dryRun bool, parentID string, wanted []Orde
 			continue
 		}
 
-		// The first page has nothing to sit after, so it is placed ahead of the
-		// one that follows it instead. Without this a page asked to lead never
-		// moved at all.
+		// The first page has nothing to sit after, so it goes ahead of the first
+		// page that stays; the page after it may be about to move itself.
 		before := i == 0
 		var neighbour Ordered
 		if before {
-			neighbour = wanted[1]
+			neighbour = wanted[keep[0]]
 		} else {
 			neighbour = wanted[i-1]
 		}
