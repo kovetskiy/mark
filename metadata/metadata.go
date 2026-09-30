@@ -204,20 +204,53 @@ const (
 	DefaultContentAppearance   = "default"
 )
 
-func toStringSlice(val any) []string {
-	v, ok := val.([]any)
-	if !ok {
+// toStringSlice reads a front matter key that holds a list of strings.
+//
+// A single string is a list of one: "parents: Engineering" means what
+// "parents: [Engineering]" does. It used to be read as no list at all, which
+// published the page at the root of its space, and for labels removed every
+// label the page had, with nothing said. Anything else that cannot be a string
+// in the list is still left out, but reported against the key it was written
+// under, the way a key mark does not read is.
+func toStringSlice(val any, key string, filename string) []string {
+	var items []any
+
+	switch v := val.(type) {
+	case nil:
+		return nil
+	case string:
+		items = []any{v}
+	case []any:
+		items = v
+	default:
+		warnAboutIgnoredValue(key, v, filename)
+
 		return nil
 	}
+
 	var res []string
-	for _, item := range v {
-		if s, ok := item.(string); ok {
-			if s = strings.TrimSpace(s); s != "" {
-				res = append(res, s)
-			}
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			warnAboutIgnoredValue(key, item, filename)
+
+			continue
+		}
+
+		if s = strings.TrimSpace(s); s != "" {
+			res = append(res, s)
 		}
 	}
+
 	return res
+}
+
+// warnAboutIgnoredValue reports a value a list key cannot hold.
+func warnAboutIgnoredValue(key string, value any, filename string) {
+	log.Warn().Msgf(
+		"%sfront matter key %q takes a string or a list of strings, so %v (%T) was ignored",
+		warningPrefix(filename), key, value, value,
+	)
 }
 
 // toBool reads a front matter boolean, which YAML gives as a bool but a quoted
@@ -333,20 +366,25 @@ func normaliseFrontMatterKey(key string) string {
 func warnAboutUnknownKeys(keys []string, filename string) {
 	slices.Sort(keys)
 
-	// A caller with nothing to call the document -- ExtractMeta takes the name
-	// for the title and a library caller need not have one -- would otherwise
-	// be told about a key in a file called ": ".
-	where := filename + ": "
-	if filename == "" {
-		where = ""
-	}
-
 	for _, key := range keys {
 		log.Warn().Msgf(
 			"%sfront matter key %q is not read by mark and was ignored",
-			where, key,
+			warningPrefix(filename), key,
 		)
 	}
+}
+
+// warningPrefix names the document a front matter warning is about.
+//
+// A caller with nothing to call the document -- ExtractMeta takes the name for
+// the title and a library caller need not have one -- would otherwise be told
+// about a key in a file called ": ".
+func warningPrefix(filename string) string {
+	if filename == "" {
+		return ""
+	}
+
+	return filename + ": "
 }
 
 func stripFrontMatter(data []byte) ([]byte, error) {
@@ -397,10 +435,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 			switch normKey {
 			case "parents":
-				meta.Parents = append(meta.Parents, toStringSlice(v)...)
+				meta.Parents = append(meta.Parents, toStringSlice(v, k, filename)...)
 				meta.DeclaredParents = true
 			case "folders":
-				meta.Folders = append(meta.Folders, toStringSlice(v)...)
+				meta.Folders = append(meta.Folders, toStringSlice(v, k, filename)...)
 			case "space":
 				meta.Space = toString(v)
 			case "type":
@@ -414,9 +452,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			case "emoji":
 				meta.Emoji = toString(v)
 			case "attachments":
-				meta.Attachments = append(meta.Attachments, toStringSlice(v)...)
+				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, filename)...)
 			case "labels":
-				meta.Labels = append(meta.Labels, toStringSlice(v)...)
+				meta.Labels = append(meta.Labels, toStringSlice(v, k, filename)...)
 			case "contentappearance":
 				setContentAppearance(meta, toString(v))
 			case "imagealign":

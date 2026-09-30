@@ -52,6 +52,10 @@ order: <whole number>
 <page contents>
 ```
 
+A list key given a single value, as in `labels: release`, reads it as a list
+of one. A value that is neither a string nor a list of strings is ignored, and
+warned about.
+
 The legacy HTML header format is also supported:
 
 When both formats are present, HTML headers override matching scalar front
