@@ -95,21 +95,25 @@ func isAlnum(r rune) bool {
 }
 
 var (
-	lineHeading     = regexp.MustCompile(`^#{1,6}(?:[ \t]|$)`)
-	lineBullet      = regexp.MustCompile(`^[-+](?:[ \t]|$)`)
-	lineRule        = regexp.MustCompile(`^(?:=+|-+|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*$`)
-	lineOrdered     = regexp.MustCompile(`^([0-9]{1,9})([.)])(?:[ \t]|$)`)
-	lineDefinition  = regexp.MustCompile(`^:(?:[ \t]|$)`)
-	lineAdmonition  = regexp.MustCompile(`^!!!`)
-	lineBlockquote  = regexp.MustCompile(`^>`)
-	leadingSpace    = regexp.MustCompile(`^[ \t]+`)
-	trailingSpace   = regexp.MustCompile(`[ \t]+$`)
-	softBreakSpaces = regexp.MustCompile(`[ \t]*\n[ \t]*`)
+	lineHeading    = regexp.MustCompile(`^#{1,6}(?:[ \t]|$)`)
+	lineBullet     = regexp.MustCompile(`^[-+](?:[ \t]|$)`)
+	lineRule       = regexp.MustCompile(`^(?:=+|-+|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*$`)
+	lineOrdered    = regexp.MustCompile(`^([0-9]{1,9})([.)])(?:[ \t]|$)`)
+	lineDefinition = regexp.MustCompile(`^:(?:[ \t]|$)`)
+	lineAdmonition = regexp.MustCompile(`^!!!`)
+	lineBlockquote = regexp.MustCompile(`^>`)
+	// A GFM table's delimiter row, which makes the line before it a header
+	// row and the paragraph a table: nothing but pipes, colons, dashes and
+	// spaces.
+	lineTableDelimiter = regexp.MustCompile(`^[ \t|:-]*-[ \t|:-]*$`)
+	leadingSpace       = regexp.MustCompile(`^[ \t]+`)
+	trailingSpace      = regexp.MustCompile(`[ \t]+$`)
+	softBreakSpaces    = regexp.MustCompile(`[ \t]*\n[ \t]*`)
 )
 
 // escapeLineStarts escapes what would make a line of a paragraph into
 // something else: a heading, a list item, a rule, a blockquote, a setext
-// underline, a definition.
+// underline, a definition, a table's delimiter row.
 func escapeLineStarts(paragraph string) string {
 	lines := strings.Split(paragraph, "\n")
 	for i, line := range lines {
@@ -124,7 +128,8 @@ func escapeLineStarts(paragraph string) string {
 			m := lineOrdered.FindStringSubmatchIndex(line)
 			line = line[:m[4]] + "\\" + line[m[4]:]
 		case lineHeading.MatchString(line), lineBullet.MatchString(line), lineRule.MatchString(line),
-			lineDefinition.MatchString(line), lineAdmonition.MatchString(line), lineBlockquote.MatchString(line):
+			lineDefinition.MatchString(line), lineAdmonition.MatchString(line), lineBlockquote.MatchString(line),
+			lineTableDelimiter.MatchString(line):
 			line = "\\" + line
 		}
 
