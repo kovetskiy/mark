@@ -1114,6 +1114,11 @@ up by those. Links are rewritten to Confluence [tiny
 links](https://support.atlassian.com/confluence/kb/how-to-programmatically-generate-the-tiny-link-of-a-confluence-page)
 (`/x/AbCdEf`), which survive page renames and moves.
 
+The path is read the way an image's is: `other%20page.md` and
+`<other page.md>` both name `other page.md`, and `other\_page.md` and
+`a&amp;b.md` name `other_page.md` and `a&b.md`. The name as written is tried
+first, so a file whose name really contains a `%` still resolves to itself.
+
 A link is left exactly as written when it has a scheme (`https:`, `mailto:`),
 is a bare `#fragment`, points at a directory or a non-text file, or names a
 file that has no mark metadata and so is never published. Links are resolved on

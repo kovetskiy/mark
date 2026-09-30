@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/ast"
@@ -178,7 +180,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 	// Decided the same way on the way in and on the way out, as the ac: branch
 	// above is: the renderer is called twice for one link, and a decision made
 	// only on the way in leaves the closing </a> of a tag that was never opened.
-	if r.AttachReferenced && r.attachable(string(n.Destination)) {
+	if r.AttachReferenced && r.attachable(n) {
 		if entering {
 			if err := r.attachReferencedFile(writer, source, node, n); err != nil {
 				return ast.WalkStop, err
@@ -217,18 +219,21 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 // part of the question -- a path to nothing is left as the document wrote it,
 // which is what happens without the flag at all -- but the file is not read
 // here, and whether it may be read is decided where it is.
-func (r *ConfluenceLinkRenderer) attachable(destination string) bool {
-	_, ok := r.localFile(destination)
+func (r *ConfluenceLinkRenderer) attachable(link *ast.Link) bool {
+	_, ok := r.localFile(link)
 
 	return ok
 }
 
 // localFile reports the file beside the document that a destination names.
 //
-// Tried as written first and then as the URL a destination is, so that
-// "a%23b.png" finds a#b.png while a file really called my%20file.png still
-// finds itself.
-func (r *ConfluenceLinkRenderer) localFile(destination string) (string, bool) {
+// Tried as written first and then the way an image destination is read --
+// CommonMark escapes resolved, then as the URL a destination is -- so that
+// "a%23b.png" finds a#b.png and "my\_file.pdf" finds my_file.pdf, while a file
+// really called my%20file.png still finds itself.
+func (r *ConfluenceLinkRenderer) localFile(link *ast.Link) (string, bool) {
+	destination := string(link.Destination)
+
 	if r.Attachments == nil || r.Stdlib == nil || r.Path == "" {
 		return "", false
 	}
@@ -238,8 +243,10 @@ func (r *ConfluenceLinkRenderer) localFile(destination string) (string, bool) {
 	}
 
 	names := []string{destination}
-	if decoded, ok := attachment.DecodeDestination(destination); ok {
-		names = append(names, decoded)
+	for _, name := range ctransformer.LocalImagePaths(ctransformer.LinkDestination(link)) {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
 	}
 
 	for _, name := range names {
@@ -262,7 +269,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 ) error {
 	// Resolved as written rather than as a pattern: a link names one file, and
 	// the one it names is the one the reader was promised.
-	name, ok := r.localFile(string(link.Destination))
+	name, ok := r.localFile(link)
 	if !ok {
 		name = string(link.Destination)
 	}
