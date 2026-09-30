@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/vfs"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/vfs"
 	"github.com/rs/zerolog/log"
 )
 

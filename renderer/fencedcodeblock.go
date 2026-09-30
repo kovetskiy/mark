@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/d2"
-	"github.com/kovetskiy/mark/v16/mermaid"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/d2"
+	"github.com/kovetskiy/mark/v17/mermaid"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -109,6 +109,14 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 			}
 		}
 		info = strings.TrimSpace(strings.Replace(info, block, " ", 1))
+	}
+
+	// Put the marker back for the match: without it the first option -- or
+	// the "title" keyword -- was taken for the language the marker says there
+	// is none of, and dropped, so "- collapse" did not collapse and
+	// "- title Some code" had no title.
+	if noLanguage {
+		info = "- " + info
 	}
 
 	groups := reBlockDetails.FindStringSubmatch(info)
