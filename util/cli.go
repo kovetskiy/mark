@@ -50,6 +50,13 @@ func NewCommand(version string) *cli.Command {
 		// command line has been parsed, so this sees the configuration file
 		// the invocation named, whichever command it was given to.
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// urfave/cli runs this for its own help and completion commands
+			// too, and for a shell asking for completions. None of them reads
+			// the configuration, so a broken file must not stop them: it is
+			// reported by the command that would have used it.
+			if answersItself(ctx, cmd) {
+				return ctx, nil
+			}
 			if err := CheckConfigFile(cmd); err != nil {
 				return ctx, err
 			}
@@ -76,6 +83,30 @@ func NewCommand(version string) *cli.Command {
 // command and was taken to mean "publish".
 type bareInvocation struct{}
 
+// completing marks, in the context, a run a shell started to ask for
+// completions.
+type completing struct{}
+
+// completionFlag is the flag a shell's completion script ends the command
+// line with, to ask for completions rather than a run.
+const completionFlag = "--generate-shell-completion"
+
+// answersItself says whether the root command, from its Before, is running
+// something that prints about mark rather than doing anything: the help or
+// completion command urfave/cli adds, or a shell's completion request.
+func answersItself(ctx context.Context, root *cli.Command) bool {
+	if asking, _ := ctx.Value(completing{}).(bool); asking {
+		return true
+	}
+
+	switch root.Args().First() {
+	case "help", "h", "completion":
+		return true
+	}
+
+	return false
+}
+
 // Run runs mark's command line.
 //
 // Before there were commands, "mark <flags>" was the one thing mark did, and it
@@ -87,6 +118,9 @@ func Run(ctx context.Context, cmd *cli.Command, args []string) error {
 	args, bare := defaultToPublish(cmd, args)
 	if bare {
 		ctx = context.WithValue(ctx, bareInvocation{}, true)
+	}
+	if len(args) > 0 && args[len(args)-1] == completionFlag {
+		ctx = context.WithValue(ctx, completing{}, true)
 	}
 
 	return cmd.Run(ctx, args)
@@ -153,7 +187,7 @@ func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 			switch name {
 			case "version", "v":
 				return args, false
-			case "help", "h", "generate-shell-completion":
+			case "help", "h", strings.TrimPrefix(completionFlag, "--"):
 				asksRoot = true
 				continue
 			}

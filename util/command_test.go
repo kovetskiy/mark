@@ -221,6 +221,47 @@ func TestPublishFlagsBelongAfterPublish(t *testing.T) {
 	assert.Contains(t, err.Error(), "files")
 }
 
+// TestBrokenConfigFileLeavesHelpAlone: urfave/cli runs the root's Before for
+// its own help and completion commands, and for a shell asking for
+// completions, so a configuration file that does not parse used to break all
+// of them. They read nothing from it; publish, which does, still says so.
+func TestBrokenConfigFileLeavesHelpAlone(t *testing.T) {
+	t.Setenv("MARK_CONFIG", writeConfig(t, t.TempDir(), "mark.toml", "x = ["))
+
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		cmd := NewCommand("test")
+		cmd.Writer, cmd.ErrWriter = &out, &bytes.Buffer{}
+		err := Run(context.Background(), cmd, append([]string{"mark"}, args...))
+		return out.String(), err
+	}
+
+	for _, args := range [][]string{
+		{"help"},
+		{"help", "publish"},
+		{"completion", "bash"},
+		{"--generate-shell-completion"},
+		{"publish", "--generate-shell-completion"},
+		{"publish", "--help"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			out, err := run(args...)
+			require.NoError(t, err)
+			// The root's completions come from os.Args, which in a test are
+			// the test binary's, so only the error says anything there.
+			if args[0] != "--generate-shell-completion" {
+				assert.NotEmpty(t, out)
+			}
+		})
+	}
+
+	t.Run("publish", func(t *testing.T) {
+		_, err := run("publish", "--compile-only", "--files", "doc.md")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unable to parse configuration file")
+	})
+}
+
 // helpOutput is what the command line prints for args.
 func helpOutput(t *testing.T, version string, args ...string) string {
 	t.Helper()
