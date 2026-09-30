@@ -99,10 +99,12 @@ func ResolveAttachmentsWithRemotes(
 		attachments[i].Checksum = checksum
 	}
 
+	unique, duplicates := splitByFilename(attachments)
+
 	existing := []Attachment{}
 	creating := []Attachment{}
 	updating := []Attachment{}
-	for _, attachment := range attachments {
+	for _, attachment := range unique {
 		var found bool
 		var same bool
 		for _, remote := range remotes {
@@ -198,7 +200,52 @@ func ResolveAttachmentsWithRemotes(
 	attachments = append(attachments, creating...)
 	attachments = append(attachments, updating...)
 
+	// A repeat is the file that was just uploaded or kept under the same name,
+	// so it points where the first one does. It stays in the list because its
+	// Replace may be what a link in the document is resolved by.
+	byFilename := make(map[string]Attachment, len(attachments))
+	for _, attachment := range attachments {
+		byFilename[attachment.Filename] = attachment
+	}
+	for _, duplicate := range duplicates {
+		resolved := byFilename[duplicate.Filename]
+		duplicate.ID = resolved.ID
+		duplicate.Link = resolved.Link
+		attachments = append(attachments, duplicate)
+	}
+
 	return attachments, remotes, nil
+}
+
+// splitByFilename separates the first attachment for each Filename from the
+// ones after it.
+//
+// A document that links or embeds the same file twice hands it over twice, and
+// the remotes are compared against once, before anything is uploaded: on a page
+// that does not have the file yet, both copies would be created, and Confluence
+// refuses the second because the first now holds the name. Only the first is
+// uploaded; every link renders the same ri:filename, so it serves them all.
+func splitByFilename(attachments []Attachment) ([]Attachment, []Attachment) {
+	first := make(map[string]Attachment, len(attachments))
+	var unique, duplicates []Attachment
+	for _, attachment := range attachments {
+		kept, ok := first[attachment.Filename]
+		if !ok {
+			first[attachment.Filename] = attachment
+			unique = append(unique, attachment)
+			continue
+		}
+
+		if kept.Checksum != attachment.Checksum {
+			log.Warn().Msgf(
+				"attachments %q and %q share the filename %q but differ; uploading %q",
+				kept.Name, attachment.Name, attachment.Filename, kept.Name,
+			)
+		}
+		duplicates = append(duplicates, attachment)
+	}
+
+	return unique, duplicates
 }
 
 func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
