@@ -99,7 +99,10 @@ func ResolveAttachmentsWithRemotes(
 		attachments[i].Checksum = checksum
 	}
 
-	unique, duplicates := splitByFilename(attachments)
+	unique, duplicates, err := splitByFilename(attachments)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	existing := []Attachment{}
 	creating := []Attachment{}
@@ -225,7 +228,11 @@ func ResolveAttachmentsWithRemotes(
 // that does not have the file yet, both copies would be created, and Confluence
 // refuses the second because the first now holds the name. Only the first is
 // uploaded; every link renders the same ri:filename, so it serves them all.
-func splitByFilename(attachments []Attachment) ([]Attachment, []Attachment) {
+//
+// Two different files can land on one name too -- "a/b_c.txt" and "a_b/c.txt"
+// both flatten to "a_b_c.txt" -- and one upload would then serve the wrong one
+// under a link that reads as right. That is refused rather than guessed at.
+func splitByFilename(attachments []Attachment) ([]Attachment, []Attachment, error) {
 	first := make(map[string]Attachment, len(attachments))
 	var unique, duplicates []Attachment
 	for _, attachment := range attachments {
@@ -237,15 +244,15 @@ func splitByFilename(attachments []Attachment) ([]Attachment, []Attachment) {
 		}
 
 		if kept.Checksum != attachment.Checksum {
-			log.Warn().Msgf(
-				"attachments %q and %q share the filename %q but differ; uploading %q",
-				kept.Name, attachment.Name, attachment.Filename, kept.Name,
+			return nil, nil, fmt.Errorf(
+				"attachments %q and %q would both be uploaded as %q but differ",
+				kept.Name, attachment.Name, attachment.Filename,
 			)
 		}
 		duplicates = append(duplicates, attachment)
 	}
 
-	return unique, duplicates
+	return unique, duplicates, nil
 }
 
 func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
