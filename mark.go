@@ -1267,7 +1267,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	shouldUpdatePage := true
 
 	if config.ChangesOnly {
-		contentHash := sha1Hash(html)
+		contentHash := contentFingerprint(html, contentAppearance, emoji)
 		log.Debug().Msgf("content hash: %s", contentHash)
 
 		if previous := readContentHash(target.Version.Message); previous != "" {
@@ -1770,6 +1770,27 @@ func sha1Hash(input string) string {
 	h := sha1.New() //nolint:gosec // G401: see the crypto/sha1 import comment
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// contentFingerprint is what --changes-only compares: the body, and the page
+// properties published alongside it.
+//
+// The body alone let a change to nothing but the Emoji or Content-Appearance
+// header be skipped as "already up to date", although both are sent with the
+// body and only take effect when it is.
+//
+// Each property is folded in only when it differs from what a page without
+// the header gets -- no emoji, full width -- so that the fingerprint of such a
+// page is the body's hash exactly as before. Every page already stamped by an
+// earlier mark would otherwise look changed and be republished once, across
+// every space, on the first run after upgrading. Pages that do carry one of
+// the headers are republished once, which is the price of finding out.
+func contentFingerprint(html, appearance, emoji string) string {
+	if emoji == "" && (appearance == "" || appearance == metadata.FullWidthContentAppearance) {
+		return sha1Hash(html)
+	}
+
+	return sha1Hash(html + "\x00mark:content-appearance=" + appearance + "\x00mark:emoji=" + emoji)
 }
 
 var (
