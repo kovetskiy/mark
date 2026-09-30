@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -73,6 +74,17 @@ type API struct {
 
 	isCloudFlag bool
 	isCloudOnce sync.Once
+
+	// moveEndpointMissing records that this Confluence answered the v1 content
+	// move endpoint with 404 or 405, so that a run reorganising a whole tree
+	// does not pay a doomed request per page before falling back; see
+	// moveContent.
+	moveEndpointMissing atomic.Bool
+
+	// reparented maps a page id to the versions either side of a move this
+	// API made by update; see ReparentedFrom.
+	reparented      map[string]reparentedVersions
+	reparentedMutex sync.Mutex
 
 	pageCache      map[string]*PageInfo
 	pageCacheByID  map[string]*PageInfo
@@ -2574,18 +2586,250 @@ func (api *API) ArchivePage(contentID string) error {
 // where it can move content to the root of the space; callers are expected not
 // to.
 func (api *API) MoveContentAfter(contentID, siblingID string) error {
-	return api.moveContent(contentID, "after", siblingID)
+	return api.orderContent(contentID, "after", siblingID)
 }
 
 // MoveContentBefore places a page immediately before one of its siblings. The
 // same caution about top-level targets applies as for MoveContentAfter.
 func (api *API) MoveContentBefore(contentID, siblingID string) error {
-	return api.moveContent(contentID, "before", siblingID)
+	return api.orderContent(contentID, "before", siblingID)
 }
 
-// MoveContentAppend relocates any content (page, folder, etc.) under targetID using the v1 move API.
+// MoveContentAppend relocates any content (page, folder, etc.) under targetID.
+//
+// The v1 move endpoint is tried first, and on Cloud that is the whole of it.
+// A Server or Data Center instance answers it 404, and the page is then moved
+// the way those releases document a move: an update carrying the new ancestor.
+// Detecting the reparent and then refusing to perform it was the worst of both
+// -- mark knew exactly where the page belonged and made the user drag it there
+// by hand.
+//
+// Whether DC lacks the endpoint outright is still unverified from here; the
+// fallback does not depend on knowing. A 404 that is really a missing page
+// reaches it too, and the update then fails on the same page for the same
+// reason, saying so in terms of the page rather than the endpoint.
 func (api *API) MoveContentAppend(contentID, targetID string) error {
-	return api.moveContent(contentID, "append", targetID)
+	if !api.moveEndpointMissing.Load() {
+		err := api.moveContent(contentID, "append", targetID)
+		if !errors.Is(err, errNoMoveEndpoint) {
+			return err
+		}
+
+		log.Debug().Msgf(
+			"this Confluence does not serve the content move endpoint; "+
+				"reparenting %s under %s with an update instead",
+			api.describeContent(contentID), targetID,
+		)
+	}
+
+	return api.reparentContent(contentID, targetID)
+}
+
+// orderContent places content before or after one of its siblings.
+//
+// Unlike a reparent this has no fallback. Position among siblings is not part
+// of what an update can carry, so outside Cloud it is the one thing the
+// missing endpoint really does cost, and saying so is all that is left.
+func (api *API) orderContent(contentID, position, siblingID string) error {
+	err := api.moveContent(contentID, position, siblingID)
+	if errors.Is(err, errNoMoveEndpoint) {
+		return fmt.Errorf(
+			"unable to place %s %s %s: ordering pages needs the content move "+
+				"endpoint, and reparenting is the only part of it mark can do "+
+				"another way; drop the Order header for these pages, or arrange "+
+				"them in Confluence by hand: %w",
+			api.describeContent(contentID), position, siblingID, err,
+		)
+	}
+
+	return err
+}
+
+// reparentContent moves content under parentID through the update API.
+//
+// Confluence documents ancestors on an update as the way a page is moved, and
+// on Server and Data Center it is the only way: there is no move endpoint to
+// call. The body is read and written back unchanged rather than left out of
+// the payload, because what an update without a body does to the one already
+// there is the server's business, and a move is not allowed to cost a page its
+// content on the reading where it blanks it.
+func (api *API) reparentContent(contentID, parentID string) error {
+	page, placed, err := api.readForReparent(contentID, parentID)
+	if err != nil || placed {
+		return err
+	}
+
+	err = api.reparentContentV1(page, parentID, page.Version.Number+1)
+	if errors.Is(err, errConflict) {
+		// Something wrote to the page between the read and the write. The
+		// payload carries the body and version message of that read, so
+		// sending it again at the next version -- which is what
+		// retryConflictingUpdate does for a publish, where mark's body is the
+		// point -- would put back what the page said before the edit and undo
+		// it. Here the body is only a passenger, so the whole page is read
+		// again and the move rebuilt from that. Nothing is overwritten this
+		// way, which is also why KeepConcurrentEdits has nothing to refuse.
+		if api.conflictRetryDelay > 0 {
+			time.Sleep(api.conflictRetryDelay)
+		}
+
+		attempted := page.Version.Number + 1
+
+		page, placed, err = api.readForReparent(contentID, parentID)
+		if err != nil || placed {
+			return err
+		}
+
+		log.Debug().Msgf(
+			"move of page %q (%s) as version %d conflicted; retrying as version %d",
+			page.Title, page.ID, attempted, page.Version.Number+1,
+		)
+
+		err = api.reparentContentV1(page, parentID, page.Version.Number+1)
+		if errors.Is(err, errConflict) {
+			err = fmt.Errorf(
+				"version %d was refused as a conflict, and version %d again "+
+					"after reading the page afresh; something else is writing to "+
+					"the page at the same time, so run mark again once it has "+
+					"stopped: %w",
+				attempted, page.Version.Number+1, err,
+			)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf(
+			"unable to move page %q (%s) under %s: %w", page.Title, page.ID, parentID, err,
+		)
+	}
+
+	api.updateCachedPageVersion(page.ID, page.Version.Number+1)
+	api.noteReparent(page.ID, page.Version.Number, page.Version.Number+1)
+
+	return nil
+}
+
+// reparentedVersions is the version a page was found at before a move by
+// update, and the version that move wrote.
+type reparentedVersions struct {
+	from, to int64
+}
+
+// noteReparent records that a move by update took a page from version from
+// to version to. A page moved twice in a run keeps the version it had before
+// the first move, since everything after that was written by mark.
+func (api *API) noteReparent(pageID string, from, to int64) {
+	api.reparentedMutex.Lock()
+	defer api.reparentedMutex.Unlock()
+
+	if api.reparented == nil {
+		api.reparented = map[string]reparentedVersions{}
+	}
+	if earlier, ok := api.reparented[pageID]; ok && earlier.to == from {
+		from = earlier.from
+	}
+	api.reparented[pageID] = reparentedVersions{from: from, to: to}
+}
+
+// ReparentedFrom reports the version a page was at before this API moved it,
+// when the page is still at the version the move wrote.
+//
+// On Server and Data Center a move is an update, and an update is a version.
+// That version is mark's own, but it is indistinguishable by number from an
+// edit made in Confluence, which is what --no-overwrite compares numbers to
+// find. A caller holding a page at current asks here which version to compare
+// instead. A page that has moved on since the move is answered false: what
+// came after it was not mark.
+//
+// The move endpoint Cloud uses writes no version, so only a move by update is
+// recorded; a page moved that way has nothing to discount.
+func (api *API) ReparentedFrom(pageID string, current int64) (int64, bool) {
+	api.reparentedMutex.Lock()
+	defer api.reparentedMutex.Unlock()
+
+	moved, ok := api.reparented[pageID]
+	if !ok || moved.to != current {
+		return 0, false
+	}
+
+	return moved.from, true
+}
+
+// readForReparent reads everything reparentContentV1 writes back, and reports
+// placed when the page already sits under parentID: Confluence accepts an
+// update that names the parent a page already has, but it costs the page a
+// version for nothing.
+func (api *API) readForReparent(contentID, parentID string) (*PageInfo, bool, error) {
+	page, err := api.GetPageByIDExpanded(contentID, "ancestors,version,body.storage")
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"unable to read %s to move it under %s: %w",
+			api.describeContent(contentID), parentID, err,
+		)
+	}
+	if page == nil {
+		return nil, false, fmt.Errorf(
+			"unable to move content %s under %s: no such content", contentID, parentID,
+		)
+	}
+
+	n := len(page.Ancestors)
+
+	return page, n > 0 && page.Ancestors[n-1].ID == parentID, nil
+}
+
+// reparentContentV1 is the request behind reparentContent; nextVersion is the
+// version the move creates.
+func (api *API) reparentContentV1(page *PageInfo, parentID string, nextVersion int64) error {
+	pageType := page.Type
+	if pageType == "" {
+		pageType = "page"
+	}
+
+	payload := map[string]any{
+		"id":    page.ID,
+		"type":  pageType,
+		"title": page.Title,
+		"version": map[string]any{
+			"number":    nextVersion,
+			"minorEdit": true,
+			// The message is carried over rather than replaced by something
+			// about the move. mark keeps the content fingerprint --changes-only
+			// reads inside it, and the caller refreshes the page from the
+			// server the moment this returns: a move that wrote its own message
+			// would tell the rest of that run, and every run after it, that the
+			// content had changed when only the page's place in the tree did.
+			// The move is a version of its own either way, so the history still
+			// shows it.
+			"message": page.Version.Message,
+		},
+		"ancestors": []map[string]any{
+			{"id": parentID},
+		},
+	}
+
+	if value := page.Body.Storage.Value; value != "" {
+		payload["body"] = map[string]any{
+			"storage": map[string]any{
+				"value":          value,
+				"representation": "storage",
+			},
+		}
+	}
+
+	request, err := api.v1().Res(
+		"content/"+page.ID, &map[string]any{},
+	).Put(payload)
+	if err != nil {
+		return newTransportError(
+			request, fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err,
+		)
+	}
+
+	if request.Raw.StatusCode != http.StatusOK {
+		return newErrorStatusNotOK(request)
+	}
+
+	return nil
 }
 
 func (api *API) moveContent(contentID, position, targetID string) error {
@@ -2601,25 +2845,21 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 	switch request.Raw.StatusCode {
 	case http.StatusOK, http.StatusNoContent:
 		return nil
-	case http.StatusNotFound, http.StatusMethodNotAllowed:
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
 		// content/{id}/move is a Cloud endpoint, reached whenever a page's
 		// ancestry stops matching its headers or whenever pages are ordered.
-		// Folder creation is gated on IsCloud() and RestrictPageUpdates names
-		// the old-Server case in so many words; this path did neither, so a
-		// Server or Data Center user reorganising a docs tree got a bare 404
-		// with nothing in it to act on.
+		// Outside Cloud it is not there, and the answer is reported as such so
+		// that the callers above can decide what to do about it: a reparent
+		// has another way round, an ordering has none.
 		//
-		// Whether DC lacks the endpoint outright is unverified from here, so
-		// the status stays in the message: a 404 that really is a missing page
-		// arrives looking exactly the same.
+		// A 404 that really is a missing page arrives looking exactly the
+		// same, which is why the status stays in the message and why nothing
+		// here concludes anything about the content itself.
 		if !api.IsCloud() {
-			return fmt.Errorf(
-				"unable to move %s (%s %s): this Confluence is not Cloud, and the "+
-					"content move endpoint mark uses to reparent and reorder pages is "+
-					"Cloud-only (status: %d); move the page in Confluence by hand, or "+
-					"leave its ancestry as the instance already has it",
-				api.describeContent(contentID), position, targetID, request.Raw.StatusCode,
-			)
+			_ = request.Raw.Body.Close()
+			api.moveEndpointMissing.Store(true)
+
+			return fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, request.Raw.StatusCode)
 		}
 		return newErrorStatusNotOK(request)
 	default:
@@ -2652,6 +2892,14 @@ var ErrNotFound = errors.New("404 (Not Found)")
 // errConflict reports that Confluence answered 409: for a page update, that
 // the version sent is not the one after the page's current version.
 var errConflict = errors.New("409 (Conflict)")
+
+// errNoMoveEndpoint reports that a non-Cloud Confluence answered
+// content/{id}/move with 404, 405 or 501. It is a sentinel because the two
+// callers answer it differently: a reparent falls back to the update API,
+// which every release has, and an ordering has nothing to fall back to.
+var errNoMoveEndpoint = errors.New(
+	"this Confluence did not serve the content move endpoint, which is Cloud-only",
+)
 
 func newErrorStatusNotOK(request *gopencils.Resource) error {
 	defer func() {

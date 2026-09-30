@@ -114,6 +114,71 @@ func TestColumnBodyIsRichText(t *testing.T) {
 	assert.Contains(t, rendered, `<ac:parameter ac:name="width">50%&#34; x=&#34;</ac:parameter>`)
 }
 
+// A control character has no escape in XML, so xmlesc and cdata replace it:
+// an ANSI colour code in a code block made the page unpublishable.
+func TestTemplatesReplaceIllegalXMLCharacters(t *testing.T) {
+	lib, err := New(nil)
+	require.NoError(t, err)
+
+	var out strings.Builder
+	err = lib.Templates.ExecuteTemplate(&out, "ac:code", struct {
+		Language    string
+		Collapse    bool
+		Theme       string
+		Linenumbers bool
+		Firstline   int
+		Title       string
+		Text        string
+	}{
+		Language: "go",
+		Title:    "a\x1bb & c",
+		Text:     "\x1b[31mred\x1b[0m\f ]]> \U0001F600",
+	})
+	require.NoError(t, err)
+
+	rendered := out.String()
+	assert.NotContains(t, rendered, "\x1b")
+	assert.NotContains(t, rendered, "\f")
+	assert.Contains(t, rendered, "a�b &amp; c")
+	assert.Contains(t, rendered, "�[31mred�[0m� ]]><![CDATA[]]]]><![CDATA[> \U0001F600")
+
+	assert.Equal(t, "a_b�.png", mustExec(t, lib, `{{ convertAttachment "a/b\x00.png" }}`))
+}
+
+func mustExec(t *testing.T, lib *Lib, text string) string {
+	t.Helper()
+
+	tmpl, err := lib.Templates.Clone()
+	require.NoError(t, err)
+
+	tmpl, err = tmpl.New("test").Parse(text)
+	require.NoError(t, err)
+
+	var out strings.Builder
+	require.NoError(t, tmpl.Execute(&out, nil))
+
+	return out.String()
+}
+
+func TestReplaceIllegalXMLChars(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+		replaced int
+	}{
+		{"", "", 0},
+		{"tab\tlf\ncr\r", "tab\tlf\ncr\r", 0},
+		{"\x00\x08\x0b\x0c\x0e\x1f", "������", 6},
+		{"del \x7f and c1 \u0085 stay", "del \x7f and c1 \u0085 stay", 0},
+		{"￾￿�", "���", 2},
+		{"lone surrogate \xed\xa0\x80", "lone surrogate ���", 3},
+		{"\U0010FFFF", "\U0010FFFF", 0},
+	} {
+		got, replaced := ReplaceIllegalXMLChars(tc.in)
+		assert.Equal(t, tc.want, got, "%q", tc.in)
+		assert.Equal(t, tc.replaced, replaced, "%q", tc.in)
+	}
+}
+
 // BenchmarkNew measures the cost of building the standard library. mark calls
 // New once per processed file, so this is the per-file floor for template
 // parsing.

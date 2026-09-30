@@ -1113,7 +1113,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// lines below, and there is no point sending them for a page that is about
 	// to be left alone.
 	if config.NoOverwrite && !pageCreated && tracker != nil && meta != nil && target != nil {
-		drifted, recorded, err := hasDrifted(tracker, meta.Space, file, target)
+		drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2165,7 +2165,15 @@ func Cleanup() {
 // An entry with no recorded version cannot answer the question -- it was
 // written before versions were tracked, or by a run without --no-overwrite --
 // and a page is given the benefit of the doubt rather than frozen.
+//
+// A page this run has already moved on Server or Data Center is compared as it
+// was before the move. The move is an update there, so it lands a version
+// before this check is reached; that version is mark's, and taking it for an
+// edit left every moved page unpublished and reported on every run after. An
+// edit made before the move still shows, since the version the move started
+// from is then not the one recorded either.
 func hasDrifted(
+	api *confluence.API,
 	tracker *manifest.Store,
 	spaceKey, file string,
 	target *confluence.PageInfo,
@@ -2179,7 +2187,12 @@ func hasDrifted(
 		return false, 0, nil
 	}
 
-	return target.Version.Number != entry.Version, entry.Version, nil
+	current := target.Version.Number
+	if before, moved := api.ReparentedFrom(target.ID, current); moved {
+		current = before
+	}
+
+	return current != entry.Version, entry.Version, nil
 }
 
 // reportBrokenLinks says what failed a link check, and decides whether it ends

@@ -61,6 +61,13 @@ an attribute break the entire upload, not just one element.
   two CDATA sections, which is the only legal way to escape it.
 - `convertAttachment` — values destined for `ri:filename`; slash-flattens *and* escapes.
 
+All three also replace the characters XML 1.0 has no spelling for — most C0 controls,
+U+FFFE/U+FFFF, bytes that are not UTF-8 — with U+FFFD; Go code that builds markup itself
+calls the same `stdlib.XMLEscape` and `stdlib.CDATA`. Text goldmark writes itself, and raw
+HTML, never passes through them, so `CompileMarkdown` and `CompileMarkdownLegacy` finish
+with one pass over the whole body that does the same, numeric references such as `&#27;`
+included.
+
 Titles, filenames, and `ri:content-title` have each caused a malformed-XML bug in the
 past. If you add a template that interpolates user-controlled text, pipe it through one
 of these.
