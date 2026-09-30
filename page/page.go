@@ -29,12 +29,27 @@ func ResolvePage(
 	}
 
 	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && offAnchor(api, meta.Space, page, meta.Parents) {
-		log.Warn().Msgf(
-			"page %q exists outside MARK_PARENTS %q; will create or relocate under folder hierarchy",
-			meta.Title,
-			strings.Join(meta.Parents, " > "),
-		)
-		page = nil
+		if len(page.Ancestors) == 0 {
+			// The space home page, or a parentless page that cannot be told
+			// apart from it: not something to move into a folder.
+			log.Warn().Msgf(
+				"page %q exists outside MARK_PARENTS %q and may be the space home page; leaving it where it is",
+				meta.Title,
+				strings.Join(meta.Parents, " > "),
+			)
+			page = nil
+		} else {
+			// Anywhere else it is still this document's page: a title is
+			// unique within a space, so there is no other page to create beside
+			// it. Dropping it here had the caller create one anyway, which
+			// Confluence refuses; kept, it is moved into its folder like any
+			// page that is not where its headers say.
+			log.Warn().Msgf(
+				"page %q exists outside MARK_PARENTS %q; it will be moved under the folder hierarchy",
+				meta.Title,
+				strings.Join(meta.Parents, " > "),
+			)
+		}
 	}
 
 	if meta.Type == "blogpost" {
