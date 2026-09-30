@@ -7,9 +7,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// ImmediateParentID returns the direct parent content ID from expanded ancestors, or "" if unknown.
+// ImmediateParentID returns the direct parent content ID, or "" if unknown:
+// the parent v2 named when the page was read from there, and otherwise the last
+// of its expanded ancestors. Only the first can be a folder.
 func ImmediateParentID(pg *confluence.PageInfo) string {
-	if pg == nil || len(pg.Ancestors) == 0 {
+	if pg == nil {
+		return ""
+	}
+	if pg.ParentID != "" {
+		return pg.ParentID
+	}
+	if len(pg.Ancestors) == 0 {
 		return ""
 	}
 	return pg.Ancestors[len(pg.Ancestors)-1].ID
@@ -89,13 +97,30 @@ func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 }
 
 // EnsurePageUnderFolderParent is EnsurePageUnderParent with folderID as the
-// parent; it does nothing folder-specific, since Confluence moves a page under
-// a folder the same way it moves one under a page.
+// parent. Confluence moves a page under a folder the same way it moves one
+// under a page; what differs is telling whether it is there already.
+//
+// A page read through v1 cannot show a folder parent -- folders are never among
+// its ancestors -- so it always looked misplaced, and every run appended it to
+// its folder again, reshuffling the folder's children. Before moving such a
+// page, its parent is asked of v2, which names folders. That is a read in place
+// of the move and the re-read that follows it, and only for a page v1 read.
 func EnsurePageUnderFolderParent(
 	api *confluence.API,
 	pg *confluence.PageInfo,
 	folderID string,
 ) error {
+	if pg != nil && folderID != "" && pg.ParentID == "" && ImmediateParentID(pg) != folderID {
+		parentID, parentType, err := api.ParentOfV2(pg.ID)
+		if err != nil {
+			// Not knowing costs a move that may not have been needed, which is
+			// what happened every time before this was asked at all.
+			log.Debug().Err(err).Msgf("unable to tell whether page %q is in folder %s already", pg.Title, folderID)
+		} else {
+			pg.ParentID, pg.ParentType = parentID, parentType
+		}
+	}
+
 	return EnsurePageUnderParent(api, pg, folderID)
 }
 
