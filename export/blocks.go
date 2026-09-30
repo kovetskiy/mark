@@ -436,6 +436,10 @@ func (c *converter) taskList(n *node, marker string) string {
 // itemBlocks renders what a list item holds. In a tight list, prose and a
 // nested list sit on adjacent lines; anything else needs a blank line, which
 // makes the list loose, but is rare enough in a tight one to be worth it.
+//
+// That includes a nested list that cannot interrupt a paragraph: one
+// numbered from anything but 1, or whose first item is empty. On the line
+// after the prose it would only continue it.
 func (c *converter) itemBlocks(nodes []*node, loose bool) string {
 	rendered := c.renderBlocks(nodes, blockContext{})
 
@@ -443,7 +447,8 @@ func (c *converter) itemBlocks(nodes []*node, loose bool) string {
 	for i, current := range rendered {
 		if i > 0 {
 			previous := rendered[i-1]
-			if !loose && ((previous.paragraph && current.list != "") || (previous.list != "" && current.list != "")) {
+			follows := previous.paragraph && interruptsParagraph.MatchString(current.text)
+			if !loose && current.list != "" && (follows || previous.list != "") {
 				b.WriteString("\n")
 			} else {
 				b.WriteString("\n\n")
@@ -454,6 +459,12 @@ func (c *converter) itemBlocks(nodes []*node, loose bool) string {
 
 	return b.String()
 }
+
+// interruptsParagraph matches a list that can start on the line after a
+// paragraph, rather than continuing it: CommonMark lets only a list with a
+// first item that is not empty, and when numbered one numbered 1, interrupt
+// a paragraph.
+var interruptsParagraph = regexp.MustCompile(`^(?:[-*+]|1[.)])[ \t]+\S`)
 
 // listItem writes content after a list marker, with the lines after the first
 // indented to belong to the item.
