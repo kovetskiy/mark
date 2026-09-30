@@ -42,7 +42,22 @@ func ImageDestination(n *ast.Image) string {
 		return string(n.Destination)
 	}
 
-	destination := util.UnescapePunctuations(n.Destination)
+	return unescapeDestination(n.Destination)
+}
+
+// LinkDestination reads a link's destination the way ImageDestination reads an
+// image's, so that "other\_page.md" and "a&amp;b.md" name other_page.md and
+// a&b.md, and a link and an image written the same way name the same file.
+// Percent-encoding is left as it is here too; LocalImagePaths is what reads
+// past it.
+func LinkDestination(n *ast.Link) string {
+	return unescapeDestination(n.Destination)
+}
+
+// unescapeDestination resolves the backslash escapes and the entity and
+// numeric references CommonMark allows in a link destination.
+func unescapeDestination(raw []byte) string {
+	destination := util.UnescapePunctuations(raw)
 	destination = util.ResolveNumericReferences(destination)
 	destination = util.ResolveEntityNames(destination)
 

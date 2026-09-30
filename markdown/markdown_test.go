@@ -544,3 +544,33 @@ func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 	test.NoError(err)
 	test.Equal([]string{"./real.md"}, asked)
 }
+
+// TestCompileMarkdownResolveLinkDecodesDestination: the resolver is asked
+// about the file a destination names, not the Markdown that spells it, just as
+// an image's destination is read. An ac: link is passed as written, since the
+// renderer takes its title from the destination as written.
+func TestCompileMarkdownResolveLinkDecodesDestination(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	var asked []string
+	cfg := types.MarkConfig{
+		MermaidScale: 1.0,
+		D2Scale:      1.0,
+		ResolveLink: func(target, text string) (string, error) {
+			asked = append(asked, target)
+			return "", nil
+		},
+	}
+
+	markdown := []byte("[a](other%20page.md) [b](other\\_page.md) " +
+		"[c](<other page.md>) [d](a&amp;b.md) [e](ac:AT&amp;T)\n")
+
+	_, _, err = mark.CompileMarkdown(markdown, lib, "testdata/x.md", cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{
+		"other%20page.md", "other_page.md", "other page.md", "a&b.md", "ac:AT&amp;T",
+	}, asked)
+}

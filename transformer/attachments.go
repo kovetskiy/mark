@@ -49,6 +49,9 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 		switch n := node.(type) {
 		case *ast.Link:
 			destination = &n.Destination
+
+			// Read as an image's is, for the same reason.
+			candidates = LocalImagePaths(LinkDestination(n))
 		case *ast.Image:
 			destination = &n.Destination
 

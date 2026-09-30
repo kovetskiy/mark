@@ -1,6 +1,8 @@
 package transformer
 
 import (
+	"strings"
+
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
@@ -53,9 +55,20 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 			return ast.WalkContinue, nil
 		}
 
-		target := string(link.Destination)
-		if target == "" {
+		written := string(link.Destination)
+		if written == "" {
 			return ast.WalkContinue, nil
+		}
+
+		// The resolver is handed the destination as CommonMark reads it, so
+		// that "other\_page.md" and "a&amp;b.md" name the files they spell --
+		// the same reading an image destination gets. An ac: link is the
+		// exception: the renderer takes its title from the destination as
+		// written, and checking a different title from the one published would
+		// be checking the wrong page.
+		target := written
+		if !strings.HasPrefix(written, "ac:") {
+			target = LinkDestination(link)
 		}
 
 		//nolint:staticcheck // Text is what the renderer reads for an ac: link.
@@ -64,7 +77,7 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 			return ast.WalkStop, err
 		}
 
-		if resolved != "" && resolved != target {
+		if resolved != "" && resolved != written {
 			link.Destination = []byte(resolved)
 		}
 

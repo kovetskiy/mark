@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -363,27 +364,39 @@ func resolveLink(
 //
 // The first base is the document's own directory and wins where both would do,
 // so adding places to look cannot change what an unambiguous link already meant.
+//
+// Each base is tried with the name as written and then percent-decoded, as a
+// browser would read the URL a destination is: "my%20page.md" is how VS Code and
+// GitHub spell "my page.md". As written comes first so that a file whose name
+// really contains a "%" still resolves to itself.
 func findLinkTarget(bases []string, name string) (string, *unresolved) {
 	var directory bool
 
+	names := []string{name}
+	if decoded, err := url.PathUnescape(name); err == nil && decoded != name {
+		names = append(names, decoded)
+	}
+
 	for _, base := range bases {
-		candidate := filepath.Join(base, name)
+		for _, n := range names {
+			candidate := filepath.Join(base, n)
 
-		log.Trace().Msgf("filepath: %s", candidate)
-		stat, err := os.Stat(candidate)
-		if err != nil {
-			// Not a file on disk here, or unreadable. Swallowing err is
-			// deliberate: the next base may have it, and if none does the link
-			// is left as written rather than failing the run.
-			continue //nolint:nilerr
+			log.Trace().Msgf("filepath: %s", candidate)
+			stat, err := os.Stat(candidate)
+			if err != nil {
+				// Not a file on disk here, or unreadable. Swallowing err is
+				// deliberate: the next candidate may have it, and if none does
+				// the link is left as written rather than failing the run.
+				continue //nolint:nilerr
+			}
+
+			if stat.IsDir() {
+				directory = true
+				continue
+			}
+
+			return candidate, nil
 		}
-
-		if stat.IsDir() {
-			directory = true
-			continue
-		}
-
-		return candidate, nil
 	}
 
 	if directory {
