@@ -83,3 +83,23 @@ func TestDetailsSummaryAfterContent(t *testing.T) {
 	assert.Contains(t, out, "<p>x</p>")
 	assert.NotContains(t, out, "summary")
 }
+
+// TestDetailsBodyWithHTMLOnlyMarkupIsRepaired: a details body is copied as
+// written, so what only HTML accepts -- a bare ampersand, an entity XML has no
+// name for, an unquoted attribute -- reaches the page unless the repair of raw
+// HTML covers it there too. html.Parse used to fix these on the way through;
+// without either, the whole page is refused.
+func TestDetailsBodyWithHTMLOnlyMarkupIsRepaired(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	input := "<details><summary>S</summary>\n" +
+		`<p>AT&T <a href="?a=1&b=2">x</a> &NotEqualTilde;</p><table><tr><td colspan=2>x</td></tr></table>` +
+		"\n</details>\n"
+
+	for name, compile := range compilers {
+		out, _, err := compile([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+		require.NoError(t, err, name)
+		require.NoError(t, CheckWellFormed(out), name)
+	}
+}
