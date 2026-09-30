@@ -182,6 +182,36 @@ func TestGetCredentialsTargetURLKeepsTheContextPath(t *testing.T) {
 			"https://x.atlassian.net/wiki/",
 			"https://x.atlassian.net/wiki", "",
 		},
+		{
+			"server instance only",
+			"https://host/confluence",
+			"https://host/confluence", "",
+		},
+		{
+			"plugin page at the root",
+			"https://host/plugins/viewsource/viewpagesrc.action?pageId=1",
+			"https://host", "1",
+		},
+		{
+			"plugin page under a context path",
+			"https://x.atlassian.net/wiki/plugins/viewsource/viewpagesrc.action?pageId=1",
+			"https://x.atlassian.net/wiki", "1",
+		},
+		{
+			"an action at the root",
+			"https://host/dashboard.action",
+			"https://host", "",
+		},
+		{
+			"the home page",
+			"https://x.atlassian.net/wiki/home",
+			"https://x.atlassian.net/wiki", "",
+		},
+		{
+			"an unrecognised page with a pageId",
+			"https://host/some/other/view?pageId=5",
+			"https://host", "5",
+		},
 	} {
 		t.Run(testcase.name, func(t *testing.T) {
 			creds, err := GetCredentials(context.Background(), "user", "secret", "",
