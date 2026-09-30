@@ -170,6 +170,17 @@ func TestCheckLinksConfluence(t *testing.T) {
 		assert.Contains(t, err.Error(), "Nowhere")
 	})
 
+	t.Run("an anchor after the title is not part of the title", func(t *testing.T) {
+		// The renderer links [it](<ac:Parent#setup>) to the "setup" section
+		// of Parent; the check looked up a page called "Parent#setup" and
+		// failed the run over a link that works.
+		assert.NoError(t, checkLinksRun(t, []string{"confluence"}, "See [it](<ac:Parent#setup>).\n", nil))
+
+		err := checkLinksRun(t, []string{"confluence"}, "See [it](<ac:Nowhere#setup>).\n", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "there is no page \"Nowhere\"")
+	})
+
 	t.Run("internal alone does not judge an ac: link", func(t *testing.T) {
 		err := checkLinksRun(t, []string{"internal"}, "See [it](ac:Nowhere).\n", nil)
 		assert.NoError(t, err)
