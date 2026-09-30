@@ -2,6 +2,10 @@ package confluence
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -9,10 +13,12 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// traced captures what the tracer writes at TRACE.
-func traced(t *testing.T, format string, args ...any) string {
+// capturedTrace sends everything logged at TRACE, for the rest of the test,
+// to the buffer it returns.
+func capturedTrace(t *testing.T) *bytes.Buffer {
 	t.Helper()
 
 	var buffer bytes.Buffer
@@ -24,6 +30,15 @@ func traced(t *testing.T, format string, args ...any) string {
 		log.Logger = previousLogger
 		zerolog.SetGlobalLevel(previousLevel)
 	})
+
+	return &buffer
+}
+
+// traced captures what the tracer writes at TRACE.
+func traced(t *testing.T, format string, args ...any) string {
+	t.Helper()
+
+	buffer := capturedTrace(t)
 
 	(&tracer{"rest:"}).Printf(format, args...)
 
@@ -83,15 +98,58 @@ func TestRedactHeadersLeavesABodyLineAlone(t *testing.T) {
 
 // TestTraceBoundsALargeDump: a body is traced as one line, and a line of
 // megabytes cost a CI runner half an hour to ingest while telling the reader
-// nothing the start of it does not.
+// nothing the start of it does not. This goes through resty's debug log, which
+// is what writes the dump, with a large body in both directions: each is cut
+// to its start, and the response still makes it into the line after a request
+// body that alone would have filled it.
 func TestTraceBoundsALargeDump(t *testing.T) {
+	large := strings.Repeat("x", 1<<20)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Set-Cookie", "JSESSIONID=SECRETSESSION; Path=/")
+		_, _ = fmt.Fprintf(w, `{"title":"start of the response %s"}`, large)
+	}))
+	t.Cleanup(server.Close)
+
+	out := capturedTrace(t)
+
+	client := newRestClient(server.Client(), server.URL, "user", "token", "rest:")
+
+	var result map[string]any
+	response, err := client.R().
+		SetResult(&result).
+		SetBody(map[string]string{"value": "start of the request " + large}).
+		Put("/content/1")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode())
+	require.Len(t, result["title"], len("start of the response ")+len(large),
+		"the bound is on the trace, not on what the caller reads")
+
+	line := out.String()
+
+	assert.Less(t, len(line), 2*traceDumpLimit+8<<10)
+	assert.Contains(t, line, "start of the request")
+	assert.Contains(t, line, "RESPONSE")
+	assert.Contains(t, line, "200 OK")
+	assert.Contains(t, line, "start of the response")
+	assert.Equal(t, 2, strings.Count(line, "more bytes not traced"))
+
+	assert.NotContains(t, line, "SECRETSESSION")
+	assert.Contains(t, line, "Authorization: <redacted>")
+}
+
+// TestTraceBoundsALine: whatever else resty logs through the tracer is held
+// to a bound of its own, so no single line can run away.
+func TestTraceBoundsALine(t *testing.T) {
 	dump := "HTTP/1.1 502 Bad Gateway\r\n" +
 		"Content-Type: text/html\r\n\r\n" +
 		strings.Repeat("x", 1<<20)
 
 	out := traced(t, "%s", dump)
 
-	assert.Less(t, len(out), traceDumpLimit+1024)
+	assert.Less(t, len(out), traceLineLimit+1024)
 	assert.Contains(t, out, "HTTP/1.1 502 Bad Gateway")
 	assert.Contains(t, out, "more bytes not traced")
 }
