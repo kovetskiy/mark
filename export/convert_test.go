@@ -307,3 +307,45 @@ func TestConvertParagraphLikeATable(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertCodeTitleRoundTrips: a code block's title has to come back
+// from the info string exactly. renderer/fencedcodeblock.go drops a "{...}"
+// at the end of it as an attribute block and reads a "title=" in it as the
+// title, so such a title is quoted.
+func TestConvertCodeTitleRoundTrips(t *testing.T) {
+	for _, test := range []struct {
+		title, language, info string
+	}{
+		{"A title", "go", "go title A title"},
+		{"A title", "", "- title A title"},
+		{"title linenumbers", "", "- title title linenumbers"},
+		{"title linenumbers", "sh", "sh title title linenumbers"},
+		{"Config {prod}", "yaml", `yaml title="Config {prod}"`},
+		{"Config {prod}", "", `- title="Config {prod}"`},
+		{"a title=b", "go", `go title="a title=b"`},
+		{"= b", "go", `go title="= b"`},
+		{`say "hi" {x}`, "go", `go title='say "hi" {x}'`},
+		{"{x} in front", "go", "go title {x} in front"},
+		{"two  spaces", "go", "go title two  spaces"},
+	} {
+		t.Run(test.title, func(t *testing.T) {
+			params := `<ac:parameter ac:name="title">` + escapeXMLText(test.title) + `</ac:parameter>`
+			if test.language != "" {
+				params = `<ac:parameter ac:name="language">` + test.language + `</ac:parameter>` + params
+			}
+
+			md, published := republish(t, `<ac:structured-macro ac:name="code">`+params+
+				`<ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`)
+			assert.Equal(t, "```"+test.info+"\nx\n```\n", md)
+			assert.Contains(t, published, `<ac:parameter ac:name="title">`+escapeXMLText(test.title)+`</ac:parameter>`)
+		})
+	}
+
+	// With both quotes and a brace at the end, it cannot be written in the
+	// info string, and the macro is kept as it is.
+	storage := `<ac:structured-macro ac:name="code"><ac:parameter ac:name="title">it's "a" {b}</ac:parameter>` +
+		`<ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`
+	md, published := republish(t, storage)
+	assert.NotContains(t, md, "```")
+	assert.Equal(t, canonical(t, storage), published)
+}

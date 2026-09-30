@@ -98,11 +98,41 @@ func (c *converter) codeMacro(n *node) (string, bool) {
 			info += " " + strings.Join(options, " ")
 		}
 		if title != "" {
-			info += " title " + title
+			written, ok := codeTitle(title)
+			if !ok {
+				return "", false
+			}
+			info += " " + written
 		}
 	}
 
 	return codeBlock(info, text), true
+}
+
+// titleMisread matches what renderer/fencedcodeblock.go would take out of a
+// title written in the space form, "title T": a "title=" inside it, which it
+// reads as the title, and a "{...}" at its end, which it drops as an
+// attribute block.
+var titleMisread = regexp.MustCompile(`\btitle\s*=|\{[^}]*\}$`)
+
+// codeTitle writes a code block's title so that the info string gives back
+// exactly that title: as "title T", mark's own form, where that reads back
+// as T, and quoted as MkDocs writes it, title="T", where it would not. A
+// title with both kinds of quote in it has no way to be written.
+func codeTitle(title string) (string, bool) {
+	written := "title " + title
+	if !titleMisread.MatchString(written) {
+		return written, true
+	}
+
+	switch {
+	case !strings.Contains(title, `"`):
+		return `title="` + title + `"`, true
+	case !strings.Contains(title, "'"):
+		return "title='" + title + "'", true
+	}
+
+	return "", false
 }
 
 // alerts maps the macro and title mark publishes each GitHub alert as back to
