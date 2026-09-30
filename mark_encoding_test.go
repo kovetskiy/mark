@@ -75,3 +75,29 @@ func TestByteOrderMarkDoesNotHideFrontMatter(t *testing.T) {
 	assert.NotContains(t, storedBody(t, server, "BOM Front Matter"), "space: DOCS",
 		"the front matter must be read as metadata, not published as text")
 }
+
+// TestLinkToDocumentWithByteOrderMark: the document being published had its
+// BOM stripped, a document it links to did not. The linked file's headers
+// were invisible behind the mark, so the link was never rewritten to the page
+// and was published pointing at other.md.
+func TestLinkToDocumentWithByteOrderMark(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	other := writeWithBOM(t, dir, "other.md", header+"<!-- Title: Other -->\n\nx\n")
+	doc := writeFile(t, dir, "doc.md", header+"<!-- Title: Doc -->\n\nSee [other](other.md).\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Features: []string{"mention"}, Output: io.Discard,
+	}
+	config.Files = other
+	require.NoError(t, Run(config))
+	config.Files = doc
+	require.NoError(t, Run(config))
+
+	body := storedBody(t, server, "Doc")
+	assert.NotContains(t, body, `href="other.md"`)
+	assert.Contains(t, body, `href="/wiki/x/`, "rewritten to the page it was published as")
+}

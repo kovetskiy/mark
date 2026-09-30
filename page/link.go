@@ -1,7 +1,6 @@
 package page
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -282,11 +281,9 @@ func resolveLink(
 			return "", &unresolved{reason: fmt.Sprintf("it is not a text file (%s)", contentType)}, nil
 		}
 
-		linkContents = bytes.ReplaceAll(
-			linkContents,
-			[]byte("\r\n"),
-			[]byte("\n"),
-		)
+		// Read the way the document is read when it is published, BOM
+		// and all: its headers are what the link is rewritten from.
+		linkContents = metadata.NormalizeSource(linkContents)
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
