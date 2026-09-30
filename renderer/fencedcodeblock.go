@@ -278,6 +278,21 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 
+	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") && r.MarkConfig.MermaidOutput == "macro" {
+		err := r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:mermaid-macro",
+			struct {
+				Text string
+			}{
+				strings.TrimSuffix(string(lval), "\n"),
+			},
+		)
+
+		if err != nil {
+			return ast.WalkStop, err
+		}
+
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
 		var (
 			att attachment.Attachment
@@ -303,7 +318,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			line, col := GetLineCol(source, node.Pos())
 
 			return ast.WalkStop, fmt.Errorf(
-				"line %d, col %d: unknown mermaid-output %q: expected png or svg",
+				"line %d, col %d: unknown mermaid-output %q: expected png, svg or macro",
 				line, col, r.MarkConfig.MermaidOutput,
 			)
 		}

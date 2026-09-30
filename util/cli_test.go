@@ -141,6 +141,10 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg"}))
 	})
 
+	t.Run("macro is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro"}))
+	})
+
 	t.Run("anything else is rejected", func(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "jpeg"}))
 	})
