@@ -151,15 +151,21 @@ func Run(config Config) error {
 
 // RunContext is Run, stoppable.
 //
-// Cancellation is checked between files and before the second pass, so a run
-// stops at the next boundary rather than part way through publishing a page --
-// which is the one place stopping would leave a page half written. Nothing
-// inside a file sees it: the Confluence client builds its own requests without
-// it, so neither a request in flight nor the backoff before retrying one is cut
-// short, and neither is a diagram being drawn.
+// Every Confluence request the run makes carries ctx, so cancelling it cuts
+// short a request in flight and the backoff before retrying one, and the file
+// being published fails at its next request instead of running to the end. The
+// run then stops, as it does for any file that fails, without starting the
+// next; ctx is also checked between files and before the second pass. A
+// request already sent is not undone, so a page can be left part way through:
+// created without its attachments, or updated without its labels. The next run
+// completes it. A diagram being drawn is not interrupted, only bounded by its
+// own render timeout.
 //
-// Whatever the run did before it stopped stands, including the page manifest,
-// which is saved on the way out as it is for any other ending.
+// Whatever the run did before it stopped stands. The page manifest and the run
+// report are still written on the way out, as for any other ending; the
+// manifest's save is made under a context of its own, detached from ctx, since
+// a save that inherited the cancellation would be refused before it was sent
+// and the mapping for every page already published would be lost with it.
 func RunContext(ctx context.Context, config Config) (err error) {
 	// The browser is shared for the life of the process and is started lazily
 	// by the first diagram or formula. A library caller has no other way to
@@ -332,6 +338,9 @@ func run(ctx context.Context, config Config) (err error) {
 	}
 
 	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	// Every request the run makes can then be stopped where it stands; see
+	// RunContext.
+	api.SetContext(ctx)
 	// An update refused as a conflict is retried against the page's current
 	// version, which overwrites whatever changed it. --no-overwrite exists to
 	// stop exactly that, so under it the retry goes ahead only when nobody else
@@ -458,6 +467,19 @@ func run(ctx context.Context, config Config) (err error) {
 		if tracker == nil {
 			return
 		}
+
+		// A run stopped by ctx still saves: what the manifest records was
+		// published, and is worth keeping however the run ends. Under ctx
+		// itself the save would be refused before a byte was sent, so it goes
+		// out under a context that keeps ctx's values and drops its
+		// cancellation. A second signal, which ends the process outright, is
+		// what stops a save that hangs; the transport's own timeouts bound it
+		// otherwise. When the run was not stopped, the explicit save below has
+		// already written everything, and this one sends nothing.
+		if ctx.Err() != nil {
+			api.SetContext(context.WithoutCancel(ctx))
+		}
+
 		if err := tracker.Save(); err != nil {
 			log.Error().Err(err).Msg("unable to save page manifest")
 
@@ -681,15 +703,25 @@ func run(ctx context.Context, config Config) (err error) {
 //
 // Callers processing several files should prefer Run, which builds the standard
 // library once instead of once per file.
+//
+// Its requests carry whatever context api was given (see
+// confluence.API.SetContext), which for an API that was never given one is
+// context.Background.
 func ProcessFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
-	return ProcessFileContext(context.Background(), file, api, config)
+	return processOneFile(file, api, config)
 }
 
 // ProcessFileContext is ProcessFile, stoppable.
 //
-// One file is one page, so there is no boundary inside it to stop at: the
-// context is checked before the work begins and not again. A caller looping
-// over files gets the same effect as RunContext by checking between them.
+// Every Confluence request made for the file carries ctx, so cancelling it
+// stops the file at its next request, or during the one in flight, with an
+// error errors.Is recognises as ctx.Err(); see RunContext for what that can
+// leave behind. A caller looping over files gets the same effect as RunContext
+// by stopping when one fails with it.
+//
+// ctx is set on api for the duration of the call, and whatever api had before
+// is put back when it returns; api must not be used by anything else in the
+// meantime.
 //
 // Unlike RunContext this does not shut the shared browser down, since a caller
 // publishing several files would pay to start it again for each. Call Cleanup
@@ -698,6 +730,10 @@ func ProcessFileContext(ctx context.Context, file string, api *confluence.API, c
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	previous := api.Context()
+	api.SetContext(ctx)
+	defer api.SetContext(previous)
 
 	return processOneFile(file, api, config)
 }
