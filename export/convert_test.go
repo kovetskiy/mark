@@ -274,3 +274,20 @@ func TestConvertTaskListInATask(t *testing.T) {
 const nestedTask = `<ac:task-list><ac:task><ac:task-id>1</ac:task-id><ac:task-status>incomplete</ac:task-status><ac:task-body>a
 <ac:task-list><ac:task><ac:task-id>2</ac:task-id><ac:task-status>complete</ac:task-status><ac:task-body>nested</ac:task-body></ac:task></ac:task-list>
 </ac:task-body></ac:task></ac:task-list>`
+
+// TestConvertNestedListNumberedFromElsewhere: in a tight item a nested list
+// sits on the line after the item's text, but a numbered one that does not
+// start at 1 cannot interrupt a paragraph there, and was published as more
+// of the item's text. It is set off by a blank line instead.
+func TestConvertNestedListNumberedFromElsewhere(t *testing.T) {
+	storage := `<ul><li>a<ol start="3"><li>c</li><li>d</li></ol></li><li>b</li></ul>`
+
+	md, published := republish(t, storage)
+	assert.Equal(t, "- a\n\n  3. c\n  4. d\n- b\n", md)
+	assert.Equal(t, canonical(t, `<ul><li><p>a</p><ol start="3"><li>c</li><li>d</li></ol></li><li><p>b</p></li></ul>`), published)
+
+	// Numbered from 1, it still sits right under the text.
+	md, published = republish(t, `<ul><li>a<ol><li>c</li></ol></li></ul>`)
+	assert.Equal(t, "- a\n  1. c\n", md)
+	assert.Equal(t, canonical(t, `<ul><li>a<ol><li>c</li></ol></li></ul>`), published)
+}
