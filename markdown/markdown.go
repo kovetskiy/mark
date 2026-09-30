@@ -218,6 +218,34 @@ func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMes
 	return string(html), nil
 }
 
+// pageTemplates is the template set one page's includes and macros are
+// parsed into: a copy of the stdlib's, thrown away with the page.
+//
+// The stdlib's set is shared by every page in a run, and the renderers draw on
+// it too. Fragments used to be parsed straight into it, each only once, so a
+// fragment's {{ define "x" }} replaced "x" for every page after it: two
+// directories each with a frag.md defining "hdr" published whichever had been
+// read last on pages that included the other, and a fragment defining "ac:box"
+// changed that macro across the run. A definition is still seen by the rest of
+// the page that made it -- its macros and the fragments it includes after --
+// since a shared file of definitions and macros using them is how includes
+// are meant to be used; it just ends with the page.
+//
+// A fragment is therefore read and parsed once per page rather than once per
+// run.
+func pageTemplates(lib *stdlib.Lib) (*template.Template, error) {
+	if lib == nil {
+		return template.New("stdlib"), nil
+	}
+
+	tmpl, err := lib.Templates.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("unable to copy the stdlib templates: %w", err)
+	}
+
+	return tmpl, nil
+}
+
 // maxIncludePasses bounds the number of times the whole document is rescanned
 // for include directives. ProcessIncludes drains every directive it can see in
 // one pass, so a pass that still finds work is expansion feeding itself, and
@@ -313,22 +341,20 @@ func expandIncludes(
 }
 
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	var tmpl *template.Template
-	if stdlib != nil {
-		tmpl = stdlib.Templates
-	} else {
-		tmpl = template.New("stdlib")
-	}
-
-	// The template set the expansion built is not carried forward: the
-	// extension takes its templates from the stdlib, as it did when the macro
-	// pass held this set locally.
-	_, markdown, err := expandDirectives(path, cfg, markdown, tmpl)
+	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
 		return "", nil, err
 	}
 
-	ghAlertsExtension := NewConfluenceExtension(stdlib, path, cfg)
+	// The page's set is handed on to the AST include and macro transformers,
+	// so that they see what the page's own fragments defined. The renderers
+	// keep drawing on the stdlib itself.
+	_, markdown, err = expandDirectives(path, cfg, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
+	}
+
+	ghAlertsExtension := newConfluenceExtension(stdlib, path, cfg, tmpl)
 	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
@@ -351,17 +377,14 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 // CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
 // This function is preserved for backward compatibility and testing purposes
 func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	var tmpl *template.Template
-	if stdlib != nil {
-		tmpl = stdlib.Templates
-	} else {
-		tmpl = template.New("stdlib")
+	tmpl, err := pageTemplates(stdlib)
+	if err != nil {
+		return "", nil, err
 	}
 
-	// The template set the expansion built is not carried forward: the
-	// extension takes its templates from the stdlib, as it did when the macro
-	// pass held this set locally.
-	_, markdown, err := expandDirectives(path, cfg, markdown, tmpl)
+	// The template set the expansion built is not carried forward: the legacy
+	// extension runs no include or macro transformer to hand it to.
+	_, markdown, err = expandDirectives(path, cfg, markdown, tmpl)
 	if err != nil {
 		return "", nil, err
 	}
@@ -399,8 +422,18 @@ type ConfluenceExtension struct {
 func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceExtension {
 	var tmpl *template.Template
 	if stdlib != nil {
-		tmpl = stdlib.Templates
+		// A page's own copy, for the reason pageTemplates gives. Cloning a
+		// text/template set cannot fail once it has been parsed, which the
+		// stdlib's has.
+		tmpl, _ = stdlib.Templates.Clone()
 	}
+
+	return newConfluenceExtension(stdlib, path, cfg, tmpl)
+}
+
+// newConfluenceExtension is NewConfluenceExtension with the template set the
+// include and macro transformers parse into given by the caller.
+func newConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig, tmpl *template.Template) *ConfluenceExtension {
 	pipeline := ctransformer.NewPipelineTransformer(
 		// The base directory a template path is resolved against is the
 		// document's directory, not the document itself. Passing path for both
