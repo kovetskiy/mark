@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"bytes"
 	"fmt"
 	stdhtml "html"
 	"strconv"
@@ -15,6 +16,10 @@ import (
 // MkDocsAdmonitionAttributeFilter defines the attribute names kept on the
 // blockquote an admonition falls back to when it maps to no Confluence macro.
 var MkDocsAdmonitionAttributeFilter = html.GlobalAttributeFilter
+
+// admonitionIDAttribute is the parser's internal id for an admonition, which is
+// never written out.
+var admonitionIDAttribute = []byte("data-admonition")
 
 // ConfluenceMkDocsAdmonitionRenderer renders MkDocs admonitions as Confluence
 // storage format.
@@ -109,7 +114,13 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmon(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	n := node.(*parser.Admonition)
 	if entering {
-		if n.Attributes() != nil {
+		// The parser tags every admonition with a data-admonition id of its
+		// own for bookkeeping: 24 random letters, or the nesting level once it
+		// sees the block close. Written out, it made two compiles of the same
+		// document differ, so --changes-only republished the page every run.
+		// It means nothing to Confluence, so it stays behind.
+		dropAttribute(n, admonitionIDAttribute)
+		if len(n.Attributes()) > 0 {
 			_, _ = w.WriteString("<blockquote")
 			html.RenderAttributes(w, n, MkDocsAdmonitionAttributeFilter)
 			_ = w.WriteByte('>')
@@ -120,4 +131,15 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmon(w util.BufWriter,
 		_, _ = w.WriteString("</blockquote>\n")
 	}
 	return ast.WalkContinue, nil
+}
+
+// dropAttribute removes one attribute from a node, keeping the rest in order.
+func dropAttribute(n ast.Node, name []byte) {
+	attributes := n.Attributes()
+	n.RemoveAttributes()
+	for _, attribute := range attributes {
+		if !bytes.Equal(attribute.Name, name) {
+			n.SetAttribute(attribute.Name, attribute.Value)
+		}
+	}
 }
