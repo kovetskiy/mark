@@ -111,6 +111,14 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 		info = strings.TrimSpace(strings.Replace(info, block, " ", 1))
 	}
 
+	// Put the marker back for the match: without it the first option -- or
+	// the "title" keyword -- was taken for the language the marker says there
+	// is none of, and dropped, so "- collapse" did not collapse and
+	// "- title Some code" had no title.
+	if noLanguage {
+		info = "- " + info
+	}
+
 	groups := reBlockDetails.FindStringSubmatch(info)
 	if len(groups) == 0 {
 		return lang, nil, title
