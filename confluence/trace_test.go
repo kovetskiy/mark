@@ -2,7 +2,9 @@ package confluence
 
 import (
 	"bytes"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -77,4 +79,38 @@ func TestRedactHeadersLeavesABodyLineAlone(t *testing.T) {
 	body := "HTTP/1.1 200 OK\r\n\r\n{\"authorization\": \"kept\"}"
 
 	assert.Contains(t, redactHeaders(body), `"authorization": "kept"`)
+}
+
+// TestTraceBoundsALargeDump: a body is traced as one line, and a line of
+// megabytes cost a CI runner half an hour to ingest while telling the reader
+// nothing the start of it does not.
+func TestTraceBoundsALargeDump(t *testing.T) {
+	dump := "HTTP/1.1 502 Bad Gateway\r\n" +
+		"Content-Type: text/html\r\n\r\n" +
+		strings.Repeat("x", 1<<20)
+
+	out := traced(t, "%s", dump)
+
+	assert.Less(t, len(out), traceDumpLimit+1024)
+	assert.Contains(t, out, "HTTP/1.1 502 Bad Gateway")
+	assert.Contains(t, out, "more bytes not traced")
+}
+
+// TestTraceCutsOnACharacterBoundary: the cut must not split a character, or
+// the line carries a broken one.
+func TestTraceCutsOnACharacterBoundary(t *testing.T) {
+	dump := strings.Repeat("a", traceDumpLimit-1) + strings.Repeat("é", 10)
+
+	bounded := boundTraceDump(dump)
+
+	assert.True(t, utf8.ValidString(bounded))
+	assert.True(t, strings.HasPrefix(bounded, strings.Repeat("a", traceDumpLimit-1)+"... ("))
+}
+
+// TestTraceKeepsASmallDumpWhole: the bound is for runaway bodies, not for the
+// ordinary JSON a trace is read for.
+func TestTraceKeepsASmallDumpWhole(t *testing.T) {
+	dump := "HTTP/1.1 200 OK\r\n\r\n{\"id\":\"1\"}"
+
+	assert.Equal(t, dump, boundTraceDump(dump))
 }

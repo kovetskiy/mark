@@ -358,7 +358,32 @@ func (tracer *tracer) Printf(format string, args ...any) {
 	// Formatted here and passed on as a message rather than as another format
 	// string: a dump is arbitrary bytes, and a body containing a percent sign
 	// would otherwise come out mangled.
-	log.Trace().Msg(tracer.prefix + " " + redactHeaders(fmt.Sprintf(format, args...)))
+	log.Trace().Msg(tracer.prefix + " " + boundTraceDump(redactHeaders(fmt.Sprintf(format, args...))))
+}
+
+// traceDumpLimit is how much of one request or response dump is traced.
+//
+// A dump is the whole message, body included, and bodies are unbounded: a page
+// in storage format, an attachment upload, a proxy's error page. Each one is a
+// single log line, and a line of megabytes is no use to anyone reading the log
+// while being very expensive for whatever collects it -- one 1 MiB line took a
+// GitHub Actions runner over half an hour to ingest. The headers, and the start
+// of the body, are what a trace is read for.
+const traceDumpLimit = 64 << 10
+
+// boundTraceDump cuts a dump down to traceDumpLimit, on a character boundary,
+// and says how much was left out.
+func boundTraceDump(dump string) string {
+	if len(dump) <= traceDumpLimit {
+		return dump
+	}
+
+	cut := traceDumpLimit
+	for cut > 0 && !utf8.RuneStart(dump[cut]) {
+		cut--
+	}
+
+	return fmt.Sprintf("%s... (%d more bytes not traced)", dump[:cut], len(dump)-cut)
 }
 
 // sensitiveHeaders name the values that are credentials rather than metadata.
