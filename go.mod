@@ -11,7 +11,6 @@ require (
 	github.com/d2lang/mathjax-go v0.1.0
 	github.com/d2lang/util-go v0.2.0
 	github.com/dreampuf/mermaid.go v0.4.0
-	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.1
 	github.com/stefanfritsch/goldmark-admonitions v1.1.1
 	github.com/stretchr/testify v1.12.1
@@ -24,6 +23,7 @@ require (
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.59.0
 	golang.org/x/text v0.42.0
+	resty.dev/v3 v3.0.0-rc.4
 )
 
 require (
