@@ -756,13 +756,10 @@ func readSource(file string) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
-	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
-
-	// A byte-order mark is not content, and leaving it in front of the first
-	// header comment makes the file look to every parser here like one with no
-	// metadata at all -- reported as "doesn't contain metadata", which is not
-	// where the author would look. Windows editors write one routinely.
-	source = bytes.TrimPrefix(source, []byte{0xEF, 0xBB, 0xBF})
+	// A byte-order mark left in front of the first header comment would be
+	// reported as "doesn't contain metadata", which is not where the author
+	// would look.
+	source = metadata.NormalizeSource(source)
 
 	// Before the headers are read, so that the line numbers in any complaint
 	// are the ones in the file the author is looking at rather than offsets
