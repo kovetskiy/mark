@@ -44,6 +44,11 @@ func TestDefaultToPublish(t *testing.T) {
 		{"the help command", []string{"mark", "help", "publish"}, []string{"mark", "help", "publish"}, false},
 		{"the completion command", []string{"mark", "completion", "bash"}, []string{"mark", "completion", "bash"}, false},
 		{"shell completion", []string{"mark", "--generate-shell-completion"}, []string{"mark", "--generate-shell-completion"}, false},
+		{"help with global flags", []string{"mark", "-u", "me", "--help"}, []string{"mark", "-u", "me", "--help"}, false},
+		// Help next to a publish flag is publish's help, wherever it is written.
+		{"help after a publish flag", []string{"mark", "-f", "doc.md", "--help"}, []string{"mark", "publish", "-f", "doc.md", "--help"}, true},
+		{"help before a publish flag", []string{"mark", "-h", "--files=doc.md"}, []string{"mark", "publish", "-h", "--files=doc.md"}, true},
+		{"shell completion after a publish flag", []string{"mark", "-f", "doc.md", "--generate-shell-completion"}, []string{"mark", "publish", "-f", "doc.md", "--generate-shell-completion"}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, bare := defaultToPublish(NewCommand("test"), test.args)
@@ -248,6 +253,12 @@ func TestHelp(t *testing.T) {
 		assert.Contains(t, help, "--features")
 		assert.Contains(t, help, "GLOBAL OPTIONS:")
 		assert.Contains(t, help, "--username", "the global flags are listed with it")
+	})
+
+	t.Run("mark -f doc.md --help", func(t *testing.T) {
+		help := helpOutput(t, "test", "-f", "doc.md", "--help")
+		assert.Contains(t, help, "mark publish", "a publish flag makes it publish's help")
+		assert.Contains(t, help, "--files")
 	})
 
 	t.Run("mark help publish", func(t *testing.T) {

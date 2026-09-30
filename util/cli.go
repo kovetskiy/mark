@@ -98,9 +98,15 @@ func Run(ctx context.Context, cmd *cli.Command, args []string) error {
 // A command is named by the first argument that is neither a flag nor a flag's
 // value. Telling a value from a command takes knowing which flags have one, so
 // "mark --version-message publish -f doc.md" publishes with the message
-// "publish", as it always did. The help and version flags, and the one shell
-// completion asks with, leave the command line alone: they are answered by the
-// root command, which lists the commands and the global flags.
+// "publish", as it always did.
+//
+// The version flag leaves the command line alone: it is answered by the root
+// command. So do the help flag and the one shell completion asks with, when
+// they come with nothing but global flags: "mark --help" is about mark as a
+// whole, and lists the commands and the global flags. Next to a flag only
+// publish has, though, they are about publish -- "mark -f doc.md --help" is
+// read as "mark publish -f doc.md --help", as it would be without the help
+// flag, rather than failing at the root on a flag it does not define.
 func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 	if len(args) == 0 {
 		return args, false
@@ -121,12 +127,20 @@ func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 	}
 
 	collect(root.Flags)
+	global := make(map[string]bool, len(takesValue))
+	for name := range takesValue {
+		global[name] = true
+	}
 	for _, command := range root.Commands {
 		for _, name := range command.Names() {
 			commands[name] = true
 		}
 		collect(command.Flags)
 	}
+
+	// Whether the command line asks for help or completion, and whether it
+	// has a flag the root does not know, which makes it publish's.
+	asksRoot, commandFlag := false, false
 
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
@@ -137,8 +151,14 @@ func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 		if len(arg) > 1 && arg[0] == '-' {
 			name, _, inline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
 			switch name {
-			case "help", "h", "version", "v", "generate-shell-completion":
+			case "version", "v":
 				return args, false
+			case "help", "h", "generate-shell-completion":
+				asksRoot = true
+				continue
+			}
+			if !global[name] {
+				commandFlag = true
 			}
 			if takesValue[name] && !inline {
 				i++
@@ -151,6 +171,10 @@ func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 		}
 
 		break
+	}
+
+	if asksRoot && !commandFlag {
+		return args, false
 	}
 
 	rewritten := make([]string, 0, len(args)+1)
