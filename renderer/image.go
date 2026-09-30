@@ -163,7 +163,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 		align = explicitAlign
 	}
 
-	attachments, err := r.resolveLocalImage(destination)
+	attached, err := r.resolveLocalImage(destination)
 
 	// A path that reaches outside the project is refused rather than quietly
 	// treated as a URL. The file is not uploaded either way, but publishing a
@@ -210,14 +210,9 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 			},
 		)
 	} else {
-		if len(attachments) == 0 {
-			line, col := GetLineCol(source, node.Pos())
-			return ast.WalkStop, fmt.Errorf("line %d, col %d: no attachment resolved for %q", line, col, destination)
-		}
+		r.Attachments.Attach(attached)
 
-		r.Attachments.Attach(attachments[0])
-
-		effectiveWidth := resolveWidth(explicitWidth, attachments[0].Width)
+		effectiveWidth := resolveWidth(explicitWidth, attached.Width)
 		effectiveAlign := calculateAlign(align, effectiveWidth)
 		effectiveLayout := calculateLayout(effectiveAlign, effectiveWidth)
 		displayWidth := calculateDisplayWidth(effectiveWidth, effectiveLayout)
@@ -239,13 +234,13 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 			}{
 				effectiveAlign,
 				effectiveLayout,
-				attachments[0].Width,
-				attachments[0].Height,
+				attached.Width,
+				attached.Height,
 				displayWidth,
 				explicitHeight,
 				r.imageTitle(n),
 				r.imageAlt(n, source),
-				attachments[0].Filename,
+				attached.Filename,
 				"",
 			},
 		)
@@ -265,19 +260,22 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 // "my_file.png", and were published as a relative ri:url instead: a broken
 // image, with the file never uploaded. A path that reaches outside the project
 // stops the search, whichever spelling reached it.
-func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) ([]attachment.Attachment, error) {
+//
+// Each spelling is resolved as written, never as a pattern: an image names one
+// file, and "img[1].png" read as a glob published img1.png in its place.
+func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachment.Attachment, error) {
 	err := errors.New("not a local file")
 
 	for _, path := range ctransformer.LocalImagePaths(destination) {
-		var attachments []attachment.Attachment
+		var attached attachment.Attachment
 
-		attachments, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(r.Path), []string{path})
+		attached, err = attachment.ResolveLocalAttachment(vfs.LocalOS, filepath.Dir(r.Path), path)
 		if err == nil || errors.Is(err, attachment.ErrOutsideProject) {
-			return attachments, err
+			return attached, err
 		}
 	}
 
-	return nil, err
+	return attachment.Attachment{}, err
 }
 
 // imageTitle is the title as its text, ready to be escaped once by the
