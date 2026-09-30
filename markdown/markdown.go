@@ -591,14 +591,16 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		))
 	}
 
-	// Close the void elements and repair the comments an author may have
-	// written by hand, which Markdown allows and storage format does not.
+	// Close the void elements, quote the attributes, escape the bare "&"s and
+	// repair the comments an author may have written by hand, which Markdown
+	// allows and storage format does not.
 	// After everything below it that owns raw HTML of its own -- the <img> and
-	// <details> transformers -- so that this only sees what they left behind,
-	// and never turns an <img> into storage format the <img> transformer would
-	// then fail to recognise.
+	// <details> transformers, and the manual anchor one at 901 -- so that this
+	// only sees what they left behind, and never turns an <img> or an
+	// <a id="a&b"> into storage format the transformer that owns it would then
+	// fail to recognise.
 	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 120),
+		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 950),
 	))
 
 	// Add confluence tag parser for <ac:*/> tags

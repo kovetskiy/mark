@@ -20,7 +20,7 @@ func TestWellFormedHTMLClosesVoidElements(t *testing.T) {
 	}{
 		{"br", "1. one<br>2. two", "1. one<br />2. two", true},
 		{"hr", "<hr>\n", "<hr />\n", true},
-		{"input", `<input type="checkbox" checked>`, `<input type="checkbox" checked />`, true},
+		{"input", `<input type="checkbox" checked>`, `<input type="checkbox" checked="checked" />`, true},
 		{"img with attributes", `<img src="a.png" width="10">`, `<img src="a.png" width="10" />`, true},
 		{"already self-closed", "<br />", "<br />", false},
 		{"self-closed without space", "<br/>", "<br/>", false},
@@ -108,4 +108,69 @@ func TestUnterminatedCDATAIsLeftAlone(t *testing.T) {
 
 	assert.False(t, changed)
 	assert.Equal(t, sample, string(out))
+}
+
+// HTML reads a "&" that starts no reference as itself, so a query string or a
+// company name written in raw HTML renders in a browser and leaves the page
+// not well-formed XML, which Confluence rejects in its entirety.
+func TestWellFormedHTMLEscapesBareAmpersands(t *testing.T) {
+	for _, testcase := range []struct {
+		name     string
+		raw      string
+		expected string
+		changed  bool
+	}{
+		{"in an attribute", `<a href="https://x.com/?a=1&b=2">`, `<a href="https://x.com/?a=1&amp;b=2">`, true},
+		{"in text", "<div>AT&T</div>", "<div>AT&amp;T</div>", true},
+		{"alone", "<p>a & b</p>", "<p>a &amp; b</p>", true},
+		{"at the end", "<p>R&</p>", "<p>R&amp;</p>", true},
+		{"no semicolon", "<p>&copy 2024</p>", "<p>&amp;copy 2024</p>", true},
+		{"named reference kept", "<p>&amp; &nbsp; &copy; &apos;</p>", "<p>&amp; &nbsp; &copy; &apos;</p>", false},
+		{"decimal reference kept", "<p>&#160; &#27;</p>", "<p>&#160; &#27;</p>", false},
+		{"hex reference kept", "<p>&#xA0; &#X1b;</p>", "<p>&#xA0; &#X1b;</p>", false},
+		{"not a number", "<p>&#xZZ;</p>", "<p>&amp;#xZZ;</p>", true},
+		{"HTML5-only name", "<p>&NotEqualTilde;</p>", "<p>\u2242\u0338</p>", true},
+		{"HTML5-only name for markup", "<p>&LT;</p>", "<p>&lt;</p>", true},
+		{"escaped already", `<a href="?a=1&amp;b=2">`, `<a href="?a=1&amp;b=2">`, false},
+		{"comment untouched", "<!-- AT&T -->", "<!-- AT&T -->", false},
+		{"cdata untouched", "<![CDATA[AT&T]]>", "<![CDATA[AT&T]]>", false},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			out, changed := wellFormedHTML([]byte(testcase.raw))
+
+			assert.Equal(t, testcase.expected, string(out))
+			assert.Equal(t, testcase.changed, changed)
+		})
+	}
+}
+
+// HTML allows an attribute value with no quotes around it, or no value at
+// all; XML allows neither.
+func TestWellFormedHTMLQuotesAttributeValues(t *testing.T) {
+	for _, testcase := range []struct {
+		name     string
+		raw      string
+		expected string
+		changed  bool
+	}{
+		{"unquoted", "<p align=center>", `<p align="center">`, true},
+		{"unquoted among quoted", `<td class="x" colspan=2 id='y'>`, `<td class="x" colspan="2" id='y'>`, true},
+		{"unquoted holding an ampersand", "<a href=?a=1&b=2>", `<a href="?a=1&amp;b=2">`, true},
+		{"unquoted holding a quote", `<p title=a"b>`, `<p title="a&quot;b">`, true},
+		{"space around the equals", "<p align = center>", `<p align = "center">`, true},
+		{"no value", "<td nowrap>", `<td nowrap="nowrap">`, true},
+		{"no value on a void element", "<input disabled>", `<input disabled="disabled" />`, true},
+		{"self-closing", "<ac:emoticon ac:name=smile/>", `<ac:emoticon ac:name="smile/">`, true},
+		{"self-closing quoted", `<ac:emoticon ac:name="smile" />`, `<ac:emoticon ac:name="smile" />`, false},
+		{"bracket in a quoted value", `<p title="a<b">`, `<p title="a&lt;b">`, true},
+		{"quoted untouched", `<p align="center" title='it"s'>`, `<p align="center" title='it"s'>`, false},
+		{"end tag untouched", "</p>", "</p>", false},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			out, changed := wellFormedHTML([]byte(testcase.raw))
+
+			assert.Equal(t, testcase.expected, string(out))
+			assert.Equal(t, testcase.changed, changed)
+		})
+	}
 }
