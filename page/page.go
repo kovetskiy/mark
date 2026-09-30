@@ -76,12 +76,14 @@ func ResolvePage(
 		homepage = nil
 	}
 
-	skipHomeAncestry := false
-	if homepage != nil && len(meta.Parents) > 0 {
-		if homepage.Title == meta.Parents[0] {
-			skipHomeAncestry = true
-		}
-	}
+	// The page's own title closes the ancestry it is validated against, except
+	// for the home page itself: it has no ancestors, so a chain ending in its
+	// title could never match. This used to be decided by whether the first
+	// Parent was the home page, which left every page declared under it out of
+	// the check -- the chain validated was then just the declared parents,
+	// which exist wherever the page is, and a page whose headers moved it from
+	// Home > Old to Home > New stayed under Old without a word.
+	skipHomeAncestry := homepage != nil && page != nil && page.ID == homepage.ID
 
 	// Handle mixed folder and page hierarchy
 	var parent *confluence.PageInfo

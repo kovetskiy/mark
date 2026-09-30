@@ -50,8 +50,27 @@ func ParentIDFor(pg *confluence.PageInfo, resolved *confluence.PageInfo) string 
 // below its declared parent still counts, because every parent the headers name
 // is in its ancestry and nothing has been contradicted. Tightening this would
 // move pages whose placement nobody complained about.
+//
+// Every parent, though, not any one of them. A first Parent that is the home
+// page is an ancestor of nearly everything in the space, so matching on any
+// declared parent left a page under Home > Old whose headers had moved it to
+// Home > New exactly where it was.
 func UnderDeclaredParents(pg *confluence.PageInfo, parents []string) bool {
-	return pageUnderParents(pg, parents)
+	if pg == nil {
+		return true
+	}
+
+	ancestors := make(map[string]struct{}, len(pg.Ancestors))
+	for _, a := range pg.Ancestors {
+		ancestors[a.Title] = struct{}{}
+	}
+	for _, p := range parents {
+		if _, ok := ancestors[p]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 // offAnchor reports whether a page that a document with folders found by title
