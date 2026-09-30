@@ -546,10 +546,23 @@ func (api *API) Context() context.Context {
 	return api.ctx
 }
 
-// isCancellation reports whether err is, or wraps, a context ending: the
-// caller giving up rather than Confluence answering.
-func isCancellation(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+// cancelled reports whether err is the caller giving up rather than
+// Confluence answering: a failure while the API's context is done.
+//
+// It asks the context, not the error. net/http's "timeout awaiting response
+// headers" and a dial's "i/o timeout" both satisfy
+// errors.Is(err, context.DeadlineExceeded), and neither is the run being
+// stopped: taken for one, a probe that timed out was asked again on every
+// call, and a transport error lost the explanation it would otherwise have
+// carried.
+func (api *API) cancelled(err error) bool {
+	return err != nil && api.Context().Err() != nil
+}
+
+// requestCancelled reports whether the context the request behind response
+// carried is done; see API.cancelled.
+func requestCancelled(response *resty.Response) bool {
+	return response != nil && response.Request != nil && response.Request.Context().Err() != nil
 }
 
 // FindRootPage returns the page a chain of parents is created under when no
@@ -627,8 +640,8 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 // an error that wraps a 404 from one call and a cancellation from the next --
 // the v1 refusal that sends a lookup on to v2 -- says nothing about the
 // answer either.
-func worthCaching(err error) bool {
-	if isCancellation(err) {
+func (api *API) worthCaching(err error) bool {
+	if api.cancelled(err) {
 		return false
 	}
 
@@ -662,7 +675,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 
 	page, err := api.fetchHomePage(space)
 
-	if worthCaching(err) {
+	if api.worthCaching(err) {
 		api.spaceCacheMutex.Lock()
 		if api.homePageCache == nil {
 			api.homePageCache = make(map[string]homePageCacheEntry)
@@ -1794,7 +1807,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 
 	user, err := api.fetchUserByName(name)
 
-	if !worthCaching(err) {
+	if !api.worthCaching(err) {
 		return user, err
 	}
 
@@ -1950,7 +1963,7 @@ func (api *API) IsCloud() bool {
 			"limit": "1",
 		}).
 		Get("spaces")
-	if isCancellation(err) {
+	if api.cancelled(err) {
 		return false
 	}
 
@@ -2380,7 +2393,7 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 
 	id, err := api.fetchSpaceID(spaceKey)
 
-	if !worthCaching(err) {
+	if !api.worthCaching(err) {
 		return id, err
 	}
 
@@ -3401,7 +3414,7 @@ func newTransportError(response *resty.Response, operation string, err error) er
 	// Nor is there when the request was cancelled, even with a response in
 	// hand: a body cut short by its context does not decode, and blaming an
 	// SSO page for it would send someone looking for a proxy that is not there.
-	if response == nil || response.RawResponse == nil || isCancellation(err) {
+	if response == nil || response.RawResponse == nil || requestCancelled(response) {
 		return fmt.Errorf("unable to %s: %w", operation, err)
 	}
 
