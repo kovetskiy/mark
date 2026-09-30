@@ -3,13 +3,10 @@ package transformer
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
-	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
 )
 
 // DetailsTransformer walks the AST and transforms HTML <details><summary> tags into
@@ -128,9 +125,9 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 // transformDetailsAt converts the <details> tags in one AST node's raw content,
 // advancing *depth by the fragment's net nesting change.
 //
-// CDATA sections are lifted out first and put back at the end. html.Parse has
-// no notion of CDATA: it reads "<![CDATA[" as a bogus comment ending at the
-// first ">", and everything after that as ordinary markup. So a code sample
+// CDATA sections are lifted out first and put back at the end. The HTML
+// tokenizer has no notion of CDATA: it reads "<![CDATA[" as a bogus comment
+// ending at the first ">", and everything after that as ordinary markup. So a code sample
 // containing ">" was cut in two -- the tail re-parsed and rewritten, the
 // section left unterminated -- which is the one thing CDATA is there to
 // prevent, and it failed the page outright with "unexpected EOF in CDATA
@@ -147,7 +144,7 @@ func (t *DetailsTransformer) transformDetailsAt(rawContent []byte, depth *int) (
 }
 
 // cdataToken is what a CDATA section is stood in by while the markup around it
-// is parsed. Letters and digits only, so that neither html.Parse nor the
+// is tokenized. Letters and digits only, so that neither the tokenizer nor the
 // renderer's escaping can alter it.
 const cdataToken = "MARKCDATASECTION"
 
@@ -234,185 +231,36 @@ func (t *DetailsTransformer) transformDetailsMarkup(rawContent []byte, depth *in
 
 	balance, lowest := detailsBalance(rawContent)
 
-	// A fragment with unmatched <details> tags cannot survive html.Parse, which
-	// would auto-close the dangling element and strand the body outside the
-	// macro. This happens whenever the body contains a blank line, since that
-	// ends the HTML block and splits the element across sibling AST nodes.
-	// Rewrite those fragments token-by-token instead.
-	// Decided on nesting rather than on the net change. A fragment that closes
-	// one element and opens another nets to zero while being no more
-	// self-contained than one that only closes: html.Parse drops the closer it
-	// cannot match, and the sections telescope -- the second published empty,
-	// inside the first, with the content that belonged to it landing in the
-	// first as well. That output is well-formed, so nothing downstream objects
-	// and the wrong page is published in silence.
-	if balance != 0 || lowest < 0 {
-		// A closing tag with nothing open is stray markup, not part of a split
-		// element. Leave it untouched so we never invent an unmatched macro end.
-		if *depth+lowest < 0 {
-			return rawContent, false
-		}
-		out, changed := rewriteUnbalancedDetails(rawContent)
-		if changed {
-			*depth += balance
-		}
-		return out, changed
-	}
-
-	if !hasOpen {
+	// A closing tag with nothing open is stray markup, not part of a split
+	// element. Leave it untouched so we never invent an unmatched macro end.
+	// Decided on the lowest depth reached rather than on the net change: a
+	// fragment that closes one element and opens another nets to zero while
+	// closing something all the same.
+	if *depth+lowest < 0 {
 		return rawContent, false
 	}
 
-	doc, err := html.Parse(bytes.NewReader(rawContent))
-	if err != nil {
-		return rawContent, false
+	// Every fragment is rewritten token by token, balanced or not -- a blank
+	// line in a body splits the element across sibling fragments, each one
+	// unbalanced -- and every
+	// token that is not part of a <details> or its <summary> is passed through
+	// byte for byte.
+	//
+	// The balanced ones used to be run through html.Parse and rendered back.
+	// That was never right for storage format: HTML5 ignores "/>" on anything
+	// but a void element, so <ri:page .../>, <ac:emoticon .../>,
+	// <ri:attachment .../> and the like were read as open elements and the
+	// siblings after them moved inside -- a link lost its body to the page it
+	// named, an emoticon swallowed the rest of its paragraph -- and tables
+	// gained a <tbody> the author never wrote. The result stayed well-formed,
+	// so nothing downstream objected and the wrong page was published in
+	// silence. Converting three tags needs no document tree.
+	out, changed := rewriteDetails(rawContent)
+	if changed {
+		*depth += balance
 	}
 
-	var hasDetails bool
-	var transform func(*html.Node)
-	transform = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.DataAtom == atom.Details {
-			hasDetails = true
-			var summaryNode *html.Node
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type == html.ElementNode && c.DataAtom == atom.Summary {
-					summaryNode = c
-					break
-				}
-			}
-
-			var summaryText string
-			if summaryNode != nil {
-				summaryText = strings.TrimSpace(extractTextFromHTMLNode(summaryNode))
-			}
-
-			macroNode := &html.Node{
-				Type: html.ElementNode,
-				Data: "ac:structured-macro",
-				Attr: []html.Attribute{
-					{Key: "ac:name", Val: "expand"},
-				},
-			}
-
-			if summaryText != "" {
-				paramNode := &html.Node{
-					Type: html.ElementNode,
-					Data: "ac:parameter",
-					Attr: []html.Attribute{
-						{Key: "ac:name", Val: "title"},
-					},
-				}
-				paramNode.AppendChild(&html.Node{
-					Type: html.TextNode,
-					Data: summaryText,
-				})
-				macroNode.AppendChild(paramNode)
-			}
-
-			bodyNode := &html.Node{
-				Type: html.ElementNode,
-				Data: "ac:rich-text-body",
-			}
-
-			var next *html.Node
-			for c := n.FirstChild; c != nil; c = next {
-				next = c.NextSibling
-				if c != summaryNode {
-					n.RemoveChild(c)
-					bodyNode.AppendChild(c)
-				}
-			}
-
-			macroNode.AppendChild(bodyNode)
-
-			if n.Parent != nil {
-				n.Parent.InsertBefore(macroNode, n)
-				n.Parent.RemoveChild(n)
-			}
-
-			for c := bodyNode.FirstChild; c != nil; c = c.NextSibling {
-				transform(c)
-			}
-			return
-		}
-
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			transform(c)
-		}
-	}
-
-	transform(doc)
-
-	if !hasDetails {
-		return rawContent, false
-	}
-
-	var buf bytes.Buffer
-	// Walk body children to avoid rendering <html><head><body> tags
-	var body *html.Node
-	for c := doc.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && c.DataAtom == atom.Html {
-			for gc := c.FirstChild; gc != nil; gc = gc.NextSibling {
-				if gc.Type == html.ElementNode && gc.DataAtom == atom.Body {
-					body = gc
-					break
-				}
-			}
-		}
-	}
-
-	if body != nil {
-		for c := body.FirstChild; c != nil; c = c.NextSibling {
-			renderHTMLNodeTree(&buf, c)
-		}
-		if buf.Len() > 0 {
-			return buf.Bytes(), true
-		}
-	}
-
-	return rawContent, false
-}
-
-func renderHTMLNodeTree(buf *bytes.Buffer, n *html.Node) {
-	if n.Type == html.CommentNode && strings.HasPrefix(n.Data, "[CDATA[") {
-		buf.WriteString("<!")
-		buf.WriteString(n.Data)
-		buf.WriteString(">")
-		return
-	}
-
-	if n.Type == html.ElementNode {
-		buf.WriteString("<")
-		buf.WriteString(n.Data)
-		for _, a := range n.Attr {
-			buf.WriteString(" ")
-			if a.Namespace != "" {
-				buf.WriteString(a.Namespace)
-				buf.WriteString(":")
-			}
-			buf.WriteString(a.Key)
-			buf.WriteString(`="`)
-			buf.WriteString(html.EscapeString(a.Val))
-			buf.WriteString(`"`)
-		}
-
-		if n.FirstChild == nil && isVoidElement(n.Data) {
-			buf.WriteString(" />")
-			return
-		}
-		buf.WriteString(">")
-
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			renderHTMLNodeTree(buf, c)
-		}
-
-		buf.WriteString("</")
-		buf.WriteString(n.Data)
-		buf.WriteString(">")
-		return
-	}
-
-	_ = html.Render(buf, n)
+	return out, changed
 }
 
 func isVoidElement(name string) bool {
@@ -422,15 +270,4 @@ func isVoidElement(name string) bool {
 	default:
 		return false
 	}
-}
-
-func extractTextFromHTMLNode(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return n.Data
-	}
-	var sb strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		sb.WriteString(extractTextFromHTMLNode(c))
-	}
-	return sb.String()
 }
