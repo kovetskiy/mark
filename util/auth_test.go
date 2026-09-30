@@ -126,6 +126,74 @@ func TestGetCredentialsBaseURLFromTargetURL(t *testing.T) {
 	assert.Equal(t, "secret", creds.Password)
 }
 
+// TestGetCredentialsTargetURLKeepsTheContextPath covers an instance that is
+// not at the root of its host, which every Cloud site is: the page URL is
+// under /wiki, and so is the REST API. Taking only the scheme and host sent
+// every call to the wrong place.
+func TestGetCredentialsTargetURLKeepsTheContextPath(t *testing.T) {
+	for _, testcase := range []struct {
+		name   string
+		target string
+		base   string
+		pageID string
+	}{
+		{
+			"cloud viewpage",
+			"https://x.atlassian.net/wiki/pages/viewpage.action?pageId=12345",
+			"https://x.atlassian.net/wiki", "12345",
+		},
+		{
+			"server under a context path",
+			"https://host/confluence/pages/viewpage.action?pageId=1",
+			"https://host/confluence", "1",
+		},
+		{
+			"cloud spaces form",
+			"https://x.atlassian.net/wiki/spaces/DOC/pages/12345/Title",
+			"https://x.atlassian.net/wiki", "12345",
+		},
+		{
+			"cloud spaces form without a title",
+			"https://x.atlassian.net/wiki/spaces/DOC/pages/12345",
+			"https://x.atlassian.net/wiki", "12345",
+		},
+		{
+			"cloud edit form",
+			"https://x.atlassian.net/wiki/spaces/DOC/pages/edit-v2/12345",
+			"https://x.atlassian.net/wiki", "12345",
+		},
+		{
+			"server spaces form at the root",
+			"https://host/spaces/DOC/pages/77/Title",
+			"https://host", "77",
+		},
+		{
+			"display form",
+			"https://host/confluence/display/DOC/Title",
+			"https://host/confluence", "",
+		},
+		{
+			"space overview names no page",
+			"https://x.atlassian.net/wiki/spaces/DOC/overview",
+			"https://x.atlassian.net/wiki", "",
+		},
+		{
+			"instance only",
+			"https://x.atlassian.net/wiki/",
+			"https://x.atlassian.net/wiki", "",
+		},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			creds, err := GetCredentials(context.Background(), "user", "secret", "",
+				testcase.target, "", false)
+			require.NoError(t, err)
+
+			assert.Equal(t, testcase.base, creds.BaseURL)
+			assert.Equal(t, testcase.pageID, creds.PageID)
+		})
+	}
+}
+
 // TestGetCredentialsExplicitBaseURLWins covers -l beside a target URL: the flag
 // is the instance, and the URL only supplies the page id.
 func TestGetCredentialsExplicitBaseURLWins(t *testing.T) {

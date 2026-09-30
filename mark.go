@@ -883,7 +883,8 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if config.PageID == "" && meta == nil {
 		return nil, nil, fmt.Errorf(
 			"specified file doesn't contain metadata and URL is not specified " +
-				"via command line or doesn't contain pageId GET-parameter",
+				"via command line or names no page: neither a pageId parameter nor a " +
+				"/spaces/KEY/pages/ID path",
 		)
 	}
 

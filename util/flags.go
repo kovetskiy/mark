@@ -191,7 +191,7 @@ var Flags = []cli.Flag{
 		Name:    "target-url",
 		Aliases: []string{"l"},
 		Value:   "",
-		Usage:   "edit the Confluence page at this URL. Without it, each file must name its page with Space and Title metadata headers.",
+		Usage:   "edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TARGET_URL"), altsrctoml.TOML("target-url", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
