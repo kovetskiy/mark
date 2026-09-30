@@ -208,3 +208,69 @@ func TestParsePageURL(t *testing.T) {
 		assert.Error(t, err, bad)
 	}
 }
+
+// republish exports storage and publishes the Markdown that comes out,
+// returning both, the storage format in canonical form.
+func republish(t *testing.T, storage string) (string, string) {
+	t.Helper()
+
+	md := convert(t, storage)
+
+	return md, canonical(t, compile(t, md, filepath.Join(t.TempDir(), "page.md")))
+}
+
+// TestConvertListNestedDirectlyInAList: older editors and pasted HTML put a
+// sublist straight into the list rather than into the item it belongs to.
+// It is kept, under the item before it.
+func TestConvertListNestedDirectlyInAList(t *testing.T) {
+	for _, test := range []struct {
+		name, storage, markdown, published string
+	}{
+		{
+			"bullets",
+			`<ul><li>a</li><ul><li>nested</li></ul><li>b</li></ul>`,
+			"- a\n  - nested\n- b\n",
+			`<ul><li>a<ul><li>nested</li></ul></li><li>b</li></ul>`,
+		},
+		{
+			"numbers",
+			`<ol><li>a</li><ol><li>nested</li></ol><li>b</li></ol>`,
+			"1. a\n   1. nested\n2. b\n",
+			`<ol><li>a<ol><li>nested</li></ol></li><li>b</li></ol>`,
+		},
+		{
+			"before the first item",
+			`<ul><ul><li>nested</li></ul><li>b</li></ul>`,
+			"- - nested\n- b\n",
+			`<ul><li><ul><li>nested</li></ul></li><li>b</li></ul>`,
+		},
+		{
+			"tasks",
+			`<ac:task-list><ac:task><ac:task-id>1</ac:task-id><ac:task-status>incomplete</ac:task-status><ac:task-body>a</ac:task-body></ac:task>` +
+				`<ac:task-list><ac:task><ac:task-id>2</ac:task-id><ac:task-status>complete</ac:task-status><ac:task-body>nested</ac:task-body></ac:task></ac:task-list>` +
+				`</ac:task-list>`,
+			"- [ ] a\n  - [x] nested\n",
+			nestedTask,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			md, published := republish(t, test.storage)
+			assert.Equal(t, test.markdown, md)
+			assert.Equal(t, canonical(t, test.published), published)
+		})
+	}
+}
+
+// TestConvertTaskListInATask: what a task holds past its first line is
+// indented under the box, where Markdown reads it as the task's.
+func TestConvertTaskListInATask(t *testing.T) {
+	md, published := republish(t, nestedTask)
+	assert.Equal(t, "- [ ] a\n  - [x] nested\n", md)
+	assert.Equal(t, canonical(t, nestedTask), published)
+}
+
+// nestedTask is a task list in a task, as mark publishes it -- the line
+// breaks around the inner list are the text of the outer task's body.
+const nestedTask = `<ac:task-list><ac:task><ac:task-id>1</ac:task-id><ac:task-status>incomplete</ac:task-status><ac:task-body>a
+<ac:task-list><ac:task><ac:task-id>2</ac:task-id><ac:task-status>complete</ac:task-status><ac:task-body>nested</ac:task-body></ac:task></ac:task-list>
+</ac:task-body></ac:task></ac:task-list>`
