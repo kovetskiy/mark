@@ -1267,7 +1267,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	shouldUpdatePage := true
 
 	if config.ChangesOnly {
-		contentHash := contentFingerprint(html, contentAppearance, emoji)
+		contentHash := contentFingerprint(html, contentAppearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
 		log.Debug().Msgf("content hash: %s", contentHash)
 
 		if previous := readContentHash(target.Version.Message); previous != "" {
@@ -1780,13 +1780,16 @@ func sha1Hash(input string) string {
 // body and only take effect when it is.
 //
 // Each property is folded in only when it differs from what a page without
-// the header gets -- no emoji, full width -- so that the fingerprint of such a
-// page is the body's hash exactly as before. Every page already stamped by an
-// earlier mark would otherwise look changed and be republished once, across
-// every space, on the first run after upgrading. Pages that do carry one of
-// the headers are republished once, which is the price of finding out.
-func contentFingerprint(html, appearance, emoji string) string {
-	if emoji == "" && (appearance == "" || appearance == metadata.FullWidthContentAppearance) {
+// the header gets -- no emoji, and the appearance --content-appearance gives,
+// full width unless it says otherwise -- so that the fingerprint of such a page
+// is the body's hash exactly as before, whatever that flag is set to. Every
+// page already stamped by an earlier mark would otherwise look changed and be
+// republished once, across every space, on the first run after upgrading.
+// Pages that do carry one of the headers are republished once, which is the
+// price of finding out. Changing --content-appearance itself is, as before,
+// not something --changes-only notices.
+func contentFingerprint(html, appearance, defaultAppearance, emoji string) string {
+	if emoji == "" && (appearance == "" || appearance == defaultAppearance) {
 		return sha1Hash(html)
 	}
 
