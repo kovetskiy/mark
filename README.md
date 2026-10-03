@@ -52,6 +52,11 @@ order: <whole number>
 <page contents>
 ```
 
+Front matter has to open on the document's first line, with three or more
+dashes and nothing else, and closes at the next line of the same dashes. A
+document whose opening delimiter is never closed is refused rather than
+published with its metadata as text.
+
 A list key given a single value, as in `labels: release`, reads it as a list
 of one. A value that is neither a string nor a list of strings is ignored, and
 warned about.

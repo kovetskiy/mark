@@ -12,9 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
-	"go.abhg.dev/goldmark/frontmatter"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -387,41 +386,59 @@ func warningPrefix(filename string) string {
 	return filename + ": "
 }
 
-func stripFrontMatter(data []byte) ([]byte, error) {
-	delimiter, rest, ok := bytes.Cut(data, []byte("\n"))
-	if !ok {
-		return nil, fmt.Errorf("unterminated YAML front matter")
+// splitFrontMatter separates the YAML front matter opening data from the
+// document after it. found is false when data does not open with front matter.
+//
+// Front matter opens on the very first line with three or more dashes and
+// nothing else, and closes at the next line made of the same dashes; trailing
+// blanks are tolerated on the closing line only. An opening line with no
+// closing one is an error rather than a document without front matter: a page
+// whose metadata silently became its body would publish somewhere unexpected.
+func splitFrontMatter(data []byte) (frontMatter, body []byte, found bool, err error) {
+	opening, rest, _ := bytes.Cut(data, []byte("\n"))
+	opening = bytes.TrimSuffix(opening, []byte("\r"))
+	if len(opening) < 3 || len(bytes.Trim(opening, "-")) != 0 {
+		return nil, data, false, nil
 	}
-	delimiter = bytes.TrimRight(delimiter, " \r\t")
 
-	for {
-		line, remaining, hasNewline := bytes.Cut(rest, []byte("\n"))
-		if bytes.Equal(bytes.TrimRight(line, " \r\t"), delimiter) {
-			return remaining, nil
+	start := len(data) - len(rest)
+	for offset := start; offset < len(data); {
+		line, remaining, _ := bytes.Cut(data[offset:], []byte("\n"))
+		if bytes.Equal(bytes.TrimRight(line, " \r\t"), opening) {
+			return data[start:offset], remaining, true, nil
 		}
-		if !hasNewline {
-			return nil, fmt.Errorf("unterminated YAML front matter")
+		offset = len(data) - len(remaining)
+		if len(remaining) == 0 {
+			break
 		}
-		rest = remaining
 	}
+
+	return nil, nil, false, fmt.Errorf("unterminated YAML front matter")
 }
 
 func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string, frontMatterEnabled bool) (*Meta, []byte, error) {
 	var meta *Meta
-	body := data
 
-	markdown := goldmark.New()
+	var (
+		frontMatter []byte
+		found       bool
+	)
 	if frontMatterEnabled {
-		(&frontmatter.Extender{
-			Formats: []frontmatter.Format{frontmatter.YAML},
-		}).Extend(markdown)
+		var err error
+		frontMatter, data, found, err = splitFrontMatter(data)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
-	ctx := parser.NewContext()
-	doc := markdown.Parser().Parse(text.NewReader(data), parser.WithContext(ctx))
-	if frontMatterData := frontmatter.Get(ctx); frontMatterData != nil {
+	// From here on data is the document after any front matter, and every
+	// offset below is taken against it.
+	body := data
+	doc := goldmark.New().Parser().Parse(text.NewReader(data))
+
+	if found {
 		var parsed map[string]any
-		if err := frontMatterData.Decode(&parsed); err != nil {
+		if err := yaml.Unmarshal(frontMatter, &parsed); err != nil {
 			return nil, nil, fmt.Errorf("decode YAML front matter: %w", err)
 		}
 
@@ -494,12 +511,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		if meta.Sidebar != "" {
 			meta.Layout = "article"
 		}
-
-		var err error
-		body, err = stripFrontMatter(data)
-		if err != nil {
-			return nil, nil, err
-		}
 	}
 
 	// Where the run of headers begins and ends. Two boundaries rather than one
@@ -508,11 +519,6 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	// has to survive into the body rather than being swallowed as though it
 	// were metadata.
 	firstStart := -1
-
-	// Where body already begins within data, which is past the front matter
-	// when there was any. stripFrontMatter returns a suffix of data, so the
-	// difference in lengths is the offset.
-	bodyStart := len(data) - len(body)
 
 	var lastStop int
 	shouldBreak := false
@@ -713,8 +719,8 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		// Only the headers are taken out. Whatever preceded them stays, which
 		// is what keeps a Macro defined above the headers working, and the
 		// Include directives found among them are put back where they stood.
-		rebuilt := make([]byte, 0, (firstStart-bodyStart)+(len(data)-lastStop))
-		rebuilt = append(rebuilt, data[bodyStart:firstStart]...)
+		rebuilt := make([]byte, 0, firstStart+(len(data)-lastStop))
+		rebuilt = append(rebuilt, data[:firstStart]...)
 		for _, line := range kept {
 			rebuilt = append(rebuilt, data[line.Start:line.Stop]...)
 		}
