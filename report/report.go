@@ -53,6 +53,11 @@ const (
 	StatusUnchanged = "unchanged"
 	StatusSkipped   = "skipped"
 	StatusFailed    = "failed"
+
+	// What a dry run that was also given --changes-only says a real run would
+	// do. A page it would leave alone is StatusUnchanged, as it is on a real run.
+	StatusWouldCreate = "would-create"
+	StatusWouldUpdate = "would-update"
 )
 
 // Page is one document's outcome.
@@ -213,6 +218,12 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		case StatusPublished:
 			if err := command(w, "notice", page.File,
 				fmt.Sprintf("published %q to %s", page.Title, page.URL)); err != nil {
+				return err
+			}
+
+		case StatusWouldCreate, StatusWouldUpdate:
+			if err := command(w, "notice", page.File,
+				fmt.Sprintf("would %s %q", strings.TrimPrefix(page.Status, "would-"), page.Title)); err != nil {
 				return err
 			}
 		}

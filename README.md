@@ -1272,6 +1272,13 @@ properties -- has been done. Each document appears once, with what finally
 became of it, so one [published again](#links-between-pages-published-together)
 whose second publish failed is `failed`.
 
+With `--dry-run` and `--changes-only` together, the report says what a real run
+would do: `would-create` for a page that does not exist yet, `would-update` for
+one whose content, title, emoji or appearance changed, and `unchanged` for one
+that would be left alone. Only the pages that would change have their HTML
+printed, so the pages a real run would write can be read straight from the
+report in CI. `--no-overwrite` is not consulted by this preview.
+
 `orphans` lists the [tracked pages whose source file is
 gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the
 `--on-orphan` action taken: `report` for a page that was only reported and left
@@ -1935,7 +1942,7 @@ GLOBAL OPTIONS:
    --files string, -f string                      use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
    --continue-on-error                            don't exit if an error occurs while processing a file, continue processing remaining files. [$MARK_CONTINUE_ON_ERROR]
    --compile-only                                 show resulting HTML and don't update Confluence page content. [$MARK_COMPILE_ONLY]
-   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. [$MARK_DRY_RUN]
+   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those. [$MARK_DRY_RUN]
    --edit-lock, -k                                lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. [$MARK_EDIT_LOCK]
    --drop-h1                                      don't include the first H1 heading in Confluence output. [$MARK_DROP_H1]
    --strip-linebreaks, -L                         remove linebreaks inside of tags, to accommodate non-standard Confluence behavior [$MARK_STRIP_LINEBREAKS]
