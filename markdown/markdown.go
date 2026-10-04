@@ -16,7 +16,6 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/rs/zerolog/log"
-	mkDocsParser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
 
@@ -105,7 +104,7 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
 		m.Parser().AddOptions(
 			parser.WithBlockParsers(
-				util.Prioritized(mkDocsParser.NewAdmonitionParser(), 100),
+				util.Prioritized(cparser.NewAdmonitionParser(), 100),
 			),
 		)
 
@@ -570,7 +569,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
 		m.Parser().AddOptions(
 			parser.WithBlockParsers(
-				util.Prioritized(mkDocsParser.NewAdmonitionParser(), 100),
+				util.Prioritized(cparser.NewAdmonitionParser(), 100),
 			),
 		)
 
