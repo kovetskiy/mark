@@ -50,6 +50,46 @@ func TestAuthenticatesFalseOn500(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestAuthenticatesFalseForAnAnonymousUser covers an instance with anonymous
+// access, which answers a caller that has not logged in with 200 and an
+// anonymous user. The browser holds a cookie long before the user has logged
+// in, so taking that 200 at its word would end the login on the first poll.
+func TestAuthenticatesFalseForAnAnonymousUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"type":"anonymous","displayName":"Anonymous"}`))
+		}))
+	t.Cleanup(server.Close)
+
+	ok := Authenticates(context.Background(), server.Client(), server.URL,
+		[]*http.Cookie{{Name: "JSESSIONID", Value: "not-logged-in-yet"}})
+
+	assert.False(t, ok)
+}
+
+// TestAuthenticatesFalseForALoginPage covers an SSO proxy that redirects an
+// unauthenticated API request to its login page: the client follows the
+// redirect, and the 200 that comes back is HTML, not a user.
+func TestAuthenticatesFalseForALoginPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/login" {
+				http.Redirect(w, r, "/login", http.StatusFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<!doctype html><title>Sign in</title>`))
+		}))
+	t.Cleanup(server.Close)
+
+	ok := Authenticates(context.Background(), server.Client(), server.URL,
+		[]*http.Cookie{{Name: "JSESSIONID", Value: "not-logged-in-yet"}})
+
+	assert.False(t, ok)
+}
+
 // TestAuthenticatesSendsTheCookies is the point of the whole function: the
 // cookies under test have to reach the server.
 func TestAuthenticatesSendsTheCookies(t *testing.T) {

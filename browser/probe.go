@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -9,10 +10,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// probePath is the cheapest endpoint that answers differently for an
-// authenticated and an anonymous caller, and it exists on Server, Data Center
-// and Cloud alike.
+// probePath is the cheapest endpoint that says who the caller is, and it
+// exists on Server, Data Center and Cloud alike.
+//
+// A 200 from it is not proof of a login. An instance with anonymous access
+// answers an anonymous caller with 200 and a user whose type is "anonymous",
+// and an SSO proxy may redirect an unauthenticated request to its login page,
+// which the client follows to a 200 that is not JSON at all. Either way the
+// browser already holds a cookie by then, so trusting the status alone would
+// end the login on its very first poll, before the user has typed anything.
 const probePath = "/rest/api/user/current"
+
+// anonymousUserType is the type /rest/api/user/current reports for a caller
+// that is not logged in, on an instance that lets such callers in.
+const anonymousUserType = "anonymous"
 
 // Authenticates reports whether cookies are enough to reach the Confluence API
 // at baseURL.
@@ -55,18 +66,32 @@ func Authenticates(ctx context.Context, client *http.Client, baseURL string, coo
 
 	// Drained so the connection can be reused: this runs once a second while
 	// a login is in progress.
-	_, _ = io.Copy(io.Discard, response.Body)
+	defer func() { _, _ = io.Copy(io.Discard, response.Body) }()
 
-	if response.StatusCode == http.StatusOK {
-		return true
+	if response.StatusCode != http.StatusOK {
+		// A 401 is the expected answer while the user has not logged in yet
+		// and is not worth a line each second. Anything else is a surprise
+		// worth seeing with --log-level DEBUG when a login mysteriously times
+		// out.
+		if response.StatusCode != http.StatusUnauthorized {
+			log.Debug().Msgf("session probe answered %d", response.StatusCode)
+		}
+
+		return false
 	}
 
-	// A 401 is the expected answer while the user has not logged in yet and is
-	// not worth a line each second. Anything else is a surprise worth seeing
-	// with --log-level DEBUG when a login mysteriously times out.
-	if response.StatusCode != http.StatusUnauthorized {
-		log.Debug().Msgf("session probe answered %d", response.StatusCode)
+	var user struct {
+		Type string `json:"type"`
 	}
 
-	return false
+	if err := json.NewDecoder(response.Body).Decode(&user); err != nil {
+		// Most likely an SSO proxy's login page, reached by following its
+		// redirect: the user has not got through it yet.
+		log.Debug().Err(err).Msg("session probe answered 200 with something other than a user")
+		return false
+	}
+
+	// Silent for the same reason as a 401: on an instance with anonymous
+	// access, this is the answer every poll gets until the user logs in.
+	return user.Type != anonymousUserType
 }
