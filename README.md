@@ -1463,7 +1463,14 @@ And attach any image with the following
 
 The width will be the commented html after the image (in this case 300px).
 
-Currently this is not compatible with the automated upload of inline images.
+The file named by `Attachment:` is uploaded with the page, and the name the macro
+writes into the page is the one it is uploaded under. A path is read relative to
+the document, and is subject to the same rules as any other attachment (see
+[Where an attachment may come from](#where-an-attachment-may-come-from)). A file that is also declared with `<!-- Attachment: -->` is uploaded once.
+
+The macro replaces the whole image, so the native `<img width="300">` syntax
+described under [HTML img tags](#use-html-img-tags-for-sizing) needs no macro and is usually the
+simpler route.
 
 #### Where an attachment may come from
 
