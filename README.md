@@ -1277,7 +1277,8 @@ would do: `would-create` for a page that does not exist yet, `would-update` for
 one whose content, title, emoji or appearance changed, and `unchanged` for one
 that would be left alone. Only the pages that would change have their HTML
 printed, so the pages a real run would write can be read straight from the
-report in CI. `--no-overwrite` is not consulted by this preview.
+report in CI. A page `--no-overwrite` would leave alone is `skipped`, as it is
+on a real run, and is not printed either.
 
 `orphans` lists the [tracked pages whose source file is
 gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the

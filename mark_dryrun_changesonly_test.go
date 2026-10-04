@@ -1,8 +1,8 @@
 package mark
 
 import (
-	"fmt"
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -59,7 +59,7 @@ func TestDryRunChangesOnlyReportsPerPage(t *testing.T) {
 
 	t.Run("changed page is reported as would-update and printed", func(t *testing.T) {
 		file, config, out, _ := publish(t)
-		require.NoError(t, os.WriteFile(file, []byte( dryRunDocBody("different body")), 0o600))
+		require.NoError(t, os.WriteFile(file, []byte(dryRunDocBody("different body")), 0o600))
 		require.NoError(t, Run(config))
 
 		assert.Contains(t, out.String(), `"status": "would-update"`)
@@ -69,7 +69,7 @@ func TestDryRunChangesOnlyReportsPerPage(t *testing.T) {
 	t.Run("writes nothing", func(t *testing.T) {
 		file, config, _, writes := publish(t)
 		before := len(writes())
-		require.NoError(t, os.WriteFile(file, []byte( dryRunDocBody("different body")), 0o600))
+		require.NoError(t, os.WriteFile(file, []byte(dryRunDocBody("different body")), 0o600))
 		require.NoError(t, Run(config))
 		assert.Len(t, writes(), before)
 	})
@@ -146,7 +146,7 @@ func TestDryRunChangesOnlyKnowsAboutAttachmentLinks(t *testing.T) {
 		0x89,
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), png, 0o600))
-	file := writeFile(t, dir, "doc.md", dryRunDocBody("[the logo](logo.png)\n\n![logo](logo.png)"))
+	file := writeFile(t, dir, "doc.md", dryRunDocBody("<!-- Attachment: logo.png -->\n\n[the logo](logo.png)\n\n![logo](logo.png)"))
 
 	config := Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
@@ -163,4 +163,55 @@ func TestDryRunChangesOnlyKnowsAboutAttachmentLinks(t *testing.T) {
 
 	assert.NotContains(t, out.String(), "would update")
 	assert.NotContains(t, out.String(), "logo.png", "an unchanged page must not be dumped")
+}
+
+func TestDryRunChangesOnlyChangedAttachment(t *testing.T) {
+	// A changed file is re-uploaded under a new download link, so only a page
+	// that holds the link differs; an image found while rendering names the file.
+	preview := func(t *testing.T, body string) string {
+		server, _ := docsSpace(t)
+		dir := t.TempDir()
+		logo := filepath.Join(dir, "logo.png")
+		require.NoError(t, os.WriteFile(logo, []byte("one"), 0o600))
+		file := writeFile(t, dir, "doc.md", dryRunDocBody(body))
+
+		config := Config{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+			ChangesOnly: true,
+		}
+		require.NoError(t, Run(config))
+
+		require.NoError(t, os.WriteFile(logo, []byte("two"), 0o600))
+		var out bytes.Buffer
+		config.Output = &out
+		config.DryRun = true
+		config.OutputFormat = "github"
+		require.NoError(t, Run(config))
+
+		return out.String()
+	}
+
+	t.Run("linked", func(t *testing.T) {
+		assert.Contains(t, preview(t, "<!-- Attachment: logo.png -->\n\n[the logo](logo.png)"), "would update")
+	})
+
+	t.Run("embedded", func(t *testing.T) {
+		assert.NotContains(t, preview(t, "![logo](logo.png)"), "would update")
+	})
+}
+
+func TestDryRunChangesOnlyNoOverwriteReportsAnEditedPageSkipped(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	var out bytes.Buffer
+	config.ChangesOnly = true
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, out.String(), `"status": "skipped"`)
+	assert.NotContains(t, out.String(), "<p>From mark.</p>", "a page left alone must not be dumped")
 }

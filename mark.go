@@ -1003,15 +1003,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 		// Only a dry run asked to tell changed pages from unchanged ones.
 		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
-		var attachmentLinks *attachment.Resolver
-		var newAttachments bool
+		var attachments *attachmentPreview
 		if compare && previewed != nil {
 			var err error
-			attachmentLinks, newAttachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
+			attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
 			if err != nil {
 				return nil, nil, err
 			}
-			cfg.ResolveAttachment = attachmentLinks.Resolve
+			cfg.ResolveAttachment = attachments.resolve
 		}
 
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
@@ -1019,15 +1018,37 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 		}
 
-		status := ""
+		status, reason := "", ""
 		if compare {
-			status, err = previewChange(html, previewed, newAttachments, file, config, meta, std)
-			if err != nil {
-				return nil, nil, err
+			// Ahead of the comparison, as it is on a real run: a page edited in
+			// Confluence is left alone whatever the source says.
+			if config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
+				drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, previewed)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				if drifted {
+					status = report.StatusSkipped
+					reason = fmt.Sprintf(
+						"edited in Confluence since mark published it (version %d, mark wrote %d)",
+						previewed.Version.Number, recorded,
+					)
+					log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
+				}
+			}
+
+			if status == "" {
+				var relinked bool
+				html, relinked = attachments.settle(html)
+				status, err = previewChange(html, previewed, relinked, file, config, meta, std)
+				if err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 
-		if status != report.StatusUnchanged {
+		if status != report.StatusUnchanged && status != report.StatusSkipped {
 			if _, err := fmt.Fprintln(config.output(), html); err != nil {
 				return nil, nil, err
 			}
@@ -1065,7 +1086,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				title = meta.Title
 			}
 			results.AddPage(report.Page{
-				File: file, Status: status,
+				File: file, Status: status, Reason: reason,
 				Space: spaceOf(meta), Title: title,
 				PageID: target.ID,
 				Warnings: resolver.Broken(),
@@ -1508,19 +1529,52 @@ func wrapLayout(std *stdlib.Lib, layout, sidebar, body string) (string, error) {
 	return buffer.String(), nil
 }
 
-// previewAttachmentLinks resolves the links a real run would write for the
-// page's attachments, without uploading anything.
+// attachmentPreview resolves the links a real run would write for a page's
+// attachments, without uploading anything.
 //
 // The fingerprint covers those links, so comparing without them would call a
-// page changed whenever it embeds a file. An attachment the page does not hold
-// yet has no link to give, and reports as new: the real run uploads it and
-// links to it, so the page differs either way.
+// page changed whenever it links a file. An attachment the page does not hold
+// yet, or holds in other bytes, is uploaded by a real run and gets a link that
+// does not exist until then: a page that links it changes, one that does not
+// is left alone, as on a real run.
+type attachmentPreview struct {
+	current *attachment.Resolver
+	pending *attachment.Resolver
+}
+
+// pendingLink stands in for a link that does not exist until the attachment is
+// uploaded. Finding it in the compiled page is how a page that links one is told
+// from one that merely embeds it, which names the file and not the link.
+const pendingLink = "/mark-dry-run-pending/"
+
+func (p *attachmentPreview) resolve(target string) string {
+	if p == nil {
+		return ""
+	}
+
+	if link := p.current.Resolve(target); link != "" {
+		return link
+	}
+
+	return p.pending.Resolve(target)
+}
+
+// settle reports whether body links an attachment whose link a real run would
+// change, and returns it with the stand-in links read as the file's name.
+func (p *attachmentPreview) settle(body string) (string, bool) {
+	if p == nil || !strings.Contains(body, pendingLink) {
+		return body, false
+	}
+
+	return strings.ReplaceAll(body, pendingLink, ""), true
+}
+
 func previewAttachmentLinks(
 	api *confluence.API,
 	target *confluence.PageInfo,
 	base string,
 	meta *metadata.Meta,
-) (*attachment.Resolver, bool, error) {
+) (*attachmentPreview, error) {
 	var declared []string
 	if meta != nil {
 		declared = meta.Attachments
@@ -1528,29 +1582,35 @@ func previewAttachmentLinks(
 
 	local, err := attachment.ResolveLocalAttachments(vfs.LocalOS, base, declared)
 	if err != nil {
-		return nil, false, fmt.Errorf("unable to locate attachments: %w", err)
+		return nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
 	remotes, err := api.GetAttachments(target.ID)
 	if err != nil {
-		return nil, false, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}
 
-	var isNew bool
-	linked := make([]attachment.Attachment, 0, len(local))
+	current := make([]attachment.Attachment, 0, len(local))
+	pending := make([]attachment.Attachment, 0, len(local))
 	for _, item := range local {
 		i := slices.IndexFunc(remotes, func(r confluence.AttachmentInfo) bool {
 			return r.Filename == item.Filename
 		})
-		if i < 0 {
-			isNew = true
+		if i < 0 || strings.TrimPrefix(remotes[i].Metadata.Comment, attachment.AttachmentChecksumPrefix) != item.Checksum {
+			item.Link = pendingLink + item.Filename
+			pending = append(pending, item)
+
 			continue
 		}
+
 		item.Link = path.Join(remotes[i].Links.Context, remotes[i].Links.Download)
-		linked = append(linked, item)
+		current = append(current, item)
 	}
 
-	return attachment.NewResolver(linked), isNew, nil
+	return &attachmentPreview{
+		current: attachment.NewResolver(current),
+		pending: attachment.NewResolver(pending),
+	}, nil
 }
 
 // previewChange says whether a real run would write the page, using the same
@@ -1558,7 +1618,7 @@ func previewAttachmentLinks(
 func previewChange(
 	body string,
 	existing *confluence.PageInfo,
-	newAttachments bool,
+	relinked bool,
 	file string,
 	config Config,
 	meta *metadata.Meta,
@@ -1586,7 +1646,7 @@ func previewChange(
 	switch {
 	case retitled:
 		log.Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
-	case newAttachments:
+	case relinked:
 		log.Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
 	case readContentHash(existing.Version.Message) == hash:
 		log.Info().Msgf("%s: page %q is already up to date", file, existing.Title)
