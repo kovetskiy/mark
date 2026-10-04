@@ -129,13 +129,9 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 	// A run of '!' with nothing after it is not an opening line: there would
 	// be no telling whether a later bare run closes this admonition or opens
 	// another.
-	if i >= len(line)-1 {
-		return nil, parser.NoChildren
-	}
-	rest := line[i:]
-	left := i + util.TrimLeftSpaceLength(rest)
-	right := len(line) - 1 - util.TrimRightSpaceLength(rest)
-	if left >= right {
+	content := withoutLineEnding(line)
+	left := i + util.TrimLeftSpaceLength(content[i:])
+	if left >= len(content) {
 		return nil, parser.NoChildren
 	}
 
@@ -164,7 +160,8 @@ func parseAdmonitionOpeningLine(reader text.Reader, left int) *Admonition {
 	reader.Advance(left)
 
 	remainingLine, _ := reader.PeekLine()
-	remainingLength := len(remainingLine) - 1
+	remainingLine = withoutLineEnding(remainingLine)
+	remainingLength := len(remainingLine)
 
 	endClass := 0
 	for ; endClass < remainingLength && remainingLine[endClass] != ' ' && remainingLine[endClass] != '{'; endClass++ {
@@ -270,7 +267,8 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 	// when its own run comes.
 	closing, newline := hasAdmonitionClosingRun(line, w, pos, state)
 	if closing && level == len(stack)-1 {
-		reader.Advance(segment.Len() - newline + segment.Padding)
+		// Len counts the padding already, which Advance steps over first.
+		reader.Advance(segment.Len() - newline)
 		return parser.Close
 	}
 
@@ -317,6 +315,12 @@ func (b *admonitionParser) CanInterruptParagraph() bool {
 
 func (b *admonitionParser) CanAcceptIndentedLine() bool {
 	return false
+}
+
+// withoutLineEnding returns line without the newline it ends in, if it ends in
+// one. The last line of a document need not.
+func withoutLineEnding(line []byte) []byte {
+	return bytes.TrimSuffix(line, []byte("\n"))
 }
 
 // hasAdmonitionClosingRun reports whether line closes state: a run of at least
