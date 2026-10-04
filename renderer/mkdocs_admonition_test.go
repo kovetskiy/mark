@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	cparser "github.com/kovetskiy/mark/v16/parser"
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
-	mkDocsParser "github.com/stefanfritsch/goldmark-admonitions"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer"
@@ -22,7 +22,7 @@ func admonitionRenderers() []renderer.NodeRenderer {
 
 func admonitionParserOptions() []parser.Option {
 	return []parser.Option{
-		parser.WithBlockParsers(util.Prioritized(mkDocsParser.NewAdmonitionParser(), 100)),
+		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
 	}
 }
 
@@ -68,11 +68,11 @@ func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
 	assert.NotContains(t, actual, "ac:structured-macro")
 }
 
-// TestAdmonitionUnknownClassIsDeterministic: the parser also tags every
-// admonition with a data-admonition id of 24 random letters, and the quote
-// carried it into the page. Two compiles of an unchanged document then
-// differed, and --changes-only, which compares a hash of the body, republished
-// the page on every run.
+// TestAdmonitionUnknownClassIsDeterministic: the parser this one came from
+// tagged every admonition with a data-admonition id of 24 random letters, and
+// the quote carried it into the page. Two compiles of an unchanged document
+// then differed, and --changes-only, which compares a hash of the body,
+// republished the page on every run.
 func TestAdmonitionUnknownClassIsDeterministic(t *testing.T) {
 	const doc = "!!! danger \"D\"\n    body\n"
 
@@ -115,4 +115,29 @@ func TestAdmonitionNested(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(actual, "<ac:structured-macro"))
 	assert.Equal(t, 2, strings.Count(actual, "</ac:structured-macro>"))
 	assert.Contains(t, actual, `ac:name="tip"`)
+}
+
+// TestAdmonitionAttributesThatAreNotText covers attribute values goldmark reads
+// as a number or a bool. The parser this one came from assumed every value was
+// text and panicked on {width=5}, taking the whole run down.
+func TestAdmonitionAttributesThatAreNotText(t *testing.T) {
+	actual := render(t, "!!! danger \"D\" {data-width=5 data-open=true data-list=[1,2]}\n    body\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `data-width="5"`)
+	assert.Contains(t, actual, `data-open="true"`)
+	assert.NotContains(t, actual, "data-list")
+}
+
+// TestAdmonitionInsideABlockquote covers an admonition written in a quote. It
+// panicked with a slice bounds error: see the comment on the Advance(0) in
+// parser/admonition.go.
+func TestAdmonitionInsideABlockquote(t *testing.T) {
+	renderers := append(admonitionRenderers(), crenderer.NewConfluenceBlockQuoteRenderer())
+	actual := render(t, "> !!! note \"In a quote\"\n>     body\n", renderers, admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:structured-macro ac:name="note">`)
+	assert.Contains(t, actual, "<p><strong>In a quote</strong></p>")
+	assert.Contains(t, actual, "body")
 }
