@@ -1,4 +1,4 @@
-NAME = $(notdir $(PWD))
+NAME = $(notdir $(or $(PWD),$(CURDIR)))
 
 VERSION = $(shell git describe --tags --abbrev=0)
 COMMIT = $(shell git rev-parse HEAD)
