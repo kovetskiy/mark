@@ -165,3 +165,13 @@ func TestMacroAttachmentOnLegacyCompilePath(t *testing.T) {
 		})
 	}
 }
+
+// TestMacroAttachmentThatIsAURLIsNotAFile covers a template that reuses the
+// key for a remote image: there is nothing to upload and nothing to warn of.
+func TestMacroAttachmentThatIsAURLIsNotAFile(t *testing.T) {
+	server, id, logged := publishMacroDoc(t, "",
+		"![A](https://example.com/a.png)<!-- width=10 -->\n")
+
+	assert.NotContains(t, logged, "is not uploaded")
+	assert.Empty(t, server.Attachments(id))
+}

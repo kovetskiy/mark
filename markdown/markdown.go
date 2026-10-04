@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -333,6 +334,11 @@ func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]atta
 
 	for _, name := range names {
 		if cfg.ResolveAttachment != nil && cfg.ResolveAttachment(name) != "" {
+			continue
+		}
+
+		// A template may reuse the key for a remote image, which is not a file.
+		if strings.Contains(name, "://") {
 			continue
 		}
 
