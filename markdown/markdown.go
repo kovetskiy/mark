@@ -65,6 +65,7 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
+		util.Prioritized(crenderer.NewConfluenceTableRenderer(), 100),
 	))
 
 	// <details> reaches here only because the document wrote the tag, and the
@@ -72,6 +73,7 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 	// markup Confluence discards or rejects. There is nothing to opt into.
 	m.Parser().AddOptions(parser.WithASTTransformers(
 		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+		util.Prioritized(ctransformer.NewTableWidthsTransformer(), 100),
 	))
 
 	if slices.Contains(c.MarkConfig.Features, "emoji") {
@@ -475,6 +477,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
+		util.Prioritized(crenderer.NewConfluenceTableRenderer(), 100),
 	))
 
 	// Add GitHub Alerts specific renderers with higher priority to override defaults
@@ -489,6 +492,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(c.Pipeline, 10),
 		util.Prioritized(ctransformer.NewLayoutTransformer(), 100),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
+		util.Prioritized(ctransformer.NewTableWidthsTransformer(), 100),
 		// Last, so that it sees the headings includes and macros brought in as
 		// well as the ones written in the file, and so that heading ids have
 		// already been assigned.
