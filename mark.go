@@ -1088,7 +1088,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			results.AddPage(report.Page{
 				File: file, Status: status, Reason: reason,
 				Space: spaceOf(meta), Title: title,
-				PageID: target.ID,
+				PageID:   target.ID,
 				Warnings: resolver.Broken(),
 			})
 		}
