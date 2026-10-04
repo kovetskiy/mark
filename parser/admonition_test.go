@@ -101,6 +101,33 @@ func TestAdmonitionParser(t *testing.T) {
 			want:   []string{`note:"N":first line` + "\n" + `second line`},
 		},
 		{
+			// The opening line was measured as though it always ended in a
+			// newline, so a one-letter class was taken for a bare run.
+			name:   "one-letter class",
+			source: "!!! a\n    body\n",
+			want:   []string{`a::body`},
+		},
+		{
+			// The same off-by-one at the end of a document cut the last
+			// character off the line: the title lost its closing quote.
+			name:   "opening line without a newline",
+			source: "!!! note \"T\"",
+			want:   []string{`note:"T":`},
+		},
+		{
+			name:   "class only, without a newline",
+			source: "!!! note",
+			want:   []string{`note::`},
+		},
+		{
+			// A closing run behind a tab the list item only partly took
+			// carries padding. Stepping over it twice ran past the end of
+			// the line, and the next one was read into the admonition.
+			name:   "closing run behind a partly taken tab",
+			source: "- item\n\n\t!!! note \"x\"\n\t    b\n\t!!!\n\tafter\n",
+			want:   []string{`note:"x":b`},
+		},
+		{
 			name:   "tab-indented body",
 			source: "!!! note \"tab\"\n\tbody\n",
 			want:   []string{`note:"tab":body`},

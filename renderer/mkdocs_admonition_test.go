@@ -141,3 +141,14 @@ func TestAdmonitionInsideABlockquote(t *testing.T) {
 	assert.Contains(t, actual, "<p><strong>In a quote</strong></p>")
 	assert.Contains(t, actual, "body")
 }
+
+// TestAdmonitionClosedInsideAQuoteWithATab covers a closing run behind a tab in
+// a blockquote. The line after it was published inside the macro.
+func TestAdmonitionClosedInsideAQuoteWithATab(t *testing.T) {
+	renderers := append(admonitionRenderers(), crenderer.NewConfluenceBlockQuoteRenderer())
+	actual := render(t, ">\t!!! note \"q\"\n>\t    b\n>\t!!!\n>\tafter\n", renderers, admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, "<p>b</p>\n</ac:rich-text-body></ac:structured-macro>")
+	assert.Contains(t, actual, "<p>after</p>")
+}
