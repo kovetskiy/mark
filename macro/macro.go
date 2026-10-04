@@ -89,7 +89,21 @@ func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
 func (macro *Macro) Apply(
 	content []byte,
 ) ([]byte, error) {
-	var err error
+	content, _, err := macro.ApplyCollecting(content)
+
+	return content, err
+}
+
+// ApplyCollecting is Apply that also reports the files the expansions name in
+// their Attachment key, in document order and without repeats. The key is only
+// a template variable, so nothing else would ever upload what it points at.
+func (macro *Macro) ApplyCollecting(
+	content []byte,
+) ([]byte, []string, error) {
+	var (
+		err         error
+		attachments []string
+	)
 
 	// Where the code is, so that a macro pattern shown inside a fenced block or
 	// a code span is left as the sample it is. Only the start of a match is
@@ -109,28 +123,33 @@ func (macro *Macro) Apply(
 				return match
 			}
 
-			var expanded []byte
+			expanded, attached, expandErr := macro.expand(match)
+			if expandErr != nil {
+				err = expandErr
 
-			expanded, err = macro.expand(match)
-			if err != nil {
 				return match
+			}
+
+			if attached != "" && !slices.Contains(attachments, attached) {
+				attachments = append(attachments, attached)
 			}
 
 			return expanded
 		},
 	)
 
-	return content, err
+	return content, attachments, err
 }
 
-// expand renders the macro's template for one match.
-func (macro *Macro) expand(match []byte) ([]byte, error) {
+// expand renders the macro's template for one match, and returns the file its
+// Attachment key names, if it has one.
+func (macro *Macro) expand(match []byte) ([]byte, string, error) {
 	config := map[string]any{}
 
 	if strings.TrimSpace(macro.Config) != "" {
 		err := yaml.Unmarshal([]byte(macro.Config), &config)
 		if err != nil {
-			return nil, fmt.Errorf("unable to unmarshal macros config template: %w", err)
+			return nil, "", fmt.Errorf("unable to unmarshal macros config template: %w", err)
 		}
 	}
 
@@ -143,7 +162,7 @@ func (macro *Macro) expand(match []byte) ([]byte, error) {
 
 		tmpl, err = macro.inlineTemplate(groups)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
@@ -151,13 +170,18 @@ func (macro *Macro) expand(match []byte) ([]byte, error) {
 
 	err := tmpl.Execute(&buf, cfgData)
 	if err != nil {
-		return nil, fmt.Errorf("unable to execute template: %w", err)
+		return nil, "", fmt.Errorf("unable to execute template: %w", err)
 	}
 
 	// Same reason as for an include: a parameter holding an element
 	// must hold nothing else, and a readable template does not
 	// naturally produce that.
-	return includes.TrimElementParameters(buf.Bytes()), nil
+	var attached string
+	if cfg, ok := cfgData.(map[string]any); ok {
+		attached, _ = cfg["Attachment"].(string)
+	}
+
+	return includes.TrimElementParameters(buf.Bytes()), attached, nil
 }
 
 // inlineTemplate is an inline macro's template with the match's captures put

@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
@@ -272,7 +274,9 @@ func expandDirectives(
 	cfg types.MarkConfig,
 	markdown []byte,
 	tmpl *template.Template,
-) (*template.Template, []byte, error) {
+) (*template.Template, []byte, []string, error) {
+	var attachments []string
+
 	for pass := 0; pass < maxIncludePasses; pass++ {
 		before := markdown
 
@@ -280,20 +284,28 @@ func expandDirectives(
 
 		tmpl, markdown, err = expandIncludes(path, cfg.IncludePath, markdown, tmpl)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		var macros []macro.Macro
 
 		macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to extract macros: %w", err)
+			return nil, nil, nil, fmt.Errorf("unable to extract macros: %w", err)
 		}
 
 		for _, m := range macros {
-			markdown, err = m.Apply(markdown)
+			var attached []string
+
+			markdown, attached, err = m.ApplyCollecting(markdown)
 			if err != nil {
-				return nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+				return nil, nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+			}
+
+			for _, name := range attached {
+				if !slices.Contains(attachments, name) {
+					attachments = append(attachments, name)
+				}
 			}
 		}
 
@@ -301,13 +313,44 @@ func expandDirectives(
 		// what was applied, since a macro that matches nothing still counts as
 		// applied and would keep the loop going for ever.
 		if bytes.Equal(before, markdown) {
-			return tmpl, markdown, nil
+			return tmpl, markdown, attachments, nil
 		}
 	}
 
-	return nil, nil, fmt.Errorf(
+	return nil, nil, nil, fmt.Errorf(
 		"includes and macros did not settle after %d passes over %q", maxIncludePasses, path,
 	)
+}
+
+// attachMacroFiles uploads the files macros name in their Attachment key, which
+// the expansion has already written into the page under their flattened names.
+//
+// A file the page declared is skipped, and counted as used by the lookup. A file
+// that is not there is only warned about, as it may already be on the page; one
+// outside the project fails, as it does anywhere else.
+func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]attachment.Attachment, error) {
+	var attached []attachment.Attachment
+
+	for _, name := range names {
+		if cfg.ResolveAttachment != nil && cfg.ResolveAttachment(name) != "" {
+			continue
+		}
+
+		file, err := attachment.ResolveLocalAttachment(vfs.LocalOS, filepath.Dir(path), name)
+		if errors.Is(err, attachment.ErrOutsideProject) {
+			return nil, fmt.Errorf("unable to attach %q named by a macro: %w", name, err)
+		}
+
+		if err != nil {
+			log.Warn().Err(err).Msgf("macro attachment %q is not uploaded", name)
+
+			continue
+		}
+
+		attached = append(attached, file)
+	}
+
+	return attached, nil
 }
 
 // expandIncludes runs include expansion over the document until it settles,
@@ -348,7 +391,12 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	// The page's set is handed on to the AST include and macro transformers,
 	// so that they see what the page's own fragments defined. The renderers
 	// keep drawing on the stdlib itself.
-	_, markdown, err = expandDirectives(path, cfg, markdown, tmpl)
+	_, markdown, macroFiles, err := expandDirectives(path, cfg, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
+	}
+
+	macroAttachments, err := attachMacroFiles(path, cfg, macroFiles)
 	if err != nil {
 		return "", nil, err
 	}
@@ -370,7 +418,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(path, markdown, replaced)
 
-	return htmlOutput, ghAlertsExtension.Attachments, nil
+	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }
 
 // CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
@@ -383,7 +431,12 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 
 	// The template set the expansion built is not carried forward: the legacy
 	// extension runs no include or macro transformer to hand it to.
-	_, markdown, err = expandDirectives(path, cfg, markdown, tmpl)
+	_, markdown, macroFiles, err := expandDirectives(path, cfg, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
+	}
+
+	macroAttachments, err := attachMacroFiles(path, cfg, macroFiles)
 	if err != nil {
 		return "", nil, err
 	}
@@ -397,7 +450,7 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(path, markdown, replaced)
 
-	return htmlOutput, confluenceExtension.Attachments, nil
+	return htmlOutput, append(macroAttachments, confluenceExtension.Attachments...), nil
 }
 
 // ConfluenceExtension is a goldmark extension for GitHub Alerts with Transformer approach
