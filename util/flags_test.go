@@ -44,7 +44,7 @@ func TestCheckConfigFile(t *testing.T) {
 		path := write(t, "username = \"u\"\nfeatures = [frontmatter,mention]\n")
 		err := run(t, "mark", "--config", path)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), path, "the message must name the file")
+		assert.Contains(t, err.Error(), fmt.Sprintf("%q", path), "the message must name the file")
 		assert.Contains(t, err.Error(), "line 2", "and where in it to look")
 	})
 
