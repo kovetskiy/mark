@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -936,6 +937,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	resolveLink := resolver.Resolve
 
+	// What a dry run found where the page would be, for --changes-only to compare
+	// against. Nil means the page would be created.
+	var previewed *confluence.PageInfo
+
 	if config.DryRun {
 		if meta != nil {
 			if _, pg, err := page.ResolvePage(true, api, meta, ancestryTracker); err != nil {
@@ -945,20 +950,26 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				// the manifest. Saying so is the whole point of a dry run:
 				// otherwise it reports a new page for every rename and retitle
 				// the run would actually have handled in place.
-				previewTrackedResolution(tracker, api, meta, file, sourceHash)
-			} else if tracker != nil {
-				// Found by title. A real run records the path once it has
-				// published, and that is what keeps the path from being read
-				// as an orphan. A dry run returns before then, so it records
-				// here; its store never saves.
-				if err := tracker.Record(meta.Space, file, pg.ID, meta.Title, sourceHash); err != nil {
-					return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+				previewed = previewTrackedResolution(tracker, api, meta, file, sourceHash)
+			} else {
+				previewed = pg
+
+				if tracker != nil {
+					// Found by title. A real run records the path once it has
+					// published, and that is what keeps the path from being read
+					// as an orphan. A dry run returns before then, so it records
+					// here; its store never saves.
+					if err := tracker.Record(meta.Space, file, pg.ID, meta.Title, sourceHash); err != nil {
+						return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+					}
 				}
 			}
 		} else if config.PageID != "" {
-			if _, err := api.GetPageByID(config.PageID); err != nil {
+			pg, err := api.GetPageByID(config.PageID)
+			if err != nil {
 				return nil, nil, fmt.Errorf("unable to resolve page by ID: %w", err)
 			}
+			previewed = pg
 		}
 	}
 
@@ -989,12 +1000,37 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			IncludePath:      config.IncludePath,
 			ResolveLink:      resolveLink,
 		}
+
+		// Only a dry run asked to tell changed pages from unchanged ones.
+		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
+		var attachmentLinks *attachment.Resolver
+		var newAttachments bool
+		if compare && previewed != nil {
+			var err error
+			attachmentLinks, newAttachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
+			if err != nil {
+				return nil, nil, err
+			}
+			cfg.ResolveAttachment = attachmentLinks.Resolve
+		}
+
 		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 		}
-		if _, err := fmt.Fprintln(config.output(), html); err != nil {
-			return nil, nil, err
+
+		status := ""
+		if compare {
+			status, err = previewChange(html, previewed, newAttachments, file, config, meta, std)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+
+		if status != report.StatusUnchanged {
+			if _, err := fmt.Fprintln(config.output(), html); err != nil {
+				return nil, nil, err
+			}
 		}
 
 		// Checked here as well as before an upload. Validating documents in CI
@@ -1017,6 +1053,23 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// pull request gate is most likely to use.
 		if err := reportBrokenLinks(resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
 			return nil, nil, err
+		}
+
+		if status != "" {
+			var target confluence.PageInfo
+			if previewed != nil {
+				target = *previewed
+			}
+			title := target.Title
+			if meta != nil {
+				title = meta.Title
+			}
+			results.AddPage(report.Page{
+				File: file, Status: status,
+				Space: spaceOf(meta), Title: title,
+				PageID: target.ID,
+				Warnings: resolver.Broken(),
+			})
 		}
 
 		return nil, nil, nil
@@ -1259,25 +1312,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		emoji = meta.Emoji
 	}
 
-	{
-		var buffer bytes.Buffer
-		err := std.Templates.ExecuteTemplate(
-			&buffer,
-			"ac:layout",
-			struct {
-				Layout  string
-				Sidebar string
-				Body    string
-			}{
-				Layout:  layout,
-				Sidebar: sidebar,
-				Body:    html,
-			},
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to execute layout template: %w", err)
-		}
-		html = buffer.String()
+	html, err = wrapLayout(std, layout, sidebar, html)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var finalVersionMessage string
@@ -1397,7 +1434,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	// No dry-run branch here: a dry run returns long before this, when the
-	// compiled page would have been printed.
+	// compiled page would have been printed or, under --changes-only, compared.
 	if err := page.ApplyProperties(
 		api, target.ID,
 		page.MergeProperties(globalProperties, documentProperties),
@@ -1447,6 +1484,121 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	return target, placement, nil
 }
 
+// wrapLayout puts the compiled body inside the page's layout, which is what is
+// sent to Confluence and what --changes-only fingerprints.
+func wrapLayout(std *stdlib.Lib, layout, sidebar, body string) (string, error) {
+	var buffer bytes.Buffer
+	err := std.Templates.ExecuteTemplate(
+		&buffer,
+		"ac:layout",
+		struct {
+			Layout  string
+			Sidebar string
+			Body    string
+		}{
+			Layout:  layout,
+			Sidebar: sidebar,
+			Body:    body,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("unable to execute layout template: %w", err)
+	}
+
+	return buffer.String(), nil
+}
+
+// previewAttachmentLinks resolves the links a real run would write for the
+// page's attachments, without uploading anything.
+//
+// The fingerprint covers those links, so comparing without them would call a
+// page changed whenever it embeds a file. An attachment the page does not hold
+// yet has no link to give, and reports as new: the real run uploads it and
+// links to it, so the page differs either way.
+func previewAttachmentLinks(
+	api *confluence.API,
+	target *confluence.PageInfo,
+	base string,
+	meta *metadata.Meta,
+) (*attachment.Resolver, bool, error) {
+	var declared []string
+	if meta != nil {
+		declared = meta.Attachments
+	}
+
+	local, err := attachment.ResolveLocalAttachments(vfs.LocalOS, base, declared)
+	if err != nil {
+		return nil, false, fmt.Errorf("unable to locate attachments: %w", err)
+	}
+
+	remotes, err := api.GetAttachments(target.ID)
+	if err != nil {
+		return nil, false, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+	}
+
+	var isNew bool
+	linked := make([]attachment.Attachment, 0, len(local))
+	for _, item := range local {
+		i := slices.IndexFunc(remotes, func(r confluence.AttachmentInfo) bool {
+			return r.Filename == item.Filename
+		})
+		if i < 0 {
+			isNew = true
+			continue
+		}
+		item.Link = path.Join(remotes[i].Links.Context, remotes[i].Links.Download)
+		linked = append(linked, item)
+	}
+
+	return attachment.NewResolver(linked), isNew, nil
+}
+
+// previewChange says whether a real run would write the page, using the same
+// comparison it does, and logs the answer.
+func previewChange(
+	body string,
+	existing *confluence.PageInfo,
+	newAttachments bool,
+	file string,
+	config Config,
+	meta *metadata.Meta,
+	std *stdlib.Lib,
+) (string, error) {
+	if existing == nil {
+		log.Info().Msgf("%s: page would be created", file)
+
+		return report.StatusWouldCreate, nil
+	}
+
+	var layout, sidebar, appearance, emoji, title string
+	if meta != nil {
+		layout, sidebar, appearance, emoji, title = meta.Layout, meta.Sidebar, meta.ContentAppearance, meta.Emoji, meta.Title
+	}
+
+	wrapped, err := wrapLayout(std, layout, sidebar, body)
+	if err != nil {
+		return "", err
+	}
+
+	hash := contentFingerprint(wrapped, appearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
+	retitled := meta != nil && existing.Title != title
+
+	switch {
+	case retitled:
+		log.Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
+	case newAttachments:
+		log.Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
+	case readContentHash(existing.Version.Message) == hash:
+		log.Info().Msgf("%s: page %q is already up to date", file, existing.Title)
+
+		return report.StatusUnchanged, nil
+	default:
+		log.Info().Msgf("%s: page %q would be updated", file, existing.Title)
+	}
+
+	return report.StatusWouldUpdate, nil
+}
+
 // previewTrackedResolution says what a real run would have done with a document
 // the title lookup could not place.
 //
@@ -1459,9 +1611,9 @@ func previewTrackedResolution(
 	meta *metadata.Meta,
 	file string,
 	sourceHash string,
-) {
+) *confluence.PageInfo {
 	if tracker == nil || meta == nil {
-		return
+		return nil
 	}
 
 	if pg, err := resolveTrackedPage(tracker, api, meta, file); err == nil && pg != nil {
@@ -1469,7 +1621,7 @@ func previewTrackedResolution(
 			"%s would be published to the existing page %s, retitled from %q to %q",
 			file, pg.ID, pg.Title, meta.Title,
 		)
-		return
+		return pg
 	}
 
 	if pg, err := resolveRenamedFile(tracker, api, meta, file, sourceHash); err == nil && pg != nil {
@@ -1477,10 +1629,12 @@ func previewTrackedResolution(
 			"%s would be treated as a rename of an already published document, updating page %s",
 			file, pg.ID,
 		)
-		return
+		return pg
 	}
 
 	log.Info().Msgf("%s would be published as a new page %q", file, meta.Title)
+
+	return nil
 }
 
 // resolveTrackedPage returns the page this file published to on a previous run,
