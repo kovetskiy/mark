@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -165,4 +166,163 @@ func TestContextDefaultsToBackground(t *testing.T) {
 	defer cancel()
 	api.SetContext(ctx)
 	assert.Equal(t, ctx, api.Context())
+}
+
+// holdUntilCancelled stops the run from inside a request and keeps that request
+// open until the client gives up on it, so the call is cut short in flight. It
+// gives up itself after promptly, for a client that never would.
+func holdUntilCancelled(r *http.Request, cancel context.CancelFunc) {
+	cancel()
+
+	select {
+	case <-r.Context().Done():
+	case <-time.After(promptly):
+	}
+}
+
+// TestCancelDuringTheV2FallbackIsReported: FindHomePage and GetSpaceID fall
+// back to v2 when v1 refuses, and report v1's refusal when v2 fails too. A run
+// stopped during the fallback is not v2 failing: wrapped behind v1's 403, the
+// cancellation was out of errors.Is's reach.
+func TestCancelDuringTheV2FallbackIsReported(t *testing.T) {
+	for name, lookup := range map[string]func(*confluence.API) error{
+		"FindHomePage": func(api *confluence.API) error { _, err := api.FindHomePage("DOCS"); return err },
+		"GetSpaceID":   func(api *confluence.API) error { _, err := api.GetSpaceID("DOCS"); return err },
+	} {
+		t.Run(name, func(t *testing.T) {
+			api, server := newAPI(t)
+			server.AddSpace("DOCS")
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			api.SetContext(ctx)
+
+			server.SetFail(func(r *http.Request) (int, string, bool) {
+				if strings.HasPrefix(r.URL.Path, "/api/v2/") {
+					holdUntilCancelled(r, cancel)
+					return http.StatusInternalServerError, `{"message":"too late"}`, true
+				}
+				if strings.Contains(r.URL.Path, "/space/") {
+					return http.StatusForbidden, `{"message":"scope"}`, true
+				}
+				return 0, "", false
+			})
+
+			require.ErrorIs(t, lookup(api), context.Canceled)
+		})
+	}
+}
+
+// TestCancelStopsTheMoveAction: movepage.action was the one request that did
+// not carry the API's context, so a stopped run sat out a blocked action until
+// the transport gave up on it.
+func TestCancelStopsTheMoveAction(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			holdUntilCancelled(r, cancel)
+			return http.StatusInternalServerError, `{"message":"too late"}`, true
+		}
+		return 0, "", false
+	})
+	api.SetContext(ctx)
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	start := time.Now()
+	err := api.MoveContentBefore(second.ID, first.ID)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), promptly)
+}
+
+// TestCancelledMoveActionIsNotRemembered: an answer from movepage.action that
+// the run's cancellation cut short is no answer. Read as one, a login page's
+// headers on it closed the action to every later move on the API, cancellation
+// or not, and the error no longer said the run had been stopped.
+func TestCancelledMoveActionIsNotRemembered(t *testing.T) {
+	fake := confluencetest.New(t)
+	fake.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+		}
+		return 0, "", false
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var cutShort atomic.Bool
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/pages/movepage.action" && cutShort.CompareAndSwap(false, true) {
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("X-Seraph-Loginreason", "AUTHENTICATED_FAILED")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html><body>Log"))
+			w.(http.Flusher).Flush()
+			// Long enough for the client to have the status and headers in
+			// hand, so it is the body that the cancellation cuts short.
+			time.Sleep(200 * time.Millisecond)
+			holdUntilCancelled(r, cancel)
+			return
+		}
+		fake.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+
+	api := confluence.NewAPI(front.URL, "user", "token", false)
+	require.False(t, api.IsCloud())
+	api.SetContext(ctx)
+
+	parent := fake.AddPage("DOCS", "Parent", "page", "")
+	first := fake.AddPage("DOCS", "First", "page", parent.ID)
+	second := fake.AddPage("DOCS", "Second", "page", parent.ID)
+
+	require.ErrorIs(t, api.MoveContentBefore(second.ID, first.ID), context.Canceled)
+
+	api.SetContext(context.Background())
+	require.NoError(t, api.MoveContentBefore(second.ID, first.ID))
+	assert.Equal(t, []string{second.ID, first.ID}, fake.ChildOrder(parent.ID))
+	assert.Equal(t, 1, fake.CountRequests(http.MethodPost, "/pages/movepage.action"),
+		"the action has to be asked again once the run is no longer stopped")
+}
+
+// TestCancelledCloudProbeDoesNotCloseTheMoveEndpoint: a move endpoint's 404 is
+// taken as the endpoint being missing only outside Cloud, and IsCloud answers
+// false for a probe the run's cancellation cut short. That false was taken for
+// an answer, and every later move on the API skipped the endpoint for the
+// Data Center fallbacks.
+func TestCancelledCloudProbeDoesNotCloseTheMoveEndpoint(t *testing.T) {
+	api, server := newAPI(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	api.SetContext(ctx)
+
+	var probed atomic.Bool
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/move/") {
+			return http.StatusNotFound, `{"message":"no such page"}`, true
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/v2/") && probed.CompareAndSwap(false, true) {
+			holdUntilCancelled(r, cancel)
+			return http.StatusInternalServerError, `{"message":"too late"}`, true
+		}
+		return 0, "", false
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	require.ErrorIs(t, api.MoveContentBefore(second.ID, first.ID), context.Canceled)
+
+	api.SetContext(context.Background())
+	_ = api.MoveContentBefore(second.ID, first.ID)
+	assert.Equal(t, 2, server.CountRequests(http.MethodPut, "/move/"),
+		"the endpoint has to be asked again once the run is no longer stopped")
 }

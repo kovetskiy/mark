@@ -515,6 +515,12 @@ func (api *API) v2() *resty.Request {
 	return api.restV2.R().SetContext(api.Context())
 }
 
+// web is v1 and v2 for the one web action mark calls, which is rooted at the
+// site rather than at an API; see moveByAction.
+func (api *API) web() *resty.Request {
+	return api.site.R().SetContext(api.Context())
+}
+
 // SetContext sets the context every later request made through api carries.
 //
 // Cancelling it cancels a request in flight, cuts short the backoff before a
@@ -764,7 +770,10 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// space that is not there for the rest of the run. Through the gateway v1
 	// is never asked and v2's answer is the only one, so it stands as it is.
 	if v2Err != nil {
-		if api.gateway {
+		// Nor does v1's answer decide anything when the run was stopped
+		// during the fallback: it was never a conclusion, and wrapping it
+		// would hide the cancellation from errors.Is behind a %v.
+		if api.gateway || api.cancelled(v2Err) {
 			return nil, v2Err
 		}
 		if v1Err == nil {
@@ -2474,6 +2483,9 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// being a 404, got a v1 outage cached for the rest of the run. v1's answer
 	// is the one that decides, so v2's is kept for the message only.
 	if err != nil {
+		if api.cancelled(err) {
+			return "", err
+		}
 		if v1Err == nil && v1Response != nil && v1Response.StatusCode() != http.StatusOK {
 			v1Err = newErrorStatusNotOK(v1Response)
 		}
@@ -2859,13 +2871,16 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	// decoded as JSON whatever it is labelled, so a page that is not JSON
 	// comes back as a decode error with the response still in hand.
 	var answer map[string]any
-	response, err = api.site.R().
+	response, err = api.web().
 		SetResult(&answer).
 		SetHeader("X-Atlassian-Token", "no-check").
 		SetHeader("Accept", "application/json").
 		SetQueryParams(query).
 		Post("pages/movepage.action")
-	if response == nil || response.RawResponse == nil {
+	// A response cut short by the run's context is no answer from the action,
+	// however much of it arrived: judged here, a cancelled move was taken for
+	// a closed action and remembered for the rest of the API's life.
+	if response == nil || response.RawResponse == nil || api.cancelled(err) {
 		return false, newTransportError(
 			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
 		)
@@ -3278,6 +3293,16 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		// same, which is why the status stays in the message and why nothing
 		// here concludes anything about the content itself.
 		if !api.IsCloud() {
+			// IsCloud answers false, and remembers nothing, when its probe
+			// was cancelled. That is no reason to conclude the endpoint is
+			// missing, and remembered, it sent every later Cloud move on
+			// this API down the Data Center fallbacks.
+			if err := api.Context().Err(); err != nil {
+				return fmt.Errorf(
+					"unable to move content %s %s %s: %w", contentID, position, targetID, err,
+				)
+			}
+
 			// closeUnreadBody has already closed the body.
 			missing := fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, response.StatusCode())
 			api.moveEndpointMissing.Store(&missing)
