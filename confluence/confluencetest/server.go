@@ -572,7 +572,10 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		s.mu.Lock()
 		u := s.currentUser
 		s.mu.Unlock()
+		// "known" is what a real instance reports for a logged-in user, as
+		// opposed to "anonymous"; the browser login's probe tells the two apart.
 		writeJSON(w, http.StatusOK, map[string]any{
+			"type":      "known",
 			"accountId": u.AccountID,
 			"userKey":   u.UserKey,
 			"username":  u.Username,
