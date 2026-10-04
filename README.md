@@ -1838,6 +1838,13 @@ The session is cached in `cookies.json` under your user cache directory
 (`~/.cache/mark` on Linux, `~/Library/Caches/mark` on macOS), readable only by
 you. Delete that file to forget the session.
 
+The cache holds the session cookie in plain text, and anyone who can read the
+file can act as you on Confluence for as long as the session lasts. How long
+that is depends on your instance's session settings, not on mark. Deleting the
+file only makes mark forget the session; the server keeps honouring it until
+it expires. Logging out in your usual browser does not end it either: mark logs
+in through a browser profile of its own, so its session is a separate one.
+
 `--login` needs a browser window, so it cannot be used in CI; use `--password`
 with a personal access token there. It cannot be combined with `--username`,
 `--password` or `--password-command`.
