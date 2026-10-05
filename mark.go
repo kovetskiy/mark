@@ -7,6 +7,7 @@ import (
 	// a security primitive. The digest is embedded in the page version message
 	// and matched back with a 40-hex-character regex, so widening it would stop
 	// mark from recognising pages published by earlier versions.
+	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // G505: non-cryptographic content fingerprint
 	"encoding/hex"
 	"errors"
@@ -1003,8 +1004,28 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 		// Only a dry run asked to tell changed pages from unchanged ones.
 		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
+
+		status, reason := "", ""
+		if compare && config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
+			// Ahead of compiling, as on a real run: a page edited in Confluence
+			// is left alone whatever the source says, and whatever it would fail on.
+			drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, previewed)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if drifted {
+				status = report.StatusSkipped
+				reason = fmt.Sprintf(
+					"edited in Confluence since mark published it (version %d, mark wrote %d)",
+					previewed.Version.Number, recorded,
+				)
+				log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
+			}
+		}
+
 		var attachments *attachmentPreview
-		if compare && previewed != nil {
+		if compare && status == "" && previewed != nil {
 			var err error
 			attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
 			if err != nil {
@@ -1013,38 +1034,20 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			cfg.ResolveAttachment = attachments.resolve
 		}
 
-		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+		var html string
+		if status == "" {
+			html, _, err = markmd.CompileMarkdown(markdown, std, file, cfg)
+			if err != nil {
+				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+			}
 		}
 
-		status, reason := "", ""
-		if compare {
-			// Ahead of the comparison, as it is on a real run: a page edited in
-			// Confluence is left alone whatever the source says.
-			if config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
-				drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, previewed)
-				if err != nil {
-					return nil, nil, err
-				}
-
-				if drifted {
-					status = report.StatusSkipped
-					reason = fmt.Sprintf(
-						"edited in Confluence since mark published it (version %d, mark wrote %d)",
-						previewed.Version.Number, recorded,
-					)
-					log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
-				}
-			}
-
-			if status == "" {
-				var relinked bool
-				html, relinked = attachments.settle(html)
-				status, err = previewChange(html, previewed, relinked, file, config, meta, std)
-				if err != nil {
-					return nil, nil, err
-				}
+		if compare && status == "" {
+			var relinked bool
+			html, relinked = attachments.settle(html)
+			status, err = previewChange(html, previewed, relinked, file, config, meta, std)
+			if err != nil {
+				return nil, nil, err
 			}
 		}
 
@@ -1062,8 +1065,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		//
 		// The layout wrap and the comment merge are missing from this output,
 		// and neither introduces the errors this catches.
-		if err := markmd.CheckWellFormed(html); err != nil {
-			return nil, nil, err
+		if status != report.StatusSkipped {
+			if err := markmd.CheckWellFormed(html); err != nil {
+				return nil, nil, err
+			}
 		}
 
 		// Said here too, and for the same reason the check above is. The links
@@ -1540,12 +1545,13 @@ func wrapLayout(std *stdlib.Lib, layout, sidebar, body string) (string, error) {
 type attachmentPreview struct {
 	current *attachment.Resolver
 	pending *attachment.Resolver
-}
 
-// pendingLink stands in for a link that does not exist until the attachment is
-// uploaded. Finding it in the compiled page is how a page that links one is told
-// from one that merely embeds it, which names the file and not the link.
-const pendingLink = "/mark-dry-run-pending/"
+	// marker stands in for a link that does not exist until the attachment is
+	// uploaded. Finding it in the compiled page is how a page that links one is
+	// told from one that merely embeds it, which names the file and not the
+	// link. Random per preview, so text in the document cannot be mistaken for it.
+	marker string
+}
 
 func (p *attachmentPreview) resolve(target string) string {
 	if p == nil {
@@ -1562,11 +1568,11 @@ func (p *attachmentPreview) resolve(target string) string {
 // settle reports whether body links an attachment whose link a real run would
 // change, and returns it with the stand-in links read as the file's name.
 func (p *attachmentPreview) settle(body string) (string, bool) {
-	if p == nil || !strings.Contains(body, pendingLink) {
+	if p == nil || !strings.Contains(body, p.marker) {
 		return body, false
 	}
 
-	return strings.ReplaceAll(body, pendingLink, ""), true
+	return strings.ReplaceAll(body, p.marker, ""), true
 }
 
 func previewAttachmentLinks(
@@ -1590,6 +1596,12 @@ func previewAttachmentLinks(
 		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}
 
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, fmt.Errorf("unable to generate a placeholder for pending attachment links: %w", err)
+	}
+	marker := "/mark-dry-run-pending-" + hex.EncodeToString(nonce[:]) + "/"
+
 	current := make([]attachment.Attachment, 0, len(local))
 	pending := make([]attachment.Attachment, 0, len(local))
 	for _, item := range local {
@@ -1597,7 +1609,7 @@ func previewAttachmentLinks(
 			return r.Filename == item.Filename
 		})
 		if i < 0 || strings.TrimPrefix(remotes[i].Metadata.Comment, attachment.AttachmentChecksumPrefix) != item.Checksum {
-			item.Link = pendingLink + item.Filename
+			item.Link = marker + item.Filename
 			pending = append(pending, item)
 
 			continue
@@ -1610,6 +1622,7 @@ func previewAttachmentLinks(
 	return &attachmentPreview{
 		current: attachment.NewResolver(current),
 		pending: attachment.NewResolver(pending),
+		marker:  marker,
 	}, nil
 }
 

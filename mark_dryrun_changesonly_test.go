@@ -213,3 +213,46 @@ func TestDryRunChangesOnlyNoOverwriteReportsAnEditedPageSkipped(t *testing.T) {
 	assert.Contains(t, out.String(), `"status": "skipped"`)
 	assert.NotContains(t, out.String(), "<p>From mark.</p>", "a page left alone must not be dumped")
 }
+
+// TestDryRunChangesOnlySkippedPageIsNotCompiled keeps the order of a real run:
+// a page that --no-overwrite leaves alone is reported as skipped even when its
+// source could not be compiled.
+func TestDryRunChangesOnlySkippedPageIsNotCompiled(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		dryRunDocBody("<!-- Attachment: missing.png -->\n\nFrom mark."))
+
+	var out bytes.Buffer
+	config.ChangesOnly = true
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, out.String(), `"status": "skipped"`)
+}
+
+// TestDryRunChangesOnlyLiteralPlaceholderTextIsNotAChange covers a document that
+// happens to contain the text an earlier version used to mark pending links.
+func TestDryRunChangesOnlyLiteralPlaceholderTextIsNotAChange(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", dryRunDocBody("see /mark-dry-run-pending/ in the docs"))
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+		ChangesOnly: true,
+	}
+	require.NoError(t, Run(config))
+
+	var out bytes.Buffer
+	config.Output = &out
+	config.DryRun = true
+	config.OutputFormat = "github"
+	require.NoError(t, Run(config))
+
+	assert.NotContains(t, out.String(), "would update")
+}
