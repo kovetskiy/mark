@@ -83,8 +83,7 @@ func UseEngine(kind string) error {
 // occupying the engine's one page, plus the render itself.
 //
 // It replaces mermaid.go's own DefaultRenderTimeout of 30 seconds, which is too
-// tight for the CPU-starved CI containers mark runs in -- the same contention
-// the chrome package raises WSURLReadTimeout for.
+// tight for the CPU-starved CI containers mark runs in.
 var renderTimeout = 120 * time.Second
 
 // renderAttempts is how many times one diagram is rendered before giving up.
@@ -141,7 +140,7 @@ func getMermaidEngine() (mermaid.Renderer, error) {
 
 	// Without this a crash is only ever seen as whatever the in-flight render
 	// happened to fail with, and one that happens between diagrams is invisible
-	// until the next diagram fails. The handler runs on chromedp's event
+	// until the next diagram fails. The handler runs on the engine's event
 	// goroutine, so it may only log: calling back into the engine from there
 	// deadlocks.
 	//
