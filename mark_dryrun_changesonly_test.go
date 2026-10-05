@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -161,6 +162,12 @@ func TestDryRunChangesOnlyKnowsAboutAttachmentLinks(t *testing.T) {
 
 	assert.NotContains(t, out.String(), "would update")
 	assert.NotContains(t, out.String(), "logo.png", "an unchanged page must not be dumped")
+
+	config.OutputFormat = "json"
+	out.Reset()
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, out.String(), `"status": "unchanged"`)
 }
 
 func TestDryRunChangesOnlyChangedAttachment(t *testing.T) {
@@ -255,4 +262,37 @@ func TestDryRunChangesOnlyLiteralPlaceholderTextIsNotAChange(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	assert.NotContains(t, out.String(), "would update")
+}
+
+// TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded keeps a failed
+// lookup from being reported as a page that would be created.
+func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	body := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: %s -->\n\nsame\n"
+	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "First"))
+
+	config := trackingConfig(server, file)
+	config.ChangesOnly = true
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	first, err := api.FindPage("DOCS", "First", "page")
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusInternalServerError, "boom",
+			r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/"+first.ID)
+	})
+
+	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Second"))
+	var out bytes.Buffer
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+
+	err = Run(config)
+	require.Error(t, err)
+	assert.NotContains(t, out.String(), "would-create")
 }
