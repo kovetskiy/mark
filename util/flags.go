@@ -251,13 +251,13 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "mermaid-output",
 		Value:   "png",
-		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark).",
+		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-scale and --mermaid-bundle have no effect with this setting).",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
 		Name:    "mermaid-bundle",
 		Value:   false,
-		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg.",
+		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and has no effect with --mermaid-output=macro, which publishes the source itself.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), altsrctoml.TOML("mermaid-bundle", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
@@ -567,6 +567,10 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	//
 	// The scale is not checked against the format any more: it applies to both,
 	// multiplying the pixels of a PNG and the size the page shows an SVG at.
+	//
+	// With --mermaid-output=macro the bundle is moot: the diagram's source is
+	// already published verbatim inside the macro body, so neither error nor
+	// warning is needed -- it is simply a no-op.
 	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
 		return context, errors.New(
 			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",

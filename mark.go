@@ -200,7 +200,11 @@ func (c Config) prepare() (page.LinkChecks, error) {
 		)
 	}
 
-	if c.MermaidBundle && c.MermaidOutput != "svg" {
+	// A bundle is only meaningful where there is a rendered file to put the
+	// source into. A PNG has nowhere for it; the macro output publishes the
+	// source by definition, so a bundle asked for alongside it is moot rather
+	// than contradictory and is let through as a no-op.
+	if c.MermaidBundle && c.MermaidOutput != "svg" && c.MermaidOutput != "macro" {
 		return page.LinkChecks{}, errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
 				"there is nowhere in a PNG to keep the diagram's source",
