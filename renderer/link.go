@@ -345,8 +345,9 @@ func hasURIScheme(destination string) bool {
 	for i := 0; i < colon; i++ {
 		c := destination[i]
 		letter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		later := (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'
 
-		if !letter && (i == 0 || !((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.')) {
+		if !letter && (i == 0 || !later) {
 			return false
 		}
 	}
