@@ -175,3 +175,34 @@ func TestMacroAttachmentThatIsAURLIsNotAFile(t *testing.T) {
 	assert.NotContains(t, logged, "is not uploaded")
 	assert.Empty(t, server.Attachments(id))
 }
+
+// TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead covers the values a
+// project file of the same name must never be uploaded for.
+func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	for name, value := range map[string]string{
+		"mailto":            "mailto:user@example.com",
+		"data":              "data:image/png,x",
+		"protocol-relative": "//host/path.png",
+		"absolute":          "/etc/secret.png",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "doc.md")
+
+			// Where a bare join of each value onto the directory would land.
+			for _, file := range []string{"etc/secret.png", "host/path.png"} {
+				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, file), onePixelPNG(), 0o600))
+			}
+
+			source := widthMacro + "\n![A](" + value + ")<!-- width=10 -->\n"
+
+			_, attached, err := markmd.CompileMarkdown([]byte(source), std, path, types.MarkConfig{})
+			require.NoError(t, err)
+			assert.Empty(t, attached)
+		})
+	}
+}
