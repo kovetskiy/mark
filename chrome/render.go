@@ -19,14 +19,11 @@ const renderTimeout = 120 * time.Second
 
 // startupTimeout bounds getting a browser ready to be asked for a picture.
 //
-// WSURLReadTimeout covers only the wait for Chrome to print the DevTools URL on
-// its stderr. Everything after that -- the websocket handshake,
-// Target.createTarget, Target.attachToTarget -- had no bound at all, so a
-// browser that announced itself and then wedged left mark waiting with no
+// chromedp puts no bound on it: once Chrome is running, the handshake over its
+// debugging pipe, Target.createTarget and Target.attachToTarget can each wait
+// for ever, so a browser that started and then wedged left mark waiting with no
 // output and no error. A contended CI box and a stalled GPU-process init both
 // produce exactly that.
-//
-// Longer than the URL wait it contains, since it is the whole of startup.
 const startupTimeout = 90 * time.Second
 
 // maxRasterSide is the largest side, in pixels after scaling, that a capture may
@@ -77,7 +74,7 @@ func Context() (context.Context, error) {
 	// Bounded, but not by giving the browser a context that expires: the
 	// browser has to outlive its own startup.
 	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(ctx) }()
+	go func() { started <- chromedp.Do(ctx) }()
 
 	select {
 	case err := <-started:
@@ -152,10 +149,13 @@ func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, 
 	// -- which ends the browser, and with it every later diagram in the run.
 	var model *dom.BoxModel
 
-	err = chromedp.Run(runCtx,
+	err = chromedp.Do(runCtx,
 		chromedp.Navigate(fmt.Sprintf("data:image/svg+xml;base64,%s", base64.StdEncoding.EncodeToString(svg))),
-		chromedp.Dimensions(selector, &model, chromedp.ByJSPath),
 	)
+	if err == nil {
+		model, err = chromedp.Run(runCtx, chromedp.Dimensions(chromedp.JSPath(selector)))
+	}
+
 	if err != nil {
 		// A browser that failed a run is not trusted for the next one: the
 		// usual cause is that it died, and every later render would fail the
@@ -171,11 +171,8 @@ func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, 
 		return nil, 0, 0, err
 	}
 
-	var result []byte
-
-	if err := chromedp.Run(runCtx,
-		chromedp.ScreenshotScale(selector, scale, &result, chromedp.ByJSPath),
-	); err != nil {
+	result, err := chromedp.Run(runCtx, chromedp.ScreenshotScale(chromedp.JSPath(selector), scale))
+	if err != nil {
 		Cleanup()
 
 		return nil, 0, 0, err
