@@ -309,21 +309,46 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 // that resolved into nothing is still not an attachment -- publishing a
 // colleague's source as a download is not what was meant by linking to it.
 func isLocalFileReference(destination string) bool {
-	if destination == "" {
-		return false
-	}
-
-	if strings.HasPrefix(destination, "#") || isRooted(destination) {
-		return false
-	}
-
-	if strings.Contains(destination, "://") || strings.HasPrefix(destination, "mailto:") {
+	if !NamesBesideDocument(destination) {
 		return false
 	}
 
 	switch strings.ToLower(filepath.Ext(destination)) {
 	case ".md", ".markdown", "":
 		return false
+	}
+
+	return true
+}
+
+// NamesBesideDocument reports whether a destination can name a file next to the
+// document: not empty, not an anchor, not rooted, and not a URI of any scheme.
+//
+// A scheme is anything URI-shaped ("mailto:", "data:", "https:"), not only the
+// "://" form, and a protocol-relative "//host/path" is caught as rooted.
+func NamesBesideDocument(destination string) bool {
+	if destination == "" || strings.HasPrefix(destination, "#") || isRooted(destination) {
+		return false
+	}
+
+	return !hasURIScheme(destination)
+}
+
+// hasURIScheme reports whether a destination opens with an RFC 3986 scheme. A
+// single letter is a drive letter, which isRooted has already answered for.
+func hasURIScheme(destination string) bool {
+	colon := strings.IndexByte(destination, ':')
+	if colon < 2 {
+		return false
+	}
+
+	for i := 0; i < colon; i++ {
+		c := destination[i]
+		letter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+
+		if !letter && (i == 0 || !((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.')) {
+			return false
+		}
 	}
 
 	return true
