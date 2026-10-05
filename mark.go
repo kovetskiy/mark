@@ -951,7 +951,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				// the manifest. Saying so is the whole point of a dry run:
 				// otherwise it reports a new page for every rename and retitle
 				// the run would actually have handled in place.
-				previewed = previewTrackedResolution(tracker, api, meta, file, sourceHash)
+				previewed, err = previewTrackedResolution(tracker, api, meta, file, sourceHash)
+				if err != nil {
+					return nil, nil, err
+				}
 			} else {
 				previewed = pg
 
@@ -1684,30 +1687,44 @@ func previewTrackedResolution(
 	meta *metadata.Meta,
 	file string,
 	sourceHash string,
-) *confluence.PageInfo {
+) (*confluence.PageInfo, error) {
 	if tracker == nil || meta == nil {
-		return nil
+		return nil, nil
 	}
 
-	if pg, err := resolveTrackedPage(tracker, api, meta, file); err == nil && pg != nil {
+	// Errors stop the preview as they stop a real run: reporting "would create"
+	// over a lookup that failed would hide the duplicate a real run refuses to make.
+	pg, err := resolveTrackedPage(tracker, api, meta, file)
+	if err != nil {
+		return nil, err
+	}
+
+	if pg != nil {
 		log.Info().Msgf(
 			"%s would be published to the existing page %s, retitled from %q to %q",
 			file, pg.ID, pg.Title, meta.Title,
 		)
-		return pg
+
+		return pg, nil
 	}
 
-	if pg, err := resolveRenamedFile(tracker, api, meta, file, sourceHash); err == nil && pg != nil {
+	pg, err = resolveRenamedFile(tracker, api, meta, file, sourceHash)
+	if err != nil {
+		return nil, err
+	}
+
+	if pg != nil {
 		log.Info().Msgf(
 			"%s would be treated as a rename of an already published document, updating page %s",
 			file, pg.ID,
 		)
-		return pg
+
+		return pg, nil
 	}
 
 	log.Info().Msgf("%s would be published as a new page %q", file, meta.Title)
 
-	return nil
+	return nil, nil
 }
 
 // resolveTrackedPage returns the page this file published to on a previous run,
