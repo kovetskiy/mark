@@ -31,7 +31,7 @@ func newStdlib(t *testing.T) *stdlib.Lib {
 }
 
 func TestNoPathIsNoHeader(t *testing.T) {
-	header, err := Load("", newStdlib(t))
+	header, err := Load("", newStdlib(t), types.MarkConfig{})
 	require.NoError(t, err)
 	assert.Nil(t, header)
 
@@ -47,7 +47,7 @@ func TestStorageFormatHeader(t *testing.T) {
 	path := writeHeader(t, "header.html",
 		`<p><a href="https://github.com/org/repo/blob/main/{{ .EscapedPath | xmlesc }}">{{ .Path | xmlesc }}</a> in {{ .Space }}: {{ .Title | xmlesc }}</p>`)
 
-	header, err := Load(path, newStdlib(t))
+	header, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.NoError(t, err)
 
 	html, _, err := header.Render(filepath.Join("docs", "my notes.md"), "A & B", "DOCS", types.MarkConfig{})
@@ -60,7 +60,7 @@ func TestStorageFormatHeader(t *testing.T) {
 func TestMarkdownHeader(t *testing.T) {
 	path := writeHeader(t, "header.md", "> [!WARNING]\n> Generated from [{{ .Path }}](https://example.com/{{ .EscapedPath }}).\n\n# Not dropped\n")
 
-	header, err := Load(path, newStdlib(t))
+	header, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.NoError(t, err)
 
 	html, _, err := header.Render("doc.md", "Title", "DOCS", types.MarkConfig{
@@ -76,7 +76,7 @@ func TestMarkdownHeader(t *testing.T) {
 func TestMalformedStorageFormatHeaderFailsAtLoad(t *testing.T) {
 	path := writeHeader(t, "header.html", `<p>unclosed`)
 
-	_, err := Load(path, newStdlib(t))
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not well-formed XML")
 }
@@ -86,7 +86,7 @@ func TestMalformedStorageFormatHeaderFailsAtLoad(t *testing.T) {
 func TestTemplateCannotReadTheEnvironment(t *testing.T) {
 	path := writeHeader(t, "header.html", `<p>{{ env "MARK_PASSWORD" }}</p>`)
 
-	_, err := Load(path, newStdlib(t))
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `function "env" not defined`)
 }
@@ -95,7 +95,7 @@ func TestHeaderDoesNotJoinTheDocumentTemplates(t *testing.T) {
 	std := newStdlib(t)
 	path := writeHeader(t, "header.html", `<p>Header</p>`)
 
-	_, err := Load(path, std)
+	_, err := Load(path, std, types.MarkConfig{})
 	require.NoError(t, err)
 	assert.Nil(t, std.Templates.Lookup("page-header"))
 }
@@ -113,21 +113,34 @@ func TestFileOutsideWorkingDirectoryIsNamedByBaseName(t *testing.T) {
 func TestPreflightCatchesErrorsOnlySomeDocumentsHit(t *testing.T) {
 	path := writeHeader(t, "header.html", `<p>{{ if .Title }}{{ index .Path 999 }}{{ end }}</p>`)
 
-	_, err := Load(path, newStdlib(t))
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.Error(t, err)
 }
 
 func TestPreflightCompilesMarkdownHeader(t *testing.T) {
 	path := writeHeader(t, "header.md", `{{ if .Title }}{{ template "missing" . }}{{ end }}`)
 
-	_, err := Load(path, newStdlib(t))
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.Error(t, err)
 }
 
 func TestPreflightCatchesUnescapedPath(t *testing.T) {
 	path := writeHeader(t, "header.html", `<p>{{ .Path }}</p>`)
 
-	_, err := Load(path, newStdlib(t))
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not well-formed XML")
+}
+
+func TestPreflightUsesTheRunsIncludePath(t *testing.T) {
+	shared := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "banner.md"), []byte("shared banner\n"), 0o600))
+
+	path := writeHeader(t, "header.md", "<!-- Include: banner.md -->\n")
+
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
+	require.Error(t, err)
+
+	_, err = Load(path, newStdlib(t), types.MarkConfig{IncludePath: shared})
+	require.NoError(t, err)
 }

@@ -378,7 +378,7 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std)
+	pageHeader, err := header.Load(config.PageHeader, std, headerPreflightConfig(config))
 	if err != nil {
 		return err
 	}
@@ -728,7 +728,7 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 		return nil, err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std)
+	pageHeader, err := header.Load(config.PageHeader, std, headerPreflightConfig(config))
 	if err != nil {
 		return nil, err
 	}
@@ -3038,4 +3038,23 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 	}
 
 	return strings.TrimSpace(pages.Title), nil
+}
+
+// headerPreflightConfig is the compile configuration a page header is checked
+// with before the run; the per-document fields are filled in at render time.
+func headerPreflightConfig(config Config) types.MarkConfig {
+	return types.MarkConfig{
+		MermaidScale:     config.MermaidScale,
+		MermaidOutput:    config.MermaidOutput,
+		MermaidBundle:    config.MermaidBundle,
+		D2Output:         config.D2Output,
+		D2Scale:          config.D2Scale,
+		D2BundleRemote:   config.D2BundleRemote,
+		MathFormat:       config.MathFormat,
+		MathScale:        config.MathScale,
+		StripNewlines:    config.StripLinebreaks,
+		Features:         config.Features,
+		AttachReferenced: config.AttachReferenced,
+		IncludePath:      config.IncludePath,
+	}
 }

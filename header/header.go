@@ -39,9 +39,10 @@ type Data struct {
 // Load reads the header template at path, returning nil when path is empty.
 // A file ending in .md is Markdown; anything else is storage format.
 //
-// The template is executed once here, so that a broken template or malformed
-// markup fails the run before any page is published.
-func Load(path string, std *stdlib.Lib) (*Header, error) {
+// The template is executed here, so that a broken template or malformed
+// markup fails the run before any page is published. cfg is the run's
+// compile configuration, which a Markdown header is compiled with.
+func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -88,8 +89,7 @@ func Load(path string, std *stdlib.Lib) (*Header, error) {
 		}
 
 		if header.markdown {
-			cfg := types.MarkConfig{}
-			if _, _, err := markmd.CompileMarkdown([]byte(rendered), std, path, cfg); err != nil {
+			if _, _, err := markmd.CompileMarkdown([]byte(rendered), std, path, compileConfig(cfg)); err != nil {
 				return nil, fmt.Errorf("unable to compile page header %q: %w", path, err)
 			}
 
@@ -128,18 +128,23 @@ func (h *Header) Render(file, title, space string, cfg types.MarkConfig) (string
 		return rendered, nil, nil
 	}
 
-	// The header is not the document: its first H1 is not the one to drop,
-	// and its relative links do not name the document's neighbours.
-	cfg.DropFirstH1 = false
-	cfg.ResolveLink = nil
-	cfg.ResolveAttachment = nil
-
-	html, attachments, err := markmd.CompileMarkdown([]byte(rendered), h.std, h.path, cfg)
+	html, attachments, err := markmd.CompileMarkdown([]byte(rendered), h.std, h.path, compileConfig(cfg))
 	if err != nil {
 		return "", nil, fmt.Errorf("unable to compile page header %q: %w", h.path, err)
 	}
 
 	return html, attachments, nil
+}
+
+// compileConfig adapts a document's configuration to the header, which is not
+// the document: its first H1 is not the one to drop, and its relative links do
+// not name the document's neighbours.
+func compileConfig(cfg types.MarkConfig) types.MarkConfig {
+	cfg.DropFirstH1 = false
+	cfg.ResolveLink = nil
+	cfg.ResolveAttachment = nil
+
+	return cfg
 }
 
 func (h *Header) execute(data Data) (string, error) {
