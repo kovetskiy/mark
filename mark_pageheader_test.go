@@ -153,3 +153,30 @@ func TestPageHeaderImageIdenticalToTheDocumentsIsAttachedOnce(t *testing.T) {
 
 	require.NoError(t, Run(config))
 }
+
+// TestPageHeaderImageThatClashesWithADeclaredAttachmentUploadsNothing: the
+// clash is known before the first upload, so the document's own file is not
+// sent for a page the run is about to fail on.
+func TestPageHeaderImageThatClashesWithADeclaredAttachmentUploadsNothing(t *testing.T) {
+	server, _ := docsSpace(t)
+	docDir := t.TempDir()
+	headerDir := t.TempDir()
+
+	writeFile(t, docDir, "logo.png", "document logo")
+	writeFile(t, headerDir, "logo.png", "header logo")
+
+	file := writeFile(t, docDir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Declared Clash -->
+<!-- Attachment: logo.png -->
+
+Text.
+`)
+	config := publishConfig(server.URL, file)
+	config.PageHeader = writeFile(t, headerDir, "header.md", "![logo](logo.png)\n")
+
+	err := Run(config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "page header attachment")
+	assert.Equal(t, 0, server.CountRequests("POST", "/child/attachment"))
+}

@@ -1328,24 +1328,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	// The page's remote attachment list is fetched once and threaded through
-	// both resolve passes. Attachments are resolved twice per page -- declared
-	// attachments here, then diagrams discovered while rendering -- and each
-	// pass previously issued its own paginated fetch of the same list.
-	remoteAttachments, err := api.GetAttachments(target.ID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
-	}
-
-	attaches, remoteAttachments, err := attachment.ResolveAttachmentsWithRemotes(
-		api, target, localAttachments, remoteAttachments,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
-	}
-
-	attachmentLinks := attachment.NewResolver(attaches)
-
 	if config.DropH1 {
 		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
@@ -1371,13 +1353,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		AttachReferenced: config.AttachReferenced,
 		IncludePath:      config.IncludePath,
 		ResolveLink:      resolveLink,
-
-		ResolveAttachment: attachmentLinks.Resolve,
-	}
-
-	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
 	// With --page-id the file's metadata is discarded, so the page itself and
@@ -1391,6 +1366,39 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// The header's own files are known now, so a clash with a declared one is
+	// refused before anything is uploaded. One with a file the document only
+	// references can be seen once it is compiled, which needs these uploaded.
+	if _, err := withHeaderAttachments(file, localAttachments, nil, headerAttachments); err != nil {
+		return nil, nil, err
+	}
+
+	// The page's remote attachment list is fetched once and threaded through
+	// both resolve passes. Attachments are resolved twice per page -- declared
+	// attachments here, then diagrams discovered while rendering -- and each
+	// pass previously issued its own paginated fetch of the same list.
+	remoteAttachments, err := api.GetAttachments(target.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+	}
+
+	attaches, remoteAttachments, err := attachment.ResolveAttachmentsWithRemotes(
+		api, target, localAttachments, remoteAttachments,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
+	}
+
+	attachmentLinks := attachment.NewResolver(attaches)
+
+	cfg.ResolveAttachment = attachmentLinks.Resolve
+
+	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+	}
+
 	html = headerHTML + html
 	inlineAttachments, err = withHeaderAttachments(file, attaches, inlineAttachments, headerAttachments)
 	if err != nil {
