@@ -1255,6 +1255,10 @@ Either way it is a Go template, executed once per page with:
 | `.Title` | the page title |
 | `.Space` | the page's space key |
 
+With `--page-id` the file's own headers are ignored, so `.Title` is the title of
+the page being updated and `.Space` is `--space`. A `--compile-only` run does
+not contact Confluence and leaves `.Title` empty there.
+
 The repository's address is written into the template. Linking to a branch
 rather than a commit points readers at the version they can edit, and keeps the
 header the same from one run to the next:

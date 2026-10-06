@@ -1392,7 +1392,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, err
 	}
 	html = headerHTML + html
-	inlineAttachments = append(inlineAttachments, headerAttachments...)
+	inlineAttachments, err = withHeaderAttachments(file, attaches, inlineAttachments, headerAttachments)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Kept for the report as well as the log. Reaching this line with any of
 	// them means the run was told to warn rather than fail, since otherwise
@@ -3043,6 +3046,43 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 	}
 
 	return strings.TrimSpace(pages.Title), nil
+}
+
+// withHeaderAttachments adds what the page header references to the document's
+// own. One filename is one attachment on the page, so a header file that shares
+// a name with a different document file would silently replace it.
+func withHeaderAttachments(file string, declared, inline, fromHeader []attachment.Attachment) ([]attachment.Attachment, error) {
+	taken := make(map[string]attachment.Attachment, len(declared)+len(inline))
+	for _, a := range append(append([]attachment.Attachment{}, declared...), inline...) {
+		taken[a.Filename] = a
+	}
+
+	for _, a := range fromHeader {
+		other, clash := taken[a.Filename]
+		if !clash {
+			taken[a.Filename] = a
+			inline = append(inline, a)
+
+			continue
+		}
+
+		if !sameAttachment(other, a) {
+			return nil, fmt.Errorf(
+				"page header attachment %q is a different file from the one %s attaches under that name",
+				a.Filename, file,
+			)
+		}
+	}
+
+	return inline, nil
+}
+
+func sameAttachment(a, b attachment.Attachment) bool {
+	if a.Checksum != "" && b.Checksum != "" {
+		return a.Checksum == b.Checksum
+	}
+
+	return bytes.Equal(a.FileBytes, b.FileBytes)
 }
 
 // headerPreflightConfig is the compile configuration a page header is checked

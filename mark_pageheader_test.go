@@ -109,3 +109,47 @@ func TestPageHeaderNamesThePageInPageIDDryRun(t *testing.T) {
 
 	assert.Contains(t, output.String(), "<p>Existing in DOCS</p>")
 }
+
+// TestPageHeaderImageThatClashesWithTheDocumentsIsRefused: one filename is one
+// attachment on the page, so the second upload would replace the first.
+func TestPageHeaderImageThatClashesWithTheDocumentsIsRefused(t *testing.T) {
+	server, _ := docsSpace(t)
+	docDir := t.TempDir()
+	headerDir := t.TempDir()
+
+	writeFile(t, docDir, "logo.png", "document logo")
+	writeFile(t, headerDir, "logo.png", "header logo")
+
+	file := writeFile(t, docDir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Clash -->
+
+![logo](logo.png)
+`)
+	config := publishConfig(server.URL, file)
+	config.PageHeader = writeFile(t, headerDir, "header.md", "![logo](logo.png)\n")
+
+	err := Run(config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "page header attachment")
+}
+
+func TestPageHeaderImageIdenticalToTheDocumentsIsAttachedOnce(t *testing.T) {
+	server, _ := docsSpace(t)
+	docDir := t.TempDir()
+	headerDir := t.TempDir()
+
+	writeFile(t, docDir, "logo.png", "same logo")
+	writeFile(t, headerDir, "logo.png", "same logo")
+
+	file := writeFile(t, docDir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Same -->
+
+![logo](logo.png)
+`)
+	config := publishConfig(server.URL, file)
+	config.PageHeader = writeFile(t, headerDir, "header.md", "![logo](logo.png)\n")
+
+	require.NoError(t, Run(config))
+}
