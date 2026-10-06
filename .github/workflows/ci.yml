@@ -77,6 +77,8 @@ jobs:
     # The first launch of the runner's Chromium takes 10-60s; the tests bound
     # startup at 90s, so pay that cost here, in a step with no timeout.
     - name: Warm up Chrome
+      # A browser that hangs here would otherwise hold the job for GitHub's default six hours.
+      timeout-minutes: 5
       run: |
         # The first one chromedp finds, in its order, which is what the tests run.
         for name in headless_shell headless-shell chromium chromium-browser google-chrome google-chrome-stable google-chrome-beta google-chrome-unstable /usr/bin/google-chrome /usr/local/bin/chrome /snap/bin/chromium chrome; do
