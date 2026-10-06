@@ -333,7 +333,21 @@ func macroFileName(base string) func(string) string {
 			return name
 		}
 
-		for _, candidate := range ctransformer.LocalImagePaths(ctransformer.UnescapeDestination(name)) {
+		// "<my file.png>" is how Markdown writes a destination with a space in it;
+		// goldmark takes the brackets off an image's, but a macro sees the raw text.
+		written := name
+		if len(written) > 2 && written[0] == '<' && written[len(written)-1] == '>' {
+			written = written[1 : len(written)-1]
+		}
+
+		for _, candidate := range ctransformer.LocalImagePaths(ctransformer.UnescapeDestination(written)) {
+			// The boundary comes before the lookup: a name that reaches outside the
+			// project must not learn from os.Stat whether the file is there. It is
+			// handed on as it is, for the upload to refuse by name.
+			if attachment.CheckReadable(base, candidate) != nil {
+				return candidate
+			}
+
 			if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
 				return candidate
 			}
