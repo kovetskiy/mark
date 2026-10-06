@@ -938,6 +938,15 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				// otherwise it reports a new page for every rename and retitle
 				// the run would actually have handled in place.
 				previewTrackedResolution(tracker, api, meta, file, sourceHash)
+			} else if tracker != nil {
+				// Found by title. A real run records the path once it has
+				// published, and that is what keeps the path - and any path
+				// it moved from - from being read as an orphan. A dry run
+				// returns before then, so it records here; its store never
+				// saves.
+				if err := tracker.Record(meta.Space, file, pg.ID, meta.Title, sourceHash); err != nil {
+					return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+				}
 			}
 		} else if config.PageID != "" {
 			if _, err := api.GetPageByID(config.PageID); err != nil {
