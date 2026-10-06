@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/renderer"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/renderer"
 	"github.com/rs/zerolog/log"
 )
 

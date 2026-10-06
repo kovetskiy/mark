@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v17/mermaid"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )

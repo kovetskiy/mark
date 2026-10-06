@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
+	cparser "github.com/kovetskiy/mark/v17/parser"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/parser"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/export"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/export"
 )
 
 // ExportConfig holds the options of Export: where Confluence is and how to

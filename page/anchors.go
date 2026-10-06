@@ -1,8 +1,8 @@
 package page
 
 import (
-	"github.com/kovetskiy/mark/v16/parser"
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/parser"
+	"github.com/kovetskiy/mark/v17/transformer"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	gparser "github.com/yuin/goldmark/parser"
