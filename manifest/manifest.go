@@ -787,11 +787,23 @@ func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
 	// tell which was intended, so it says so and records the latest -- silently
 	// keeping one would make the next surprise harder to explain.
 	if owner, ok := state.byPage[pageID]; ok && owner != path {
-		log.Warn().Msgf(
-			"%s and %s both publish to page %s in space %q; "+
-				"renaming either will move a page the other also claims",
-			owner, path, pageID, spaceKey,
-		)
+		if ownerEntry, recorded := state.shards[shardFor(owner)].pages[owner]; recorded &&
+			ownerEntry.Glob == s.runGlob && !s.runFiles[owner] {
+			// The path that owned this page is not in this run, and the page
+			// was found for this one by its title: the document moved (a plain
+			// rename of the file, title unchanged). The page follows it. Left
+			// recorded, the old path would read as an orphan whose page is the
+			// very one just published - and --on-orphan delete would trash it.
+			log.Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
+			delete(state.shards[shardFor(owner)].pages, owner)
+			state.shards[shardFor(owner)].dirty = true
+		} else {
+			log.Warn().Msgf(
+				"%s and %s both publish to page %s in space %q; "+
+					"renaming either will move a page the other also claims",
+				owner, path, pageID, spaceKey,
+			)
+		}
 	}
 
 	// The same path recorded in another space means the document moved between
@@ -1149,6 +1161,11 @@ func (s *Store) orphans(spaceKey string) []string {
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
 			if state.seen[path] || entry.Glob == "" || entry.Glob != s.runGlob {
+				continue
+			}
+			// A page another document published this run is that document's
+			// now, whatever this stale entry says: never offer it for removal.
+			if state.claimed[entry.PageID] {
 				continue
 			}
 			orphans = append(orphans, path)
