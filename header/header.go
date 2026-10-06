@@ -78,6 +78,7 @@ func Load(path string, std *stdlib.Lib) (*Header, error) {
 			Path: "docs/my notes.md", EscapedPath: "docs/my%20notes.md",
 			Title: "Example & <title>", Space: "SPACE",
 		},
+		{Path: xmlSpecialPath, EscapedPath: escapePath(xmlSpecialPath)},
 	}
 
 	for _, sample := range samples {
@@ -168,6 +169,9 @@ func relativePath(file string) string {
 
 	return filepath.Base(file)
 }
+
+// xmlSpecialPath is a sample name a template must escape to stay well-formed.
+const xmlSpecialPath = "docs/a & <b>.md"
 
 func escapePath(path string) string {
 	segments := strings.Split(path, "/")

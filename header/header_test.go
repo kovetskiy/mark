@@ -123,3 +123,11 @@ func TestPreflightCompilesMarkdownHeader(t *testing.T) {
 	_, err := Load(path, newStdlib(t))
 	require.Error(t, err)
 }
+
+func TestPreflightCatchesUnescapedPath(t *testing.T) {
+	path := writeHeader(t, "header.html", `<p>{{ .Path }}</p>`)
+
+	_, err := Load(path, newStdlib(t))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not well-formed XML")
+}
