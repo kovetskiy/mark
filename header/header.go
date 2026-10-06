@@ -69,12 +69,32 @@ func Load(path string, std *stdlib.Lib) (*Header, error) {
 		std:      std,
 	}
 
-	rendered, err := header.execute(Data{Path: "example.md", EscapedPath: "example.md"})
-	if err != nil {
-		return nil, err
+	// Several samples, not one: a template that indexes into .Path or
+	// branches on .Title fails only for some documents, and that has to be
+	// found before the first page is published rather than part-way through.
+	samples := []Data{
+		{Path: "example.md", EscapedPath: "example.md"},
+		{
+			Path: "docs/my notes.md", EscapedPath: "docs/my%20notes.md",
+			Title: "Example & <title>", Space: "SPACE",
+		},
 	}
 
-	if !header.markdown {
+	for _, sample := range samples {
+		rendered, err := header.execute(sample)
+		if err != nil {
+			return nil, err
+		}
+
+		if header.markdown {
+			cfg := types.MarkConfig{}
+			if _, _, err := markmd.CompileMarkdown([]byte(rendered), std, path, cfg); err != nil {
+				return nil, fmt.Errorf("unable to compile page header %q: %w", path, err)
+			}
+
+			continue
+		}
+
 		if err := markmd.CheckWellFormed(rendered); err != nil {
 			return nil, fmt.Errorf("page header %q: %w", path, err)
 		}
@@ -130,6 +150,9 @@ func (h *Header) execute(data Data) (string, error) {
 	return buffer.String(), nil
 }
 
+// relativePath names file relative to the working directory. A file outside
+// it is named by its base name alone: the page is public to whoever reads the
+// space, and the machine's directory layout is not for them.
 func relativePath(file string) string {
 	abs, err := filepath.Abs(file)
 	if err == nil {
@@ -143,7 +166,7 @@ func relativePath(file string) string {
 		}
 	}
 
-	return filepath.ToSlash(filepath.Clean(file))
+	return filepath.Base(file)
 }
 
 func escapePath(path string) string {

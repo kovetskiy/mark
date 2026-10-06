@@ -1072,7 +1072,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 			}
 
-			headerHTML, _, err := pageHeader.Render(file, titleOf(meta), spaceOf(meta), cfg)
+			headerHTML, _, err := pageHeader.Render(file, titleOf(meta), spaceOr(meta, config.Space), cfg)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1375,7 +1375,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
-	headerHTML, headerAttachments, err := pageHeader.Render(file, titleOf(meta), spaceOf(meta), cfg)
+	// With --page-id the file's metadata is discarded, so the page itself and
+	// --space are what the header can name.
+	headerTitle := titleOf(meta)
+	if headerTitle == "" && target != nil {
+		headerTitle = target.Title
+	}
+
+	headerHTML, headerAttachments, err := pageHeader.Render(file, headerTitle, spaceOr(meta, config.Space), cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2717,6 +2724,15 @@ func spaceOf(meta *metadata.Meta) string {
 	}
 
 	return meta.Space
+}
+
+// spaceOr is the document's space, or fallback when it has none.
+func spaceOr(meta *metadata.Meta, fallback string) string {
+	if space := spaceOf(meta); space != "" {
+		return space
+	}
+
+	return fallback
 }
 
 func titleOf(meta *metadata.Meta) string {

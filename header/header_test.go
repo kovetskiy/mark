@@ -99,3 +99,27 @@ func TestHeaderDoesNotJoinTheDocumentTemplates(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, std.Templates.Lookup("page-header"))
 }
+
+func TestFileOutsideWorkingDirectoryIsNamedByBaseName(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	outside := filepath.Join(t.TempDir(), "secret", "doc.md")
+
+	assert.Equal(t, "doc.md", relativePath(outside))
+	assert.Equal(t, "doc.md", relativePath(filepath.Join("..", "elsewhere", "doc.md")))
+	assert.Equal(t, "docs/doc.md", relativePath(filepath.Join("docs", "doc.md")))
+}
+
+func TestPreflightCatchesErrorsOnlySomeDocumentsHit(t *testing.T) {
+	path := writeHeader(t, "header.html", `<p>{{ if .Title }}{{ index .Path 999 }}{{ end }}</p>`)
+
+	_, err := Load(path, newStdlib(t))
+	require.Error(t, err)
+}
+
+func TestPreflightCompilesMarkdownHeader(t *testing.T) {
+	path := writeHeader(t, "header.md", `{{ if .Title }}{{ template "missing" . }}{{ end }}`)
+
+	_, err := Load(path, newStdlib(t))
+	require.Error(t, err)
+}

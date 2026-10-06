@@ -67,3 +67,22 @@ Body text.
 
 	assert.Contains(t, output.String(), "<p><strong>Generated</strong> from DOCS</p>")
 }
+
+// TestPageHeaderNamesThePageInPageIDMode: --page-id discards the file's
+// metadata, so the title has to come from the page being updated.
+func TestPageHeaderNamesThePageInPageIDMode(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	existing := server.AddPage("DOCS", "Existing", "page", "")
+	file := writeFile(t, dir, "doc.md", "Just a body.\n")
+
+	config := publishConfig(server.URL, file)
+	config.PageID = existing.ID
+	config.Space = "DOCS"
+	config.PageHeader = writeFile(t, dir, "header.html", `<p>{{ .Title | xmlesc }} in {{ .Space | xmlesc }}</p>`)
+
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, bodyOfPageTitled(t, server, "Existing"), "<p>Existing in DOCS</p>")
+}
