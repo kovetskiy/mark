@@ -206,3 +206,52 @@ func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
 		})
 	}
 }
+
+// TestMacroAttachmentIsReadLikeAnImageDestination keeps a macro image in step
+// with a plain one: "my%20logo.png" names "my logo.png", and the page has to
+// say so under the name the file is uploaded as.
+func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		files []string
+		value string
+		want  string
+	}{
+		"decoded when only the decoded file exists": {
+			files: []string{"my logo.png"}, value: "my%20logo.png", want: "my logo.png",
+		},
+		"as written when a file really has the percent": {
+			files: []string{"my%20logo.png", "my logo.png"}, value: "my%20logo.png", want: "my%20logo.png",
+		},
+		"as written when nothing exists": {
+			files: nil, value: "my%20logo.png", want: "",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, file := range tt.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, file), onePixelPNG(), 0o600))
+			}
+
+			source := widthMacro + "\n![A](" + tt.value + ")<!-- width=10 -->\n"
+
+			html, attached, err := markmd.CompileMarkdown(
+				[]byte(source), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+			require.NoError(t, err)
+
+			if tt.want == "" {
+				assert.Empty(t, attached)
+
+				return
+			}
+
+			require.Len(t, attached, 1)
+			assert.Equal(t, tt.want, attached[0].Filename)
+			assert.Contains(t, html, `ri:filename="`+tt.want+`"`)
+		})
+	}
+}
