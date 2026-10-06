@@ -6,7 +6,15 @@
 // apart.
 package chrome
 
-import "github.com/chromedp/chromedp"
+import (
+	"os"
+
+	"github.com/chromedp/chromedp"
+)
+
+// BrowserPathEnv names the environment variable that selects the browser
+// executable, overriding the search for Chrome or Chromium.
+const BrowserPathEnv = "MARK_BROWSER_PATH"
 
 // AllocatorOptions returns the options mark appends to
 // chromedp.DefaultExecAllocatorOptions.
@@ -23,9 +31,17 @@ import "github.com/chromedp/chromedp"
 // already passes --no-sandbox on its own when running as root (uid 0), so this
 // only changes behaviour for non-root runs.
 func AllocatorOptions() []chromedp.ExecAllocatorOption {
-	return []chromedp.ExecAllocatorOption{
+	opts := []chromedp.ExecAllocatorOption{
 		chromedp.DisableGPU,
 		chromedp.NoSandbox,
 		chromedp.Flag("disable-setuid-sandbox", true),
 	}
+
+	// chromedp only searches for Chrome and Chromium by name; this is the way
+	// to point it at another Chromium-based browser such as Brave or Edge.
+	if path := os.Getenv(BrowserPathEnv); path != "" {
+		opts = append(opts, chromedp.ExecPath(path))
+	}
+
+	return opts
 }

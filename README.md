@@ -1534,6 +1534,10 @@ a PNG has nowhere to keep it.
 Diagrams are drawn by a headless browser running mermaid.js, which is what
 mermaid.js is built for and what mark has always done.
 
+mark looks for Chrome or Chromium on the usual paths. To use another
+Chromium-based browser such as Brave or Edge, set `MARK_BROWSER_PATH` to its
+executable.
+
 `--mermaid-engine=merman` draws them with [merman](https://github.com/Latias94/merman)
 instead, a native implementation that needs no browser -- useful where starting
 Chrome is awkward or slow, such as a minimal CI image. It is installed
