@@ -324,8 +324,8 @@ func expandDirectives(
 }
 
 // macroFileName reads a macro's Attachment value the way an image destination is
-// read: as written first, so a file whose name really holds a "%" keeps
-// resolving to itself, then percent-decoded. The macro writes the name it is
+// read: backslash escapes and entities resolved, then as written so a file whose
+// name really holds a "%" keeps resolving to itself, then percent-decoded. The macro writes the name it is
 // given into the page, so the decoded name has to be settled before it does.
 func macroFileName(base string) func(string) string {
 	return func(name string) string {
@@ -333,7 +333,7 @@ func macroFileName(base string) func(string) string {
 			return name
 		}
 
-		for _, candidate := range ctransformer.LocalImagePaths(name) {
+		for _, candidate := range ctransformer.LocalImagePaths(ctransformer.UnescapeDestination(name)) {
 			if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
 				return candidate
 			}
