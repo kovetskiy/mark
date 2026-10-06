@@ -108,3 +108,45 @@ A[Start] --> B[End]]]></ac:plain-text-body></ac:structured-macro>
 
 	assert.Equal(t, strings.TrimSuffix(expected, "\n"), strings.TrimSuffix(actual, "\n"))
 }
+
+// TestCompileMarkdownMermaidMacroName covers the configurable macro key: with
+// MermaidMacroName the ac:name is the one the caller named, escaped like any
+// attribute value, and an empty name falls back to the default.
+func TestCompileMarkdownMermaidMacroName(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	document := []byte("# Mermaid Test\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n")
+
+	t.Run("a named macro", func(t *testing.T) {
+		actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+			Features:         []string{"mermaid"},
+			MermaidOutput:    "macro",
+			MermaidMacroName: "mermaid-diagrams",
+		})
+		require.NoError(t, err)
+
+		assert.Contains(t, actual, `<ac:structured-macro ac:name="mermaid-diagrams">`)
+	})
+
+	t.Run("an empty name falls back to the default", func(t *testing.T) {
+		actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+			Features:      []string{"mermaid"},
+			MermaidOutput: "macro",
+		})
+		require.NoError(t, err)
+
+		assert.Contains(t, actual, `<ac:structured-macro ac:name="mermaid-macro">`)
+	})
+
+	t.Run("the name is escaped", func(t *testing.T) {
+		actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+			Features:         []string{"mermaid"},
+			MermaidOutput:    "macro",
+			MermaidMacroName: "mermaid&co",
+		})
+		require.NoError(t, err)
+
+		assert.Contains(t, actual, `ac:name="mermaid&amp;co"`)
+	})
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/types"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -251,14 +252,20 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "mermaid-output",
 		Value:   "png",
-		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-scale and --mermaid-bundle have no effect with this setting).",
+		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine, --mermaid-scale and --mermaid-bundle have no effect with it).",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
 		Name:    "mermaid-bundle",
 		Value:   false,
-		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and has no effect with --mermaid-output=macro, which publishes the source itself.",
+		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and is refused with png or macro.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), altsrctoml.TOML("mermaid-bundle", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "mermaid-macro-name",
+		Value:   types.MermaidMacroDefaultName,
+		Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Needs --mermaid-output=macro.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_MACRO_NAME"), altsrctoml.TOML("mermaid-macro-name", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
 		Name:    "math-format",
@@ -565,16 +572,43 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
 	// way at all.
 	//
-	// The scale is not checked against the format any more: it applies to both,
-	// multiplying the pixels of a PNG and the size the page shows an SVG at.
-	//
-	// With --mermaid-output=macro the bundle is moot: the diagram's source is
-	// already published verbatim inside the macro body, so neither error nor
-	// warning is needed -- it is simply a no-op.
-	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
+	// Only an SVG has room for the source: a PNG has nowhere for it, and the
+	// macro output already publishes the source itself. Either is refused, just
+	// as the PNG always was.
+	if command.Bool("mermaid-bundle") && mermaidOutput != "svg" {
 		return context, errors.New(
-			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
+			"--mermaid-bundle needs --mermaid-output=svg: only an SVG has room for the diagram's source",
 		)
+	}
+
+	// With --mermaid-output=macro nothing is drawn, so the settings that drive
+	// drawing have no effect. Both carry a default, so a value is only worth
+	// refusing when it was set on purpose -- otherwise a command that never
+	// heard of the flag would fail for carrying its default.
+	if mermaidOutput == "macro" {
+		if command.IsSet("mermaid-engine") {
+			return context, errors.New(
+				"--mermaid-engine has no effect with --mermaid-output=macro, which does not draw the diagram",
+			)
+		}
+		if command.IsSet("mermaid-scale") {
+			return context, errors.New(
+				"--mermaid-scale has no effect with --mermaid-output=macro, which does not draw the diagram",
+			)
+		}
+	}
+
+	// A macro name is only meaningful with the macro output. Empty is refused
+	// when asked for on purpose, and a name set without the macro output names
+	// a macro that never appears.
+	mermaidMacroName := command.String("mermaid-macro-name")
+	if command.IsSet("mermaid-macro-name") {
+		if mermaidMacroName == "" {
+			return context, errors.New("--mermaid-macro-name must not be empty")
+		}
+		if mermaidOutput != "macro" {
+			return context, errors.New("--mermaid-macro-name needs --mermaid-output=macro")
+		}
 	}
 
 	// Checked as written, and asked of IsSet as well, so that a value somebody

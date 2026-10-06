@@ -152,6 +152,14 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		Output: os.Stdout,
 	}
 
+	// The flag carries a default so --help shows it, but an operator who never
+	// set it has not named a macro: leave Config.MermaidMacroName empty so the
+	// renderer's default applies, and so prepare() does not read a name beside
+	// an image format and refuse it.
+	if cmd.IsSet("mermaid-macro-name") {
+		config.MermaidMacroName = cmd.String("mermaid-macro-name")
+	}
+
 	// RunContext shuts the shared browser down on the way out, however the run
 	// ends -- including when ctx is cancelled by a signal.
 	return mark.RunContext(ctx, config)

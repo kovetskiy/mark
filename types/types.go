@@ -1,5 +1,10 @@
 package types
 
+// MermaidMacroDefaultName is the ac:name of the Confluence macro a diagram is
+// published as with MermaidOutput "macro", when the caller does not name one
+// of their own.
+const MermaidMacroDefaultName = "mermaid-macro"
+
 type MarkConfig struct {
 	MermaidScale float64
 	// MermaidOutput is how a diagram is published: "png" or "svg" as an image
@@ -9,6 +14,9 @@ type MarkConfig struct {
 	// the SVG it is published as, and applies to nothing else.
 	MermaidOutput string
 	MermaidBundle bool
+	// MermaidMacroName is the ac:name of the Confluence macro a diagram is
+	// published as with MermaidOutput "macro". Empty means MermaidMacroDefaultName.
+	MermaidMacroName string
 	// D2Output is the image a diagram is published as, "png" or "svg".
 	// D2Scale multiplies the pixels of a PNG one and the size the page
 	// displays an SVG one at.

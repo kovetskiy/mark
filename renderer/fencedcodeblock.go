@@ -279,12 +279,19 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") && r.MarkConfig.MermaidOutput == "macro" {
+		name := r.MarkConfig.MermaidMacroName
+		if name == "" {
+			name = types.MermaidMacroDefaultName
+		}
+
 		err := r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:mermaid-macro",
 			struct {
+				Name string
 				Text string
 			}{
+				name,
 				strings.TrimSuffix(string(lval), "\n"),
 			},
 		)

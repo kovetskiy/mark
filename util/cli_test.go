@@ -23,6 +23,8 @@ func runWithArgs(args []string) error {
 			&cli.FloatFlag{Name: "d2-scale", Value: 1.0},
 			&cli.StringFlag{Name: "mermaid-output", Value: "png"},
 			&cli.BoolFlag{Name: "mermaid-bundle"},
+			&cli.StringFlag{Name: "mermaid-engine", Value: "chrome"},
+			&cli.StringFlag{Name: "mermaid-macro-name", Value: "mermaid-macro"},
 			&cli.FloatFlag{Name: "mermaid-scale", Value: 1.0},
 			&cli.FloatFlag{Name: "math-scale", Value: 2.0},
 		},
@@ -191,6 +193,42 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 
 	t.Run("and a bundle in an svg is the point", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-bundle"}))
+	})
+
+	// With macro nothing is drawn, so the settings that drive drawing have no
+	// effect. The bundle is refused like it is with a PNG; the scale and engine
+	// carry defaults, so only an explicit setting is refused.
+	t.Run("a bundle in a macro is refused", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-bundle"}))
+	})
+
+	t.Run("a scale with macro is refused", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-scale", "2"}))
+	})
+
+	t.Run("an engine with macro is refused", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-engine", "merman"}))
+	})
+}
+
+// TestMermaidMacroNameFlagValidation covers the macro key a diagram is
+// published under with --mermaid-output=macro. It is only meaningful with the
+// macro output, and must not be empty.
+func TestMermaidMacroNameFlagValidation(t *testing.T) {
+	t.Run("a name with macro is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", "mermaid-diagrams"}))
+	})
+
+	t.Run("a name without macro is refused", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-macro-name", "mermaid-diagrams"}))
+	})
+
+	t.Run("an empty name is refused", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", ""}))
+	})
+
+	t.Run("the default without macro is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd"}))
 	})
 }
 

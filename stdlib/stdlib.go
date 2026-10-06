@@ -538,7 +538,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 		),
 
 		`ac:mermaid-macro`: text(
-			`<ac:structured-macro ac:name="mermaid-macro">`,
+			`<ac:structured-macro ac:name="{{ .Name | xmlesc }}">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
 			`</ac:structured-macro>`,
 		),

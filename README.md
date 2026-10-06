@@ -1560,12 +1560,20 @@ With `--mermaid-output=macro` and the `mermaid` feature, code blocks marked as "
 The source stays verbatim inside the macro, so the diagram is drawn by Confluence itself.
 This requires a Mermaid plugin to be installed in your Confluence instance -- we use
 `org.anvard.atlassian.mermaid-plugin` (Mermaid Diagrams for Confluence);
-other plugins may use a different macro key. The `mermaid` feature must also be enabled.
+other plugins may use a different macro key, which `--mermaid-macro-name` names. The `mermaid` feature must also be enabled.
 
 ```mermaid
 flowchart TD
 A[Start] --> B[End]
 ```
+
+A plugin that declares its macro under a different key is named with `--mermaid-macro-name`:
+
+```bash
+mark --mermaid-output=macro --mermaid-macro-name=my-mermaid
+```
+
+Nothing is drawn with `macro`, so `--mermaid-engine`, `--mermaid-scale` and `--mermaid-bundle` are refused when given alongside it.
 
 ### Render D2 Diagram
 
