@@ -75,7 +75,7 @@ jobs:
         merman-cli --version
 
     # The first launch of the runner's Chromium takes 10-60s; the tests bound
-    # startup at 90s, so pay that cost here, in a step with no timeout.
+    # startup at 90s, so pay that cost here, in a step the tests' 90s bound does not apply to.
     - name: Warm up Chrome
       # A browser that hangs here would otherwise hold the job for GitHub's default six hours.
       timeout-minutes: 5
