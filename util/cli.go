@@ -134,8 +134,10 @@ func Run(ctx context.Context, cmd *cli.Command, args []string) error {
 // "mark --version-message publish -f doc.md" publishes with the message
 // "publish", as it always did.
 //
-// The version flag leaves the command line alone: it is answered by the root
-// command. So do the help flag and the one shell completion asks with, when
+// The version flag is answered by the root command, whatever else the command
+// line holds, so it is all that is passed on: "mark -f doc.md --version" printed
+// the version before there were commands, and the root would otherwise refuse
+// -f as a flag it does not define. The help flag and the one shell completion asks with, when
 // they come with nothing but global flags: "mark --help" is about mark as a
 // whole, and lists the commands and the global flags. Next to a flag only
 // publish has, though, they are about publish -- "mark -f doc.md --help" is
@@ -186,7 +188,7 @@ func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 			name, _, inline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
 			switch name {
 			case "version", "v":
-				return args, false
+				return []string{args[0], arg}, false
 			case "help", "h", strings.TrimPrefix(completionFlag, "--"):
 				asksRoot = true
 				continue
