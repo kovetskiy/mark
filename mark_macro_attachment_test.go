@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -225,6 +226,15 @@ func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
 		"as written when a file really has the percent": {
 			files: []string{"my%20logo.png", "my logo.png"}, value: "my%20logo.png", want: "my%20logo.png",
 		},
+		"backslash escape": {
+			files: []string{"my_logo.png"}, value: `my\_logo.png`, want: "my_logo.png",
+		},
+		"entity reference": {
+			files: []string{"a&b.png"}, value: "a&amp;b.png", want: "a&b.png",
+		},
+		"escaped and percent-encoded": {
+			files: []string{"my_logo 1.png"}, value: `my\_logo%201.png`, want: "my_logo 1.png",
+		},
 		"as written when nothing exists": {
 			files: nil, value: "my%20logo.png", want: "",
 		},
@@ -251,7 +261,7 @@ func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
 
 			require.Len(t, attached, 1)
 			assert.Equal(t, tt.want, attached[0].Filename)
-			assert.Contains(t, html, `ri:filename="`+tt.want+`"`)
+			assert.Contains(t, html, `ri:filename="`+strings.ReplaceAll(tt.want, "&", "&amp;")+`"`)
 		})
 	}
 }
