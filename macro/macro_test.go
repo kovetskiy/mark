@@ -1,6 +1,7 @@
 package macro
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"text/template"
@@ -165,4 +166,24 @@ func TestExtractMacros_SkipsDirectivesInIndentedCode(t *testing.T) {
 
 	assert.Empty(t, macros)
 	assert.Contains(t, string(remaining), "<!-- Macro: X")
+}
+
+// The hook decides the name the template writes, and so the one reported.
+func TestApplyCollecting_ResolvesTheAttachmentName(t *testing.T) {
+	tmpl := template.Must(template.New("t").Parse(`<img src="{{ .Attachment }}"/>`))
+	m := Macro{Regexp: regexp.MustCompile(`@(\S+)`), Template: tmpl, Config: "Attachment: ${1}"}
+
+	out, names, err := m.ApplyCollecting([]byte("@a%20b.png"), func(name string) string {
+		return strings.ReplaceAll(name, "%20", " ")
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, `<img src="a b.png"/>`, string(out))
+	assert.Equal(t, []string{"a b.png"}, names)
+
+	out, names, err = m.ApplyCollecting([]byte("@a%20b.png"), nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, `<img src="a%20b.png"/>`, string(out))
+	assert.Equal(t, []string{"a%20b.png"}, names)
 }

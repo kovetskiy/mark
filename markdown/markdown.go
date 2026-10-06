@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"text/template"
@@ -297,7 +298,7 @@ func expandDirectives(
 		for _, m := range macros {
 			var attached []string
 
-			markdown, attached, err = m.ApplyCollecting(markdown)
+			markdown, attached, err = m.ApplyCollecting(markdown, macroFileName(filepath.Dir(path)))
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
 			}
@@ -320,6 +321,26 @@ func expandDirectives(
 	return nil, nil, nil, fmt.Errorf(
 		"includes and macros did not settle after %d passes over %q", maxIncludePasses, path,
 	)
+}
+
+// macroFileName reads a macro's Attachment value the way an image destination is
+// read: as written first, so a file whose name really holds a "%" keeps
+// resolving to itself, then percent-decoded. The macro writes the name it is
+// given into the page, so the decoded name has to be settled before it does.
+func macroFileName(base string) func(string) string {
+	return func(name string) string {
+		if !crenderer.NamesBesideDocument(name) {
+			return name
+		}
+
+		for _, candidate := range ctransformer.LocalImagePaths(name) {
+			if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
+
+		return name
+	}
 }
 
 // attachMacroFiles uploads the files macros name in their Attachment key, which

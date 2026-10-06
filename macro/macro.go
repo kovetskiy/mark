@@ -89,7 +89,7 @@ func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
 func (macro *Macro) Apply(
 	content []byte,
 ) ([]byte, error) {
-	content, _, err := macro.ApplyCollecting(content)
+	content, _, err := macro.ApplyCollecting(content, nil)
 
 	return content, err
 }
@@ -97,8 +97,13 @@ func (macro *Macro) Apply(
 // ApplyCollecting is Apply that also reports the files the expansions name in
 // their Attachment key, in document order and without repeats. The key is only
 // a template variable, so nothing else would ever upload what it points at.
+//
+// resolve, when given, turns the written value into the name of the file it
+// stands for before the template sees it, so that the page and the upload agree
+// on one name. Nil leaves the value as written.
 func (macro *Macro) ApplyCollecting(
 	content []byte,
+	resolve func(name string) string,
 ) ([]byte, []string, error) {
 	var (
 		err         error
@@ -123,7 +128,7 @@ func (macro *Macro) ApplyCollecting(
 				return match
 			}
 
-			expanded, attached, expandErr := macro.expand(match)
+			expanded, attached, expandErr := macro.expand(match, resolve)
 			if expandErr != nil {
 				err = expandErr
 
@@ -143,7 +148,7 @@ func (macro *Macro) ApplyCollecting(
 
 // expand renders the macro's template for one match, and returns the file its
 // Attachment key names, if it has one.
-func (macro *Macro) expand(match []byte) ([]byte, string, error) {
+func (macro *Macro) expand(match []byte, resolve func(name string) string) ([]byte, string, error) {
 	config := map[string]any{}
 
 	if strings.TrimSpace(macro.Config) != "" {
@@ -155,6 +160,12 @@ func (macro *Macro) expand(match []byte) ([]byte, string, error) {
 
 	groups := macro.Regexp.FindSubmatch(match)
 	cfgData := macro.configure(config, groups)
+
+	if cfg, ok := cfgData.(map[string]any); ok && resolve != nil {
+		if name, ok := cfg["Attachment"].(string); ok && name != "" {
+			cfg["Attachment"] = resolve(name)
+		}
+	}
 
 	tmpl := macro.Template
 	if macro.Name != "" {
