@@ -41,6 +41,10 @@ func TestDefaultToPublish(t *testing.T) {
 		{"short help", []string{"mark", "-h"}, []string{"mark", "-h"}, false},
 		{"version", []string{"mark", "--version"}, []string{"mark", "--version"}, false},
 		{"short version", []string{"mark", "-v"}, []string{"mark", "-v"}, false},
+		// The version is mark's, whatever comes with it.
+		{"version after a publish flag", []string{"mark", "-f", "doc.md", "--version"}, []string{"mark", "--version"}, false},
+		{"short version before a publish flag", []string{"mark", "-v", "--files=doc.md"}, []string{"mark", "-v"}, false},
+		{"version with global flags", []string{"mark", "-u", "me", "--version"}, []string{"mark", "--version"}, false},
 		{"the help command", []string{"mark", "help", "publish"}, []string{"mark", "help", "publish"}, false},
 		{"the completion command", []string{"mark", "completion", "bash"}, []string{"mark", "completion", "bash"}, false},
 		{"shell completion", []string{"mark", "--generate-shell-completion"}, []string{"mark", "--generate-shell-completion"}, false},
@@ -308,6 +312,10 @@ func TestHelp(t *testing.T) {
 
 	t.Run("mark --version", func(t *testing.T) {
 		assert.Equal(t, "mark version v1.2.3@abc\n", helpOutput(t, "v1.2.3@abc", "--version"))
+	})
+
+	t.Run("mark -f doc.md --version", func(t *testing.T) {
+		assert.Equal(t, "mark version v1.2.3@abc\n", helpOutput(t, "v1.2.3@abc", "-f", "doc.md", "--version"))
 	})
 }
 
