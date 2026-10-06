@@ -58,6 +58,11 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 		return nil, fmt.Errorf("unable to prepare page header %q: %w", path, err)
 	}
 
+	compileSet, err := std.Templates.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("unable to prepare page header %q: %w", path, err)
+	}
+
 	tmpl, err := base.New("page-header").Parse(string(source))
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse page header %q: %w", path, err)
@@ -67,7 +72,9 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 		path:     path,
 		markdown: strings.EqualFold(filepath.Ext(path), ".md"),
 		tmpl:     tmpl,
-		std:      std,
+		// Includes and macros register templates on the set they compile
+		// with; a set of its own keeps them from reaching the documents.
+		std: &stdlib.Lib{Templates: compileSet},
 	}
 
 	// Several samples, not one: a template that indexes into .Path or
@@ -89,11 +96,12 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 		}
 
 		if header.markdown {
-			if _, _, err := markmd.CompileMarkdown([]byte(rendered), std, path, compileConfig(cfg)); err != nil {
+			compiled, _, err := markmd.CompileMarkdown([]byte(rendered), header.std, path, compileConfig(cfg))
+			if err != nil {
 				return nil, fmt.Errorf("unable to compile page header %q: %w", path, err)
 			}
 
-			continue
+			rendered = compiled
 		}
 
 		if err := markmd.CheckWellFormed(rendered); err != nil {

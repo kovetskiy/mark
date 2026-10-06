@@ -1262,11 +1262,12 @@ header the same from one run to the next:
 ```markdown
 > [!WARNING]
 > This page is generated from
-> [{{ .Path }}](https://github.com/org/repo/blob/main/{{ .EscapedPath }}).
+> [{{ .Path | xmlesc }}](https://github.com/org/repo/blob/main/{{ .EscapedPath }}).
 > Edit it there: changes made in Confluence are overwritten.
 ```
 
-The same in storage format, where text has to go through `xmlesc`:
+A file name can hold `&` or `<`, so `.Path`, `.Title` and `.Space` go through
+`xmlesc` in either format. The same in storage format:
 
 ```html
 <ac:structured-macro ac:name="warning">
@@ -1284,8 +1285,8 @@ before mark runs, for example with `envsubst`, by the script that knows which
 variables are safe to publish.
 
 The template is executed once before anything is published, so a broken
-template or a storage-format header that is not well-formed XML stops the run
-instead of every page. The header is part of the page body, so with
+template, or a header that does not render to well-formed XML for a title and a
+file name holding `&` and `<`, stops the run instead of every page. The header is part of the page body, so with
 `--changes-only` a change to it republishes every page. Pair it with
 `--edit-lock` to keep people from editing the page in Confluence at all.
 

@@ -58,7 +58,7 @@ func TestStorageFormatHeader(t *testing.T) {
 }
 
 func TestMarkdownHeader(t *testing.T) {
-	path := writeHeader(t, "header.md", "> [!WARNING]\n> Generated from [{{ .Path }}](https://example.com/{{ .EscapedPath }}).\n\n# Not dropped\n")
+	path := writeHeader(t, "header.md", "> [!WARNING]\n> Generated from [{{ .Path | xmlesc }}](https://example.com/{{ .EscapedPath }}).\n\n# Not dropped\n")
 
 	header, err := Load(path, newStdlib(t), types.MarkConfig{})
 	require.NoError(t, err)
@@ -143,4 +143,32 @@ func TestPreflightUsesTheRunsIncludePath(t *testing.T) {
 
 	_, err = Load(path, newStdlib(t), types.MarkConfig{IncludePath: shared})
 	require.NoError(t, err)
+}
+
+func TestPreflightRejectsMarkdownThatCompilesToMalformedXML(t *testing.T) {
+	path := writeHeader(t, "header.md", "<p>unclosed\n")
+
+	_, err := Load(path, newStdlib(t), types.MarkConfig{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not well-formed XML")
+}
+
+// TestMarkdownHeaderIncludesDoNotJoinTheDocumentTemplates: an include
+// registers its template on the set it compiles with.
+func TestMarkdownHeaderIncludesDoNotJoinTheDocumentTemplates(t *testing.T) {
+	shared := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "banner.md"), []byte("shared banner\n"), 0o600))
+
+	std := newStdlib(t)
+	before := len(std.Templates.Templates())
+
+	path := writeHeader(t, "header.md", "<!-- Include: banner.md -->\n")
+
+	loaded, err := Load(path, std, types.MarkConfig{IncludePath: shared})
+	require.NoError(t, err)
+
+	_, _, err = loaded.Render("doc.md", "Title", "SPACE", types.MarkConfig{IncludePath: shared})
+	require.NoError(t, err)
+
+	assert.Len(t, std.Templates.Templates(), before)
 }

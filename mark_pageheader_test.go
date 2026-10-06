@@ -86,3 +86,26 @@ func TestPageHeaderNamesThePageInPageIDMode(t *testing.T) {
 
 	assert.Contains(t, bodyOfPageTitled(t, server, "Existing"), "<p>Existing in DOCS</p>")
 }
+
+// TestPageHeaderNamesThePageInPageIDDryRun: the dry run already looks the page
+// up, so the header it prints matches the one a real run would publish.
+func TestPageHeaderNamesThePageInPageIDDryRun(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	existing := server.AddPage("DOCS", "Existing", "page", "")
+	file := writeFile(t, dir, "doc.md", "Just a body.\n")
+
+	var output bytes.Buffer
+
+	config := publishConfig(server.URL, file)
+	config.PageID = existing.ID
+	config.Space = "DOCS"
+	config.DryRun = true
+	config.Output = &output
+	config.PageHeader = writeFile(t, dir, "header.html", `<p>{{ .Title | xmlesc }} in {{ .Space | xmlesc }}</p>`)
+
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, output.String(), "<p>Existing in DOCS</p>")
+}

@@ -1072,7 +1072,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 			}
 
-			headerHTML, _, err := pageHeader.Render(file, titleOf(meta), spaceOr(meta, config.Space), cfg)
+			headerTitle := titleOf(meta)
+			if headerTitle == "" && previewed != nil {
+				headerTitle = previewed.Title
+			}
+
+			headerHTML, _, err := pageHeader.Render(file, headerTitle, spaceOr(meta, config.Space), cfg)
 			if err != nil {
 				return nil, nil, err
 			}
