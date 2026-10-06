@@ -335,8 +335,8 @@ func setContentAppearance(meta *Meta, value string) {
 }
 
 // NormalizeContentAppearance is the appearance a Content-Appearance value, or
-// the --content-appearance default, gives a page: fixed or default when it
-// says so, and full width otherwise.
+// the --content-appearance default, gives a page: fixed, default or max when
+// it says so, and full width otherwise.
 func NormalizeContentAppearance(value string) string {
 	switch strings.TrimSpace(value) {
 	case FixedContentAppearance:
