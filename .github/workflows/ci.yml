@@ -74,19 +74,24 @@ jobs:
         sudo install -m 0755 merman-cli-x86_64-unknown-linux-gnu/merman-cli /usr/local/bin/merman-cli
         merman-cli --version
 
-    # The first launch of the runner's Chromium takes up to 30s; the tests bound
-    # startup at 90s, so pay that cost here.
+    # The first launch of the runner's Chromium takes 10-60s; the tests bound
+    # startup at 90s, so pay that cost here, in a step with no timeout.
     - name: Warm up Chrome
       run: |
         # The first one chromedp finds, in its order, which is what the tests run.
-        for name in headless_shell headless-shell chromium chromium-browser google-chrome google-chrome-stable; do
+        for name in headless_shell headless-shell chromium chromium-browser google-chrome google-chrome-stable google-chrome-beta google-chrome-unstable /usr/bin/google-chrome /usr/local/bin/chrome /snap/bin/chromium chrome; do
           browser="$(command -v "$name" || true)"
           [ -n "$browser" ] && break
         done
-        [ -n "$browser" ] || exit 0
+        if [ -z "$browser" ]; then
+          echo "::warning::no browser found to warm up"
+          exit 0
+        fi
         echo "warming $browser ($(readlink -f "$browser"))"
-        "$browser" --version || true
-        time "$browser" --headless --disable-gpu --no-sandbox --dump-dom about:blank || true
+        # No `|| true`: a browser that cannot launch here would fail the tests
+        # anyway, and this step names the cause.
+        "$browser" --version
+        time "$browser" --headless --disable-gpu --no-sandbox --dump-dom about:blank
 
     - name: Run unit tests
       run: |
