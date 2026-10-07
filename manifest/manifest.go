@@ -786,14 +786,16 @@ func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
 	// either retitles a page the other still believes is its own. mark cannot
 	// tell which was intended, so it says so and records the latest -- silently
 	// keeping one would make the next surprise harder to explain.
+	moved, movedOK := s.movedOwner(state, path, pageID)
 	if owner, ok := state.byPage[pageID]; ok && owner != path {
-		if ownerEntry, recorded := state.shards[shardFor(owner)].pages[owner]; recorded &&
-			ownerEntry.Glob == s.runGlob && !s.runFiles[owner] {
-			// The path that owned this page is not in this run, and the page
-			// was found for this one by its title: the document moved (a plain
-			// rename of the file, title unchanged). The page follows it. Left
-			// recorded, the old path would read as an orphan whose page is the
-			// very one just published - and --on-orphan delete would trash it.
+		if movedOK {
+			// The path that owned this page is absent from this run -- recorded
+			// under this run's --files pattern, yet not among the files it
+			// publishes and not seen by it -- and this path now publishes to the
+			// same page: the document moved (a plain rename of the file, title
+			// unchanged), and the page follows it. Left recorded, the old path
+			// would read as an orphan whose page is the very one just published
+			// -- and --on-orphan delete would trash it.
 			log.Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
 			delete(state.shards[shardFor(owner)].pages, owner)
 			state.shards[shardFor(owner)].dirty = true
@@ -823,6 +825,12 @@ func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
 
 	state.claimed[pageID] = true
 
+	// Set before the early return below, not after it: a path whose entry is
+	// already exactly right can still have just taken the page over from a
+	// moved owner, and leaving the reverse lookup naming the deleted path
+	// makes the next Record of this page warn about a document that is gone.
+	state.byPage[pageID] = path
+
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
 	if ok && existing.PageID == pageID && existing.Title == title &&
@@ -845,14 +853,71 @@ func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
 	//
 	// Zeroed only when the page id changes, where a version belonging to a
 	// different page would mean nothing.
-	if ok && existing.PageID == pageID {
+	//
+	// A document that moved has no entry of its own to carry from, so the
+	// version comes from the path it moved from, whose entry was dropped
+	// above. Starting it at zero would hand the next run the same blank
+	// baseline, and --no-overwrite would wave through an edit it exists to
+	// keep.
+	switch {
+	case ok && existing.PageID == pageID:
 		entry.Version = existing.Version
+	case movedOK:
+		entry.Version = moved.Version
 	}
 
 	sh.pages[path] = entry
-	state.byPage[pageID] = path
 	sh.dirty = true
 	return nil
+}
+
+// movedOwner returns the entry of the path a page belongs to in the manifest,
+// when that path is absent from this run and path is not it: recorded under
+// this run's --files pattern, yet neither among the files the run publishes nor
+// seen by it. A page found for a document under another path whose owner is
+// gone like that is the same document, moved.
+//
+// An owner the run publishes, or one from another pattern, is not gone -- it
+// is a second document claiming the page, which is a conflict to report and
+// not a move to follow.
+func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool) {
+	owner, ok := state.byPage[pageID]
+	if !ok || owner == path {
+		return Entry{}, false
+	}
+
+	entry, recorded := state.shards[shardFor(owner)].pages[owner]
+	if !recorded || entry.PageID != pageID || entry.Glob == "" || entry.Glob != s.runGlob ||
+		s.runFiles[owner] || state.seen[owner] {
+		return Entry{}, false
+	}
+
+	return entry, true
+}
+
+// LookupMoved returns the entry a page was recorded under before the document
+// publishing to it moved to path, for a path with no entry of its own.
+//
+// The run on which a document moves is the one run where its own path knows
+// nothing, and Record has not yet carried the old entry across -- it cannot
+// until the page has been dealt with. Whatever has to be answered from the
+// manifest before then, --no-overwrite's version baseline above all, is in the
+// entry of the path it moved from.
+//
+// Unlike Lookup it does not mark anything as seen: the path it answers for is
+// marked by its own Lookup, and the one it reads from is, by definition, not
+// part of this run.
+func (s *Store) LookupMoved(spaceKey, path, pageID string) (Entry, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.load(spaceKey)
+	if err != nil {
+		return Entry{}, false, err
+	}
+
+	entry, ok := s.movedOwner(state, Key(path), pageID)
+	return entry, ok, nil
 }
 
 // ResolveRenamed reports the page a document published to under a previous
@@ -1165,7 +1230,23 @@ func (s *Store) orphans(spaceKey string) []string {
 			}
 			// A page another document published this run is that document's
 			// now, whatever this stale entry says: never offer it for removal.
+			//
+			// Nor keep it. Only one path per page is in byPage, so a move only
+			// ever drops the owner it names, and any other stale path for the
+			// page would otherwise stay forever -- offered to ResolveRenamed by
+			// its fingerprint, to ResolveStaleTitle by its title, and behind a
+			// warning that two documents share a page one of which is gone.
+			// Kept only for a path this run still publishes: unseen there means
+			// it failed before it was recorded, not that it went away.
 			if state.claimed[entry.PageID] {
+				if !s.runFiles[path] {
+					log.Info().Msgf(
+						"%s is gone and its page %s is now published by %s; forgetting it",
+						path, entry.PageID, state.byPage[entry.PageID],
+					)
+					delete(state.shards[i].pages, path)
+					state.shards[i].dirty = true
+				}
 				continue
 			}
 			orphans = append(orphans, path)

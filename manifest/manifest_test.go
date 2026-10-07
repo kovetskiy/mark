@@ -1,6 +1,7 @@
 package manifest_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/manifest"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -971,4 +974,200 @@ func TestPrefixIsValidated(t *testing.T) {
 	}
 
 	require.NoError(t, store.SetPropertyKeyPrefix(""), "empty means the default")
+}
+
+// captureLog sends the package logger to a buffer for the rest of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logged bytes.Buffer
+	restore := log.Logger
+	log.Logger = zerolog.New(&logged)
+	t.Cleanup(func() { log.Logger = restore })
+	return &logged
+}
+
+// runStore is the store of a later run of "*.md" publishing exactly files.
+func runStore(t *testing.T, server *confluencetest.Server, files ...string) *manifest.Store {
+	t.Helper()
+	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store.SetRunFiles("*.md", files)
+	return store
+}
+
+// TestRecordFollowsAMovedDocument: a path recorded under this run's pattern
+// and absent from it, whose page another path now publishes to, is that
+// document moved. Its entry goes, the move is said, and the version
+// --no-overwrite compares against comes along to the new path rather than
+// starting again from nothing.
+func TestRecordFollowsAMovedDocument(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	require.NoError(t, store.Record("DOCS", "doc.md", "1", "Doc", "h"))
+	require.NoError(t, store.RecordVersion("DOCS", "doc.md", 7))
+	require.NoError(t, store.Save())
+
+	logged := captureLog(t)
+	next := runStore(t, server, "sub/doc.md")
+	require.NoError(t, next.Record("DOCS", "sub/doc.md", "1", "Doc", "h"))
+
+	assert.Contains(t, logged.String(), "doc.md moved to sub/doc.md; page 1 follows it")
+	assert.NotContains(t, logged.String(), "both publish")
+
+	entry, ok, err := next.Lookup("DOCS", "sub/doc.md")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, int64(7), entry.Version, "the moved document keeps its version baseline")
+	assert.Empty(t, next.Orphans("DOCS"))
+
+	require.NoError(t, next.Save())
+	assert.Equal(t, map[string]string{"sub/doc.md": "1"}, manifestPages(t, server, spaceID(t, server, "DOCS")),
+		"the path it moved from is dropped")
+
+	// The page is the new path's now: a third document claiming it is in
+	// conflict with that one, not with the path that is gone.
+	logged.Reset()
+	require.NoError(t, next.Record("DOCS", "other.md", "1", "Other", "o"))
+	assert.Contains(t, logged.String(), "sub/doc.md and other.md both publish to page 1")
+}
+
+// TestLookupMovedAnswersForTheMovingRun: before Record carries a moved
+// document's entry across, its new path has none, and what the manifest knows
+// about the page is in the entry of the path it moved from. Nothing is
+// answered for a page whose owner the run still publishes.
+func TestLookupMovedAnswersForTheMovingRun(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	require.NoError(t, store.Record("DOCS", "doc.md", "1", "Doc", "h"))
+	require.NoError(t, store.RecordVersion("DOCS", "doc.md", 7))
+	require.NoError(t, store.Save())
+
+	next := runStore(t, server, "sub/doc.md")
+	entry, ok, err := next.LookupMoved("DOCS", "sub/doc.md", "1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, int64(7), entry.Version)
+
+	_, ok, err = next.LookupMoved("DOCS", "sub/doc.md", "2")
+	require.NoError(t, err)
+	assert.False(t, ok, "a page nobody recorded has no previous owner")
+
+	stays := runStore(t, server, "doc.md", "sub/doc.md")
+	_, ok, err = stays.LookupMoved("DOCS", "sub/doc.md", "1")
+	require.NoError(t, err)
+	assert.False(t, ok, "an owner this run publishes has not moved")
+}
+
+// TestRecordDoesNotFollowAnotherPatternsDocument: a path recorded by another
+// --files pattern is not this run's to call gone, so a second document
+// publishing to its page is a conflict, warned about, and the entry stays.
+func TestRecordDoesNotFollowAnotherPatternsDocument(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	other := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	other.SetRunFiles("other/*.md", []string{"other/doc.md"})
+	require.NoError(t, other.Record("DOCS", "other/doc.md", "1", "Doc", "h"))
+	require.NoError(t, other.RecordVersion("DOCS", "other/doc.md", 7))
+	require.NoError(t, other.Save())
+
+	logged := captureLog(t)
+	next := runStore(t, server, "doc.md")
+	require.NoError(t, next.Record("DOCS", "doc.md", "1", "Doc", "h"))
+
+	assert.Contains(t, logged.String(), "other/doc.md and doc.md both publish to page 1")
+	assert.NotContains(t, logged.String(), "moved")
+
+	entry, ok, err := next.Lookup("DOCS", "doc.md")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Zero(t, entry.Version, "a version belongs to the path that wrote it")
+
+	require.NoError(t, next.Save())
+	assert.Equal(t, map[string]string{"other/doc.md": "1", "doc.md": "1"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")))
+}
+
+// TestRecordUpdatesTheOwnerOfAnUnchangedEntry: a path whose entry is already
+// exactly right returns early, and the page it took over from a moved owner
+// must still be its own afterwards rather than the deleted path's.
+//
+// Two entries for one page are loaded in shard order, the later shard's path
+// becoming the owner, so the moved path is chosen to sit in a later shard than
+// the one that stays.
+func TestRecordUpdatesTheOwnerOfAnUnchangedEntry(t *testing.T) {
+	const current = "sub/doc.md"
+	gone := ""
+	for i := range 100 {
+		candidate := fmt.Sprintf("doc%d.md", i)
+		if manifest.ShardFor(candidate) > manifest.ShardFor(current) {
+			gone = candidate
+			break
+		}
+	}
+	require.NotEmpty(t, gone, "no path found in a later shard than %s", current)
+
+	// Both published by one run, so neither is taken for the other moved.
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	store := runStore(t, server, current, gone)
+	require.NoError(t, store.Record("DOCS", current, "1", "Doc", "h"))
+	require.NoError(t, store.Record("DOCS", gone, "1", "Doc", "h"))
+	require.NoError(t, store.Save())
+
+	logged := captureLog(t)
+	next := runStore(t, server, current, "other.md")
+	require.NoError(t, next.Record("DOCS", current, "1", "Doc", "h"))
+	assert.Contains(t, logged.String(), gone+" moved to "+current)
+
+	logged.Reset()
+	require.NoError(t, next.Record("DOCS", "other.md", "1", "Other", "o"))
+	assert.Contains(t, logged.String(), current+" and other.md both publish to page 1",
+		"the conflict is with the path that publishes the page, not the one that moved away")
+}
+
+// TestOrphansForgetStaleEntriesForAClaimedPage: a page this run published is
+// the publishing document's, so no other entry for it is offered as an
+// orphan -- and one whose path is gone from the run is forgotten, rather than
+// lingering to be matched by its fingerprint or title on every run after.
+func TestOrphansForgetStaleEntriesForAClaimedPage(t *testing.T) {
+	// Both published by one run, so neither is taken for the other moved.
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	store := runStore(t, server, "a.md", "b.md", "kept.md")
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "Doc", "h"))
+	require.NoError(t, store.Record("DOCS", "b.md", "1", "Doc", "h"))
+	require.NoError(t, store.Record("DOCS", "kept.md", "2", "Kept", "k"))
+	require.NoError(t, store.Save())
+
+	// a.md and b.md are both gone; c.md publishes their page. Only one of
+	// them is the page's owner and so followed as a move; the other is stale.
+	next := runStore(t, server, "c.md", "kept.md")
+	require.NoError(t, next.Record("DOCS", "c.md", "1", "Doc", "h"))
+	require.NoError(t, next.Record("DOCS", "kept.md", "2", "Kept", "k"))
+
+	assert.Empty(t, next.Orphans("DOCS"), "a page this run published is never an orphan")
+
+	require.NoError(t, next.Save())
+	assert.Equal(t, map[string]string{"c.md": "1", "kept.md": "2"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")),
+		"the stale entry is forgotten, not kept forever")
+}
+
+// TestOrphansKeepAnUnseenPathThisRunPublishes: a path the run publishes that
+// was not seen failed before it was recorded. Its page being claimed by
+// another document says nothing about the file being gone, so it is neither
+// offered as an orphan nor forgotten.
+func TestOrphansKeepAnUnseenPathThisRunPublishes(t *testing.T) {
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "Doc", "h"))
+	require.NoError(t, store.Save())
+
+	next := runStore(t, server, "a.md", "c.md")
+	require.NoError(t, next.Record("DOCS", "c.md", "1", "Doc", "h"))
+
+	assert.Empty(t, next.Orphans("DOCS"))
+
+	require.NoError(t, next.Save())
+	assert.Equal(t, map[string]string{"a.md": "1", "c.md": "1"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")))
 }

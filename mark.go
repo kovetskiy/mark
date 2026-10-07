@@ -2202,6 +2202,9 @@ func Cleanup() {
 // edit left every moved page unpublished and reported on every run after. An
 // edit made before the move still shows, since the version the move started
 // from is then not the one recorded either.
+//
+// A source file that moved is compared against the entry of the path it moved
+// from, for the one run on which its own path has none.
 func hasDrifted(
 	api *confluence.API,
 	tracker *manifest.Store,
@@ -2211,6 +2214,18 @@ func hasDrifted(
 	entry, ok, err := tracker.Lookup(spaceKey, file)
 	if err != nil {
 		return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+	}
+
+	// A document moved with its title unchanged is found by that title, and
+	// its new path has no entry yet: the baseline is still in the one it moved
+	// from, which Record only carries across after this. Asking the new path
+	// alone read that as a page with no baseline, and the very run that moved
+	// the file overwrote an edit --no-overwrite exists to keep.
+	if !ok {
+		entry, ok, err = tracker.LookupMoved(spaceKey, file, target.ID)
+		if err != nil {
+			return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+		}
 	}
 
 	if !ok || entry.Version == 0 || entry.PageID != target.ID {
