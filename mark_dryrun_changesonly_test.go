@@ -378,6 +378,58 @@ func TestDryRunChangesOnlyReportsAMoveUnderAParentToBeCreated(t *testing.T) {
 	assert.Len(t, nonGET(server), before, "a dry run must not write")
 }
 
+// TestDryRunChangesOnlyReportsChangedLabels covers a page whose body is
+// unchanged but whose labels are not what its headers declare: a real run
+// brings them in line whatever the body comparison finds.
+func TestDryRunChangesOnlyReportsChangedLabels(t *testing.T) {
+	body := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n%s\nsame\n"
+
+	preview := func(t *testing.T, edit func(*confluencetest.Server, string, string)) string {
+		server, _ := docsSpace(t)
+		dir := t.TempDir()
+		file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "<!-- Label: kept -->\n"))
+
+		config := Config{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+			ChangesOnly: true,
+		}
+		require.NoError(t, Run(config))
+		id := mustFind(t, server, "Doc")
+		edit(server, id, dir)
+		before := len(nonGET(server))
+
+		var out bytes.Buffer
+		config.DryRun = true
+		config.OutputFormat = "json"
+		config.Output = &out
+		require.NoError(t, Run(config))
+		assert.Len(t, nonGET(server), before, "a dry run must not write")
+
+		return out.String()
+	}
+
+	t.Run("label header changed", func(t *testing.T) {
+		out := preview(t, func(_ *confluencetest.Server, _, dir string) {
+			writeFile(t, dir, "doc.md", fmt.Sprintf(body, "<!-- Label: kept -->\n<!-- Label: added -->\n"))
+		})
+		assert.Contains(t, out, `"status": "would-update"`)
+		assert.Contains(t, out, "labels")
+	})
+
+	t.Run("label added in Confluence is removed by a real run", func(t *testing.T) {
+		out := preview(t, func(server *confluencetest.Server, id, _ string) {
+			server.AddLabel(id, "stray")
+		})
+		assert.Contains(t, out, `"status": "would-update"`)
+	})
+
+	t.Run("labels as declared", func(t *testing.T) {
+		out := preview(t, func(*confluencetest.Server, string, string) {})
+		assert.Contains(t, out, `"status": "unchanged"`)
+	})
+}
+
 // mustFind returns the id of the page titled title in DOCS.
 func mustFind(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
