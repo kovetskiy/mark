@@ -100,10 +100,12 @@ func (macro *Macro) Apply(
 //
 // resolve, when given, turns the written value into the name of the file it
 // stands for before the template sees it, so that the page and the upload agree
-// on one name. Nil leaves the value as written.
+// on one name, and says whether it names a file at all: a URL does not, and is
+// written into the page without being reported. Nil leaves the value as
+// written, and reports it.
 func (macro *Macro) ApplyCollecting(
 	content []byte,
-	resolve func(name string) string,
+	resolve func(name string) (string, bool),
 ) ([]byte, []string, error) {
 	var (
 		err         error
@@ -148,7 +150,7 @@ func (macro *Macro) ApplyCollecting(
 
 // expand renders the macro's template for one match, and returns the file its
 // Attachment key names, if it has one.
-func (macro *Macro) expand(match []byte, resolve func(name string) string) ([]byte, string, error) {
+func (macro *Macro) expand(match []byte, resolve func(name string) (string, bool)) ([]byte, string, error) {
 	config := map[string]any{}
 
 	if strings.TrimSpace(macro.Config) != "" {
@@ -161,9 +163,13 @@ func (macro *Macro) expand(match []byte, resolve func(name string) string) ([]by
 	groups := macro.Regexp.FindSubmatch(match)
 	cfgData := macro.configure(config, groups)
 
+	// Whether the Attachment value names a file, decided once, by whoever
+	// resolved it, rather than guessed again from the name it came out as.
+	isFile := true
+
 	if cfg, ok := cfgData.(map[string]any); ok && resolve != nil {
 		if name, ok := cfg["Attachment"].(string); ok && name != "" {
-			cfg["Attachment"] = resolve(name)
+			cfg["Attachment"], isFile = resolve(name)
 		}
 	}
 
@@ -188,7 +194,7 @@ func (macro *Macro) expand(match []byte, resolve func(name string) string) ([]by
 	// must hold nothing else, and a readable template does not
 	// naturally produce that.
 	var attached string
-	if cfg, ok := cfgData.(map[string]any); ok {
+	if cfg, ok := cfgData.(map[string]any); ok && isFile {
 		attached, _ = cfg["Attachment"].(string)
 	}
 
