@@ -17,7 +17,6 @@ import (
 	"io/fs"
 	"math"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -1027,7 +1026,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if compare && config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
 			// Ahead of compiling, as on a real run: a page edited in Confluence
 			// is left alone whatever the source says, and whatever it would fail on.
-			drift, err := driftReason(api, tracker, meta.Space, file, previewed)
+			drift, err := hasDrifted(api, tracker, meta.Space, file, previewed)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1038,58 +1037,58 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			}
 		}
 
-		var attachments *attachmentPreview
-		if compare && status == "" {
-			var err error
-			attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
-			if err != nil {
-				return nil, nil, err
-			}
-			if attachments != nil {
-				cfg.ResolveAttachment = attachments.resolve
-			}
-		}
-
+		// A page the drift check above leaves alone is not compiled at all.
 		var html string
-		var inline []attachment.Attachment
 		if status == "" {
+			var attachments *attachmentPreview
+			if compare {
+				var err error
+				attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
+				if err != nil {
+					return nil, nil, err
+				}
+				if attachments != nil {
+					cfg.ResolveAttachment = attachments.resolve
+				}
+			}
+
+			var inline []attachment.Attachment
 			html, inline, err = markmd.CompileMarkdown(markdown, std, file, cfg)
 			if err != nil {
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 			}
-		}
 
-		if compare && status == "" {
-			var relinked bool
-			html, relinked = attachments.settle(html)
+			if compare {
+				var relinked bool
+				html, relinked = attachments.settle(html)
 
-			var others []string
-			uploads, err := attachments.uploads(inline)
-			if err != nil {
-				return nil, nil, err
-			}
-			if uploads {
-				others = append(others, "an attachment would be uploaded")
-			}
-
-			if previewed != nil && meta != nil &&
-				page.WouldMove(api, previewed, previewParent, meta.Parents, previewMisplaced) {
-				others = append(others, "it would be moved under the parent its headers declare")
-			}
-
-			if previewed != nil && meta != nil {
-				add, del, err := labelChanges(api, previewed, meta.Labels, config.AppendLabels)
+				var others []string
+				uploads, err := attachments.uploads(inline)
 				if err != nil {
 					return nil, nil, err
 				}
-				if len(add) > 0 || len(del) > 0 {
-					others = append(others, "its labels would change")
+				if uploads {
+					others = append(others, "an attachment would be uploaded")
 				}
-			}
 
-			status, reason, err = previewChange(html, previewed, relinked, others, file, config, meta, std)
-			if err != nil {
-				return nil, nil, err
+				if previewed != nil && meta != nil {
+					if page.WouldMove(api, previewed, previewParent, meta.Parents, previewMisplaced) {
+						others = append(others, "it would be moved under the parent its headers declare")
+					}
+
+					add, del, err := labelChanges(api, previewed, meta.Labels, config.AppendLabels)
+					if err != nil {
+						return nil, nil, err
+					}
+					if len(add) > 0 || len(del) > 0 {
+						others = append(others, "its labels would change")
+					}
+				}
+
+				status, reason, err = previewChange(html, previewed, relinked, others, file, config, meta, std)
+				if err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 
@@ -1262,7 +1261,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// lines below, and there is no point sending them for a page that is about
 	// to be left alone.
 	if config.NoOverwrite && !pageCreated && tracker != nil && meta != nil && target != nil {
-		drift, err := driftReason(api, tracker, meta.Space, file, target)
+		drift, err := hasDrifted(api, tracker, meta.Space, file, target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1592,13 +1591,12 @@ func wrapLayout(std *stdlib.Lib, layout, sidebar, body string) (string, error) {
 // does not exist until then: a page that links it has a changed body. The
 // upload itself is a change to the page either way, which uploads reports.
 type attachmentPreview struct {
-	current *attachment.Resolver
-	pending *attachment.Resolver
+	links *attachment.Resolver
 
-	// remotes is what the page holds now, and declared how many of the
-	// attachments its headers declare a real run would upload.
+	// remotes is what the page holds now, and declared whether a real run
+	// would upload any of the attachments its headers declare.
 	remotes  []confluence.AttachmentInfo
-	declared int
+	declared bool
 
 	// marker stands in for a link that does not exist until the attachment is
 	// uploaded. Finding it in the compiled page is how a page that links one is
@@ -1612,11 +1610,7 @@ func (p *attachmentPreview) resolve(target string) string {
 		return ""
 	}
 
-	if link := p.current.Resolve(target); link != "" {
-		return link
-	}
-
-	return p.pending.Resolve(target)
+	return p.links.Resolve(target)
 }
 
 // settle reports whether body links an attachment whose link a real run would
@@ -1641,12 +1635,12 @@ func (p *attachmentPreview) uploads(inline []attachment.Attachment) (bool, error
 		remotes = p.remotes
 	}
 
-	pending, err := attachment.Pending(inline, remotes)
+	_, pending, err := attachment.Pending(inline, remotes)
 	if err != nil {
 		return false, fmt.Errorf("unable to resolve attachments: %w", err)
 	}
 
-	return p != nil && (p.declared > 0 || len(pending) > 0), nil
+	return p != nil && (p.declared || len(pending) > 0), nil
 }
 
 func previewAttachmentLinks(
@@ -1669,7 +1663,7 @@ func previewAttachmentLinks(
 		// Nothing to link against on a page that does not exist yet, but two
 		// files that flatten to one name still fail a real run before it
 		// writes anything, so they fail the preview too.
-		if _, err := attachment.Pending(local, nil); err != nil {
+		if _, _, err := attachment.Pending(local, nil); err != nil {
 			return nil, fmt.Errorf("unable to resolve attachments: %w", err)
 		}
 
@@ -1683,14 +1677,9 @@ func previewAttachmentLinks(
 
 	// Asked the way a real run decides it, so what it refuses -- two files
 	// that flatten to one name -- is refused here too.
-	uploads, err := attachment.Pending(local, remotes)
+	existing, uploads, err := attachment.Pending(local, remotes)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve attachments: %w", err)
-	}
-
-	uploading := make(map[string]bool, len(uploads))
-	for _, item := range uploads {
-		uploading[item.Filename] = true
 	}
 
 	var nonce [8]byte
@@ -1699,29 +1688,27 @@ func previewAttachmentLinks(
 	}
 	marker := "/mark-dry-run-pending-" + hex.EncodeToString(nonce[:]) + "/"
 
-	current := make([]attachment.Attachment, 0, len(local))
-	pending := make([]attachment.Attachment, 0, len(local))
+	// By filename, so a file declared twice is linked under each spelling, as
+	// a real run links it.
+	links := make(map[string]string, len(local))
+	for _, item := range existing {
+		links[item.Filename] = item.Link
+	}
+	for _, item := range uploads {
+		links[item.Filename] = marker + item.Filename
+	}
+
+	linked := make([]attachment.Attachment, 0, len(local))
 	for _, item := range local {
-		if uploading[item.Filename] {
-			item.Link = marker + item.Filename
-			pending = append(pending, item)
-
-			continue
-		}
-
-		i := slices.IndexFunc(remotes, func(r confluence.AttachmentInfo) bool {
-			return r.Filename == item.Filename
-		})
-		item.Link = path.Join(remotes[i].Links.Context, remotes[i].Links.Download)
-		current = append(current, item)
+		item.Link = links[item.Filename]
+		linked = append(linked, item)
 	}
 
 	return &attachmentPreview{
-		current:  attachment.NewResolver(current),
-		pending:  attachment.NewResolver(pending),
+		links:    attachment.NewResolver(linked),
 		marker:   marker,
 		remotes:  remotes,
-		declared: len(uploads),
+		declared: len(uploads) > 0,
 	}, nil
 }
 
@@ -2563,28 +2550,11 @@ func Cleanup() {
 	mermaid.Cleanup()
 }
 
-// driftReason is hasDrifted put the way the report says it: why --no-overwrite
-// leaves the page alone, or "" when it does not. Shared by a real run and the
-// --changes-only preview, so the two cannot disagree about either.
-func driftReason(
-	api *confluence.API,
-	tracker *manifest.Store,
-	spaceKey, file string,
-	target *confluence.PageInfo,
-) (string, error) {
-	drifted, recorded, err := hasDrifted(api, tracker, spaceKey, file, target)
-	if err != nil || !drifted {
-		return "", err
-	}
-
-	return fmt.Sprintf(
-		"edited in Confluence since mark published it (version %d, mark wrote %d)",
-		target.Version.Number, recorded,
-	), nil
-}
-
 // hasDrifted reports whether a page has been changed by somebody other than
-// mark since mark last published it, along with the version mark wrote.
+// mark since mark last published it, put the way the report says it: why
+// --no-overwrite leaves the page alone, naming the version mark wrote, or ""
+// when it has not drifted. Shared by a real run and the --changes-only
+// preview, so the two cannot disagree about either.
 //
 // The comparison is against the version number rather than the page's content:
 // Confluence rewrites storage markup on save often enough that comparing bodies
@@ -2608,10 +2578,10 @@ func hasDrifted(
 	tracker *manifest.Store,
 	spaceKey, file string,
 	target *confluence.PageInfo,
-) (bool, int64, error) {
+) (string, error) {
 	entry, ok, err := tracker.Lookup(spaceKey, file)
 	if err != nil {
-		return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+		return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 	}
 
 	// A document moved with its title unchanged is found by that title, and
@@ -2622,12 +2592,12 @@ func hasDrifted(
 	if !ok {
 		entry, ok, err = tracker.LookupMoved(spaceKey, file, target.ID)
 		if err != nil {
-			return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+			return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 		}
 	}
 
 	if !ok || entry.Version == 0 || entry.PageID != target.ID {
-		return false, 0, nil
+		return "", nil
 	}
 
 	current := target.Version.Number
@@ -2635,7 +2605,14 @@ func hasDrifted(
 		current = before
 	}
 
-	return current != entry.Version, entry.Version, nil
+	if current == entry.Version {
+		return "", nil
+	}
+
+	return fmt.Sprintf(
+		"edited in Confluence since mark published it (version %d, mark wrote %d)",
+		target.Version.Number, entry.Version,
+	), nil
 }
 
 // reportBrokenLinks says what failed a link check, and decides whether it ends

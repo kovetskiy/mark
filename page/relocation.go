@@ -143,13 +143,10 @@ func WouldMove(
 			return true
 		}
 
-		// As EnsurePageUnderFolderParent tells: a page v1 read cannot show a
-		// folder parent, so v2 is asked, and not knowing means a move.
-		current := ImmediateParentID(pg)
-		if pg.ParentID == "" && current != parent.ID {
-			if id, _, err := api.ParentOfV2(pg.ID); err == nil && id != "" {
-				current = id
-			}
+		// Not knowing means a move, as it does for EnsurePageUnderFolderParent.
+		current, _, err := currentParentID(api, pg, parent.ID)
+		if err != nil || current == "" {
+			current = ImmediateParentID(pg)
 		}
 
 		return current != parent.ID
@@ -180,8 +177,8 @@ func EnsurePageUnderFolderParent(
 	pg *confluence.PageInfo,
 	folderID string,
 ) error {
-	if pg != nil && folderID != "" && pg.ParentID == "" && ImmediateParentID(pg) != folderID {
-		parentID, parentType, err := api.ParentOfV2(pg.ID)
+	if pg != nil && folderID != "" {
+		parentID, parentType, err := currentParentID(api, pg, folderID)
 		if err != nil {
 			// Not knowing costs a move that may not have been needed, which is
 			// what happened every time before this was asked at all.
@@ -192,6 +189,23 @@ func EnsurePageUnderFolderParent(
 	}
 
 	return EnsurePageUnderParent(api, pg, folderID)
+}
+
+// currentParentID returns the id and type of pg's direct parent as far as
+// telling whether it is in folderID goes. A page read through v1 cannot show a
+// folder parent, so when pg has no parent id and its ancestors do not end at
+// folderID, v2 is asked, and its answer or error returned; otherwise it is
+// pg's own ParentID and ParentType.
+func currentParentID(
+	api *confluence.API,
+	pg *confluence.PageInfo,
+	folderID string,
+) (string, string, error) {
+	if pg.ParentID != "" || ImmediateParentID(pg) == folderID {
+		return pg.ParentID, pg.ParentType, nil
+	}
+
+	return api.ParentOfV2(pg.ID)
 }
 
 // EnsurePageUnderParent moves an existing page under parentID when its direct
