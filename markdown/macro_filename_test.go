@@ -33,3 +33,30 @@ func TestMacroFileNameDoesNotProbeOutsideTheProject(t *testing.T) {
 	assert.Equal(t, "../secret.png", fileName("../secret.png"))
 	assert.Equal(t, "../missing.png", fileName("../missing.png"))
 }
+
+// TestMacroFileNameDropsAnImageTitle: a pattern such as \((.+)\) captures an
+// image's title along with its destination, and the title is not part of the
+// file's name, in any of the three quotings.
+func TestMacroFileNameDropsAnImageTitle(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), []byte("x"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "my file.png"), []byte("x"), 0o600))
+
+	fileName := macroFileName(dir)
+
+	assert.Equal(t, "logo.png", fileName(`logo.png "The logo"`))
+	assert.Equal(t, "logo.png", fileName(`logo.png 'The logo'`))
+	assert.Equal(t, "logo.png", fileName(`logo.png (The logo)`))
+	assert.Equal(t, "my file.png", fileName(`<my file.png> "The logo"`))
+	assert.Equal(t, "missing.png", fileName(`missing.png "The logo"`),
+		"a file that is not there is still named without its title")
+}
+
+// TestMacroFileNameKeepsANameThatEndsLikeATitle: the value as written is tried
+// first, so a file whose name really ends in a quoted word still resolves.
+func TestMacroFileNameKeepsANameThatEndsLikeATitle(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "draft (v2)"), []byte("x"), 0o600))
+
+	assert.Equal(t, "draft (v2)", macroFileName(dir)("draft (v2)"))
+}

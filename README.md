@@ -1469,6 +1469,10 @@ the document, and is subject to the same rules as any other attachment (see
 [Where an attachment may come from](#where-an-attachment-may-come-from)). A file that is also declared with `<!-- Attachment: -->` is uploaded once. A value that is a URL of any
 scheme, or an absolute or UNC path, names no file beside the document and is left alone. A percent-encoded name such as `my%20logo.png` is read as it is
 for an image: the file of that exact name if there is one, otherwise `my logo.png`.
+An image title captured along with the name, as in `![Logo](logo.png "The logo")`,
+is not part of it. A file that is not there is only warned about, since it may
+already be attached to the page, unlike a file declared with
+`<!-- Attachment: -->`, which fails the run.
 
 The macro replaces the whole image, so the native `<img width="300">` syntax
 described under [HTML img tags](#use-html-img-tags-for-sizing) needs no macro and is usually the
