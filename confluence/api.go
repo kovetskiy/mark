@@ -101,6 +101,11 @@ type API struct {
 	userCache      map[string]userCacheEntry
 	userCacheMutex sync.RWMutex
 
+	// currentUser is the answer GetCurrentUser last got, guarded by
+	// userCacheMutex. Only a successful lookup is kept, so a failed one is
+	// asked again rather than remembered for the rest of the run.
+	currentUser *User
+
 	// Both maps are keyed by space key and guarded by the one mutex: they
 	// answer the same question about the same thing and are always populated
 	// from the same place in a run.
@@ -1845,7 +1850,18 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 	return &response.Results[0].User, nil
 }
 
+// GetCurrentUser returns the user mark authenticates as. The answer does not
+// change during a run, so a successful lookup is reused by every later call:
+// the platform probe and an edit lock both need it.
 func (api *API) GetCurrentUser() (*User, error) {
+	api.userCacheMutex.RLock()
+	cached := api.currentUser
+	api.userCacheMutex.RUnlock()
+	if cached != nil {
+		user := *cached
+		return &user, nil
+	}
+
 	var user User
 
 	request, err := api.v1().
@@ -1859,6 +1875,11 @@ func (api *API) GetCurrentUser() (*User, error) {
 	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
+
+	stored := user
+	api.userCacheMutex.Lock()
+	api.currentUser = &stored
+	api.userCacheMutex.Unlock()
 
 	return &user, nil
 }
@@ -1919,7 +1940,12 @@ func (api *API) cloud() (bool, error) {
 			return
 		}
 
-		api.isCloudFlag, api.isCloudErr = identifyCloud(api.GetCurrentUser())
+		user, err := api.GetCurrentUser()
+		if err != nil {
+			api.isCloudErr = fmt.Errorf("unable to identify the Confluence platform: %w", err)
+		} else {
+			api.isCloudFlag, api.isCloudErr = identifyCloud(user)
+		}
 		if api.isCloudErr != nil {
 			log.Warn().Err(api.isCloudErr).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
 		}
@@ -1929,11 +1955,7 @@ func (api *API) cloud() (bool, error) {
 }
 
 // identifyCloud reads the platform off the current user.
-func identifyCloud(user *User, err error) (bool, error) {
-	if err != nil {
-		return false, fmt.Errorf("unable to identify the Confluence platform: %w", err)
-	}
-
+func identifyCloud(user *User) (bool, error) {
 	switch {
 	case user.AccountID != "":
 		return true, nil

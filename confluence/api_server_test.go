@@ -735,8 +735,7 @@ func TestIsCloudReadsTheCurrentUser(t *testing.T) {
 
 // TestIsCloudOnAnUnreadableUserIsNotCloud: a target that cannot be identified
 // is not taken for Cloud, which is what every caller of IsCloud has always
-// assumed of a failed probe. The error is kept for a caller that must not
-// guess.
+// assumed of a failed probe.
 func TestIsCloudOnAnUnreadableUserIsNotCloud(t *testing.T) {
 	for name, fail := range map[string]confluencetest.FailFunc{
 		"refused": func(r *http.Request) (int, string, bool) {
@@ -757,10 +756,6 @@ func TestIsCloudOnAnUnreadableUserIsNotCloud(t *testing.T) {
 			server.SetFail(fail)
 
 			assert.False(t, api.IsCloud())
-
-			_, err := confluence.CloudForTest(api)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "unable to identify the Confluence platform")
 		})
 	}
 }

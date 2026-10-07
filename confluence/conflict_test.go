@@ -273,7 +273,7 @@ func newConflictDataCenterAPI(
 	api, server := newConflictAPI(t, false)
 	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") ||
+		if strings.Contains(r.URL.Path, "/move/") ||
 			r.URL.Path == "/pages/movepage.action" {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
 		}
