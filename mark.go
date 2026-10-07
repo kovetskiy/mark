@@ -941,10 +941,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// What a dry run found where the page would be, for --changes-only to compare
 	// against. Nil means the page would be created.
 	var previewed *confluence.PageInfo
+	// Where a real run would put that page, and whether it failed the ancestry
+	// check: what page.WouldMove needs to tell whether it would be moved.
+	var previewParent *confluence.PageInfo
+	var previewMisplaced bool
 
 	if config.DryRun {
 		if meta != nil {
-			if _, pg, err := page.ResolvePage(true, api, meta, ancestryTracker); err != nil {
+			if parent, pg, misplaced, err := page.PreviewPage(api, meta, ancestryTracker); err != nil {
 				return nil, nil, fmt.Errorf("unable to resolve page location: %w", err)
 			} else if pg == nil {
 				// The title found nothing, which is where a real run consults
@@ -955,8 +959,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				if err != nil {
 					return nil, nil, err
 				}
+				// Not found by title, so ResolvePage's own move does not apply.
+				previewParent = parent
 			} else {
 				previewed = pg
+				previewParent, previewMisplaced = parent, misplaced
 
 				if tracker != nil {
 					// Found by title. A real run records the path once it has
@@ -1046,7 +1053,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if compare && status == "" {
 			var relinked bool
 			html, relinked = attachments.settle(html)
-			status, err = previewChange(html, previewed, relinked, file, config, meta, std)
+
+			var others []string
+			if previewed != nil && meta != nil &&
+				page.WouldMove(api, previewed, previewParent, meta.Parents, previewMisplaced) {
+				others = append(others, "it would be moved under the parent its headers declare")
+			}
+
+			status, reason, err = previewChange(html, previewed, relinked, others, file, config, meta, std)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1643,21 +1657,26 @@ func previewAttachmentLinks(
 	}, nil
 }
 
-// previewChange says whether a real run would write the page, using the same
-// comparison it does, and logs the answer.
+// previewChange says whether a real run would change the page, using the same
+// comparison it does for the body, and logs the answer.
+//
+// others are what a real run would do to the page besides writing its body --
+// moving it, say -- which it does whatever the body comparison finds, so any of
+// them makes the page one that would change. They come back as the reason.
 func previewChange(
 	body string,
 	existing *confluence.PageInfo,
 	relinked bool,
+	others []string,
 	file string,
 	config Config,
 	meta *metadata.Meta,
 	std *stdlib.Lib,
-) (string, error) {
+) (string, string, error) {
 	if existing == nil {
 		log.Info().Msgf("%s: page would be created", file)
 
-		return report.StatusWouldCreate, nil
+		return report.StatusWouldCreate, "", nil
 	}
 
 	var layout, sidebar, appearance, emoji, title string
@@ -1667,11 +1686,12 @@ func previewChange(
 
 	wrapped, err := wrapLayout(std, layout, sidebar, body)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	hash := contentFingerprint(wrapped, appearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
 	retitled := meta != nil && existing.Title != title
+	reason := strings.Join(others, "; ")
 
 	switch {
 	case retitled:
@@ -1679,14 +1699,18 @@ func previewChange(
 	case relinked:
 		log.Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
 	case readContentHash(existing.Version.Message) == hash:
-		log.Info().Msgf("%s: page %q is already up to date", file, existing.Title)
+		if len(others) == 0 {
+			log.Info().Msgf("%s: page %q is already up to date", file, existing.Title)
 
-		return report.StatusUnchanged, nil
+			return report.StatusUnchanged, "", nil
+		}
+
+		log.Info().Msgf("%s: page %q has an unchanged body but %s", file, existing.Title, reason)
 	default:
 		log.Info().Msgf("%s: page %q would be updated", file, existing.Title)
 	}
 
-	return report.StatusWouldUpdate, nil
+	return report.StatusWouldUpdate, reason, nil
 }
 
 // previewTrackedResolution says what a real run would have done with a document

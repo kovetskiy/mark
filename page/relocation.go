@@ -115,6 +115,57 @@ func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 	return false
 }
 
+// dryRunFolderID stands in for a folder a dry run would have created.
+const dryRunFolderID = "dry-run-folder-id"
+
+// WouldMove reports whether a real run would move pg, an existing page, given
+// what PreviewPage resolved: parent, and whether the page failed the ancestry
+// check. It asks nothing that writes.
+//
+// It follows the two places a real run moves a page: ResolvePage, for a page
+// found by title that failed the ancestry check, and the caller, for any page
+// not under all of its declared parents -- each moving it only if its direct
+// parent is not parent already. A dry run creates no missing parent, so parent
+// is then the deepest one that exists; a page cannot sit under a parent that
+// does not exist yet, so it would be moved once a real run has created it.
+func WouldMove(
+	api *confluence.API,
+	pg, parent *confluence.PageInfo,
+	parents []string,
+	misplaced bool,
+) bool {
+	if pg == nil || parent == nil {
+		return false
+	}
+
+	if parent.Type == "folder-parent" {
+		if parent.ID == dryRunFolderID {
+			return true
+		}
+
+		// As EnsurePageUnderFolderParent tells: a page v1 read cannot show a
+		// folder parent, so v2 is asked, and not knowing means a move.
+		current := ImmediateParentID(pg)
+		if pg.ParentID == "" && current != parent.ID {
+			if id, _, err := api.ParentOfV2(pg.ID); err == nil && id != "" {
+				current = id
+			}
+		}
+
+		return current != parent.ID
+	}
+
+	if !misplaced && UnderDeclaredParents(pg, parents) {
+		return false
+	}
+
+	if len(parents) > 0 && parent.Title != parents[len(parents)-1] {
+		return true
+	}
+
+	return ImmediateParentID(pg) != parent.ID
+}
+
 // EnsurePageUnderFolderParent is EnsurePageUnderParent with folderID as the
 // parent. Confluence moves a page under a folder the same way it moves one
 // under a page; what differs is telling whether it is there already.

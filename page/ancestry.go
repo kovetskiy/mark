@@ -389,7 +389,7 @@ func EnsureFolderAncestry(
 		if len(rest) > 0 {
 			finalTitle := rest[len(rest)-1]
 			parent = &ParentInfo{
-				ID:    "dry-run-folder-id",
+				ID:    dryRunFolderID,
 				Title: finalTitle,
 				Type:  "folder",
 			}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -295,6 +296,96 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 	err = Run(config)
 	require.Error(t, err)
 	assert.NotContains(t, out.String(), "would-create")
+}
+
+// nonGET lists the requests that could have written something.
+func nonGET(server *confluencetest.Server) []string {
+	var w []string
+	for _, r := range server.Requests() {
+		if r.Method != http.MethodGet {
+			w = append(w, r.Method+" "+r.Path)
+		}
+	}
+	return w
+}
+
+// TestDryRunChangesOnlyReportsAMove covers a page whose body is unchanged but
+// whose Parent header is not: a real run moves it, so it would change.
+func TestDryRunChangesOnlyReportsAMove(t *testing.T) {
+	server, _ := docsSpace(t)
+	other := server.AddPage("DOCS", "Other", "page", mustFind(t, server, "Home"))
+	dir := t.TempDir()
+	body := "<!-- Space: DOCS -->\n<!-- Parent: %s -->\n<!-- Title: Doc -->\n\nsame\n"
+	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Parent"))
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+		ChangesOnly: true,
+	}
+	require.NoError(t, Run(config))
+	id := mustFind(t, server, "Doc")
+
+	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Other"))
+	before := len(nonGET(server))
+
+	var out bytes.Buffer
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, out.String(), `"status": "would-update"`)
+	assert.Contains(t, out.String(), "moved")
+	assert.Len(t, nonGET(server), before, "a dry run must not write")
+	assert.NotEqual(t, other.ID, server.Page(id).ParentID, "a dry run must not move the page")
+
+	// And the real run does move it, which is what the report promised.
+	config.DryRun = false
+	config.OutputFormat = ""
+	config.Output = &bytes.Buffer{}
+	require.NoError(t, Run(config))
+	assert.Equal(t, other.ID, server.Page(id).ParentID)
+}
+
+// TestDryRunChangesOnlyReportsAMoveUnderAParentToBeCreated covers a Parent
+// header naming a page that does not exist yet. A dry run creates nothing, so
+// the parent it resolves is the one the page already sits under, and the move
+// a real run makes once it has created the new parent must still be counted.
+func TestDryRunChangesOnlyReportsAMoveUnderAParentToBeCreated(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", dryRunDocBody("same"))
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+		ChangesOnly: true,
+	}
+	require.NoError(t, Run(config))
+
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Parent: Missing -->\n<!-- Title: Doc -->\n\nsame\n")
+	before := len(nonGET(server))
+
+	var out bytes.Buffer
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, out.String(), `"status": "would-update"`)
+	assert.Len(t, nonGET(server), before, "a dry run must not write")
+}
+
+// mustFind returns the id of the page titled title in DOCS.
+func mustFind(t *testing.T, server *confluencetest.Server, title string) string {
+	t.Helper()
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	pg, err := api.FindPage("DOCS", title, "page")
+	require.NoError(t, err)
+	require.NotNil(t, pg)
+	return pg.ID
 }
 
 // TestDryRunChangesOnlyFailsOnAttachmentsSharingAName keeps the preview from
