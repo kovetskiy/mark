@@ -70,7 +70,9 @@ type Page struct {
 	URL    string `json:"url,omitempty"`
 
 	// Reason says why a page was skipped or how it failed, in the words a
-	// person would want to read.
+	// person would want to read. On a page a dry run says would be updated, it
+	// names what a real run would do besides rewriting the body, such as moving
+	// the page.
 	Reason string `json:"reason,omitempty"`
 
 	// Warnings are what was wrong with a document that was published anyway --

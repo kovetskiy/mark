@@ -17,15 +17,38 @@ func ResolvePage(
 	meta *metadata.Meta,
 	tracker AncestryTracker,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
+	parent, page, _, err := resolvePage(dryRun, api, meta, tracker)
+
+	return parent, page, err
+}
+
+// PreviewPage is ResolvePage for a dry run that also has to say whether a real
+// run would move the page. Misplaced reports that the page found by title
+// failed the ancestry check, which is what has a real run move it from inside
+// ResolvePage; WouldMove takes it from there.
+func PreviewPage(
+	api *confluence.API,
+	meta *metadata.Meta,
+	tracker AncestryTracker,
+) (parent, page *confluence.PageInfo, misplaced bool, err error) {
+	return resolvePage(true, api, meta, tracker)
+}
+
+func resolvePage(
+	dryRun bool,
+	api *confluence.API,
+	meta *metadata.Meta,
+	tracker AncestryTracker,
+) (*confluence.PageInfo, *confluence.PageInfo, bool, error) {
 	if meta == nil {
-		return nil, nil, fmt.Errorf("metadata is empty")
+		return nil, nil, false, fmt.Errorf("metadata is empty")
 	}
 	if len(meta.Folders) > 0 && !api.IsCloud() {
-		return nil, nil, fmt.Errorf("folder support is currently only available on Confluence Cloud")
+		return nil, nil, false, fmt.Errorf("folder support is currently only available on Confluence Cloud")
 	}
 	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
+		return nil, nil, false, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
 
 	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && offAnchor(api, meta.Space, page, meta.Parents) {
@@ -59,7 +82,7 @@ func ResolvePage(
 				meta.Title,
 			)
 
-		return nil, page, nil
+		return nil, page, false, nil
 	}
 
 	// The home page is only ever compared against here -- never used as a
@@ -87,6 +110,9 @@ func ResolvePage(
 
 	// Handle mixed folder and page hierarchy
 	var parent *confluence.PageInfo
+	// Whether the page found by title failed the ancestry check, and so is
+	// moved under parent below.
+	var misplaced bool
 
 	if len(meta.Folders) > 0 {
 
@@ -109,7 +135,7 @@ func ResolvePage(
 			meta.Parents,
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("can't create mixed folder/page ancestry tree: folders=%s, pages=%s: %w",
+			return nil, nil, false, fmt.Errorf("can't create mixed folder/page ancestry tree: folders=%s, pages=%s: %w",
 				strings.Join(meta.Folders, ` > `),
 				strings.Join(meta.Parents, ` > `),
 				err,
@@ -117,7 +143,6 @@ func ResolvePage(
 		}
 	} else {
 		// Traditional page-only ancestry
-		misplaced := false
 		// Copied rather than appended to: meta.Parents may have spare
 		// capacity, and the path below would then write its title into the
 		// same slot this puts the page's.
@@ -134,7 +159,7 @@ func ResolvePage(
 			)
 			if err != nil {
 				if !errors.Is(err, ErrAncestryMismatch) {
-					return nil, nil, err
+					return nil, nil, false, err
 				}
 
 				// The document has declared a different parent than the one the
@@ -176,7 +201,7 @@ func ResolvePage(
 			tracker,
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("can't create ancestry tree %q: %w", strings.Join(meta.Parents, ` > `), err)
+			return nil, nil, false, fmt.Errorf("can't create ancestry tree %q: %w", strings.Join(meta.Parents, ` > `), err)
 		}
 
 		// Only a page that failed validation is moved. A page nested deeper
@@ -185,7 +210,7 @@ func ResolvePage(
 		// hierarchies nobody asked to change.
 		if misplaced && !dryRun && page != nil && parent != nil {
 			if err := EnsurePageUnderParent(api, page, parent.ID); err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
 		}
 	}
@@ -220,5 +245,5 @@ func ResolvePage(
 		)
 	}
 
-	return parent, page, nil
+	return parent, page, misplaced && page != nil, nil
 }
