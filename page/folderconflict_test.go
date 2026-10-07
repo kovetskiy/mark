@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v17/page"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
