@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -62,8 +63,8 @@ func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
 
 	// The capture works, at the level the orphan report is written at: without
 	// this, a quieter logger would make the assertions below pass vacuously.
-	assert.Contains(t, logged, "processing "+a)
-	assert.Contains(t, logged, "processing "+b)
+	assert.Contains(t, logged, "processing "+inLog(a))
+	assert.Contains(t, logged, "processing "+inLog(b))
 
 	// What the dry run used to log: every page reported as an orphan, then the
 	// "nothing was published" guard holding the deletion back.
@@ -105,8 +106,8 @@ func TestDryRunStillReportsRealOrphans(t *testing.T) {
 	dry.DryRun = true
 	logged := captureLog(t, func() { require.NoError(t, Run(dry)) })
 
-	assert.Contains(t, logged, "processing "+a)
-	assert.Contains(t, logged, "1 tracked page(s) had no matching source file in this run: "+b,
+	assert.Contains(t, logged, "processing "+inLog(a))
+	assert.Contains(t, logged, "1 tracked page(s) had no matching source file in this run: "+filepath.ToSlash(b),
 		"b.md is gone, and only b.md")
 	// "page %q would be %sd" in page/orphan.go; the quotes are escaped because
 	// zerolog writes the message as JSON.
@@ -116,4 +117,12 @@ func TestDryRunStillReportsRealOrphans(t *testing.T) {
 	assert.Empty(t, writesTo(server), "a dry run must not change anything")
 	assert.False(t, server.Page(pageA.ID).Trashed)
 	assert.False(t, server.Page(pageB.ID).Trashed, "a dry run only says what it would delete")
+}
+
+// inLog is s as it reads in the captured log, which zerolog writes as JSON: a
+// Windows path has its backslashes doubled.
+func inLog(s string) string {
+	b, _ := json.Marshal(s)
+
+	return string(b[1 : len(b)-1])
 }

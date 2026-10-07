@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,7 +29,7 @@ type virtualOpener struct {
 }
 
 func (o *virtualOpener) Open(name string) (io.ReadCloser, error) {
-	if buf, ok := o.PathToBuf[name]; ok {
+	if buf, ok := o.PathToBuf[filepath.ToSlash(name)]; ok {
 		return buf, nil
 	}
 	return nil, os.ErrNotExist
