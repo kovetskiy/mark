@@ -69,12 +69,13 @@ func TestMacroAttachmentIsUploaded(t *testing.T) {
 		body     string
 		filename string
 	}{
-		"a plain path":    {"![Logo](logo.png)<!-- width=300 -->\n", "logo.png"},
-		"a nested path":   {"![Ex](images/example.png)<!-- width=300 -->\n", "images_example.png"},
-		"a ./ path":       {"![Logo](./logo.png)<!-- width=300 -->\n", "._logo.png"},
-		"a parent path":   {"![Ex](./images/example.png)<!-- width=120 -->\n", "._images_example.png"},
-		"inside a table":  {"| a | b |\n|---|---|\n| ![Logo](logo.png)<!-- width=300 --> | text |\n", "logo.png"},
-		"outside a table": {"Text before.\n\n![Logo](logo.png)<!-- width=300 -->\n\nText after.\n", "logo.png"},
+		"a plain path":     {"![Logo](logo.png)<!-- width=300 -->\n", "logo.png"},
+		"a nested path":    {"![Ex](images/example.png)<!-- width=300 -->\n", "images_example.png"},
+		"a ./ path":        {"![Logo](./logo.png)<!-- width=300 -->\n", "._logo.png"},
+		"a ./ nested path": {"![Ex](./images/example.png)<!-- width=120 -->\n", "._images_example.png"},
+		"with a title":     {"![Logo](logo.png \"The logo\")<!-- width=300 -->\n", "logo.png"},
+		"inside a table":   {"| a | b |\n|---|---|\n| ![Logo](logo.png)<!-- width=300 --> | text |\n", "logo.png"},
+		"outside a table":  {"Text before.\n\n![Logo](logo.png)<!-- width=300 -->\n\nText after.\n", "logo.png"},
 	}
 
 	for name, tc := range cases {
