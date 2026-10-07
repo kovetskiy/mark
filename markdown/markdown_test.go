@@ -417,6 +417,33 @@ func TestContinueOnError(t *testing.T) {
 	assert.ErrorContains(t, err, "one or more files failed to process")
 }
 
+// TestMermaidMacroOutputNeedsNoDrawingFlags: --mermaid-output=macro on its own
+// goes from the CLI through Config into prepare(), which used to read the flag
+// defaults (chrome, 1.0) and refuse them as "has no effect with macro". The
+// defaults must stay behind the flags, so a run that asked only for the macro
+// publishes it without also naming an engine or a scale.
+func TestMermaidMacroOutputNeedsNoDrawingFlags(t *testing.T) {
+	cmd := &cli.Command{
+		Name:   "temp-mark",
+		Flags:  util.Flags,
+		Action: util.RunMark,
+	}
+
+	dir := t.TempDir()
+	doc := filepath.Join(dir, "page.md")
+	if err := os.WriteFile(doc, []byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.Run(context.TODO(), []string{
+		"",
+		"--compile-only",
+		"--mermaid-output", "macro",
+		"--files", doc,
+	})
+	assert.NoError(t, err)
+}
+
 // TestDetailsIsNotOptional: <details> is converted whatever --features says.
 // The storage format cannot carry the tag, so the alternative was never a
 // working page -- and the feature name is still accepted, since nothing
