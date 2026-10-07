@@ -85,16 +85,21 @@ func ResolveAttachments(
 // Pending returns the attachments that ResolveAttachmentsWithRemotes would
 // upload against remotes -- created, or updated because their checksum
 // differs -- without uploading anything, and refuses what it would refuse.
+// Alongside them come the ones it would keep as they are, with the link the
+// remote they match already has.
 //
 // It is what a dry run asks: the same decision a real run makes, from the same
 // list, so the two cannot disagree about which files would be sent.
-func Pending(attachments []Attachment, remotes []confluence.AttachmentInfo) ([]Attachment, error) {
-	_, creating, updating, _, err := classify(attachments, remotes)
+func Pending(
+	attachments []Attachment,
+	remotes []confluence.AttachmentInfo,
+) (existing, pending []Attachment, err error) {
+	existing, creating, updating, _, err := classify(attachments, remotes)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return append(creating, updating...), nil
+	return existing, append(creating, updating...), nil
 }
 
 // classify sorts attachments by what uploading them against remotes takes:
