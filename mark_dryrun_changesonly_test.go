@@ -172,8 +172,8 @@ func TestDryRunChangesOnlyKnowsAboutAttachmentLinks(t *testing.T) {
 }
 
 func TestDryRunChangesOnlyChangedAttachment(t *testing.T) {
-	// A changed file is re-uploaded under a new download link, so only a page
-	// that holds the link differs; an image found while rendering names the file.
+	// A changed file is re-uploaded by a real run whether or not the body
+	// changes with it, so every page that would upload one would change.
 	preview := func(t *testing.T, body string) string {
 		server, _ := docsSpace(t)
 		dir := t.TempDir()
@@ -202,8 +202,14 @@ func TestDryRunChangesOnlyChangedAttachment(t *testing.T) {
 		assert.Contains(t, preview(t, "<!-- Attachment: logo.png -->\n\n[the logo](logo.png)"), "would update")
 	})
 
+	// The body names the file and is unchanged, but a real run still uploads
+	// the new bytes, so the page is one that would change.
 	t.Run("embedded", func(t *testing.T) {
-		assert.NotContains(t, preview(t, "![logo](logo.png)"), "would update")
+		assert.Contains(t, preview(t, "![logo](logo.png)"), "would update")
+	})
+
+	t.Run("declared and not linked", func(t *testing.T) {
+		assert.Contains(t, preview(t, "<!-- Attachment: logo.png -->\n\nno link"), "would update")
 	})
 }
 
