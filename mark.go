@@ -1128,8 +1128,11 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 		if status != "" {
 			var target confluence.PageInfo
+			var url string
 			if previewed != nil {
 				target = *previewed
+				// Built as a real run builds it, so CI can link the page.
+				url = api.BaseURL + target.Links.Full
 			}
 			title := target.Title
 			if meta != nil {
@@ -1138,7 +1141,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			results.AddPage(report.Page{
 				File: file, Status: status, Reason: reason,
 				Space: spaceOf(meta), Title: title,
-				PageID:   target.ID,
+				PageID: target.ID, URL: url,
 				Warnings: resolver.Broken(),
 			})
 		}
