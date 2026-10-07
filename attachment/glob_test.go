@@ -3,6 +3,8 @@ package attachment
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/vfs"
@@ -106,7 +108,8 @@ func TestAttachmentPatternMatchingNothingIsReportedByName(t *testing.T) {
 	_, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"pictures/*.png"})
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "pictures/*.png")
+	// %q in the error doubles the backslashes of a Windows path.
+	assert.Contains(t, err.Error(), strings.Trim(strconv.Quote(filepath.FromSlash("pictures/*.png")), `"`))
 }
 
 // TestAttachmentPatternCannotReachOutsideTheProject is the one that matters: a
