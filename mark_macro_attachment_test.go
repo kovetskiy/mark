@@ -142,6 +142,30 @@ func TestMacroAttachmentOutsideProjectFails(t *testing.T) {
 	assert.Zero(t, server.CountRequests("POST", "/child/attachment"))
 }
 
+// TestMacroAttachmentTitleReachingOutsideIsOnlyATitle: the title is not part
+// of the file's name, so a "../" in it must not fail the run for an image that
+// is sitting beside the document.
+func TestMacroAttachmentTitleReachingOutsideIsOnlyATitle(t *testing.T) {
+	server, id, _ := publishMacroDoc(t, "",
+		"![L](logo.png \"see v1/../../../old\")<!-- width=1 -->\n")
+
+	stored := server.Attachments(id)
+	require.Len(t, stored, 1)
+	assert.Equal(t, "logo.png", stored[0].Filename)
+	assert.Contains(t, server.Page(id).Body, `<ri:attachment ri:filename="logo.png"/>`)
+}
+
+// TestMacroAttachmentDecodingToARootedPathIsWarnedAbout: "%2Fetc%2Fpasswd"
+// decodes to a file that is never read, and the page still refers to an
+// attachment, so the missing upload is said out loud rather than dropped.
+func TestMacroAttachmentDecodingToARootedPathIsWarnedAbout(t *testing.T) {
+	server, id, logged := publishMacroDoc(t, "", "![P](%2Fetc%2Fpasswd)<!-- width=1 -->\n")
+
+	assert.Empty(t, server.Attachments(id))
+	assert.Contains(t, logged, "is not uploaded")
+	assert.Contains(t, logged, "%2Fetc%2Fpasswd")
+}
+
 // TestMacroAttachmentOnLegacyCompilePath keeps both compile paths in step.
 func TestMacroAttachmentOnLegacyCompilePath(t *testing.T) {
 	dir := t.TempDir()
