@@ -212,28 +212,23 @@ func (c Config) prepare() (page.LinkChecks, error) {
 					"the macro does not draw the diagram",
 			)
 		}
-		if c.MermaidBundle {
-			return page.LinkChecks{}, errors.New(
-				"MermaidBundle needs MermaidOutput \"svg\": " +
-					"only an SVG has room for the diagram's source",
-			)
-		}
 	} else {
 		// The engine is chosen before anything is published, because it is built
 		// lazily and shared: a diagram already drawn is not drawn again to match.
 		if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
 			return page.LinkChecks{}, err
 		}
+	}
 
-		// A bundle is only meaningful where there is a rendered file to put the
-		// source into, and only an SVG has room for it. A PNG has nowhere, so a
-		// bundle asked for alongside one is contradictory rather than moot.
-		if c.MermaidBundle && c.MermaidOutput != "svg" {
-			return page.LinkChecks{}, errors.New(
-				"MermaidBundle needs MermaidOutput \"svg\": " +
-					"only an SVG has room for the diagram's source",
-			)
-		}
+	// A bundle is only meaningful where there is a rendered file to put the
+	// source into, and only an SVG has room for it. A PNG has nowhere, and the
+	// macro output publishes the source itself, so a bundle asked for alongside
+	// either is contradictory rather than moot.
+	if c.MermaidBundle && c.MermaidOutput != "svg" {
+		return page.LinkChecks{}, errors.New(
+			"MermaidBundle needs MermaidOutput \"svg\": " +
+				"only an SVG has room for the diagram's source",
+		)
 	}
 
 	// A macro name is only meaningful with the macro output, and a caller that

@@ -531,13 +531,17 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
+		// Kept for include templates that call it by name; the renderer goes
+		// through ac:plain-text-macro.
 		`ac:plantuml`: text(
 			`<ac:structured-macro ac:name="plantuml">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
 			`</ac:structured-macro>`,
 		),
 
-		`ac:mermaid-macro`: text(
+		// A macro whose body is the plain text of a diagram the instance draws
+		// itself: plantuml, and mermaid with --mermaid-output=macro.
+		`ac:plain-text-macro`: text(
 			`<ac:structured-macro ac:name="{{ .Name | xmlesc }}">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
 			`</ac:structured-macro>`,
