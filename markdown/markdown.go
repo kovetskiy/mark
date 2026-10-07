@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strings"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -280,6 +279,10 @@ func expandDirectives(
 ) (*template.Template, []byte, []string, error) {
 	var attachments []string
 
+	// One resolver for the whole expansion: it remembers what it read, and a
+	// macro applied on every pass sees the same values again.
+	resolve := macroFileName(filepath.Dir(path))
+
 	for pass := 0; pass < maxIncludePasses; pass++ {
 		before := markdown
 
@@ -300,7 +303,7 @@ func expandDirectives(
 		for _, m := range macros {
 			var attached []string
 
-			markdown, attached, err = m.ApplyCollecting(markdown, macroFileName(filepath.Dir(path)))
+			markdown, attached, err = m.ApplyCollecting(markdown, resolve)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
 			}
@@ -326,81 +329,83 @@ func expandDirectives(
 }
 
 // macroFileName reads a macro's Attachment value the way an image destination is
-// read: brackets taken off, backslash escapes and entities resolved, then as
-// written so a file whose name really holds a "%" keeps resolving to itself,
-// then percent-decoded. The macro writes the name it is given into the page, so
-// the decoded name has to be settled before it does.
-//
-// A pattern such as \((.+)\) captures an image's title along with its
-// destination. When the value ends in one, the destination without it is tried
-// first, since that is what CommonMark reads ![x](draft (v2)) as: the file
-// "draft", titled "v2". The value as written comes after, so a file whose name
-// really ends in a quoted or parenthesised part still resolves when there is no
-// file under the shorter name.
+// read, and says whether it names a file at all: a URL or a rooted path does
+// not. A value ending in an image title is tried without it first, then as
+// written; each spelling as written, then percent-decoded. The macro writes the
+// returned name into the page, so it has to be settled before it does.
 //
 // The boundary comes before every lookup: a name that reaches outside the
 // project must not learn from os.Stat whether the file is there. Such a name is
-// not returned at once, though, or a title holding "../" would fail the run for
-// an image that is sitting beside the document. It is handed on, for the upload
-// to refuse by name, only when it is the destination itself and nothing inside
-// the project answered; a title that reaches outside is just a title.
+// handed on, for the upload to refuse, only when it is the destination itself
+// and nothing inside the project answered; a title that reaches outside is just
+// a title.
 //
-// A decoded or unescaped candidate that no longer names a file beside the
-// document -- "%2Fetc%2Fpasswd" decodes to a rooted path -- is not a candidate
-// at all, as it would not be for an image.
-//
-// Whether the value names a file is decided here, once, and returned with the
-// name: the name that comes out is not the value that went in, and reading it
-// again by the same rules gets "<https://...>" and "\/etc/passwd" wrong. A
-// destination written as a URL or a rooted path, brackets taken off, names no
-// file; everything else does, and is uploaded, refused, or warned about.
+// The function returned remembers each value it has read.
 func macroFileName(base string) func(string) (string, bool) {
-	return func(name string) (string, bool) {
-		destinations := []string{name}
-		if match := imageTitle.FindStringSubmatch(name); match != nil {
-			destinations = []string{match[1], name}
+	type resolved struct {
+		name   string
+		isFile bool
+	}
+
+	seen := map[string]resolved{}
+
+	return func(value string) (string, bool) {
+		r, ok := seen[value]
+		if !ok {
+			r.name, r.isFile = readMacroFileName(base, value)
+			seen[value] = r
 		}
 
-		if !writtenAsFile(destinations[0]) {
-			return stripBrackets(name), false
-		}
+		return r.name, r.isFile
+	}
+}
 
-		var outside string
+// readMacroFileName is macroFileName without the memory.
+func readMacroFileName(base, name string) (string, bool) {
+	destinations := []string{name}
+	if match := imageTitle.FindStringSubmatch(name); match != nil {
+		destinations = []string{match[1], name}
+	}
 
-		for i, destination := range destinations {
-			for _, candidate := range ctransformer.LocalImagePaths(macroDestination(destination)) {
-				if !crenderer.NamesBesideDocument(candidate) {
-					continue
+	if !writtenAsFile(destinations[0]) {
+		return stripBrackets(name), false
+	}
+
+	var outside string
+
+	for i, destination := range destinations {
+		for _, candidate := range ctransformer.LocalImagePaths(macroDestination(destination)) {
+			if !crenderer.NamesBesideDocument(candidate) {
+				continue
+			}
+
+			if attachment.CheckReadable(base, candidate) != nil {
+				if i == 0 && outside == "" {
+					outside = candidate
 				}
 
-				if attachment.CheckReadable(base, candidate) != nil {
-					if i == 0 && outside == "" {
-						outside = candidate
-					}
+				continue
+			}
 
-					continue
-				}
-
-				if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
-					return candidate, true
-				}
+			if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
+				return candidate, true
 			}
 		}
-
-		if outside != "" {
-			return outside, true
-		}
-
-		// Nothing is there. The warning and the page name the file the
-		// destination does: no brackets, no escapes, and no title. A value that
-		// stops naming a file beside the document once read is kept as written,
-		// for the upload to warn about by that name.
-		if cleaned := macroDestination(destinations[0]); crenderer.NamesBesideDocument(cleaned) {
-			return cleaned, true
-		}
-
-		return name, true
 	}
+
+	if outside != "" {
+		return outside, true
+	}
+
+	// Nothing is there. The warning and the page name the file the
+	// destination does: no brackets, no escapes, and no title. A value that
+	// stops naming a file beside the document once read is kept as written,
+	// for the upload to warn about by that name.
+	if cleaned := macroDestination(destinations[0]); crenderer.NamesBesideDocument(cleaned) {
+		return cleaned, true
+	}
+
+	return name, true
 }
 
 // writtenAsFile reports whether a destination, brackets taken off, is written
@@ -417,12 +422,11 @@ func writtenAsFile(destination string) bool {
 		return true
 	}
 
+	// util.IsPunct is exactly the ASCII punctuation CommonMark lets a
+	// backslash escape.
 	return len(destination) > 1 && destination[0] == '\\' &&
-		destination[1] != '\\' && strings.IndexByte(asciiPunctuation, destination[1]) >= 0
+		destination[1] != '\\' && util.IsPunct(destination[1])
 }
-
-// asciiPunctuation is what CommonMark lets a backslash escape.
-const asciiPunctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 
 // stripBrackets takes the angle brackets off a destination. "<my file.png>" is
 // how Markdown writes a destination with a space in it; goldmark takes the

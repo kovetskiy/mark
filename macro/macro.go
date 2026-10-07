@@ -95,7 +95,7 @@ func (macro *Macro) Apply(
 }
 
 // ApplyCollecting is Apply that also reports the files the expansions name in
-// their Attachment key, in document order and without repeats. The key is only
+// their Attachment key, in document order, repeats included. The key is only
 // a template variable, so nothing else would ever upload what it points at.
 //
 // resolve, when given, turns the written value into the name of the file it
@@ -137,7 +137,7 @@ func (macro *Macro) ApplyCollecting(
 				return match
 			}
 
-			if attached != "" && !slices.Contains(attachments, attached) {
+			if attached != "" {
 				attachments = append(attachments, attached)
 			}
 
@@ -163,13 +163,21 @@ func (macro *Macro) expand(match []byte, resolve func(name string) (string, bool
 	groups := macro.Regexp.FindSubmatch(match)
 	cfgData := macro.configure(config, groups)
 
-	// Whether the Attachment value names a file, decided once, by whoever
+	// Whether the Attachment value names a file is decided once, by whoever
 	// resolved it, rather than guessed again from the name it came out as.
-	isFile := true
+	var attached string
 
-	if cfg, ok := cfgData.(map[string]any); ok && resolve != nil {
+	if cfg, ok := cfgData.(map[string]any); ok {
 		if name, ok := cfg["Attachment"].(string); ok && name != "" {
-			cfg["Attachment"], isFile = resolve(name)
+			isFile := true
+			if resolve != nil {
+				name, isFile = resolve(name)
+				cfg["Attachment"] = name
+			}
+
+			if isFile {
+				attached = name
+			}
 		}
 	}
 
@@ -193,11 +201,6 @@ func (macro *Macro) expand(match []byte, resolve func(name string) (string, bool
 	// Same reason as for an include: a parameter holding an element
 	// must hold nothing else, and a readable template does not
 	// naturally produce that.
-	var attached string
-	if cfg, ok := cfgData.(map[string]any); ok && isFile {
-		attached, _ = cfg["Attachment"].(string)
-	}
-
 	return includes.TrimElementParameters(buf.Bytes()), attached, nil
 }
 
