@@ -1467,7 +1467,9 @@ The file named by `Attachment:` is uploaded with the page, and the name the macr
 writes into the page is the one it is uploaded under. A path is read relative to
 the document, and is subject to the same rules as any other attachment (see
 [Where an attachment may come from](#where-an-attachment-may-come-from)). A file that is also declared with `<!-- Attachment: -->` is uploaded once. A value that is a URL of any
-scheme, or an absolute or UNC path, names no file beside the document and is left alone. A percent-encoded name such as `my%20logo.png` is read as it is
+scheme, or an absolute or UNC path, with or without angle brackets, names no file beside the document and is left alone;
+one that only becomes such a path once read, as `%2Fetc%2Fpasswd` and `\/etc/passwd` do, is never looked
+for and is warned about like a missing file. A percent-encoded name such as `my%20logo.png` is read as it is
 for an image: the file of that exact name if there is one, otherwise `my logo.png`.
 An image title captured along with the name, as in `![Logo](logo.png "The logo")`,
 is not part of it: the name without the title is looked for first, and the value

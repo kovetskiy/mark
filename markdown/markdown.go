@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -347,15 +348,21 @@ func expandDirectives(
 // A decoded or unescaped candidate that no longer names a file beside the
 // document -- "%2Fetc%2Fpasswd" decodes to a rooted path -- is not a candidate
 // at all, as it would not be for an image.
-func macroFileName(base string) func(string) string {
-	return func(name string) string {
-		if !crenderer.NamesBesideDocument(name) {
-			return name
-		}
-
+//
+// Whether the value names a file is decided here, once, and returned with the
+// name: the name that comes out is not the value that went in, and reading it
+// again by the same rules gets "<https://...>" and "\/etc/passwd" wrong. A
+// destination written as a URL or a rooted path, brackets taken off, names no
+// file; everything else does, and is uploaded, refused, or warned about.
+func macroFileName(base string) func(string) (string, bool) {
+	return func(name string) (string, bool) {
 		destinations := []string{name}
 		if match := imageTitle.FindStringSubmatch(name); match != nil {
 			destinations = []string{match[1], name}
+		}
+
+		if !writtenAsFile(destinations[0]) {
+			return stripBrackets(name), false
 		}
 
 		var outside string
@@ -375,37 +382,63 @@ func macroFileName(base string) func(string) string {
 				}
 
 				if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
-					return candidate
+					return candidate, true
 				}
 			}
 		}
 
 		if outside != "" {
-			return outside
+			return outside, true
 		}
 
 		// Nothing is there. The warning and the page name the file the
 		// destination does: no brackets, no escapes, and no title. A value that
 		// stops naming a file beside the document once read is kept as written,
-		// so that the upload still looks for it there and warns that it is not.
+		// for the upload to warn about by that name.
 		if cleaned := macroDestination(destinations[0]); crenderer.NamesBesideDocument(cleaned) {
-			return cleaned
+			return cleaned, true
 		}
 
-		return name
+		return name, true
 	}
 }
 
-// macroDestination takes the brackets off a destination and resolves its
-// backslash escapes and entities. "<my file.png>" is how Markdown writes a
-// destination with a space in it; goldmark takes the brackets off an image's,
-// but a macro sees the raw text.
-func macroDestination(destination string) string {
-	if len(destination) > 2 && destination[0] == '<' && destination[len(destination)-1] == '>' {
-		destination = destination[1 : len(destination)-1]
+// writtenAsFile reports whether a destination, brackets taken off, is written
+// as a file beside the document rather than as a URL or a rooted path.
+//
+// A leading backslash is a Windows root, or the "\\server" of a UNC path,
+// except where it escapes some other punctuation: "\/etc/passwd" is
+// "/etc/passwd" spelled with an escape, as "%2Fetc%2Fpasswd" and
+// "&#47;etc&#47;passwd" are, and is warned about as they are rather than taken
+// for a path someone meant to write.
+func writtenAsFile(destination string) bool {
+	destination = stripBrackets(destination)
+	if crenderer.NamesBesideDocument(destination) {
+		return true
 	}
 
-	return ctransformer.UnescapeDestination(destination)
+	return len(destination) > 1 && destination[0] == '\\' &&
+		destination[1] != '\\' && strings.IndexByte(asciiPunctuation, destination[1]) >= 0
+}
+
+// asciiPunctuation is what CommonMark lets a backslash escape.
+const asciiPunctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+
+// stripBrackets takes the angle brackets off a destination. "<my file.png>" is
+// how Markdown writes a destination with a space in it; goldmark takes the
+// brackets off an image's, but a macro sees the raw text.
+func stripBrackets(destination string) string {
+	if len(destination) > 2 && destination[0] == '<' && destination[len(destination)-1] == '>' {
+		return destination[1 : len(destination)-1]
+	}
+
+	return destination
+}
+
+// macroDestination takes the brackets off a destination and resolves its
+// backslash escapes and entities.
+func macroDestination(destination string) string {
+	return ctransformer.UnescapeDestination(stripBrackets(destination))
 }
 
 // imageTitle matches a destination followed by an image title, in any of the
@@ -420,9 +453,10 @@ var imageTitle = regexp.MustCompile(
 // attachMacroFiles uploads the files macros name in their Attachment key, which
 // the expansion has already written into the page under their flattened names.
 //
-// A file the page declared is skipped, and counted as used by the lookup. A file
-// that is not there is only warned about, as it may already be on the page; one
-// outside the project fails, as it does anywhere else.
+// Every name is one macroFileName said is a file: a URL or a rooted path never
+// gets here. A file the page declared is skipped, and counted as used by the
+// lookup. A file that is not there is only warned about, as it may already be on
+// the page; one outside the project fails, as it does anywhere else.
 func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]attachment.Attachment, error) {
 	var attached []attachment.Attachment
 
@@ -431,9 +465,11 @@ func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]atta
 			continue
 		}
 
-		// A template may reuse the key for a URL or a rooted path, which is not a
-		// file beside the document and must never be joined onto its directory.
+		// "\/etc/passwd" is written as a file but reads as a rooted path, which
+		// must never be joined onto the document's directory to be looked for.
 		if !crenderer.NamesBesideDocument(name) {
+			log.Warn().Msgf("macro attachment %q is not uploaded: it does not name a file beside the document", name)
+
 			continue
 		}
 

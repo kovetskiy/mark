@@ -290,3 +290,23 @@ func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
 		})
 	}
 }
+
+// TestMacroAttachmentThatIsAnAngleBracketedURLIsNotAFile: the brackets do not
+// make a URL a file.
+func TestMacroAttachmentThatIsAnAngleBracketedURLIsNotAFile(t *testing.T) {
+	server, id, logged := publishMacroDoc(t, "",
+		"![A](<https://example.com/a.png>)<!-- width=10 -->\n")
+
+	assert.NotContains(t, logged, "is not uploaded")
+	assert.Empty(t, server.Attachments(id))
+}
+
+// TestMacroAttachmentEscapedToARootedPathIsWarnedAbout: "\/etc/passwd" is
+// "%2Fetc%2Fpasswd" spelled with a backslash escape, and is said out loud the
+// same way.
+func TestMacroAttachmentEscapedToARootedPathIsWarnedAbout(t *testing.T) {
+	server, id, logged := publishMacroDoc(t, "", "![P](\\/etc/passwd)<!-- width=1 -->\n")
+
+	assert.Empty(t, server.Attachments(id))
+	assert.Contains(t, logged, "is not uploaded")
+}
