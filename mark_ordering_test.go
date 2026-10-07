@@ -96,7 +96,7 @@ func TestOrderIsAppliedOnDataCenter(t *testing.T) {
 	server, api := docsSpace(t)
 	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+		if strings.Contains(r.URL.Path, "/move/") {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
 		}
 		return 0, "", false
