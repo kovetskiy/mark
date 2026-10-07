@@ -1163,6 +1163,9 @@ type Orphan struct {
 
 // OrphanEntries is Orphans with the page each path published to, for a caller
 // that means to do something about them rather than only say so.
+//
+// Like Orphans it is not a pure query: it forgets the stale entries whose page
+// another document published this run. See Orphans.
 func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1208,6 +1211,12 @@ func (s *Store) Published(spaceKey string) int {
 // genuine deletions in a list of files that are perfectly present. Entries with
 // no recorded pattern predate this and are never reported, because there is no
 // way to know what they were in scope of.
+//
+// It is not a pure query. A recorded path that is gone from the run, and whose
+// page another document published this run, is not returned but forgotten:
+// its entry is dropped and its shard marked for writing. The change is in
+// memory until Save, so a dry run, whose read-only store never writes, leaves
+// the stored manifest as it was.
 func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1215,7 +1224,8 @@ func (s *Store) Orphans(spaceKey string) []string {
 	return s.orphans(spaceKey)
 }
 
-// orphans is Orphans without the lock, for callers that already hold it.
+// orphans is Orphans without the lock, for callers that already hold it. It
+// forgets the same stale entries Orphans does.
 func (s *Store) orphans(spaceKey string) []string {
 	state, ok := s.spaces[spaceKey]
 	if !ok {

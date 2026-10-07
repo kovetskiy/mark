@@ -1171,3 +1171,53 @@ func TestOrphansKeepAnUnseenPathThisRunPublishes(t *testing.T) {
 	assert.Equal(t, map[string]string{"a.md": "1", "c.md": "1"},
 		manifestPages(t, server, spaceID(t, server, "DOCS")))
 }
+
+// TestRecordDoesNotFollowAPathThisRunRecorded: a directory's page is recorded
+// under a key that is never among the run's files, so only having been seen
+// says that it is not gone. A document landing on a directory page recorded
+// earlier in the same run is a conflict to report, not the directory moved,
+// and the directory keeps its entry.
+func TestRecordDoesNotFollowAPathThisRunRecorded(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	store := runStore(t, server, "doc.md")
+
+	logged := captureLog(t)
+	require.NoError(t, store.Record("DOCS", "dir", "1", "Dir", "d"))
+	require.NoError(t, store.Record("DOCS", "doc.md", "1", "Doc", "h"))
+
+	assert.Contains(t, logged.String(), "dir and doc.md both publish to page 1")
+	assert.NotContains(t, logged.String(), "moved")
+
+	require.NoError(t, store.Save())
+	assert.Equal(t, map[string]string{"dir": "1", "doc.md": "1"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")),
+		"the directory's entry is kept")
+}
+
+// TestRecordDoesNotFollowAnEntryWithNoPattern: an entry recorded before
+// patterns were has no scope to be absent from, so a run with no pattern of
+// its own must not read the two empty patterns as a match and take the entry
+// for a moved document.
+func TestRecordDoesNotFollowAnEntryWithNoPattern(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	legacy := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	require.NoError(t, legacy.Record("DOCS", "doc.md", "1", "Doc", "h"))
+	require.NoError(t, legacy.Save())
+
+	logged := captureLog(t)
+	next := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	_, ok, err := next.LookupMoved("DOCS", "sub/doc.md", "1")
+	require.NoError(t, err)
+	assert.False(t, ok, "an entry with no pattern has not moved")
+
+	require.NoError(t, next.Record("DOCS", "sub/doc.md", "1", "Doc", "h"))
+	assert.Contains(t, logged.String(), "doc.md and sub/doc.md both publish to page 1")
+	assert.NotContains(t, logged.String(), "moved")
+
+	require.NoError(t, next.Save())
+	assert.Equal(t, map[string]string{"doc.md": "1", "sub/doc.md": "1"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")),
+		"the legacy entry is kept")
+}
