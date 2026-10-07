@@ -1283,7 +1283,9 @@ the last three. Only the pages that would change have their HTML printed, and
 only with the default `url` output format: with `json` or `github` the report
 is all that is written, so a CI step can parse it. A page `--no-overwrite`
 would leave alone is `skipped`, as it is on a real run, and is not printed
-either.
+either. A real run's report only tells a content update apart, so a page
+previewed as `would-update` only for a move, its labels or an attachment is
+reported `unchanged` by the real run that makes that change.
 
 Not compared, so a page differing only in them is `unchanged` although a real
 run still applies them: [content properties](#confluence-content-properties),
