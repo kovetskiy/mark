@@ -1274,11 +1274,18 @@ whose second publish failed is `failed`.
 
 With `--dry-run` and `--changes-only` together, the report says what a real run
 would do: `would-create` for a page that does not exist yet, `would-update` for
-one whose content, title, emoji or appearance changed, and `unchanged` for one
-that would be left alone. Only the pages that would change have their HTML
-printed, so the pages a real run would write can be read straight from the
-report in CI. A page `--no-overwrite` would leave alone is `skipped`, as it is
-on a real run, and is not printed either.
+one a real run would change, and `unchanged` for one it would leave alone. A
+page would change when its content, title, emoji or appearance differs, when it
+would be moved under the parent its headers declare, when its labels differ
+from its `Label` headers, or when an attachment -- declared, embedded or
+rendered -- would be uploaded; the `reason` of a `would-update` names any of
+the last three. Only the pages that would change have their HTML printed. A
+page `--no-overwrite` would leave alone is `skipped`, as it is on a real run,
+and is not printed either.
+
+Not compared, so a page differing only in them is `unchanged` although a real
+run still applies them: [content properties](#confluence-content-properties),
+the `--edit-lock` restriction, and the `Order` of a page among its siblings.
 
 `orphans` lists the [tracked pages whose source file is
 gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the
