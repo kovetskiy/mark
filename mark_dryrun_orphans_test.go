@@ -36,8 +36,9 @@ func publishTracked(t *testing.T, server *confluencetest.Server, dir string) Con
 // TestDryRunDoesNotReportPublishedPagesAsOrphans: a dry run over documents that
 // are all still present, after a tracked publish, must not read them as gone.
 // The dry run found each page by title and returned before recording it, so
-// every tracked path looked unseen - and with --on-orphan delete it then set
-// about removing the whole set.
+// every tracked path looked unseen: it reported the whole set as orphans, and
+// with --on-orphan delete only the "nothing was published" guard in mark.go
+// stopped it from listing each one as to be deleted.
 func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
@@ -64,8 +65,14 @@ func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
 	assert.Contains(t, logged, "processing "+a)
 	assert.Contains(t, logged, "processing "+b)
 
+	// What the dry run used to log: every page reported as an orphan, then the
+	// "nothing was published" guard holding the deletion back.
 	assert.NotContains(t, logged, "had no matching source file",
 		"every document is still there")
+	assert.NotContains(t, logged, "nothing was published in this run")
+	// The guard above stopped the original bug short of this line; this
+	// assertion guards against a regression that gets past it. The text comes
+	// from the "page %q would be %sd" format in page/orphan.go.
 	assert.NotContains(t, logged, "would be deleted")
 
 	assert.Empty(t, writesTo(server), "a dry run must not change anything")
@@ -101,6 +108,8 @@ func TestDryRunStillReportsRealOrphans(t *testing.T) {
 	assert.Contains(t, logged, "processing "+a)
 	assert.Contains(t, logged, "1 tracked page(s) had no matching source file in this run: "+b,
 		"b.md is gone, and only b.md")
+	// "page %q would be %sd" in page/orphan.go; the quotes are escaped because
+	// zerolog writes the message as JSON.
 	assert.Contains(t, logged, `page \"B\" would be deleted`)
 	assert.NotContains(t, logged, `page \"A\" would be deleted`)
 
