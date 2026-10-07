@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -24,6 +25,20 @@ type Header struct {
 	markdown bool
 	tmpl     *template.Template
 	std      *stdlib.Lib
+
+	// compiled holds a Markdown header's compiled result by the text its
+	// template executed to and the configuration it was compiled with. A
+	// header that names nothing about the document -- or names only what many
+	// documents share -- compiles once rather than once per page, which for a
+	// diagram means once rather than once per page in Chrome.
+	compiled map[string]compiledHeader
+	// compiles counts calls to CompileMarkdown, for the tests.
+	compiles int
+}
+
+type compiledHeader struct {
+	html        string
+	attachments []attachment.Attachment
 }
 
 // Data is what the header template is executed with.
@@ -75,7 +90,8 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 		tmpl:     tmpl,
 		// Includes and macros register templates on the set they compile
 		// with; a set of its own keeps them from reaching the documents.
-		std: &stdlib.Lib{Templates: compileSet},
+		std:      &stdlib.Lib{Templates: compileSet},
+		compiled: map[string]compiledHeader{},
 	}
 
 	// Several samples, not one: a template that indexes into .Path or
@@ -97,12 +113,10 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 		}
 
 		if header.markdown {
-			compiled, _, err := markmd.CompileMarkdown([]byte(rendered), header.std, path, compileConfig(cfg))
+			rendered, _, err = header.compile(rendered, cfg)
 			if err != nil {
-				return nil, fmt.Errorf("unable to compile page header %q: %w", path, err)
+				return nil, err
 			}
-
-			rendered = compiled
 		}
 
 		if err := markmd.CheckWellFormed(rendered); err != nil {
@@ -137,12 +151,35 @@ func (h *Header) Render(file, title, space string, cfg types.MarkConfig) (string
 		return rendered, nil, nil
 	}
 
-	html, attachments, err := markmd.CompileMarkdown([]byte(rendered), h.std, h.path, compileConfig(cfg))
-	if err != nil {
-		return "", nil, fmt.Errorf("unable to compile page header %q: %w", h.path, err)
+	return h.compile(rendered, cfg)
+}
+
+// compile compiles the executed Markdown header, or returns what an earlier
+// call compiled from the same text and configuration. The attachments are a
+// fresh slice each time, so that a caller appending to or editing them does
+// not change what the next page is given.
+func (h *Header) compile(rendered string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+	cfg = compileConfig(cfg)
+
+	// The configuration is part of the key because Render is handed each
+	// document's. compileConfig has cleared its functions, so this prints only
+	// values.
+	key := fmt.Sprintf("%#v\x00%s", cfg, rendered)
+
+	cached, ok := h.compiled[key]
+	if !ok {
+		h.compiles++
+
+		html, attachments, err := markmd.CompileMarkdown([]byte(rendered), h.std, h.path, cfg)
+		if err != nil {
+			return "", nil, fmt.Errorf("unable to compile page header %q: %w", h.path, err)
+		}
+
+		cached = compiledHeader{html: html, attachments: attachments}
+		h.compiled[key] = cached
 	}
 
-	return html, attachments, nil
+	return cached.html, slices.Clone(cached.attachments), nil
 }
 
 // compileConfig adapts a document's configuration to the header, which is not

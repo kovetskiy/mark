@@ -172,3 +172,36 @@ func TestMarkdownHeaderIncludesDoNotJoinTheDocumentTemplates(t *testing.T) {
 
 	assert.Len(t, std.Templates.Templates(), before)
 }
+
+// TestMarkdownHeaderCompilesOncePerText: a header that names nothing about the
+// document compiles once for the whole run, preflight included, while one that
+// names the document still renders each page's own.
+func TestMarkdownHeaderCompilesOncePerText(t *testing.T) {
+	fixed := writeHeader(t, "fixed.md", "> [!NOTE]\n> Generated; do not edit.\n")
+
+	header, err := Load(fixed, newStdlib(t), types.MarkConfig{})
+	require.NoError(t, err)
+
+	first, _, err := header.Render("a.md", "A", "SPACE", types.MarkConfig{})
+	require.NoError(t, err)
+
+	second, _, err := header.Render("b.md", "B", "SPACE", types.MarkConfig{})
+	require.NoError(t, err)
+
+	assert.Equal(t, first, second)
+	assert.Equal(t, 1, header.compiles)
+
+	named := writeHeader(t, "named.md", "Generated from {{ .Path | xmlesc }}.\n")
+
+	header, err = Load(named, newStdlib(t), types.MarkConfig{})
+	require.NoError(t, err)
+
+	first, _, err = header.Render("a.md", "A", "SPACE", types.MarkConfig{})
+	require.NoError(t, err)
+
+	second, _, err = header.Render("b.md", "B", "SPACE", types.MarkConfig{})
+	require.NoError(t, err)
+
+	assert.Equal(t, "<p>Generated from a.md.</p>\n", first)
+	assert.Equal(t, "<p>Generated from b.md.</p>\n", second)
+}
