@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -600,6 +601,37 @@ func TestDryRunChangesOnlySkipsLabelLookupWhenLabelsCannotChange(t *testing.T) {
 		n := 0
 		for _, r := range server.Requests()[before:] {
 			if strings.HasSuffix(r.Path, "/label") {
+				n++
+			}
+		}
+		return n
+	}
+
+	assert.Zero(t, labelReads(t, true))
+	assert.NotZero(t, labelReads(t, false), "without --append-labels a stray label is removed")
+}
+
+// A real run decides the same way: with nothing to add and --append-labels,
+// it does not read the page's labels either.
+func TestRealRunSkipsLabelLookupWhenLabelsCannotChange(t *testing.T) {
+	labelReads := func(t *testing.T, appendLabels bool) int {
+		server, _ := docsSpace(t)
+		dir := t.TempDir()
+		file := writeFile(t, dir, "doc.md", dryRunDocBody("same"))
+
+		config := Config{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			Files: file, Features: []string{"mention"}, Output: io.Discard,
+			AppendLabels: appendLabels,
+		}
+		require.NoError(t, Run(config))
+
+		before := len(server.Requests())
+		require.NoError(t, Run(config))
+
+		n := 0
+		for _, r := range server.Requests()[before:] {
+			if strings.HasSuffix(r.Path, "/label") && r.Method == http.MethodGet {
 				n++
 			}
 		}
