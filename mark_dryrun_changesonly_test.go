@@ -684,3 +684,42 @@ func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T
 	require.NoError(t, Run(config))
 	assert.NotEqual(t, oldFolder, server.Page(id).ParentID, "the real run should have moved the page")
 }
+
+// TestDryRunChangesOnlyFollowsARenamedParent covers --track-pages with a parent
+// renamed in Confluence. A real run rewrites the stale title before resolving
+// ancestry and finds the page where it already is, so it moves nothing; the
+// preview has to do the same, or it reports a move every run that never comes.
+func TestDryRunChangesOnlyFollowsARenamedParent(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	guide := handMadeParent(t, server, "Guide")
+	file := writeFile(t, dir, "child.md", markdownUnder("Guide", "Child"))
+
+	config := trackingConfig(server, file)
+	config.ChangesOnly = true
+	require.NoError(t, Run(config))
+
+	server.RenamePage(guide.ID, "Guide Renamed")
+	id := mustFind(t, server, "Child")
+	before := len(nonGET(server))
+
+	var out bytes.Buffer
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, report.StatusUnchanged, decodeReport(t, out.Bytes()).Pages[0].Status)
+	assert.Len(t, nonGET(server), before, "a dry run must not write")
+
+	// The real run agrees: it leaves the page where it is and does not write
+	// it. It may still save the manifest, which is not the page.
+	config.DryRun = false
+	config.OutputFormat = ""
+	config.Output = &bytes.Buffer{}
+	require.NoError(t, Run(config))
+	assert.Equal(t, guide.ID, server.Page(id).ParentID)
+	for _, w := range nonGET(server)[before:] {
+		assert.NotContains(t, w, "/content/", "the real run should not have written a page: %s", w)
+	}
+}
