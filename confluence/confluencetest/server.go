@@ -384,6 +384,20 @@ func (s *Server) SetCurrentUser(u User) {
 	s.currentUser = u
 }
 
+// SetDataCenter makes the fake identify as Confluence Server or Data Center:
+// the current user loses the accountId Cloud gives every user, and keeps the
+// username and userKey a local user directory has instead. The rest of what
+// distinguishes the platforms, such as the missing v2 API, is the test's to
+// arrange.
+func (s *Server) SetDataCenter() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentUser.AccountID = ""
+	if s.currentUser.UserKey == "" {
+		s.currentUser.UserKey = "key-" + s.currentUser.Username
+	}
+}
+
 // Page returns the stored page with the given ID, or nil.
 func (s *Server) Page(id string) *Page {
 	s.mu.Lock()

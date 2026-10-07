@@ -19,6 +19,7 @@ func dataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
 
 	api, server := newAPI(t)
+	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true

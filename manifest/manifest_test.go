@@ -294,6 +294,7 @@ func TestConcurrentWriteIsReportedNotFatal(t *testing.T) {
 func serverInstance(t *testing.T) (*manifest.Store, *confluencetest.Server, *confluence.API) {
 	t.Helper()
 	server := confluencetest.New(t)
+	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if strings.HasPrefix(r.URL.Path, "/api/v2") {
 			return http.StatusNotFound, `<html>404</html>`, true

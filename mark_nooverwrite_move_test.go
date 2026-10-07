@@ -38,6 +38,7 @@ func dataCenterMoveFixtureWith(
 	t.Helper()
 
 	server := confluencetest.New(t)
+	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") ||
 			(!withAction && r.URL.Path == "/pages/movepage.action") {
