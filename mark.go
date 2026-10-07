@@ -1043,8 +1043,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 
 		var html string
+		var inline []attachment.Attachment
 		if status == "" {
-			html, _, err = markmd.CompileMarkdown(markdown, std, file, cfg)
+			html, inline, err = markmd.CompileMarkdown(markdown, std, file, cfg)
 			if err != nil {
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 			}
@@ -1055,6 +1056,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			html, relinked = attachments.settle(html)
 
 			var others []string
+			uploads, err := attachments.uploads(inline)
+			if err != nil {
+				return nil, nil, err
+			}
+			if uploads {
+				others = append(others, "an attachment would be uploaded")
+			}
+
 			if previewed != nil && meta != nil &&
 				page.WouldMove(api, previewed, previewParent, meta.Parents, previewMisplaced) {
 				others = append(others, "it would be moved under the parent its headers declare")
@@ -1558,11 +1567,16 @@ func wrapLayout(std *stdlib.Lib, layout, sidebar, body string) (string, error) {
 // The fingerprint covers those links, so comparing without them would call a
 // page changed whenever it links a file. An attachment the page does not hold
 // yet, or holds in other bytes, is uploaded by a real run and gets a link that
-// does not exist until then: a page that links it changes, one that does not
-// is left alone, as on a real run.
+// does not exist until then: a page that links it has a changed body. The
+// upload itself is a change to the page either way, which uploads reports.
 type attachmentPreview struct {
 	current *attachment.Resolver
 	pending *attachment.Resolver
+
+	// remotes is what the page holds now, and declared how many of the
+	// attachments its headers declare a real run would upload.
+	remotes  []confluence.AttachmentInfo
+	declared int
 
 	// marker stands in for a link that does not exist until the attachment is
 	// uploaded. Finding it in the compiled page is how a page that links one is
@@ -1591,6 +1605,26 @@ func (p *attachmentPreview) settle(body string) (string, bool) {
 	}
 
 	return strings.ReplaceAll(body, p.marker, ""), true
+}
+
+// uploads reports whether a real run would upload any attachment to the page:
+// one its headers declare, or one found while compiling it -- an embedded
+// image, a rendered diagram -- whose checksum the page does not hold. The
+// latter are asked the way a real run decides them, so two of them that
+// flatten to one name fail here as they fail there. A preview of a page that
+// does not exist yet (p is nil) only checks that.
+func (p *attachmentPreview) uploads(inline []attachment.Attachment) (bool, error) {
+	var remotes []confluence.AttachmentInfo
+	if p != nil {
+		remotes = p.remotes
+	}
+
+	pending, err := attachment.Pending(inline, remotes)
+	if err != nil {
+		return false, fmt.Errorf("unable to resolve attachments: %w", err)
+	}
+
+	return p != nil && (p.declared > 0 || len(pending) > 0), nil
 }
 
 func previewAttachmentLinks(
@@ -1661,9 +1695,11 @@ func previewAttachmentLinks(
 	}
 
 	return &attachmentPreview{
-		current: attachment.NewResolver(current),
-		pending: attachment.NewResolver(pending),
-		marker:  marker,
+		current:  attachment.NewResolver(current),
+		pending:  attachment.NewResolver(pending),
+		marker:   marker,
+		remotes:  remotes,
+		declared: len(uploads),
 	}, nil
 }
 
