@@ -378,7 +378,7 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std, headerPreflightConfig(config))
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
 	if err != nil {
 		return err
 	}
@@ -728,7 +728,7 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 		return nil, err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std, headerPreflightConfig(config))
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -1015,23 +1015,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
 		}
 
-		cfg := types.MarkConfig{
-			MermaidScale:     config.MermaidScale,
-			MermaidOutput:    config.MermaidOutput,
-			MermaidBundle:    config.MermaidBundle,
-			D2Output:         config.D2Output,
-			D2Scale:          config.D2Scale,
-			D2BundleRemote:   config.D2BundleRemote,
-			MathFormat:       config.MathFormat,
-			MathScale:        config.MathScale,
-			DropFirstH1:      config.DropH1,
-			StripNewlines:    config.StripLinebreaks,
-			Features:         config.Features,
-			ImageAlign:       imageAlign,
-			AttachReferenced: config.AttachReferenced,
-			IncludePath:      config.IncludePath,
-			ResolveLink:      resolveLink,
-		}
+		cfg := config.markConfig()
+		cfg.DropFirstH1 = config.DropH1
+		cfg.ImageAlign = imageAlign
+		cfg.ResolveLink = resolveLink
 
 		// Only a dry run asked to tell changed pages from unchanged ones.
 		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
@@ -1072,12 +1059,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 			}
 
-			headerTitle := titleOf(meta)
-			if headerTitle == "" && previewed != nil {
-				headerTitle = previewed.Title
+			var previewedTitle string
+			if previewed != nil {
+				previewedTitle = previewed.Title
 			}
 
-			headerHTML, _, err := pageHeader.Render(file, headerTitle, spaceOr(meta, config.Space), cfg)
+			headerHTML, _, err := renderHeader(pageHeader, file, meta, previewedTitle, config.Space, cfg)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1337,32 +1324,19 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
 	}
 
-	cfg := types.MarkConfig{
-		MermaidScale:     config.MermaidScale,
-		MermaidOutput:    config.MermaidOutput,
-		MermaidBundle:    config.MermaidBundle,
-		D2Output:         config.D2Output,
-		D2Scale:          config.D2Scale,
-		D2BundleRemote:   config.D2BundleRemote,
-		MathFormat:       config.MathFormat,
-		MathScale:        config.MathScale,
-		DropFirstH1:      config.DropH1,
-		StripNewlines:    config.StripLinebreaks,
-		Features:         config.Features,
-		ImageAlign:       imageAlign,
-		AttachReferenced: config.AttachReferenced,
-		IncludePath:      config.IncludePath,
-		ResolveLink:      resolveLink,
-	}
+	cfg := config.markConfig()
+	cfg.DropFirstH1 = config.DropH1
+	cfg.ImageAlign = imageAlign
+	cfg.ResolveLink = resolveLink
 
 	// With --page-id the file's metadata is discarded, so the page itself and
 	// --space are what the header can name.
-	headerTitle := titleOf(meta)
-	if headerTitle == "" && target != nil {
-		headerTitle = target.Title
+	var targetTitle string
+	if target != nil {
+		targetTitle = target.Title
 	}
 
-	headerHTML, headerAttachments, err := pageHeader.Render(file, headerTitle, spaceOr(meta, config.Space), cfg)
+	headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, targetTitle, config.Space, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -3093,21 +3067,34 @@ func sameAttachment(a, b attachment.Attachment) bool {
 	return bytes.Equal(a.FileBytes, b.FileBytes)
 }
 
-// headerPreflightConfig is the compile configuration a page header is checked
-// with before the run; the per-document fields are filled in at render time.
-func headerPreflightConfig(config Config) types.MarkConfig {
+// renderHeader renders the page header for one document, naming it by its
+// metadata where it has some and by fallbackTitle and fallbackSpace where not.
+func renderHeader(
+	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg types.MarkConfig,
+) (string, []attachment.Attachment, error) {
+	title := titleOf(meta)
+	if title == "" {
+		title = fallbackTitle
+	}
+
+	return pageHeader.Render(file, title, spaceOr(meta, fallbackSpace), cfg)
+}
+
+// markConfig is the compile configuration the run's flags give every
+// document; the per-document fields are left for the caller to fill in.
+func (c Config) markConfig() types.MarkConfig {
 	return types.MarkConfig{
-		MermaidScale:     config.MermaidScale,
-		MermaidOutput:    config.MermaidOutput,
-		MermaidBundle:    config.MermaidBundle,
-		D2Output:         config.D2Output,
-		D2Scale:          config.D2Scale,
-		D2BundleRemote:   config.D2BundleRemote,
-		MathFormat:       config.MathFormat,
-		MathScale:        config.MathScale,
-		StripNewlines:    config.StripLinebreaks,
-		Features:         config.Features,
-		AttachReferenced: config.AttachReferenced,
-		IncludePath:      config.IncludePath,
+		MermaidScale:     c.MermaidScale,
+		MermaidOutput:    c.MermaidOutput,
+		MermaidBundle:    c.MermaidBundle,
+		D2Output:         c.D2Output,
+		D2Scale:          c.D2Scale,
+		D2BundleRemote:   c.D2BundleRemote,
+		MathFormat:       c.MathFormat,
+		MathScale:        c.MathScale,
+		StripNewlines:    c.StripLinebreaks,
+		Features:         c.Features,
+		AttachReferenced: c.AttachReferenced,
+		IncludePath:      c.IncludePath,
 	}
 }
