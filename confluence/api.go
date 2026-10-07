@@ -76,6 +76,7 @@ type API struct {
 	contentTypesV2 sync.Map
 
 	isCloudFlag bool
+	isCloudErr  error
 	isCloudOnce sync.Once
 
 	// moveEndpointMissing holds the error this Confluence's answer to the v1
@@ -1889,32 +1890,60 @@ func isCloudHost(host string) bool {
 	return false
 }
 
-// IsCloud reports whether the target is Confluence Cloud, probing at most once
-// per API value.
+// IsCloud reports whether the target is Confluence Cloud, deciding at most once
+// per API value. A target that could not be identified is reported as not
+// Cloud; cloud says so as an error, for a caller that must not guess.
+func (api *API) IsCloud() bool {
+	isCloud, _ := api.cloud()
+
+	return isCloud
+}
+
+// cloud identifies the target, at most once per API value.
+//
+// A known Cloud host answers without a request. Anything else is identified by
+// the current user, which every authenticated user may read on both platforms
+// and which they describe in incompatible terms: Cloud names a user by its
+// Atlassian accountId, while Server and Data Center have no accountId and name
+// one by username and userKey instead.
 //
 // The result is memoised through sync.Once rather than a plain bool pair: the
-// slow path issues an HTTP request, so two callers racing here would both probe
-// and would also write isCloudFlag concurrently. Once also guarantees that a
-// caller arriving while the probe is in flight waits for the answer instead of
+// slow path issues an HTTP request, so two callers racing here would both ask
+// and would also write the result concurrently. Once also guarantees that a
+// caller arriving while the request is in flight waits for the answer instead of
 // reading a half-written one.
-func (api *API) IsCloud() bool {
+func (api *API) cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
-		// 1. Fast path: check for a known Cloud host
 		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
 
-		// 2. Slow path: probe Cloud-only v2 API endpoint
-		var result any
-		request, err := api.v2().Res("spaces", &result).Get(map[string]string{
-			"limit": "1",
-		})
-		api.isCloudFlag = err == nil &&
-			(request.Raw.StatusCode == http.StatusOK || request.Raw.StatusCode == http.StatusForbidden)
+		api.isCloudFlag, api.isCloudErr = identifyCloud(api.GetCurrentUser())
+		if api.isCloudErr != nil {
+			log.Warn().Err(api.isCloudErr).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
+		}
 	})
 
-	return api.isCloudFlag
+	return api.isCloudFlag, api.isCloudErr
+}
+
+// identifyCloud reads the platform off the current user.
+func identifyCloud(user *User, err error) (bool, error) {
+	if err != nil {
+		return false, fmt.Errorf("unable to identify the Confluence platform: %w", err)
+	}
+
+	switch {
+	case user.AccountID != "":
+		return true, nil
+	case user.Username != "" || user.UserKey != "":
+		return false, nil
+	default:
+		return false, errors.New(
+			"unable to identify the Confluence platform: the current user has neither an accountId nor a username",
+		)
+	}
 }
 
 // restrictionUserCloud resolves the user a Cloud page is restricted to.

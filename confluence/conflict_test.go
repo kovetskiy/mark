@@ -271,6 +271,7 @@ func newConflictDataCenterAPI(
 	t.Helper()
 
 	api, server := newConflictAPI(t, false)
+	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") ||
 			r.URL.Path == "/pages/movepage.action" {
