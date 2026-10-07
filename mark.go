@@ -1012,17 +1012,13 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if compare && config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
 			// Ahead of compiling, as on a real run: a page edited in Confluence
 			// is left alone whatever the source says, and whatever it would fail on.
-			drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, previewed)
+			drift, err := driftReason(api, tracker, meta.Space, file, previewed)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			if drifted {
-				status = report.StatusSkipped
-				reason = fmt.Sprintf(
-					"edited in Confluence since mark published it (version %d, mark wrote %d)",
-					previewed.Version.Number, recorded,
-				)
+			if drift != "" {
+				status, reason = report.StatusSkipped, drift
 				log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
 			}
 		}
@@ -1209,25 +1205,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// lines below, and there is no point sending them for a page that is about
 	// to be left alone.
 	if config.NoOverwrite && !pageCreated && tracker != nil && meta != nil && target != nil {
-		drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, target)
+		drift, err := driftReason(api, tracker, meta.Space, file, target)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		if drifted {
-			log.Warn().Msgf(
-				"page %q was edited in Confluence since mark published it "+
-					"(version %d, mark wrote %d); leaving it alone",
-				target.Title, target.Version.Number, recorded,
-			)
+		if drift != "" {
+			log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
 
 			results.AddPage(report.Page{
 				File: file, Status: report.StatusSkipped,
-				Reason: fmt.Sprintf(
-					"edited in Confluence since mark published it (version %d, mark wrote %d)",
-					target.Version.Number, recorded,
-				),
-				Space: spaceOf(meta), Title: target.Title,
+				Reason: drift,
+				Space:  spaceOf(meta), Title: target.Title,
 				PageID: target.ID, URL: api.BaseURL + target.Links.Full,
 			})
 
@@ -2435,6 +2424,26 @@ func mergeComments(newBody string, oldBody string, comments *confluence.InlineCo
 func Cleanup() {
 	d2.Cleanup()
 	mermaid.Cleanup()
+}
+
+// driftReason is hasDrifted put the way the report says it: why --no-overwrite
+// leaves the page alone, or "" when it does not. Shared by a real run and the
+// --changes-only preview, so the two cannot disagree about either.
+func driftReason(
+	api *confluence.API,
+	tracker *manifest.Store,
+	spaceKey, file string,
+	target *confluence.PageInfo,
+) (string, error) {
+	drifted, recorded, err := hasDrifted(api, tracker, spaceKey, file, target)
+	if err != nil || !drifted {
+		return "", err
+	}
+
+	return fmt.Sprintf(
+		"edited in Confluence since mark published it (version %d, mark wrote %d)",
+		target.Version.Number, recorded,
+	), nil
 }
 
 // hasDrifted reports whether a page has been changed by somebody other than
