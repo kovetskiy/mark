@@ -1024,13 +1024,15 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 
 		var attachments *attachmentPreview
-		if compare && status == "" && previewed != nil {
+		if compare && status == "" {
 			var err error
 			attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
 			if err != nil {
 				return nil, nil, err
 			}
-			cfg.ResolveAttachment = attachments.resolve
+			if attachments != nil {
+				cfg.ResolveAttachment = attachments.resolve
+			}
 		}
 
 		var html string
@@ -1583,9 +1585,32 @@ func previewAttachmentLinks(
 		return nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
+	if target == nil {
+		// Nothing to link against on a page that does not exist yet, but two
+		// files that flatten to one name still fail a real run before it
+		// writes anything, so they fail the preview too.
+		if _, err := attachment.Pending(local, nil); err != nil {
+			return nil, fmt.Errorf("unable to resolve attachments: %w", err)
+		}
+
+		return nil, nil
+	}
+
 	remotes, err := api.GetAttachments(target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+	}
+
+	// Asked the way a real run decides it, so what it refuses -- two files
+	// that flatten to one name -- is refused here too.
+	uploads, err := attachment.Pending(local, remotes)
+	if err != nil {
+		return nil, fmt.Errorf("unable to resolve attachments: %w", err)
+	}
+
+	uploading := make(map[string]bool, len(uploads))
+	for _, item := range uploads {
+		uploading[item.Filename] = true
 	}
 
 	var nonce [8]byte
@@ -1597,16 +1622,16 @@ func previewAttachmentLinks(
 	current := make([]attachment.Attachment, 0, len(local))
 	pending := make([]attachment.Attachment, 0, len(local))
 	for _, item := range local {
-		i := slices.IndexFunc(remotes, func(r confluence.AttachmentInfo) bool {
-			return r.Filename == item.Filename
-		})
-		if i < 0 || strings.TrimPrefix(remotes[i].Metadata.Comment, attachment.AttachmentChecksumPrefix) != item.Checksum {
+		if uploading[item.Filename] {
 			item.Link = marker + item.Filename
 			pending = append(pending, item)
 
 			continue
 		}
 
+		i := slices.IndexFunc(remotes, func(r confluence.AttachmentInfo) bool {
+			return r.Filename == item.Filename
+		})
 		item.Link = path.Join(remotes[i].Links.Context, remotes[i].Links.Download)
 		current = append(current, item)
 	}

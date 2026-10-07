@@ -296,3 +296,39 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, out.String(), "would-create")
 }
+
+// TestDryRunChangesOnlyFailsOnAttachmentsSharingAName keeps the preview from
+// passing a document a real run refuses: two different files that flatten to
+// one attachment name.
+func TestDryRunChangesOnlyFailsOnAttachmentsSharingAName(t *testing.T) {
+	for _, existing := range []bool{true, false} {
+		t.Run(fmt.Sprintf("page exists %v", existing), func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			file := writeFile(t, dir, "doc.md", dryRunDocBody("plain"))
+
+			config := Config{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+				ChangesOnly: true,
+			}
+			if existing {
+				require.NoError(t, Run(config))
+			}
+
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o700))
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "a_b"), 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b_c.txt"), []byte("one"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "a_b", "c.txt"), []byte("two"), 0o600))
+			writeFile(t, dir, "doc.md", dryRunDocBody(
+				"<!-- Attachment: a/b_c.txt -->\n<!-- Attachment: a_b/c.txt -->\n\nplain"))
+
+			config.DryRun = true
+			config.OutputFormat = "json"
+			config.Output = &bytes.Buffer{}
+			err := Run(config)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "would both be uploaded")
+		})
+	}
+}
