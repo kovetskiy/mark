@@ -553,3 +553,59 @@ func TestDryRunChangesOnlyFailsOnAttachmentsSharingAName(t *testing.T) {
 		})
 	}
 }
+
+// A page that does not exist has no attachment preview to settle against; the
+// dry run must still compile it, links to local files included.
+func TestDryRunChangesOnlyNewPageWithAttachments(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), []byte("png"), 0o600))
+	file := writeFile(t, dir, "doc.md", dryRunDocBody(
+		"<!-- Attachment: logo.png -->\n\n![logo](logo.png)\n\n[the logo](logo.png)"))
+	before := len(nonGET(server))
+
+	var out bytes.Buffer
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: &out,
+		ChangesOnly: true, DryRun: true, OutputFormat: "json",
+	}
+	require.NoError(t, Run(config))
+
+	assert.Contains(t, out.String(), `"status": "would-create"`)
+	assert.Len(t, nonGET(server), before, "a dry run must not write")
+}
+
+// With nothing to add and --append-labels removing nothing, a page's labels
+// cannot matter, so the preview does not read them.
+func TestDryRunChangesOnlySkipsLabelLookupWhenLabelsCannotChange(t *testing.T) {
+	labelReads := func(t *testing.T, appendLabels bool) int {
+		server, _ := docsSpace(t)
+		dir := t.TempDir()
+		file := writeFile(t, dir, "doc.md", dryRunDocBody("same"))
+
+		config := Config{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+			ChangesOnly: true, AppendLabels: appendLabels,
+		}
+		require.NoError(t, Run(config))
+
+		before := len(server.Requests())
+		config.DryRun = true
+		config.OutputFormat = "json"
+		config.Output = &bytes.Buffer{}
+		require.NoError(t, Run(config))
+
+		n := 0
+		for _, r := range server.Requests()[before:] {
+			if strings.HasSuffix(r.Path, "/label") {
+				n++
+			}
+		}
+		return n
+	}
+
+	assert.Zero(t, labelReads(t, true))
+	assert.NotZero(t, labelReads(t, false), "without --append-labels a stray label is removed")
+}

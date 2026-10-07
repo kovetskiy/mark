@@ -2045,6 +2045,11 @@ func labelChanges(
 	metaLabels []string,
 	appendOnly bool,
 ) (add, del []string, err error) {
+	// Nothing to add, and appending removes nothing: no need to read the labels.
+	if appendOnly && len(metaLabels) == 0 {
+		return nil, nil, nil
+	}
+
 	labelInfo, err := api.GetPageLabels(target, "global")
 	if err != nil {
 		return nil, nil, err
