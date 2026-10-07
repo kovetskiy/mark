@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,13 +59,32 @@ func TestDryRunChangesOnlyReportsPerPage(t *testing.T) {
 		assert.NotContains(t, out.String(), "<p>", "an unchanged page must not be dumped")
 	})
 
-	t.Run("changed page is reported as would-update and printed", func(t *testing.T) {
+	t.Run("changed page is reported as would-update, its HTML only without a report", func(t *testing.T) {
 		file, config, out, _ := publish(t)
 		require.NoError(t, os.WriteFile(file, []byte(dryRunDocBody("different body")), 0o600))
 		require.NoError(t, Run(config))
 
-		assert.Contains(t, out.String(), `"status": "would-update"`)
+		// stdout is the report alone, so a CI step can parse it.
+		assert.Equal(t, report.StatusWouldUpdate, decodeReport(t, out.Bytes()).Pages[0].Status)
+		assert.NotContains(t, out.String(), "different body")
+
+		// The HTML is printed with the url format, which has no report to break.
+		out.Reset()
+		config.OutputFormat = ""
+		require.NoError(t, Run(config))
 		assert.Contains(t, out.String(), "different body")
+	})
+
+	t.Run("github format is the annotations alone", func(t *testing.T) {
+		file, config, out, _ := publish(t)
+		require.NoError(t, os.WriteFile(file, []byte(dryRunDocBody("different body")), 0o600))
+		config.OutputFormat = "github"
+		require.NoError(t, Run(config))
+
+		for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			assert.True(t, strings.HasPrefix(line, "::"), "not a workflow command: %q", line)
+		}
+		assert.Contains(t, out.String(), "would update")
 	})
 
 	t.Run("writes nothing", func(t *testing.T) {
@@ -87,7 +108,11 @@ func TestDryRunChangesOnlyNewPageWouldBeCreated(t *testing.T) {
 	}
 	require.NoError(t, Run(config))
 
-	assert.Contains(t, out.String(), `"status": "would-create"`)
+	assert.Equal(t, report.StatusWouldCreate, decodeReport(t, out.Bytes()).Pages[0].Status)
+
+	out.Reset()
+	config.OutputFormat = ""
+	require.NoError(t, Run(config))
 	assert.Contains(t, out.String(), "fresh")
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
@@ -434,6 +459,14 @@ func TestDryRunChangesOnlyReportsChangedLabels(t *testing.T) {
 		out := preview(t, func(*confluencetest.Server, string, string) {})
 		assert.Contains(t, out, `"status": "unchanged"`)
 	})
+}
+
+// decodeReport reads a JSON report, failing the test if the output is not one.
+func decodeReport(t *testing.T, data []byte) *report.Report {
+	t.Helper()
+	r := &report.Report{}
+	require.NoError(t, json.Unmarshal(data, r), "output is not a JSON report: %s", data)
+	return r
 }
 
 // mustFind returns the id of the page titled title in DOCS.

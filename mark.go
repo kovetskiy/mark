@@ -1085,7 +1085,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			}
 		}
 
-		if status != report.StatusUnchanged && status != report.StatusSkipped {
+		printHTML := status != report.StatusUnchanged && status != report.StatusSkipped
+		if compare {
+			// A json or github report goes to the same stream, for a CI step to
+			// parse; HTML written ahead of it would make it unparseable.
+			format, err := report.ParseFormat(config.OutputFormat)
+			if err != nil {
+				return nil, nil, err
+			}
+			printHTML = printHTML && format == report.FormatURL
+		}
+
+		if printHTML {
 			if _, err := fmt.Fprintln(config.output(), html); err != nil {
 				return nil, nil, err
 			}

@@ -1279,9 +1279,11 @@ page would change when its content, title, emoji or appearance differs, when it
 would be moved under the parent its headers declare, when its labels differ
 from its `Label` headers, or when an attachment -- declared, embedded or
 rendered -- would be uploaded; the `reason` of a `would-update` names any of
-the last three. Only the pages that would change have their HTML printed. A
-page `--no-overwrite` would leave alone is `skipped`, as it is on a real run,
-and is not printed either.
+the last three. Only the pages that would change have their HTML printed, and
+only with the default `url` output format: with `json` or `github` the report
+is all that is written, so a CI step can parse it. A page `--no-overwrite`
+would leave alone is `skipped`, as it is on a real run, and is not printed
+either.
 
 Not compared, so a page differing only in them is `unchanged` although a real
 run still applies them: [content properties](#confluence-content-properties),
@@ -1950,7 +1952,7 @@ GLOBAL OPTIONS:
    --files string, -f string                      use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
    --continue-on-error                            don't exit if an error occurs while processing a file, continue processing remaining files. [$MARK_CONTINUE_ON_ERROR]
    --compile-only                                 show resulting HTML and don't update Confluence page content. [$MARK_COMPILE_ONLY]
-   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those. [$MARK_DRY_RUN]
+   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github. [$MARK_DRY_RUN]
    --edit-lock, -k                                lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. [$MARK_EDIT_LOCK]
    --drop-h1                                      don't include the first H1 heading in Confluence output. [$MARK_DROP_H1]
    --strip-linebreaks, -L                         remove linebreaks inside of tags, to accommodate non-standard Confluence behavior [$MARK_STRIP_LINEBREAKS]
