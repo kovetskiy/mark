@@ -461,6 +461,45 @@ func TestDryRunChangesOnlyReportsChangedLabels(t *testing.T) {
 	})
 }
 
+// TestDryRunChangesOnlyReportsTheURL gives an existing page the address a
+// real run reports for it, and a page to be created none.
+func TestDryRunChangesOnlyReportsTheURL(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", dryRunDocBody("same"))
+	writeFile(t, dir, "new.md", "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: New -->\n\nnew\n")
+
+	var first bytes.Buffer
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: &first,
+		ChangesOnly: true, OutputFormat: "json",
+	}
+	require.NoError(t, Run(config))
+	published := decodeReport(t, first.Bytes())
+	require.Len(t, published.Pages, 1)
+	require.NotEmpty(t, published.Pages[0].URL)
+
+	var out bytes.Buffer
+	config.Files = filepath.Join(dir, "*.md")
+	config.DryRun = true
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	previewed := decodeReport(t, out.Bytes())
+	require.Len(t, previewed.Pages, 2)
+	for _, pg := range previewed.Pages {
+		switch filepath.Base(pg.File) {
+		case "doc.md":
+			assert.Equal(t, report.StatusUnchanged, pg.Status)
+			assert.Equal(t, published.Pages[0].URL, pg.URL)
+		case "new.md":
+			assert.Equal(t, report.StatusWouldCreate, pg.Status)
+			assert.Empty(t, pg.URL)
+		}
+	}
+}
+
 // decodeReport reads a JSON report, failing the test if the output is not one.
 func decodeReport(t *testing.T, data []byte) *report.Report {
 	t.Helper()
