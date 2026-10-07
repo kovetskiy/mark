@@ -641,3 +641,46 @@ func TestRealRunSkipsLabelLookupWhenLabelsCannotChange(t *testing.T) {
 	assert.Zero(t, labelReads(t, true))
 	assert.NotZero(t, labelReads(t, false), "without --append-labels a stray label is removed")
 }
+
+// TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated covers a
+// document with a Folder and a Parent chain whose last page does not exist yet.
+// A dry run stops the chain at the deepest page that exists, and the folder
+// found under it is the one the page already sits in; a real run creates the
+// missing page and a new folder beneath it, then moves the page there.
+func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownInFolder("Manuals", "Doc"))
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
+		ChangesOnly: true,
+	}
+	require.NoError(t, Run(config))
+	id := mustFind(t, server, "Doc")
+	require.Len(t, server.Folders(), 1)
+	oldFolder := server.Folders()[0].ID
+	require.Equal(t, oldFolder, server.Page(id).ParentID)
+
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Parent: Missing -->\n"+
+			"<!-- Folder: Manuals -->\n<!-- Title: Doc -->\n\nBody.\n")
+	before := len(nonGET(server))
+
+	var out bytes.Buffer
+	config.DryRun = true
+	config.OutputFormat = "json"
+	config.Output = &out
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, report.StatusWouldUpdate, decodeReport(t, out.Bytes()).Pages[0].Status)
+	assert.Len(t, nonGET(server), before, "a dry run must not write")
+
+	// And the real run does move it, which is what the report promised.
+	config.DryRun = false
+	config.OutputFormat = ""
+	config.Output = &bytes.Buffer{}
+	require.NoError(t, Run(config))
+	assert.NotEqual(t, oldFolder, server.Page(id).ParentID, "the real run should have moved the page")
+}
