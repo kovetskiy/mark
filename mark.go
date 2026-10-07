@@ -948,6 +948,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	if config.DryRun {
 		if meta != nil {
+			// As a real run does before resolving, or a parent renamed in
+			// Confluence is looked for under its old title and the page is
+			// reported moved on every preview while the real run leaves it be.
+			// It only reads, and a dry run's manifest store saves nothing.
+			if err := refreshStaleParents(tracker, api, meta); err != nil {
+				return nil, nil, err
+			}
+
 			if parent, pg, misplaced, err := page.PreviewPage(api, meta, ancestryTracker); err != nil {
 				return nil, nil, fmt.Errorf("unable to resolve page location: %w", err)
 			} else if pg == nil {
