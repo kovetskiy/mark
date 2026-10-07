@@ -1060,6 +1060,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				others = append(others, "it would be moved under the parent its headers declare")
 			}
 
+			if previewed != nil && meta != nil {
+				add, del, err := labelChanges(api, previewed, meta.Labels, config.AppendLabels)
+				if err != nil {
+					return nil, nil, err
+				}
+				if len(add) > 0 || len(del) > 0 {
+					others = append(others, "its labels would change")
+				}
+			}
+
 			status, reason, err = previewChange(html, previewed, relinked, others, file, config, meta, std)
 			if err != nil {
 				return nil, nil, err
@@ -1977,6 +1987,37 @@ func resolveRenamedFile(
 	return pg, nil
 }
 
+// labelChanges reads a page's labels and says which updateLabels would add and
+// which it would remove. A dry run asks it too, so the two agree.
+func labelChanges(
+	api *confluence.API,
+	target *confluence.PageInfo,
+	metaLabels []string,
+	appendOnly bool,
+) (add, del []string, err error) {
+	labelInfo, err := api.GetPageLabels(target, "global")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	log.Debug().Msg("Page Labels:")
+	log.Debug().Interface("labels", labelInfo.Labels).Send()
+	log.Debug().Msg("Meta Labels:")
+	log.Debug().Interface("labels", metaLabels).Send()
+
+	if !appendOnly {
+		del = determineLabelsToRemove(labelInfo, metaLabels)
+	}
+	log.Debug().Msg("Del Labels:")
+	log.Debug().Interface("labels", del).Send()
+
+	add = determineLabelsToAdd(metaLabels, labelInfo)
+	log.Debug().Msg("Add Labels:")
+	log.Debug().Interface("labels", add).Send()
+
+	return add, del, nil
+}
+
 // updateLabels brings a page's labels in line with what its document asks for.
 //
 // Whether that means removing the others is the caller's choice. A page's
@@ -1986,26 +2027,10 @@ func resolveRenamedFile(
 // of a label outliving the Label header that introduced it -- which is visible
 // and reversible, unlike the deletion.
 func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels []string, appendOnly bool) error {
-	labelInfo, err := api.GetPageLabels(target, "global")
+	addLabels, delLabels, err := labelChanges(api, target, metaLabels, appendOnly)
 	if err != nil {
 		return err
 	}
-
-	log.Debug().Msg("Page Labels:")
-	log.Debug().Interface("labels", labelInfo.Labels).Send()
-	log.Debug().Msg("Meta Labels:")
-	log.Debug().Interface("labels", metaLabels).Send()
-
-	var delLabels []string
-	if !appendOnly {
-		delLabels = determineLabelsToRemove(labelInfo, metaLabels)
-	}
-	log.Debug().Msg("Del Labels:")
-	log.Debug().Interface("labels", delLabels).Send()
-
-	addLabels := determineLabelsToAdd(metaLabels, labelInfo)
-	log.Debug().Msg("Add Labels:")
-	log.Debug().Interface("labels", addLabels).Send()
 
 	if len(addLabels) > 0 {
 		if _, err = api.AddPageLabels(target, addLabels); err != nil {
