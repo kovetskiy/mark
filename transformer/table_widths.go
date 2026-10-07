@@ -13,14 +13,10 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// TableWidthsAttribute names the node attribute that carries a table's column
-// widths, in pixels, as an []int with one entry per column.
-const TableWidthsAttribute = "mark-table-widths"
-
 var tableWidthsDirective = regexp.MustCompile(`(?i)^<!--\s*Table-Widths\s*:(.*?)-->$`)
 
 // TableWidthsTransformer reads `<!-- Table-Widths: 160,720 -->` comments and
-// hands each width list to the table that follows.
+// gives the table that follows a <colgroup> with those widths.
 //
 // The comment is an HTML comment so that GitHub and GitLab still show a plain
 // table; only Confluence gets the column widths.
@@ -35,20 +31,25 @@ func NewTableWidthsTransformer() *TableWidthsTransformer {
 func (t *TableWidthsTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
 
-	var directives []*ast.HTMLBlock
+	type directive struct {
+		block *ast.HTMLBlock
+		value string
+	}
+
+	var directives []directive
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if block, ok := node.(*ast.HTMLBlock); ok && entering {
-			if _, matched := tableWidthsValue(block, source); matched {
-				directives = append(directives, block)
+			if value, matched := tableWidthsValue(block, source); matched {
+				directives = append(directives, directive{block, value})
 			}
 		}
 
 		return ast.WalkContinue, nil
 	})
 
-	for _, block := range directives {
-		value, _ := tableWidthsValue(block, source)
+	for _, d := range directives {
+		block, value := d.block, d.value
 		line := getNodeLineNumber(block, source)
 
 		// Blank lines leave no node behind, so "the next sibling" is what
@@ -79,8 +80,25 @@ func (t *TableWidthsTransformer) Transform(doc *ast.Document, reader text.Reader
 			continue
 		}
 
-		table.SetAttribute([]byte(TableWidthsAttribute), widths)
+		// goldmark's table renderer walks every child and only looks at its
+		// own kinds, so a verbatim string ahead of the header comes out right
+		// after <table>. SetCode, not SetRaw: a "raw" string is still escaped.
+		colgroup := ast.NewString(colgroupMarkup(widths))
+		colgroup.SetCode(true)
+		table.InsertBefore(table, table.FirstChild(), colgroup)
 	}
+}
+
+func colgroupMarkup(widths []int) []byte {
+	var b strings.Builder
+
+	b.WriteString("<colgroup>\n")
+	for _, width := range widths {
+		fmt.Fprintf(&b, "<col style=\"width: %dpx;\"/>\n", width)
+	}
+	b.WriteString("</colgroup>\n")
+
+	return []byte(b.String())
 }
 
 func tableWidthsValue(block *ast.HTMLBlock, source []byte) (string, bool) {

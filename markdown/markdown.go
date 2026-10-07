@@ -65,7 +65,6 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceTableRenderer(), 100),
 	))
 
 	// <details> reaches here only because the document wrote the tag, and the
@@ -477,7 +476,6 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
 		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
 		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceTableRenderer(), 100),
 	))
 
 	// Add GitHub Alerts specific renderers with higher priority to override defaults
