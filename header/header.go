@@ -13,7 +13,6 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
@@ -207,17 +206,18 @@ func (h *Header) execute(data Data) (string, error) {
 // space, and the machine's directory layout is not for them.
 func relativePath(file string) string {
 	abs, err := filepath.Abs(file)
-	if err != nil {
-		return filepath.Base(file)
+	if err == nil {
+		if wd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(wd, abs); err == nil {
+				rel = filepath.ToSlash(rel)
+				if rel != ".." && !strings.HasPrefix(rel, "../") {
+					return rel
+				}
+			}
+		}
 	}
 
-	// Key leaves a path outside the working directory absolute.
-	rel := manifest.Key(abs)
-	if filepath.IsAbs(rel) {
-		return filepath.Base(file)
-	}
-
-	return rel
+	return filepath.Base(file)
 }
 
 // xmlSpecialPath is a sample name a template must escape to stay well-formed.
