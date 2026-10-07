@@ -1,0 +1,20 @@
+<h2>Heading ending in #</h2>
+<p>Stars *like this*, under_scores, _leading and trailing_, [brackets], `ticks`, ~tildes~ and a back\slash.</p>
+<p># not a heading
+1. not a list
+- not a bullet
++ not a bullet either
+&gt; not a quote
+: not a definition
+---</p>
+<p>Markup-looking text: &lt;div&gt; and &amp;copy; and @{mention} and user@example.com, https://example.com and www.example.com.</p>
+<p>Punctuation <strong>"quoted"</strong>next to strong, and <em>(parenthesised)</em>.</p>
+<p><code>a `tick` inside</code> and <code>`leading</code></p>
+<table><tbody><tr><th>a | b</th><th><code>c|d</code></th></tr><tr><td>1</td><td>2</td></tr></tbody></table>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">markdown</ac:parameter><ac:plain-text-body><![CDATA[```
+nested fence
+```]]></ac:plain-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="noformat"><ac:plain-text-body><![CDATA[keep *this*
+
+   as ]]]]><![CDATA[> it is]]></ac:plain-text-body></ac:structured-macro>
+<blockquote><p>Note: a quote that starts like an admonition</p></blockquote>
