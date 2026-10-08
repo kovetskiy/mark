@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -142,11 +143,17 @@ func TestMacroFileNameTriesTheDestinationBeforeTheTitle(t *testing.T) {
 func TestMacroFileNameKeepsANameThatEndsLikeATitle(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "draft (v2)"), []byte("x"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, `notes "final"`), []byte("x"), 0o600))
 
 	fileName := nameOnly(dir)
 
 	assert.Equal(t, "draft (v2)", fileName("draft (v2)"))
+
+	// Windows has no spelling for a quote in a filename.
+	if runtime.GOOS == "windows" {
+		return
+	}
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, `notes "final"`), []byte("x"), 0o600))
 	assert.Equal(t, `notes "final"`, fileName(`notes "final"`))
 }
 
