@@ -1006,19 +1006,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if config.CompileOnly || config.DryRun {
-		if config.DropH1 {
-			log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
-		}
-
-		imageAlign, err := getImageAlign(config.ImageAlign, meta)
+		cfg, err := config.documentConfig(meta, resolveLink)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
+			return nil, nil, err
 		}
-
-		cfg := config.markConfig()
-		cfg.DropFirstH1 = config.DropH1
-		cfg.ImageAlign = imageAlign
-		cfg.ResolveLink = resolveLink
 
 		// Only a dry run asked to tell changed pages from unchanged ones.
 		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
@@ -1332,19 +1323,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	if config.DropH1 {
-		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
-	}
-
-	imageAlign, err := getImageAlign(config.ImageAlign, meta)
+	cfg, err := config.documentConfig(meta, resolveLink)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
+		return nil, nil, err
 	}
-
-	cfg := config.markConfig()
-	cfg.DropFirstH1 = config.DropH1
-	cfg.ImageAlign = imageAlign
-	cfg.ResolveLink = resolveLink
 
 	// With --page-id the file's metadata is discarded, so the page itself and
 	// --space are what the header can name.
@@ -3095,6 +3077,26 @@ func renderHeader(
 	}
 
 	return pageHeader.Render(file, title, spaceOr(meta, fallbackSpace), cfg)
+}
+
+// documentConfig is the compile configuration for one document: the run's,
+// with what its metadata and link resolution add.
+func (c Config) documentConfig(meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
+	if c.DropH1 {
+		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
+	}
+
+	imageAlign, err := getImageAlign(c.ImageAlign, meta)
+	if err != nil {
+		return types.MarkConfig{}, fmt.Errorf("unable to determine image-align: %w", err)
+	}
+
+	cfg := c.markConfig()
+	cfg.DropFirstH1 = c.DropH1
+	cfg.ImageAlign = imageAlign
+	cfg.ResolveLink = resolveLink
+
+	return cfg, nil
 }
 
 // markConfig is the compile configuration the run's flags give every
