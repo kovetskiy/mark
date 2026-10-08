@@ -52,7 +52,8 @@ type Data struct {
 }
 
 // Load reads the header template at path, returning nil when path is empty.
-// A file ending in .md is Markdown; anything else is storage format.
+// A file with a Markdown extension (.md, .markdown and the like) is Markdown;
+// anything else is storage format.
 //
 // The template is executed here, so that a broken template or malformed
 // markup fails the run before any page is published. cfg is the run's
@@ -85,7 +86,7 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 
 	header := &Header{
 		path:     path,
-		markdown: strings.EqualFold(filepath.Ext(path), ".md"),
+		markdown: isMarkdown(path),
 		tmpl:     tmpl,
 		// Includes and macros register templates on the set they compile
 		// with; a set of its own keeps them from reaching the documents.
@@ -218,6 +219,18 @@ func relativePath(file string) string {
 	}
 
 	return filepath.Base(file)
+}
+
+// isMarkdown reports whether path has one of the extensions Markdown is
+// commonly saved under. Anything else would be published as storage format,
+// its Markdown printed literally on every page, and still well-formed.
+func isMarkdown(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".mdown", ".mkd", ".mkdn", ".mdwn":
+		return true
+	}
+
+	return false
 }
 
 // xmlSpecialPath is a sample name a template must escape to stay well-formed.

@@ -1244,8 +1244,9 @@ is generated, and where to edit it, is the usual use:
 mark --page-header generated.md --files "docs/**/*.md"
 ```
 
-A file ending in `.md` is Markdown, compiled like a document with the same
-`--features`; anything else is Confluence storage format, published as written.
+A file ending in `.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn` or `.mdwn` is
+Markdown, compiled like a document with the same `--features`; anything else is
+Confluence storage format, published as written.
 Either way it is a Go template, executed once per page with:
 
 | field | value |
@@ -2070,7 +2071,7 @@ GLOBAL OPTIONS:
    --insecure-skip-tls-verify                     skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --attach-referenced                            upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way. [$MARK_ATTACH_REFERENCED]
    --image-align string                           set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
-   --page-header string                           path to a template placed at the top of every page: Markdown if it ends in .md, Confluence storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space. [$MARK_PAGE_HEADER]
+   --page-header string                           path to a template placed at the top of every page: Markdown if it ends in .md, .markdown, .mdown, .mkd, .mkdn or .mdwn, Confluence storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space. [$MARK_PAGE_HEADER]
    --help, -h                                     show help
    --version, -v                                  print the version
 ```

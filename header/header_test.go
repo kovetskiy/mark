@@ -205,3 +205,18 @@ func TestMarkdownHeaderCompilesOncePerText(t *testing.T) {
 	assert.Equal(t, "<p>Generated from a.md.</p>\n", first)
 	assert.Equal(t, "<p>Generated from b.md.</p>\n", second)
 }
+
+func TestEveryMarkdownExtensionIsCompiled(t *testing.T) {
+	for _, name := range []string{"header.md", "header.MD", "header.markdown", "header.mdown", "header.mkd", "header.mkdn", "header.mdwn"} {
+		t.Run(name, func(t *testing.T) {
+			path := writeHeader(t, name, "**Generated**\n")
+
+			header, err := Load(path, newStdlib(t), types.MarkConfig{})
+			require.NoError(t, err)
+
+			html, _, err := header.Render("doc.md", "Title", "SPACE", types.MarkConfig{})
+			require.NoError(t, err)
+			assert.Equal(t, "<p><strong>Generated</strong></p>\n", html)
+		})
+	}
+}

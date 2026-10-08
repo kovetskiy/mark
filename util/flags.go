@@ -411,7 +411,7 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:      "page-header",
 		Value:     "",
-		Usage:     "path to a template placed at the top of every page: Markdown if it ends in .md, Confluence storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space.",
+		Usage:     "path to a template placed at the top of every page: Markdown if it ends in .md, .markdown, .mdown, .mkd, .mkdn or .mdwn, Confluence storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space.",
 		TakesFile: true,
 		Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_HEADER"), altsrctoml.TOML("page-header", altsrc.NewStringPtrSourcer(&filename))),
 	},

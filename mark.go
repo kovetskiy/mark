@@ -107,7 +107,7 @@ type Config struct {
 	AttachReferenced bool
 	IncludePath      string
 	// PageHeader is a template placed at the top of every page: Markdown
-	// when it ends in .md, storage format otherwise.
+	// when it has a Markdown extension, storage format otherwise.
 	PageHeader string
 
 	// Output is the writer used for result output (e.g. published page URLs,
