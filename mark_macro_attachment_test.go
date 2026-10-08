@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -211,6 +212,7 @@ func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
 	for name, value := range map[string]string{
 		"mailto":            "mailto:user@example.com",
 		"data":              "data:image/png,x",
+		"https, no slashes": "https:host/path.png",
 		"protocol-relative": "//host/path.png",
 		"absolute":          "/etc/secret.png",
 	} {
@@ -309,4 +311,28 @@ func TestMacroAttachmentEscapedToARootedPathIsWarnedAbout(t *testing.T) {
 
 	assert.Empty(t, server.Attachments(id))
 	assert.Contains(t, logged, "is not uploaded")
+}
+
+// TestMacroAttachmentWithAColonIsUploaded covers a filename that holds a colon,
+// which Linux and macOS allow: it looks as if it opened with a URI scheme, but
+// it is the file the macro writes into the page, so it has to be uploaded.
+func TestMacroAttachmentWithAColonIsUploaded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows filename cannot hold a colon")
+	}
+
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "shot:1.png"), onePixelPNG(), 0o600))
+
+	source := widthMacro + "\n![A](shot:1.png)<!-- width=10 -->\n"
+
+	html, attached, err := markmd.CompileMarkdown(
+		[]byte(source), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	require.NoError(t, err)
+	require.Len(t, attached, 1)
+	assert.Equal(t, "shot:1.png", attached[0].Filename)
+	assert.Contains(t, html, `<ri:attachment ri:filename="shot:1.png"/>`)
 }
