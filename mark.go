@@ -1048,7 +1048,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 					return nil, nil, err
 				}
 				if attachments != nil {
-					cfg.ResolveAttachment = attachments.resolve
+					cfg.ResolveAttachment = attachments.links.Resolve
 				}
 			}
 
@@ -1603,14 +1603,6 @@ type attachmentPreview struct {
 	// told from one that merely embeds it, which names the file and not the
 	// link. Random per preview, so text in the document cannot be mistaken for it.
 	marker string
-}
-
-func (p *attachmentPreview) resolve(target string) string {
-	if p == nil {
-		return ""
-	}
-
-	return p.links.Resolve(target)
 }
 
 // settle reports whether body links an attachment whose link a real run would
