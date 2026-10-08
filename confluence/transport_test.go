@@ -213,7 +213,7 @@ func TestRoundTripRetriesPostOn429(t *testing.T) {
 		return respond(http.StatusOK, nil), nil
 	})
 
-	// A *bytes.Buffer body is what gopencils sends, and it is what makes
+	// An in-memory body is what client.do sends, and it is what makes
 	// net/http populate GetBody so the request can be replayed.
 	req, err := http.NewRequest(
 		http.MethodPost,

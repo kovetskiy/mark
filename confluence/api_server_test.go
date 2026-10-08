@@ -515,7 +515,7 @@ func TestGetSpaceIDMissingSpace(t *testing.T) {
 }
 
 // TestRetriesThroughTheRealClientStack drives a retry end to end: real
-// confluence.API, real gopencils, real HTTP, with the fake returning 503 for
+// confluence.API, real client, real HTTP, with the fake returning 503 for
 // the first two GETs. Before the retry transport existed this returned an
 // error on the first 503, because gopencils only retried transport-level
 // failures and a 503 arrives with a nil error.

@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/kovetskiy/gopencils"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -46,19 +46,19 @@ func (user *User) isNamed(name string) bool {
 }
 
 type API struct {
-	rest *gopencils.Resource
-	// v2 API for newer endpoints like folders
-	restV2 *gopencils.Resource
-	// site is rooted at the base URL itself, for the one web action mark
-	// calls; see moveByAction.
-	site    *gopencils.Resource
+	// v1 is rooted at /rest/api and v2 at /api/v2, the newer endpoints such
+	// as folders. site is rooted at the base URL itself, for the one web
+	// action mark calls; see moveByAction.
+	v1      *client
+	v2      *client
+	site    *client
 	BaseURL string
 
-	// bearerToken is the Personal Access Token used when no username was
-	// given. It is kept here instead of being installed on rest/restV2 because
-	// those two would then hand it, and their whole header map, to every
-	// resource derived from them; see resource().
-	bearerToken string
+	// ctx is what every request carries; see SetContext. Nil means
+	// context.Background, which is what an API that was never given one --
+	// a zero value, or NewAPI's before SetContext -- has always had.
+	ctx      context.Context
+	ctxMutex sync.RWMutex
 
 	// username is the login mark authenticates with, empty for a Personal
 	// Access Token. Whoever it names is the current user by definition, which
@@ -380,6 +380,16 @@ type form struct {
 	writer *multipart.Writer
 }
 
+// headers are the ones an attachment upload goes with: the multipart
+// Content-Type, the only one on the request, and the token that lets the
+// upload past Confluence's XSRF check.
+func (form *form) headers() []requestOption {
+	return []requestOption{
+		withHeader("Content-Type", form.writer.FormDataContentType()),
+		withHeader("X-Atlassian-Token", "no-check"),
+	}
+}
+
 type tracer struct {
 	prefix string
 }
@@ -463,37 +473,24 @@ func redactHeaders(dump string) string {
 }
 
 func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
-	var auth *gopencils.BasicAuth
-	if username != "" {
-		auth = &gopencils.BasicAuth{
-			Username: username,
-			Password: password,
-		}
-	}
-
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
+	// Retries happen in the client's retryTransport and nowhere else; see
+	// newHTTPClient.
 	httpClient := newHTTPClient(insecureSkipVerify)
 
-	// gopencils is given 0 retries: its own retry loop only runs when the very
-	// first Client.Do returns a transport error, so a 429 or 503 -- which come
-	// back with a nil error -- was never retried at all. retryTransport in the
-	// client handles both cases, and is the single place retries happen.
-	rest := gopencils.Api(baseURL+"/rest/api", auth, httpClient, 0)
-	restV2 := gopencils.Api(baseURL+"/api/v2", auth, httpClient, 0) // v2 API for folders and new features
-	site := gopencils.Api(baseURL, auth, httpClient, 0)
-
-	if zerolog.GlobalLevel() == zerolog.TraceLevel {
-		rest.Logger = &tracer{"rest:"}
-		restV2.Logger = &tracer{"rest-v2:"}
-		site.Logger = &tracer{"site:"}
+	trace := func(prefix string) string {
+		if zerolog.GlobalLevel() == zerolog.TraceLevel {
+			return prefix
+		}
+		return ""
 	}
 
-	api := &API{
-		rest:          rest,
-		restV2:        restV2,
-		site:          site,
+	return &API{
+		v1:            newClient(baseURL+"/rest/api", httpClient, username, password, trace("rest:")),
+		v2:            newClient(baseURL+"/api/v2", httpClient, username, password, trace("rest-v2:")),
+		site:          newClient(baseURL, httpClient, username, password, trace("site:")),
 		BaseURL:       baseURL,
 		username:      username,
 		gateway:       isGatewayURL(baseURL),
@@ -503,50 +500,37 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		conflictRetryDelay: time.Second,
 		moveSettleDelay:    250 * time.Millisecond,
 	}
-
-	// A Personal Access Token arrives as the password with no username. It is
-	// recorded rather than installed on rest/restV2 so that resource() can put
-	// it on a header map belonging to one request.
-	if username == "" {
-		api.bearerToken = password
-	}
-
-	return api
 }
 
-// v1 returns a request-scoped resource rooted at /rest/api, and v2 the same for
-// /api/v2. Every call in this package starts from one of them.
+// SetContext sets the context every later request made through api carries.
 //
-// The indirection is what keeps one request's headers out of the next one's.
-// gopencils hands the same http.Header map to a resource and to everything
-// Res() derives from it, and after each response it copies that response's
-// headers into the map with Add. A header map installed on the two roots
-// therefore lived for the whole run: it grew one value per header per request,
-// and since gopencils sends the *first* value ever recorded for a key, a single
-// odd Content-Type -- an SSO login page, a proxy interstitial, anything
-// answering below 400 -- pinned that Content-Type on every later PUT and POST
-// body for the rest of the run. CreateAttachment used to escape this only by
-// rebinding Headers to a fresh map by hand.
-func (api *API) v1() *gopencils.Resource {
-	return api.resource(api.rest)
+// Cancelling it cancels a request in flight, cuts short the backoff before a
+// retry, and fails every request made after it at once with an error that
+// errors.Is recognises as ctx.Err(). A request already sent is not undone:
+// cancelling one that was writing a page leaves whatever Confluence made of
+// it.
+//
+// The context is a property of the API value rather than a parameter of each
+// method, so that the methods keep their signatures and a caller that never
+// sets one is unaffected: its requests carry context.Background.
+func (api *API) SetContext(ctx context.Context) {
+	api.ctxMutex.Lock()
+	defer api.ctxMutex.Unlock()
+
+	api.ctx = ctx
 }
 
-func (api *API) v2() *gopencils.Resource {
-	return api.resource(api.restV2)
-}
+// Context returns the context requests made through api carry: the one last
+// given to SetContext, or context.Background.
+func (api *API) Context() context.Context {
+	api.ctxMutex.RLock()
+	defer api.ctxMutex.RUnlock()
 
-func (api *API) resource(root *gopencils.Resource) *gopencils.Resource {
-	headers := http.Header{}
-	if api.bearerToken != "" {
-		headers.Set("Authorization", "Bearer "+api.bearerToken)
+	if api.ctx == nil {
+		return context.Background()
 	}
 
-	return &gopencils.Resource{
-		Api:     root.Api,
-		Url:     root.Url,
-		Headers: headers,
-		Logger:  root.Logger,
-	}
+	return api.ctx
 }
 
 // FindRootPage returns the page a chain of parents is created under when no
@@ -671,18 +655,20 @@ func (api *API) cachedHomePage(space string) (homePageCacheEntry, bool) {
 
 func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	var (
-		v1Request *gopencils.Resource
-		v1Err     error
+		v1Result   SpaceInfo
+		v1Response *http.Response
+		v1Err      error
 	)
 
 	// Through the gateway v1 is not asked at all: a scoped token is refused
 	// there, and v2 answers either kind of token.
 	if !api.gateway {
-		v1Request, v1Err = api.v1().Res(
-			"space/"+space, &SpaceInfo{},
-		).Get(map[string]string{"expand": "homepage"})
-		if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK {
-			homepage := &v1Request.Response.(*SpaceInfo).Homepage
+		v1Response, v1Err = api.v1.do(
+			api.Context(), http.MethodGet, []string{"space", space},
+			url.Values{"expand": {"homepage"}}, nil, &v1Result,
+		)
+		if v1Err == nil && v1Response.StatusCode == http.StatusOK {
+			homepage := &v1Result.Homepage
 
 			// A 200 does not guarantee a homepage came with it. Returning the
 			// zero PageInfo handed the caller an empty id, which then went out
@@ -714,14 +700,15 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		} `json:"_links"`
 	}{}
 
-	v2Request, v2Err := api.v2().Res(
-		"spaces", &v2Result,
-	).Get(map[string]string{"keys": space})
+	v2Response, v2Err := api.v2.do(
+		api.Context(), http.MethodGet, []string{"spaces"},
+		url.Values{"keys": {space}}, nil, &v2Result,
+	)
 	switch {
 	case v2Err != nil:
-		v2Err = newTransportError(v2Request, "look up space "+space, v2Err)
-	case v2Request.Raw.StatusCode != http.StatusOK:
-		v2Err = newErrorStatusNotOK(v2Request)
+		v2Err = newTransportError(v2Response, "look up space "+space, v2Err)
+	case v2Response.StatusCode != http.StatusOK:
+		v2Err = newErrorStatusNotOK(v2Response)
 	}
 
 	// When v2 cannot answer either, report why v1 refused rather than why v2
@@ -736,13 +723,13 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// space that is not there for the rest of the run. Through the gateway v1
 	// is never asked and v2's answer is the only one, so it stands as it is.
 	if v2Err != nil {
-		if v1Request == nil {
+		if api.gateway {
 			return nil, v2Err
 		}
 		if v1Err == nil {
-			v1Err = newErrorStatusNotOK(v1Request)
+			v1Err = newErrorStatusNotOK(v1Response)
 		} else {
-			v1Err = newTransportError(v1Request, "read space "+space, v1Err)
+			v1Err = newTransportError(v1Response, "read space "+space, v1Err)
 		}
 		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, v2Err) //nolint:errorlint // v2's 404 on Server must not reach errors.Is(ErrNotFound)
 	}
@@ -833,31 +820,29 @@ func (api *API) findPageV1(space, title, pageType string) (*PageInfo, error) {
 		} `json:"_links"`
 	}{}
 
-	payload := map[string]string{
-		"spaceKey": space,
-		"expand":   "ancestors,version",
-		"type":     pageType,
+	query := url.Values{
+		"spaceKey": {space},
+		"expand":   {"ancestors,version"},
+		"type":     {pageType},
 		// Stated rather than left to the default, because the default is the
 		// whole subtlety here: this lookup deliberately sees live content only,
 		// and pageHoldingTitle is the one place that asks about the rest.
-		"status": "current",
+		"status": {"current"},
 	}
 
 	if title != "" {
-		payload["title"] = title
+		query.Set("title", title)
 	}
 
-	request, err := api.v1().Res(
-		"content/", &result,
-	).Get(payload)
+	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"content", ""}, query, nil, &result)
 	if err != nil {
-		return nil, newTransportError(request, fmt.Sprintf("find page %q in space %s", title, space), err)
+		return nil, newTransportError(response, fmt.Sprintf("find page %q in space %s", title, space), err)
 	}
 
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
-	if request.Raw.StatusCode != http.StatusNotFound && request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusNotFound && response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
 	if len(result.Results) == 0 {
@@ -901,32 +886,30 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 		Results []PageInfo `json:"results"`
 	}{}
 
-	payload := map[string]string{
-		"spaceKey": space,
-		"expand":   "ancestors,version",
-		"type":     pageType,
-		"status":   status,
+	query := url.Values{
+		"spaceKey": {space},
+		"expand":   {"ancestors,version"},
+		"type":     {pageType},
+		"status":   {status},
 	}
 
 	if title != "" {
-		payload["title"] = title
+		query.Set("title", title)
 	}
 
-	request, err := api.v1().Res(
-		"content/", &result,
-	).Get(payload)
+	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"content", ""}, query, nil, &result)
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("find %s page %q in space %s", status, title, space), err,
+			response, fmt.Sprintf("find %s page %q in space %s", status, title, space), err,
 		)
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound {
+	if response.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
 	if len(result.Results) == 0 {
@@ -1002,27 +985,18 @@ func (api *API) CreateAttachment(
 		Results []AttachmentInfo `json:"results"`
 	}
 
-	resource := api.v1().Res(
-		"content/"+pageID+"/child/attachment", &result,
+	response, err := api.v1.do(
+		api.Context(), http.MethodPost, []string{"content", pageID, "child", "attachment"},
+		nil, form.buffer, &result, form.headers()...,
 	)
-
-	resource.Payload = form.buffer
-	// The multipart Content-Type has to be the only one on the request. It used
-	// to be set on a hand-made replacement header map because the map reached
-	// here carrying every header of every earlier response; resource() now
-	// gives each request a map of its own, so setting it is enough.
-	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
-	resource.SetHeader("X-Atlassian-Token", "no-check")
-
-	request, err := resource.Post()
 	if err != nil {
 		return info, newTransportError(
-			request, fmt.Sprintf("attach %q to page %s", name, pageID), err,
+			response, fmt.Sprintf("attach %q to page %s", name, pageID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return info, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return info, newErrorStatusNotOK(response)
 	}
 
 	if len(result.Results) == 0 {
@@ -1072,27 +1046,19 @@ func (api *API) UpdateAttachment(
 
 	var result json.RawMessage
 
-	resource := api.v1().Res(
-		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
+	response, err := api.v1.do(
+		api.Context(), http.MethodPost,
+		[]string{"content", pageID, "child", "attachment", attachID, "data"},
+		nil, form.buffer, &result, form.headers()...,
 	)
-
-	resource.Payload = form.buffer
-	// The multipart Content-Type has to be the only one on the request. It used
-	// to be set on a hand-made replacement header map because the map reached
-	// here carrying every header of every earlier response; resource() now
-	// gives each request a map of its own, so setting it is enough.
-	resource.SetHeader("Content-Type", form.writer.FormDataContentType())
-	resource.SetHeader("X-Atlassian-Token", "no-check")
-
-	request, err := resource.Post()
 	if err != nil {
 		return info, newTransportError(
-			request, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID), err,
+			response, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return info, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return info, newErrorStatusNotOK(response)
 	}
 
 	err = json.Unmarshal(result, &extendedResponse)
@@ -1192,21 +1158,22 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 	for {
 		var result page
 
-		payload := map[string]string{
-			"expand": "version,container",
-			"limit":  fmt.Sprintf("%d", pageSize),
-			"start":  fmt.Sprintf("%d", start),
+		query := url.Values{
+			"expand": {"version,container"},
+			"limit":  {strconv.Itoa(pageSize)},
+			"start":  {strconv.Itoa(start)},
 		}
 
-		request, err := api.v1().Res(
-			"content/"+pageID+"/child/attachment", &result,
-		).Get(payload)
+		response, err := api.v1.do(
+			api.Context(), http.MethodGet, []string{"content", pageID, "child", "attachment"},
+			query, nil, &result,
+		)
 		if err != nil {
-			return nil, newTransportError(request, "list attachments of page "+pageID, err)
+			return nil, newTransportError(response, "list attachments of page "+pageID, err)
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		for i, info := range result.Results {
@@ -1243,18 +1210,20 @@ func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, er
 		return api.getPageByIDV2(pageID, expand)
 	}
 
-	request, err := api.v1().Res(
-		"content/"+pageID, &PageInfo{},
-	).Get(map[string]string{"expand": expand})
+	var page PageInfo
+	response, err := api.v1.do(
+		api.Context(), http.MethodGet, []string{"content", pageID},
+		url.Values{"expand": {expand}}, nil, &page,
+	)
 	if err != nil {
-		return nil, newTransportError(request, "read page "+pageID, err)
+		return nil, newTransportError(response, "read page "+pageID, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
-	return request.Response.(*PageInfo), nil
+	return &page, nil
 }
 
 func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
@@ -1264,19 +1233,21 @@ func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
 
 	for {
 		result := &InlineComments{}
-		request, err := api.v1().Res(
-			"content/"+pageID+"/child/comment", result,
-		).Get(map[string]string{
-			"expand": "extensions.inlineProperties",
-			"limit":  fmt.Sprintf("%d", pageSize),
-			"start":  fmt.Sprintf("%d", start),
-		})
+		response, err := api.v1.do(
+			api.Context(), http.MethodGet, []string{"content", pageID, "child", "comment"},
+			url.Values{
+				"expand": {"extensions.inlineProperties"},
+				"limit":  {strconv.Itoa(pageSize)},
+				"start":  {strconv.Itoa(start)},
+			},
+			nil, result,
+		)
 		if err != nil {
-			return nil, newTransportError(request, "read inline comments of page "+pageID, err)
+			return nil, newTransportError(response, "read inline comments of page "+pageID, err)
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		if all.Links.Context == "" {
@@ -1407,20 +1378,19 @@ func (api *API) createPageV1(space, pageType string, parent *PageInfo, title, bo
 		}
 	}
 
-	request, err := api.v1().Res(
-		"content/", &PageInfo{},
-	).Post(payload)
+	var page PageInfo
+	response, err := api.v1.do(api.Context(), http.MethodPost, []string{"content", ""}, nil, payload, &page)
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("create page %q in space %s", title, space), err,
+			response, fmt.Sprintf("create page %q in space %s", title, space), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
+	if response.StatusCode != http.StatusOK {
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(response))
 	}
 
-	return request.Response.(*PageInfo), nil
+	return &page, nil
 }
 
 func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
@@ -1628,17 +1598,17 @@ func (api *API) updatePageV1(
 		}
 	}
 
-	request, err := api.v1().Res(
-		"content/"+page.ID, &map[string]any{},
-	).Put(payload)
+	response, err := api.v1.do(
+		api.Context(), http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
+	)
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
+			response, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return newErrorStatusNotOK(response)
 	}
 
 	return nil
@@ -1684,40 +1654,42 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 
 	payload := labels
 
-	request, err := api.v1().Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).Post(payload)
+	var result LabelInfo
+	response, err := api.v1.do(
+		api.Context(), http.MethodPost, []string{"content", page.ID, "label"}, nil, payload, &result,
+	)
 	if err != nil {
-		return nil, newTransportError(request, "add labels to page "+page.ID, err)
+		return nil, newTransportError(response, "add labels to page "+page.ID, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
-	return request.Response.(*LabelInfo), nil
+	return &result, nil
 }
 
 func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
-
-	request, err := api.v1().Res(
-		"content/"+page.ID+"/label", &LabelInfo{},
-	).SetQuery(map[string]string{"name": label}).Delete()
+	var result LabelInfo
+	response, err := api.v1.do(
+		api.Context(), http.MethodDelete, []string{"content", page.ID, "label"},
+		url.Values{"name": {label}}, nil, &result,
+	)
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("remove label %q from page %s", label, page.ID), err,
+			response, fmt.Sprintf("remove label %q from page %s", label, page.ID), err,
 		)
 	}
 
-	if request.Raw.StatusCode == http.StatusNoContent {
+	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
-	return request.Response.(*LabelInfo), nil
+	return &result, nil
 }
 
 func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error) {
@@ -1740,19 +1712,21 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 	for {
 		var result labelPage
 
-		request, err := api.v1().Res(
-			"content/"+page.ID+"/label", &result,
-		).Get(map[string]string{
-			"prefix": prefix,
-			"limit":  fmt.Sprintf("%d", pageSize),
-			"start":  fmt.Sprintf("%d", start),
-		})
+		response, err := api.v1.do(
+			api.Context(), http.MethodGet, []string{"content", page.ID, "label"},
+			url.Values{
+				"prefix": {prefix},
+				"limit":  {strconv.Itoa(pageSize)},
+				"start":  {strconv.Itoa(start)},
+			},
+			nil, &result,
+		)
 		if err != nil {
-			return nil, newTransportError(request, "read labels of page "+page.ID, err)
+			return nil, newTransportError(response, "read labels of page "+page.ID, err)
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		all = append(all, result.Labels...)
@@ -1816,44 +1790,37 @@ func (api *API) cachedUser(name string) (userCacheEntry, bool) {
 }
 
 func (api *API) fetchUserByName(name string) (*User, error) {
-	var response struct {
+	var result struct {
 		Results []struct {
 			User User
 		}
 	}
 
+	query := url.Values{"cql": {fmt.Sprintf("user.fullname~%q", name)}}
+
 	// Try the new path first
-	request, err := api.v1().
-		Res("search").
-		Res("user", &response).
-		Get(map[string]string{
-			"cql": fmt.Sprintf("user.fullname~%q", name),
-		})
+	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"search", "user"}, query, nil, &result)
 	if err != nil {
-		return nil, newTransportError(request, fmt.Sprintf("look up user %q", name), err)
+		return nil, newTransportError(response, fmt.Sprintf("look up user %q", name), err)
 	}
 
 	// Try old path
-	if request.Raw.StatusCode != http.StatusOK || len(response.Results) == 0 {
-		request, err = api.v1().
-			Res("search", &response).
-			Get(map[string]string{
-				"cql": fmt.Sprintf("user.fullname~%q", name),
-			})
+	if response.StatusCode != http.StatusOK || len(result.Results) == 0 {
+		response, err = api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
 		if err != nil {
-			return nil, newTransportError(request, fmt.Sprintf("look up user %q", name), err)
+			return nil, newTransportError(response, fmt.Sprintf("look up user %q", name), err)
 		}
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 	}
 
-	if len(response.Results) == 0 {
+	if len(result.Results) == 0 {
 
 		return nil, fmt.Errorf("user with name %q is not found: %w", name, errNoSuchUser)
 	}
 
-	return &response.Results[0].User, nil
+	return &result.Results[0].User, nil
 }
 
 // GetCurrentUser returns the user mark authenticates as. The answer does not
@@ -1870,16 +1837,13 @@ func (api *API) GetCurrentUser() (*User, error) {
 
 	var user User
 
-	request, err := api.v1().
-		Res("user").
-		Res("current", &user).
-		Get()
+	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"user", "current"}, nil, nil, &user)
 	if err != nil {
-		return nil, newTransportError(request, "read the current user", err)
+		return nil, newTransportError(response, "read the current user", err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
 	stored := user
@@ -1937,7 +1901,7 @@ func (api *API) IsCloud() bool {
 // answer instead of reading a half-written one.
 func (api *API) cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
-		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
+		if api.gateway || isCloudHost(api.v1.base.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
@@ -2031,11 +1995,9 @@ func (api *API) RestrictPageUpdates(
 	}
 
 	var result any
-	request, err := api.v1().
-		Res("content").
-		Id(page.ID).
-		Res("restriction", &result).
-		Post([]map[string]any{
+	response, err := api.v1.do(
+		api.Context(), http.MethodPost, []string{"content", page.ID, "restriction"}, nil,
+		[]map[string]any{
 			{
 				"operation": "update",
 				"restrictions": map[string]any{
@@ -2044,16 +2006,18 @@ func (api *API) RestrictPageUpdates(
 					},
 				},
 			},
-		})
+		},
+		&result,
+	)
 	if err != nil {
-		return newTransportError(request, "restrict updates of page "+page.ID, err)
+		return newTransportError(response, "restrict updates of page "+page.ID, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		if !api.IsCloud() && (request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode == http.StatusMethodNotAllowed) {
-			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", request.Raw.StatusCode)
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		if !api.IsCloud() && (response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed) {
+			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", response.StatusCode)
 		}
-		return newErrorStatusNotOK(request)
+		return newErrorStatusNotOK(response)
 	}
 
 	return nil
@@ -2097,20 +2061,19 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 		payload["parentType"] = parentType
 	}
 
-	request, err := api.v2().Res(
-		"folders", &FolderInfo{},
-	).Post(payload)
+	var folder FolderInfo
+	response, err := api.v2.do(api.Context(), http.MethodPost, []string{"folders"}, nil, payload, &folder)
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("create folder %q in space %s", title, spaceID), err,
+			response, fmt.Sprintf("create folder %q in space %s", title, spaceID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return nil, newErrorStatusNotOK(response)
 	}
 
-	return request.Response.(*FolderInfo), nil
+	return &folder, nil
 }
 
 // FindFolder finds a folder with a title anywhere in a space, or anywhere
@@ -2138,21 +2101,19 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 		cql += fmt.Sprintf(` AND ancestor=%s`, underAncestorID)
 	}
 
-	payload := map[string]string{
-		"cql":    cql,
-		"limit":  "1",
-		"expand": "content",
+	query := url.Values{
+		"cql":    {cql},
+		"limit":  {"1"},
+		"expand": {"content"},
 	}
 
-	request, err := api.v1().Res(
-		"search", &result,
-	).Get(payload)
+	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
 	if err != nil {
-		return nil, newTransportError(request, fmt.Sprintf("search for folder %q", title), err)
+		return nil, newTransportError(response, fmt.Sprintf("search for folder %q", title), err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
 	if len(result.Results) == 0 || result.Results[0].Content.ID == "" {
@@ -2264,24 +2225,25 @@ func (api *API) eachDirectChild(
 			} `json:"_links"`
 		}{}
 
-		query := map[string]string{"limit": strconv.Itoa(pageSize)}
+		query := url.Values{"limit": {strconv.Itoa(pageSize)}}
 		if cursor != "" {
-			query["cursor"] = cursor
+			query.Set("cursor", cursor)
 		}
 
-		request, err := api.v2().Res(
-			collection+"/"+parentID+"/direct-children", &result,
-		).Get(query)
+		response, err := api.v2.do(
+			api.Context(), http.MethodGet, []string{collection, parentID, "direct-children"},
+			query, nil, &result,
+		)
 		if err != nil {
-			return newTransportError(request, operation, err)
+			return newTransportError(response, operation, err)
 		}
 
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+		if response.StatusCode == http.StatusNotFound && cursor == "" {
 			return nil
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return newErrorStatusNotOK(response)
 		}
 
 		for _, child := range result.Results {
@@ -2335,10 +2297,10 @@ func (api *API) searchFolders(spaceKey, title string, visit func(id string) (boo
 	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
 	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
 
-	query := map[string]string{
-		"cql":    fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey),
-		"limit":  "25",
-		"expand": "content",
+	query := url.Values{
+		"cql":    {fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey)},
+		"limit":  {"25"},
+		"expand": {"content"},
 	}
 
 	for {
@@ -2355,13 +2317,13 @@ func (api *API) searchFolders(spaceKey, title string, visit func(id string) (boo
 			} `json:"_links"`
 		}{}
 
-		request, err := api.v1().Res("search", &result).Get(query)
+		response, err := api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
 		if err != nil {
-			return newTransportError(request, fmt.Sprintf("search for folder %q", title), err)
+			return newTransportError(response, fmt.Sprintf("search for folder %q", title), err)
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return newErrorStatusNotOK(response)
 		}
 
 		for _, item := range result.Results {
@@ -2390,10 +2352,10 @@ func (api *API) searchFolders(spaceKey, title string, visit func(id string) (boo
 		followed := maps.Clone(query)
 		for key, values := range next.Query() {
 			if len(values) > 0 {
-				followed[key] = values[0]
+				followed.Set(key, values[0])
 			}
 		}
-		if maps.Equal(followed, query) {
+		if followed.Encode() == query.Encode() {
 			return nil
 		}
 		query = followed
@@ -2401,22 +2363,21 @@ func (api *API) searchFolders(spaceKey, title string, visit func(id string) (boo
 }
 
 func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
-	request, err := api.v2().Res(
-		"folders/"+folderID, &FolderInfo{},
-	).Get()
+	var folder FolderInfo
+	response, err := api.v2.do(api.Context(), http.MethodGet, []string{"folders", folderID}, nil, nil, &folder)
 	if err != nil {
-		return nil, newTransportError(request, "read folder "+folderID, err)
+		return nil, newTransportError(response, "read folder "+folderID, err)
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound {
+	if response.StatusCode == http.StatusNotFound {
 		return nil, nil // Folder not found
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
-	return request.Response.(*FolderInfo), nil
+	return &folder, nil
 }
 
 // GetSpaceID resolves a space key to the numeric id v2 endpoints want.
@@ -2459,7 +2420,7 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	//
 	// The response is decoded into SpaceInfo rather than a struct declared
 	// here. The local one typed `id` as a string, but v1 returns it as a JSON
-	// *number*, so the decode failed on every single call, gopencils returned
+	// *number*, so the decode failed on every single call, the client returned
 	// the error, and this branch was skipped every time -- making the v2
 	// "fallback" below the only path that had ever run. SpaceInfo already types
 	// the field correctly and is exercised against real Confluence by
@@ -2468,16 +2429,16 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// v2 keeps its own string-typed struct: the two APIs genuinely disagree
 	// about this field, which is what made the mismatch easy to miss.
 	var (
-		v1Result  SpaceInfo
-		v1Request *gopencils.Resource
-		v1Err     error
+		v1Result   SpaceInfo
+		v1Response *http.Response
+		v1Err      error
 	)
 
 	// Through the gateway v1 is not asked at all: a scoped token is refused
 	// there, and v2 answers either kind of token.
 	if !api.gateway {
-		v1Request, v1Err = api.v1().Res("space/"+spaceKey, &v1Result).Get()
-		if v1Err == nil && v1Request.Raw.StatusCode == http.StatusOK && v1Result.ID != 0 {
+		v1Response, v1Err = api.v1.do(api.Context(), http.MethodGet, []string{"space", spaceKey}, nil, nil, &v1Result)
+		if v1Err == nil && v1Response.StatusCode == http.StatusOK && v1Result.ID != 0 {
 			return strconv.Itoa(v1Result.ID), nil
 		}
 	}
@@ -2493,17 +2454,14 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 		} `json:"_links"`
 	}{}
 
-	payload := map[string]string{
-		"keys": spaceKey,
-	}
-
-	request, err := api.v2().Res(
-		"spaces", &v2Result,
-	).Get(payload)
+	response, err := api.v2.do(
+		api.Context(), http.MethodGet, []string{"spaces"},
+		url.Values{"keys": {spaceKey}}, nil, &v2Result,
+	)
 	if err != nil {
-		err = newTransportError(request, "look up the id of space "+spaceKey, err)
-	} else if request.Raw.StatusCode != http.StatusOK {
-		err = newErrorStatusNotOK(request)
+		err = newTransportError(response, "look up the id of space "+spaceKey, err)
+	} else if response.StatusCode != http.StatusOK {
+		err = newErrorStatusNotOK(response)
 	}
 
 	// When v2 cannot answer either, report why v1 refused, as FindHomePage
@@ -2512,8 +2470,8 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// being a 404, got a v1 outage cached for the rest of the run. v1's answer
 	// is the one that decides, so v2's is kept for the message only.
 	if err != nil {
-		if v1Err == nil && v1Request != nil && v1Request.Raw.StatusCode != http.StatusOK {
-			v1Err = newErrorStatusNotOK(v1Request)
+		if v1Err == nil && v1Response != nil && v1Response.StatusCode != http.StatusOK {
+			v1Err = newErrorStatusNotOK(v1Response)
 		}
 		if v1Err == nil {
 			return "", err
@@ -2578,18 +2536,20 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 			} `json:"_links"`
 		}{}
 
-		request, err := api.v1().Res(
-			"content/"+parentID+"/child/page", &result,
-		).Get(map[string]string{
-			"limit": fmt.Sprintf("%d", pageSize),
-			"start": fmt.Sprintf("%d", start),
-		})
+		response, err := api.v1.do(
+			api.Context(), http.MethodGet, []string{"content", parentID, "child", "page"},
+			url.Values{
+				"limit": {strconv.Itoa(pageSize)},
+				"start": {strconv.Itoa(start)},
+			},
+			nil, &result,
+		)
 		if err != nil {
-			return nil, newTransportError(request, "list child pages of "+parentID, err)
+			return nil, newTransportError(response, "list child pages of "+parentID, err)
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		all = append(all, result.Results...)
@@ -2645,18 +2605,18 @@ func (api *API) HasChildFolders(parentID string) (bool, error) {
 // make. A tool that removes pages because a file left a repository should leave
 // the last word to a person.
 func (api *API) DeletePage(contentID string) error {
-	request, err := api.v1().Res("content").Id(contentID, &struct{}{}).Delete()
+	response, err := api.v1.do(api.Context(), http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
 	if err != nil {
-		return newTransportError(request, "delete content "+contentID, err)
+		return newTransportError(response, "delete content "+contentID, err)
 	}
 
 	// 204 is the documented answer; 200 is accepted because some versions send
 	// it, and a page already gone is the outcome that was wanted anyway.
-	switch request.Raw.StatusCode {
+	switch response.StatusCode {
 	case http.StatusNoContent, http.StatusOK, http.StatusNotFound:
 		return nil
 	default:
-		return newErrorStatusNotOK(request)
+		return newErrorStatusNotOK(response)
 	}
 }
 
@@ -2686,16 +2646,16 @@ func (api *API) ArchivePage(contentID string) error {
 		"pages": []map[string]any{{"id": id}},
 	}
 
-	request, err := api.v1().Res("content").Res("archive", &struct{}{}).Post(payload)
+	response, err := api.v1.do(api.Context(), http.MethodPost, []string{"content", "archive"}, nil, payload, &struct{}{})
 	if err != nil {
-		return newTransportError(request, "archive content "+contentID, err)
+		return newTransportError(response, "archive content "+contentID, err)
 	}
 
-	switch request.Raw.StatusCode {
+	switch response.StatusCode {
 	case http.StatusOK, http.StatusAccepted, http.StatusNoContent:
 		return nil
 	default:
-		return newErrorStatusNotOK(request)
+		return newErrorStatusNotOK(response)
 	}
 }
 
@@ -2811,14 +2771,15 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		} `json:"ancestors"`
 	}
 
-	request, err := api.v1().Res("content/"+targetID, &target).Get(
-		map[string]string{"expand": "space,ancestors"},
+	response, err := api.v1.do(
+		api.Context(), http.MethodGet, []string{"content", targetID},
+		url.Values{"expand": {"space,ancestors"}}, nil, &target,
 	)
 	if err != nil {
-		return false, newTransportError(request, "read move target "+targetID, err)
+		return false, newTransportError(response, "read move target "+targetID, err)
 	}
-	if request.Raw.StatusCode != http.StatusOK {
-		return false, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return false, newErrorStatusNotOK(response)
 	}
 
 	// The parent the content has to end up under; for before and after that
@@ -2837,42 +2798,41 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		return true, nil
 	}
 
-	query := map[string]string{
-		"pageId":      contentID,
-		"position":    actionPositions[position],
-		"targetId":    targetID,
-		"targetTitle": target.Title,
-		"spaceKey":    target.Space.Key,
+	query := url.Values{
+		"pageId":      {contentID},
+		"position":    {actionPositions[position]},
+		"targetId":    {targetID},
+		"targetTitle": {target.Title},
+		"spaceKey":    {target.Space.Key},
 	}
 	// Asks Seraph to authenticate a non-REST request from the basic auth header.
-	if api.site.Api.BasicAuth != nil {
-		query["os_authType"] = "basic"
+	if api.site.basic != nil {
+		query.Set("os_authType", "basic")
 	}
 
 	var answer map[string]any
-	resource := api.resource(api.site).Res("pages/movepage.action", &answer)
-	resource.SetHeader("X-Atlassian-Token", "no-check")
-	resource.SetHeader("Accept", "application/json")
-
-	request, err = resource.SetQuery(query).Post()
-	if request == nil || request.Raw == nil {
+	response, err = api.site.do(
+		api.Context(), http.MethodPost, []string{"pages", "movepage.action"}, query, nil, &answer,
+		withHeader("X-Atlassian-Token", "no-check"),
+		withHeader("Accept", "application/json"),
+	)
+	if response == nil {
 		return false, newTransportError(
-			request, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
+			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
 		)
 	}
 
 	// A 401 is about the credentials, not the page, so it too holds for the
 	// rest of the run.
-	switch status := request.Raw.StatusCode; {
+	switch status := response.StatusCode; {
 	case status == http.StatusNotFound || status == http.StatusMethodNotAllowed ||
 		status == http.StatusNotImplemented || status == http.StatusUnauthorized:
-		_ = request.Raw.Body.Close()
 		missing := fmt.Errorf("%w (status: %d)", errNoMoveAction, status)
 		api.moveActionMissing.Store(&missing)
 
 		return false, missing
 	case status >= http.StatusBadRequest:
-		return false, newErrorStatusNotOK(request)
+		return false, newErrorStatusNotOK(response)
 	}
 
 	// A body that does not decode is no answer from the action. Seraph's login
@@ -2881,11 +2841,10 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	// the move redirected to, a proxy's page for this one request -- says
 	// nothing about the next page, and may even follow a move that worked.
 	notJSON := err != nil
-	if notJSON && loginPage(request.Raw) {
-		_ = request.Raw.Body.Close()
+	if notJSON && loginPage(response) {
 		missing := fmt.Errorf(
 			"%w: it answered with a login page (status: %d)",
-			errNoMoveAction, request.Raw.StatusCode,
+			errNoMoveAction, response.StatusCode,
 		)
 		api.moveActionMissing.Store(&missing)
 
@@ -2917,7 +2876,7 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		return false, fmt.Errorf(
 			"movepage.action answered with something other than JSON (status: %d) "+
 				"and left %s where it was",
-			request.Raw.StatusCode, api.describeContent(contentID),
+			response.StatusCode, api.describeContent(contentID),
 		)
 	}
 
@@ -3213,17 +3172,17 @@ func (api *API) reparentContentV1(page *PageInfo, parentID string, nextVersion i
 		}
 	}
 
-	request, err := api.v1().Res(
-		"content/"+page.ID, &map[string]any{},
-	).Put(payload)
+	response, err := api.v1.do(
+		api.Context(), http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
+	)
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err,
+			response, fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return newErrorStatusNotOK(response)
 	}
 
 	return nil
@@ -3234,16 +3193,18 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		return *missing
 	}
 
-	path := fmt.Sprintf("content/%s/move/%s/%s", contentID, position, targetID)
 	var result map[string]any
-	request, err := api.v1().Res(path, &result).Put(map[string]interface{}{})
+	response, err := api.v1.do(
+		api.Context(), http.MethodPut, []string{"content", contentID, "move", position, targetID},
+		nil, map[string]any{}, &result,
+	)
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
+			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
 		)
 	}
 
-	switch request.Raw.StatusCode {
+	switch response.StatusCode {
 	case http.StatusOK, http.StatusNoContent:
 		return nil
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
@@ -3257,15 +3218,14 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		// same, which is why the status stays in the message and why nothing
 		// here concludes anything about the content itself.
 		if !api.IsCloud() {
-			_ = request.Raw.Body.Close()
-			missing := fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, request.Raw.StatusCode)
+			missing := fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, response.StatusCode)
 			api.moveEndpointMissing.Store(&missing)
 
 			return missing
 		}
-		return newErrorStatusNotOK(request)
+		return newErrorStatusNotOK(response)
 	default:
-		return newErrorStatusNotOK(request)
+		return newErrorStatusNotOK(response)
 	}
 }
 
@@ -3308,23 +3268,23 @@ var errNoMoveEndpoint = errors.New(
 	"this Confluence did not serve the content move endpoint, which is Cloud-only",
 )
 
-func newErrorStatusNotOK(request *gopencils.Resource) error {
+func newErrorStatusNotOK(response *http.Response) error {
 	defer func() {
-		_ = request.Raw.Body.Close()
+		_ = response.Body.Close()
 	}()
 
 	// The URL is part of every one of these. mark makes several calls per page,
 	// and a status on its own does not say which of them refused.
-	target := requestTarget(request)
+	target := requestTarget(response)
 
-	if request.Raw.StatusCode == http.StatusUnauthorized {
+	if response.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf(
 			"the Confluence API returned unexpected status: 401 (Unauthorized) for %s",
 			target,
 		)
 	}
 
-	if request.Raw.StatusCode == http.StatusNotFound {
+	if response.StatusCode == http.StatusNotFound {
 		// Wrapped rather than a bare string so callers that need to act on
 		// "this is gone" specifically can ask with errors.Is instead of
 		// matching on the message.
@@ -3337,14 +3297,14 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	// error is not always Confluence. A proxy's HTML error page or a Server
 	// stack trace can run to megabytes, all of which used to be read into
 	// memory and printed.
-	output, _ := io.ReadAll(io.LimitReader(request.Raw.Body, maxErrorBody+1))
+	output, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody+1))
 	truncated := ""
 	if len(output) > maxErrorBody {
 		output = output[:maxErrorBody]
 		truncated = " (truncated)"
 	}
 
-	if request.Raw.StatusCode == http.StatusConflict {
+	if response.StatusCode == http.StatusConflict {
 		// Wrapped for UpdatePage, which recovers from a conflict on its own
 		// write. The body is kept: Confluence says there which kind it was.
 		return fmt.Errorf(
@@ -3356,7 +3316,7 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	return fmt.Errorf(
 		"the Confluence API returned unexpected status: %v for %s, "+
 			"output: %q%s",
-		request.Raw.Status, target, output, truncated,
+		response.Status, target, output, truncated,
 	)
 }
 
@@ -3366,28 +3326,28 @@ const maxErrorBody = 4096
 
 // requestTarget names the URL a request was made to, with any credentials in
 // it redacted.
-func requestTarget(request *gopencils.Resource) string {
-	if request == nil || request.Raw == nil ||
-		request.Raw.Request == nil || request.Raw.Request.URL == nil {
+func requestTarget(response *http.Response) string {
+	if response == nil || response.Request == nil || response.Request.URL == nil {
 		return "the Confluence API"
 	}
 
-	return request.Raw.Request.URL.Redacted()
+	return response.Request.URL.Redacted()
 }
 
 // newTransportError explains an error the HTTP library returned in place of a
 // status.
 //
-// gopencils hands the JSON decode error straight back for any response below
-// 400 whose body it cannot parse, so newErrorStatusNotOK -- the one place that
-// builds a readable message -- is never reached for those. The common trigger
-// is a Confluence behind SSO answering 200 with an HTML login page, and what
-// reached the user was `invalid character '<' looking for beginning of value`:
-// no URL, no status, and no page name.
-func newTransportError(request *gopencils.Resource, operation string, err error) error {
+// client.do hands the JSON decode error back, together with the response,
+// for any response below 400 whose body it cannot parse, so
+// newErrorStatusNotOK -- the one place that builds a readable message -- is
+// never reached for those. The common trigger is a Confluence behind SSO
+// answering 200 with an HTML login page, and what reached the user was
+// `invalid character '<' looking for beginning of value`: no URL, no status,
+// and no page name.
+func newTransportError(response *http.Response, operation string, err error) error {
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
-	if request == nil || request.Raw == nil {
+	if response == nil {
 		return fmt.Errorf("unable to %s: %w", operation, err)
 	}
 
@@ -3395,6 +3355,6 @@ func newTransportError(request *gopencils.Resource, operation string, err error)
 		"unable to %s: %s answered %s with a body that is not JSON "+
 			"(an SSO login page or a proxy interstitial in front of Confluence is the "+
 			"usual cause): %w",
-		operation, requestTarget(request), request.Raw.Status, err,
+		operation, requestTarget(response), response.Status, err,
 	)
 }
