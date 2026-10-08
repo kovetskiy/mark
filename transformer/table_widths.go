@@ -98,15 +98,12 @@ func (t *TableWidthsTransformer) warn(format string, args ...any) {
 }
 
 func colgroupMarkup(widths []int) []byte {
-	var b strings.Builder
-
-	b.WriteString("<colgroup>\n")
+	b := []byte("<colgroup>\n")
 	for _, width := range widths {
-		fmt.Fprintf(&b, "<col style=\"width: %dpx;\"/>\n", width)
+		b = fmt.Appendf(b, "<col style=\"width: %dpx;\"/>\n", width)
 	}
-	b.WriteString("</colgroup>\n")
 
-	return []byte(b.String())
+	return append(b, "</colgroup>\n"...)
 }
 
 func tableWidthsValue(block *ast.HTMLBlock, source []byte) (string, bool) {
