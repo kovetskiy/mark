@@ -29,12 +29,10 @@ func unidentified(t *testing.T, status int) *confluencetest.Server {
 }
 
 // failures are answers to the current user that say nothing about the
-// platform.
+// platform: one retryTransport retries, one it does not.
 var failures = map[string]int{
-	"bad gateway":       http.StatusBadGateway,
-	"unavailable":       http.StatusServiceUnavailable,
-	"too many requests": http.StatusTooManyRequests,
-	"unauthorized":      http.StatusUnauthorized,
+	"bad gateway":  http.StatusBadGateway,
+	"unauthorized": http.StatusUnauthorized,
 }
 
 // TestHasChildFoldersOutsideCloudAsksNothing: folders are a Cloud feature, and
