@@ -13,7 +13,7 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-var tableWidthsDirective = regexp.MustCompile(`(?i)^<!--\s*Table-Widths\s*:(.*?)-->$`)
+var tableWidthsDirective = regexp.MustCompile(`(?is)^<!--\s*Table-Widths\s*:(.*?)-->$`)
 
 // TableWidthsTransformer reads `<!-- Table-Widths: 160,720 -->` comments and
 // gives the table that follows a <colgroup> with those widths.

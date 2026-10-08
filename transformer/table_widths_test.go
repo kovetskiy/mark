@@ -96,3 +96,10 @@ func TestTableWidthsTransformerColgroupRendersThroughGoldmark(t *testing.T) {
 	assert.Contains(t, out.String(), `<th style="text-align:center">a</th>`)
 	assert.Contains(t, out.String(), `<td style="text-align:right">2</td>`)
 }
+
+func TestTableWidthsTransformerAcceptsDirectiveOverSeveralLines(t *testing.T) {
+	doc := parseTableWidths(t, "<!--\nTable-Widths:\n160,\n720\n-->\n\n| a | b |\n|---|---|\n")
+
+	assert.Equal(t, "<colgroup>\n<col style=\"width: 160px;\"/>\n<col style=\"width: 720px;\"/>\n</colgroup>\n", colgroup(firstTable(t, doc)))
+	assert.IsType(t, &ext_ast.Table{}, doc.FirstChild(), "the directive comment is gone")
+}
