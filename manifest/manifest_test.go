@@ -697,7 +697,7 @@ func TestKeyNormalisesToTheWorkingDirectory(t *testing.T) {
 	// Outside it there is no better anchor, and mark has no notion of a project
 	// root to invent one from.
 	outside := filepath.Join(filepath.Dir(cwd), "elsewhere", "a.md")
-	assert.Equal(t, outside, manifest.Key(outside))
+	assert.Equal(t, filepath.ToSlash(outside), manifest.Key(outside))
 }
 
 // TestAbsoluteAndRelativeRunsShareOneMapping is the behaviour that matters: the
@@ -802,8 +802,12 @@ func TestKeysWrittenBeforeNormalisationAreMigrated(t *testing.T) {
 	oldKey := filepath.Join(cwd, "docs", "a.md")
 
 	// The shape an earlier mark wrote: an absolute, unnormalised key.
-	server.SetSpaceProperty(id, manifest.PropertyKey(manifest.ShardFor(oldKey)),
-		[]byte(`{"version":1,"pages":{"`+oldKey+`":{"pageId":"1234","title":"A"}}}`))
+	old, err := json.Marshal(map[string]any{
+		"version": 1,
+		"pages":   map[string]any{oldKey: map[string]any{"pageId": "1234", "title": "A"}},
+	})
+	require.NoError(t, err)
+	server.SetSpaceProperty(id, manifest.PropertyKey(manifest.ShardFor(oldKey)), old)
 
 	// The same file, asked for the way it is written now.
 	entry, ok, err := store.Lookup("DOCS", "docs/a.md")

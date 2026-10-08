@@ -1,0 +1,2 @@
+# Golden files are compared byte for byte, so they must stay LF on Windows.
+testdata/** text=auto eol=lf
