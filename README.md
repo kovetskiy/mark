@@ -185,7 +185,10 @@ holds one page of a title: rename one of them, or use
 `--title-append-generated-hash` is the way to keep both titles as they are: it
 appends a short hash of the page's parents, space and title, taken once the
 path has supplied the parents, so it differs between two documents in
-different directories.
+different directories. The pages standing for directories are hashed the same
+way, whether a README stands for them or not, so `docs/api/guides` and
+`docs/sdk/guides` are two pages, and a directory's README is the very page the
+documents beside it sit under.
 
 ### Directories are remembered too
 

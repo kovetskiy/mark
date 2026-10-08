@@ -572,3 +572,73 @@ func TestRootReadmeIsTitledByTheRoot(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, page, "the root's document is titled after the root directory")
 }
+
+// titlesWithPrefix lists the titles of the pages in DOCS that begin with prefix.
+func titlesWithPrefix(t *testing.T, api *confluence.API, prefix string) []string {
+	t.Helper()
+
+	var titles []string
+	for _, p := range serverPages(t, api) {
+		if strings.HasPrefix(p.Title, prefix) {
+			titles = append(titles, p.Title)
+		}
+	}
+
+	return titles
+}
+
+// TestHashedIndexIsItsDirectorysPage: with --title-append-generated-hash the
+// README's title was hashed while the documents beside it still looked for the
+// unhashed directory title, so the README published childless and an empty
+// page named after the directory took its children.
+func TestHashedIndexIsItsDirectorysPage(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/README.md", space+"\nWhat the guides are.\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	api := runHierarchy(t, dir, func(c *Config) { c.TitleAppendGeneratedHash = true })
+
+	guides := titlesWithPrefix(t, api, "Guides")
+	require.Len(t, guides, 1, "one page for the directory, not the README and an empty one")
+	assert.True(t, strings.HasPrefix(guides[0], "Guides - "), "the directory's page is hashed: %q", guides[0])
+
+	setup := titlesWithPrefix(t, api, "Setup - ")
+	require.Len(t, setup, 1)
+	assert.Equal(t, []string{"Home", guides[0]}, ancestryOf(t, api, setup[0]),
+		"the children belong to the page their directory's document published")
+}
+
+// TestHashTellsSameDirectoriesApart: a directory without a document of its own
+// is a page too, and two of one name in different places are two pages. The
+// hash on the documents beneath them is no use if both still look for one
+// parent of the same unhashed title: the second directory's documents end up
+// under the first's page.
+func TestHashTellsSameDirectoriesApart(t *testing.T) {
+	dir := t.TempDir()
+	writeAt(t, dir, "api/guides/setup.md", space+"<!-- Title: Setup -->\n\nAPI.\n")
+	writeAt(t, dir, "sdk/guides/setup.md", space+"<!-- Title: Setup -->\n\nSDK.\n")
+
+	api := runHierarchy(t, dir, func(c *Config) { c.TitleAppendGeneratedHash = true })
+
+	guides := titlesWithPrefix(t, api, "Guides - ")
+	require.Len(t, guides, 2, "each directory has a page of its own, hashed apart")
+	assert.NotEqual(t, guides[0], guides[1])
+
+	for _, title := range titlesWithPrefix(t, api, "Setup - ") {
+		ancestry := ancestryOf(t, api, title)
+		require.Len(t, ancestry, 3, "%s sits under its own directories", title)
+		assert.True(t, strings.HasPrefix(ancestry[1], "Api - ") || strings.HasPrefix(ancestry[1], "Sdk - "),
+			"%s: the top directory's page is hashed too: %v", title, ancestry)
+		assert.True(t, strings.HasPrefix(ancestry[2], "Guides - "), "%s: %v", title, ancestry)
+	}
+
+	// Each Guides page holds exactly one Setup.
+	for _, title := range guides {
+		parent, err := api.FindPage("DOCS", title, "page")
+		require.NoError(t, err)
+		require.NotNil(t, parent)
+		children, err := api.GetChildPages(parent.ID)
+		require.NoError(t, err)
+		assert.Len(t, children, 1, "%s holds its own directory's document only", title)
+	}
+}
