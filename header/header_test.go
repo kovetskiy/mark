@@ -206,6 +206,23 @@ func TestMarkdownHeaderCompilesOncePerText(t *testing.T) {
 	assert.Equal(t, "<p>Generated from b.md.</p>\n", second)
 }
 
+// TestPageDependentHeaderIsNotCachedPerPage: a header naming the document
+// compiles to something new for every page, and keeping each would hold every
+// page's header, diagrams included, for the rest of the run.
+func TestPageDependentHeaderIsNotCachedPerPage(t *testing.T) {
+	path := writeHeader(t, "header.md", "Generated from {{ .Path | xmlesc }}.\n")
+
+	header, err := Load(path, newStdlib(t), types.MarkConfig{})
+	require.NoError(t, err)
+
+	for _, file := range []string{"a.md", "b.md", "c.md", "d.md"} {
+		_, _, err := header.Render(file, "Title", "SPACE", types.MarkConfig{})
+		require.NoError(t, err)
+	}
+
+	assert.LessOrEqual(t, len(header.compiled), 1)
+}
+
 func TestEveryMarkdownExtensionIsCompiled(t *testing.T) {
 	for _, name := range []string{"header.md", "header.MD", "header.markdown", "header.mdown", "header.mkd", "header.mkdn", "header.mdwn"} {
 		t.Run(name, func(t *testing.T) {

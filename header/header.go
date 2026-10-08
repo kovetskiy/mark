@@ -25,11 +25,12 @@ type Header struct {
 	tmpl     *template.Template
 	std      *stdlib.Lib
 
-	// compiled holds a Markdown header's compiled result by the text its
+	// compiled holds a Markdown header's last compiled result, by the text its
 	// template executed to and the configuration it was compiled with. A
-	// header that names nothing about the document -- or names only what many
-	// documents share -- compiles once rather than once per page, which for a
-	// diagram means once rather than once per page in Chrome.
+	// header that names nothing about the document compiles once rather than
+	// once per page, which for a diagram means once rather than once per page
+	// in Chrome. Only the last is kept: one that names the document never
+	// compiles to the same text twice, and would otherwise hold every page's.
 	compiled map[string]compiledHeader
 	// compiles counts calls to CompileMarkdown, for the tests.
 	compiles int
@@ -154,7 +155,7 @@ func (h *Header) Render(file, title, space string, cfg types.MarkConfig) (string
 	return h.compile(rendered, cfg)
 }
 
-// compile compiles the executed Markdown header, or returns what an earlier
+// compile compiles the executed Markdown header, or returns what the previous
 // call compiled from the same text and configuration. The attachments are a
 // fresh slice each time, so that a caller appending to or editing them does
 // not change what the next page is given.
@@ -176,6 +177,7 @@ func (h *Header) compile(rendered string, cfg types.MarkConfig) (string, []attac
 		}
 
 		cached = compiledHeader{html: html, attachments: attachments}
+		clear(h.compiled)
 		h.compiled[key] = cached
 	}
 
