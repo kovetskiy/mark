@@ -80,9 +80,12 @@ type API struct {
 	// the right collection; see collectionOfV2.
 	contentTypesV2 sync.Map
 
-	isCloudFlag bool
-	isCloudErr  error
-	isCloudOnce sync.Once
+	// isCloudFlag and isCloudErr are the answer cloud memoises once
+	// isCloudKnown is set, all three guarded by isCloudMutex; see cloud.
+	isCloudFlag  bool
+	isCloudErr   error
+	isCloudKnown bool
+	isCloudMutex sync.Mutex
 
 	// moveEndpointMissing holds the error this Confluence's answer to the v1
 	// content move endpoint was reported as, so that a run reorganising a
@@ -533,6 +536,36 @@ func (api *API) Context() context.Context {
 	return api.ctx
 }
 
+// cancelled reports whether err is the caller giving up rather than
+// Confluence answering: a failure while the API's context is done.
+//
+// It asks the context, not the error. net/http's "timeout awaiting response
+// headers" and a dial's "i/o timeout" both satisfy
+// errors.Is(err, context.DeadlineExceeded), and neither is the run being
+// stopped.
+func (api *API) cancelled(err error) bool {
+	return err != nil && api.Context().Err() != nil
+}
+
+// wait sits out d -- the delay before a conflicting write is retried, or
+// between reads of a move that has not settled yet -- and returns the
+// context's error instead if the API's context ends first.
+func (api *API) wait(d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-api.Context().Done():
+		return api.Context().Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // FindRootPage returns the page a chain of parents is created under when no
 // member of it exists yet: the space's home page.
 //
@@ -603,7 +636,16 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 // moment. The retry transport gives up after four attempts, so remembering one
 // of those made a few unlucky seconds fail every remaining file in the space --
 // where before the memoisation the next document would simply have asked again.
-func worthCaching(err error) bool {
+//
+// A cancelled request is never one: it is the caller who stopped asking, and
+// an error that wraps a 404 from one call and a cancellation from the next --
+// the v1 refusal that sends a lookup on to v2 -- says nothing about the
+// answer either.
+func (api *API) worthCaching(err error) bool {
+	if api.cancelled(err) {
+		return false
+	}
+
 	return err == nil ||
 		errors.Is(err, ErrNotFound) ||
 		errors.Is(err, errNoHomePage) ||
@@ -634,7 +676,7 @@ func (api *API) FindHomePage(space string) (*PageInfo, error) {
 
 	page, err := api.fetchHomePage(space)
 
-	if worthCaching(err) {
+	if api.worthCaching(err) {
 		api.spaceCacheMutex.Lock()
 		if api.homePageCache == nil {
 			api.homePageCache = make(map[string]homePageCacheEntry)
@@ -723,7 +765,10 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// space that is not there for the rest of the run. Through the gateway v1
 	// is never asked and v2's answer is the only one, so it stands as it is.
 	if v2Err != nil {
-		if api.gateway {
+		// Nor does v1's answer decide anything when the run was stopped
+		// during the fallback: it was never a conclusion, and wrapping it
+		// would hide the cancellation from errors.Is behind a %v.
+		if api.gateway || api.cancelled(v2Err) {
 			return nil, v2Err
 		}
 		if v1Err == nil {
@@ -1495,8 +1540,11 @@ func (api *API) retryConflictingUpdate(
 	conflict error,
 	put func(version int64) error,
 ) (int64, error) {
-	if api.conflictRetryDelay > 0 {
-		time.Sleep(api.conflictRetryDelay)
+	if err := api.wait(api.conflictRetryDelay); err != nil {
+		return 0, fmt.Errorf(
+			"update of page %q (%s) conflicted (%w), and was not retried: %w",
+			page.Title, page.ID, conflict, err,
+		)
 	}
 
 	current, err := api.currentPageVersion(page)
@@ -1768,7 +1816,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 
 	user, err := api.fetchUserByName(name)
 
-	if !worthCaching(err) {
+	if !api.worthCaching(err) {
 		return user, err
 	}
 
@@ -1895,29 +1943,46 @@ func (api *API) IsCloud() bool {
 // Cloud names it by an Atlassian accountId, Server and Data Center by a
 // username and userKey instead.
 //
-// Memoised through sync.Once, not a plain bool pair: the slow path issues a
-// request, so racing callers would both ask and write the result
-// concurrently, and Once makes a caller arriving mid-request wait for the
-// answer instead of reading a half-written one.
+// Memoised under a mutex held for the whole probe, not a plain bool pair: the
+// slow path issues a request, so racing callers would both ask and write the
+// result concurrently, and the mutex makes a caller arriving mid-request wait
+// for the answer instead of reading a half-written one.
+//
+// Not a sync.Once, because a probe cut short by the API's context is not an
+// answer: Once would have remembered it as "could not identify" for the rest
+// of the API's life, and an API reused after a cancelled ProcessFileContext
+// would have taken Cloud for Server from then on. A cancelled probe answers
+// for that call only, and the next call asks again.
 func (api *API) cloud() (bool, error) {
-	api.isCloudOnce.Do(func() {
-		if api.gateway || isCloudHost(api.v1.base.Hostname()) {
-			api.isCloudFlag = true
-			return
-		}
+	api.isCloudMutex.Lock()
+	defer api.isCloudMutex.Unlock()
 
-		user, err := api.GetCurrentUser()
-		if err != nil {
-			api.isCloudErr = fmt.Errorf("unable to identify the Confluence platform: %w", err)
-		} else {
-			api.isCloudFlag, api.isCloudErr = identifyCloud(user)
-		}
-		if api.isCloudErr != nil {
-			log.Warn().Err(api.isCloudErr).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
-		}
-	})
+	if api.isCloudKnown {
+		return api.isCloudFlag, api.isCloudErr
+	}
 
-	return api.isCloudFlag, api.isCloudErr
+	if api.gateway || (api.v1 != nil && isCloudHost(api.v1.base.Hostname())) {
+		api.isCloudFlag, api.isCloudKnown = true, true
+		return true, nil
+	}
+
+	var isCloud bool
+	user, err := api.GetCurrentUser()
+	if err != nil {
+		err = fmt.Errorf("unable to identify the Confluence platform: %w", err)
+	} else {
+		isCloud, err = identifyCloud(user)
+	}
+	if api.cancelled(err) {
+		return false, err
+	}
+	if err != nil {
+		log.Warn().Err(err).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
+	}
+
+	api.isCloudFlag, api.isCloudErr, api.isCloudKnown = isCloud, err, true
+
+	return isCloud, err
 }
 
 // identifyCloud reads the platform off the current user.
@@ -2393,7 +2458,7 @@ func (api *API) GetSpaceID(spaceKey string) (string, error) {
 
 	id, err := api.fetchSpaceID(spaceKey)
 
-	if !worthCaching(err) {
+	if !api.worthCaching(err) {
 		return id, err
 	}
 
@@ -2470,6 +2535,9 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// being a 404, got a v1 outage cached for the rest of the run. v1's answer
 	// is the one that decides, so v2's is kept for the message only.
 	if err != nil {
+		if api.cancelled(err) {
+			return "", err
+		}
 		if v1Err == nil && v1Response != nil && v1Response.StatusCode != http.StatusOK {
 			v1Err = newErrorStatusNotOK(v1Response)
 		}
@@ -2816,7 +2884,10 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		withHeader("X-Atlassian-Token", "no-check"),
 		withHeader("Accept", "application/json"),
 	)
-	if response == nil {
+	// A response cut short by the run's context is no answer from the action,
+	// however much of it arrived: judged here, a cancelled move was taken for
+	// a closed action and remembered for the rest of the API's life.
+	if response == nil || api.cancelled(err) {
 		return false, newTransportError(
 			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
 		)
@@ -2860,7 +2931,12 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 
 	for attempt := range attempts {
 		if attempt > 0 {
-			time.Sleep(api.moveSettleDelay)
+			if err := api.wait(api.moveSettleDelay); err != nil {
+				return false, fmt.Errorf(
+					"stopped waiting for movepage.action to move %s: %w",
+					api.describeContent(contentID), err,
+				)
+			}
 		}
 
 		placed, verifyErr := api.placedAt(contentID, position, targetID, parentID, before)
@@ -3025,11 +3101,14 @@ func (api *API) reparentContent(contentID, parentID string) error {
 		// it. Here the body is only a passenger, so the whole page is read
 		// again and the move rebuilt from that. Nothing is overwritten this
 		// way, which is also why KeepConcurrentEdits has nothing to refuse.
-		if api.conflictRetryDelay > 0 {
-			time.Sleep(api.conflictRetryDelay)
-		}
-
 		attempted := page.Version.Number + 1
+
+		if err := api.wait(api.conflictRetryDelay); err != nil {
+			return fmt.Errorf(
+				"move of page %q (%s) as version %d conflicted (%w), and was not retried: %w",
+				page.Title, page.ID, attempted, errConflict, err,
+			)
+		}
 
 		page, placed, err = api.readForReparent(contentID, parentID)
 		if err != nil || placed {
@@ -3218,6 +3297,16 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		// same, which is why the status stays in the message and why nothing
 		// here concludes anything about the content itself.
 		if !api.IsCloud() {
+			// IsCloud answers false, and remembers nothing, when its probe
+			// was cancelled. That is no reason to conclude the endpoint is
+			// missing, and remembered, it would send every later Cloud move on
+			// this API down the Data Center fallbacks.
+			if err := api.Context().Err(); err != nil {
+				return fmt.Errorf(
+					"unable to move content %s %s %s: %w", contentID, position, targetID, err,
+				)
+			}
+
 			missing := fmt.Errorf("%w (status: %d)", errNoMoveEndpoint, response.StatusCode)
 			api.moveEndpointMissing.Store(&missing)
 
@@ -3347,7 +3436,11 @@ func requestTarget(response *http.Response) string {
 func newTransportError(response *http.Response, operation string, err error) error {
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
-	if response == nil {
+	//
+	// Nor is there when the request was cancelled, even with a response in
+	// hand: a body cut short by its context does not decode, and blaming an
+	// SSO page for it would send someone looking for a proxy that is not there.
+	if response == nil || requestCancelled(response) {
 		return fmt.Errorf("unable to %s: %w", operation, err)
 	}
 
@@ -3357,4 +3450,10 @@ func newTransportError(response *http.Response, operation string, err error) err
 			"usual cause): %w",
 		operation, requestTarget(response), response.Status, err,
 	)
+}
+
+// requestCancelled reports whether the context the request behind response
+// carried is done; see API.cancelled.
+func requestCancelled(response *http.Response) bool {
+	return response != nil && response.Request != nil && response.Request.Context().Err() != nil
 }
