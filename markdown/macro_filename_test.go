@@ -144,11 +144,14 @@ func TestMacroFileNameKeepsANameThatEndsLikeATitle(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "draft (v2)"), []byte("x"), 0o600))
 
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes 'final'"), []byte("x"), 0o600))
+
 	fileName := nameOnly(dir)
 
 	assert.Equal(t, "draft (v2)", fileName("draft (v2)"))
+	assert.Equal(t, "notes 'final'", fileName("notes 'final'"))
 
-	// Windows has no spelling for a quote in a filename.
+	// Windows has no spelling for a double quote in a filename.
 	if runtime.GOOS == "windows" {
 		return
 	}
