@@ -140,7 +140,7 @@ func v2Collection(pageType string) string {
 // answers for a space or page that has never had a property. Later on, a 404
 // is a failure like any other, since the results already in hand would
 // otherwise be thrown away.
-func listV2[T any](api *API, path string, query map[string]string, describe string) ([]T, error) {
+func listV2[T any](api *API, path []string, query url.Values, describe string) ([]T, error) {
 	var (
 		all    []T
 		cursor string
@@ -154,25 +154,25 @@ func listV2[T any](api *API, path string, query map[string]string, describe stri
 			} `json:"_links"`
 		}
 
-		page := make(map[string]string, len(query)+1)
-		for key, value := range query {
-			page[key] = value
+		page := maps.Clone(query)
+		if page == nil {
+			page = url.Values{}
 		}
 		if cursor != "" {
-			page["cursor"] = cursor
+			page.Set("cursor", cursor)
 		}
 
-		request, err := api.v2().Res(path, &result).Get(page)
+		response, err := api.v2.do(api.Context(), http.MethodGet, path, page, nil, &result)
 		if err != nil {
-			return nil, newTransportError(request, describe, err)
+			return nil, newTransportError(response, describe, err)
 		}
 
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+		if response.StatusCode == http.StatusNotFound && cursor == "" {
 			return nil, nil
 		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if response.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(response)
 		}
 
 		all = append(all, result.Results...)
@@ -195,12 +195,12 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 		return nil, err
 	}
 
-	query := map[string]string{
-		"space-id": spaceID,
-		"status":   status,
+	query := url.Values{
+		"space-id": {spaceID},
+		"status":   {status},
 	}
 	if title != "" {
-		query["title"] = title
+		query.Set("title", title)
 	}
 
 	// One request, not a paged walk: as on v1, the first result is the answer.
@@ -211,15 +211,15 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 		} `json:"_links"`
 	}
 
-	request, err := api.v2().Res(v2Collection(pageType), &result).Get(query)
+	response, err := api.v2.do(api.Context(), http.MethodGet, []string{v2Collection(pageType)}, query, nil, &result)
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("find page %q in space %s", title, space), err,
+			response, fmt.Sprintf("find page %q in space %s", title, space), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, newErrorStatusNotOK(response)
 	}
 
 	api.learnSiteBase(result.Links.Base)
@@ -252,25 +252,25 @@ func (api *API) readContentV2(collection, id string, withBody bool) (*contentV2,
 func (api *API) readContentStatusV2(collection, id string, withBody bool) (*contentV2, int, error) {
 	var result contentV2
 
-	query := map[string]string{}
+	query := url.Values{}
 	if withBody {
-		query["body-format"] = "storage"
+		query.Set("body-format", "storage")
 	}
 
-	request, err := api.v2().Res(collection+"/"+id, &result).Get(query)
+	response, err := api.v2.do(api.Context(), http.MethodGet, []string{collection, id}, query, nil, &result)
 	if err != nil {
 		status := 0
-		if request != nil && request.Raw != nil {
-			status = request.Raw.StatusCode
+		if response != nil {
+			status = response.StatusCode
 		}
-		return nil, status, newTransportError(request, "read "+collection+" "+id, err)
+		return nil, status, newTransportError(response, "read "+collection+" "+id, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, request.Raw.StatusCode, newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return nil, response.StatusCode, newErrorStatusNotOK(response)
 	}
 
-	return &result, request.Raw.StatusCode, nil
+	return &result, response.StatusCode, nil
 }
 
 // lookupContentV2 reads a page or blogpost known only by its id.
@@ -431,15 +431,15 @@ func (api *API) createPageV2(space, pageType, parentID, parentType, title, body 
 
 	var result contentV2
 
-	request, err := api.v2().Res(v2Collection(pageType), &result).Post(payload)
+	response, err := api.v2.do(api.Context(), http.MethodPost, []string{v2Collection(pageType)}, nil, payload, &result)
 	if err != nil {
 		return nil, newTransportError(
-			request, fmt.Sprintf("create page %q in space %s", title, space), err,
+			response, fmt.Sprintf("create page %q in space %s", title, space), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(response))
 	}
 
 	return api.pageInfoV2(result, pageType), nil
@@ -478,15 +478,17 @@ func (api *API) updatePageV2(
 		payload["parentId"] = page.Ancestors[len(page.Ancestors)-1].ID
 	}
 
-	request, err := api.v2().Res(v2Collection(page.Type)+"/"+page.ID, &map[string]any{}).Put(payload)
+	response, err := api.v2.do(
+		api.Context(), http.MethodPut, []string{v2Collection(page.Type), page.ID}, nil, payload, &map[string]any{},
+	)
 	if err != nil {
 		return newTransportError(
-			request, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
+			response, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
 		)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+	if response.StatusCode != http.StatusOK {
+		return newErrorStatusNotOK(response)
 	}
 
 	return nil
@@ -544,7 +546,7 @@ func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
 	}
 
 	found, err := listV2[attachmentV2](
-		api, collection+"/"+pageID+"/attachments", map[string]string{"limit": "250"},
+		api, []string{collection, pageID, "attachments"}, url.Values{"limit": {"250"}},
 		"list attachments of page "+pageID,
 	)
 	if err != nil {
@@ -577,13 +579,13 @@ func (api *API) getPageLabelsV2(page *PageInfo, prefix string) (*LabelInfo, erro
 		Prefix string      `json:"prefix"`
 	}
 
-	query := map[string]string{"limit": "250"}
+	query := url.Values{"limit": {"250"}}
 	if prefix != "" {
-		query["prefix"] = prefix
+		query.Set("prefix", prefix)
 	}
 
 	found, err := listV2[labelV2](
-		api, v2Collection(page.Type)+"/"+page.ID+"/labels", query, "read labels of page "+page.ID,
+		api, []string{v2Collection(page.Type), page.ID, "labels"}, query, "read labels of page "+page.ID,
 	)
 	if err != nil {
 		return nil, err
