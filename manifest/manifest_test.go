@@ -890,6 +890,59 @@ func TestManifestPageByID(t *testing.T) {
 	assert.NotNil(t, shardOf(server, handbook.ID, "a.md"))
 }
 
+// TestManifestPageByIDRefusesASecondSpace: an id names the same page for every
+// space, and one page holds one space's manifest. Two spaces sharing it used to
+// write the same shard twice -- the second write against a version the first
+// had superseded -- and the second space's mapping was lost with Save
+// returning nil. The second space is refused instead, and the first space's
+// mapping is kept.
+func TestManifestPageByIDRefusesASecondSpace(t *testing.T) {
+	store, server := newStore(t)
+	homeID := docsWithHomepage(t, server)
+	server.AddSpace("OPS")
+	handbook := server.AddPage("DOCS", "Team Handbook", "page", homeID)
+	store.SetManifestPage(handbook.ID)
+
+	// A path in the same shard as a.md, which is where the writes collided.
+	other := ""
+	for i := 0; other == "" || manifest.ShardFor(other) != manifest.ShardFor("a.md"); i++ {
+		other = fmt.Sprintf("b%d.md", i)
+	}
+
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "A", ""))
+	err := store.Record("OPS", other, "2", "B", "")
+	require.Error(t, err, "a second space on the same page is refused")
+	assert.Contains(t, err.Error(), "--manifest-page")
+	assert.Contains(t, err.Error(), `"DOCS"`)
+	assert.Contains(t, err.Error(), `"OPS"`)
+	require.NoError(t, store.Save())
+
+	next := newStoreOn(t, server)
+	next.SetManifestPage(handbook.ID)
+	entry, ok, err := next.Lookup("DOCS", "a.md")
+	require.NoError(t, err)
+	require.True(t, ok, "the first space's mapping is kept")
+	assert.Equal(t, "1", entry.PageID)
+}
+
+// TestManifestPageByTitleKeepsSpacesApart: a title is looked up in each space,
+// so two spaces in one run find a page each and keep a manifest each.
+func TestManifestPageByTitleKeepsSpacesApart(t *testing.T) {
+	store, server := newStore(t)
+	homeID := docsWithHomepage(t, server)
+	server.AddSpace("OPS")
+	docs := server.AddPage("DOCS", "Manifest", "page", homeID)
+	ops := server.AddPage("OPS", "Manifest", "page", "")
+	store.SetManifestPage("Manifest")
+
+	require.NoError(t, store.Record("DOCS", "a.md", "1", "A", ""))
+	require.NoError(t, store.Record("OPS", "b.md", "2", "B", ""))
+	require.NoError(t, store.Save())
+
+	assert.NotNil(t, shardOf(server, docs.ID, "a.md"))
+	assert.NotNil(t, shardOf(server, ops.ID, "b.md"))
+}
+
 // TestManifestPageMustExist: a page that cannot be found is refused rather
 // than the mapping being quietly kept somewhere else.
 func TestManifestPageMustExist(t *testing.T) {

@@ -2353,8 +2353,12 @@ publisher has by definition, and on Cloud it is written through the v2 API, so
 a scoped token holding the page scopes is enough. A space holding several
 independent mirrors can give each its own manifest this way. A title is looked
 up in each space the run publishes to; an id is used as it is, and so suits a
-run confined to one space. The page has to exist already: Mark refuses to start
-rather than quietly keep the mapping somewhere else.
+run confined to one space. One page holds one space's manifest, so a run given
+an id that publishes to a second space fails when it reaches it, rather than
+the two spaces overwriting each other's mapping: name the page by title, or
+publish each space in a run of its own with its own `--manifest-prefix`. The
+page has to exist already: Mark refuses to start rather than quietly keep the
+mapping somewhere else.
 
 #### Two projects in one space
 
