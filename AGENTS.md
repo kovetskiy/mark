@@ -33,7 +33,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache |
 | `attachment/` | checksum, upload/update, link rewriting |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |

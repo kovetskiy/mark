@@ -41,6 +41,13 @@ linters:
       - path: _test\.go
         linters:
           - gosec
+      # confluence's client.do reads and closes every response body itself and
+      # hands back an in-memory copy, so there is nothing for its callers to
+      # close. bodyclose stays on for client.go, where the real body is.
+      - path: ^confluence/
+        source: \.do\(
+        linters:
+          - bodyclose
 
 formatters:
   enable:

@@ -84,7 +84,7 @@ func newHTTPClient(insecureSkipVerify bool) *http.Client {
 }
 
 // retryTransport retries requests that Confluence rejected without acting on
-// them. It sits below gopencils, which is configured not to retry, so this is
+// them. It sits below client.do, which does not retry on its own, so this is
 // the only place retries happen.
 type retryTransport struct {
 	base  http.RoundTripper
@@ -200,7 +200,7 @@ func backoffFor(attempt int, retryAfter string, now time.Time) time.Duration {
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// A request whose body cannot be rewound must not be replayed. net/http
-	// populates GetBody for the in-memory body types gopencils uses.
+	// populates GetBody for the in-memory body client.do sends.
 	canReplay := req.Body == nil || req.GetBody != nil
 
 	var lastResp *http.Response
