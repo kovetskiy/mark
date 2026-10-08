@@ -279,8 +279,6 @@ func expandDirectives(
 ) (*template.Template, []byte, []string, error) {
 	var attachments []string
 
-	// One resolver for the whole expansion: it remembers what it read, and a
-	// macro applied on every pass sees the same values again.
 	resolve := macroFileName(filepath.Dir(path))
 
 	for pass := 0; pass < maxIncludePasses; pass++ {
@@ -339,28 +337,13 @@ func expandDirectives(
 // handed on, for the upload to refuse, only when it is the destination itself
 // and nothing inside the project answered; a title that reaches outside is just
 // a title.
-//
-// The function returned remembers each value it has read.
 func macroFileName(base string) func(string) (string, bool) {
-	type resolved struct {
-		name   string
-		isFile bool
-	}
-
-	seen := map[string]resolved{}
-
 	return func(value string) (string, bool) {
-		r, ok := seen[value]
-		if !ok {
-			r.name, r.isFile = readMacroFileName(base, value)
-			seen[value] = r
-		}
-
-		return r.name, r.isFile
+		return readMacroFileName(base, value)
 	}
 }
 
-// readMacroFileName is macroFileName without the memory.
+// readMacroFileName is macroFileName for one value.
 func readMacroFileName(base, name string) (string, bool) {
 	destinations := []string{name}
 	if match := imageTitle.FindStringSubmatch(name); match != nil {
