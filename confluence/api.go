@@ -1960,6 +1960,18 @@ func (api *API) cloud() (bool, error) {
 	return api.isCloudFlag, api.isCloudErr
 }
 
+// definitelyNotCloud reports whether the target was identified as Server or
+// Data Center, as opposed to not identified at all.
+//
+// It, not !IsCloud, gates the v2 folder listings in eachDirectChild: IsCloud is
+// also false when identification failed, and skipping the listing then is the
+// bug this exists to avoid -- a page holding folders read as childless.
+func (api *API) definitelyNotCloud() bool {
+	isCloud, err := api.cloud()
+
+	return !isCloud && err == nil
+}
+
 // identifyCloud reads the platform off the current user.
 func identifyCloud(user *User) (bool, error) {
 	switch {
@@ -2186,9 +2198,65 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 // An exact title wins; failing that, one differing only in case is taken, as
 // the search this replaces would have matched it.
 //
-// A 404 on the first page is read as "none", as HasChildFolders reads it: a
-// deployment that does not route the v2 listing has no folders to find.
+// A 404 on the first page is read as "none", and the listing is skipped once
+// Cloud is ruled out; see eachDirectChild.
 func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo, error) {
+	var exact, folded string
+	err := api.eachDirectChild(
+		parentID, parentType,
+		fmt.Sprintf("look for folder %q under %s", title, parentID),
+		func(id, typ, childTitle string) bool {
+			if typ != "folder" {
+				return false
+			}
+			if childTitle == title {
+				exact = id
+				return true
+			}
+			if folded == "" && strings.EqualFold(childTitle, title) {
+				folded = id
+			}
+			return false
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case exact != "":
+		return api.GetFolderByID(exact)
+	case folded != "":
+		return api.GetFolderByID(folded)
+	default:
+		return nil, nil
+	}
+}
+
+// eachDirectChild calls visit with every direct child of a page or a folder,
+// in the order the v2 listing gives them, until visit answers true. parentType
+// is "page" or "folder", and picks the listing to read; operation names the
+// request in a transport error.
+//
+// A 404 on the first page reads as an empty listing, since a deployment
+// without this route has no folders either; past the first page it's a real
+// failure, since the listing it interrupts is already known partial.
+//
+// Skipped entirely once definitelyNotCloud: folders are Cloud-only, so Server
+// and Data Center never need the request.
+func (api *API) eachDirectChild(
+	parentID, parentType, operation string,
+	visit func(id, typ, title string) (stop bool),
+) error {
+	if api.definitelyNotCloud() {
+		log.Debug().Msgf(
+			"not listing the children of %s %s: Confluence Cloud was ruled out",
+			parentType, parentID,
+		)
+
+		return nil
+	}
+
 	const pageSize = 100
 
 	collection := "pages"
@@ -2196,7 +2264,6 @@ func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo
 		collection = "folders"
 	}
 
-	folded := ""
 	var cursor string
 	for {
 		result := struct {
@@ -2220,45 +2287,31 @@ func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo
 			collection+"/"+parentID+"/direct-children", &result,
 		).Get(query)
 		if err != nil {
-			return nil, newTransportError(
-				request, fmt.Sprintf("look for folder %q under %s", title, parentID), err,
-			)
+			return newTransportError(request, operation, err)
 		}
 
-		// First page only, as in HasChildFolders: a 404 partway through is a
-		// real failure.
 		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return nil, nil
+			return nil
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+			return newErrorStatusNotOK(request)
 		}
 
 		for _, child := range result.Results {
-			if child.Type != "folder" {
-				continue
-			}
-			if child.Title == title {
-				return api.GetFolderByID(child.ID)
-			}
-			if folded == "" && strings.EqualFold(child.Title, title) {
-				folded = child.ID
+			if visit(child.ID, child.Type, child.Title) {
+				return nil
 			}
 		}
 
 		next := nextCursor(result.Links.Next)
+		// A server that hands back the cursor it was given would otherwise keep
+		// this loop going for as long as it keeps answering.
 		if next == "" || next == cursor || len(result.Results) == 0 {
-			break
+			return nil
 		}
 		cursor = next
 	}
-
-	if folded != "" {
-		return api.GetFolderByID(folded)
-	}
-
-	return nil, nil
 }
 
 // FindRootFolder finds the folder with a title at the root of a space --
@@ -2578,66 +2631,25 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 // folders therefore looks childless there -- while trashing it takes the
 // folders, and every page inside them, along with it.
 //
-// A deployment that does not route the v2 children endpoint is a deployment
-// without folders, so a 404 is read as "none" rather than as a failure: there
-// is nothing there for the answer to be wrong about. Any other status is a real
-// failure and is reported, because a caller about to delete something should
-// not be told "no children" by a request that did not work.
+// A 404 is read as "none", any other failure is reported, and the request is
+// skipped once Cloud is ruled out; see eachDirectChild.
 //
 // Stops at the first folder it sees. The answer is a yes or a no, and the rest
 // of the listing cannot change it.
 func (api *API) HasChildFolders(parentID string) (bool, error) {
-	const pageSize = 100
-
-	var cursor string
-	for {
-		result := struct {
-			Results []struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
-		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res(
-			"pages/"+parentID+"/direct-children", &result,
-		).Get(query)
-		if err != nil {
-			return false, newTransportError(request, "list direct children of "+parentID, err)
-		}
-
-		// First page only: a 404 partway through is a real failure, and reading
-		// it as "none" would answer from a listing already known to be partial.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return false, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return false, newErrorStatusNotOK(request)
-		}
-
-		for _, child := range result.Results {
-			if child.Type == "folder" {
-				return true, nil
-			}
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			return false, nil
-		}
-		cursor = next
+	found := false
+	err := api.eachDirectChild(
+		parentID, "page", "list direct children of "+parentID,
+		func(_, typ, _ string) bool {
+			found = typ == "folder"
+			return found
+		},
+	)
+	if err != nil {
+		return false, err
 	}
+
+	return found, nil
 }
 
 // DeletePage moves a page to the space's trash.
