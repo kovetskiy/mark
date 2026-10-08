@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -262,4 +263,37 @@ func TestAFilenameWithBracketsIsNotAPattern(t *testing.T) {
 	require.Len(t, stored, 1)
 	assert.Equal(t, "files_report[2024].pdf", stored[0].Filename)
 	assert.Contains(t, server.Page(target.ID).Body, `ri:filename="files_report[2024].pdf"`)
+}
+
+// TestALinkedFileWithAColonIsAttached covers a filename that holds a colon,
+// which Linux and macOS allow. What comes before the colon is shaped like a URI
+// scheme, but it is no scheme a link is written with, so the link names a file
+// beside the document.
+func TestALinkedFileWithAColonIsAttached(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows filename cannot hold a colon")
+	}
+
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes:v2.pdf"), []byte("notes\n"), 0o600))
+
+	file := writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\nSee [the spec](notes:v2.pdf).\n")
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	target, err := ProcessFile(file, api, Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: file, AttachReferenced: true, Output: io.Discard,
+	})
+	require.NoError(t, err)
+
+	stored := server.Attachments(target.ID)
+	require.Len(t, stored, 1)
+	assert.Equal(t, "notes:v2.pdf", stored[0].Filename)
+	assert.Contains(t, server.Page(target.ID).Body, `<ri:attachment ri:filename="notes:v2.pdf"`)
 }

@@ -322,37 +322,38 @@ func isLocalFileReference(destination string) bool {
 }
 
 // NamesBesideDocument reports whether a destination can name a file next to the
-// document: not empty, not an anchor, not rooted, and not a URI of any scheme.
+// document: not empty, not an anchor, not rooted, and not a URI.
 //
-// A scheme is anything URI-shaped ("mailto:", "data:", "https:"), not only the
-// "://" form, and a protocol-relative "//host/path" is caught as rooted.
+// A protocol-relative "//host/path" is caught as rooted.
 func NamesBesideDocument(destination string) bool {
 	if destination == "" || strings.HasPrefix(destination, "#") || isRooted(destination) {
 		return false
 	}
 
-	return !hasURIScheme(destination)
+	return !isURI(destination)
 }
 
-// hasURIScheme reports whether a destination opens with an RFC 3986 scheme. A
-// single letter is a drive letter, which isRooted has already answered for.
-func hasURIScheme(destination string) bool {
-	colon := strings.IndexByte(destination, ':')
-	if colon < 2 {
-		return false
+// opaqueSchemes are the schemes a link is written with and without the "//"
+// after the colon: "mailto:", "data:", and "https:example.com" alike.
+var opaqueSchemes = []string{
+	"mailto", "tel", "sms", "data", "javascript", "urn", "news", "magnet",
+	"xmpp", "about", "blob", "http", "https", "ftp", "file",
+}
+
+// isURI reports whether a destination is a URI rather than a file.
+//
+// Any "://" is one. Without it, only the schemes in opaqueSchemes count: a
+// Linux or macOS filename may hold a colon, and "notes:v2.pdf" or
+// "shot:1.png" is shaped like a scheme without being one, so taking every
+// scheme-shaped prefix for a URI would leave such a file unattached.
+func isURI(destination string) bool {
+	if strings.Contains(destination, "://") {
+		return true
 	}
 
-	for i := 0; i < colon; i++ {
-		c := destination[i]
-		letter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-		later := (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'
+	scheme, _, found := strings.Cut(destination, ":")
 
-		if !letter && (i == 0 || !later) {
-			return false
-		}
-	}
-
-	return true
+	return found && slices.Contains(opaqueSchemes, strings.ToLower(scheme))
 }
 
 // isRooted reports whether a destination names a place from the root of a
