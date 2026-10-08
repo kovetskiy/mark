@@ -21,6 +21,12 @@ type Macro struct {
 	Template *template.Template
 	Config   string
 	Name     string
+
+	// defined is, for an inline macro, every tree its body parsed into: its
+	// own and one per {{ define }} in it, as they were when the macro was
+	// defined. A later definition of the same name may have replaced one of
+	// them in the page's set since.
+	defined []*parse.Tree
 }
 
 // MacroDirective contains parsed parameters from a <!-- Macro: ... --> block.
@@ -171,17 +177,51 @@ func (macro *Macro) inlineTemplate(groups [][]byte) (*template.Template, error) 
 		return nil, fmt.Errorf("unable to clone inline template: %w", err)
 	}
 
-	tree := macro.Template.Copy()
-	substituteCaptures(tree.Root, func(s string) string {
-		return replaceCaptures(s, groups)
-	})
+	trees := macro.defined
+	if len(trees) == 0 {
+		trees = []*parse.Tree{macro.Template.Tree}
+	}
 
-	tmpl, err = tmpl.AddParseTree(tmpl.Name(), tree)
-	if err != nil {
-		return nil, fmt.Errorf("unable to prepare inline template: %w", err)
+	// Every tree the body parsed, not just its own: a ${n} inside one of its
+	// {{ define }}s was otherwise published as written.
+	for _, defined := range trees {
+		tree := defined.Copy()
+		substituteCaptures(tree.Root, func(s string) string {
+			return replaceCaptures(s, groups)
+		})
+
+		_, err = tmpl.AddParseTree(tree.Name, tree)
+		if err != nil {
+			return nil, fmt.Errorf("unable to prepare inline template: %w", err)
+		}
 	}
 
 	return tmpl, nil
+}
+
+// treesOf maps each template in set to its parse tree.
+func treesOf(set *template.Template) map[string]*parse.Tree {
+	trees := map[string]*parse.Tree{}
+
+	for _, t := range set.Templates() {
+		trees[t.Name()] = t.Tree
+	}
+
+	return trees
+}
+
+// definedTrees is the trees set holds now that it did not hold in before:
+// what a Parse into set since then defined.
+func definedTrees(set *template.Template, before map[string]*parse.Tree) []*parse.Tree {
+	var trees []*parse.Tree
+
+	for _, t := range set.Templates() {
+		if t.Tree != nil && before[t.Name()] != t.Tree {
+			trees = append(trees, t.Tree)
+		}
+	}
+
+	return trees
 }
 
 // substituteCaptures applies replace to the places a capture may stand in a
@@ -443,10 +483,14 @@ func ExtractMacros(
 			// be parsed with those delimiters and its own {{ }} left as literal
 			// text -- with no error, since a template containing no recognised
 			// actions parses fine.
+			before := treesOf(templates)
+
 			m.Template, err = templates.New(dir.Template).Delims("{{", "}}").Parse(body)
 			if err != nil {
 				return nil, contents, fmt.Errorf("unable to parse template: %w", err)
 			}
+
+			m.defined = definedTrees(templates, before)
 		} else {
 			m.Template, err = includes.LoadTemplate(base, includePath, dir.Template, "{{", "}}", templates)
 			if err != nil {
