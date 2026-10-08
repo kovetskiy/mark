@@ -1956,18 +1956,6 @@ func (api *API) cloud() (bool, error) {
 	return api.isCloudFlag, api.isCloudErr
 }
 
-// definitelyNotCloud reports whether the target was identified as Server or
-// Data Center, as opposed to not identified at all.
-//
-// It, not !IsCloud, gates the v2 folder listings in eachDirectChild: IsCloud is
-// also false when identification failed, and skipping the listing then is the
-// bug this exists to avoid -- a page holding folders read as childless.
-func (api *API) definitelyNotCloud() bool {
-	isCloud, err := api.cloud()
-
-	return !isCloud && err == nil
-}
-
 // identifyCloud reads the platform off the current user.
 func identifyCloud(user *User) (bool, error) {
 	switch {
@@ -2238,13 +2226,15 @@ func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo
 // without this route has no folders either; past the first page it's a real
 // failure, since the listing it interrupts is already known partial.
 //
-// Skipped entirely once definitelyNotCloud: folders are Cloud-only, so Server
-// and Data Center never need the request.
+// Skipped entirely once the target is identified as Server or Data Center:
+// folders are Cloud-only. Not on !IsCloud, which is also false when
+// identification failed -- skipping then reads a page holding folders as
+// childless.
 func (api *API) eachDirectChild(
 	parentID, parentType, operation string,
 	visit func(id, typ, title string) (stop bool),
 ) error {
-	if api.definitelyNotCloud() {
+	if isCloud, err := api.cloud(); err == nil && !isCloud {
 		log.Debug().Msgf(
 			"not listing the children of %s %s: Confluence Cloud was ruled out",
 			parentType, parentID,
