@@ -180,3 +180,40 @@ Text.
 	assert.Contains(t, err.Error(), "page header attachment")
 	assert.Equal(t, 0, server.CountRequests("POST", "/child/attachment"))
 }
+
+// TestPageHeaderAttachmentClashFailsADryRun: a dry run that reports success
+// where the real run refuses the page is not a dry run of it. Both a declared
+// attachment and one the document only references are covered.
+func TestPageHeaderAttachmentClashFailsADryRun(t *testing.T) {
+	for _, mode := range []string{"dry-run", "compile-only"} {
+		t.Run(mode, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			docDir := t.TempDir()
+			headerDir := t.TempDir()
+
+			writeFile(t, docDir, "logo.png", "document logo")
+			writeFile(t, docDir, "chart.png", "document chart")
+			writeFile(t, headerDir, "logo.png", "header logo")
+			writeFile(t, headerDir, "chart.png", "header chart")
+
+			file := writeFile(t, docDir, "doc.md", `<!-- Space: DOCS -->
+<!-- Parent: Parent -->
+<!-- Title: Dry Clash -->
+<!-- Attachment: logo.png -->
+
+![chart](chart.png)
+`)
+			for _, header := range []string{"![logo](logo.png)\n", "![chart](chart.png)\n"} {
+				config := publishConfig(server.URL, file)
+				config.DryRun = mode == "dry-run"
+				config.CompileOnly = mode == "compile-only"
+				config.Output = &bytes.Buffer{}
+				config.PageHeader = writeFile(t, headerDir, "header.md", header)
+
+				err := Run(config)
+				require.Error(t, err, header)
+				assert.Contains(t, err.Error(), "page header attachment")
+			}
+		})
+	}
+}

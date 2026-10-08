@@ -1064,11 +1064,28 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				previewedTitle = previewed.Title
 			}
 
-			headerHTML, _, err := renderHeader(pageHeader, file, meta, previewedTitle, config.Space, cfg)
+			headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, previewedTitle, config.Space, cfg)
 			if err != nil {
 				return nil, nil, err
 			}
 			html = headerHTML + html
+
+			// The clash a real run refuses, so that this one does not report
+			// success for a page that run will fail on. Declared files are read
+			// only when there is something to clash with them.
+			if len(headerAttachments) > 0 {
+				var declared []attachment.Attachment
+				if meta != nil {
+					declared, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+					if err != nil {
+						return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
+					}
+				}
+
+				if _, err := withHeaderAttachments(file, declared, inline, headerAttachments); err != nil {
+					return nil, nil, err
+				}
+			}
 
 			if compare {
 				var relinked bool
