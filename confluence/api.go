@@ -60,6 +60,11 @@ type API struct {
 	// resource derived from them; see resource().
 	bearerToken string
 
+	// username is the login mark authenticates with, empty for a Personal
+	// Access Token. Whoever it names is the current user by definition, which
+	// restrictionUserCloud relies on when the profile does not repeat it.
+	username string
+
 	// gateway is set when the base URL is the api.atlassian.com gateway, the
 	// route a scoped API token takes. The page calls go to v2 there, since a
 	// scoped token is not entitled to v1; see v2pages.go.
@@ -490,6 +495,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		restV2:        restV2,
 		site:          site,
 		BaseURL:       baseURL,
+		username:      username,
 		gateway:       isGatewayURL(baseURL),
 		pageCache:     make(map[string]*PageInfo),
 		pageCacheByID: make(map[string]*PageInfo),
@@ -1973,13 +1979,18 @@ func identifyCloud(user *User) (bool, error) {
 // Cloud restrictions take an accountId, so the name has to be looked up. The
 // authenticated user is checked first: --edit-lock passes the configured
 // username, which on Cloud is the account's email, and the user search matches
-// full names, so it would not find it. Anyone else goes through the search, and
-// a name that resolves to nobody is an error. It used to fall back to the
-// authenticated user, which quietly locked the page against the very person it
-// was meant to leave editable.
+// full names, so it would not find it. The login itself is matched against the
+// credential mark authenticated with rather than against the profile: Cloud's
+// profile-visibility settings can hide the email from /user/current, and an
+// alias login is not the address the profile reports, yet either way the login
+// names the current user. Anyone else goes through the search, and a name that
+// resolves to nobody is an error. It used to fall back to the authenticated
+// user, which quietly locked the page against the very person it was meant to
+// leave editable.
 func (api *API) restrictionUserCloud(name string) (*User, error) {
 	current, currentErr := api.GetCurrentUser()
-	if currentErr == nil && (name == "" || current.isNamed(name)) {
+	isLogin := api.username != "" && strings.EqualFold(name, api.username)
+	if currentErr == nil && (name == "" || isLogin || current.isNamed(name)) {
 		return current, nil
 	}
 	if name == "" {
