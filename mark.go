@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	// SHA-1 is used only as a content fingerprint for --changes-only, never as
 	// a security primitive. The digest is embedded in the page version message
@@ -2715,15 +2716,6 @@ func spaceOf(meta *metadata.Meta) string {
 	return meta.Space
 }
 
-// spaceOr is the document's space, or fallback when it has none.
-func spaceOr(meta *metadata.Meta, fallback string) string {
-	if space := spaceOf(meta); space != "" {
-		return space
-	}
-
-	return fallback
-}
-
 func titleOf(meta *metadata.Meta) string {
 	if meta == nil {
 		return ""
@@ -3034,7 +3026,7 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 // a name with a different document file would silently replace it.
 func withHeaderAttachments(file string, declared, inline, fromHeader []attachment.Attachment) ([]attachment.Attachment, error) {
 	taken := make(map[string]attachment.Attachment, len(declared)+len(inline))
-	for _, a := range append(append([]attachment.Attachment{}, declared...), inline...) {
+	for _, a := range slices.Concat(declared, inline) {
 		taken[a.Filename] = a
 	}
 
@@ -3071,12 +3063,7 @@ func sameAttachment(a, b attachment.Attachment) bool {
 func renderHeader(
 	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg types.MarkConfig,
 ) (string, []attachment.Attachment, error) {
-	title := titleOf(meta)
-	if title == "" {
-		title = fallbackTitle
-	}
-
-	return pageHeader.Render(file, title, spaceOr(meta, fallbackSpace), cfg)
+	return pageHeader.Render(file, cmp.Or(titleOf(meta), fallbackTitle), cmp.Or(spaceOf(meta), fallbackSpace), cfg)
 }
 
 // documentConfig is the compile configuration for one document: the run's,
