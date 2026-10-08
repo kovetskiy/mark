@@ -131,3 +131,44 @@ func TestExtractMacros_LeavesInputUntouched(t *testing.T) {
 	assert.Equal(t, doc, string(input), "the caller's buffer must not change")
 	assert.NotContains(t, string(rest), "Macro:")
 }
+
+// Captures were put only into the tree of the body itself, so a template the
+// body defines with {{ define }} kept its ${n} and published it literally.
+func TestApply_InlineCapturesReachDefinedTemplates(t *testing.T) {
+	t.Run("define", func(t *testing.T) {
+		out, err := applyAll(t, `<!-- Macro: MAC
+     Template: #inline
+     inline: "{{ define \"inner\" }}IN ${0}{{ end }}{{ template \"inner\" }} out ${0}" -->
+
+MAC
+`)
+		require.NoError(t, err)
+		assert.Contains(t, out, "IN MAC out MAC")
+		assert.NotContains(t, out, "${0}")
+	})
+
+	t.Run("capture stays text", func(t *testing.T) {
+		out, err := applyAll(t, `<!-- Macro: SAY\((.*?)\)
+     Template: #inline
+     inline: "{{ define \"say\" }}<b>${1}</b>{{ end }}{{ template \"say\" }}" -->
+
+SAY(helm uses {{ .Values.x }})
+`)
+		require.NoError(t, err)
+		assert.Contains(t, out, "<b>helm uses {{ .Values.x }}</b>")
+	})
+
+	t.Run("each macro keeps its own definition", func(t *testing.T) {
+		out, err := applyAll(t, `<!-- Macro: A\((\w+)\)
+     Template: #inline
+     inline: "{{ define \"inner\" }}a=${1}{{ end }}{{ template \"inner\" }}" -->
+<!-- Macro: B\((\w+)\)
+     Template: #inline
+     inline: "{{ define \"inner\" }}b=${1}{{ end }}{{ template \"inner\" }}" -->
+
+A(x) B(y)
+`)
+		require.NoError(t, err)
+		assert.Contains(t, out, "a=x b=y")
+	})
+}
