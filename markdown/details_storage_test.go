@@ -103,3 +103,56 @@ func TestDetailsBodyWithHTMLOnlyMarkupIsRepaired(t *testing.T) {
 		require.NoError(t, CheckWellFormed(out), name)
 	}
 }
+
+// TestDetailsClosesOmittedEndTags covers the end tags HTML lets an author leave
+// off, written inside a <details>. The body used to be rendered back out of
+// html.Parse, which closed them; copied as written, `<td>a<td>b</table>` is not
+// well-formed XML and Confluence refuses the whole page.
+func TestDetailsClosesOmittedEndTags(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "table cells and rows",
+			input: "<details><summary>S</summary><table><tr><td>a<td>b<tr><th>c</table></details>\n",
+			want:  `<table><tr><td>a</td><td>b</td></tr><tr><th>c</th></tr></table>`,
+		},
+		{
+			name:  "paragraphs",
+			input: "<details><summary>S</summary><p>one<p>two</details>\n",
+			want:  `<p>one</p><p>two</p></ac:rich-text-body>`,
+		},
+		{
+			name:  "list items",
+			input: "<details><summary>S</summary><ul><li>a<li>b<p>c</ul></details>\n",
+			want:  `<ul><li>a</li><li>b<p>c</p></li></ul>`,
+		},
+		{
+			name: "storage-format markup alongside",
+			input: "<details><summary>S</summary><table><tr><td>" +
+				`<ac:link><ri:page ri:content-title="Other"/><ac:plain-text-link-body><![CDATA[a<td>]]></ac:plain-text-link-body></ac:link>` +
+				`<td><ac:emoticon ac:name="smile"/> b</table></details>` + "\n",
+			want: `<table><tr><td>` +
+				`<ac:link><ri:page ri:content-title="Other"/><ac:plain-text-link-body><![CDATA[a<td>]]></ac:plain-text-link-body></ac:link>` +
+				`</td><td><ac:emoticon ac:name="smile"/> b</td></tr></table>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for name, compile := range compilers {
+				out, _, err := compile([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
+				require.NoError(t, err, name)
+
+				assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`, name)
+				assert.Contains(t, out, tt.want, name)
+				assert.NoError(t, CheckWellFormed(out), name)
+			}
+		})
+	}
+}
