@@ -1926,19 +1926,15 @@ func (api *API) IsCloud() bool {
 	return isCloud
 }
 
-// cloud identifies the target, at most once per API value.
+// cloud identifies the target, at most once per API value: a known Cloud
+// host answers without a request, otherwise the current user decides --
+// Cloud names it by an Atlassian accountId, Server and Data Center by a
+// username and userKey instead.
 //
-// A known Cloud host answers without a request. Anything else is identified by
-// the current user, which every authenticated user may read on both platforms
-// and which they describe in incompatible terms: Cloud names a user by its
-// Atlassian accountId, while Server and Data Center have no accountId and name
-// one by username and userKey instead.
-//
-// The result is memoised through sync.Once rather than a plain bool pair: the
-// slow path issues an HTTP request, so two callers racing here would both ask
-// and would also write the result concurrently. Once also guarantees that a
-// caller arriving while the request is in flight waits for the answer instead of
-// reading a half-written one.
+// Memoised through sync.Once, not a plain bool pair: the slow path issues a
+// request, so racing callers would both ask and write the result
+// concurrently, and Once makes a caller arriving mid-request wait for the
+// answer instead of reading a half-written one.
 func (api *API) cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
 		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
