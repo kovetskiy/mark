@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 func TestMacroThenIncludeTransformerPipeline(t *testing.T) {
@@ -41,13 +41,14 @@ Main body text.`)
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(pipeline, 10),
+				util.Prioritized[parser.ASTTransformer](pipeline, 10),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)
@@ -95,13 +96,14 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(pipeline, 10),
+				util.Prioritized[parser.ASTTransformer](pipeline, 10),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)
@@ -135,13 +137,14 @@ func TestCircularIncludeLoopErrorPipeline(t *testing.T) {
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(pipeline, 10),
+				util.Prioritized[parser.ASTTransformer](pipeline, 10),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)

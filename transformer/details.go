@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // DetailsTransformer walks the AST and transforms HTML <details><summary> tags into
@@ -42,7 +42,7 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 		}
 
 		switch n := node.(type) {
-		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *ast.String:
+		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text:
 			// Text inside an inline code span is literal by definition:
 			// `<details>` in prose documents the tag, it does not open one.
 			if parent := node.Parent(); parent != nil && parent.Kind() == ast.KindCodeSpan {
@@ -111,13 +111,11 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 			// A folded sibling's bytes moved into the fragment that opened the
 			// macro; remove it outright so nothing is emitted twice.
 			if item.newB == nil {
-				parent.RemoveChild(parent, item.node)
+				parent.RemoveChild(item.node)
 				continue
 			}
-			textNode := ast.NewText()
-			textNode.SetAttribute([]byte("replacement-content"), item.newB)
-			parent.InsertBefore(parent, item.node, textNode)
-			parent.RemoveChild(parent, item.node)
+			parent.InsertBefore(item.node, newReplacementNode(item.newB))
+			parent.RemoveChild(item.node)
 		}
 	}
 }

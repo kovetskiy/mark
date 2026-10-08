@@ -6,8 +6,7 @@ import (
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // TestConstructorsHonourHTMLOptions covers the html options every constructor
@@ -23,7 +22,7 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 	lib := newStdlib(t)
 	opts := []html.Option{html.WithUnsafe(), html.WithHardWraps()}
 
-	constructors := map[string]renderer.NodeRenderer{
+	constructors := map[string]html.Extension{
 		"blockquote":        crenderer.NewConfluenceBlockQuoteRenderer(opts...),
 		"codeblock":         crenderer.NewConfluenceCodeBlockRenderer(lib, opts...),
 		"definitionlist":    crenderer.NewConfluenceDefinitionListRenderer(opts...),
@@ -50,7 +49,7 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 }
 
 // htmlConfig digs out the html.Config each renderer embeds.
-func htmlConfig(t *testing.T, nodeRenderer renderer.NodeRenderer) html.Config {
+func htmlConfig(t *testing.T, nodeRenderer html.Extension) html.Config {
 	t.Helper()
 
 	switch r := nodeRenderer.(type) {

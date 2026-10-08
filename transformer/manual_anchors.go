@@ -5,9 +5,9 @@ import (
 	"html"
 	"regexp"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // manualAnchor matches an anchor written by hand: an <a> carrying a name or an
@@ -85,16 +85,13 @@ func (t *ManualAnchorTransformer) Transform(doc *ast.Document, reader text.Reade
 		}
 
 		if item.value == nil {
-			parent.RemoveChild(parent, item.node)
+			parent.RemoveChild(item.node)
 
 			continue
 		}
 
-		macro := ast.NewString(item.value)
-		macro.SetCode(true)
-
-		parent.InsertBefore(parent, item.node, macro)
-		parent.RemoveChild(parent, item.node)
+		parent.InsertBefore(item.node, newVerbatim(item.value))
+		parent.RemoveChild(item.node)
 	}
 }
 
@@ -134,14 +131,7 @@ func anchorMacro(name string) []byte {
 
 // rawHTMLBytes joins the segments of a raw HTML node.
 func rawHTMLBytes(node *ast.RawHTML, source []byte) []byte {
-	var buf bytes.Buffer
-
-	for i := 0; i < node.Segments.Len(); i++ {
-		segment := node.Segments.At(i)
-		buf.Write(segment.Value(source))
-	}
-
-	return buf.Bytes()
+	return bytes.Clone(node.Value.Bytes(source))
 }
 
 // firstNonEmpty returns the first group that matched, since the pattern offers

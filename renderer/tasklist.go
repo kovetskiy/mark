@@ -3,33 +3,38 @@ package renderer
 import (
 	"fmt"
 
-	"github.com/yuin/goldmark/ast"
-	ext_ast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceTaskListRenderer renders GFM task lists as Confluence ac:task-list elements.
 type ConfluenceTaskListRenderer struct {
 	html.Config
-	taskID int
+
+	// options are the html options the constructor was given, which apply
+	// on top of the ones the renderer is registered with.
+	options []html.Option
+	taskID  int
 }
 
-func NewConfluenceTaskListRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceTaskListRenderer{
-		Config: html.NewConfig(),
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+func NewConfluenceTaskListRenderer(opts ...html.Option) html.Extension {
+	r := &ConfluenceTaskListRenderer{}
+	r.options = opts
+	r.Config = withOptions(html.Config{}.Default(), opts)
 	return r
 }
 
-func (r *ConfluenceTaskListRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindList, r.renderList)
-	reg.Register(ast.KindListItem, r.renderListItem)
-	reg.Register(ext_ast.KindTaskCheckBox, r.renderTaskCheckBox)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceTaskListRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.Config = withOptions(*cfg, r.options)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindList:                  nodeRenderer(r.renderList),
+		ast.KindListItem:              nodeRenderer(r.renderListItem),
+		ctransformer.KindTaskCheckBox: nodeRenderer(r.renderTaskCheckBox),
+	})}
 }
 
 // isTaskList returns true only if every top-level list item is a task item.
@@ -109,8 +114,9 @@ func closesRun(item ast.Node) bool {
 }
 
 // getTaskCheckBox returns the TaskCheckBox node for a ListItem, or nil if not a task item.
-// The structure is: ListItem -> TextBlock -> TaskCheckBox
-func getTaskCheckBox(item ast.Node) *ext_ast.TaskCheckBox {
+// The structure is: ListItem -> TextBlock -> TaskCheckBox, which
+// TaskCheckBoxTransformer builds from the status goldmark records on the item.
+func getTaskCheckBox(item ast.Node) *ctransformer.TaskCheckBox {
 	fc := item.FirstChild()
 	if fc == nil {
 		return nil
@@ -119,7 +125,7 @@ func getTaskCheckBox(item ast.Node) *ext_ast.TaskCheckBox {
 	if gfc == nil {
 		return nil
 	}
-	checkbox, ok := gfc.(*ext_ast.TaskCheckBox)
+	checkbox, ok := gfc.(*ctransformer.TaskCheckBox)
 	if !ok {
 		return nil
 	}
@@ -210,7 +216,7 @@ func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []by
 }
 
 // writeTaskOpening writes everything an ac:task needs before its body.
-func (r *ConfluenceTaskListRenderer) writeTaskOpening(w util.BufWriter, checkbox *ext_ast.TaskCheckBox) {
+func (r *ConfluenceTaskListRenderer) writeTaskOpening(w util.BufWriter, checkbox *ctransformer.TaskCheckBox) {
 	r.taskID++
 
 	status := "incomplete"
@@ -239,7 +245,7 @@ func (r *ConfluenceTaskListRenderer) renderTaskCheckBox(w util.BufWriter, source
 	}
 	// Fallback: emit a textual marker so completion state is preserved.
 	if entering {
-		checkbox := node.(*ext_ast.TaskCheckBox)
+		checkbox := node.(*ctransformer.TaskCheckBox)
 		if checkbox.IsChecked {
 			_, _ = w.WriteString("[x] ")
 		} else {
@@ -263,7 +269,7 @@ func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source
 			_, _ = fmt.Fprintf(w, " start=\"%d\"", n.Start)
 		}
 		if n.Attributes() != nil {
-			html.RenderAttributes(w, n, html.ListAttributeFilter)
+			html.RenderAttributes(w, source, n, html.ListAttributeFilter, nil)
 		}
 		_, _ = w.WriteString(">\n")
 	} else {
@@ -279,14 +285,14 @@ func (r *ConfluenceTaskListRenderer) goldmarkRenderListItem(w util.BufWriter, so
 	if entering {
 		if node.Attributes() != nil {
 			_, _ = w.WriteString("<li")
-			html.RenderAttributes(w, node, html.ListItemAttributeFilter)
+			html.RenderAttributes(w, source, node, html.ListItemAttributeFilter, nil)
 			_ = w.WriteByte('>')
 		} else {
 			_, _ = w.WriteString("<li>")
 		}
 		fc := node.FirstChild()
 		if fc != nil {
-			if _, ok := fc.(*ast.TextBlock); !ok {
+			if _, ok := fc.(*ctransformer.TextBlock); !ok {
 				_ = w.WriteByte('\n')
 			}
 		}

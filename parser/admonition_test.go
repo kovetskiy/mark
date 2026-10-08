@@ -7,11 +7,9 @@ import (
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // admonitions parses source and returns every admonition found, in document
@@ -19,12 +17,12 @@ import (
 func admonitions(t *testing.T, source string) []string {
 	t.Helper()
 
-	md := goldmark.New(goldmark.WithParserOptions(
+	md := parser.New(
 		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
-	))
+	)
 
 	src := []byte(source)
-	doc := md.Parser().Parse(text.NewReader(src))
+	doc := md.Parse(src)
 
 	var found []string
 	require.NoError(t, ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -41,11 +39,9 @@ func admonitions(t *testing.T, source string) []string {
 		}
 
 		body := ""
-		if first := node.FirstChild(); first != nil {
-			lines := first.Lines()
-			for i := 0; i < lines.Len(); i++ {
-				segment := lines.At(i)
-				body += string(segment.Value(src))
+		if first, ok := node.FirstChild().(ast.BlockNode); ok {
+			for _, segment := range first.Source() {
+				body += string(segment.Bytes(src))
 			}
 		}
 
@@ -154,17 +150,18 @@ func TestAdmonitionParser(t *testing.T) {
 // TestAdmonitionParserIsDeterministic: the parser keeps no attribute of its
 // own on the node, so nothing random can reach the page.
 func TestAdmonitionParserIsDeterministic(t *testing.T) {
-	md := goldmark.New(goldmark.WithParserOptions(
+	md := parser.New(
 		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
-	))
+	)
 
-	doc := md.Parser().Parse(text.NewReader([]byte("!!! danger \"D\" {.extra #id}\n    body\n")))
+	source := []byte("!!! danger \"D\" {.extra #id}\n    body\n")
+	doc := md.Parse(source)
 	admonition, ok := doc.FirstChild().(*cparser.Admonition)
 	require.True(t, ok)
 
 	var names []string
 	for _, attribute := range admonition.Attributes() {
-		names = append(names, string(attribute.Name)+"="+string(attribute.Value.([]byte)))
+		names = append(names, attribute.Name+"="+attribute.Value.Value(source))
 	}
 	assert.ElementsMatch(t, []string{"class=admonition adm-danger extra", "id=id"}, names)
 }

@@ -8,8 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/parser"
 )
 
 func TestExtractDocumentLeadingH1(t *testing.T) {
@@ -27,9 +26,7 @@ func TestExtractDocumentLeadingH1(t *testing.T) {
 		panic(err)
 	}
 
-	reader := text.NewReader(markdown)
-	parser := goldmark.DefaultParser()
-	doc := parser.Parse(reader)
+	doc := parser.New().Parse(markdown)
 	actual := ExtractDocumentLeadingH1(doc, markdown)
 
 	assert.Equal(t, "a", actual)

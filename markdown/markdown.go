@@ -20,18 +20,19 @@ import (
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
-	"github.com/yuin/goldmark"
-	emoji "github.com/yuin/goldmark-emoji"
-
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	emoji "github.com/yuin/goldmark-emoji/v2"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceLegacyExtension is the original goldmark extension without GitHub Alerts support
 // This extension is preserved for backward compatibility and testing purposes
+//
+// It is a goldmark parser.Extension and html.Extension at once: goldmark v2
+// takes the two halves separately, the first to parser.New and the second to
+// html.New.
 type ConfluenceLegacyExtension struct {
 	html.Config
 	Stdlib      *stdlib.Lib
@@ -43,7 +44,7 @@ type ConfluenceLegacyExtension struct {
 // NewConfluenceLegacyExtension creates a new instance of the ConfluenceLegacyExtension.
 func NewConfluenceLegacyExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceLegacyExtension {
 	return &ConfluenceLegacyExtension{
-		Config:      html.NewConfig(),
+		Config:      html.Config{}.Default(),
 		Stdlib:      stdlib,
 		Path:        path,
 		MarkConfig:  cfg,
@@ -55,163 +56,191 @@ func (c *ConfluenceLegacyExtension) Attach(a attachment.Attachment) {
 	c.Attachments = append(c.Attachments, a)
 }
 
-func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
-
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 100),
-		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib), 100),
-		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path), 100),
-		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
-		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1), 100),
-		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
-		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
-		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
-	))
-
-	// <details> reaches here only because the document wrote the tag, and the
-	// storage format has no way to carry it, so leaving it alone publishes
-	// markup Confluence discards or rejects. There is nothing to opt into.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
-	))
-
-	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		m.Parser().AddOptions(parser.WithInlineParsers(
-			// The priority goldmark-emoji's own extension gives this parser.
-			// Nothing else in the set triggers on ':'.
-			util.Prioritized(emoji.NewParser(), 999),
-		))
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			// Only the parser is taken from goldmark-emoji, so the renderer it
-			// registers at 200 is not in play; 100 is what the rest of this
-			// file uses.
-			util.Prioritized(crenderer.NewConfluenceEmojiRenderer(c.Stdlib), 100),
-		))
+// RendererOptions implements html.Extension.
+//
+// goldmark v2 keeps one renderer per node kind and lets the last registration
+// for a kind win: html.New puts its own CommonMark renderers in first, then
+// every extension in the order it was given. These come after goldmark's own
+// table and strikethrough renderers, so they replace html.New's for every kind
+// they name, which is what the smaller priority number did in v1.
+func (c *ConfluenceLegacyExtension) RendererOptions(cfg *html.Config) []html.Option {
+	renderers := []html.Extension{
+		// First, so that the task list renderer below takes the checkbox.
+		ctransformer.NewHTMLRenderer(),
+		crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines),
+		crenderer.NewConfluenceBlockQuoteRenderer(),
+		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path),
+		crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
+		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1),
+		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
+		crenderer.NewConfluenceParagraphRenderer(),
+		crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced),
+		crenderer.NewConfluenceTaskListRenderer(),
+		crenderer.NewConfluenceDefinitionListRenderer(),
+		// goldmark's footnote parser is always on, so `[^1]` is always parsed.
+		// The only question is what renders it, and the alternative is the
+		// HTML goldmark's footnote renderer emits -- ids and fragment links,
+		// neither of which survives a Confluence page. That renderer is not
+		// registered at all.
+		crenderer.NewConfluenceFootnoteRenderer(c.Stdlib),
 	}
 
-	// goldmark's footnote extension is always on, so `[^1]` is always parsed.
-	// The only question is what renders it, and the alternative is the HTML
-	// that extension emits -- ids and fragment links, neither of which survives
-	// a Confluence page.
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		// Below the 500 goldmark's own footnote extension registers at.
-		// Node renderers are registered from the highest priority number
-		// down, and each registration overwrites the last, so the *smaller*
-		// number is the one that ends up rendering the node.
-		util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
-	))
+	if slices.Contains(c.MarkConfig.Features, "emoji") {
+		// Only the parser is taken from goldmark-emoji; its own renderer is
+		// never registered.
+		renderers = append(renderers, crenderer.NewConfluenceEmojiRenderer(c.Stdlib))
+	}
 
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		m.Parser().AddOptions(
-			parser.WithBlockParsers(
-				util.Prioritized(cparser.NewAdmonitionParser(), 100),
-			),
-		)
+		renderers = append(renderers, crenderer.NewConfluenceMkDocsAdmonitionRenderer())
+	}
 
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMkDocsAdmonitionRenderer(), 100),
+	if slices.Contains(c.MarkConfig.Features, "date") {
+		renderers = append(renderers, crenderer.NewConfluenceDateRenderer())
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "mention") {
+		renderers = append(renderers, crenderer.NewConfluenceMentionRenderer(c.Stdlib))
+	}
+
+	return rendererOptions(cfg, renderers)
+}
+
+// ParserOptions implements parser.Extension.
+func (c *ConfluenceLegacyExtension) ParserOptions(cfg *parser.Config) []parser.Option {
+	opts := []parser.Option{
+		parser.WithASTTransformers(ctransformer.ShapeTransformers()...),
+		// <details> reaches here only because the document wrote the tag, and the
+		// storage format has no way to carry it, so leaving it alone publishes
+		// markup Confluence discards or rejects. There is nothing to opt into.
+		parser.WithASTTransformers(
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewDetailsTransformer(), 110),
+		),
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "emoji") {
+		// The options of goldmark-emoji's parser extension, which registers its
+		// parser at 999. An extension cannot hand goldmark another to run, so
+		// they are added here directly.
+		// Nothing else in the set triggers on ':'.
+		opts = append(opts, emoji.NewParser().ParserOptions(cfg)...)
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
+		opts = append(opts, parser.WithBlockParsers(
+			util.Prioritized(cparser.NewAdmonitionParser(), 100),
 		))
 	}
 
 	if slices.Contains(c.MarkConfig.Features, "date") {
-		m.Parser().AddOptions(
-			parser.WithInlineParsers(
-				util.Prioritized(cparser.NewDateParser(), 99),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
+		opts = append(opts, parser.WithInlineParsers(
+			util.Prioritized(cparser.NewDateParser(), 99),
 		))
 	}
 
 	if slices.Contains(c.MarkConfig.Features, "mention") {
-		m.Parser().AddOptions(
-			parser.WithInlineParsers(
-				util.Prioritized(cparser.NewMentionParser(), 99),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMentionRenderer(c.Stdlib), 100),
+		opts = append(opts, parser.WithInlineParsers(
+			util.Prioritized(cparser.NewMentionParser(), 99),
 		))
 	}
 
 	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		m.Parser().AddOptions(parser.WithASTTransformers(
-			util.Prioritized(ctransformer.NewAutoLinkTransformer(), 110),
+		opts = append(opts, parser.WithASTTransformers(
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewAutoLinkTransformer(), 110),
 		))
 	}
 
-	// Close the void elements and repair the comments an author may have
-	// written by hand, which Markdown allows and storage format does not.
-	// After everything at 110 that owns raw HTML of its own, so that this only
-	// sees what those transformers left behind.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 120),
-	))
+	opts = append(opts,
+		// Close the void elements and repair the comments an author may have
+		// written by hand, which Markdown allows and storage format does not.
+		// After everything at 110 that owns raw HTML of its own, so that this only
+		// sees what those transformers left behind.
+		parser.WithASTTransformers(
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewXMLWellFormedTransformer(), 120),
+		),
+		parser.WithInlineParsers(
+			// Must be registered with a smaller priority number than goldmark's
+			// linkParser (200), so that it is tried first and goldmark doesn't
+			// parse the <ac:*/> tags.
+			util.Prioritized(cparser.NewConfluenceTagParser(), 199),
+		),
+	)
 
-	m.Parser().AddOptions(parser.WithInlineParsers(
-		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
-		// the <ac:*/> tags.
-		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
-	))
+	return opts
+}
+
+// rendererOptions collects the options of each renderer in turn, the later
+// ones replacing the earlier for any node kind both name. An extension cannot
+// hand html.New further extensions to run, so this is how one extension
+// carries several renderers.
+func rendererOptions(cfg *html.Config, renderers []html.Extension) []html.Option {
+	var opts []html.Option
+	for _, r := range renderers {
+		opts = append(opts, r.RendererOptions(cfg)...)
+	}
+
+	return opts
+}
+
+// markdownExtension is the half of each compile path goldmark is given.
+type markdownExtension interface {
+	parser.Extension
+	html.Extension
 }
 
 // compileMarkdownWithExtension is a shared helper to eliminate code duplication
 // between different compilation approaches
-func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMessage string) (string, error) {
+func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, error) {
 	log.Trace().Msgf(logMessage, string(markdown))
 
-	converter := goldmark.New(
-		goldmark.WithExtensions(
-			extension.Footnote,
-			extension.DefinitionList,
-			// GFM's members are listed one by one rather than through
-			// extension.GFM, which bundles its own default-configured Table.
-			// Registering Table twice put two cell renderers at the same
-			// priority 500, and goldmark sorts renderers with sort.Slice, which
-			// is not stable -- so which alignment method survived was decided by
-			// nothing at all. Alignment came out as ac:align attributes or as
-			// style="text-align:..." depending on the sort.
-			extension.NewTable(
+	p := parser.New(
+		parser.WithExtensions(
+			extension.FootnoteParser,
+			extension.DefinitionListParser,
+			extension.TableParser,
+			ext,
+			extension.LinkifyParser,
+			extension.StrikethroughParser,
+			extension.TaskListItemParser,
+		),
+		parser.WithAutoHeadingID(),
+		// Lets an author name a heading's anchor themselves, with the
+		// {#custom-id} syntax every other Markdown tool understands.
+		// Without it the braces are not ignored but taken as heading text:
+		// they render visibly in the title and are folded into the
+		// generated id, so "## Title {#custom-id}" becomes a heading called
+		// "Title {#custom-id}" with the id "Title-custom-id".
+		//
+		// goldmark parses attributes on every block element, but each
+		// renderer emits them through its own filter -- HeadingAttributeFilter,
+		// ParagraphAttributeFilter and so on -- so nothing but headings is
+		// affected in practice.
+		parser.WithAttribute(),
+		parser.WithIDGenerator(cparser.ConfluenceIDGenerator{}),
+	)
+
+	r := html.New(
+		html.WithUnsafe(),
+		html.WithXHTML(),
+		html.WithExtensions(
+			// Alignment goes out as style="text-align:...", which Confluence
+			// keeps, rather than as an align attribute.
+			extension.NewTableHTMLRenderer(
 				extension.WithTableCellAlignMethod(extension.TableCellAlignStyle),
 			),
+			extension.StrikethroughHTMLRenderer,
+			// Last, so that its renderers are the ones that stay registered.
+			// goldmark's own definition list, task list and footnote
+			// renderers are left out: these replace every node kind they
+			// render, and the task list one would replace the paragraph
+			// renderer too.
 			ext,
-			extension.Linkify,
-			extension.Strikethrough,
-			extension.TaskList,
 		),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(),
-			// Lets an author name a heading's anchor themselves, with the
-			// {#custom-id} syntax every other Markdown tool understands.
-			// Without it the braces are not ignored but taken as heading text:
-			// they render visibly in the title and are folded into the
-			// generated id, so "## Title {#custom-id}" becomes a heading called
-			// "Title {#custom-id}" with the id "Title-custom-id".
-			//
-			// goldmark parses attributes on every block element, but each
-			// renderer emits them through its own filter -- HeadingAttributeFilter,
-			// ParagraphAttributeFilter and so on -- so nothing but headings is
-			// affected in practice.
-			parser.WithAttribute(),
-		),
-		goldmark.WithRendererOptions(
-			html.WithUnsafe(),
-			html.WithXHTML(),
-		))
-
-	ctx := parser.NewContext(parser.WithIDs(cparser.NewConfluenceIDs()))
+	)
 
 	var buf bytes.Buffer
-	err := converter.Convert(markdown, &buf, parser.WithContext(ctx))
-
-	if err != nil {
+	if err := r.Render(&buf, markdown, p.Parse(markdown)); err != nil {
 		return "", err
 	}
 
@@ -581,6 +610,9 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 // This extension provides superior GitHub Alert processing by transforming [!NOTE], [!TIP], etc.
 // into proper Confluence macros while maintaining full compatibility with existing functionality.
 // This is now the primary/default extension.
+//
+// Like ConfluenceLegacyExtension it is a parser.Extension and an
+// html.Extension at once.
 type ConfluenceExtension struct {
 	html.Config
 	Stdlib          *stdlib.Lib
@@ -620,7 +652,7 @@ func newConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
-		Config:          html.NewConfig(),
+		Config:          html.Config{}.Default(),
 		Stdlib:          stdlib,
 		Path:            path,
 		MarkConfig:      cfg,
@@ -635,99 +667,116 @@ func (c *ConfluenceExtension) Attach(a attachment.Attachment) {
 	c.Attachments = append(c.Attachments, a)
 }
 
-// Extend extends the Goldmark processor with GitHub Alerts transformer and renderers
-// This method registers all necessary components for GitHub Alert processing:
+// RendererOptions implements html.Extension. It registers, in order:
 // 1. Core renderers for standard markdown elements
-// 2. GitHub Alerts specific renderers (blockquote and text) with higher priority
-// 3. GitHub Alerts AST transformer for preprocessing
-func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
-	// Register core renderers (excluding blockquote and text which we'll replace)
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib), 100),
-		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path), 100),
-		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
-		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1), 100),
-		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
-		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
-		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
-	))
+// 2. GitHub Alerts specific renderers (blockquote and text)
+// 3. The renderers of the features that are switched on
+//
+// Each replaces html.New's renderer for the node kinds it names, as the
+// legacy extension's do.
+func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
+	renderers := []html.Extension{
+		// The nodes the transformers stand in for goldmark v1's with. First,
+		// so that the task list renderer below takes the checkbox.
+		ctransformer.NewHTMLRenderer(),
 
-	// Add GitHub Alerts specific renderers with higher priority to override defaults
-	// These renderers handle both GitHub Alerts and legacy blockquote syntax
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(), 200),
-		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 200),
-	))
+		// Core renderers (excluding blockquote and text which are replaced below)
+		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path),
+		crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
+		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1),
+		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
+		crenderer.NewConfluenceParagraphRenderer(),
+		crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced),
+		crenderer.NewConfluenceTaskListRenderer(),
+		crenderer.NewConfluenceDefinitionListRenderer(),
 
-	// Add AST Transformers for Macros, Includes, Layouts, and GitHub Alerts
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(c.Pipeline, 10),
-		util.Prioritized(ctransformer.NewLayoutTransformer(), 100),
-		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
-		// Last, so that it sees the headings includes and macros brought in as
-		// well as the ones written in the file, and so that heading ids have
-		// already been assigned.
-		util.Prioritized(ctransformer.NewAnchorTransformer(), 900),
-		// After the anchor transformer, so a heading that a manual anchor sits
-		// beside has already been matched to the links that name it.
-		util.Prioritized(ctransformer.NewManualAnchorTransformer(), 901),
-		// After includes and macros have brought their content in, so links
-		// inside an included fragment are resolved too.
-		// Before link resolution, so that a path a document declared as an
-		// attachment is taken as one rather than looked up as a page.
-		util.Prioritized(c.AttachmentLinks, 905),
-		util.Prioritized(c.Links, 910),
-	))
+		// GitHub Alerts specific renderers. These handle both GitHub Alerts
+		// and legacy blockquote syntax.
+		crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(),
+		crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines),
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "date") {
+		renderers = append(renderers, crenderer.NewConfluenceDateRenderer())
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "emoji") {
+		// Only the parser is taken from goldmark-emoji; its own renderer is
+		// never registered.
+		renderers = append(renderers, crenderer.NewConfluenceEmojiRenderer(c.Stdlib))
+	}
+
+	// goldmark's footnote parser is always on, so `[^1]` is always parsed.
+	// The only question is what renders it, and the alternative is the HTML
+	// goldmark's footnote renderer emits -- ids and fragment links, neither of
+	// which survives a Confluence page. That renderer is not registered at
+	// all.
+	renderers = append(renderers, crenderer.NewConfluenceFootnoteRenderer(c.Stdlib))
+
+	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
+		renderers = append(renderers, crenderer.NewConfluenceMkDocsAdmonitionRenderer())
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "mention") {
+		renderers = append(renderers, crenderer.NewConfluenceMentionRenderer(c.Stdlib))
+	}
+
+	if slices.Contains(c.MarkConfig.Features, "math") {
+		renderers = append(renderers, crenderer.NewConfluenceMathRenderer(c.Stdlib, c, c.MarkConfig))
+	}
+
+	return rendererOptions(cfg, renderers)
+}
+
+// ParserOptions implements parser.Extension. It registers the AST
+// transformers for macros, includes, layouts and GitHub Alerts, and the
+// parsers of the features that are switched on.
+func (c *ConfluenceExtension) ParserOptions(cfg *parser.Config) []parser.Option {
+	opts := []parser.Option{
+		parser.WithASTTransformers(ctransformer.ShapeTransformers()...),
+		parser.WithASTTransformers(
+			util.Prioritized[parser.ASTTransformer](c.Pipeline, 10),
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewLayoutTransformer(), 100),
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewGHAlertsTransformer(), 100),
+			// Last, so that it sees the headings includes and macros brought in as
+			// well as the ones written in the file, and so that heading ids have
+			// already been assigned.
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewAnchorTransformer(), 900),
+			// After the anchor transformer, so a heading that a manual anchor sits
+			// beside has already been matched to the links that name it.
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewManualAnchorTransformer(), 901),
+			// After includes and macros have brought their content in, so links
+			// inside an included fragment are resolved too.
+			// Before link resolution, so that a path a document declared as an
+			// attachment is taken as one rather than looked up as a page.
+			util.Prioritized[parser.ASTTransformer](c.AttachmentLinks, 905),
+			util.Prioritized[parser.ASTTransformer](c.Links, 910),
+		),
+	}
 
 	// Add date widget support if requested
 	if slices.Contains(c.MarkConfig.Features, "date") {
-		m.Parser().AddOptions(
-			parser.WithInlineParsers(
-				util.Prioritized(cparser.NewDateParser(), 99),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
+		opts = append(opts, parser.WithInlineParsers(
+			util.Prioritized(cparser.NewDateParser(), 99),
 		))
 	}
 
 	// <details> reaches here only because the document wrote the tag, and the
 	// storage format has no way to carry it, so leaving it alone publishes
 	// markup Confluence discards or rejects. There is nothing to opt into.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
+	opts = append(opts, parser.WithASTTransformers(
+		util.Prioritized[parser.ASTTransformer](ctransformer.NewDetailsTransformer(), 110),
 	))
 
 	// Add emoji shortcode support if requested
 	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		m.Parser().AddOptions(parser.WithInlineParsers(
-			// The priority goldmark-emoji's own extension gives this parser.
-			// Nothing else in the set triggers on ':'.
-			util.Prioritized(emoji.NewParser(), 999),
-		))
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			// Only the parser is taken from goldmark-emoji, so the renderer it
-			// registers at 200 is not in play; 100 is what the rest of this
-			// file uses.
-			util.Prioritized(crenderer.NewConfluenceEmojiRenderer(c.Stdlib), 100),
-		))
+		// The options of goldmark-emoji's parser extension, which registers its
+		// parser at 999. An extension cannot hand goldmark another to run, so
+		// they are added here directly.
+		// Nothing else in the set triggers on ':'.
+		opts = append(opts, emoji.NewParser().ParserOptions(cfg)...)
 	}
-
-	// goldmark's footnote extension is always on, so `[^1]` is always parsed.
-	// The only question is what renders it, and the alternative is the HTML
-	// that extension emits -- ids and fragment links, neither of which survives
-	// a Confluence page.
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		// Below the 500 goldmark's own footnote extension registers at.
-		// Node renderers are registered from the highest priority number
-		// down, and each registration overwrites the last, so the *smaller*
-		// number is the one that ends up rendering the node.
-		util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
-	))
 
 	// An <img> is a void tag, which the storage format -- being XML -- cannot
 	// carry as written. Publishing one unconverted is how a page ends up
@@ -738,56 +787,41 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	// own into a Text node of markup, so that an <img> inside one is found
 	// there. At the same number as <details> the order between the two was
 	// whatever the sort left it.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewHTMLImgTransformer(), 115),
+	opts = append(opts, parser.WithASTTransformers(
+		util.Prioritized[parser.ASTTransformer](ctransformer.NewHTMLImgTransformer(), 115),
 	))
 
 	// Add mkdocsadmonitions support if requested
 	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		m.Parser().AddOptions(
-			parser.WithBlockParsers(
-				util.Prioritized(cparser.NewAdmonitionParser(), 100),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMkDocsAdmonitionRenderer(), 100),
+		opts = append(opts, parser.WithBlockParsers(
+			util.Prioritized(cparser.NewAdmonitionParser(), 100),
 		))
 	}
 
 	// Add mention support if requested
 	if slices.Contains(c.MarkConfig.Features, "mention") {
-		m.Parser().AddOptions(
-			parser.WithInlineParsers(
-				util.Prioritized(cparser.NewMentionParser(), 99),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMentionRenderer(c.Stdlib), 100),
+		opts = append(opts, parser.WithInlineParsers(
+			util.Prioritized(cparser.NewMentionParser(), 99),
 		))
 	}
 
 	// Add math / latex formula support if requested
 	if slices.Contains(c.MarkConfig.Features, "math") {
-		m.Parser().AddOptions(parser.WithBlockParsers(
-			// Between goldmark's fenced code block (700) and its block quote
-			// (800). Below the fence so that a "$$" shown inside one stays a
-			// code sample, and above the paragraph (1000) it would otherwise
-			// become.
-			util.Prioritized(cparser.NewMathBlockParser(), 750),
-		))
-
-		m.Parser().AddOptions(parser.WithInlineParsers(
-			// Ahead of goldmark's own inline parsers, so that a formula holding
-			// markup characters -- and TeX is made of them -- is taken as a
-			// formula rather than partly as emphasis or a link.
-			util.Prioritized(cparser.NewMathParser(), 99),
-		))
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMathRenderer(c.Stdlib, c, c.MarkConfig), 100),
-		))
+		opts = append(opts,
+			parser.WithBlockParsers(
+				// Between goldmark's fenced code block (700) and its block quote
+				// (800). Below the fence so that a "$$" shown inside one stays a
+				// code sample, and above the paragraph (1000) it would otherwise
+				// become.
+				util.Prioritized(cparser.NewMathBlockParser(), 750),
+			),
+			parser.WithInlineParsers(
+				// Ahead of goldmark's own inline parsers, so that a formula holding
+				// markup characters -- and TeX is made of them -- is taken as a
+				// formula rather than partly as emphasis or a link.
+				util.Prioritized(cparser.NewMathParser(), 99),
+			),
+		)
 	}
 
 	// Add inline-link-card support if requested · renders auto-detected bare
@@ -795,27 +829,31 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	// Cloud to display them as inline smart cards (page mentions, Jira issues,
 	// GitHub references, etc.) instead of plain hyperlinks.
 	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		m.Parser().AddOptions(parser.WithASTTransformers(
-			util.Prioritized(ctransformer.NewAutoLinkTransformer(), 110),
+		opts = append(opts, parser.WithASTTransformers(
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewAutoLinkTransformer(), 110),
 		))
 	}
 
-	// Close the void elements, quote the attributes, escape the bare "&"s and
-	// repair the comments an author may have written by hand, which Markdown
-	// allows and storage format does not.
-	// After everything below it that owns raw HTML of its own -- the <img> and
-	// <details> transformers, and the manual anchor one at 901 -- so that this
-	// only sees what they left behind, and never turns an <img> or an
-	// <a id="a&b"> into storage format the transformer that owns it would then
-	// fail to recognise.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 950),
-	))
+	opts = append(opts,
+		// Close the void elements, quote the attributes, escape the bare "&"s and
+		// repair the comments an author may have written by hand, which Markdown
+		// allows and storage format does not.
+		// After everything below it that owns raw HTML of its own -- the <img> and
+		// <details> transformers, and the manual anchor one at 901 -- so that this
+		// only sees what they left behind, and never turns an <img> or an
+		// <a id="a&b"> into storage format the transformer that owns it would then
+		// fail to recognise.
+		parser.WithASTTransformers(
+			util.Prioritized[parser.ASTTransformer](ctransformer.NewXMLWellFormedTransformer(), 950),
+		),
+		// Add confluence tag parser for <ac:*/> tags, tried before goldmark's
+		// link parser at 200.
+		parser.WithInlineParsers(
+			util.Prioritized(cparser.NewConfluenceTagParser(), 199),
+		),
+	)
 
-	// Add confluence tag parser for <ac:*/> tags
-	m.Parser().AddOptions(parser.WithInlineParsers(
-		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
-	))
+	return opts
 }
 
 // CompileMarkdownWithTransformer compiles markdown using the transformer approach for GitHub Alerts

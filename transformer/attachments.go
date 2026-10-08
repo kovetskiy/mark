@@ -1,9 +1,9 @@
 package transformer
 
 import (
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // AttachmentTransformer points links and images at the attachments uploaded
@@ -37,6 +37,8 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 		return
 	}
 
+	source := reader.Source()
+
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -44,14 +46,14 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 
 		// Images as well as links: an attachment is as often shown inline as it
 		// is linked to, and the text this replaces matched both.
-		var destination *[]byte
+		var destination *text.SingleLineValue
 		var candidates []string
 		switch n := node.(type) {
 		case *ast.Link:
 			destination = &n.Destination
 
 			// Read as an image's is, for the same reason.
-			candidates = LocalImagePaths(LinkDestination(n))
+			candidates = LocalImagePaths(LinkDestination(n, source))
 		case *ast.Image:
 			destination = &n.Destination
 
@@ -59,23 +61,23 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 			// "my%20file.png" or "my\_file.png" is taken as the attachment a
 			// document declared as "my file.png" or "my_file.png" rather
 			// than uploaded a second time beside it and reported as unused.
-			candidates = LocalImagePaths(ImageDestination(n))
+			candidates = LocalImagePaths(ImageDestination(n, source))
 		default:
 			return ast.WalkContinue, nil
 		}
 
-		target := string(*destination)
+		target := destination.Str(source)
 		if target == "" {
 			return ast.WalkContinue, nil
 		}
 
 		for _, candidate := range append([]string{target}, candidates...) {
 			if resolved := t.Resolve(candidate); resolved != "" {
-				*destination = []byte(resolved)
-
 				// A URL built here, not Markdown the document wrote.
+				*destination = PlainValue(resolved)
+
 				if image, ok := node.(*ast.Image); ok {
-					image.SetAttribute(plainDestinationAttribute, true)
+					SetAttributeText(image, plainDestinationAttribute, "")
 				}
 
 				break

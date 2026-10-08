@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
 )
 
 const (
@@ -176,61 +175,42 @@ func InCode(regions []Region, offset int) bool {
 func CodeRegions(data []byte) []Region {
 	var regions []Region
 
-	doc := goldmark.New().Parser().Parse(text.NewReader(data))
+	doc := parser.New().Parse(data)
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 
-		switch node.Kind() {
-		case ast.KindFencedCodeBlock, ast.KindCodeBlock:
-			lines := node.Lines()
-			if lines.Len() == 0 {
+		switch n := node.(type) {
+		case *ast.CodeBlock:
+			// Fenced and indented blocks alike: goldmark v2 has the one node
+			// for both.
+			lines := n.Value.Segments()
+			if len(lines) == 0 {
 				return ast.WalkContinue, nil
 			}
 			regions = append(regions, Region{
-				Start: lines.At(0).Start,
-				Stop:  lines.At(lines.Len() - 1).Stop,
+				Start: lines[0].Start,
+				Stop:  lines[len(lines)-1].Stop,
 			})
 
-		case ast.KindCodeSpan:
-			// A span's own segments live on its children.
-			first, last := node.FirstChild(), node.LastChild()
-			if first == nil || last == nil {
+		case *ast.CodeSpan:
+			// A span's content is its value, one index per source line.
+			indices := n.Value.Indices()
+			if len(indices) == 0 || n.Value.IsEmpty() {
 				return ast.WalkContinue, nil
 			}
-			start, ok := segmentStart(first)
-			if !ok {
-				return ast.WalkContinue, nil
-			}
-			stop, ok := segmentStop(last)
-			if !ok {
-				return ast.WalkContinue, nil
-			}
-			regions = append(regions, Region{Start: start, Stop: stop})
+			regions = append(regions, Region{
+				Start: indices[0].Start,
+				Stop:  indices[len(indices)-1].Stop,
+			})
 		}
 
 		return ast.WalkContinue, nil
 	})
 
 	return regions
-}
-
-func segmentStart(node ast.Node) (int, bool) {
-	if t, ok := node.(*ast.Text); ok {
-		return t.Segment.Start, true
-	}
-
-	return 0, false
-}
-
-func segmentStop(node ast.Node) (int, bool) {
-	if t, ok := node.(*ast.Text); ok {
-		return t.Segment.Stop, true
-	}
-
-	return 0, false
 }
 
 // codeLines reports which lines of the document are inside code.

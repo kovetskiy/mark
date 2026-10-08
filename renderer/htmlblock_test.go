@@ -7,8 +7,9 @@ import (
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // fakeAttacher records calls to Attach for inspection in tests.
@@ -19,28 +20,6 @@ type fakeAttacher struct {
 func (f *fakeAttacher) Attach(a attachment.Attachment) {
 	f.attached = append(f.attached, a)
 }
-
-func newHTMLBlockFromSource(source []byte) *ast.HTMLBlock {
-	node := ast.NewHTMLBlock(ast.HTMLBlockType6)
-	start := 0
-	for start < len(source) {
-		offset := bytes.IndexByte(source[start:], '\n')
-		if offset < 0 {
-			node.Lines().Append(text.NewSegment(start, len(source)))
-			break
-		}
-		end := start + offset
-		node.Lines().Append(text.NewSegment(start, end))
-		start = end + 1
-	}
-	return node
-}
-
-// bufWriter wraps bytes.Buffer to satisfy util.BufWriter.
-type bufWriter struct{ bytes.Buffer }
-
-func (b *bufWriter) Buffered() int { return b.Len() }
-func (b *bufWriter) Flush() error  { return nil }
 
 func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Attacher, path string) *ConfluenceHTMLBlockRenderer {
 	t.Helper()
@@ -58,17 +37,20 @@ func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Att
 
 func TestHTMLBlock_NonImgTagFallback(t *testing.T) {
 	r := newTestRenderer(t, "left", &fakeAttacher{}, "/docs/page.md")
-	r.Unsafe = true
 
-	var buf bufWriter
 	source := []byte(`<p>Hello World</p>`)
-	node := newHTMLBlockFromSource(source)
-	status, err := r.renderHTMLBlock(&buf, source, node, true)
+	doc := parser.New().Parse(source)
+	if _, ok := doc.FirstChild().(*ast.HTMLBlock); !ok {
+		t.Fatalf("source parsed as %T, want an HTML block", doc.FirstChild())
+	}
+
+	var buf bytes.Buffer
+	err := html.New(html.WithUnsafe(), html.WithExtensions(r)).Render(&buf, source, doc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if status != ast.WalkContinue {
-		t.Errorf("status = %v, want WalkContinue", status)
+	if !r.Unsafe {
+		t.Errorf("renderer was not given the Unsafe option it is registered with")
 	}
 	out := buf.String()
 	if !strings.Contains(out, "<p>Hello World</p>") {

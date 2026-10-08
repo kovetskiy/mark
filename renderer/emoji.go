@@ -1,14 +1,15 @@
 package renderer
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
-	east "github.com/yuin/goldmark-emoji/ast"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	east "github.com/yuin/goldmark-emoji/v2"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceEmojiRenderer renders a :shortcode: as the emoji it names.
@@ -26,15 +27,17 @@ type ConfluenceEmojiRenderer struct {
 }
 
 // NewConfluenceEmojiRenderer creates a new instance of the ConfluenceEmojiRenderer.
-func NewConfluenceEmojiRenderer(stdlib *stdlib.Lib) renderer.NodeRenderer {
+func NewConfluenceEmojiRenderer(stdlib *stdlib.Lib) html.Extension {
 	return &ConfluenceEmojiRenderer{
 		Stdlib: stdlib,
 	}
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceEmojiRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(east.KindEmoji, r.renderEmoji)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceEmojiRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		east.KindEmoji: nodeRenderer(r.renderEmoji),
+	})}
 }
 
 // confluenceEmoticons maps an emoji to the legacy ac:emoticon name that stands
@@ -115,8 +118,10 @@ func (r *ConfluenceEmojiRenderer) renderEmoji(w util.BufWriter, source []byte, n
 	// U+FFFD. The bundled GitHub set has none of those today, but a definition
 	// passed to goldmark-emoji's WithEmojis may; writing one would put a
 	// replacement glyph on the page, so the shortcode is left as it was typed.
+	shortName := emojiShortName(n, source)
+
 	if !n.Value.IsUnicode() {
-		_, _ = w.WriteString(":" + string(n.ShortName) + ":")
+		_, _ = w.WriteString(":" + shortName + ":")
 		return ast.WalkContinue, nil
 	}
 
@@ -142,7 +147,7 @@ func (r *ConfluenceEmojiRenderer) renderEmoji(w util.BufWriter, source []byte, n
 		// The shortcode as the author spelled it, not the emoji's canonical
 		// one: Cloud only shows it when the editor offers the emoji back for
 		// editing, and either spelling names the same character.
-		ShortName: ":" + string(n.ShortName) + ":",
+		ShortName: ":" + shortName + ":",
 		ID:        id,
 		Fallback:  character,
 	})
@@ -151,4 +156,23 @@ func (r *ConfluenceEmojiRenderer) renderEmoji(w util.BufWriter, source []byte, n
 	}
 
 	return ast.WalkContinue, nil
+}
+
+// emojiShortName is the shortcode as the author spelled it.
+//
+// goldmark-emoji v2 keeps the spelling to itself, but the node sits at the
+// ":" the parser was triggered by, and the parser took exactly ":name:" from
+// there. Should the source not say so, the emoji's first shortcode stands in.
+func emojiShortName(n *east.Emoji, source []byte) string {
+	if pos := n.Pos(); pos >= 0 && pos < len(source) && source[pos] == ':' {
+		if end := bytes.IndexByte(source[pos+1:], ':'); end > 0 {
+			return string(source[pos+1 : pos+1+end])
+		}
+	}
+
+	if len(n.Value.ShortNames) > 0 {
+		return n.Value.ShortNames[0]
+	}
+
+	return n.Value.Name
 }

@@ -3,9 +3,9 @@ package transformer
 import (
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // LinkTransformer rewrites relative links to the Confluence pages they name.
@@ -55,7 +55,7 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 			return ast.WalkContinue, nil
 		}
 
-		written := string(link.Destination)
+		written := link.Destination.Str(reader.Source())
 		if written == "" {
 			return ast.WalkContinue, nil
 		}
@@ -68,17 +68,17 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 		// be checking the wrong page.
 		target := written
 		if !strings.HasPrefix(written, "ac:") {
-			target = LinkDestination(link)
+			target = LinkDestination(link, reader.Source())
 		}
 
-		//nolint:staticcheck // Text is what the renderer reads for an ac: link.
-		resolved, err := t.Resolve(target, string(link.Text(reader.Source())))
+		// The label as written is what the renderer reads for an ac: link.
+		resolved, err := t.Resolve(target, LabelText(link, reader.Source()))
 		if err != nil {
 			return ast.WalkStop, err
 		}
 
 		if resolved != "" && resolved != written {
-			link.Destination = []byte(resolved)
+			link.Destination = SourceValue(resolved)
 		}
 
 		return ast.WalkContinue, nil

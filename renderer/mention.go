@@ -3,23 +3,26 @@ package renderer
 import (
 	"github.com/kovetskiy/mark/v16/parser"
 	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceMentionRenderer struct {
 	Stdlib *stdlib.Lib
 }
 
-func NewConfluenceMentionRenderer(stdlib *stdlib.Lib) renderer.NodeRenderer {
+func NewConfluenceMentionRenderer(stdlib *stdlib.Lib) html.Extension {
 	return &ConfluenceMentionRenderer{
 		Stdlib: stdlib,
 	}
 }
 
-func (r *ConfluenceMentionRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(parser.KindMention, r.renderMention)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceMentionRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		parser.KindMention: nodeRenderer(r.renderMention),
+	})}
 }
 
 func (r *ConfluenceMentionRenderer) renderMention(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {

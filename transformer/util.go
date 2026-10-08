@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
-	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/v2/ast"
 )
 
 var bufferPool = sync.Pool{
@@ -32,14 +33,16 @@ func getNodeLineNumber(node ast.Node, source []byte) int {
 	offset := -1
 	switch t := node.(type) {
 	case *ast.HTMLBlock:
-		if t.Lines().Len() > 0 {
-			offset = t.Lines().At(0).Start
+		if lines := t.Value.Segments(); len(lines) > 0 {
+			offset = lines[0].Start
 		}
 	case *ast.Text:
-		offset = t.Segment.Start
+		if !t.Value.IsOwned() {
+			offset = t.Value.Index().Start
+		}
 	case *ast.RawHTML:
-		if t.Segments.Len() > 0 {
-			offset = t.Segments.At(0).Start
+		if !t.Value.IsOwned() {
+			offset = t.Value.Index().Start
 		}
 	}
 	if offset < 0 || offset >= len(source) {
@@ -48,32 +51,10 @@ func getNodeLineNumber(node ast.Node, source []byte) int {
 	return bytes.Count(source[:offset], []byte("\n")) + 1
 }
 
+// extractHTMLBlockBytes returns a block's bytes, its closing line included:
+// goldmark v2 keeps that among the others, where v1 held it apart.
 func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
-	lines := t.Lines()
-	if lines.Len() == 1 && !t.HasClosure() {
-		seg := lines.At(0)
-		if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
-			return seg.Value(source)
-		}
-		return nil
-	}
-
-	buf := getBuffer()
-	defer putBuffer(buf)
-
-	for i := 0; i < lines.Len(); i++ {
-		seg := lines.At(i)
-		if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
-			buf.Write(seg.Value(source))
-		}
-	}
-	if t.HasClosure() && t.ClosureLine.Start >= 0 && t.ClosureLine.Stop <= len(source) {
-		buf.Write(t.ClosureLine.Value(source))
-	}
-
-	res := make([]byte, buf.Len())
-	copy(res, buf.Bytes())
-	return res
+	return bytes.Clone(t.Value.Bytes(source))
 }
 
 // ExtractDirectiveContent is ExtractNodeRawContent with inline code left out.
@@ -100,7 +81,7 @@ func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
 	// The leaf kinds carry their own bytes; only the recursive case has
 	// children a code span could be hiding among.
 	switch node.(type) {
-	case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *ast.String:
+	case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *String:
 		return ExtractNodeRawContent(node, source)
 	}
 
@@ -126,30 +107,14 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	case *ast.HTMLBlock:
 		return extractHTMLBlockBytes(t, source)
 	case *ast.RawHTML:
-		if t.Segments.Len() == 1 {
-			seg := t.Segments.At(0)
-			if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
-				return seg.Value(source)
-			}
-			return nil
-		}
-		buf := getBuffer()
-		defer putBuffer(buf)
-		for i := 0; i < t.Segments.Len(); i++ {
-			seg := t.Segments.At(i)
-			if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
-				buf.Write(seg.Value(source))
-			}
-		}
-		res := make([]byte, buf.Len())
-		copy(res, buf.Bytes())
-		return res
+		return bytes.Clone(t.Value.Bytes(source))
 	case *ast.Text:
-		if t.Segment.Start >= 0 && t.Segment.Stop <= len(source) && t.Segment.Start <= t.Segment.Stop {
-			return t.Segment.Value(source)
-		}
-		return nil
-	case *ast.String:
+		return t.Value.Bytes(source)
+	case *ast.CodeSpan:
+		// A span's text is its value in goldmark v2, where v1 kept it on Text
+		// children for the default case below to collect.
+		return t.Value.Bytes(source)
+	case *String:
 		return t.Value
 	default:
 		if node.HasChildren() {
@@ -171,17 +136,16 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 var errUnmovableNode = errors.New("cannot be carried into the document it was expanded into")
 
 // unmovableNode names the first node under doc that renders straight from
-// segments into its own source, which convertSegmentsToStrings has no way to
-// rebase, or returns nil when there is none.
+// its own source in a way convertSegmentsToStrings does not rebase, or returns
+// nil when there is none.
 //
 // The sub-document is parsed from the expanded bytes and rendered against the
 // outer document's: a code block reads its lines, and a fenced one its info
 // string too, as offsets into whatever source it is handed, and an autolink its
 // URL. Spliced in as they were, a fenced block in an included fragment came out
 // with its language and body sliced from the middle of the outer page -- still
-// well-formed, so nothing downstream noticed. There is no node to put in their
-// place that the code block renderer would read from elsewhere, so the caller
-// fails instead.
+// well-formed, so nothing downstream noticed. The code block renderer reads
+// from nowhere else, so the caller fails instead.
 func unmovableNode(doc ast.Node) ast.Node {
 	var found ast.Node
 
@@ -191,7 +155,7 @@ func unmovableNode(doc ast.Node) ast.Node {
 		}
 
 		switch n.(type) {
-		case *ast.FencedCodeBlock, *ast.CodeBlock, *ast.AutoLink:
+		case *ast.CodeBlock, *ast.AutoLink:
 			found = n
 			return ast.WalkStop, nil
 		}
@@ -202,13 +166,28 @@ func unmovableNode(doc ast.Node) ast.Node {
 	return found
 }
 
+// nodeName names a node's kind as goldmark v1 did, which kept fenced and
+// indented code blocks apart.
+func nodeName(n ast.Node) string {
+	if block, ok := n.(*ast.CodeBlock); ok && block.CodeBlockKind == ast.CodeBlockKindFenced {
+		return "FencedCodeBlock"
+	}
+
+	return n.Kind().String()
+}
+
 // convertSegmentsToStrings detaches a parsed sub-document from the bytes it was
 // parsed out of, so that its nodes can be moved into another document. It
 // refuses, before changing anything, a sub-document holding a node it cannot
 // detach.
+//
+// Text, raw HTML and HTML blocks become Strings, as goldmark v1's ast.String
+// they replace here always did. Everything else that goldmark v2 points into
+// the source -- a link's destination and title, a code span, an attribute --
+// is given its own copy where it stands, since v1 held those as bytes already.
 func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 	if n := unmovableNode(doc); n != nil {
-		return fmt.Errorf("%s %w", n.Kind(), errUnmovableNode)
+		return fmt.Errorf("%s %w", nodeName(n), errUnmovableNode)
 	}
 
 	type replaceItem struct {
@@ -222,41 +201,28 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
+
+		for _, attribute := range n.Attributes() {
+			n.SetAttribute(attribute.Name, ownedMulti(attribute.Value, source))
+		}
+
 		switch t := n.(type) {
 		case *ast.Text:
-			if t.Segment.Start >= 0 && t.Segment.Stop <= len(source) && t.Segment.Start <= t.Segment.Stop {
-				val := t.Segment.Value(source)
-				valCopy := make([]byte, len(val))
-				copy(valCopy, val)
-				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: false})
-			}
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: bytes.Clone(t.Value.Bytes(source)), verbatim: false})
 		case *ast.HTMLBlock:
-			val := extractHTMLBlockBytes(t, source)
-			valCopy := make([]byte, len(val))
-			copy(valCopy, val)
-			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: true})
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: extractHTMLBlockBytes(t, source), verbatim: true})
 		case *ast.RawHTML:
-			if t.Segments.Len() == 1 {
-				seg := t.Segments.At(0)
-				if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
-					val := seg.Value(source)
-					valCopy := make([]byte, len(val))
-					copy(valCopy, val)
-					nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: true})
-				}
-			} else {
-				buf := getBuffer()
-				for i := 0; i < t.Segments.Len(); i++ {
-					seg := t.Segments.At(i)
-					if seg.Start >= 0 && seg.Stop <= len(source) && seg.Start <= seg.Stop {
-						buf.Write(seg.Value(source))
-					}
-				}
-				valCopy := make([]byte, buf.Len())
-				copy(valCopy, buf.Bytes())
-				putBuffer(buf)
-				nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: valCopy, verbatim: true})
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: bytes.Clone(t.Value.Bytes(source)), verbatim: true})
+		case *ast.CodeSpan:
+			if !t.Value.IsOwned() {
+				t.Value = PlainValue(strings.Clone(t.Value.Value(source)))
 			}
+		case *ast.Link:
+			t.Destination = ownedSingle(t.Destination, source)
+			t.Title = ownedMulti(t.Title, source)
+		case *ast.Image:
+			t.Destination = ownedSingle(t.Destination, source)
+			t.Title = ownedMulti(t.Title, source)
 		}
 		return ast.WalkContinue, nil
 	})
@@ -264,17 +230,15 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 	for _, item := range nodesToReplace {
 		parent := item.node.Parent()
 		if parent != nil {
-			strNode := ast.NewString(item.val)
+			strNode := NewString(item.val)
 			if item.verbatim {
-				// SetCode, not SetRaw. A "raw" string still goes through
-				// Writer.RawWrite, which escapes & < > and ", so the
-				// <ac:structured-macro> a macro or include exists to carry was
-				// published as visible literal text. SetCode is goldmark's
-				// only verbatim path.
-				strNode.SetCode(true)
+				// Code, not escaped text: the <ac:structured-macro> a macro or
+				// include exists to carry would otherwise be published as
+				// visible literal text.
+				strNode.Code = true
 			}
-			parent.InsertBefore(parent, item.node, strNode)
-			parent.RemoveChild(parent, item.node)
+			parent.InsertBefore(item.node, strNode)
+			parent.RemoveChild(item.node)
 		}
 	}
 

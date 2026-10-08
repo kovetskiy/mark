@@ -6,11 +6,11 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
-func legacyBlockQuoteRenderers() []renderer.NodeRenderer {
-	return []renderer.NodeRenderer{
+func legacyBlockQuoteRenderers() []html.Extension {
+	return []html.Extension{
 		crenderer.NewConfluenceBlockQuoteRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),

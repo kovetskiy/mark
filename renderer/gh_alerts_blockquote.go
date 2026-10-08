@@ -4,34 +4,41 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceGHAlertsBlockQuoteRenderer struct {
 	html.Config
+
+	// options are the html options the constructor was given, which apply
+	// on top of the ones the renderer is registered with.
+	options        []html.Option
 	LevelMap       BlockQuoteLevelMap
 	BlockQuoteNode ast.Node
 }
 
 // NewConfluenceGHAlertsBlockQuoteRenderer creates a new instance of the renderer for GitHub Alerts
-func NewConfluenceGHAlertsBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceGHAlertsBlockQuoteRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceGHAlertsBlockQuoteRenderer{
-		Config:         html.NewConfig(),
 		LevelMap:       nil,
 		BlockQuoteNode: nil,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.options = opts
+	r.Config = withOptions(html.Config{}.Default(), opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.Config = withOptions(*cfg, r.options)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindBlockquote: nodeRenderer(r.renderBlockQuote),
+	})}
 }
 
 // getConfluenceMacroTitle gives the alert the header Confluence draws for it.
@@ -61,10 +68,8 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufW
 	}
 
 	// Check if this blockquote has been transformed by the GHAlerts transformer
-	if alertTypeBytes, hasAttribute := node.Attribute([]byte("gh-alert-type")); hasAttribute && alertTypeBytes != nil {
-		if alertTypeStr, ok := alertTypeBytes.([]byte); ok {
-			return r.renderGHAlert(writer, source, node, entering, string(alertTypeStr))
-		}
+	if alertType, hasAttribute := ctransformer.AttributeText(node, "gh-alert-type", source); hasAttribute {
+		return r.renderGHAlert(writer, source, node, entering, alertType)
 	}
 
 	// Fall back to legacy blockquote rendering for non-GitHub Alert blockquotes

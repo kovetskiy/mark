@@ -5,7 +5,7 @@ import (
 
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/v2/ast"
 )
 
 // TestConfluenceIDsKeepsNonASCII pins the id of a heading written in a script

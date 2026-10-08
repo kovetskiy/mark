@@ -5,9 +5,9 @@ import (
 
 	"github.com/kovetskiy/mark/v16/metadata"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // MathBlock is a display formula written on lines of its own:
@@ -39,15 +39,24 @@ type MathBlock struct {
 	// found. Empty until then.
 	Equation []byte
 
+	// Value holds the lines between the fences as goldmark recorded them.
+	//
+	// Kept here rather than as the block's Source, which is what goldmark
+	// parses inlines from. Parsed, the formula was published as its picture and
+	// then again, immediately after it, as the TeX source; a code block keeps
+	// its body out of Source for the same reason.
+	Value text.Lines
+
 	// fence is the pair of markers this block was opened with, so the closer
 	// looked for is the one that matches the opener.
 	fence fence
 }
 
-func (m *MathBlock) Dump(source []byte, level int) {
-	ast.DumpHelper(m, source, level, map[string]string{
+func (m *MathBlock) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(m, map[string]any{
 		"Equation": string(m.Equation),
-	}, nil)
+		"Value":    m.Value,
+	})
 }
 
 var KindMathBlock = ast.NewNodeKind("MathBlock")
@@ -56,18 +65,10 @@ func (m *MathBlock) Kind() ast.NodeKind {
 	return KindMathBlock
 }
 
-// IsRaw keeps goldmark from parsing inlines into the block.
-//
-// Without it the parser walks the block's lines and builds Text children out of
-// them, exactly as it does for a paragraph -- so the formula was published as
-// its picture and then again, immediately after it, as the TeX source. A fenced
-// code block declares itself raw for the same reason.
-func (m *MathBlock) IsRaw() bool {
-	return true
-}
-
 func NewMathBlock() *MathBlock {
-	return &MathBlock{}
+	m := &MathBlock{}
+	m.Init(m)
+	return m
 }
 
 // fence is one pair of markers that can stand on lines of their own around a
@@ -272,13 +273,17 @@ func (b *mathBlockParser) Continue(node ast.Node, reader text.Reader, pc parser.
 	line, segment := reader.PeekLine()
 
 	block, ok := node.(*MathBlock)
-	if ok && block.fence.closesBlock(line) {
+	if !ok {
+		return parser.Close
+	}
+
+	if block.fence.closesBlock(line) {
 		reader.Advance(segment.Len() - 1)
 
 		return parser.Close
 	}
 
-	node.Lines().Append(segment)
+	block.Value.AppendSegment(segment)
 
 	return parser.Continue | parser.NoChildren
 }
@@ -295,12 +300,10 @@ func (b *mathBlockParser) Close(node ast.Node, reader text.Reader, pc parser.Con
 	// records the segment.
 	var buf bytes.Buffer
 
-	lines := block.Lines()
 	source := reader.Source()
 
-	for i := 0; i < lines.Len(); i++ {
-		line := lines.At(i)
-		buf.Write(line.Value(source))
+	for _, line := range block.Value.Segments() {
+		buf.Write(line.Bytes(source))
 	}
 
 	block.Equation = bytes.TrimSpace(buf.Bytes())
