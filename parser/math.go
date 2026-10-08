@@ -3,10 +3,10 @@ package parser
 import (
 	"bytes"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // Math is one LaTeX formula, held as its source until a renderer decides what
@@ -20,11 +20,11 @@ type Math struct {
 	Display  bool
 }
 
-func (m *Math) Dump(source []byte, level int) {
-	ast.DumpHelper(m, source, level, map[string]string{
+func (m *Math) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(m, map[string]any{
 		"Equation": string(m.Equation),
 		"Display":  boolText(m.Display),
-	}, nil)
+	})
 }
 
 func boolText(b bool) string {
@@ -41,10 +41,12 @@ func (m *Math) Kind() ast.NodeKind {
 }
 
 func NewMath(equation []byte, display bool) *Math {
-	return &Math{
+	m := &Math{
 		Equation: equation,
 		Display:  display,
 	}
+	m.Init(m)
+	return m
 }
 
 // delimiter is one pair of markers a formula can be written between.
@@ -154,19 +156,20 @@ func spansWholeLine(source []byte, start, end int) bool {
 // An inline parser is handed the source of the whole document; parent is the
 // block node that owns every inline in this pass, so its own line segments are
 // the only bound available. A block with no lines -- and the inline node an
-// inline parser is never given as a parent, whose Lines panics -- leaves the
-// source as it was.
+// inline parser is never given as a parent, which has no source of its own --
+// leaves the source as it was.
 func blockEnd(parent ast.Node, source []byte) int {
-	if parent.Type() != ast.TypeBlock {
+	block, ok := parent.(ast.BlockNode)
+	if !ok {
 		return len(source)
 	}
 
-	lines := parent.Lines()
-	if lines == nil || lines.Len() == 0 {
+	lines := block.Source()
+	if len(lines) == 0 {
 		return len(source)
 	}
 
-	last := lines.At(lines.Len() - 1)
+	last := lines[len(lines)-1]
 	if last.Stop < 0 || last.Stop > len(source) {
 		return len(source)
 	}

@@ -6,10 +6,9 @@ import (
 	"strconv"
 
 	"github.com/kovetskiy/mark/v16/parser"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // MkDocsAdmonitionAttributeFilter defines the attribute names kept on the
@@ -20,22 +19,27 @@ var MkDocsAdmonitionAttributeFilter = html.GlobalAttributeFilter
 // storage format.
 type ConfluenceMkDocsAdmonitionRenderer struct {
 	html.Config
+
+	// options are the html options the constructor was given, which apply
+	// on top of the ones the renderer is registered with.
+	options []html.Option
 }
 
 // NewConfluenceMkDocsAdmonitionRenderer creates a new instance of the ConfluenceMkDocsAdmonitionRenderer.
-func NewConfluenceMkDocsAdmonitionRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceMkDocsAdmonitionRenderer{
-		Config: html.NewConfig(),
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+func NewConfluenceMkDocsAdmonitionRenderer(opts ...html.Option) html.Extension {
+	r := &ConfluenceMkDocsAdmonitionRenderer{}
+	r.options = opts
+	r.Config = withOptions(html.Config{}.Default(), opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs.
-func (r *ConfluenceMkDocsAdmonitionRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(parser.KindAdmonition, r.renderMkDocsAdmonition)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceMkDocsAdmonitionRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.Config = withOptions(*cfg, r.options)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		parser.KindAdmonition: nodeRenderer(r.renderMkDocsAdmonition),
+	})}
 }
 
 // ParseMkDocsAdmonitionType returns the macro an admonition node is published
@@ -90,7 +94,7 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmon(w util.BufWriter,
 	if entering {
 		if len(n.Attributes()) > 0 {
 			_, _ = w.WriteString("<blockquote")
-			html.RenderAttributes(w, n, MkDocsAdmonitionAttributeFilter)
+			html.RenderAttributes(w, source, n, MkDocsAdmonitionAttributeFilter, nil)
 			_ = w.WriteByte('>')
 		} else {
 			_, _ = w.WriteString("<blockquote>\n")

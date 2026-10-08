@@ -6,8 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // reInlineLink matches a link or an image as it is written in the source.
@@ -19,8 +19,22 @@ import (
 // reader sees, so it is the part the id is built from.
 var reInlineLink = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
 
-// ConfluenceIDs implements parser.IDs for Confluence-compatible header anchor IDs,
-// preserving '/', '_', '.', and '-' characters in heading IDs.
+// ConfluenceIDGenerator is the parser.IDGenerator goldmark is given for
+// Confluence-compatible header anchor IDs, preserving '/', '_', '.', and '-'
+// characters in heading IDs.
+//
+// It returns the base id only. goldmark's parser.IDs keeps the ids a document
+// has used, the ones an author wrote as {#id} included, and numbers a repeat
+// "-1", "-2" and so on, which is what ConfluenceIDs does for itself.
+type ConfluenceIDGenerator struct{}
+
+// Generate implements parser.IDGenerator.
+func (ConfluenceIDGenerator) Generate(value []byte, kind ast.NodeKind) []byte {
+	return confluenceID(value, kind)
+}
+
+// ConfluenceIDs generates Confluence-compatible header anchor IDs and keeps
+// them unique, for a caller that has no parser.IDs to do the second part.
 type ConfluenceIDs struct {
 	Values map[string]bool
 }
@@ -31,10 +45,29 @@ func NewConfluenceIDs() *ConfluenceIDs {
 		Values: make(map[string]bool),
 	}
 }
+
+// Generate returns the id for value, numbered if it has been used before.
 func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 	if s.Values == nil {
 		s.Values = make(map[string]bool)
 	}
+	result := confluenceID(value, kind)
+	if _, ok := s.Values[util.BytesToReadOnlyString(result)]; !ok {
+		s.Values[util.BytesToReadOnlyString(result)] = true
+		return result
+	}
+	for i := 1; ; i++ {
+		newResult := fmt.Sprintf("%s-%d", result, i)
+		if _, ok := s.Values[newResult]; !ok {
+			s.Values[newResult] = true
+			return []byte(newResult)
+		}
+	}
+}
+
+// confluenceID is the base id for value: the characters Confluence keeps in an
+// anchor, before any numbering.
+func confluenceID(value []byte, kind ast.NodeKind) []byte {
 	value = reInlineLink.ReplaceAll(value, []byte("$1"))
 	value = util.TrimLeftSpace(value)
 	value = util.TrimRightSpace(value)
@@ -59,22 +92,11 @@ func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 	}
 	if len(result) == 0 {
 		if kind == ast.KindHeading {
-			result = []byte("heading")
-		} else {
-			result = []byte("id")
+			return []byte("heading")
 		}
+		return []byte("id")
 	}
-	if _, ok := s.Values[util.BytesToReadOnlyString(result)]; !ok {
-		s.Values[util.BytesToReadOnlyString(result)] = true
-		return result
-	}
-	for i := 1; ; i++ {
-		newResult := fmt.Sprintf("%s-%d", result, i)
-		if _, ok := s.Values[newResult]; !ok {
-			s.Values[newResult] = true
-			return []byte(newResult)
-		}
-	}
+	return result
 }
 
 func (s *ConfluenceIDs) Put(value []byte) {

@@ -3,10 +3,8 @@ package page
 import (
 	"github.com/kovetskiy/mark/v16/parser"
 	"github.com/kovetskiy/mark/v16/transformer"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	gparser "github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	gparser "github.com/yuin/goldmark/v2/parser"
 )
 
 // headingAnchor returns the anchor a fragment names in another document.
@@ -64,13 +62,13 @@ func headingAnchor(document []byte, fragment string) string {
 // Parsed with the same id generator the publish uses, since an id that is
 // derived differently here would match the wrong heading -- or none.
 func headingIDs(document []byte) []string {
-	md := goldmark.New(goldmark.WithParserOptions(gparser.WithAutoHeadingID()))
+	md := gparser.New(
+		gparser.WithAutoHeadingID(),
+		// The id generator is what makes these the ids the publish will use.
+		gparser.WithIDGenerator(parser.ConfluenceIDGenerator{}),
+	)
 
-	// The id generator is a context option rather than a parser option, and it
-	// is what makes these the ids the publish will use.
-	ctx := gparser.NewContext(gparser.WithIDs(parser.NewConfluenceIDs()))
-
-	doc := md.Parser().Parse(text.NewReader(document), gparser.WithContext(ctx))
+	doc := md.Parse(document)
 
 	var ids []string
 
@@ -79,13 +77,8 @@ func headingIDs(document []byte) []string {
 			return ast.WalkContinue, nil
 		}
 
-		if id, ok := node.AttributeString("id"); ok {
-			switch value := id.(type) {
-			case []byte:
-				ids = append(ids, string(value))
-			case string:
-				ids = append(ids, value)
-			}
+		if id, ok := transformer.AttributeText(node, "id", document); ok {
+			ids = append(ids, id)
 		}
 
 		return ast.WalkContinue, nil

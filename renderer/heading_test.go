@@ -5,14 +5,14 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
-func headingRenderers(t *testing.T, dropFirstH1 bool) []renderer.NodeRenderer {
+func headingRenderers(t *testing.T, dropFirstH1 bool) []html.Extension {
 	t.Helper()
 
-	return []renderer.NodeRenderer{
+	return []html.Extension{
 		crenderer.NewConfluenceHeadingRenderer(newStdlib(t), dropFirstH1),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),

@@ -7,7 +7,7 @@ import (
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // collectingAttacher stands in for the extension, which is what collects the
@@ -27,7 +27,7 @@ func (c *collectingAttacher) Attach(a attachment.Attachment) {
 func fencedCode(t *testing.T, info string) string {
 	t.Helper()
 
-	return render(t, "```"+info+"\nsample\n```\n", []renderer.NodeRenderer{
+	return render(t, "```"+info+"\nsample\n```\n", []html.Extension{
 		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}, ""),
 	})
 }
@@ -184,7 +184,7 @@ func TestFencedCodeBlockBraceInATitleIsKept(t *testing.T) {
 // TestFencedCodeBlockEscapesTheCDATATerminator covers a code sample carrying
 // the one sequence CDATA cannot hold.
 func TestFencedCodeBlockEscapesTheCDATATerminator(t *testing.T) {
-	actual := render(t, "```xml\n<![CDATA[x]]>\n```\n", []renderer.NodeRenderer{
+	actual := render(t, "```xml\n<![CDATA[x]]>\n```\n", []html.Extension{
 		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}, ""),
 	})
 	assertWellFormed(t, actual)

@@ -26,13 +26,13 @@ package parser
 
 import (
 	"bytes"
-	"fmt"
 	"slices"
+	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // Admonition is a MkDocs admonition block:
@@ -52,11 +52,11 @@ type Admonition struct {
 }
 
 // Dump implements ast.Node.
-func (n *Admonition) Dump(source []byte, level int) {
-	ast.DumpHelper(n, source, level, map[string]string{
+func (n *Admonition) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(n, map[string]any{
 		"AdmonitionClass": string(n.AdmonitionClass),
 		"Title":           string(n.Title),
-	}, nil)
+	})
 }
 
 // KindAdmonition is the ast.NodeKind of an Admonition.
@@ -69,7 +69,9 @@ func (n *Admonition) Kind() ast.NodeKind {
 
 // NewAdmonition returns an empty Admonition.
 func NewAdmonition() *Admonition {
-	return &Admonition{}
+	n := &Admonition{}
+	n.Init(n)
+	return n
 }
 
 type admonitionParser struct{}
@@ -202,43 +204,51 @@ func parseAdmonitionOpeningLine(reader text.Reader, left int) *Admonition {
 
 	if ok {
 		for _, attribute := range attributes {
-			value, ok := admonitionAttributeValue(attribute.Value)
-			if !ok {
+			// goldmark v2 reads every attribute value as text: {width=5} is
+			// "5" and {open=true} is "true", where v1 handed back a number and
+			// a bool for this parser to spell out.
+			if !admonitionAttributeIsText(attribute, reader.Source()) {
 				continue
 			}
 
-			if bytes.Equal(attribute.Name, []byte("class")) {
+			if attribute.Name == "class" {
 				hasClass = true
-				value = bytes.Join([][]byte{class, value}, []byte(" "))
+				value := string(class) + " " + attribute.Value.Value(reader.Source())
+				node.SetAttribute(attribute.Name, text.NewMultiLineValueFromString(value, text.IdentityDecoder))
+
+				continue
 			}
 
-			node.SetAttribute(attribute.Name, value)
+			node.SetAttribute(attribute.Name, attribute.Value)
 		}
 	}
 
 	if !hasClass {
-		node.SetAttribute([]byte("class"), class)
+		node.SetAttribute("class", text.NewMultiLineValueFromString(string(class), text.IdentityDecoder))
 	}
 
 	return node
 }
 
-// admonitionAttributeValue spells an attribute value as text. goldmark reads
-// {width=5} as a number and {open=true} as a bool, which the library this
-// parser came from assumed could not happen, and panicked on. A list or a
-// nested object has no spelling an HTML attribute could carry, so it is left
-// out.
-func admonitionAttributeValue(value any) ([]byte, bool) {
-	switch v := value.(type) {
-	case []byte:
-		return v, true
-	case string:
-		return []byte(v), true
-	case float64, bool:
-		return fmt.Append(nil, v), true
-	default:
-		return nil, false
+// admonitionAttributeIsText reports whether an attribute value is one an HTML
+// attribute can carry. goldmark v1 read an unquoted [1,2] as a list, {a=b} as
+// a nested object and null as nothing, none of which has a spelling an HTML
+// attribute could carry, so they were left out; v2 reads every value as text,
+// and these are still left out.
+func admonitionAttributeIsText(attribute ast.Attribute, source []byte) bool {
+	value := attribute.Value
+	if value.IsOwned() {
+		return true
 	}
+
+	start := value.Index().Start
+	if start > 0 && (source[start-1] == '"' || source[start-1] == '\'') {
+		return true
+	}
+
+	raw := value.Str(source)
+
+	return raw != "null" && !strings.HasPrefix(raw, "[") && !strings.HasPrefix(raw, "{")
 }
 
 func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser.Context) parser.State {

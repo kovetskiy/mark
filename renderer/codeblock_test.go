@@ -5,7 +5,7 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // TestIndentedCodeBlockBecomesTheCodeMacro covers the block written by
@@ -14,7 +14,7 @@ import (
 func TestIndentedCodeBlockBecomesTheCodeMacro(t *testing.T) {
 	lib := newStdlib(t)
 
-	actual := render(t, "    package main\n    func main() {}\n", []renderer.NodeRenderer{
+	actual := render(t, "    package main\n    func main() {}\n", []html.Extension{
 		crenderer.NewConfluenceCodeBlockRenderer(lib),
 	})
 	assertWellFormed(t, actual)
@@ -33,7 +33,7 @@ func TestIndentedCodeBlockBecomesTheCodeMacro(t *testing.T) {
 func TestIndentedCodeBlockEscapesTheCDATATerminator(t *testing.T) {
 	lib := newStdlib(t)
 
-	actual := render(t, "    <![CDATA[x]]>\n", []renderer.NodeRenderer{
+	actual := render(t, "    <![CDATA[x]]>\n", []html.Extension{
 		crenderer.NewConfluenceCodeBlockRenderer(lib),
 	})
 	assertWellFormed(t, actual)

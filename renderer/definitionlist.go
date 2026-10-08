@@ -1,11 +1,10 @@
 package renderer
 
 import (
-	"github.com/yuin/goldmark/ast"
-	ext_ast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceDefinitionListRenderer publishes a definition list as a two-column
@@ -23,6 +22,10 @@ import (
 // row, the definition is the row's content.
 type ConfluenceDefinitionListRenderer struct {
 	html.Config
+
+	// options are the html options the constructor was given, which apply
+	// on top of the ones the renderer is registered with.
+	options []html.Option
 
 	// open holds one frame per definition list currently being written, and
 	// only the innermost is ever written to.
@@ -45,20 +48,22 @@ type listRow struct {
 	inCell bool
 }
 
-func NewConfluenceDefinitionListRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceDefinitionListRenderer{
-		Config: html.NewConfig(),
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+func NewConfluenceDefinitionListRenderer(opts ...html.Option) html.Extension {
+	r := &ConfluenceDefinitionListRenderer{}
+	r.options = opts
+	r.Config = withOptions(html.Config{}.Default(), opts)
 	return r
 }
 
-func (r *ConfluenceDefinitionListRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ext_ast.KindDefinitionList, r.renderList)
-	reg.Register(ext_ast.KindDefinitionTerm, r.renderTerm)
-	reg.Register(ext_ast.KindDefinitionDescription, r.renderDescription)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceDefinitionListRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.Config = withOptions(*cfg, r.options)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ext_ast.KindDefinitionList:        nodeRenderer(r.renderList),
+		ext_ast.KindDefinitionTerm:        nodeRenderer(r.renderTerm),
+		ext_ast.KindDefinitionDescription: nodeRenderer(r.renderDescription),
+	})}
 }
 
 func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {

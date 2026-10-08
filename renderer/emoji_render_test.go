@@ -5,22 +5,21 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	emoji "github.com/yuin/goldmark-emoji"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	emoji "github.com/yuin/goldmark-emoji/v2"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 func emojiRender(t *testing.T, source string) string {
 	t.Helper()
 
-	return render(t, source,
-		[]renderer.NodeRenderer{
+	return renderExtended(t, source,
+		[]parser.Extension{emoji.NewParser()},
+		[]html.Extension{
 			crenderer.NewConfluenceEmojiRenderer(newStdlib(t)),
 			crenderer.NewConfluenceParagraphRenderer(),
 			crenderer.NewConfluenceTextRenderer(false),
-		},
-		parser.WithInlineParsers(util.Prioritized(emoji.NewParser(), 999)))
+		})
 }
 
 // TestEmojiWithALegacyNameBecomesTheMacro covers the emoji Confluence Data

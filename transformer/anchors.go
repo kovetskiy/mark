@@ -4,9 +4,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // AnchorTransformer points same-page links at the heading ids mark actually
@@ -54,6 +54,7 @@ func AnchorKey(s string) string {
 
 // Transform implements the parser.ASTTransformer interface.
 func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
+	source := reader.Source()
 	headings := map[string]string{}
 	ambiguous := map[string]bool{}
 
@@ -62,12 +63,11 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 			return ast.WalkContinue, nil
 		}
 
-		id, ok := node.AttributeString("id")
+		value, ok := AttributeText(node, "id", source)
 		if !ok {
 			return ast.WalkContinue, nil
 		}
 
-		value := attributeString(id)
 		key := AnchorKey(value)
 		if key == "" {
 			return ast.WalkContinue, nil
@@ -99,7 +99,7 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 			return ast.WalkContinue, nil
 		}
 
-		target, found := strings.CutPrefix(string(link.Destination), "#")
+		target, found := strings.CutPrefix(link.Destination.Str(source), "#")
 		if !found || target == "" {
 			return ast.WalkContinue, nil
 		}
@@ -118,13 +118,13 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 		}
 
 		if id, ok := headings[key]; ok {
-			link.Destination = []byte("#" + id)
+			link.Destination = SourceValue("#" + id)
 		}
 
 		return ast.WalkContinue, nil
 	})
 
-	markTargetedHeadings(doc)
+	markTargetedHeadings(doc, source)
 }
 
 // AnchorAttribute names the heading attribute that carries the anchor a link
@@ -142,7 +142,7 @@ const AnchorAttribute = "mark:anchor"
 
 // markTargetedHeadings records, on each heading, whether a link on this page
 // points at it.
-func markTargetedHeadings(doc *ast.Document) {
+func markTargetedHeadings(doc *ast.Document, source []byte) {
 	targets := map[string]bool{}
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -151,7 +151,7 @@ func markTargetedHeadings(doc *ast.Document) {
 		}
 
 		if link, ok := node.(*ast.Link); ok {
-			if target, found := strings.CutPrefix(string(link.Destination), "#"); found && target != "" {
+			if target, found := strings.CutPrefix(link.Destination.Str(source), "#"); found && target != "" {
 				targets[target] = true
 			}
 		}
@@ -168,29 +168,15 @@ func markTargetedHeadings(doc *ast.Document) {
 			return ast.WalkContinue, nil
 		}
 
-		id, ok := node.AttributeString("id")
+		value, ok := AttributeText(node, "id", source)
 		if !ok {
 			return ast.WalkContinue, nil
 		}
 
-		value := attributeString(id)
 		if targets[value] {
-			node.SetAttributeString(AnchorAttribute, []byte(value))
+			SetAttributeText(node, AnchorAttribute, value)
 		}
 
 		return ast.WalkContinue, nil
 	})
-}
-
-// attributeString renders a node attribute value, which goldmark hands back as
-// either bytes or a string depending on how it was set.
-func attributeString(value any) string {
-	switch v := value.(type) {
-	case []byte:
-		return string(v)
-	case string:
-		return v
-	default:
-		return ""
-	}
 }

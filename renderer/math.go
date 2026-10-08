@@ -6,9 +6,9 @@ import (
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceMathRenderer publishes a LaTeX formula as an image.
@@ -30,7 +30,7 @@ type ConfluenceMathRenderer struct {
 }
 
 // NewConfluenceMathRenderer creates a new instance of the ConfluenceMathRenderer.
-func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig) renderer.NodeRenderer {
+func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig) html.Extension {
 	return &ConfluenceMathRenderer{
 		Stdlib:      stdlib,
 		Attachments: attachments,
@@ -39,10 +39,12 @@ func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attach
 	}
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceMathRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(cparser.KindMath, r.renderMath)
-	reg.Register(cparser.KindMathBlock, r.renderMathBlock)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceMathRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		cparser.KindMath:      nodeRenderer(r.renderMath),
+		cparser.KindMathBlock: nodeRenderer(r.renderMathBlock),
+	})}
 }
 
 // renderMathBlock publishes a display formula written on lines of its own. The

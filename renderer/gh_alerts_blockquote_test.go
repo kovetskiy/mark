@@ -7,13 +7,13 @@ import (
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
-func ghAlertRenderers() []renderer.NodeRenderer {
-	return []renderer.NodeRenderer{
+func ghAlertRenderers() []html.Extension {
+	return []html.Extension{
 		crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),
 		crenderer.NewConfluenceParagraphRenderer(),
@@ -22,7 +22,7 @@ func ghAlertRenderers() []renderer.NodeRenderer {
 
 func ghAlertParserOptions() []parser.Option {
 	return []parser.Option{
-		parser.WithASTTransformers(util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100)),
+		parser.WithASTTransformers(util.Prioritized[parser.ASTTransformer](ctransformer.NewGHAlertsTransformer(), 100)),
 	}
 }
 

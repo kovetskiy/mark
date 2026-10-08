@@ -5,32 +5,37 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceBlockQuoteRenderer struct {
 	html.Config
+
+	// options are the html options the constructor was given, which apply
+	// on top of the ones the renderer is registered with.
+	options  []html.Option
 	LevelMap BlockQuoteLevelMap
 }
 
 // NewConfluenceBlockQuoteRenderer creates a new instance of the ConfluenceBlockQuoteRenderer.
-func NewConfluenceBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceBlockQuoteRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceBlockQuoteRenderer{
-		Config:   html.NewConfig(),
 		LevelMap: nil,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.options = opts
+	r.Config = withOptions(html.Config{}.Default(), opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceBlockQuoteRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.Config = withOptions(*cfg, r.options)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindBlockquote: nodeRenderer(r.renderBlockQuote),
+	})}
 }
 
 type BlockQuoteLevelMap map[ast.Node]int
@@ -134,15 +139,14 @@ func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
 		if countParagraphs < 2 && entering {
 			if node.Kind() == ast.KindText {
 				n := node.(*ast.Text)
-				t = legacyClassifier.ClassifyingBlockQuote(string(n.Value(source)))
+				t = legacyClassifier.ClassifyingBlockQuote(n.Value.Str(source))
 				countParagraphs += 1
 			}
 			if node.Kind() == ast.KindHTMLBlock {
 
 				n := node.(*ast.HTMLBlock)
-				for i := 0; i < n.BaseBlock.Lines().Len(); i++ {
-					line := n.BaseBlock.Lines().At(i)
-					t = legacyClassifier.ClassifyingBlockQuote(string(line.Value(source)))
+				for _, line := range n.Value.Segments() {
+					t = legacyClassifier.ClassifyingBlockQuote(line.Str(source))
 					if t != AdmonitionNone {
 						break
 					}
@@ -209,7 +213,7 @@ func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, s
 	if entering {
 		if node.Attributes() != nil {
 			_, _ = writer.WriteString("<blockquote")
-			html.RenderAttributes(writer, node, html.BlockquoteAttributeFilter)
+			html.RenderAttributes(writer, source, node, html.BlockquoteAttributeFilter, nil)
 			_ = writer.WriteByte('>')
 		} else {
 			_, _ = writer.WriteString("<blockquote>\n")
