@@ -873,11 +873,20 @@ func AppendGeneratedHash(meta *Meta) {
 		return
 	}
 
-	path := strings.Join(append(slices.Clone(meta.Parents), meta.Space, meta.Title), "/")
+	meta.Title = GeneratedHashTitle(meta.Parents, meta.Space, meta.Title)
+	log.Debug().Msgf("appended hash to page title: %s", meta.Title)
+}
+
+// GeneratedHashTitle is title with the hash AppendGeneratedHash gives a page of
+// that title in that space under those parents. It is for a page with no
+// document of its own to hash, or whose title has to be known before its
+// document is read: the page standing for a directory, which every document
+// beneath it names as a parent.
+func GeneratedHashTitle(parents []string, space, title string) string {
+	path := strings.Join(append(slices.Clone(parents), space, title), "/")
 	pathHash := sha256.Sum256([]byte(path))
 	// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
-	meta.Title = fmt.Sprintf("%s - %x", meta.Title, pathHash[0:4])
-	log.Debug().Msgf("appended hash to page title: %s", meta.Title)
+	return fmt.Sprintf("%s - %x", title, pathHash[0:4])
 }
 
 // TitleFromName turns a file or directory name into a page title, so that

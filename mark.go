@@ -813,10 +813,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, err
 		}
 
-		if !meta.DeclaredParents {
-			meta.Parents = append(meta.Parents, derived...)
-		}
-
 		// A directory's own document is titled by the directory, whatever the
 		// filename would have said -- "Readme" on every page that has one. The
 		// title comes from the same place its children's parent does, so the
@@ -825,14 +821,26 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if err != nil {
 			return nil, nil, err
 		}
-		if title != "" {
-			meta.Title = title
+
+		// The pages standing for directories are hashed like any other, and
+		// both ends have to agree on it: the directory's own document in the
+		// title it publishes, the documents beneath it in the parent they look
+		// for. Hashing only the first left the README childless beside an
+		// empty, unhashed page of the directory's name that took its children.
+		if config.TitleAppendGeneratedHash {
+			derived, title = hashDirectoryTitles(config.Parents, meta.Space, derived, title)
 		}
 
-		// Only now, with the parents final: hashed before they were, two
-		// documents of one title in different directories hashed the same,
-		// and the hash was the very thing meant to tell them apart.
-		if config.TitleAppendGeneratedHash {
+		if !meta.DeclaredParents {
+			meta.Parents = append(meta.Parents, derived...)
+		}
+
+		if title != "" {
+			meta.Title = title
+		} else if config.TitleAppendGeneratedHash {
+			// Only now, with the parents final: hashed before they were, two
+			// documents of one title in different directories hashed the same,
+			// and the hash was the very thing meant to tell them apart.
 			metadata.AppendGeneratedHash(meta)
 		}
 	}
@@ -2532,6 +2540,37 @@ func newHierarchy(config Config, files []string) (*page.Hierarchy, error) {
 	}
 
 	return hierarchy, nil
+}
+
+// hashDirectoryTitles appends the generated hash to the titles of the pages
+// standing for directories: the parents a document's path derives, outermost
+// first, and the directory title its own document takes, if it is one.
+//
+// Each is hashed as AppendGeneratedHash would hash a document there: over the
+// --parents prefix, the hashed directories above it, the space and its title.
+// That is what a directory's own document comes to when it declares no parents
+// of its own, so its title is the one its children look for. One that does
+// declare them is still the directory's page, and is titled by its path rather
+// than by where the header moves it, or its children would lose it.
+func hashDirectoryTitles(prefix []string, space string, derived []string, title string) ([]string, string) {
+	var chain []string
+	// ExtractMeta ignores a --parents whose first entry is empty.
+	if len(prefix) > 0 && prefix[0] != "" {
+		chain = slices.Clone(prefix)
+	}
+
+	hashed := make([]string, 0, len(derived))
+	for _, parent := range derived {
+		parent = metadata.GeneratedHashTitle(chain, space, parent)
+		hashed = append(hashed, parent)
+		chain = append(chain, parent)
+	}
+
+	if title != "" {
+		title = metadata.GeneratedHashTitle(chain, space, title)
+	}
+
+	return hashed, title
 }
 
 // directoryHash gives a directory entry a fingerprint of its own.
