@@ -178,3 +178,26 @@ func TestTableWidthsInsideIncludedFile(t *testing.T) {
 		})
 	}
 }
+
+// The source compiled here is the body after the header comments are gone and
+// the macros and includes are expanded, so a line counted in it is not a line
+// of the file. The warning names the file and quotes the directive instead.
+func TestTableWidthsWarningNamesFileNotLine(t *testing.T) {
+	cases := map[string]string{
+		"invalid":      "<!-- Table-Widths: 30%,70% -->\n\n" + widthsTable,
+		"mismatch":     "<!-- Table-Widths: 1,2,3 -->\n\n" + widthsTable,
+		"not adjacent": "<!-- Table-Widths: 1,2,3 -->\n\ntext\n\n" + widthsTable,
+	}
+
+	for name := range compilers {
+		for label, src := range cases {
+			t.Run(name+"/"+label, func(t *testing.T) {
+				_, logs := compileLogged(t, name, src, "docs/page.md")
+
+				assert.Contains(t, logs, `"file":"docs/page.md"`)
+				assert.Contains(t, logs, "Table-Widths")
+				assert.NotContains(t, logs, "line")
+			})
+		}
+	}
+}

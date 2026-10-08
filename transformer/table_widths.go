@@ -20,11 +20,18 @@ var tableWidthsDirective = regexp.MustCompile(`(?is)^<!--\s*Table-Widths\s*:(.*?
 //
 // The comment is an HTML comment so that GitHub and GitLab still show a plain
 // table; only Confluence gets the column widths.
-type TableWidthsTransformer struct{}
+type TableWidthsTransformer struct {
+	// FilePath names the document in warnings. The source the transformer
+	// sees has lost its header comments and had its macros and includes
+	// expanded, so a line counted in it is not a line of the file; the
+	// warnings quote the directive instead.
+	FilePath string
+}
 
-// NewTableWidthsTransformer creates a new instance of TableWidthsTransformer.
-func NewTableWidthsTransformer() *TableWidthsTransformer {
-	return &TableWidthsTransformer{}
+// NewTableWidthsTransformer creates a new instance of TableWidthsTransformer
+// for the document at path.
+func NewTableWidthsTransformer(path string) *TableWidthsTransformer {
+	return &TableWidthsTransformer{FilePath: path}
 }
 
 // Transform implements the parser.ASTTransformer interface.
@@ -49,32 +56,29 @@ func (t *TableWidthsTransformer) Transform(doc *ast.Document, reader text.Reader
 	})
 
 	for _, d := range directives {
-		block, value := d.block, d.value
-		line := getNodeLineNumber(block, source)
-
 		// Blank lines leave no node behind, so "the next sibling" is what
 		// "immediately before" means once Markdown formatters add them.
-		table, ok := block.NextSibling().(*ext_ast.Table)
+		table, ok := d.block.NextSibling().(*ext_ast.Table)
 		if !ok {
-			log.Warn().Msgf("line %d: Table-Widths is not directly followed by a table; ignoring it", line)
+			t.warn("Table-Widths %q is not directly followed by a table; ignoring it", d.value)
 
 			continue
 		}
 
-		parent := block.Parent()
-		parent.RemoveChild(parent, block)
+		parent := d.block.Parent()
+		parent.RemoveChild(parent, d.block)
 
-		widths, err := parseTableWidths(value)
+		widths, err := parseTableWidths(d.value)
 		if err != nil {
-			log.Warn().Msgf("line %d: Table-Widths %q: %v; publishing the table without column widths", line, value, err)
+			t.warn("Table-Widths %q: %v; publishing the table without column widths", d.value, err)
 
 			continue
 		}
 
 		if len(widths) != len(table.Alignments) {
-			log.Warn().Msgf(
-				"line %d: Table-Widths lists %d widths but the table has %d columns; publishing the table without column widths",
-				line, len(widths), len(table.Alignments),
+			t.warn(
+				"Table-Widths %q lists %d widths but the table has %d columns; publishing the table without column widths",
+				d.value, len(widths), len(table.Alignments),
 			)
 
 			continue
@@ -87,6 +91,10 @@ func (t *TableWidthsTransformer) Transform(doc *ast.Document, reader text.Reader
 		colgroup.SetCode(true)
 		table.InsertBefore(table, table.FirstChild(), colgroup)
 	}
+}
+
+func (t *TableWidthsTransformer) warn(format string, args ...any) {
+	log.Warn().Str("file", t.FilePath).Msgf(format, args...)
 }
 
 func colgroupMarkup(widths []int) []byte {

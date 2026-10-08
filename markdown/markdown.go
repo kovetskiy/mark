@@ -72,7 +72,7 @@ func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
 	// markup Confluence discards or rejects. There is nothing to opt into.
 	m.Parser().AddOptions(parser.WithASTTransformers(
 		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
-		util.Prioritized(ctransformer.NewTableWidthsTransformer(), 100),
+		util.Prioritized(ctransformer.NewTableWidthsTransformer(c.Path), 100),
 	))
 
 	if slices.Contains(c.MarkConfig.Features, "emoji") {
@@ -490,7 +490,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 		util.Prioritized(c.Pipeline, 10),
 		util.Prioritized(ctransformer.NewLayoutTransformer(), 100),
 		util.Prioritized(ctransformer.NewGHAlertsTransformer(), 100),
-		util.Prioritized(ctransformer.NewTableWidthsTransformer(), 100),
+		util.Prioritized(ctransformer.NewTableWidthsTransformer(c.Path), 100),
 		// Last, so that it sees the headings includes and macros brought in as
 		// well as the ones written in the file, and so that heading ids have
 		// already been assigned.

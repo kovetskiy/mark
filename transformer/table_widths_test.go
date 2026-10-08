@@ -22,7 +22,7 @@ func parseTableWidths(t *testing.T, source string) ast.Node {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.Table),
 		goldmark.WithParserOptions(
-			parser.WithASTTransformers(util.Prioritized(transformer.NewTableWidthsTransformer(), 100)),
+			parser.WithASTTransformers(util.Prioritized(transformer.NewTableWidthsTransformer("test.md"), 100)),
 		),
 	)
 
@@ -85,7 +85,7 @@ func TestTableWidthsTransformerColgroupRendersThroughGoldmark(t *testing.T) {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.NewTable(extension.WithTableCellAlignMethod(extension.TableCellAlignStyle))),
 		goldmark.WithParserOptions(
-			parser.WithASTTransformers(util.Prioritized(transformer.NewTableWidthsTransformer(), 100)),
+			parser.WithASTTransformers(util.Prioritized(transformer.NewTableWidthsTransformer("test.md"), 100)),
 		),
 	)
 
