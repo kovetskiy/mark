@@ -138,7 +138,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 
 	// Read as CommonMark defines it before anything looks at it, which is
 	// also what goldmark's own renderer checks for a dangerous scheme.
-	destination := ctransformer.ImageDestination(n, source)
+	destination := n.Destination.Value(source)
 
 	if !r.Unsafe && html.IsDangerousURL(destination) {
 		return ast.WalkContinue, nil
@@ -273,11 +273,7 @@ func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachm
 // entity references, and passing those through put `\&#34;` and `&amp;amp;` on
 // the page where `"` and `&` were meant.
 func (r *ConfluenceImageRenderer) imageTitle(n *ast.Image, source []byte) string {
-	if ctransformer.HasPlainTitle(n) {
-		return n.Title.Str(source)
-	}
-
-	return r.plainText(n.Title.Bytes(source))
+	return n.Title.Value(source)
 }
 
 // imageAlt is the alt text as its text, read the same way as the title.

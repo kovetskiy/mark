@@ -68,7 +68,7 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 		// be checking the wrong page.
 		target := written
 		if !strings.HasPrefix(written, "ac:") {
-			target = LinkDestination(link, reader.Source())
+			target = link.Destination.Value(reader.Source())
 		}
 
 		// The label as written is what the renderer reads for an ac: link.

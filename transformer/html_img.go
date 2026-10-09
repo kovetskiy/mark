@@ -366,7 +366,6 @@ func (t *HTMLImgTransformer) parseHTMLImages(rawBytes []byte) []*ast.Image {
 
 		// The HTML parser has decoded both already.
 		imgNode := ast.NewImage(PlainValue(src))
-		markPlain(imgNode)
 
 		if title != "" {
 			imgNode.Title = text.NewMultiLineValueFromString(title, text.IdentityDecoder)

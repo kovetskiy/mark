@@ -53,7 +53,7 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 			destination = &n.Destination
 
 			// Read as an image's is, for the same reason.
-			candidates = LocalImagePaths(LinkDestination(n, source))
+			candidates = LocalImagePaths(n.Destination.Value(source))
 		case *ast.Image:
 			destination = &n.Destination
 
@@ -61,7 +61,7 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 			// "my%20file.png" or "my\_file.png" is taken as the attachment a
 			// document declared as "my file.png" or "my_file.png" rather
 			// than uploaded a second time beside it and reported as unused.
-			candidates = LocalImagePaths(ImageDestination(n, source))
+			candidates = LocalImagePaths(n.Destination.Value(source))
 		default:
 			return ast.WalkContinue, nil
 		}
@@ -73,11 +73,13 @@ func (t *AttachmentTransformer) Transform(doc *ast.Document, reader text.Reader,
 
 		for _, candidate := range append([]string{target}, candidates...) {
 			if resolved := t.Resolve(candidate); resolved != "" {
-				// A URL built here, not Markdown the document wrote.
-				*destination = PlainValue(resolved)
-
-				if image, ok := node.(*ast.Image); ok {
-					SetAttributeText(image, plainDestinationAttribute, "")
+				// A URL built here, not Markdown the document wrote. A
+				// link's has always been read as Markdown after this,
+				// though, and still is.
+				if _, ok := node.(*ast.Image); ok {
+					*destination = PlainValue(resolved)
+				} else {
+					*destination = SourceValue(resolved)
 				}
 
 				break

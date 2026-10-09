@@ -202,12 +202,12 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 		if r.Unsafe || !html.IsDangerousURL(destination) {
 			// CommonMark escapes and references resolved, then made a URL,
 			// which goldmark v2's URLEscape also makes safe in an attribute.
-			_, _ = writer.Write(util.URLEscape(ctransformer.DecodeMarkdown(n.Destination.Bytes(source))))
+			_, _ = writer.Write(util.URLEscape([]byte(n.Destination.Value(source))))
 		}
 		_ = writer.WriteByte('"')
 		if !n.Title.IsEmpty() {
 			_, _ = writer.WriteString(` title="`)
-			_, _ = ctransformer.DecodeMarkdownTo(html.ContextTextWriter(rc), n.Title.Bytes(source))
+			_, _ = n.Title.WriteTo(html.ContextTextWriter(rc), source)
 			_ = writer.WriteByte('"')
 		}
 		if n.Attributes() != nil {
@@ -252,7 +252,7 @@ func (r *ConfluenceLinkRenderer) localFile(link *ast.Link, source []byte) (strin
 	}
 
 	names := []string{destination}
-	for _, name := range ctransformer.LocalImagePaths(ctransformer.LinkDestination(link, source)) {
+	for _, name := range ctransformer.LocalImagePaths(link.Destination.Value(source)) {
 		if !slices.Contains(names, name) {
 			names = append(names, name)
 		}
