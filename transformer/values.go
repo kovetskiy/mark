@@ -104,6 +104,11 @@ func writeNodeText(b *strings.Builder, node ast.Node, source []byte) {
 	case *ast.AutoLink:
 		b.WriteString(n.Label.Str(source))
 		return
+	case *String:
+		// mark's own node for text it built itself, such as an <img>'s alt
+		// text; v1's ast.String gave its value as its text the same way.
+		b.Write(n.Value)
+		return
 	}
 
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
