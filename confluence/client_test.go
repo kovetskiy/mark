@@ -124,10 +124,13 @@ func TestClientSendsAndDecodesJSON(t *testing.T) {
 func TestClientSendsAReaderAsItIs(t *testing.T) {
 	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "", `{}`)
 
-	_, err := c.do(context.Background(), http.MethodPost, []string{"content", "1", "child", "attachment"}, nil,
+	_, err := c.doWithHeader(context.Background(),
+		http.Header{
+			"Content-Type":      {"multipart/form-data; boundary=boundary"},
+			"X-Atlassian-Token": {"no-check"},
+		},
+		http.MethodPost, []string{"content", "1", "child", "attachment"}, nil,
 		bytes.NewBufferString("--boundary--"), &map[string]any{},
-		withHeader("Content-Type", "multipart/form-data; boundary=boundary"),
-		withHeader("X-Atlassian-Token", "no-check"),
 	)
 	require.NoError(t, err)
 

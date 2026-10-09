@@ -378,19 +378,12 @@ type FolderInfo struct {
 		Base string `json:"base"`
 	} `json:"_links,omitempty"`
 }
-type form struct {
-	buffer io.Reader
-	writer *multipart.Writer
-}
 
-// headers are the ones an attachment upload goes with: the multipart
-// Content-Type, the only one on the request, and the token that lets the
-// upload past Confluence's XSRF check.
-func (form *form) headers() []requestOption {
-	return []requestOption{
-		withHeader("Content-Type", form.writer.FormDataContentType()),
-		withHeader("X-Atlassian-Token", "no-check"),
-	}
+// form is an attachment upload's multipart body; client.do sends it with the
+// headers it needs.
+type form struct {
+	buffer *bytes.Buffer
+	writer *multipart.Writer
 }
 
 type tracer struct {
@@ -1032,7 +1025,7 @@ func (api *API) CreateAttachment(
 
 	response, err := api.v1.do(
 		api.Context(), http.MethodPost, []string{"content", pageID, "child", "attachment"},
-		nil, form.buffer, &result, form.headers()...,
+		nil, form, &result,
 	)
 	if err != nil {
 		return info, newTransportError(
@@ -1094,7 +1087,7 @@ func (api *API) UpdateAttachment(
 	response, err := api.v1.do(
 		api.Context(), http.MethodPost,
 		[]string{"content", pageID, "child", "attachment", attachID, "data"},
-		nil, form.buffer, &result, form.headers()...,
+		nil, form, &result,
 	)
 	if err != nil {
 		return info, newTransportError(
@@ -2879,10 +2872,10 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	}
 
 	var answer map[string]any
-	response, err = api.site.do(
-		api.Context(), http.MethodPost, []string{"pages", "movepage.action"}, query, nil, &answer,
-		withHeader("X-Atlassian-Token", "no-check"),
-		withHeader("Accept", "application/json"),
+	response, err = api.site.doWithHeader(
+		api.Context(),
+		http.Header{"X-Atlassian-Token": {"no-check"}, "Accept": {"application/json"}},
+		http.MethodPost, []string{"pages", "movepage.action"}, query, nil, &answer,
 	)
 	// A response cut short by the run's context is no answer from the action,
 	// however much of it arrived: judged here, a cancelled move was taken for
