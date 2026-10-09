@@ -2867,7 +2867,7 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		"spaceKey":    {target.Space.Key},
 	}
 	// Asks Seraph to authenticate a non-REST request from the basic auth header.
-	if api.site.basic != nil {
+	if api.site.username != "" {
 		query.Set("os_authType", "basic")
 	}
 

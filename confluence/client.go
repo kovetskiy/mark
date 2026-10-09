@@ -29,34 +29,24 @@ type client struct {
 
 	http *http.Client
 
-	// basic is set when mark logs in with a username; bearer is the Personal
-	// Access Token otherwise. At most one of them is set.
-	basic  *basicAuth
-	bearer string
+	// username and password are sent as basic auth when username is set;
+	// otherwise password is a Personal Access Token, sent as a bearer token
+	// when it is set.
+	username string
+	password string
 
 	// trace is the prefix of this client's request and response dumps at
 	// TRACE, or nil when they are not written.
 	trace *tracer
 }
 
-type basicAuth struct {
-	username string
-	password string
-}
-
 // newClient roots a client at base.
 func newClient(base string, httpClient *http.Client, username, password string, trace string) *client {
-	c := &client{http: httpClient}
+	c := &client{http: httpClient, username: username, password: password}
 
 	c.base, c.baseErr = url.Parse(base)
 	if c.baseErr != nil {
 		c.base = &url.URL{}
-	}
-
-	if username != "" {
-		c.basic = &basicAuth{username: username, password: password}
-	} else {
-		c.bearer = password
 	}
 
 	if trace != "" {
@@ -158,10 +148,10 @@ func (c *client) doWithHeader(
 
 	maps.Copy(req.Header, bodyHeader)
 
-	if c.basic != nil {
-		req.SetBasicAuth(c.basic.username, c.basic.password)
-	} else if c.bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+c.bearer)
+	if c.username != "" {
+		req.SetBasicAuth(c.username, c.password)
+	} else if c.password != "" {
+		req.Header.Set("Authorization", "Bearer "+c.password)
 	}
 
 	maps.Copy(req.Header, header)
