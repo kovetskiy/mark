@@ -141,9 +141,10 @@ deterministic.
 that.
 
 **8. `--features` replaces the defaults, it does not add to them.** Defaults are
-`mermaid,mention`. When adding a feature: register it in `markdown/markdown.go` (both
-extensions if applicable), add it to the `Usage` string of the `features` flag in
-`util/flags.go`, and document it in `README.md`.
+`mermaid,mention`. When adding a feature: register its parser options and renderer in
+`markdownFeatures` in `markdown/features.go` and name it in `defaultFeatures` (and
+`legacyFeatures`, if the legacy path supports it), add it to the `Usage` string of the
+`features` flag in `util/flags.go`, and document it in `README.md`.
 
 **9. Everything is sequential today, and one thing still relies on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits

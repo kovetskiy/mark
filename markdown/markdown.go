@@ -20,7 +20,6 @@ import (
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
-	emoji "github.com/yuin/goldmark-emoji/v2"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"
@@ -81,24 +80,7 @@ func (c *ConfluenceLegacyExtension) RendererOptions(cfg *html.Config) []html.Opt
 		// registered at all.
 		crenderer.NewConfluenceFootnoteRenderer(c.Stdlib),
 	}
-
-	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		// Only the parser is taken from goldmark-emoji; its own renderer is
-		// never registered.
-		renderers = append(renderers, crenderer.NewConfluenceEmojiRenderer(c.Stdlib))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		renderers = append(renderers, crenderer.NewConfluenceMkDocsAdmonitionRenderer())
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "date") {
-		renderers = append(renderers, crenderer.NewConfluenceDateRenderer())
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "mention") {
-		renderers = append(renderers, crenderer.NewConfluenceMentionRenderer(c.Stdlib))
-	}
+	renderers = append(renderers, featureRenderers(legacyFeatures, c.MarkConfig.Features, featureDeps{c.Stdlib, c, c.MarkConfig})...)
 
 	return rendererOptions(cfg, renderers)
 }
@@ -115,37 +97,7 @@ func (c *ConfluenceLegacyExtension) ParserOptions(cfg *parser.Config) []parser.O
 		),
 	}
 
-	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		// The options of goldmark-emoji's parser extension, which registers its
-		// parser at 999. An extension cannot hand goldmark another to run, so
-		// they are added here directly.
-		// Nothing else in the set triggers on ':'.
-		opts = append(opts, emoji.NewParser().ParserOptions(cfg)...)
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		opts = append(opts, parser.WithBlockParsers(
-			util.Prioritized(cparser.NewAdmonitionParser(), 100),
-		))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "date") {
-		opts = append(opts, parser.WithInlineParsers(
-			util.Prioritized(cparser.NewDateParser(), 99),
-		))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "mention") {
-		opts = append(opts, parser.WithInlineParsers(
-			util.Prioritized(cparser.NewMentionParser(), 99),
-		))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		opts = append(opts, parser.WithASTTransformers(
-			util.Prioritized[parser.ASTTransformer](ctransformer.NewAutoLinkTransformer(), 110),
-		))
-	}
+	opts = append(opts, featureParserOptions(legacyFeatures, c.MarkConfig.Features, cfg)...)
 
 	opts = append(opts,
 		// Close the void elements and repair the comments an author may have
@@ -687,36 +639,15 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 		// and legacy blockquote syntax.
 		crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(),
 		crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines),
-	}
 
-	if slices.Contains(c.MarkConfig.Features, "date") {
-		renderers = append(renderers, crenderer.NewConfluenceDateRenderer())
+		// goldmark's footnote parser is always on, so `[^1]` is always parsed.
+		// The only question is what renders it, and the alternative is the HTML
+		// goldmark's footnote renderer emits -- ids and fragment links, neither
+		// of which survives a Confluence page. That renderer is not registered
+		// at all.
+		crenderer.NewConfluenceFootnoteRenderer(c.Stdlib),
 	}
-
-	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		// Only the parser is taken from goldmark-emoji; its own renderer is
-		// never registered.
-		renderers = append(renderers, crenderer.NewConfluenceEmojiRenderer(c.Stdlib))
-	}
-
-	// goldmark's footnote parser is always on, so `[^1]` is always parsed.
-	// The only question is what renders it, and the alternative is the HTML
-	// goldmark's footnote renderer emits -- ids and fragment links, neither of
-	// which survives a Confluence page. That renderer is not registered at
-	// all.
-	renderers = append(renderers, crenderer.NewConfluenceFootnoteRenderer(c.Stdlib))
-
-	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		renderers = append(renderers, crenderer.NewConfluenceMkDocsAdmonitionRenderer())
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "mention") {
-		renderers = append(renderers, crenderer.NewConfluenceMentionRenderer(c.Stdlib))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "math") {
-		renderers = append(renderers, crenderer.NewConfluenceMathRenderer(c.Stdlib, c, c.MarkConfig))
-	}
+	renderers = append(renderers, featureRenderers(defaultFeatures, c.MarkConfig.Features, featureDeps{c.Stdlib, c, c.MarkConfig})...)
 
 	return rendererOptions(cfg, renderers)
 }
@@ -747,28 +678,12 @@ func (c *ConfluenceExtension) ParserOptions(cfg *parser.Config) []parser.Option 
 		),
 	}
 
-	// Add date widget support if requested
-	if slices.Contains(c.MarkConfig.Features, "date") {
-		opts = append(opts, parser.WithInlineParsers(
-			util.Prioritized(cparser.NewDateParser(), 99),
-		))
-	}
-
 	// <details> reaches here only because the document wrote the tag, and the
 	// storage format has no way to carry it, so leaving it alone publishes
 	// markup Confluence discards or rejects. There is nothing to opt into.
 	opts = append(opts, parser.WithASTTransformers(
 		util.Prioritized[parser.ASTTransformer](ctransformer.NewDetailsTransformer(), 110),
 	))
-
-	// Add emoji shortcode support if requested
-	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		// The options of goldmark-emoji's parser extension, which registers its
-		// parser at 999. An extension cannot hand goldmark another to run, so
-		// they are added here directly.
-		// Nothing else in the set triggers on ':'.
-		opts = append(opts, emoji.NewParser().ParserOptions(cfg)...)
-	}
 
 	// An <img> is a void tag, which the storage format -- being XML -- cannot
 	// carry as written. Publishing one unconverted is how a page ends up
@@ -783,48 +698,7 @@ func (c *ConfluenceExtension) ParserOptions(cfg *parser.Config) []parser.Option 
 		util.Prioritized[parser.ASTTransformer](ctransformer.NewHTMLImgTransformer(), 115),
 	))
 
-	// Add mkdocsadmonitions support if requested
-	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		opts = append(opts, parser.WithBlockParsers(
-			util.Prioritized(cparser.NewAdmonitionParser(), 100),
-		))
-	}
-
-	// Add mention support if requested
-	if slices.Contains(c.MarkConfig.Features, "mention") {
-		opts = append(opts, parser.WithInlineParsers(
-			util.Prioritized(cparser.NewMentionParser(), 99),
-		))
-	}
-
-	// Add math / latex formula support if requested
-	if slices.Contains(c.MarkConfig.Features, "math") {
-		opts = append(opts,
-			parser.WithBlockParsers(
-				// Between goldmark's fenced code block (700) and its block quote
-				// (800). Below the fence so that a "$$" shown inside one stays a
-				// code sample, and above the paragraph (1000) it would otherwise
-				// become.
-				util.Prioritized(cparser.NewMathBlockParser(), 750),
-			),
-			parser.WithInlineParsers(
-				// Ahead of goldmark's own inline parsers, so that a formula holding
-				// markup characters -- and TeX is made of them -- is taken as a
-				// formula rather than partly as emphasis or a link.
-				util.Prioritized(cparser.NewMathParser(), 99),
-			),
-		)
-	}
-
-	// Add inline-link-card support if requested · renders auto-detected bare
-	// URLs with the `data-card-appearance="inline"` hint, prompting Confluence
-	// Cloud to display them as inline smart cards (page mentions, Jira issues,
-	// GitHub references, etc.) instead of plain hyperlinks.
-	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		opts = append(opts, parser.WithASTTransformers(
-			util.Prioritized[parser.ASTTransformer](ctransformer.NewAutoLinkTransformer(), 110),
-		))
-	}
+	opts = append(opts, featureParserOptions(defaultFeatures, c.MarkConfig.Features, cfg)...)
 
 	opts = append(opts,
 		// Close the void elements, quote the attributes, escape the bare "&"s and
