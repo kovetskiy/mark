@@ -14,13 +14,13 @@ import (
 func footnoteRender(t *testing.T, source string) string {
 	t.Helper()
 
-	return renderExtended(t, source,
-		[]parser.Extension{extension.FootnoteParser},
+	return render(t, source,
 		[]html.Extension{
 			crenderer.NewConfluenceFootnoteRenderer(newStdlib(t)),
 			crenderer.NewConfluenceParagraphRenderer(),
 			crenderer.NewConfluenceTextRenderer(false),
-		})
+		},
+		parser.WithExtensions(extension.FootnoteParser))
 }
 
 // TestFootnoteBothEndsCarryAnAnchor covers the property the whole feature rests

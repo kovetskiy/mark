@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,17 +38,15 @@ func TestConfluenceTagParserClosingTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := parser.New(
-				parser.WithInlineParsers(
+			md := goldmarktest.New(
+				goldmarktest.WithParserOptions(parser.WithInlineParsers(
 					util.Prioritized(cparser.NewConfluenceTagParser(), 199),
-				),
+				)),
+				goldmarktest.WithRendererOptions(html.WithUnsafe()),
 			)
-			r := html.New(html.WithUnsafe())
-
-			source := []byte(tt.input + "\n")
 
 			var buf bytes.Buffer
-			require.NoError(t, r.Render(&buf, source, p.Parse(source)))
+			require.NoError(t, md.Convert([]byte(tt.input+"\n"), &buf))
 			got := buf.String()
 
 			assert.NotContains(t, got, "&lt;/", "a closing Confluence tag must not be escaped")

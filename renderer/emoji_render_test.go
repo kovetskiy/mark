@@ -13,13 +13,13 @@ import (
 func emojiRender(t *testing.T, source string) string {
 	t.Helper()
 
-	return renderExtended(t, source,
-		[]parser.Extension{emoji.NewParser()},
+	return render(t, source,
 		[]html.Extension{
 			crenderer.NewConfluenceEmojiRenderer(newStdlib(t)),
 			crenderer.NewConfluenceParagraphRenderer(),
 			crenderer.NewConfluenceTextRenderer(false),
-		})
+		},
+		parser.WithExtensions(emoji.NewParser()))
 }
 
 // TestEmojiWithALegacyNameBecomesTheMacro covers the emoji Confluence Data
