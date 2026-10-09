@@ -11,11 +11,8 @@ import (
 )
 
 type ConfluenceBlockQuoteRenderer struct {
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options  []html.Option
 	LevelMap BlockQuoteLevelMap
 }
 
@@ -24,14 +21,13 @@ func NewConfluenceBlockQuoteRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceBlockQuoteRenderer{
 		LevelMap: nil,
 	}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceBlockQuoteRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindBlockquote: nodeRenderer(r.renderBlockQuote),

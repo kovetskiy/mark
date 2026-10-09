@@ -18,24 +18,19 @@ var MkDocsAdmonitionAttributeFilter = html.GlobalAttributeFilter
 // ConfluenceMkDocsAdmonitionRenderer renders MkDocs admonitions as Confluence
 // storage format.
 type ConfluenceMkDocsAdmonitionRenderer struct {
-	html.Config
-
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
+	htmlOptions
 }
 
 // NewConfluenceMkDocsAdmonitionRenderer creates a new instance of the ConfluenceMkDocsAdmonitionRenderer.
 func NewConfluenceMkDocsAdmonitionRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceMkDocsAdmonitionRenderer{}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceMkDocsAdmonitionRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		parser.KindAdmonition: nodeRenderer(r.renderMkDocsAdmonition),

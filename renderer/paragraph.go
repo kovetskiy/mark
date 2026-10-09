@@ -10,24 +10,19 @@ import (
 )
 
 type ConfluenceParagraphRenderer struct {
-	html.Config
-
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
+	htmlOptions
 }
 
 // NewConfluenceParagraphRenderer creates a new instance of the ConfluenceParagraphRenderer.
 func NewConfluenceParagraphRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceParagraphRenderer{}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceParagraphRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindParagraph: nodeRenderer(r.renderParagraph),

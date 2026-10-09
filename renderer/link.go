@@ -21,12 +21,9 @@ import (
 )
 
 type ConfluenceLinkRenderer struct {
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
-	Stdlib  *stdlib.Lib
+	Stdlib *stdlib.Lib
 
 	// Attachments collects a file a link points at, when this run attaches
 	// what its documents refer to.
@@ -55,14 +52,13 @@ func NewConfluenceLinkRenderer(
 		Path:             path,
 		AttachReferenced: attachReferenced,
 	}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceLinkRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindLink: contextNodeRenderer(r.renderLink),

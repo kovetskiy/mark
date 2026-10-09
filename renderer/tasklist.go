@@ -12,24 +12,20 @@ import (
 
 // ConfluenceTaskListRenderer renders GFM task lists as Confluence ac:task-list elements.
 type ConfluenceTaskListRenderer struct {
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
-	taskID  int
+	taskID int
 }
 
 func NewConfluenceTaskListRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceTaskListRenderer{}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceTaskListRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindList:     nodeRenderer(r.renderList),

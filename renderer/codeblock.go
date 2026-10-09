@@ -11,12 +11,9 @@ import (
 )
 
 type ConfluenceCodeBlockRenderer struct {
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
-	Stdlib  *stdlib.Lib
+	Stdlib *stdlib.Lib
 }
 
 // NewConfluenceCodeBlockRenderer creates a renderer for indented code blocks.
@@ -24,14 +21,13 @@ func NewConfluenceCodeBlockRenderer(stdlib *stdlib.Lib, opts ...html.Option) htm
 	r := &ConfluenceCodeBlockRenderer{
 		Stdlib: stdlib,
 	}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceCodeBlockRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindCodeBlock: nodeRenderer(r.renderCodeBlock),

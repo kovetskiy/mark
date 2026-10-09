@@ -39,9 +39,28 @@ func contextNodeRenderer(f contextRenderFunc) html.NodeRenderer {
 	})
 }
 
-// withOptions is cfg with the options a renderer's constructor was given
-// applied on top. Those are the html options this repo's renderers have always
-// taken; the ones html.New is given reach a renderer through cfg.
+// htmlOptions is the html.Config a renderer reads: the options html.New is
+// given, with the ones the renderer's constructor was given applied on top.
+// Every renderer here embeds one.
+type htmlOptions struct {
+	html.Config
+
+	options []html.Option
+}
+
+// newHTMLOptions is the config a constructor given opts starts out with,
+// before it is registered.
+func newHTMLOptions(opts []html.Option) htmlOptions {
+	return htmlOptions{Config: withOptions(html.Config{}.Default(), opts), options: opts}
+}
+
+// configure takes the config the renderer is registered with, from
+// RendererOptions.
+func (o *htmlOptions) configure(cfg *html.Config) {
+	o.Config = withOptions(*cfg, o.options)
+}
+
+// withOptions is cfg with opts applied on top.
 func withOptions(cfg html.Config, opts []html.Option) html.Config {
 	for _, opt := range opts {
 		opt.SetFormatOption(&cfg)
