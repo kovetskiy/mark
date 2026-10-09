@@ -34,7 +34,6 @@ import (
 // takes the two halves separately, the first to parser.New and the second to
 // html.New.
 type ConfluenceLegacyExtension struct {
-	html.Config
 	Stdlib      *stdlib.Lib
 	Path        string
 	MarkConfig  types.MarkConfig
@@ -44,7 +43,6 @@ type ConfluenceLegacyExtension struct {
 // NewConfluenceLegacyExtension creates a new instance of the ConfluenceLegacyExtension.
 func NewConfluenceLegacyExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceLegacyExtension {
 	return &ConfluenceLegacyExtension{
-		Config:      html.Config{}.Default(),
 		Stdlib:      stdlib,
 		Path:        path,
 		MarkConfig:  cfg,
@@ -613,7 +611,6 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 // Like ConfluenceLegacyExtension it is a parser.Extension and an
 // html.Extension at once.
 type ConfluenceExtension struct {
-	html.Config
 	Stdlib          *stdlib.Lib
 	Path            string
 	MarkConfig      types.MarkConfig
@@ -651,7 +648,6 @@ func newConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
-		Config:          html.Config{}.Default(),
 		Stdlib:          stdlib,
 		Path:            path,
 		MarkConfig:      cfg,

@@ -90,11 +90,6 @@ func NodeText(node ast.Node, source []byte) string {
 	return b.String()
 }
 
-// LabelText is NodeText for a link's label.
-func LabelText(link *ast.Link, source []byte) string {
-	return NodeText(link, source)
-}
-
 func writeNodeText(b *strings.Builder, node ast.Node, source []byte) {
 	switch n := node.(type) {
 	case *ast.Text:
