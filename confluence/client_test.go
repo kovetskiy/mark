@@ -152,9 +152,7 @@ func TestClientReturnsTheResponseWithADecodeError(t *testing.T) {
 			require.NotNil(t, response)
 			assert.Equal(t, http.StatusOK, response.StatusCode)
 
-			read, readErr := io.ReadAll(response.Body)
-			require.NoError(t, readErr)
-			assert.Equal(t, body, string(read), "the body is still there to read")
+			assert.Equal(t, body, string(response.Body), "the body is still there to read")
 
 			transport := newTransportError(response, "read things", err)
 			assert.Contains(t, transport.Error(), "body that is not JSON")
@@ -174,9 +172,7 @@ func TestClientDoesNotDecodeAFailure(t *testing.T) {
 		require.NoError(t, err, "status %d", status)
 		assert.Empty(t, page.ID, "status %d", status)
 
-		read, err := io.ReadAll(response.Body)
-		require.NoError(t, err)
-		assert.JSONEq(t, `{"id":"not-decoded","message":"no"}`, string(read), "status %d", status)
+		assert.JSONEq(t, `{"id":"not-decoded","message":"no"}`, string(response.Body), "status %d", status)
 	}
 }
 

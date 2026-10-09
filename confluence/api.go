@@ -698,7 +698,7 @@ func (api *API) cachedHomePage(space string) (homePageCacheEntry, bool) {
 func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	var (
 		v1Result   SpaceInfo
-		v1Response *http.Response
+		v1Response *reply
 		v1Err      error
 	)
 
@@ -2495,7 +2495,7 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// about this field, which is what made the mismatch easy to miss.
 	var (
 		v1Result   SpaceInfo
-		v1Response *http.Response
+		v1Response *reply
 		v1Err      error
 	)
 
@@ -2965,7 +2965,7 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 // loginPage reports whether a response is Seraph turning the request away
 // rather than the action answering it: a login reason other than OK, an
 // anonymous user, or a redirect that ended on the login page.
-func loginPage(response *http.Response) bool {
+func loginPage(response *reply) bool {
 	if reason := response.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
 		return true
 	}
@@ -3357,11 +3357,7 @@ var errNoMoveEndpoint = errors.New(
 	"this Confluence did not serve the content move endpoint, which is Cloud-only",
 )
 
-func newErrorStatusNotOK(response *http.Response) error {
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
+func newErrorStatusNotOK(response *reply) error {
 	// The URL is part of every one of these. mark makes several calls per page,
 	// and a status on its own does not say which of them refused.
 	target := requestTarget(response)
@@ -3386,7 +3382,7 @@ func newErrorStatusNotOK(response *http.Response) error {
 	// error is not always Confluence. A proxy's HTML error page or a Server
 	// stack trace can run to megabytes, all of which used to be read into
 	// memory and printed.
-	output, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody+1))
+	output := response.Body
 	truncated := ""
 	if len(output) > maxErrorBody {
 		output = output[:maxErrorBody]
@@ -3415,7 +3411,7 @@ const maxErrorBody = 4096
 
 // requestTarget names the URL a request was made to, with any credentials in
 // it redacted.
-func requestTarget(response *http.Response) string {
+func requestTarget(response *reply) string {
 	if response == nil || response.Request == nil || response.Request.URL == nil {
 		return "the Confluence API"
 	}
@@ -3433,7 +3429,7 @@ func requestTarget(response *http.Response) string {
 // answering 200 with an HTML login page, and what reached the user was
 // `invalid character '<' looking for beginning of value`: no URL, no status,
 // and no page name.
-func newTransportError(response *http.Response, operation string, err error) error {
+func newTransportError(response *reply, operation string, err error) error {
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
 	//
@@ -3454,6 +3450,6 @@ func newTransportError(response *http.Response, operation string, err error) err
 
 // requestCancelled reports whether the context the request behind response
 // carried is done; see API.cancelled.
-func requestCancelled(response *http.Response) bool {
+func requestCancelled(response *reply) bool {
 	return response != nil && response.Request != nil && response.Request.Context().Err() != nil
 }
