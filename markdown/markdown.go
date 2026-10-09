@@ -71,7 +71,6 @@ func (c *ConfluenceLegacyExtension) RendererOptions(cfg *html.Config) []html.Opt
 		crenderer.NewConfluenceBlockQuoteRenderer(),
 		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
 		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path),
-		crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
 		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1),
 		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
 		crenderer.NewConfluenceParagraphRenderer(),
@@ -683,7 +682,6 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 		// Core renderers (excluding blockquote and text which are replaced below)
 		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
 		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path),
-		crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
 		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1),
 		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
 		crenderer.NewConfluenceParagraphRenderer(),

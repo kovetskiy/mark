@@ -10,7 +10,7 @@ import (
 )
 
 // TestConstructorsHonourHTMLOptions covers the html options every constructor
-// accepts. Only NewConfluenceHTMLBlockRenderer used to apply them; the rest
+// accepts. Only the HTML block renderer used to apply them; the rest
 // took them and dropped them, so a caller building a renderer by hand and
 // asking for, say, unsafe links or hard wraps got the defaults with nothing to
 // say why.
@@ -29,7 +29,6 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 		"fencedcodeblock":   crenderer.NewConfluenceFencedCodeBlockRenderer(lib, &collectingAttacher{}, types.MarkConfig{}, "", opts...),
 		"gh alerts":         crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(opts...),
 		"heading":           crenderer.NewConfluenceHeadingRenderer(lib, false, opts...),
-		"htmlblock":         crenderer.NewConfluenceHTMLBlockRenderer(lib, &collectingAttacher{}, "", "", opts...),
 		"image":             crenderer.NewConfluenceImageRenderer(lib, &collectingAttacher{}, "", "", opts...),
 		"link":              crenderer.NewConfluenceLinkRenderer(lib, &collectingAttacher{}, "", false, opts...),
 		"mkdocs admonition": crenderer.NewConfluenceMkDocsAdmonitionRenderer(opts...),
@@ -64,8 +63,6 @@ func htmlConfig(t *testing.T, nodeRenderer html.Extension) html.Config {
 	case *crenderer.ConfluenceGHAlertsBlockQuoteRenderer:
 		return r.Config
 	case *crenderer.ConfluenceHeadingRenderer:
-		return r.Config
-	case *crenderer.ConfluenceHTMLBlockRenderer:
 		return r.Config
 	case *crenderer.ConfluenceImageRenderer:
 		return r.Config
