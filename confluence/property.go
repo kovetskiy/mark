@@ -120,7 +120,7 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 
 	var (
 		result   Property
-		response *http.Response
+		response *reply
 		err      error
 	)
 
@@ -234,7 +234,7 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 
 	var (
 		result   Property
-		response *http.Response
+		response *reply
 		err      error
 	)
 
@@ -272,7 +272,7 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 // ordinary and survivable. Colliding with a key that was there the whole time
 // is neither: it means the listing this run worked from was incomplete, so
 // whatever that property held has already been treated as missing.
-func propertyWriteResult(response *http.Response, key, subject string, creating bool) error {
+func propertyWriteResult(response *reply, key, subject string, creating bool) error {
 	switch response.StatusCode {
 	case http.StatusOK, http.StatusCreated:
 		return nil

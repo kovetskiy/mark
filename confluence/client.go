@@ -75,9 +75,23 @@ func withHeader(key, value string) requestOption {
 	}
 }
 
-// do sends one request and hands back the response, its body read in full and
-// replaced by an in-memory copy, so that a caller can check the status and
-// read the body whatever happened to it here.
+// reply is what do hands back of an answer: the parts of an http.Response
+// mark looks at, with the body already read in full and closed, so there is
+// nothing left for a caller to close.
+type reply struct {
+	StatusCode int
+	Status     string
+	Header     http.Header
+	Body       []byte
+
+	// Request is the request that got this answer -- after redirects, the
+	// last one.
+	Request *http.Request
+}
+
+// do sends one request and hands back the response, its body read in full, so
+// that a caller can check the status and read the body whatever happened to
+// it here.
 //
 // The behaviours below are the ones gopencils had and mark's error handling
 // is built around; they are kept on purpose.
@@ -117,7 +131,7 @@ func (c *client) do(
 	query url.Values,
 	body, out any,
 	options ...requestOption,
-) (*http.Response, error) {
+) (*reply, error) {
 	if c.baseErr != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", c.baseErr)
 	}
@@ -167,27 +181,35 @@ func (c *client) do(
 
 	data, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(data))
 
 	if c.trace != nil {
+		// DumpResponse reads the body it dumps, and the real one is spent.
+		resp.Body = io.NopCloser(bytes.NewReader(data))
 		dump, dumpErr := httputil.DumpResponse(resp, true)
 		if dumpErr != nil {
 			c.trace.Printf("dump response failed: %s", dumpErr)
 		} else {
 			c.trace.Printf("%s", dump)
 		}
-		resp.Body = io.NopCloser(bytes.NewReader(data))
+	}
+
+	answer := &reply{
+		StatusCode: resp.StatusCode,
+		Status:     resp.Status,
+		Header:     resp.Header,
+		Body:       data,
+		Request:    resp.Request,
 	}
 
 	if err != nil {
-		return resp, err
+		return answer, err
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest || resp.StatusCode == http.StatusNoContent || out == nil {
-		return resp, nil
+		return answer, nil
 	}
 
-	return resp, json.NewDecoder(bytes.NewReader(data)).Decode(out)
+	return answer, json.NewDecoder(bytes.NewReader(data)).Decode(out)
 }
 
 // url joins path and query onto the base.
