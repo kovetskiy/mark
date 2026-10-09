@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -65,16 +66,6 @@ func newClient(base string, httpClient *http.Client, username, password string, 
 	return c
 }
 
-// requestOption adjusts one request, and that request only.
-type requestOption func(*http.Request)
-
-// withHeader sets a header on the request, over any do sets itself.
-func withHeader(key, value string) requestOption {
-	return func(req *http.Request) {
-		req.Header.Set(key, value)
-	}
-}
-
 // reply is what do hands back of an answer: the parts of an http.Response
 // mark looks at, with the body already read in full and closed, so there is
 // nothing left for a caller to close.
@@ -104,11 +95,13 @@ type reply struct {
 //   - Auth: basic auth when a username was given, otherwise "Authorization:
 //     Bearer" with the token, and nothing when that is empty too.
 //   - Headers: none by default, beyond what net/http adds. A JSON body is
-//     announced as application/json; anything else a request needs, such as
-//     a multipart Content-Type, comes as an option and overrides that.
-//   - Body: an io.Reader is sent as it is; any other non-nil value is sent as
-//     its JSON encoding. Either way it is buffered, so the retry transport can
-//     replay it.
+//     announced as application/json, and an attachment form as its multipart
+//     Content-Type together with the token that lets an upload past
+//     Confluence's XSRF check. Anything else a request needs comes through
+//     doWithHeader and overrides those.
+//   - Body: a *form is sent as its multipart encoding, an io.Reader as it is,
+//     and any other non-nil value as its JSON encoding. Either way it is
+//     buffered, so the retry transport can replay it.
 //   - Trace: at TRACE the request and the response are dumped, bodies
 //     included, through the same tracer and prefixes as before.
 //   - No response: a request that got no answer returns a nil response and
@@ -130,13 +123,25 @@ func (c *client) do(
 	path []string,
 	query url.Values,
 	body, out any,
-	options ...requestOption,
+) (*reply, error) {
+	return c.doWithHeader(ctx, nil, method, path, query, body, out)
+}
+
+// doWithHeader is do with header set on the request, over any do sets itself.
+// Its keys must be in canonical form.
+func (c *client) doWithHeader(
+	ctx context.Context,
+	header http.Header,
+	method string,
+	path []string,
+	query url.Values,
+	body, out any,
 ) (*reply, error) {
 	if c.baseErr != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", c.baseErr)
 	}
 
-	payload, contentType, err := encodeBody(body)
+	payload, bodyHeader, err := encodeBody(body)
 	if err != nil {
 		return nil, err
 	}
@@ -151,9 +156,7 @@ func (c *client) do(
 		return nil, err
 	}
 
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
+	maps.Copy(req.Header, bodyHeader)
 
 	if c.basic != nil {
 		req.SetBasicAuth(c.basic.username, c.basic.password)
@@ -161,9 +164,7 @@ func (c *client) do(
 		req.Header.Set("Authorization", "Bearer "+c.bearer)
 	}
 
-	for _, option := range options {
-		option(req)
-	}
+	maps.Copy(req.Header, header)
 
 	if c.trace != nil {
 		dump, err := httputil.DumpRequest(req, true)
@@ -235,23 +236,28 @@ func joinPath(base, rest string) string {
 	return base + "/" + rest
 }
 
-// encodeBody turns a request body into bytes and the Content-Type that names
+// encodeBody turns a request body into bytes and the headers that go with
 // them; see do.
-func encodeBody(body any) ([]byte, string, error) {
+func encodeBody(body any) ([]byte, http.Header, error) {
 	switch body := body.(type) {
 	case nil:
-		return nil, "", nil
+		return nil, nil, nil
+	case *form:
+		return body.buffer.Bytes(), http.Header{
+			"Content-Type":      {body.writer.FormDataContentType()},
+			"X-Atlassian-Token": {"no-check"},
+		}, nil
 	case io.Reader:
 		data, err := io.ReadAll(body)
 		if err != nil {
-			return nil, "", fmt.Errorf("unable to read request body: %w", err)
+			return nil, nil, fmt.Errorf("unable to read request body: %w", err)
 		}
-		return data, "", nil
+		return data, nil, nil
 	default:
 		data, err := json.Marshal(body)
 		if err != nil {
-			return nil, "", fmt.Errorf("unable to encode request body: %w", err)
+			return nil, nil, fmt.Errorf("unable to encode request body: %w", err)
 		}
-		return data, "application/json", nil
+		return data, http.Header{"Content-Type": {"application/json"}}, nil
 	}
 }
