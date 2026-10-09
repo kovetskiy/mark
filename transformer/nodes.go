@@ -12,17 +12,11 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// String is an inline node that carries its text itself rather than pointing
-// into the source.
-//
-// goldmark v1 had one, ast.String, and the transformers here used it for two
-// things: markup that has to reach the page exactly as it stands -- the
-// fragments a macro or an include expands to, and the HTML the well-formedness
-// pass repaired -- and plain text, such as an <img>'s alt. v2 has no such node,
-// and the ones that come closest each bring something with them: a Text node
-// is what the <details>, <img> and well-formedness passes look for, and a
-// RawHTML is what the paragraph renderer unwraps. This one is seen by exactly
-// the passes that saw goldmark's, and rendered the way goldmark rendered it.
+// String is an inline node that owns its text: markup written to the page as
+// it stands (Code), or Markdown text decoded and escaped. It stands in for
+// goldmark v1's ast.String, which v2 dropped. A Text or RawHTML node will not
+// do: the <details>, <img> and well-formedness passes rewrite the one, and the
+// paragraph renderer unwraps the other.
 type String struct {
 	ast.BaseInline
 
@@ -67,15 +61,10 @@ func newVerbatim(value []byte) *String {
 	return n
 }
 
-// TextBlock holds the inline content of a paragraph that is not rendered as
-// one: the paragraphs of a tight list item and of a tight definition
-// description, and the markup an <img> was cut out of.
-//
-// goldmark v1 parsed those paragraphs as a node of this kind, and everything
-// here -- the transformers looking for paragraphs, the paragraph renderer
-// deciding on a <p> -- was written against that. v2 keeps them as paragraphs
-// and leaves the renderer to ask whether one is tight, so TightBlockTransformer
-// puts this node back where v1 had it before anything else looks.
+// TextBlock is a paragraph rendered without a <p>: one of a tight list item or
+// a tight definition description, or the markup an <img> was cut out of.
+// goldmark v1 parsed the first two as a node of their own, which the
+// transformers and renderers here still look for.
 type TextBlock struct {
 	ast.BaseBlock
 }
@@ -102,10 +91,8 @@ func NewTextBlock() *TextBlock {
 }
 
 // TightBlockTransformer turns the paragraphs of tight lists and tight
-// definition descriptions into TextBlocks, as goldmark v1's parser did.
-//
-// It has to run before every transformer that looks for paragraphs, so it is
-// registered ahead of them all.
+// definition descriptions into TextBlocks, ahead of every transformer that
+// looks for paragraphs.
 type TightBlockTransformer struct{}
 
 // NewTightBlockTransformer returns a TightBlockTransformer.
@@ -178,13 +165,10 @@ var subDocumentParser = sync.OnceValue(func() parser.Parser {
 	)
 })
 
-// ShapeTransformers put back the parts of the tree goldmark v1's parser built
-// and v2's does not, which the transformers and renderers here were written
-// against: tight paragraphs as TextBlocks, and the footnotes gathered into one
-// list. The first two run before anything else looks at the tree, where v1 had
-// already done it while parsing; the last
-// runs after everything, at the priority v1's own footnote transformer had.
-// Both compile paths register them.
+// ShapeTransformers give the tree the shape goldmark v1's parser built, which
+// the transformers and renderers here read: TextBlocks first, the
+// FootnoteList right after, and its backlinks last of all. Both compile paths
+// register them.
 func ShapeTransformers() []util.PrioritizedValue[parser.ASTTransformer] {
 	return []util.PrioritizedValue[parser.ASTTransformer]{
 		util.Prioritized[parser.ASTTransformer](NewTightBlockTransformer(), 1),
