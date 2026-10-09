@@ -10,14 +10,10 @@ import (
 	"github.com/yuin/goldmark/v2/text"
 )
 
-// goldmark v2 leaves each footnote definition where it was written and has its
-// own renderer gather them up at the end of the page. goldmark v1 did that
-// gathering in the AST: the definitions went into one FootnoteList standing
-// where the first of them was written, the list was moved to the end of the
-// document once everything else had run, and each note got a backlink node
-// per citation. The footnote renderer here was written against that tree, and
-// so were the transformers in between, which saw the notes inside the list.
-// The two transformers below build it again, at the two points v1 did.
+// The footnote renderer reads the notes gathered into one FootnoteList at the
+// end of the document, with a backlink per citation, as goldmark v1 built
+// them; v2 leaves each definition where it was written. The two transformers
+// below build the list.
 
 // FootnoteList holds the footnote definitions of a document.
 type FootnoteList struct {
