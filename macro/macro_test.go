@@ -1,6 +1,7 @@
 package macro
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"text/template"
@@ -165,4 +166,39 @@ func TestExtractMacros_SkipsDirectivesInIndentedCode(t *testing.T) {
 
 	assert.Empty(t, macros)
 	assert.Contains(t, string(remaining), "<!-- Macro: X")
+}
+
+// The hook decides the name the template writes, and so the one reported.
+func TestApplyCollecting_ResolvesTheAttachmentName(t *testing.T) {
+	tmpl := template.Must(template.New("t").Parse(`<img src="{{ .Attachment }}"/>`))
+	m := Macro{Regexp: regexp.MustCompile(`@(\S+)`), Template: tmpl, Config: "Attachment: ${1}"}
+
+	out, names, err := m.ApplyCollecting([]byte("@a%20b.png"), func(name string) (string, bool) {
+		return strings.ReplaceAll(name, "%20", " "), true
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, `<img src="a b.png"/>`, string(out))
+	assert.Equal(t, []string{"a b.png"}, names)
+
+	out, names, err = m.ApplyCollecting([]byte("@a%20b.png"), nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, `<img src="a%20b.png"/>`, string(out))
+	assert.Equal(t, []string{"a%20b.png"}, names)
+}
+
+// A value the hook says names no file is written into the page as resolved,
+// and not reported for upload.
+func TestApplyCollecting_DoesNotReportWhatIsNotAFile(t *testing.T) {
+	tmpl := template.Must(template.New("t").Parse(`<img src="{{ .Attachment }}"/>`))
+	m := Macro{Regexp: regexp.MustCompile(`@(\S+)`), Template: tmpl, Config: "Attachment: ${1}"}
+
+	out, names, err := m.ApplyCollecting([]byte("@<https://x/a.png>"), func(name string) (string, bool) {
+		return strings.Trim(name, "<>"), false
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, `<img src="https://x/a.png"/>`, string(out))
+	assert.Empty(t, names)
 }

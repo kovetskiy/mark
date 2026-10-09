@@ -389,7 +389,7 @@ func EnsureFolderAncestry(
 		if len(rest) > 0 {
 			finalTitle := rest[len(rest)-1]
 			parent = &ParentInfo{
-				ID:    "dry-run-folder-id",
+				ID:    dryRunFolderID,
 				Title: finalTitle,
 				Type:  "folder",
 			}
@@ -420,6 +420,24 @@ func EnsureMixedAncestry(
 			return nil, fmt.Errorf("MARK_PARENTS page chain %q could not be resolved", strings.Join(pages, " > "))
 		}
 		anchorPageID = &anchor.ID
+
+		// A dry run creates no missing page, so the anchor is then the deepest
+		// one that exists, and the folders found under it are where the page
+		// sits now rather than where a real run would put it. A real run
+		// creates the rest of the chain and new folders beneath it, so the
+		// folder parent is one that does not exist yet.
+		if dryRun && len(folders) > 0 && anchor.Title != pages[len(pages)-1] {
+			log.Info().Msgf(
+				"skipping folder creation due to dry-run mode: MARK_PARENTS chain %q is not there yet, so neither are folders %v",
+				strings.Join(pages, " > "), folders,
+			)
+
+			return &confluence.PageInfo{
+				ID:    dryRunFolderID,
+				Type:  "folder-parent",
+				Title: folders[len(folders)-1],
+			}, nil
+		}
 	}
 
 	if len(folders) == 0 {

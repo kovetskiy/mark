@@ -131,7 +131,11 @@ type Server struct {
 	users       []User
 	currentUser User
 	requests    []Request
-	nextID      int
+
+	// dataCenter makes the fake answer as Server or Data Center; see
+	// SetDataCenter.
+	dataCenter bool
+	nextID     int
 
 	// PageSizeHint is echoed in paginated responses; tests that exercise
 	// pagination set the page count by adding more items than the client's
@@ -382,6 +386,22 @@ func (s *Server) SetCurrentUser(u User) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.currentUser = u
+}
+
+// SetDataCenter makes the fake answer as Confluence Server or Data Center: the
+// current user loses the accountId Cloud gives every user and keeps the
+// username and userKey a local user directory has instead, and there is no
+// /api/v2 at all. A FailFunc is still consulted first, so a test can answer the
+// v2 routes differently, and what varies between releases, such as the content
+// move endpoint, is the test's to arrange.
+func (s *Server) SetDataCenter() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dataCenter = true
+	s.currentUser.AccountID = ""
+	if s.currentUser.UserKey == "" {
+		s.currentUser.UserKey = "key-" + s.currentUser.Username
+	}
 }
 
 // Page returns the stored page with the given ID, or nil.
@@ -658,7 +678,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		Path:   r.URL.Path,
 		Query:  r.URL.RawQuery,
 	})
-	fail, failHeaders := s.fail, s.failHeaders
+	fail, failHeaders, dataCenter := s.fail, s.failHeaders, s.dataCenter
 	s.mu.Unlock()
 
 	if fail != nil {
@@ -685,6 +705,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasPrefix(path, "/rest/api"):
 		s.handleV1(w, r, strings.TrimPrefix(path, "/rest/api"))
+	case strings.HasPrefix(path, "/api/v2") && dataCenter:
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such endpoint"})
 	case strings.HasPrefix(path, "/api/v2"):
 		s.handleV2(w, r, strings.TrimPrefix(path, "/api/v2"))
 	case path == "/pages/movepage.action":

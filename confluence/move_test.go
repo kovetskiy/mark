@@ -14,7 +14,8 @@ import (
 )
 
 // newDataCenterAPI is the fake dressed as Confluence Server or Data Center:
-// no /api/v2 at all, so IsCloud() is false, and no content move endpoint.
+// a current user with no accountId, so IsCloud() is false, no /api/v2 at all,
+// and no content move endpoint.
 // Everything else -- content read, content update, ancestors on an update,
 // /pages/movepage.action -- is what those releases really do serve.
 func newDataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
@@ -44,8 +45,9 @@ func newDataCenterAPIWith(
 	t.Helper()
 
 	api, server := newAPI(t)
+	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.HasPrefix(r.URL.Path, "/api/v2") || strings.Contains(r.URL.Path, "/move/") {
+		if strings.Contains(r.URL.Path, "/move/") {
 			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
 		}
 		if f != nil {

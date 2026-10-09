@@ -89,7 +89,7 @@ var Flags = []cli.Flag{
 	&cli.BoolFlag{
 		Name:    "dry-run",
 		Value:   false,
-		Usage:   "resolve page and ancestry, show resulting HTML and exit.",
+		Usage:   "resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), altsrctoml.TOML("dry-run", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{

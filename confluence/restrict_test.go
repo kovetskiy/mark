@@ -60,3 +60,67 @@ func TestRestrictPageUpdatesNamedUser(t *testing.T) {
 	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
 	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
 }
+
+// newCloudLoginAPI is a Cloud fake whose client authenticates as login, and
+// whose current-user endpoint answers with email -- empty when the profile
+// hides it, or another address when the login is an alias.
+func newCloudLoginAPI(t *testing.T, login, email string) (*confluence.API, *confluencetest.Server, *confluence.PageInfo) {
+	t.Helper()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, login, "token", false)
+	server.AddSpace("DOCS")
+	stored := server.AddPage("DOCS", "Locked", "page", "")
+	server.SetCurrentUser(confluencetest.User{
+		AccountID: "acct-me",
+		Email:     email,
+		FullName:  "Mark Bot",
+	})
+	require.True(t, api.IsCloud(), "the fixture has to look like Cloud for this to mean anything")
+	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
+}
+
+// TestRestrictPageUpdatesOwnLoginWithoutVisibleEmail is --edit-lock on Cloud
+// when the current user's profile does not name the login: the email is
+// hidden by the profile-visibility settings, or the login is an alias of
+// another address. The login is still the account mark authenticated as, so
+// the page is locked to it.
+func TestRestrictPageUpdatesOwnLoginWithoutVisibleEmail(t *testing.T) {
+	for name, email := range map[string]string{
+		"hidden email": "",
+		"alias login":  "primary@example.com",
+	} {
+		t.Run(name, func(t *testing.T) {
+			api, server, page := newCloudLoginAPI(t, "login@example.com", email)
+
+			require.NoError(t, api.RestrictPageUpdates(page, "Login@Example.com"))
+			assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+		})
+	}
+}
+
+// TestRestrictPageUpdatesOtherNameStillRefused keeps the restriction strict for
+// anyone but the login: a name that is neither the login nor one the current
+// user goes by is not taken to mean the current user.
+func TestRestrictPageUpdatesOtherNameStillRefused(t *testing.T) {
+	api, server, page := newCloudLoginAPI(t, "login@example.com", "")
+
+	err := api.RestrictPageUpdates(page, "someone-else@example.com")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
+	assert.Empty(t, server.Page(page.ID).UpdateRestrictedTo)
+	assert.Zero(t, server.CountRequests("POST", "/restriction"))
+}
+
+// TestRestrictPageUpdatesTokenWithoutUsername is a Personal Access Token setup:
+// with no login, --edit-lock passes an empty name and the page is locked to the
+// current user, while any other name is still refused.
+func TestRestrictPageUpdatesTokenWithoutUsername(t *testing.T) {
+	api, server, page := newCloudLoginAPI(t, "", "")
+
+	require.NoError(t, api.RestrictPageUpdates(page, ""))
+	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+
+	err := api.RestrictPageUpdates(page, "someone-else@example.com")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
+}

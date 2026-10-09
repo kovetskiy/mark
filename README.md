@@ -185,7 +185,10 @@ holds one page of a title: rename one of them, or use
 `--title-append-generated-hash` is the way to keep both titles as they are: it
 appends a short hash of the page's parents, space and title, taken once the
 path has supplied the parents, so it differs between two documents in
-different directories.
+different directories. The pages standing for directories are hashed the same
+way, whether a README stands for them or not, so `docs/api/guides` and
+`docs/sdk/guides` are two pages, and a directory's README is the very page the
+documents beside it sit under.
 
 ### Directories are remembered too
 
@@ -1269,6 +1272,25 @@ properties -- has been done. Each document appears once, with what finally
 became of it, so one [published again](#links-between-pages-published-together)
 whose second publish failed is `failed`.
 
+With `--dry-run` and `--changes-only` together, the report says what a real run
+would do: `would-create` for a page that does not exist yet, `would-update` for
+one a real run would change, and `unchanged` for one it would leave alone. A
+page would change when its content, title, emoji or appearance differs, when it
+would be moved under the parent its headers declare, when its labels differ
+from its `Label` headers, or when an attachment -- declared, embedded or
+rendered -- would be uploaded; the `reason` of a `would-update` names any of
+the last three. Only the pages that would change have their HTML printed, and
+only with the default `url` output format: with `json` or `github` the report
+is all that is written, so a CI step can parse it. A page `--no-overwrite`
+would leave alone is `skipped`, as it is on a real run, and is not printed
+either. A real run's report only tells a content update apart, so a page
+previewed as `would-update` only for a move, its labels or an attachment is
+reported `unchanged` by the real run that makes that change.
+
+Not compared, so a page differing only in them is `unchanged` although a real
+run still applies them: [content properties](#confluence-content-properties),
+the `--edit-lock` restriction, and the `Order` of a page among its siblings.
+
 `orphans` lists the [tracked pages whose source file is
 gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the
 `--on-orphan` action taken: `report` for a page that was only reported and left
@@ -1460,7 +1482,25 @@ And attach any image with the following
 
 The width will be the commented html after the image (in this case 300px).
 
-Currently this is not compatible with the automated upload of inline images.
+The file named by `Attachment:` is uploaded with the page, and the name the macro
+writes into the page is the one it is uploaded under. A path is read relative to
+the document, and is subject to the same rules as any other attachment (see
+[Where an attachment may come from](#where-an-attachment-may-come-from)). A file that is also declared with `<!-- Attachment: -->` is uploaded once. A value that is a URL
+(`https://...`, `mailto:`, `data:` and the like, though not a filename that merely holds a colon), or an absolute or UNC path, with or without angle brackets, names no file beside the document and is left alone;
+one that only becomes such a path once read, as `%2Fetc%2Fpasswd` and `\/etc/passwd` do, is never looked
+for and is warned about like a missing file. A percent-encoded name such as `my%20logo.png` is read as it is
+for an image: the file of that exact name if there is one, otherwise `my logo.png`.
+An image title captured along with the name, as in `![Logo](logo.png "The logo")`,
+is not part of it: the name without the title is looked for first, and the value
+as written only when that file is not there, so `draft (v2)` names `draft` if there
+is one, as it would for an image. A file that is not there is only warned about,
+under the name the destination gives it, since it may
+already be attached to the page, unlike a file declared with
+`<!-- Attachment: -->`, which fails the run.
+
+The macro replaces the whole image, so the native `<img width="300">` syntax
+described under [HTML img tags](#use-html-img-tags-for-sizing) needs no macro and is usually the
+simpler route.
 
 #### Where an attachment may come from
 
@@ -1935,7 +1975,7 @@ GLOBAL OPTIONS:
    --files string, -f string                      use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
    --continue-on-error                            don't exit if an error occurs while processing a file, continue processing remaining files. [$MARK_CONTINUE_ON_ERROR]
    --compile-only                                 show resulting HTML and don't update Confluence page content. [$MARK_COMPILE_ONLY]
-   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. [$MARK_DRY_RUN]
+   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github. [$MARK_DRY_RUN]
    --edit-lock, -k                                lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. [$MARK_EDIT_LOCK]
    --drop-h1                                      don't include the first H1 heading in Confluence output. [$MARK_DROP_H1]
    --strip-linebreaks, -L                         remove linebreaks inside of tags, to accommodate non-standard Confluence behavior [$MARK_STRIP_LINEBREAKS]
@@ -2372,8 +2412,12 @@ publisher has by definition, and on Cloud it is written through the v2 API, so
 a scoped token holding the page scopes is enough. A space holding several
 independent mirrors can give each its own manifest this way. A title is looked
 up in each space the run publishes to; an id is used as it is, and so suits a
-run confined to one space. The page has to exist already: Mark refuses to start
-rather than quietly keep the mapping somewhere else.
+run confined to one space. One page holds one space's manifest, so a run given
+an id that publishes to a second space fails when it reaches it, rather than
+the two spaces overwriting each other's mapping: name the page by title, or
+publish each space in a run of its own with its own `--manifest-prefix`. The
+page has to exist already: Mark refuses to start rather than quietly keep the
+mapping somewhere else.
 
 #### Two projects in one space
 

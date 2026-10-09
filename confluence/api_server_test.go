@@ -666,7 +666,7 @@ func TestGetUserByNameCachesPerName(t *testing.T) {
 
 // TestIsCloudConcurrentCallsProbeOnce covers the memoisation and its safety
 // together: many goroutines calling IsCloud must agree on the answer, and the
-// Cloud-only probe must be issued at most once. Before sync.Once the flag was
+// probe must be issued at most once. Before sync.Once the flag was
 // read and written without synchronisation, so concurrent callers raced on it
 // and each could issue its own probe.
 func TestIsCloudConcurrentCallsProbeOnce(t *testing.T) {
@@ -694,7 +694,7 @@ func TestIsCloudConcurrentCallsProbeOnce(t *testing.T) {
 		assert.Equal(t, results[0], got, "goroutine %d disagreed about IsCloud", i)
 	}
 
-	assert.LessOrEqual(t, server.CountRequests("GET", "/api/v2/spaces"), 1,
+	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/user/current"),
 		"the Cloud probe should be issued at most once regardless of caller count")
 }
 
@@ -705,14 +705,59 @@ func TestIsCloudCachesAcrossSequentialCalls(t *testing.T) {
 	server.AddSpace("DOCS")
 
 	first := api.IsCloud()
-	before := server.CountRequests("GET", "/api/v2/spaces")
+	before := server.CountRequests("GET", "/rest/api/user/current")
 
 	for range 5 {
 		assert.Equal(t, first, api.IsCloud())
 	}
 
-	assert.Equal(t, before, server.CountRequests("GET", "/api/v2/spaces"),
+	assert.Equal(t, before, server.CountRequests("GET", "/rest/api/user/current"),
 		"repeat calls must not re-probe")
+}
+
+// TestIsCloudReadsTheCurrentUser: the platform is told by how the current user
+// is described, an Atlassian accountId on Cloud and a local username and userKey
+// on Server and Data Center.
+func TestIsCloudReadsTheCurrentUser(t *testing.T) {
+	t.Run("Cloud", func(t *testing.T) {
+		api, _ := newAPI(t)
+
+		assert.True(t, api.IsCloud())
+	})
+
+	t.Run("Data Center", func(t *testing.T) {
+		api, server := newAPI(t)
+		server.SetDataCenter()
+
+		assert.False(t, api.IsCloud())
+	})
+}
+
+// TestIsCloudOnAnUnreadableUserIsNotCloud: a target that cannot be identified
+// is not taken for Cloud, which is what every caller of IsCloud has always
+// assumed of a failed probe.
+func TestIsCloudOnAnUnreadableUserIsNotCloud(t *testing.T) {
+	for name, fail := range map[string]confluencetest.FailFunc{
+		"refused": func(r *http.Request) (int, string, bool) {
+			if r.URL.Path == "/rest/api/user/current" {
+				return http.StatusUnauthorized, `{"message":"bad credentials"}`, true
+			}
+			return 0, "", false
+		},
+		"neither accountId nor username": func(r *http.Request) (int, string, bool) {
+			if r.URL.Path == "/rest/api/user/current" {
+				return http.StatusOK, `{"type":"anonymous"}`, true
+			}
+			return 0, "", false
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api, server := newAPI(t)
+			server.SetFail(fail)
+
+			assert.False(t, api.IsCloud())
+		})
+	}
 }
 
 // scopedTokenV1Gone makes the v1 space endpoint answer as it does for an

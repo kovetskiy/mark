@@ -255,9 +255,16 @@ func (t *DetailsTransformer) transformDetailsMarkup(rawContent []byte, depth *in
 	// gained a <tbody> the author never wrote. The result stayed well-formed,
 	// so nothing downstream objected and the wrong page was published in
 	// silence. Converting three tags needs no document tree.
+	//
+	// The one thing html.Parse did that was needed is close the end tags HTML
+	// lets an author omit: `<td>a<td>b</table>` copied as written is not XML,
+	// and Confluence refuses the whole page. That is done by a token pass that
+	// only ever inserts an end tag, so storage-format markup is still left as
+	// written.
 	out, changed := rewriteDetails(rawContent)
 	if changed {
 		*depth += balance
+		out, _ = closeOmittedEndTags(out)
 	}
 
 	return out, changed

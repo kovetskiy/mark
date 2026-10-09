@@ -7,6 +7,7 @@ import (
 	// a security primitive. The digest is embedded in the page version message
 	// and matched back with a 40-hex-character regex, so widening it would stop
 	// mark from recognising pages published by earlier versions.
+	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // G505: non-cryptographic content fingerprint
 	"encoding/hex"
 	"errors"
@@ -848,10 +849,6 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			return nil, nil, err
 		}
 
-		if !meta.DeclaredParents {
-			meta.Parents = append(meta.Parents, derived...)
-		}
-
 		// A directory's own document is titled by the directory, whatever the
 		// filename would have said -- "Readme" on every page that has one. The
 		// title comes from the same place its children's parent does, so the
@@ -860,14 +857,26 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		if err != nil {
 			return nil, nil, err
 		}
-		if title != "" {
-			meta.Title = title
+
+		// The pages standing for directories are hashed like any other, and
+		// both ends have to agree on it: the directory's own document in the
+		// title it publishes, the documents beneath it in the parent they look
+		// for. Hashing only the first left the README childless beside an
+		// empty, unhashed page of the directory's name that took its children.
+		if config.TitleAppendGeneratedHash {
+			derived, title = hashDirectoryTitles(config.Parents, meta.Space, derived, title)
 		}
 
-		// Only now, with the parents final: hashed before they were, two
-		// documents of one title in different directories hashed the same,
-		// and the hash was the very thing meant to tell them apart.
-		if config.TitleAppendGeneratedHash {
+		if !meta.DeclaredParents {
+			meta.Parents = append(meta.Parents, derived...)
+		}
+
+		if title != "" {
+			meta.Title = title
+		} else if config.TitleAppendGeneratedHash {
+			// Only now, with the parents final: hashed before they were, two
+			// documents of one title in different directories hashed the same,
+			// and the hash was the very thing meant to tell them apart.
 			metadata.AppendGeneratedHash(meta)
 		}
 	}
@@ -963,29 +972,57 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	resolveLink := resolver.Resolve
 
+	// What a dry run found where the page would be, for --changes-only to compare
+	// against. Nil means the page would be created.
+	var previewed *confluence.PageInfo
+	// Where a real run would put that page, and whether it failed the ancestry
+	// check: what page.WouldMove needs to tell whether it would be moved.
+	var previewParent *confluence.PageInfo
+	var previewMisplaced bool
+
 	if config.DryRun {
 		if meta != nil {
-			if _, pg, err := page.ResolvePage(true, api, meta, ancestryTracker); err != nil {
+			// As a real run does before resolving, or a parent renamed in
+			// Confluence is looked for under its old title and the page is
+			// reported moved on every preview while the real run leaves it be.
+			// It only reads, and a dry run's manifest store saves nothing.
+			if err := refreshStaleParents(tracker, api, meta); err != nil {
+				return nil, nil, err
+			}
+
+			if parent, pg, misplaced, err := page.PreviewPage(api, meta, ancestryTracker); err != nil {
 				return nil, nil, fmt.Errorf("unable to resolve page location: %w", err)
 			} else if pg == nil {
 				// The title found nothing, which is where a real run consults
 				// the manifest. Saying so is the whole point of a dry run:
 				// otherwise it reports a new page for every rename and retitle
 				// the run would actually have handled in place.
-				previewTrackedResolution(tracker, api, meta, file, sourceHash)
-			} else if tracker != nil {
-				// Found by title. A real run records the path once it has
-				// published, and that is what keeps the path from being read
-				// as an orphan. A dry run returns before then, so it records
-				// here; its store never saves.
-				if err := tracker.Record(meta.Space, file, pg.ID, meta.Title, sourceHash); err != nil {
-					return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+				previewed, err = previewTrackedResolution(tracker, api, meta, file, sourceHash)
+				if err != nil {
+					return nil, nil, err
+				}
+				// Not found by title, so ResolvePage's own move does not apply.
+				previewParent = parent
+			} else {
+				previewed = pg
+				previewParent, previewMisplaced = parent, misplaced
+
+				if tracker != nil {
+					// Found by title. A real run records the path once it has
+					// published, and that is what keeps the path from being read
+					// as an orphan. A dry run returns before then, so it records
+					// here; its store never saves.
+					if err := tracker.Record(meta.Space, file, pg.ID, meta.Title, sourceHash); err != nil {
+						return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+					}
 				}
 			}
 		} else if config.PageID != "" {
-			if _, err := api.GetPageByID(config.PageID); err != nil {
+			pg, err := api.GetPageByID(config.PageID)
+			if err != nil {
 				return nil, nil, fmt.Errorf("unable to resolve page by ID: %w", err)
 			}
+			previewed = pg
 		}
 	}
 
@@ -1017,12 +1054,95 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			IncludePath:      config.IncludePath,
 			ResolveLink:      resolveLink,
 		}
-		html, _, err := markmd.CompileMarkdown(markdown, std, file, cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+
+		// Only a dry run asked to tell changed pages from unchanged ones.
+		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
+
+		status, reason := "", ""
+		if compare && config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
+			// Ahead of compiling, as on a real run: a page edited in Confluence
+			// is left alone whatever the source says, and whatever it would fail on.
+			drift, err := hasDrifted(api, tracker, meta.Space, file, previewed)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if drift != "" {
+				status, reason = report.StatusSkipped, drift
+				log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
+			}
 		}
-		if _, err := fmt.Fprintln(config.output(), html); err != nil {
-			return nil, nil, err
+
+		// A page the drift check above leaves alone is not compiled at all.
+		var html string
+		if status == "" {
+			var attachments *attachmentPreview
+			if compare {
+				var err error
+				attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
+				if err != nil {
+					return nil, nil, err
+				}
+				if attachments != nil {
+					cfg.ResolveAttachment = attachments.links.Resolve
+				}
+			}
+
+			var inline []attachment.Attachment
+			html, inline, err = markmd.CompileMarkdown(markdown, std, file, cfg)
+			if err != nil {
+				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+			}
+
+			if compare {
+				var relinked bool
+				html, relinked = attachments.settle(html)
+
+				var others []string
+				uploads, err := attachments.uploads(inline)
+				if err != nil {
+					return nil, nil, err
+				}
+				if uploads {
+					others = append(others, "an attachment would be uploaded")
+				}
+
+				if previewed != nil && meta != nil {
+					if page.WouldMove(api, previewed, previewParent, meta.Parents, previewMisplaced) {
+						others = append(others, "it would be moved under the parent its headers declare")
+					}
+
+					add, del, err := labelChanges(api, previewed, meta.Labels, config.AppendLabels)
+					if err != nil {
+						return nil, nil, err
+					}
+					if len(add) > 0 || len(del) > 0 {
+						others = append(others, "its labels would change")
+					}
+				}
+
+				status, reason, err = previewChange(html, previewed, relinked, others, file, config, meta, std)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+
+		printHTML := status != report.StatusUnchanged && status != report.StatusSkipped
+		if compare {
+			// A json or github report goes to the same stream, for a CI step to
+			// parse; HTML written ahead of it would make it unparseable.
+			format, err := report.ParseFormat(config.OutputFormat)
+			if err != nil {
+				return nil, nil, err
+			}
+			printHTML = printHTML && format == report.FormatURL
+		}
+
+		if printHTML {
+			if _, err := fmt.Fprintln(config.output(), html); err != nil {
+				return nil, nil, err
+			}
 		}
 
 		// Checked here as well as before an upload. Validating documents in CI
@@ -1033,8 +1153,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		//
 		// The layout wrap and the comment merge are missing from this output,
 		// and neither introduces the errors this catches.
-		if err := markmd.CheckWellFormed(html); err != nil {
-			return nil, nil, err
+		if status != report.StatusSkipped {
+			if err := markmd.CheckWellFormed(html); err != nil {
+				return nil, nil, err
+			}
 		}
 
 		// Said here too, and for the same reason the check above is. The links
@@ -1045,6 +1167,26 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// pull request gate is most likely to use.
 		if err := reportBrokenLinks(resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
 			return nil, nil, err
+		}
+
+		if status != "" {
+			var target confluence.PageInfo
+			var url string
+			if previewed != nil {
+				target = *previewed
+				// Built as a real run builds it, so CI can link the page.
+				url = api.BaseURL + target.Links.Full
+			}
+			title := target.Title
+			if meta != nil {
+				title = meta.Title
+			}
+			results.AddPage(report.Page{
+				File: file, Status: status, Reason: reason,
+				Space: spaceOf(meta), Title: title,
+				PageID: target.ID, URL: url,
+				Warnings: resolver.Broken(),
+			})
 		}
 
 		return nil, nil, nil
@@ -1155,25 +1297,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// lines below, and there is no point sending them for a page that is about
 	// to be left alone.
 	if config.NoOverwrite && !pageCreated && tracker != nil && meta != nil && target != nil {
-		drifted, recorded, err := hasDrifted(api, tracker, meta.Space, file, target)
+		drift, err := hasDrifted(api, tracker, meta.Space, file, target)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		if drifted {
-			log.Warn().Msgf(
-				"page %q was edited in Confluence since mark published it "+
-					"(version %d, mark wrote %d); leaving it alone",
-				target.Title, target.Version.Number, recorded,
-			)
+		if drift != "" {
+			log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
 
 			results.AddPage(report.Page{
 				File: file, Status: report.StatusSkipped,
-				Reason: fmt.Sprintf(
-					"edited in Confluence since mark published it (version %d, mark wrote %d)",
-					target.Version.Number, recorded,
-				),
-				Space: spaceOf(meta), Title: target.Title,
+				Reason: drift,
+				Space:  spaceOf(meta), Title: target.Title,
 				PageID: target.ID, URL: api.BaseURL + target.Links.Full,
 			})
 
@@ -1288,25 +1423,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		emoji = meta.Emoji
 	}
 
-	{
-		var buffer bytes.Buffer
-		err := std.Templates.ExecuteTemplate(
-			&buffer,
-			"ac:layout",
-			struct {
-				Layout  string
-				Sidebar string
-				Body    string
-			}{
-				Layout:  layout,
-				Sidebar: sidebar,
-				Body:    html,
-			},
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to execute layout template: %w", err)
-		}
-		html = buffer.String()
+	html, err = wrapLayout(std, layout, sidebar, html)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var finalVersionMessage string
@@ -1426,7 +1545,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	// No dry-run branch here: a dry run returns long before this, when the
-	// compiled page would have been printed.
+	// compiled page would have been printed or, under --changes-only, compared.
 	if err := page.ApplyProperties(
 		api, target.ID,
 		page.MergeProperties(globalProperties, documentProperties),
@@ -1476,6 +1595,208 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	return target, placement, nil
 }
 
+// wrapLayout puts the compiled body inside the page's layout, which is what is
+// sent to Confluence and what --changes-only fingerprints.
+func wrapLayout(std *stdlib.Lib, layout, sidebar, body string) (string, error) {
+	var buffer bytes.Buffer
+	err := std.Templates.ExecuteTemplate(
+		&buffer,
+		"ac:layout",
+		struct {
+			Layout  string
+			Sidebar string
+			Body    string
+		}{
+			Layout:  layout,
+			Sidebar: sidebar,
+			Body:    body,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("unable to execute layout template: %w", err)
+	}
+
+	return buffer.String(), nil
+}
+
+// attachmentPreview resolves the links a real run would write for a page's
+// attachments, without uploading anything.
+//
+// The fingerprint covers those links, so comparing without them would call a
+// page changed whenever it links a file. An attachment the page does not hold
+// yet, or holds in other bytes, is uploaded by a real run and gets a link that
+// does not exist until then: a page that links it has a changed body. The
+// upload itself is a change to the page either way, which uploads reports.
+type attachmentPreview struct {
+	links *attachment.Resolver
+
+	// remotes is what the page holds now, and declared whether a real run
+	// would upload any of the attachments its headers declare.
+	remotes  []confluence.AttachmentInfo
+	declared bool
+
+	// marker stands in for a link that does not exist until the attachment is
+	// uploaded. Finding it in the compiled page is how a page that links one is
+	// told from one that merely embeds it, which names the file and not the
+	// link. Random per preview, so text in the document cannot be mistaken for it.
+	marker string
+}
+
+// settle reports whether body links an attachment whose link a real run would
+// change, and returns it with the stand-in links read as the file's name.
+func (p *attachmentPreview) settle(body string) (string, bool) {
+	if p == nil || !strings.Contains(body, p.marker) {
+		return body, false
+	}
+
+	return strings.ReplaceAll(body, p.marker, ""), true
+}
+
+// uploads reports whether a real run would upload any attachment to the page:
+// one its headers declare, or one found while compiling it -- an embedded
+// image, a rendered diagram -- whose checksum the page does not hold. The
+// latter are asked the way a real run decides them, so two of them that
+// flatten to one name fail here as they fail there. A preview of a page that
+// does not exist yet (p is nil) only checks that.
+func (p *attachmentPreview) uploads(inline []attachment.Attachment) (bool, error) {
+	var remotes []confluence.AttachmentInfo
+	if p != nil {
+		remotes = p.remotes
+	}
+
+	_, pending, err := attachment.Pending(inline, remotes)
+	if err != nil {
+		return false, fmt.Errorf("unable to resolve attachments: %w", err)
+	}
+
+	return p != nil && (p.declared || len(pending) > 0), nil
+}
+
+func previewAttachmentLinks(
+	api *confluence.API,
+	target *confluence.PageInfo,
+	base string,
+	meta *metadata.Meta,
+) (*attachmentPreview, error) {
+	var declared []string
+	if meta != nil {
+		declared = meta.Attachments
+	}
+
+	local, err := attachment.ResolveLocalAttachments(vfs.LocalOS, base, declared)
+	if err != nil {
+		return nil, fmt.Errorf("unable to locate attachments: %w", err)
+	}
+
+	if target == nil {
+		// Nothing to link against on a page that does not exist yet, but two
+		// files that flatten to one name still fail a real run before it
+		// writes anything, so they fail the preview too.
+		if _, _, err := attachment.Pending(local, nil); err != nil {
+			return nil, fmt.Errorf("unable to resolve attachments: %w", err)
+		}
+
+		return nil, nil
+	}
+
+	remotes, err := api.GetAttachments(target.ID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+	}
+
+	// Asked the way a real run decides it, so what it refuses -- two files
+	// that flatten to one name -- is refused here too.
+	existing, uploads, err := attachment.Pending(local, remotes)
+	if err != nil {
+		return nil, fmt.Errorf("unable to resolve attachments: %w", err)
+	}
+
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, fmt.Errorf("unable to generate a placeholder for pending attachment links: %w", err)
+	}
+	marker := "/mark-dry-run-pending-" + hex.EncodeToString(nonce[:]) + "/"
+
+	// By filename, so a file declared twice is linked under each spelling, as
+	// a real run links it.
+	links := make(map[string]string, len(local))
+	for _, item := range existing {
+		links[item.Filename] = item.Link
+	}
+	for _, item := range uploads {
+		links[item.Filename] = marker + item.Filename
+	}
+
+	linked := make([]attachment.Attachment, 0, len(local))
+	for _, item := range local {
+		item.Link = links[item.Filename]
+		linked = append(linked, item)
+	}
+
+	return &attachmentPreview{
+		links:    attachment.NewResolver(linked),
+		marker:   marker,
+		remotes:  remotes,
+		declared: len(uploads) > 0,
+	}, nil
+}
+
+// previewChange says whether a real run would change the page, using the same
+// comparison it does for the body, and logs the answer.
+//
+// others are what a real run would do to the page besides writing its body --
+// moving it, say -- which it does whatever the body comparison finds, so any of
+// them makes the page one that would change. They come back as the reason.
+func previewChange(
+	body string,
+	existing *confluence.PageInfo,
+	relinked bool,
+	others []string,
+	file string,
+	config Config,
+	meta *metadata.Meta,
+	std *stdlib.Lib,
+) (string, string, error) {
+	if existing == nil {
+		log.Info().Msgf("%s: page would be created", file)
+
+		return report.StatusWouldCreate, "", nil
+	}
+
+	var layout, sidebar, appearance, emoji, title string
+	if meta != nil {
+		layout, sidebar, appearance, emoji, title = meta.Layout, meta.Sidebar, meta.ContentAppearance, meta.Emoji, meta.Title
+	}
+
+	wrapped, err := wrapLayout(std, layout, sidebar, body)
+	if err != nil {
+		return "", "", err
+	}
+
+	hash := contentFingerprint(wrapped, appearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
+	retitled := meta != nil && existing.Title != title
+	reason := strings.Join(others, "; ")
+
+	switch {
+	case retitled:
+		log.Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
+	case relinked:
+		log.Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
+	case readContentHash(existing.Version.Message) == hash:
+		if len(others) == 0 {
+			log.Info().Msgf("%s: page %q is already up to date", file, existing.Title)
+
+			return report.StatusUnchanged, "", nil
+		}
+
+		log.Info().Msgf("%s: page %q has an unchanged body but %s", file, existing.Title, reason)
+	default:
+		log.Info().Msgf("%s: page %q would be updated", file, existing.Title)
+	}
+
+	return report.StatusWouldUpdate, reason, nil
+}
+
 // previewTrackedResolution says what a real run would have done with a document
 // the title lookup could not place.
 //
@@ -1488,28 +1809,44 @@ func previewTrackedResolution(
 	meta *metadata.Meta,
 	file string,
 	sourceHash string,
-) {
+) (*confluence.PageInfo, error) {
 	if tracker == nil || meta == nil {
-		return
+		return nil, nil
 	}
 
-	if pg, err := resolveTrackedPage(tracker, api, meta, file); err == nil && pg != nil {
+	// Errors stop the preview as they stop a real run: reporting "would create"
+	// over a lookup that failed would hide the duplicate a real run refuses to make.
+	pg, err := resolveTrackedPage(tracker, api, meta, file)
+	if err != nil {
+		return nil, err
+	}
+
+	if pg != nil {
 		log.Info().Msgf(
 			"%s would be published to the existing page %s, retitled from %q to %q",
 			file, pg.ID, pg.Title, meta.Title,
 		)
-		return
+
+		return pg, nil
 	}
 
-	if pg, err := resolveRenamedFile(tracker, api, meta, file, sourceHash); err == nil && pg != nil {
+	pg, err = resolveRenamedFile(tracker, api, meta, file, sourceHash)
+	if err != nil {
+		return nil, err
+	}
+
+	if pg != nil {
 		log.Info().Msgf(
 			"%s would be treated as a rename of an already published document, updating page %s",
 			file, pg.ID,
 		)
-		return
+
+		return pg, nil
 	}
 
 	log.Info().Msgf("%s would be published as a new page %q", file, meta.Title)
+
+	return nil, nil
 }
 
 // resolveTrackedPage returns the page this file published to on a previous run,
@@ -1724,6 +2061,42 @@ func resolveRenamedFile(
 	return pg, nil
 }
 
+// labelChanges reads a page's labels and says which updateLabels would add and
+// which it would remove. A dry run asks it too, so the two agree.
+func labelChanges(
+	api *confluence.API,
+	target *confluence.PageInfo,
+	metaLabels []string,
+	appendOnly bool,
+) (add, del []string, err error) {
+	// Nothing to add, and appending removes nothing: no need to read the labels.
+	if appendOnly && len(metaLabels) == 0 {
+		return nil, nil, nil
+	}
+
+	labelInfo, err := api.GetPageLabels(target, "global")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	log.Debug().Msg("Page Labels:")
+	log.Debug().Interface("labels", labelInfo.Labels).Send()
+	log.Debug().Msg("Meta Labels:")
+	log.Debug().Interface("labels", metaLabels).Send()
+
+	if !appendOnly {
+		del = determineLabelsToRemove(labelInfo, metaLabels)
+	}
+	log.Debug().Msg("Del Labels:")
+	log.Debug().Interface("labels", del).Send()
+
+	add = determineLabelsToAdd(metaLabels, labelInfo)
+	log.Debug().Msg("Add Labels:")
+	log.Debug().Interface("labels", add).Send()
+
+	return add, del, nil
+}
+
 // updateLabels brings a page's labels in line with what its document asks for.
 //
 // Whether that means removing the others is the caller's choice. A page's
@@ -1733,26 +2106,10 @@ func resolveRenamedFile(
 // of a label outliving the Label header that introduced it -- which is visible
 // and reversible, unlike the deletion.
 func updateLabels(api *confluence.API, target *confluence.PageInfo, metaLabels []string, appendOnly bool) error {
-	labelInfo, err := api.GetPageLabels(target, "global")
+	addLabels, delLabels, err := labelChanges(api, target, metaLabels, appendOnly)
 	if err != nil {
 		return err
 	}
-
-	log.Debug().Msg("Page Labels:")
-	log.Debug().Interface("labels", labelInfo.Labels).Send()
-	log.Debug().Msg("Meta Labels:")
-	log.Debug().Interface("labels", metaLabels).Send()
-
-	var delLabels []string
-	if !appendOnly {
-		delLabels = determineLabelsToRemove(labelInfo, metaLabels)
-	}
-	log.Debug().Msg("Del Labels:")
-	log.Debug().Interface("labels", delLabels).Send()
-
-	addLabels := determineLabelsToAdd(metaLabels, labelInfo)
-	log.Debug().Msg("Add Labels:")
-	log.Debug().Interface("labels", addLabels).Send()
 
 	if len(addLabels) > 0 {
 		if _, err = api.AddPageLabels(target, addLabels); err != nil {
@@ -2223,7 +2580,10 @@ func Cleanup() {
 }
 
 // hasDrifted reports whether a page has been changed by somebody other than
-// mark since mark last published it, along with the version mark wrote.
+// mark since mark last published it, put the way the report says it: why
+// --no-overwrite leaves the page alone, naming the version mark wrote, or ""
+// when it has not drifted. Shared by a real run and the --changes-only
+// preview, so the two cannot disagree about either.
 //
 // The comparison is against the version number rather than the page's content:
 // Confluence rewrites storage markup on save often enough that comparing bodies
@@ -2247,10 +2607,10 @@ func hasDrifted(
 	tracker *manifest.Store,
 	spaceKey, file string,
 	target *confluence.PageInfo,
-) (bool, int64, error) {
+) (string, error) {
 	entry, ok, err := tracker.Lookup(spaceKey, file)
 	if err != nil {
-		return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+		return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 	}
 
 	// A document moved with its title unchanged is found by that title, and
@@ -2261,12 +2621,12 @@ func hasDrifted(
 	if !ok {
 		entry, ok, err = tracker.LookupMoved(spaceKey, file, target.ID)
 		if err != nil {
-			return false, 0, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+			return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 		}
 	}
 
 	if !ok || entry.Version == 0 || entry.PageID != target.ID {
-		return false, 0, nil
+		return "", nil
 	}
 
 	current := target.Version.Number
@@ -2274,7 +2634,14 @@ func hasDrifted(
 		current = before
 	}
 
-	return current != entry.Version, entry.Version, nil
+	if current == entry.Version {
+		return "", nil
+	}
+
+	return fmt.Sprintf(
+		"edited in Confluence since mark published it (version %d, mark wrote %d)",
+		target.Version.Number, entry.Version,
+	), nil
 }
 
 // reportBrokenLinks says what failed a link check, and decides whether it ends
@@ -2569,6 +2936,37 @@ func newHierarchy(config Config, files []string) (*page.Hierarchy, error) {
 	}
 
 	return hierarchy, nil
+}
+
+// hashDirectoryTitles appends the generated hash to the titles of the pages
+// standing for directories: the parents a document's path derives, outermost
+// first, and the directory title its own document takes, if it is one.
+//
+// Each is hashed as AppendGeneratedHash would hash a document there: over the
+// --parents prefix, the hashed directories above it, the space and its title.
+// That is what a directory's own document comes to when it declares no parents
+// of its own, so its title is the one its children look for. One that does
+// declare them is still the directory's page, and is titled by its path rather
+// than by where the header moves it, or its children would lose it.
+func hashDirectoryTitles(prefix []string, space string, derived []string, title string) ([]string, string) {
+	var chain []string
+	// ExtractMeta ignores a --parents whose first entry is empty.
+	if len(prefix) > 0 && prefix[0] != "" {
+		chain = slices.Clone(prefix)
+	}
+
+	hashed := make([]string, 0, len(derived))
+	for _, parent := range derived {
+		parent = metadata.GeneratedHashTitle(chain, space, parent)
+		hashed = append(hashed, parent)
+		chain = append(chain, parent)
+	}
+
+	if title != "" {
+		title = metadata.GeneratedHashTitle(chain, space, title)
+	}
+
+	return hashed, title
 }
 
 // directoryHash gives a directory entry a fingerprint of its own.

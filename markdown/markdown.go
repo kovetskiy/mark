@@ -2,8 +2,11 @@ package mark
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"text/template"
 
@@ -15,6 +18,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
@@ -272,7 +276,11 @@ func expandDirectives(
 	cfg types.MarkConfig,
 	markdown []byte,
 	tmpl *template.Template,
-) (*template.Template, []byte, error) {
+) (*template.Template, []byte, []string, error) {
+	var attachments []string
+
+	resolve := macroFileName(filepath.Dir(path))
+
 	for pass := 0; pass < maxIncludePasses; pass++ {
 		before := markdown
 
@@ -280,20 +288,28 @@ func expandDirectives(
 
 		tmpl, markdown, err = expandIncludes(path, cfg.IncludePath, markdown, tmpl)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		var macros []macro.Macro
 
 		macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to extract macros: %w", err)
+			return nil, nil, nil, fmt.Errorf("unable to extract macros: %w", err)
 		}
 
 		for _, m := range macros {
-			markdown, err = m.Apply(markdown)
+			var attached []string
+
+			markdown, attached, err = m.ApplyCollecting(markdown, resolve)
 			if err != nil {
-				return nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+				return nil, nil, nil, fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
+			}
+
+			for _, name := range attached {
+				if !slices.Contains(attachments, name) {
+					attachments = append(attachments, name)
+				}
 			}
 		}
 
@@ -301,13 +317,164 @@ func expandDirectives(
 		// what was applied, since a macro that matches nothing still counts as
 		// applied and would keep the loop going for ever.
 		if bytes.Equal(before, markdown) {
-			return tmpl, markdown, nil
+			return tmpl, markdown, attachments, nil
 		}
 	}
 
-	return nil, nil, fmt.Errorf(
+	return nil, nil, nil, fmt.Errorf(
 		"includes and macros did not settle after %d passes over %q", maxIncludePasses, path,
 	)
+}
+
+// macroFileName reads a macro's Attachment value the way an image destination is
+// read, and says whether it names a file at all: a URL or a rooted path does
+// not. A value ending in an image title is tried without it first, then as
+// written; each spelling as written, then percent-decoded. The macro writes the
+// returned name into the page, so it has to be settled before it does.
+//
+// The boundary comes before every lookup: a name that reaches outside the
+// project must not learn from os.Stat whether the file is there. Such a name is
+// handed on, for the upload to refuse, only when it is the destination itself
+// and nothing inside the project answered; a title that reaches outside is just
+// a title.
+func macroFileName(base string) func(string) (string, bool) {
+	return func(value string) (string, bool) {
+		return readMacroFileName(base, value)
+	}
+}
+
+// readMacroFileName is macroFileName for one value.
+func readMacroFileName(base, name string) (string, bool) {
+	destinations := []string{name}
+	if match := imageTitle.FindStringSubmatch(name); match != nil {
+		destinations = []string{match[1], name}
+	}
+
+	if !writtenAsFile(destinations[0]) {
+		return stripBrackets(name), false
+	}
+
+	var outside string
+
+	for i, destination := range destinations {
+		for _, candidate := range ctransformer.LocalImagePaths(macroDestination(destination)) {
+			if !crenderer.NamesBesideDocument(candidate) {
+				continue
+			}
+
+			if attachment.CheckReadable(base, candidate) != nil {
+				if i == 0 && outside == "" {
+					outside = candidate
+				}
+
+				continue
+			}
+
+			if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
+				return candidate, true
+			}
+		}
+	}
+
+	if outside != "" {
+		return outside, true
+	}
+
+	// Nothing is there. The warning and the page name the file the
+	// destination does: no brackets, no escapes, and no title. A value that
+	// stops naming a file beside the document once read is kept as written,
+	// for the upload to warn about by that name.
+	if cleaned := macroDestination(destinations[0]); crenderer.NamesBesideDocument(cleaned) {
+		return cleaned, true
+	}
+
+	return name, true
+}
+
+// writtenAsFile reports whether a destination, brackets taken off, is written
+// as a file beside the document rather than as a URL or a rooted path.
+//
+// A leading backslash is a Windows root, or the "\\server" of a UNC path,
+// except where it escapes some other punctuation: "\/etc/passwd" is
+// "/etc/passwd" spelled with an escape, as "%2Fetc%2Fpasswd" and
+// "&#47;etc&#47;passwd" are, and is warned about as they are rather than taken
+// for a path someone meant to write.
+func writtenAsFile(destination string) bool {
+	destination = stripBrackets(destination)
+	if crenderer.NamesBesideDocument(destination) {
+		return true
+	}
+
+	// util.IsPunct is exactly the ASCII punctuation CommonMark lets a
+	// backslash escape.
+	return len(destination) > 1 && destination[0] == '\\' &&
+		destination[1] != '\\' && util.IsPunct(destination[1])
+}
+
+// stripBrackets takes the angle brackets off a destination. "<my file.png>" is
+// how Markdown writes a destination with a space in it; goldmark takes the
+// brackets off an image's, but a macro sees the raw text.
+func stripBrackets(destination string) string {
+	if len(destination) > 2 && destination[0] == '<' && destination[len(destination)-1] == '>' {
+		return destination[1 : len(destination)-1]
+	}
+
+	return destination
+}
+
+// macroDestination takes the brackets off a destination and resolves its
+// backslash escapes and entities.
+func macroDestination(destination string) string {
+	return ctransformer.UnescapeDestination(stripBrackets(destination))
+}
+
+// imageTitle matches a destination followed by an image title, in any of the
+// three quotings CommonMark allows, and captures the destination. A title may
+// hold its own delimiter backslash-escaped -- "a \"b\" c", 'Bob\'s', (a \) b) --
+// but not a bare parenthesis inside parentheses: CommonMark does not read
+// ![x](logo.png (a (b))) as an image at all, so there is no title to drop.
+var imageTitle = regexp.MustCompile(
+	`^(.*\S)\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))$`,
+)
+
+// attachMacroFiles uploads the files macros name in their Attachment key, which
+// the expansion has already written into the page under their flattened names.
+//
+// Every name is one macroFileName said is a file: a URL or a rooted path never
+// gets here. A file the page declared is skipped, and counted as used by the
+// lookup. A file that is not there is only warned about, as it may already be on
+// the page; one outside the project fails, as it does anywhere else.
+func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]attachment.Attachment, error) {
+	var attached []attachment.Attachment
+
+	for _, name := range names {
+		if cfg.ResolveAttachment != nil && cfg.ResolveAttachment(name) != "" {
+			continue
+		}
+
+		// "\/etc/passwd" is written as a file but reads as a rooted path, which
+		// must never be joined onto the document's directory to be looked for.
+		if !crenderer.NamesBesideDocument(name) {
+			log.Warn().Msgf("macro attachment %q is not uploaded: it does not name a file beside the document", name)
+
+			continue
+		}
+
+		file, err := attachment.ResolveLocalAttachment(vfs.LocalOS, filepath.Dir(path), name)
+		if errors.Is(err, attachment.ErrOutsideProject) {
+			return nil, fmt.Errorf("unable to attach %q named by a macro: %w", name, err)
+		}
+
+		if err != nil {
+			log.Warn().Err(err).Msgf("macro attachment %q is not uploaded", name)
+
+			continue
+		}
+
+		attached = append(attached, file)
+	}
+
+	return attached, nil
 }
 
 // expandIncludes runs include expansion over the document until it settles,
@@ -348,7 +515,12 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	// The page's set is handed on to the AST include and macro transformers,
 	// so that they see what the page's own fragments defined. The renderers
 	// keep drawing on the stdlib itself.
-	_, markdown, err = expandDirectives(path, cfg, markdown, tmpl)
+	_, markdown, macroFiles, err := expandDirectives(path, cfg, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
+	}
+
+	macroAttachments, err := attachMacroFiles(path, cfg, macroFiles)
 	if err != nil {
 		return "", nil, err
 	}
@@ -370,7 +542,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(path, markdown, replaced)
 
-	return htmlOutput, ghAlertsExtension.Attachments, nil
+	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }
 
 // CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
@@ -383,7 +555,12 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 
 	// The template set the expansion built is not carried forward: the legacy
 	// extension runs no include or macro transformer to hand it to.
-	_, markdown, err = expandDirectives(path, cfg, markdown, tmpl)
+	_, markdown, macroFiles, err := expandDirectives(path, cfg, markdown, tmpl)
+	if err != nil {
+		return "", nil, err
+	}
+
+	macroAttachments, err := attachMacroFiles(path, cfg, macroFiles)
 	if err != nil {
 		return "", nil, err
 	}
@@ -397,7 +574,7 @@ func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(path, markdown, replaced)
 
-	return htmlOutput, confluenceExtension.Attachments, nil
+	return htmlOutput, append(macroAttachments, confluenceExtension.Attachments...), nil
 }
 
 // ConfluenceExtension is a goldmark extension for GitHub Alerts with Transformer approach

@@ -169,3 +169,17 @@ func TestAPageIsReportedOnce(t *testing.T) {
 	require.Len(t, r.Pages, 1)
 	assert.Equal(t, "second", r.Pages[0].URL, "the later word is the true one")
 }
+
+func TestGitHubSaysWhatADryRunWouldDo(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "docs/a.md", Status: StatusWouldCreate, Title: "A"})
+	r.AddPage(Page{File: "docs/b.md", Status: StatusWouldUpdate, Title: "B"})
+	r.AddPage(Page{File: "docs/c.md", Status: StatusUnchanged, Title: "C"})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::notice file=docs/a.md::would create \"A\"\n::notice file=docs/b.md::would update \"B\"\n",
+		out.String())
+}

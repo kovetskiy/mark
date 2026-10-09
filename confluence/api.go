@@ -60,6 +60,11 @@ type API struct {
 	// resource derived from them; see resource().
 	bearerToken string
 
+	// username is the login mark authenticates with, empty for a Personal
+	// Access Token. Whoever it names is the current user by definition, which
+	// restrictionUserCloud relies on when the profile does not repeat it.
+	username string
+
 	// gateway is set when the base URL is the api.atlassian.com gateway, the
 	// route a scoped API token takes. The page calls go to v2 there, since a
 	// scoped token is not entitled to v1; see v2pages.go.
@@ -76,6 +81,7 @@ type API struct {
 	contentTypesV2 sync.Map
 
 	isCloudFlag bool
+	isCloudErr  error
 	isCloudOnce sync.Once
 
 	// moveEndpointMissing holds the error this Confluence's answer to the v1
@@ -99,6 +105,11 @@ type API struct {
 
 	userCache      map[string]userCacheEntry
 	userCacheMutex sync.RWMutex
+
+	// currentUser is the answer GetCurrentUser last got, guarded by
+	// userCacheMutex. Only a successful lookup is kept, so a failed one is
+	// asked again rather than remembered for the rest of the run.
+	currentUser *User
 
 	// Both maps are keyed by space key and guarded by the one mutex: they
 	// answer the same question about the same thing and are always populated
@@ -484,6 +495,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		restV2:        restV2,
 		site:          site,
 		BaseURL:       baseURL,
+		username:      username,
 		gateway:       isGatewayURL(baseURL),
 		pageCache:     make(map[string]*PageInfo),
 		pageCacheByID: make(map[string]*PageInfo),
@@ -1844,7 +1856,18 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 	return &response.Results[0].User, nil
 }
 
+// GetCurrentUser returns the user mark authenticates as. The answer does not
+// change during a run, so a successful lookup is reused by every later call:
+// the platform probe and an edit lock both need it.
 func (api *API) GetCurrentUser() (*User, error) {
+	api.userCacheMutex.RLock()
+	cached := api.currentUser
+	api.userCacheMutex.RUnlock()
+	if cached != nil {
+		user := *cached
+		return &user, nil
+	}
+
 	var user User
 
 	request, err := api.v1().
@@ -1858,6 +1881,11 @@ func (api *API) GetCurrentUser() (*User, error) {
 	if request.Raw.StatusCode != http.StatusOK {
 		return nil, newErrorStatusNotOK(request)
 	}
+
+	stored := user
+	api.userCacheMutex.Lock()
+	api.currentUser = &stored
+	api.userCacheMutex.Unlock()
 
 	return &user, nil
 }
@@ -1889,32 +1917,57 @@ func isCloudHost(host string) bool {
 	return false
 }
 
-// IsCloud reports whether the target is Confluence Cloud, probing at most once
-// per API value.
-//
-// The result is memoised through sync.Once rather than a plain bool pair: the
-// slow path issues an HTTP request, so two callers racing here would both probe
-// and would also write isCloudFlag concurrently. Once also guarantees that a
-// caller arriving while the probe is in flight waits for the answer instead of
-// reading a half-written one.
+// IsCloud reports whether the target is Confluence Cloud, deciding at most once
+// per API value. A target that could not be identified is reported as not
+// Cloud; cloud says so as an error, for a caller that must not guess.
 func (api *API) IsCloud() bool {
+	isCloud, _ := api.cloud()
+
+	return isCloud
+}
+
+// cloud identifies the target, at most once per API value: a known Cloud
+// host answers without a request, otherwise the current user decides --
+// Cloud names it by an Atlassian accountId, Server and Data Center by a
+// username and userKey instead.
+//
+// Memoised through sync.Once, not a plain bool pair: the slow path issues a
+// request, so racing callers would both ask and write the result
+// concurrently, and Once makes a caller arriving mid-request wait for the
+// answer instead of reading a half-written one.
+func (api *API) cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
-		// 1. Fast path: check for a known Cloud host
 		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
 
-		// 2. Slow path: probe Cloud-only v2 API endpoint
-		var result any
-		request, err := api.v2().Res("spaces", &result).Get(map[string]string{
-			"limit": "1",
-		})
-		api.isCloudFlag = err == nil &&
-			(request.Raw.StatusCode == http.StatusOK || request.Raw.StatusCode == http.StatusForbidden)
+		user, err := api.GetCurrentUser()
+		if err != nil {
+			api.isCloudErr = fmt.Errorf("unable to identify the Confluence platform: %w", err)
+		} else {
+			api.isCloudFlag, api.isCloudErr = identifyCloud(user)
+		}
+		if api.isCloudErr != nil {
+			log.Warn().Err(api.isCloudErr).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
+		}
 	})
 
-	return api.isCloudFlag
+	return api.isCloudFlag, api.isCloudErr
+}
+
+// identifyCloud reads the platform off the current user.
+func identifyCloud(user *User) (bool, error) {
+	switch {
+	case user.AccountID != "":
+		return true, nil
+	case user.Username != "" || user.UserKey != "":
+		return false, nil
+	default:
+		return false, errors.New(
+			"unable to identify the Confluence platform: the current user has neither an accountId nor a username",
+		)
+	}
 }
 
 // restrictionUserCloud resolves the user a Cloud page is restricted to.
@@ -1922,13 +1975,18 @@ func (api *API) IsCloud() bool {
 // Cloud restrictions take an accountId, so the name has to be looked up. The
 // authenticated user is checked first: --edit-lock passes the configured
 // username, which on Cloud is the account's email, and the user search matches
-// full names, so it would not find it. Anyone else goes through the search, and
-// a name that resolves to nobody is an error. It used to fall back to the
-// authenticated user, which quietly locked the page against the very person it
-// was meant to leave editable.
+// full names, so it would not find it. The login itself is matched against the
+// credential mark authenticated with rather than against the profile: Cloud's
+// profile-visibility settings can hide the email from /user/current, and an
+// alias login is not the address the profile reports, yet either way the login
+// names the current user. Anyone else goes through the search, and a name that
+// resolves to nobody is an error. It used to fall back to the authenticated
+// user, which quietly locked the page against the very person it was meant to
+// leave editable.
 func (api *API) restrictionUserCloud(name string) (*User, error) {
 	current, currentErr := api.GetCurrentUser()
-	if currentErr == nil && (name == "" || current.isNamed(name)) {
+	isLogin := api.username != "" && strings.EqualFold(name, api.username)
+	if currentErr == nil && (name == "" || isLogin || current.isNamed(name)) {
 		return current, nil
 	}
 	if name == "" {
@@ -2124,9 +2182,67 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 // An exact title wins; failing that, one differing only in case is taken, as
 // the search this replaces would have matched it.
 //
-// A 404 on the first page is read as "none", as HasChildFolders reads it: a
-// deployment that does not route the v2 listing has no folders to find.
+// A 404 on the first page is read as "none", and the listing is skipped once
+// Cloud is ruled out; see eachDirectChild.
 func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo, error) {
+	var exact, folded string
+	err := api.eachDirectChild(
+		parentID, parentType,
+		fmt.Sprintf("look for folder %q under %s", title, parentID),
+		func(id, typ, childTitle string) bool {
+			if typ != "folder" {
+				return false
+			}
+			if childTitle == title {
+				exact = id
+				return true
+			}
+			if folded == "" && strings.EqualFold(childTitle, title) {
+				folded = id
+			}
+			return false
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case exact != "":
+		return api.GetFolderByID(exact)
+	case folded != "":
+		return api.GetFolderByID(folded)
+	default:
+		return nil, nil
+	}
+}
+
+// eachDirectChild calls visit with every direct child of a page or a folder,
+// in the order the v2 listing gives them, until visit answers true. parentType
+// is "page" or "folder", and picks the listing to read; operation names the
+// request in a transport error.
+//
+// A 404 on the first page reads as an empty listing, since a deployment
+// without this route has no folders either; past the first page it's a real
+// failure, since the listing it interrupts is already known partial.
+//
+// Skipped entirely once the target is identified as Server or Data Center:
+// folders are Cloud-only. Not on !IsCloud, which is also false when
+// identification failed -- skipping then reads a page holding folders as
+// childless.
+func (api *API) eachDirectChild(
+	parentID, parentType, operation string,
+	visit func(id, typ, title string) (stop bool),
+) error {
+	if isCloud, err := api.cloud(); err == nil && !isCloud {
+		log.Debug().Msgf(
+			"not listing the children of %s %s: Confluence Cloud was ruled out",
+			parentType, parentID,
+		)
+
+		return nil
+	}
+
 	const pageSize = 100
 
 	collection := "pages"
@@ -2134,7 +2250,6 @@ func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo
 		collection = "folders"
 	}
 
-	folded := ""
 	var cursor string
 	for {
 		result := struct {
@@ -2158,45 +2273,31 @@ func (api *API) FindChildFolder(parentID, parentType, title string) (*FolderInfo
 			collection+"/"+parentID+"/direct-children", &result,
 		).Get(query)
 		if err != nil {
-			return nil, newTransportError(
-				request, fmt.Sprintf("look for folder %q under %s", title, parentID), err,
-			)
+			return newTransportError(request, operation, err)
 		}
 
-		// First page only, as in HasChildFolders: a 404 partway through is a
-		// real failure.
 		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return nil, nil
+			return nil
 		}
 
 		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+			return newErrorStatusNotOK(request)
 		}
 
 		for _, child := range result.Results {
-			if child.Type != "folder" {
-				continue
-			}
-			if child.Title == title {
-				return api.GetFolderByID(child.ID)
-			}
-			if folded == "" && strings.EqualFold(child.Title, title) {
-				folded = child.ID
+			if visit(child.ID, child.Type, child.Title) {
+				return nil
 			}
 		}
 
 		next := nextCursor(result.Links.Next)
+		// A server that hands back the cursor it was given would otherwise keep
+		// this loop going for as long as it keeps answering.
 		if next == "" || next == cursor || len(result.Results) == 0 {
-			break
+			return nil
 		}
 		cursor = next
 	}
-
-	if folded != "" {
-		return api.GetFolderByID(folded)
-	}
-
-	return nil, nil
 }
 
 // FindRootFolder finds the folder with a title at the root of a space --
@@ -2516,66 +2617,25 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 // folders therefore looks childless there -- while trashing it takes the
 // folders, and every page inside them, along with it.
 //
-// A deployment that does not route the v2 children endpoint is a deployment
-// without folders, so a 404 is read as "none" rather than as a failure: there
-// is nothing there for the answer to be wrong about. Any other status is a real
-// failure and is reported, because a caller about to delete something should
-// not be told "no children" by a request that did not work.
+// A 404 is read as "none", any other failure is reported, and the request is
+// skipped once Cloud is ruled out; see eachDirectChild.
 //
 // Stops at the first folder it sees. The answer is a yes or a no, and the rest
 // of the listing cannot change it.
 func (api *API) HasChildFolders(parentID string) (bool, error) {
-	const pageSize = 100
-
-	var cursor string
-	for {
-		result := struct {
-			Results []struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
-		query := map[string]string{"limit": fmt.Sprintf("%d", pageSize)}
-		if cursor != "" {
-			query["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res(
-			"pages/"+parentID+"/direct-children", &result,
-		).Get(query)
-		if err != nil {
-			return false, newTransportError(request, "list direct children of "+parentID, err)
-		}
-
-		// First page only: a 404 partway through is a real failure, and reading
-		// it as "none" would answer from a listing already known to be partial.
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
-			return false, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return false, newErrorStatusNotOK(request)
-		}
-
-		for _, child := range result.Results {
-			if child.Type == "folder" {
-				return true, nil
-			}
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			return false, nil
-		}
-		cursor = next
+	found := false
+	err := api.eachDirectChild(
+		parentID, "page", "list direct children of "+parentID,
+		func(_, typ, _ string) bool {
+			found = typ == "folder"
+			return found
+		},
+	)
+	if err != nil {
+		return false, err
 	}
+
+	return found, nil
 }
 
 // DeletePage moves a page to the space's trash.

@@ -66,6 +66,42 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	assert.Equal(t, guide.ID, renamed.ID, "the manifest found the page the first run made")
 }
 
+// TestManifestPageByIDAcrossTwoSpaces: a page id names the same page for every
+// space, so a run publishing to two of them used to read one manifest as both
+// and write it back twice. The second write was refused as stale, warned about
+// as a concurrent run, and the run exited 0 with that space's mapping gone.
+// The run fails instead, and the space it did publish keeps its mapping.
+func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	opsHome := server.AddPage("OPS", "Home", "page", "")
+	server.SetHomepage("OPS", opsHome.ID)
+	handbook := server.AddPage("DOCS", "Handbook", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "a.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
+	writeFile(t, dir, "b.md", "<!-- Space: OPS -->\n<!-- Title: Runbook -->\n\nA runbook.\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, ManifestPage: handbook.ID, Output: io.Discard,
+	})
+	require.Error(t, err, "a run spanning two spaces on one manifest page fails")
+	assert.Contains(t, err.Error(), "--manifest-page")
+	assert.Contains(t, err.Error(), `"OPS"`)
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	runbook, err := api.FindPage("OPS", "Runbook", "page")
+	require.NoError(t, err)
+	assert.Nil(t, runbook, "refused before anything was published to the second space")
+
+	assert.NotNil(t,
+		server.SpaceProperty(handbook.ID, manifest.PropertyKey(manifest.ShardFor(filepath.Join(dir, "a.md")))),
+		"the first space's mapping is saved")
+}
+
 // TestManifestPageRequiresTrackPages: the flag says where a manifest is kept,
 // and nothing else keeps one.
 func TestManifestPageRequiresTrackPages(t *testing.T) {

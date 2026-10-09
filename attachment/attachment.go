@@ -82,16 +82,34 @@ func ResolveAttachments(
 	return resolved, err
 }
 
-// ResolveAttachmentsWithRemotes is ResolveAttachments against an
-// already-fetched remote attachment list. It returns the resolved attachments
-// and an updated remote list that includes anything created or updated by this
-// call, so a subsequent call can be made without another round-trip.
-func ResolveAttachmentsWithRemotes(
-	api *confluence.API,
-	page *confluence.PageInfo,
+// Pending returns the attachments that ResolveAttachmentsWithRemotes would
+// upload against remotes -- created, or updated because their checksum
+// differs -- without uploading anything, and refuses what it would refuse.
+// Alongside them come the ones it would keep as they are, with the link the
+// remote they match already has.
+//
+// It is what a dry run asks: the same decision a real run makes, from the same
+// list, so the two cannot disagree about which files would be sent.
+func Pending(
 	attachments []Attachment,
 	remotes []confluence.AttachmentInfo,
-) ([]Attachment, []confluence.AttachmentInfo, error) {
+) (existing, pending []Attachment, err error) {
+	existing, creating, updating, _, err := classify(attachments, remotes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return existing, append(creating, updating...), nil
+}
+
+// classify sorts attachments by what uploading them against remotes takes:
+// nothing, a create, or an update. Repeats of a filename come back apart, as
+// splitByFilename returns them. Checksums not already set are computed in
+// place.
+func classify(
+	attachments []Attachment,
+	remotes []confluence.AttachmentInfo,
+) (existing, creating, updating, duplicates []Attachment, err error) {
 	for i := range attachments {
 		// Skip checksum computation if already set (e.g. by mermaid/d2 renderers
 		// which use the source content as the stable checksum rather than the
@@ -102,7 +120,7 @@ func ResolveAttachmentsWithRemotes(
 
 		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
+			return nil, nil, nil, nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
 		}
 
 		attachments[i].Checksum = checksum
@@ -110,12 +128,12 @@ func ResolveAttachmentsWithRemotes(
 
 	unique, duplicates, err := splitByFilename(attachments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	existing := []Attachment{}
-	creating := []Attachment{}
-	updating := []Attachment{}
+	existing = []Attachment{}
+	creating = []Attachment{}
+	updating = []Attachment{}
 	for _, attachment := range unique {
 		var found bool
 		var same bool
@@ -147,6 +165,24 @@ func ResolveAttachmentsWithRemotes(
 		} else {
 			creating = append(creating, attachment)
 		}
+	}
+
+	return existing, creating, updating, duplicates, nil
+}
+
+// ResolveAttachmentsWithRemotes is ResolveAttachments against an
+// already-fetched remote attachment list. It returns the resolved attachments
+// and an updated remote list that includes anything created or updated by this
+// call, so a subsequent call can be made without another round-trip.
+func ResolveAttachmentsWithRemotes(
+	api *confluence.API,
+	page *confluence.PageInfo,
+	attachments []Attachment,
+	remotes []confluence.AttachmentInfo,
+) ([]Attachment, []confluence.AttachmentInfo, error) {
+	existing, creating, updating, duplicates, err := classify(attachments, remotes)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	for i, attachment := range creating {

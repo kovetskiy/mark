@@ -54,6 +54,12 @@ func LinkDestination(n *ast.Link) string {
 	return unescapeDestination(n.Destination)
 }
 
+// UnescapeDestination reads a destination written as Markdown source, such as
+// a macro's Attachment value, the way ImageDestination reads an image's.
+func UnescapeDestination(destination string) string {
+	return unescapeDestination([]byte(destination))
+}
+
 // unescapeDestination resolves the backslash escapes and the entity and
 // numeric references CommonMark allows in a link destination.
 func unescapeDestination(raw []byte) string {

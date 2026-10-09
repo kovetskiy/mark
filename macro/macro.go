@@ -21,6 +21,12 @@ type Macro struct {
 	Template *template.Template
 	Config   string
 	Name     string
+
+	// defined is, for an inline macro, every tree its body parsed into: its
+	// own and one per {{ define }} in it, as they were when the macro was
+	// defined. A later definition of the same name may have replaced one of
+	// them in the page's set since.
+	defined []*parse.Tree
 }
 
 // MacroDirective contains parsed parameters from a <!-- Macro: ... --> block.
@@ -83,7 +89,28 @@ func ParseMacroDirective(raw []byte) (*MacroDirective, error) {
 func (macro *Macro) Apply(
 	content []byte,
 ) ([]byte, error) {
-	var err error
+	content, _, err := macro.ApplyCollecting(content, nil)
+
+	return content, err
+}
+
+// ApplyCollecting is Apply that also reports the files the expansions name in
+// their Attachment key, in document order, repeats included. The key is only
+// a template variable, so nothing else would ever upload what it points at.
+//
+// resolve, when given, turns the written value into the name of the file it
+// stands for before the template sees it, so that the page and the upload agree
+// on one name, and says whether it names a file at all: a URL does not, and is
+// written into the page without being reported. Nil leaves the value as
+// written, and reports it.
+func (macro *Macro) ApplyCollecting(
+	content []byte,
+	resolve func(name string) (string, bool),
+) ([]byte, []string, error) {
+	var (
+		err         error
+		attachments []string
+	)
 
 	// Where the code is, so that a macro pattern shown inside a fenced block or
 	// a code span is left as the sample it is. Only the start of a match is
@@ -103,33 +130,56 @@ func (macro *Macro) Apply(
 				return match
 			}
 
-			var expanded []byte
+			expanded, attached, expandErr := macro.expand(match, resolve)
+			if expandErr != nil {
+				err = expandErr
 
-			expanded, err = macro.expand(match)
-			if err != nil {
 				return match
+			}
+
+			if attached != "" {
+				attachments = append(attachments, attached)
 			}
 
 			return expanded
 		},
 	)
 
-	return content, err
+	return content, attachments, err
 }
 
-// expand renders the macro's template for one match.
-func (macro *Macro) expand(match []byte) ([]byte, error) {
+// expand renders the macro's template for one match, and returns the file its
+// Attachment key names, if it has one.
+func (macro *Macro) expand(match []byte, resolve func(name string) (string, bool)) ([]byte, string, error) {
 	config := map[string]any{}
 
 	if strings.TrimSpace(macro.Config) != "" {
 		err := yaml.Unmarshal([]byte(macro.Config), &config)
 		if err != nil {
-			return nil, fmt.Errorf("unable to unmarshal macros config template: %w", err)
+			return nil, "", fmt.Errorf("unable to unmarshal macros config template: %w", err)
 		}
 	}
 
 	groups := macro.Regexp.FindSubmatch(match)
 	cfgData := macro.configure(config, groups)
+
+	// Whether the Attachment value names a file is decided once, by whoever
+	// resolved it, rather than guessed again from the name it came out as.
+	var attached string
+
+	if cfg, ok := cfgData.(map[string]any); ok {
+		if name, ok := cfg["Attachment"].(string); ok && name != "" {
+			isFile := true
+			if resolve != nil {
+				name, isFile = resolve(name)
+				cfg["Attachment"] = name
+			}
+
+			if isFile {
+				attached = name
+			}
+		}
+	}
 
 	tmpl := macro.Template
 	if macro.Name != "" {
@@ -137,7 +187,7 @@ func (macro *Macro) expand(match []byte) ([]byte, error) {
 
 		tmpl, err = macro.inlineTemplate(groups)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
@@ -145,13 +195,13 @@ func (macro *Macro) expand(match []byte) ([]byte, error) {
 
 	err := tmpl.Execute(&buf, cfgData)
 	if err != nil {
-		return nil, fmt.Errorf("unable to execute template: %w", err)
+		return nil, "", fmt.Errorf("unable to execute template: %w", err)
 	}
 
 	// Same reason as for an include: a parameter holding an element
 	// must hold nothing else, and a readable template does not
 	// naturally produce that.
-	return includes.TrimElementParameters(buf.Bytes()), nil
+	return includes.TrimElementParameters(buf.Bytes()), attached, nil
 }
 
 // inlineTemplate is an inline macro's template with the match's captures put
@@ -171,17 +221,51 @@ func (macro *Macro) inlineTemplate(groups [][]byte) (*template.Template, error) 
 		return nil, fmt.Errorf("unable to clone inline template: %w", err)
 	}
 
-	tree := macro.Template.Copy()
-	substituteCaptures(tree.Root, func(s string) string {
-		return replaceCaptures(s, groups)
-	})
+	trees := macro.defined
+	if len(trees) == 0 {
+		trees = []*parse.Tree{macro.Template.Tree}
+	}
 
-	tmpl, err = tmpl.AddParseTree(tmpl.Name(), tree)
-	if err != nil {
-		return nil, fmt.Errorf("unable to prepare inline template: %w", err)
+	// Every tree the body parsed, not just its own: a ${n} inside one of its
+	// {{ define }}s was otherwise published as written.
+	for _, defined := range trees {
+		tree := defined.Copy()
+		substituteCaptures(tree.Root, func(s string) string {
+			return replaceCaptures(s, groups)
+		})
+
+		_, err = tmpl.AddParseTree(tree.Name, tree)
+		if err != nil {
+			return nil, fmt.Errorf("unable to prepare inline template: %w", err)
+		}
 	}
 
 	return tmpl, nil
+}
+
+// treesOf maps each template in set to its parse tree.
+func treesOf(set *template.Template) map[string]*parse.Tree {
+	trees := map[string]*parse.Tree{}
+
+	for _, t := range set.Templates() {
+		trees[t.Name()] = t.Tree
+	}
+
+	return trees
+}
+
+// definedTrees is the trees set holds now that it did not hold in before:
+// what a Parse into set since then defined.
+func definedTrees(set *template.Template, before map[string]*parse.Tree) []*parse.Tree {
+	var trees []*parse.Tree
+
+	for _, t := range set.Templates() {
+		if t.Tree != nil && before[t.Name()] != t.Tree {
+			trees = append(trees, t.Tree)
+		}
+	}
+
+	return trees
 }
 
 // substituteCaptures applies replace to the places a capture may stand in a
@@ -443,10 +527,14 @@ func ExtractMacros(
 			// be parsed with those delimiters and its own {{ }} left as literal
 			// text -- with no error, since a template containing no recognised
 			// actions parses fine.
+			before := treesOf(templates)
+
 			m.Template, err = templates.New(dir.Template).Delims("{{", "}}").Parse(body)
 			if err != nil {
 				return nil, contents, fmt.Errorf("unable to parse template: %w", err)
 			}
+
+			m.defined = definedTrees(templates, before)
 		} else {
 			m.Template, err = includes.LoadTemplate(base, includePath, dir.Template, "{{", "}}", templates)
 			if err != nil {

@@ -445,7 +445,9 @@ func NewReadOnlyStore(api *confluence.API) *Store {
 // scoped token can reach. A space holding several independent mirrors can also
 // give each its own manifest this way.
 //
-// A title is looked up in each space the run touches; an id is used as it is.
+// A title is looked up in each space the run touches; an id is used as it is,
+// and so names the same page for every space -- which a run publishing to more
+// than one is refused, since one page holds one space's manifest.
 func (s *Store) SetManifestPage(page string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -550,6 +552,34 @@ func (s *Store) resolveManifestPage(spaceKey string) (string, error) {
 	}
 
 	return found.ID, nil
+}
+
+// refuseSharedPage reports an error when the manifest page has already been
+// resolved for another space in this run, which an id does whatever the space.
+//
+// One page holds one manifest under a prefix: every space on it reads the same
+// properties as its own and writes them back. Two spaces in a run would each
+// take the other's entries for theirs -- and report them as gone -- and then
+// write the same shard twice, the second write against a version the first
+// has already superseded. That write fails, is warned about as a concurrent
+// run, and the mapping it held is lost with the run still succeeding. Refused
+// when the second space is first touched, before anything is published to it,
+// so the run says so instead.
+func (s *Store) refuseSharedPage(spaceKey, contentID string) error {
+	for _, other := range s.sortedSpaces() {
+		if other == spaceKey || s.spaces[other].contentID != contentID {
+			continue
+		}
+		return fmt.Errorf(
+			"--manifest-page %q keeps the manifest of space %q, and this run also publishes to space %q: "+
+				"one page holds one space's manifest, and two would overwrite each other's. "+
+				"Name the page by title so each space finds a page of its own, "+
+				"or publish each space in a run of its own with its own --manifest-prefix",
+			s.manifestPage, other, spaceKey,
+		)
+	}
+
+	return nil
 }
 
 func isNumeric(s string) bool {
@@ -657,6 +687,10 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 		state.backend = contentProperties
 		if s.api.IsCloud() {
 			state.backend = pageProperties
+		}
+
+		if err := s.refuseSharedPage(spaceKey, state.contentID); err != nil {
+			return nil, err
 		}
 
 	case s.api.IsCloud():

@@ -309,15 +309,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 // that resolved into nothing is still not an attachment -- publishing a
 // colleague's source as a download is not what was meant by linking to it.
 func isLocalFileReference(destination string) bool {
-	if destination == "" {
-		return false
-	}
-
-	if strings.HasPrefix(destination, "#") || isRooted(destination) {
-		return false
-	}
-
-	if strings.Contains(destination, "://") || strings.HasPrefix(destination, "mailto:") {
+	if !NamesBesideDocument(destination) {
 		return false
 	}
 
@@ -327,6 +319,41 @@ func isLocalFileReference(destination string) bool {
 	}
 
 	return true
+}
+
+// NamesBesideDocument reports whether a destination can name a file next to the
+// document: not empty, not an anchor, not rooted, and not a URI.
+//
+// A protocol-relative "//host/path" is caught as rooted.
+func NamesBesideDocument(destination string) bool {
+	if destination == "" || strings.HasPrefix(destination, "#") || isRooted(destination) {
+		return false
+	}
+
+	return !isURI(destination)
+}
+
+// opaqueSchemes are the schemes a link is written with and without the "//"
+// after the colon: "mailto:", "data:", and "https:example.com" alike.
+var opaqueSchemes = []string{
+	"mailto", "tel", "sms", "data", "javascript", "urn", "news", "magnet",
+	"xmpp", "about", "blob", "http", "https", "ftp", "file",
+}
+
+// isURI reports whether a destination is a URI rather than a file.
+//
+// Any "://" is one. Without it, only the schemes in opaqueSchemes count: a
+// Linux or macOS filename may hold a colon, and "notes:v2.pdf" or
+// "shot:1.png" is shaped like a scheme without being one, so taking every
+// scheme-shaped prefix for a URI would leave such a file unattached.
+func isURI(destination string) bool {
+	if strings.Contains(destination, "://") {
+		return true
+	}
+
+	scheme, _, found := strings.Cut(destination, ":")
+
+	return found && slices.Contains(opaqueSchemes, strings.ToLower(scheme))
 }
 
 // isRooted reports whether a destination names a place from the root of a
