@@ -548,15 +548,7 @@ func (api *API) wait(d time.Duration) error {
 		return nil
 	}
 
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-api.Context().Done():
-		return api.Context().Err()
-	case <-timer.C:
-		return nil
-	}
+	return sleepContext(api.Context(), d, nil)
 }
 
 // FindRootPage returns the page a chain of parents is created under when no
