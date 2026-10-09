@@ -391,10 +391,23 @@ type tracer struct {
 }
 
 func (tracer *tracer) Printf(format string, args ...any) {
-	// Formatted here and passed on as a message rather than as another format
-	// string: a dump is arbitrary bytes, and a body containing a percent sign
-	// would otherwise come out mangled.
-	log.Trace().Msg(tracer.prefix + " " + boundTraceDump(redactHeaders(fmt.Sprintf(format, args...))))
+	tracer.write(boundTraceDump(fmt.Sprintf(format, args...)))
+}
+
+// dump traces a request or response dump. Only the part of it that is traced
+// is copied into a string.
+func (tracer *tracer) dump(dump []byte) {
+	tracer.write(boundTraceDump(dump))
+}
+
+// write traces a message that is already bounded. It is passed on as a
+// message rather than as another format string: a dump is arbitrary bytes,
+// and a body containing a percent sign would otherwise come out mangled.
+//
+// Headers are redacted after the bound, so that a large body is not split
+// into lines and joined again only for most of it to be thrown away.
+func (tracer *tracer) write(message string) {
+	log.Trace().Msg(tracer.prefix + " " + redactHeaders(message))
 }
 
 // traceDumpLimit is how much of one request or response dump is traced.
@@ -409,9 +422,9 @@ const traceDumpLimit = 64 << 10
 
 // boundTraceDump cuts a dump down to traceDumpLimit, on a character boundary,
 // and says how much was left out.
-func boundTraceDump(dump string) string {
+func boundTraceDump[T string | []byte](dump T) string {
 	if len(dump) <= traceDumpLimit {
-		return dump
+		return string(dump)
 	}
 
 	cut := traceDumpLimit
