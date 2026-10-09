@@ -1,17 +1,15 @@
 package renderer_test
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // renderDefinitionList compiles with the definition-list extension and mark's
@@ -19,19 +17,7 @@ import (
 func renderDefinitionList(t *testing.T, input string) string {
 	t.Helper()
 
-	gm := goldmark.New(
-		goldmark.WithExtensions(extension.DefinitionList),
-		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(
-				util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
-			),
-		),
-	)
-
-	var buf bytes.Buffer
-	require.NoError(t, gm.Convert([]byte(input), &buf))
-
-	return buf.String()
+	return render(t, input, []html.Extension{crenderer.NewConfluenceDefinitionListRenderer()}, parser.WithExtensions(extension.DefinitionListParser))
 }
 
 // TestDefinitionListIsATable: storage format has no <dl>, <dt> or <dd>, so a

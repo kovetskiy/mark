@@ -3,37 +3,39 @@ package renderer
 import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceHeadingRenderer struct {
 	Stdlib *stdlib.Lib
-	html.Config
+	htmlOptions
+
 	DropFirstH1 bool
 }
 
 // NewConfluenceHeadingRenderer creates a new instance of the ConfluenceHeadingRenderer.
-func NewConfluenceHeadingRenderer(lib *stdlib.Lib, dropFirstH1 bool, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceHeadingRenderer(lib *stdlib.Lib, dropFirstH1 bool, opts ...html.Option) html.Extension {
 	r := &ConfluenceHeadingRenderer{
 		Stdlib:      lib,
-		Config:      html.NewConfig(),
 		DropFirstH1: dropFirstH1,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceHeadingRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindHeading, r.renderHeading)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceHeadingRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindHeading: nodeRenderer(r.renderHeading),
+	})}
 }
 
-func (r *ConfluenceHeadingRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceHeadingRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.Heading)
 
 	// If this is the first h1 heading of the document and we want to drop it, let's not render it at all.
@@ -44,16 +46,16 @@ func (r *ConfluenceHeadingRenderer) renderHeading(w util.BufWriter, source []byt
 		return ast.WalkSkipChildren, nil
 	}
 
-	return r.goldmarkRenderHeading(w, source, node, entering)
+	return r.goldmarkRenderHeading(w, source, node, entering, rc)
 }
 
-func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.Heading)
 	if entering {
 		_, _ = w.WriteString("<h")
 		_ = w.WriteByte("0123456"[n.Level])
 		if n.Attributes() != nil {
-			html.RenderAttributes(w, node, html.HeadingAttributeFilter)
+			html.RenderAttributes(w, source, node, html.HeadingAttributeFilter, rc)
 		}
 		_ = w.WriteByte('>')
 
@@ -65,16 +67,18 @@ func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, sour
 		//
 		// Inside the heading rather than before it, which is where the editor
 		// puts one, and the macro renders as nothing either way.
-		if anchor, ok := node.AttributeString(ctransformer.AnchorAttribute); ok && r.Stdlib != nil {
+		if anchor, ok := ctransformer.AttributeText(node, ctransformer.AnchorAttribute, source); ok && r.Stdlib != nil {
 			err := r.Stdlib.Templates.ExecuteTemplate(w, "ac:anchor", struct {
 				Anchor string
 			}{
-				string(anchor.([]byte)),
+				anchor,
 			})
 			if err != nil {
 				return ast.WalkStop, err
 			}
 		}
+
+		_, _ = w.WriteString(taskMarker(node))
 	} else {
 		_, _ = w.WriteString("</h")
 		_ = w.WriteByte("0123456"[n.Level])

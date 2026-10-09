@@ -14,14 +14,15 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/vfs"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceLinkRenderer struct {
-	html.Config
+	htmlOptions
+
 	Stdlib *stdlib.Lib
 
 	// Attachments collects a file a link points at, when this run attaches
@@ -44,23 +45,24 @@ func NewConfluenceLinkRenderer(
 	path string,
 	attachReferenced bool,
 	opts ...html.Option,
-) renderer.NodeRenderer {
+) html.Extension {
 	r := &ConfluenceLinkRenderer{
-		Config:           html.NewConfig(),
 		Stdlib:           lib,
 		Attachments:      attachments,
 		Path:             path,
 		AttachReferenced: attachReferenced,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceLinkRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindLink, r.renderLink)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceLinkRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindLink: nodeRenderer(r.renderLink),
+	})}
 }
 
 // SplitPageAnchor separates a page title from the anchor written after it.
@@ -91,8 +93,11 @@ func SplitPageAnchor(destination string) (title, anchor string) {
 }
 
 // renderLink renders links specifically for confluence
-func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.Link)
+
+	// The destination as written. Each branch below reads it its own way.
+	destination := n.Destination.Str(source)
 
 	// A link to an anchor on this page. The HTML idiom -- href="#X" against an
 	// id="X" on the heading -- renders and does nothing when clicked, because
@@ -100,7 +105,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 	// element's text. ac:link with ac:anchor and no ri:page is the storage
 	// format's own way of saying "somewhere on this page", and is what the
 	// footnote renderers have always emitted.
-	if anchor, found := strings.CutPrefix(string(n.Destination), "#"); found && anchor != "" && r.Stdlib != nil {
+	if anchor, found := strings.CutPrefix(destination, "#"); found && anchor != "" && r.Stdlib != nil {
 		if entering {
 			err := r.Stdlib.Templates.ExecuteTemplate(writer, "ac:link:anchor", struct {
 				Anchor string
@@ -119,14 +124,14 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 		return ast.WalkContinue, nil
 	}
 
-	if len(n.Destination) >= 3 && string(n.Destination[0:3]) == "ac:" {
+	if strings.HasPrefix(destination, "ac:") {
 		if entering {
 			// A "#" in the destination names an anchor on the page rather than
 			// part of its title: "ac:Other Page#Setup" is the section, not a
 			// page called "Other Page#Setup". Storage format says so with the
 			// same ac:anchor a same-page link uses, alongside the ri:page that
 			// says which page.
-			title, anchor := SplitPageAnchor(string(n.Destination[min(3, len(n.Destination)):]))
+			title, anchor := SplitPageAnchor(destination[3:])
 
 			opening := "<ac:link>"
 			if anchor != "" {
@@ -141,9 +146,8 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 			// The page title lands in an XML attribute, so it has to be escaped:
 			// an unescaped "&" makes the body malformed and a quote closes the
 			// attribute early, letting document content inject further attributes.
-			if len(string(n.Destination)) < 4 {
-				//nolint:staticcheck
-				_, err := writer.WriteString(xmlAttrEscape(string(node.Text(source))))
+			if len(destination) < 4 {
+				_, err := writer.WriteString(xmlAttrEscape(ctransformer.NodeText(node, source)))
 				if err != nil {
 					return ast.WalkStop, err
 				}
@@ -161,8 +165,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 
 			// A "]]>" in the link text would terminate the CDATA section early;
 			// splitting it across two sections is the only way to escape it.
-			//nolint:staticcheck
-			_, err = writer.WriteString(cdataEscape(string(node.Text(source))))
+			_, err = writer.WriteString(cdataEscape(ctransformer.NodeText(node, source)))
 			if err != nil {
 				return ast.WalkStop, err
 			}
@@ -180,7 +183,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 	// Decided the same way on the way in and on the way out, as the ac: branch
 	// above is: the renderer is called twice for one link, and a decision made
 	// only on the way in leaves the closing </a> of a tag that was never opened.
-	if r.AttachReferenced && r.attachable(n) {
+	if r.AttachReferenced && r.attachable(n, source) {
 		if entering {
 			if err := r.attachReferencedFile(writer, source, node, n); err != nil {
 				return ast.WalkStop, err
@@ -192,17 +195,19 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 
 	if entering {
 		_, _ = writer.WriteString("<a href=\"")
-		if r.Unsafe || !html.IsDangerousURL(n.Destination) {
-			_, _ = writer.Write(util.EscapeHTML(util.URLEscape(n.Destination, true)))
+		if r.Unsafe || !html.IsDangerousURL(destination) {
+			// CommonMark escapes and references resolved, then made a URL,
+			// which goldmark v2's URLEscape also makes safe in an attribute.
+			_, _ = writer.Write(util.URLEscape([]byte(n.Destination.Value(source))))
 		}
 		_ = writer.WriteByte('"')
-		if n.Title != nil {
+		if !n.Title.IsEmpty() {
 			_, _ = writer.WriteString(` title="`)
-			r.Writer.Write(writer, n.Title)
+			_, _ = n.Title.WriteTo(html.ContextTextWriter(rc), source)
 			_ = writer.WriteByte('"')
 		}
 		if n.Attributes() != nil {
-			html.RenderAttributes(writer, n, html.LinkAttributeFilter)
+			html.RenderAttributes(writer, source, n, html.LinkAttributeFilter, rc)
 		}
 		_ = writer.WriteByte('>')
 	} else {
@@ -219,8 +224,8 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 // part of the question -- a path to nothing is left as the document wrote it,
 // which is what happens without the flag at all -- but the file is not read
 // here, and whether it may be read is decided where it is.
-func (r *ConfluenceLinkRenderer) attachable(link *ast.Link) bool {
-	_, ok := r.localFile(link)
+func (r *ConfluenceLinkRenderer) attachable(link *ast.Link, source []byte) bool {
+	_, ok := r.localFile(link, source)
 
 	return ok
 }
@@ -231,8 +236,8 @@ func (r *ConfluenceLinkRenderer) attachable(link *ast.Link) bool {
 // CommonMark escapes resolved, then as the URL a destination is -- so that
 // "a%23b.png" finds a#b.png and "my\_file.pdf" finds my_file.pdf, while a file
 // really called my%20file.png still finds itself.
-func (r *ConfluenceLinkRenderer) localFile(link *ast.Link) (string, bool) {
-	destination := string(link.Destination)
+func (r *ConfluenceLinkRenderer) localFile(link *ast.Link, source []byte) (string, bool) {
+	destination := link.Destination.Str(source)
 
 	if r.Attachments == nil || r.Stdlib == nil || r.Path == "" {
 		return "", false
@@ -243,7 +248,7 @@ func (r *ConfluenceLinkRenderer) localFile(link *ast.Link) (string, bool) {
 	}
 
 	names := []string{destination}
-	for _, name := range ctransformer.LocalImagePaths(ctransformer.LinkDestination(link)) {
+	for _, name := range ctransformer.LocalImagePaths(link.Destination.Value(source)) {
 		if !slices.Contains(names, name) {
 			names = append(names, name)
 		}
@@ -269,9 +274,9 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 ) error {
 	// Resolved as written rather than as a pattern: a link names one file, and
 	// the one it names is the one the reader was promised.
-	name, ok := r.localFile(link)
+	name, ok := r.localFile(link, source)
 	if !ok {
-		name = string(link.Destination)
+		name = link.Destination.Str(source)
 	}
 
 	attached, err := attachment.ResolveLocalAttachment(
@@ -292,8 +297,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 
 	r.Attachments.Attach(attached)
 
-	//nolint:staticcheck
-	text := string(node.Text(source))
+	text := ctransformer.NodeText(node, source)
 
 	return r.Stdlib.Templates.ExecuteTemplate(writer, "ac:link:attachment", struct {
 		Name string

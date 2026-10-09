@@ -1,11 +1,9 @@
 package renderer
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
-	stdhtml "html"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -16,10 +14,10 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/vfs"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // calculateAlign determines the appropriate ac:align value
@@ -99,7 +97,8 @@ func resolveWidth(explicitWidth string, originalWidth string) string {
 }
 
 type ConfluenceImageRenderer struct {
-	html.Config
+	htmlOptions
+
 	Stdlib      *stdlib.Lib
 	Path        string
 	Attachments attachment.Attacher
@@ -107,27 +106,28 @@ type ConfluenceImageRenderer struct {
 }
 
 // NewConfluenceImageRenderer creates a new instance of the ConfluenceImageRenderer
-func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, path string, imageAlign string, opts ...html.Option) html.Extension {
 	r := &ConfluenceImageRenderer{
-		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		Path:        path,
 		Attachments: attachments,
 		ImageAlign:  imageAlign,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceImageRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindImage, r.renderImage)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceImageRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindImage: nodeRenderer(r.renderImage),
+	})}
 }
 
 // renderImage renders an inline image
-func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
@@ -135,28 +135,15 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 
 	// Read as CommonMark defines it before anything looks at it, which is
 	// also what goldmark's own renderer checks for a dangerous scheme.
-	destination := ctransformer.ImageDestination(n)
+	destination := n.Destination.Value(source)
 
-	if !r.Unsafe && html.IsDangerousURL([]byte(destination)) {
+	if !r.Unsafe && html.IsDangerousURL(destination) {
 		return ast.WalkContinue, nil
 	}
 
-	var explicitWidth, explicitHeight, explicitAlign string
-	if attr, ok := n.Attribute([]byte("width")); ok {
-		if b, ok := attr.([]byte); ok {
-			explicitWidth = string(b)
-		}
-	}
-	if attr, ok := n.Attribute([]byte("height")); ok {
-		if b, ok := attr.([]byte); ok {
-			explicitHeight = string(b)
-		}
-	}
-	if attr, ok := n.Attribute([]byte("align")); ok {
-		if b, ok := attr.([]byte); ok {
-			explicitAlign = string(b)
-		}
-	}
+	explicitWidth, _ := ctransformer.AttributeText(n, "width", source)
+	explicitHeight, _ := ctransformer.AttributeText(n, "height", source)
+	explicitAlign, _ := ctransformer.AttributeText(n, "align", source)
 
 	align := r.ImageAlign
 	if explicitAlign != "" {
@@ -203,7 +190,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				"",
 				displayWidth,
 				explicitHeight,
-				r.imageTitle(n),
+				r.imageTitle(n, source),
 				r.imageAlt(n, source),
 				"",
 				destination,
@@ -238,7 +225,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				attached.Height,
 				displayWidth,
 				explicitHeight,
-				r.imageTitle(n),
+				r.imageTitle(n, source),
 				r.imageAlt(n, source),
 				attached.Filename,
 				"",
@@ -282,12 +269,8 @@ func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachm
 // template. Written as Markdown it still carries its backslash escapes and
 // entity references, and passing those through put `\&#34;` and `&amp;amp;` on
 // the page where `"` and `&` were meant.
-func (r *ConfluenceImageRenderer) imageTitle(n *ast.Image) string {
-	if ctransformer.HasPlainTitle(n) {
-		return string(n.Title)
-	}
-
-	return r.plainText(n.Title)
+func (r *ConfluenceImageRenderer) imageTitle(n *ast.Image, source []byte) string {
+	return n.Title.Value(source)
 }
 
 // imageAlt is the alt text as its text, read the same way as the title.
@@ -305,41 +288,29 @@ func (r *ConfluenceImageRenderer) imageAlt(n *ast.Image, source []byte) string {
 // &amp;amp; on the page.
 func (r *ConfluenceImageRenderer) writeAltText(buf *bytes.Buffer, n ast.Node, source []byte) {
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-		if s, ok := c.(*ast.String); ok {
+		switch t := c.(type) {
+		case *ctransformer.String:
 			// The <img> transformer hands the alt text over as a plain String,
 			// and only the IsCode branch existed, so every alt written as an
 			// HTML attribute was silently dropped while the Markdown spelling
 			// kept its own. It is already the text: the HTML parser decoded it.
-			buf.Write(s.Value)
-		} else if t, ok := c.(*ast.Text); ok {
-			// Raw text is a code span's, where a backslash is a backslash.
-			// Anything else is Markdown, read the way goldmark reads it.
-			if t.IsRaw() {
-				buf.Write(t.Value(source))
-			} else {
-				buf.WriteString(r.plainText(t.Value(source)))
-			}
-		} else {
+			buf.Write(t.Value)
+		case *ast.CodeSpan:
+			// A code span's text, where a backslash is a backslash.
+			buf.WriteString(t.Value.Value(source))
+		case *ast.Text:
+			// Markdown, read the way goldmark reads it.
+			buf.WriteString(r.plainText(t.Value.Bytes(source)))
+		default:
 			r.writeAltText(buf, c, source)
 		}
 	}
 }
 
-// plainText reads Markdown text the way goldmark's own HTML renderer does --
-// backslash escapes dropped, entity and numeric references resolved -- and
-// returns the text itself rather than HTML. Borrowing goldmark's writer keeps
-// the edge cases its own: "\&amp;" is the five characters "&amp;", not "&".
-// The writer's output is HTML with only &, <, > and " escaped, which is
-// exactly what html.UnescapeString undoes.
+// plainText reads Markdown text the way goldmark does -- backslash escapes
+// dropped, entity and numeric references resolved -- and returns the text
+// itself rather than HTML. Borrowing goldmark's decoder keeps the edge cases
+// its own: "\&amp;" is the five characters "&amp;", not "&".
 func (r *ConfluenceImageRenderer) plainText(markdown []byte) string {
-	if len(markdown) == 0 {
-		return ""
-	}
-
-	var buf bytes.Buffer
-	w := bufio.NewWriter(&buf)
-	r.Writer.Write(w, markdown)
-	_ = w.Flush()
-
-	return stdhtml.UnescapeString(buf.String())
+	return string(ctransformer.DecodeMarkdown(markdown))
 }

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // LayoutTransformer walks the AST and transforms Confluence layout HTML comment tags
@@ -34,7 +34,7 @@ func (t *LayoutTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 		}
 
 		switch n := node.(type) {
-		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *ast.String:
+		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *String:
 			// Only where the pair can survive. A layout directive opens an
 			// element that the next directive closes, and both have to end up
 			// side by side in the output: inside a list item, a blockquote, a
@@ -75,10 +75,8 @@ func (t *LayoutTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 	for _, item := range nodesToReplace {
 		parent := item.node.Parent()
 		if parent != nil {
-			textNode := ast.NewText()
-			textNode.SetAttribute([]byte("replacement-content"), item.newB)
-			parent.InsertBefore(parent, item.node, textNode)
-			parent.RemoveChild(parent, item.node)
+			parent.InsertBefore(item.node, newReplacementNode(item.newB))
+			parent.RemoveChild(item.node)
 		}
 	}
 }

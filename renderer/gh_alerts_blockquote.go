@@ -4,34 +4,38 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceGHAlertsBlockQuoteRenderer struct {
-	html.Config
+	htmlOptions
+
 	LevelMap       BlockQuoteLevelMap
 	BlockQuoteNode ast.Node
 }
 
 // NewConfluenceGHAlertsBlockQuoteRenderer creates a new instance of the renderer for GitHub Alerts
-func NewConfluenceGHAlertsBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceGHAlertsBlockQuoteRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceGHAlertsBlockQuoteRenderer{
-		Config:         html.NewConfig(),
 		LevelMap:       nil,
 		BlockQuoteNode: nil,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindBlockquote: nodeRenderer(r.renderBlockQuote),
+	})}
 }
 
 // getConfluenceMacroTitle gives the alert the header Confluence draws for it.
@@ -55,20 +59,18 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) getConfluenceMacroTitle(alertType
 	}
 }
 
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if r.LevelMap == nil {
 		r.LevelMap = GenerateBlockQuoteLevel(node)
 	}
 
 	// Check if this blockquote has been transformed by the GHAlerts transformer
-	if alertTypeBytes, hasAttribute := node.Attribute([]byte("gh-alert-type")); hasAttribute && alertTypeBytes != nil {
-		if alertTypeStr, ok := alertTypeBytes.([]byte); ok {
-			return r.renderGHAlert(writer, source, node, entering, string(alertTypeStr))
-		}
+	if alertType, hasAttribute := ctransformer.AttributeText(node, "gh-alert-type", source); hasAttribute {
+		return r.renderGHAlert(writer, source, node, entering, alertType)
 	}
 
 	// Fall back to legacy blockquote rendering for non-GitHub Alert blockquotes
-	return r.renderLegacyBlockQuote(writer, source, node, entering)
+	return r.renderLegacyBlockQuote(writer, source, node, entering, rc)
 }
 
 func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWriter, source []byte, node ast.Node, entering bool, alertType string) (ast.WalkStatus, error) {
@@ -123,7 +125,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWrit
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	// Legacy blockquote handling (same as original ParseBlockQuoteType logic)
 	quoteType := ParseBlockQuoteType(node, source)
 	quoteLevel := r.LevelMap.Level(node)

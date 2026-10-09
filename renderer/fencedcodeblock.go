@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strconv"
@@ -13,14 +14,15 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceFencedCodeBlockRenderer struct {
-	html.Config
+	htmlOptions
+
 	Stdlib      *stdlib.Lib
 	MarkConfig  types.MarkConfig
 	Attachments attachment.Attacher
@@ -127,36 +129,49 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 }
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) html.Extension {
 	r := &ConfluenceFencedCodeBlockRenderer{
-		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
 		MarkConfig:  cfg,
 		Attachments: attachments,
 		Path:        path,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceFencedCodeBlockRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceFencedCodeBlockRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRendererDecorator(ast.KindCodeBlock, r.decorateCodeBlock)}
+}
+
+// decorateCodeBlock takes the fenced code blocks for this renderer. goldmark
+// v2 has one node kind for fenced and indented blocks alike, and the indented
+// ones are left to whichever renderer the kind is registered to -- the
+// ConfluenceCodeBlockRenderer, in both compile paths.
+func (r *ConfluenceFencedCodeBlockRenderer) decorateCodeBlock(next html.NodeRenderer) html.NodeRenderer {
+	fenced := nodeRenderer(r.renderFencedCodeBlock)
+
+	return html.NodeRendererFunc(func(w io.Writer, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
+		if block, ok := node.(*ast.CodeBlock); ok && block.CodeBlockKind == ast.CodeBlockKindFenced {
+			return fenced.Render(w, source, node, entering, rc)
+		}
+
+		return next.Render(w, source, node, entering, rc)
+	})
 }
 
 // renderFencedCodeBlock renders a FencedCodeBlock
-func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
-	var info []byte
-	nodeFencedCodeBlock := node.(*ast.FencedCodeBlock)
-	if nodeFencedCodeBlock.Info != nil {
-		segment := nodeFencedCodeBlock.Info.Segment
-		info = segment.Value(source)
-	}
+	// The info string as written: what it holds is mark's own option
+	// vocabulary, which reads no escapes.
+	nodeFencedCodeBlock := node.(*ast.CodeBlock)
+	info := nodeFencedCodeBlock.Info.Bytes(source)
 	linenumbers := false
 	firstline := 0
 	theme := ""
@@ -190,13 +205,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		theme = option
 	}
 
-	var lval []byte
-
-	lines := node.Lines().Len()
-	for i := 0; i < lines; i++ {
-		line := node.Lines().At(i)
-		lval = append(lval, line.Value(source)...)
-	}
+	lval := nodeFencedCodeBlock.Value.Bytes(source)
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
 		var (

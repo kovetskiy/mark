@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 func TestMacroThenIncludeTransformerPipeline(t *testing.T) {
@@ -41,13 +43,14 @@ Main body text.`)
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(pipeline, 10),
+				util.Prioritized[parser.ASTTransformer](pipeline, 10),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)
@@ -95,13 +98,14 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(pipeline, 10),
+				util.Prioritized[parser.ASTTransformer](pipeline, 10),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)
@@ -135,13 +139,14 @@ func TestCircularIncludeLoopErrorPipeline(t *testing.T) {
 
 	pipeline := NewPipelineTransformer(macroTransformer, includeTransformer)
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(pipeline, 10),
+				util.Prioritized[parser.ASTTransformer](pipeline, 10),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)
@@ -151,4 +156,41 @@ func TestCircularIncludeLoopErrorPipeline(t *testing.T) {
 
 	require.Error(t, pipeline.GetError())
 	assert.Contains(t, pipeline.GetError().Error(), "circular include detected")
+}
+
+// TestIncludedDetailsBecomeAnExpandMacro: the include transformer hands its
+// output on as String nodes, and a <details> block arriving that way must
+// still be turned into an expand macro, not left as raw <details> markup.
+func TestIncludedDetailsBecomeAnExpandMacro(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "inc.md"),
+		[]byte("<details>\n<summary>S</summary>\n\nbody\n\n</details>\n"), 0o644))
+
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	source := []byte("<!-- Include: inc.md -->\n")
+	doc := parser.New(parser.WithASTTransformers(
+		util.Prioritized[parser.ASTTransformer](
+			NewPipelineTransformer(NewIncludeTransformer("test.md", tempDir, "", std.Templates)), 10),
+		util.Prioritized[parser.ASTTransformer](NewDetailsTransformer(), 110),
+	)).Parse(source)
+
+	var replacements, leftover []string
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		if v, ok := AttributeText(node, ReplacementContentAttribute, source); ok {
+			replacements = append(replacements, v)
+		}
+		if raw := string(ExtractNodeRawContent(node, source)); strings.Contains(raw, "<details") {
+			leftover = append(leftover, raw)
+		}
+		return ast.WalkContinue, nil
+	})
+
+	assert.NotEmpty(t, replacements, "the details block was not rewritten")
+	assert.Contains(t, strings.Join(replacements, ""), `ac:name="expand"`)
+	assert.Empty(t, leftover, "raw <details> left in the document")
 }

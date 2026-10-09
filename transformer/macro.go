@@ -6,14 +6,10 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/macro"
-	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/rs/zerolog/log"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // MacroTransformer extracts macro directives from HTML comment blocks in the Goldmark AST,
@@ -127,7 +123,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 
 		for _, n := range target.nodesToRemove {
 			if n.Parent() != nil {
-				n.Parent().RemoveChild(n.Parent(), n)
+				n.Parent().RemoveChild(n)
 			}
 		}
 
@@ -190,17 +186,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				continue
 			}
 
-			p := goldmark.New(
-				goldmark.WithParserOptions(
-					parser.WithInlineParsers(
-						util.Prioritized(cparser.NewConfluenceTagParser(), 99),
-					),
-				),
-				goldmark.WithRendererOptions(
-					html.WithUnsafe(),
-				),
-			).Parser()
-			subDoc := p.Parse(text.NewReader(expanded))
+			subDoc := parseSubDocument(expanded)
 			if err := convertSegmentsToStrings(subDoc, expanded); err != nil {
 				t.Err = fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
 				log.Error().
@@ -218,12 +204,12 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 
 			for subDoc.FirstChild() != nil {
 				child := subDoc.FirstChild()
-				subDoc.RemoveChild(subDoc, child)
-				parent.InsertBefore(parent, item.node, child)
+				subDoc.RemoveChild(child)
+				parent.InsertBefore(item.node, child)
 			}
 
 			if item.node.Parent() != nil {
-				item.node.Parent().RemoveChild(item.node.Parent(), item.node)
+				item.node.Parent().RemoveChild(item.node)
 			}
 
 			modified = true

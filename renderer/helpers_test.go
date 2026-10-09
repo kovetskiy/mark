@@ -8,52 +8,44 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	"github.com/kovetskiy/mark/v16/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // render compiles source with the given Confluence renderers registered, and
 // returns what they wrote.
 //
-// The renderers go in at 100, which is what markdown/markdown.go uses and what
-// makes them win: goldmark's own html.Renderer registers at 1000 and claims
-// every core node kind, and the *smaller* number is the one that ends up
-// rendering (AGENTS.md, invariant 4). Registering at a larger number here would
-// quietly test goldmark's output instead of this repo's.
-func render(t *testing.T, source string, nodeRenderers []renderer.NodeRenderer, parserOpts ...parser.Option) string {
+// The renderers go in as html.Extensions given to html.New, which is what
+// markdown/markdown.go does and what makes them win: html.New registers
+// goldmark's own renderers for every core node kind first, and of two
+// registrations for one kind the later is the one that renders (AGENTS.md,
+// invariant 4). Registering them any other way here could quietly test
+// goldmark's output instead of this repo's.
+//
+// The parser is given the transformers both compile paths run to give the tree
+// the shape these renderers read; a renderer whose nodes exist only once a
+// goldmark extension has parsed them gets it in parserOpts.
+func render(t *testing.T, source string, nodeRenderers []html.Extension, parserOpts ...parser.Option) string {
 	t.Helper()
 
-	return renderExtended(t, source, nil, nodeRenderers, parserOpts...)
-}
-
-// renderExtended is render for a renderer whose nodes exist only once a
-// goldmark extension has parsed them, footnotes being the one in this package.
-func renderExtended(t *testing.T, source string, extensions []goldmark.Extender, nodeRenderers []renderer.NodeRenderer, parserOpts ...parser.Option) string {
-	t.Helper()
-
-	prioritized := make([]util.PrioritizedValue, 0, len(nodeRenderers))
-	for _, nodeRenderer := range nodeRenderers {
-		prioritized = append(prioritized, util.Prioritized(nodeRenderer, 100))
-	}
-
-	converter := goldmark.New(
-		goldmark.WithExtensions(extensions...),
-		goldmark.WithParserOptions(parserOpts...),
-		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(prioritized...),
+	md := goldmarktest.New(
+		goldmarktest.WithParserOptions(parser.WithASTTransformers(ctransformer.ShapeTransformers()...)),
+		goldmarktest.WithParserOptions(parserOpts...),
+		goldmarktest.WithRendererOptions(
 			html.WithUnsafe(),
 			html.WithXHTML(),
+			html.WithExtensions(ctransformer.NewHTMLRenderer()),
+			html.WithExtensions(nodeRenderers...),
 		),
 	)
 
 	var buf bytes.Buffer
-	require.NoError(t, converter.Convert([]byte(source), &buf))
+	require.NoError(t, md.Convert([]byte(source), &buf))
 
 	return buf.String()
 }

@@ -3,44 +3,46 @@ package renderer
 import (
 	"bytes"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceParagraphRenderer struct {
-	html.Config
+	htmlOptions
 }
 
 // NewConfluenceParagraphRenderer creates a new instance of the ConfluenceParagraphRenderer.
-func NewConfluenceParagraphRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceParagraphRenderer{
-		Config: html.NewConfig(),
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+func NewConfluenceParagraphRenderer(opts ...html.Option) html.Extension {
+	r := &ConfluenceParagraphRenderer{}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceParagraphRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindParagraph, r.renderParagraph)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceParagraphRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindParagraph: nodeRenderer(r.renderParagraph),
+	})}
 }
 
-func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source []byte, n ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	unwrapped := unwrapParagraph(n, source)
 	if entering {
 		if !unwrapped {
 			if n.Attributes() != nil {
 				_, _ = w.WriteString("<p")
-				html.RenderAttributes(w, n, html.ParagraphAttributeFilter)
+				html.RenderAttributes(w, source, n, html.ParagraphAttributeFilter, rc)
 				_ = w.WriteByte('>')
 			} else {
 				_, _ = w.WriteString("<p>")
 			}
 		}
+		_, _ = w.WriteString(taskMarker(n))
 	} else {
 		if !unwrapped {
 			_, _ = w.WriteString("</p>")
@@ -65,7 +67,13 @@ func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source [
 //     which is how <b>bold</b> arrives here;
 //   - one half of a Confluence element the author spread over several blocks,
 //     where a <p> would interleave with the element being built.
+//
+// A task's paragraph never is: it opens with the checkbox.
 func unwrapParagraph(n ast.Node, source []byte) bool {
+	if ctransformer.OpensTask(n) {
+		return false
+	}
+
 	first, ok := n.FirstChild().(*ast.RawHTML)
 	if !ok {
 		return false
@@ -135,12 +143,7 @@ func closingFragment(n ast.Node, firstTag []byte, source []byte) ast.Node {
 // rawHTMLTag returns the fragment's bytes, which for an inline raw HTML node is
 // a single tag.
 func rawHTMLTag(n *ast.RawHTML, source []byte) []byte {
-	var buf bytes.Buffer
-	for i := 0; i < n.Segments.Len(); i++ {
-		segment := n.Segments.At(i)
-		buf.Write(segment.Value(source))
-	}
-	return bytes.TrimSpace(buf.Bytes())
+	return bytes.TrimSpace(n.Value.Bytes(source))
 }
 
 // spansConfluenceElement reports whether the fragment is the opening or closing

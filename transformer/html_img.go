@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -48,7 +48,7 @@ func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 			// The <details> and layout transformers run first and leave the
 			// block they rewrote as a Text node carrying the result. Whatever
 			// <img> the author wrote inside it is still there, still raw.
-			if _, ok := n.Attribute(replacementContent); ok {
+			if _, ok := n.Attribute(ReplacementContentAttribute); ok {
 				replaced = append(replaced, n)
 			}
 		}
@@ -63,7 +63,7 @@ func (t *HTMLImgTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 		t.transformRawHTML(n, reader)
 	}
 	for _, n := range replaced {
-		t.transformReplacedText(n)
+		t.transformReplacedText(n, reader.Source())
 	}
 }
 
@@ -87,10 +87,10 @@ func (t *HTMLImgTransformer) transformHTMLBlock(n *ast.HTMLBlock, reader text.Re
 
 		p := ast.NewParagraph()
 		for _, imgNode := range imgNodes {
-			p.AppendChild(p, imgNode)
+			p.AppendChild(imgNode)
 		}
 
-		parent.ReplaceChild(parent, n, p)
+		parent.ReplaceChild(n, p)
 
 		return
 	}
@@ -111,37 +111,36 @@ func (t *HTMLImgTransformer) transformHTMLBlock(n *ast.HTMLBlock, reader text.Re
 		return
 	}
 
-	block := ast.NewTextBlock()
+	block := NewTextBlock()
 	for _, piece := range pieces {
-		block.AppendChild(block, piece)
+		block.AppendChild(piece)
 	}
 
-	parent.ReplaceChild(parent, n, block)
+	parent.ReplaceChild(n, block)
 }
 
 // transformReplacedText converts the <img> tags inside markup an earlier
 // transformer rewrote, the same way transformHTMLBlock does for a block.
-func (t *HTMLImgTransformer) transformReplacedText(n *ast.Text) {
+func (t *HTMLImgTransformer) transformReplacedText(n *ast.Text, source []byte) {
 	parent := n.Parent()
 	if parent == nil {
 		return
 	}
 
-	existing, _ := n.Attribute(replacementContent)
-	raw, ok := existing.([]byte)
+	raw, ok := AttributeText(n, ReplacementContentAttribute, source)
 	if !ok {
 		return
 	}
 
-	pieces := t.splitImages(raw)
+	pieces := t.splitImages([]byte(raw))
 	if pieces == nil {
 		return
 	}
 
 	for _, piece := range pieces {
-		parent.InsertBefore(parent, n, piece)
+		parent.InsertBefore(n, piece)
 	}
-	parent.RemoveChild(parent, n)
+	parent.RemoveChild(n)
 }
 
 // splitImages cuts raw at each <img> tag it can convert and returns the pieces
@@ -171,9 +170,7 @@ func (t *HTMLImgTransformer) splitImages(raw []byte) []ast.Node {
 			return
 		}
 
-		piece := ast.NewText()
-		piece.SetAttribute(replacementContent, markup)
-		pieces = append(pieces, piece)
+		pieces = append(pieces, newReplacementNode(markup))
 		markup = nil
 	}
 
@@ -273,13 +270,7 @@ func onlyImages(raw []byte) bool {
 }
 
 func (t *HTMLImgTransformer) transformRawHTML(n *ast.RawHTML, reader text.Reader) {
-	var buf bytes.Buffer
-	l := n.Segments.Len()
-	for i := 0; i < l; i++ {
-		segment := n.Segments.At(i)
-		buf.Write(segment.Value(reader.Source()))
-	}
-	rawBytes := buf.Bytes()
+	rawBytes := n.Value.Bytes(reader.Source())
 
 	imgNodes := t.parseHTMLImages(rawBytes)
 	if len(imgNodes) == 0 {
@@ -293,9 +284,9 @@ func (t *HTMLImgTransformer) transformRawHTML(n *ast.RawHTML, reader text.Reader
 
 	// Replace RawHTML node with converted image AST nodes
 	for _, imgNode := range imgNodes {
-		parent.InsertBefore(parent, n, imgNode)
+		parent.InsertBefore(n, imgNode)
 	}
-	parent.RemoveChild(parent, n)
+	parent.RemoveChild(n)
 }
 
 func (t *HTMLImgTransformer) parseHTMLImages(rawBytes []byte) []*ast.Image {
@@ -373,24 +364,23 @@ func (t *HTMLImgTransformer) parseHTMLImages(rawBytes []byte) []*ast.Image {
 			continue
 		}
 
-		imgNode := ast.NewImage(ast.NewLink())
-		imgNode.Destination = []byte(src)
-		markPlain(imgNode)
+		// The HTML parser has decoded both already.
+		imgNode := ast.NewImage(PlainValue(src))
 
 		if title != "" {
-			imgNode.Title = []byte(title)
+			imgNode.Title = text.NewMultiLineValueFromString(title, text.IdentityDecoder)
 		}
 		if width != "" {
-			imgNode.SetAttribute([]byte("width"), []byte(width))
+			SetAttributeText(imgNode, "width", width)
 		}
 		if height != "" {
-			imgNode.SetAttribute([]byte("height"), []byte(height))
+			SetAttributeText(imgNode, "height", height)
 		}
 		if align != "" {
-			imgNode.SetAttribute([]byte("align"), []byte(align))
+			SetAttributeText(imgNode, "align", align)
 		}
 		if alt != "" {
-			imgNode.AppendChild(imgNode, ast.NewString([]byte(alt)))
+			imgNode.AppendChild(NewString([]byte(alt)))
 		}
 
 		astImages = append(astImages, imgNode)

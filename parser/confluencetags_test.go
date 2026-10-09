@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // The tag parser routes Confluence tags to RawHTML so they are not escaped. Its
@@ -38,17 +38,15 @@ func TestConfluenceTagParserClosingTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gm := goldmark.New(
-				goldmark.WithParserOptions(
-					parser.WithInlineParsers(
-						util.Prioritized(cparser.NewConfluenceTagParser(), 199),
-					),
-				),
-				goldmark.WithRendererOptions(html.WithUnsafe()),
+			md := goldmarktest.New(
+				goldmarktest.WithParserOptions(parser.WithInlineParsers(
+					util.Prioritized(cparser.NewConfluenceTagParser(), 199),
+				)),
+				goldmarktest.WithRendererOptions(html.WithUnsafe()),
 			)
 
 			var buf bytes.Buffer
-			require.NoError(t, gm.Convert([]byte(tt.input+"\n"), &buf))
+			require.NoError(t, md.Convert([]byte(tt.input+"\n"), &buf))
 			got := buf.String()
 
 			assert.NotContains(t, got, "&lt;/", "a closing Confluence tag must not be escaped")

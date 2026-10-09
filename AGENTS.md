@@ -42,6 +42,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
+| `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve/create page + ancestry → resolve attachments → `CompileMarkdown` →
@@ -78,27 +79,46 @@ table cells. `macro.ExtractMacros` and `includes.ProcessIncludes` run on the raw
 `CompileMarkdown` before the converter is built. Do not move this work into an AST
 transformer without understanding why it was moved out of one.
 
-**4. A smaller goldmark priority number wins, for parsers and renderers alike.**
+**4. Parsers and transformers run by priority; renderers have none, and the last one
+registered for a node kind wins.** mark is on goldmark v2.
 
-- *Inline/block parsers*: a **smaller** number is tried **first**. `ConfluenceTagParser`
-  uses `199` to run before goldmark's own link parser at `200`, so that `<ac:*/>` tags are
-  not parsed as links.
-- *Node renderers*: goldmark sorts them ascending and then calls `RegisterFuncs` from the
-  **end backwards** (`renderer/renderer.go`), and each registration overwrites the last
-  for a given node kind -- so the **smaller** number is the one that renders. Every
-  renderer in this repo is competing with one of goldmark's: the default `html.Renderer`
-  goes in at `1000` and claims every core kind, so anything meant to replace it has to
-  sit below that. Only the bound is load-bearing there --- anything in `(0, 1000)`
-  clears `html.Renderer`, so the GH-alerts blockquote/text renderers' `200` would work
-  just as well at `100`. The numbers that are genuinely constrained are the footnote
-  renderers' `100`, which has to beat goldmark's footnote extension at `500` as well,
-  and `ConfluenceTagParser`'s `199` above.
+- *Inline/block parsers and AST transformers*: `util.Prioritized`, and a **smaller**
+  number is tried, or runs, **first**. `ConfluenceTagParser` uses `199` to run before
+  goldmark's own link parser at `200`, so that `<ac:*/>` tags are not parsed as links.
+  `util.Prioritized` is generic: give it the interface type,
+  `util.Prioritized[parser.ASTTransformer](...)`, when the constructor returns a pointer.
+- *Node renderers*: goldmark v2 keeps one renderer per node kind. `html.New` puts its own
+  CommonMark renderers in first and then applies each `html.Extension` in the order it was
+  given, each overwriting the kinds it names. Every renderer in `renderer/` is an
+  `html.Extension`; each compile path's `RendererOptions` collects them, in order, and is
+  given to `html.New` after goldmark's table and strikethrough renderers, so mark's are
+  the ones left standing. Of two of mark's for one kind, the later wins.
+- Two ways to get this wrong. `html.WithNodeRenderers` passed straight to `html.New` is
+  applied *before* the CommonMark extension, which then overwrites it. And an extension
+  cannot hand goldmark further extensions: a `parser.WithExtensions` or
+  `html.WithExtensions` returned from `ParserOptions`/`RendererOptions` is silently never
+  run, which is why the emoji parser's options and the renderers' are inlined there.
+- goldmark's own footnote, task list and definition list HTML renderers are not
+  registered: the footnote one writes the notes from a decorator on the document, and
+  the task list one replaces the paragraph renderer. Fenced and indented code blocks
+  are one kind in v2; the fenced renderer is a `NodeRendererDecorator` over whatever
+  renders `ast.KindCodeBlock`.
 
-Getting this backwards silently produces the default rendering, with no error anywhere.
+Getting this wrong silently produces the default rendering, with no error anywhere.
+
+`transformer.ShapeTransformers()` (priorities `1`--`3`, and `999`) give the tree the
+shape goldmark v1's parser built and everything here was written against: tight
+paragraphs as `transformer.TextBlock`, and the footnotes gathered into a
+`transformer.FootnoteList` at the end with backlinks. `transformer.String` stands in for
+v1's `ast.String`, and `transformer.NewHTMLRenderer` renders it and `TextBlock` the way
+v1 did. Both compile paths register them. A task's status is read straight off the list
+item with `extension.TaskStatusOf`; there is no checkbox node. goldmark v2 also
+keeps text as a `text.Value`: `Str(source)` is the text as written, which is what this
+code reads, and `Value(source)` the decoded text.
 
 **5. AST transformers cannot return errors.** goldmark's `ASTTransformer` interface has no
 error return, so `transformer.PipelineTransformer` accumulates errors internally and
-`CompileMarkdown` retrieves them with `Pipeline.GetError()` after `Convert`. A transformer
+`CompileMarkdown` retrieves them with `Pipeline.GetError()` after rendering. A transformer
 that fails silently without recording into the pipeline will produce a wrong page and a
 zero exit code.
 
@@ -121,9 +141,10 @@ deterministic.
 that.
 
 **8. `--features` replaces the defaults, it does not add to them.** Defaults are
-`mermaid,mention`. When adding a feature: register it in `markdown/markdown.go` (both
-extensions if applicable), add it to the `Usage` string of the `features` flag in
-`util/flags.go`, and document it in `README.md`.
+`mermaid,mention`. When adding a feature: register its parser options and renderer in
+`markdownFeatures` in `markdown/features.go` and name it in `defaultFeatures` (and
+`legacyFeatures`, if the legacy path supports it), add it to the `Usage` string of the
+`features` flag in `util/flags.go`, and document it in `README.md`.
 
 **9. Everything is sequential today, and one thing still relies on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits

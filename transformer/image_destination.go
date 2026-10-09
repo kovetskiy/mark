@@ -3,71 +3,19 @@ package transformer
 import (
 	"net/url"
 	"strings"
-
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/util"
 )
-
-// These mark an image whose destination or title already holds the value
-// itself, rather than Markdown source that still has to be read. An <img> tag
-// is decoded by the HTML parser that finds it, and a destination pointed at an
-// uploaded attachment is a URL mark built; reading either as Markdown on top of
-// that would decode it twice, so a title written as "&amp;amp;" would lose the
-// level of escaping it was given on purpose.
-var (
-	plainDestinationAttribute = []byte("data-mark-plain-destination")
-	plainTitleAttribute       = []byte("data-mark-plain-title")
-)
-
-// markPlain records that n's destination and title need no further decoding.
-func markPlain(n *ast.Image) {
-	n.SetAttribute(plainDestinationAttribute, true)
-	n.SetAttribute(plainTitleAttribute, true)
-}
-
-// HasPlainTitle reports whether n's title is a plain value rather than
-// Markdown source.
-func HasPlainTitle(n *ast.Image) bool {
-	_, ok := n.Attribute(plainTitleAttribute)
-
-	return ok
-}
-
-// ImageDestination reads an image's destination the way CommonMark defines it:
-// backslash escapes and entity references are resolved, so "a\_b.png" names
-// a_b.png and "?a=1&amp;b=2" is a query of two parameters. Percent-encoding is
-// left as it is; this is still a URL.
-func ImageDestination(n *ast.Image) string {
-	if _, ok := n.Attribute(plainDestinationAttribute); ok {
-		return string(n.Destination)
-	}
-
-	return unescapeDestination(n.Destination)
-}
-
-// LinkDestination reads a link's destination the way ImageDestination reads an
-// image's, so that "other\_page.md" and "a&amp;b.md" name other_page.md and
-// a&b.md, and a link and an image written the same way name the same file.
-// Percent-encoding is left as it is here too; LocalImagePaths is what reads
-// past it.
-func LinkDestination(n *ast.Link) string {
-	return unescapeDestination(n.Destination)
-}
 
 // UnescapeDestination reads a destination written as Markdown source, such as
-// a macro's Attachment value, the way ImageDestination reads an image's.
+// a macro's Attachment value, the way goldmark reads a link's or an image's:
+// backslash escapes and entity references are resolved, so "a\_b.png" names
+// a_b.png, and percent-encoding is left as it is.
+//
+// A destination in the tree is read with Destination.Value(source) instead:
+// goldmark binds the decoder to it, and a value mark built itself carries the
+// decoder that says whether it is still Markdown (SourceValue) or not
+// (PlainValue).
 func UnescapeDestination(destination string) string {
-	return unescapeDestination([]byte(destination))
-}
-
-// unescapeDestination resolves the backslash escapes and the entity and
-// numeric references CommonMark allows in a link destination.
-func unescapeDestination(raw []byte) string {
-	destination := util.UnescapePunctuations(raw)
-	destination = util.ResolveNumericReferences(destination)
-	destination = util.ResolveEntityNames(destination)
-
-	return string(destination)
+	return string(DecodeMarkdown([]byte(destination)))
 }
 
 // LocalImagePaths lists the paths a local file for destination may be found

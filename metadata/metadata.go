@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -440,7 +440,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	// From here on data is the document after any front matter, and every
 	// offset below is taken against it.
 	body := data
-	doc := goldmark.New().Parser().Parse(text.NewReader(data))
+	doc := parser.New().Parse(data)
 
 	if found {
 		var parsed map[string]any
@@ -540,16 +540,15 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
 		if htmlBlock, ok := child.(*ast.HTMLBlock); ok {
-			lines := htmlBlock.Lines()
-			if lines.Len() > 0 {
-				if lastStop > 0 && !onlyWhitespace(data, lastStop, lines.At(0).Start) {
+			lines := htmlBlock.Value.Segments()
+			if len(lines) > 0 {
+				if lastStop > 0 && !onlyWhitespace(data, lastStop, lines[0].Start) {
 					break
 				}
 			}
 
-			for i := 0; i < lines.Len(); i++ {
-				lineSeg := lines.At(i)
-				line := string(lineSeg.Value(data))
+			for _, lineSeg := range lines {
+				line := string(lineSeg.Bytes(data))
 
 				key, value, ok := parseHeaderComment(line)
 				if ok {
@@ -907,8 +906,20 @@ func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 			if heading, ok := n.(*ast.Heading); ok && heading.Level == 1 {
 				var buf strings.Builder
 				_ = ast.Walk(heading, func(child ast.Node, childEntering bool) (ast.WalkStatus, error) {
-					if childEntering && child.Kind() == ast.KindText {
-						buf.Write(child.(*ast.Text).Value(markdown))
+					if !childEntering {
+						return ast.WalkContinue, nil
+					}
+					switch c := child.(type) {
+					case *ast.Text:
+						// The text as written, escapes and entities
+						// included, which is what the title has always
+						// been taken from.
+						buf.WriteString(c.Value.Str(markdown))
+					case *ast.CodeSpan:
+						// v2 keeps a code span's text on the span itself
+						// rather than in Text children, so it is read here.
+						buf.WriteString(c.Value.Str(markdown))
+						return ast.WalkSkipChildren, nil
 					}
 					return ast.WalkContinue, nil
 				})
