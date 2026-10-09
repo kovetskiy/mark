@@ -1936,6 +1936,14 @@ func (api *API) IsCloud() bool {
 	return isCloud
 }
 
+// Cloud is IsCloud for a caller that must not guess: it says when the target
+// could not be identified, as an error, rather than answering false. A probe
+// cut short by the API's context is reported as such -- the error then wraps
+// the context's own -- and, unlike any other failure, is not remembered.
+func (api *API) Cloud() (bool, error) {
+	return api.cloud()
+}
+
 // cloud identifies the target, at most once per API value: a known Cloud
 // host answers without a request, otherwise the current user decides --
 // Cloud names it by an Atlassian accountId, Server and Data Center by a
