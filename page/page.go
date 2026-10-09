@@ -43,8 +43,21 @@ func resolvePage(
 	if meta == nil {
 		return nil, nil, false, fmt.Errorf("metadata is empty")
 	}
-	if len(meta.Folders) > 0 && !api.IsCloud() {
-		return nil, nil, false, fmt.Errorf("folder support is currently only available on Confluence Cloud")
+	if len(meta.Folders) > 0 {
+		// Not IsCloud: a probe cut short by a cancellation answers false as
+		// well, and refusing the folders over it named the wrong problem and
+		// hid the cancellation from errors.Is. Any other failure to identify
+		// the target is still taken for "not Cloud", as IsCloud has it.
+		isCloud, err := api.Cloud()
+		if ctxErr := api.Context().Err(); err != nil && ctxErr != nil {
+			if !errors.Is(err, ctxErr) {
+				err = fmt.Errorf("%w: %w", ctxErr, err)
+			}
+			return nil, nil, false, fmt.Errorf("unable to tell whether folders are supported: %w", err)
+		}
+		if !isCloud {
+			return nil, nil, false, fmt.Errorf("folder support is currently only available on Confluence Cloud")
+		}
 	}
 	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
 	if err != nil {

@@ -33,7 +33,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache |
 | `attachment/` | checksum, upload/update, link rewriting |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
@@ -125,14 +125,16 @@ that.
 extensions if applicable), add it to the `Usage` string of the `features` flag in
 `util/flags.go`, and document it in `README.md`.
 
-**9. Everything is sequential today, and one thing still relies on that.**
+**9. Everything is sequential today, and two things still rely on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits
 behind an `RWMutex` (`page/concurrency_test.go` races it on purpose), and
-`confluence.API`'s Cloud probe goes through a `sync.Once`, so the field the old wording
-named no longer exists. What is genuinely single-threaded is `page.LinkChecker`:
-`MissingPages` reads `len(c.pending)` before taking the mutex and then reads the map
-itself after releasing it (`page/check.go`). Anything that introduces concurrency across
-files has to fix that first.
+`confluence.API`'s Cloud probe runs under a mutex held for the whole probe, so the field
+the old wording named no longer exists. What is genuinely single-threaded is
+`page.LinkChecker`: `MissingPages` reads `len(c.pending)` before taking the mutex and then
+reads the map itself after releasing it (`page/check.go`). The other is the context every
+request carries: it is one value per `confluence.API` (`SetContext`), and
+`ProcessFileContext` swaps it for the length of a call. Anything that introduces
+concurrency across files has to fix both first.
 
 ## Tests
 
