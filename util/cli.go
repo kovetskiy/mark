@@ -135,8 +135,6 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 
 		DropH1:           cmd.Bool("drop-h1"),
 		StripLinebreaks:  cmd.Bool("strip-linebreaks"),
-		MermaidEngine:    cmd.String("mermaid-engine"),
-		MermaidScale:     cmd.Float("mermaid-scale"),
 		MermaidOutput:    cmd.String("mermaid-output"),
 		MermaidBundle:    cmd.Bool("mermaid-bundle"),
 		D2Output:         cmd.String("d2-output"),
@@ -150,6 +148,21 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		IncludePath:      cmd.String("include-path"),
 
 		Output: os.Stdout,
+	}
+
+	// Engine, scale and macro-name carry defaults so --help shows them, but an
+	// operator who never set them has asked for nothing: leave them at their
+	// zero values, which the renderer reads as its own defaults. That also keeps
+	// prepare() from seeing a default ("chrome", 1.0) beside --mermaid-output=
+	// macro and refusing a run that asked only for the macro.
+	if cmd.IsSet("mermaid-engine") {
+		config.MermaidEngine = cmd.String("mermaid-engine")
+	}
+	if cmd.IsSet("mermaid-scale") {
+		config.MermaidScale = cmd.Float("mermaid-scale")
+	}
+	if cmd.IsSet("mermaid-macro-name") {
+		config.MermaidMacroName = cmd.String("mermaid-macro-name")
 	}
 
 	// RunContext shuts the shared browser down on the way out, however the run
