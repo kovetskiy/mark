@@ -18,11 +18,8 @@ import (
 // It also writes out the replacement-content a transformer has left on a Text
 // node in place of the node's own text. Both compile paths use it.
 type ConfluenceTextRenderer struct {
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
 	// softBreak is written verbatim with WriteByte and is only ever '\n' or
 	// ' ', so it is a byte rather than a rune -- a rune would imply multi-byte
 	// values that the write path cannot represent.
@@ -38,14 +35,13 @@ func NewConfluenceTextRenderer(stripNewlines bool, opts ...html.Option) html.Ext
 	r := &ConfluenceTextRenderer{
 		softBreak: sb,
 	}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceTextRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindText: contextNodeRenderer(r.renderText),

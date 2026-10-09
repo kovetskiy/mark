@@ -21,11 +21,7 @@ import (
 // this shape, and it is what the elements mean: the term is a heading for its
 // row, the definition is the row's content.
 type ConfluenceDefinitionListRenderer struct {
-	html.Config
-
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options []html.Option
+	htmlOptions
 
 	// open holds one frame per definition list currently being written, and
 	// only the innermost is ever written to.
@@ -50,14 +46,13 @@ type listRow struct {
 
 func NewConfluenceDefinitionListRenderer(opts ...html.Option) html.Extension {
 	r := &ConfluenceDefinitionListRenderer{}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceDefinitionListRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ext_ast.KindDefinitionList:        nodeRenderer(r.renderList),

@@ -10,11 +10,8 @@ import (
 
 type ConfluenceHeadingRenderer struct {
 	Stdlib *stdlib.Lib
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options     []html.Option
 	DropFirstH1 bool
 }
 
@@ -24,14 +21,13 @@ func NewConfluenceHeadingRenderer(lib *stdlib.Lib, dropFirstH1 bool, opts ...htm
 		Stdlib:      lib,
 		DropFirstH1: dropFirstH1,
 	}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceHeadingRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindHeading: nodeRenderer(r.renderHeading),

@@ -96,11 +96,8 @@ func resolveWidth(explicitWidth string, originalWidth string) string {
 }
 
 type ConfluenceImageRenderer struct {
-	html.Config
+	htmlOptions
 
-	// options are the html options the constructor was given, which apply
-	// on top of the ones the renderer is registered with.
-	options     []html.Option
 	Stdlib      *stdlib.Lib
 	Path        string
 	Attachments attachment.Attacher
@@ -115,14 +112,13 @@ func NewConfluenceImageRenderer(stdlib *stdlib.Lib, attachments attachment.Attac
 		Attachments: attachments,
 		ImageAlign:  imageAlign,
 	}
-	r.options = opts
-	r.Config = withOptions(html.Config{}.Default(), opts)
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
 // RendererOptions implements html.Extension.
 func (r *ConfluenceImageRenderer) RendererOptions(cfg *html.Config) []html.Option {
-	r.Config = withOptions(*cfg, r.options)
+	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
 		ast.KindImage: nodeRenderer(r.renderImage),
