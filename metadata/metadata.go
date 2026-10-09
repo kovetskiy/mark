@@ -906,11 +906,20 @@ func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 			if heading, ok := n.(*ast.Heading); ok && heading.Level == 1 {
 				var buf strings.Builder
 				_ = ast.Walk(heading, func(child ast.Node, childEntering bool) (ast.WalkStatus, error) {
-					if childEntering && child.Kind() == ast.KindText {
+					if !childEntering {
+						return ast.WalkContinue, nil
+					}
+					switch c := child.(type) {
+					case *ast.Text:
 						// The text as written, escapes and entities
 						// included, which is what the title has always
 						// been taken from.
-						buf.WriteString(child.(*ast.Text).Value.Str(markdown))
+						buf.WriteString(c.Value.Str(markdown))
+					case *ast.CodeSpan:
+						// v2 keeps a code span's text on the span itself
+						// rather than in Text children, so it is read here.
+						buf.WriteString(c.Value.Str(markdown))
+						return ast.WalkSkipChildren, nil
 					}
 					return ast.WalkContinue, nil
 				})
