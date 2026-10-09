@@ -5,6 +5,7 @@ import (
 	"github.com/yuin/goldmark/v2/ast"
 	extast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/text"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -148,22 +149,11 @@ func (t *TightBlockTransformer) Transform(doc *ast.Document, _ text.Reader, _ pa
 // TextBlock: a child of an item of a tight list, or of a tight definition
 // description.
 func inTightBlock(paragraph *ast.Paragraph) bool {
-	parent := paragraph.Parent()
-	if parent == nil {
-		return false
-	}
-
-	if description, ok := parent.(*extast.DefinitionDescription); ok {
+	if description, ok := paragraph.Parent().(*extast.DefinitionDescription); ok {
 		return description.IsTight
 	}
 
-	if _, ok := parent.(*ast.ListItem); !ok {
-		return false
-	}
-
-	list, ok := parent.Parent().(*ast.List)
-
-	return ok && list.IsTight
+	return html.IsInTightBlock(paragraph)
 }
 
 // parseSubDocument parses the bytes a macro or an include expanded to, with
