@@ -1,6 +1,8 @@
 package transformer
 
 import (
+	"sync"
+
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/yuin/goldmark/v2/ast"
 	extast "github.com/yuin/goldmark/v2/extension/ast"
@@ -160,6 +162,12 @@ func inTightBlock(paragraph *ast.Paragraph) bool {
 // what the document around them was parsed with that its nodes depend on: the
 // Confluence tag parser, and the tight blocks v1 parsed by itself.
 func parseSubDocument(source []byte) ast.Node {
+	return subDocumentParser().Parse(source)
+}
+
+// subDocumentParser is built once: a goldmark parser keeps no state from one
+// Parse to the next, and neither do the parsers and the transformer it holds.
+var subDocumentParser = sync.OnceValue(func() parser.Parser {
 	return parser.New(
 		parser.WithInlineParsers(
 			util.Prioritized(cparser.NewConfluenceTagParser(), 99),
@@ -167,8 +175,8 @@ func parseSubDocument(source []byte) ast.Node {
 		parser.WithASTTransformers(
 			util.Prioritized[parser.ASTTransformer](NewTightBlockTransformer(), 0),
 		),
-	).Parse(source)
-}
+	)
+})
 
 // ShapeTransformers put back the parts of the tree goldmark v1's parser built
 // and v2's does not, which the transformers and renderers here were written

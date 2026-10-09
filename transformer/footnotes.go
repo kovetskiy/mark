@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"bytes"
 	"slices"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -114,6 +115,9 @@ func NewFootnoteListTransformer() *FootnoteListTransformer {
 // Transform implements parser.ASTTransformer.
 func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reader, _ parser.Context) {
 	source := reader.Source()
+	if !mayHaveFootnotes(source) {
+		return
+	}
 
 	var definitions []*extast.FootnoteDefinition
 	indices := map[string]int{}
@@ -127,8 +131,9 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 		case *extast.FootnoteDefinition:
 			definitions = append(definitions, n)
 		case *extast.FootnoteReference:
-			if _, seen := indices[n.Label.Str(source)]; !seen {
-				indices[n.Label.Str(source)] = n.Index
+			label := n.Label.Str(source)
+			if _, seen := indices[label]; !seen {
+				indices[label] = n.Index
 			}
 		}
 
@@ -168,7 +173,11 @@ func NewFootnoteBacklinkTransformer() *FootnoteBacklinkTransformer {
 }
 
 // Transform implements parser.ASTTransformer.
-func (t *FootnoteBacklinkTransformer) Transform(doc *ast.Document, _ text.Reader, _ parser.Context) {
+func (t *FootnoteBacklinkTransformer) Transform(doc *ast.Document, reader text.Reader, _ parser.Context) {
+	if !mayHaveFootnotes(reader.Source()) {
+		return
+	}
+
 	var list *FootnoteList
 	counter := map[int]int{}
 
@@ -235,4 +244,11 @@ func (t *FootnoteBacklinkTransformer) Transform(doc *ast.Document, _ text.Reader
 	}
 
 	doc.AppendChild(list)
+}
+
+// mayHaveFootnotes reports whether source could hold a footnote at all, which
+// both its reference and its definition open with "[^". Most pages have none,
+// and the footnote transformers need not walk the tree of one.
+func mayHaveFootnotes(source []byte) bool {
+	return bytes.Contains(source, []byte("[^"))
 }
