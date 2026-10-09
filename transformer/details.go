@@ -42,7 +42,7 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 		}
 
 		switch n := node.(type) {
-		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text:
+		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text, *String:
 			// Text inside an inline code span is literal by definition:
 			// `<details>` in prose documents the tag, it does not open one.
 			if parent := node.Parent(); parent != nil && parent.Kind() == ast.KindCodeSpan {

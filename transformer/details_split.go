@@ -223,7 +223,7 @@ func coalesceInlineDetails(node ast.Node, raw []byte, source []byte) ([]byte, []
 	var folded []ast.Node
 	for sib := node.NextSibling(); sib != nil; sib = sib.NextSibling() {
 		switch sib.(type) {
-		case *ast.RawHTML, *ast.Text:
+		case *ast.RawHTML, *ast.Text, *String:
 		default:
 			return raw, nil
 		}
