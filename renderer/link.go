@@ -61,7 +61,7 @@ func (r *ConfluenceLinkRenderer) RendererOptions(cfg *html.Config) []html.Option
 	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
-		ast.KindLink: contextNodeRenderer(r.renderLink),
+		ast.KindLink: nodeRenderer(r.renderLink),
 	})}
 }
 
@@ -207,7 +207,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 			_ = writer.WriteByte('"')
 		}
 		if n.Attributes() != nil {
-			html.RenderAttributes(writer, source, n, html.LinkAttributeFilter, nil)
+			html.RenderAttributes(writer, source, n, html.LinkAttributeFilter, rc)
 		}
 		_ = writer.WriteByte('>')
 	} else {

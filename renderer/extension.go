@@ -16,24 +16,12 @@ import (
 // them for the kinds it names, and of two extensions naming one kind the later
 // one wins.
 
-// renderFunc is a node renderer that writes plain bytes and has no use for the
-// render context.
-type renderFunc func(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error)
+// renderFunc is a node renderer as this package writes them, given the
+// util.BufWriter html.Renderer always hands a node renderer.
+type renderFunc func(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error)
 
-// contextRenderFunc is a node renderer that needs the render context, for the
-// writers goldmark escapes text through.
-type contextRenderFunc func(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error)
-
-// nodeRenderer adapts a renderFunc to goldmark's html.NodeRenderer. The writer
-// html.Renderer hands a node renderer is always a util.BufWriter.
+// nodeRenderer adapts a renderFunc to goldmark's html.NodeRenderer.
 func nodeRenderer(f renderFunc) html.NodeRenderer {
-	return html.NodeRendererFunc(func(w io.Writer, source []byte, node ast.Node, entering bool, _ renderer.Context) (ast.WalkStatus, error) {
-		return f(w.(util.BufWriter), source, node, entering)
-	})
-}
-
-// contextNodeRenderer adapts a contextRenderFunc to goldmark's html.NodeRenderer.
-func contextNodeRenderer(f contextRenderFunc) html.NodeRenderer {
 	return html.NodeRendererFunc(func(w io.Writer, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 		return f(w.(util.BufWriter), source, node, entering, rc)
 	})

@@ -6,6 +6,7 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -125,7 +126,7 @@ func taskMarker(block ast.Node) string {
 	return "[ ] "
 }
 
-func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.List)
 
 	// A split list has no container of its own: each run opens and closes one,
@@ -135,7 +136,7 @@ func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte,
 	}
 
 	if !isTaskList(n) {
-		return r.goldmarkRenderList(w, source, node, entering)
+		return r.goldmarkRenderList(w, source, node, entering, rc)
 	}
 	if entering {
 		// The counter is deliberately not reset here. It is per document, not per
@@ -149,19 +150,19 @@ func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte,
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	parentList, _ := node.Parent().(*ast.List)
 	if parentList == nil {
-		return r.goldmarkRenderListItem(w, source, node, entering)
+		return r.goldmarkRenderListItem(w, source, node, entering, rc)
 	}
 
 	// In a split list the item carries its run's container.
 	if splitsIntoRuns(parentList) {
-		return r.renderRunItem(w, source, node, entering)
+		return r.renderRunItem(w, source, node, entering, rc)
 	}
 
 	if !isTaskItem(node) || !isTaskList(parentList) {
-		return r.goldmarkRenderListItem(w, source, node, entering)
+		return r.goldmarkRenderListItem(w, source, node, entering, rc)
 	}
 
 	if entering {
@@ -175,7 +176,7 @@ func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []b
 // renderRunItem publishes one item of a list that holds both kinds, opening the
 // run's container before the first item of the run and closing it after the
 // last.
-func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	task := isTaskItem(node)
 
 	if entering && opensRun(node) {
@@ -192,7 +193,7 @@ func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []by
 		} else {
 			_, _ = w.WriteString("</ac:task-body>\n</ac:task>\n")
 		}
-	} else if _, err := r.goldmarkRenderListItem(w, source, node, entering); err != nil {
+	} else if _, err := r.goldmarkRenderListItem(w, source, node, entering, rc); err != nil {
 		return ast.WalkStop, err
 	}
 
@@ -224,7 +225,7 @@ func (r *ConfluenceTaskListRenderer) writeTaskOpening(w util.BufWriter, item ast
 }
 
 // goldmarkRenderList is the default list rendering from goldmark.
-func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.List)
 	tag := "ul"
 	if n.IsOrdered() {
@@ -237,7 +238,7 @@ func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source
 			_, _ = fmt.Fprintf(w, " start=\"%d\"", n.Start)
 		}
 		if n.Attributes() != nil {
-			html.RenderAttributes(w, source, n, html.ListAttributeFilter, nil)
+			html.RenderAttributes(w, source, n, html.ListAttributeFilter, rc)
 		}
 		_, _ = w.WriteString(">\n")
 	} else {
@@ -249,11 +250,11 @@ func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source
 }
 
 // goldmarkRenderListItem is the default list item rendering from goldmark.
-func (r *ConfluenceTaskListRenderer) goldmarkRenderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) goldmarkRenderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		if node.Attributes() != nil {
 			_, _ = w.WriteString("<li")
-			html.RenderAttributes(w, source, node, html.ListItemAttributeFilter, nil)
+			html.RenderAttributes(w, source, node, html.ListItemAttributeFilter, rc)
 			_ = w.WriteByte('>')
 		} else {
 			_, _ = w.WriteString("<li>")

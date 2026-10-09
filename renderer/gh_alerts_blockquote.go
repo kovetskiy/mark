@@ -7,6 +7,7 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -58,7 +59,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) getConfluenceMacroTitle(alertType
 	}
 }
 
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if r.LevelMap == nil {
 		r.LevelMap = GenerateBlockQuoteLevel(node)
 	}
@@ -69,7 +70,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufW
 	}
 
 	// Fall back to legacy blockquote rendering for non-GitHub Alert blockquotes
-	return r.renderLegacyBlockQuote(writer, source, node, entering)
+	return r.renderLegacyBlockQuote(writer, source, node, entering, rc)
 }
 
 func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWriter, source []byte, node ast.Node, entering bool, alertType string) (ast.WalkStatus, error) {
@@ -124,7 +125,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWrit
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	// Legacy blockquote handling (same as original ParseBlockQuoteType logic)
 	quoteType := ParseBlockQuoteType(node, source)
 	quoteLevel := r.LevelMap.Level(node)

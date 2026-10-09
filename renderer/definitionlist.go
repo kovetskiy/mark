@@ -3,6 +3,7 @@ package renderer
 import (
 	"github.com/yuin/goldmark/v2/ast"
 	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -61,7 +62,7 @@ func (r *ConfluenceDefinitionListRenderer) RendererOptions(cfg *html.Config) []h
 	})}
 }
 
-func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		r.open = append(r.open, listRow{})
 
@@ -88,7 +89,7 @@ func (r *ConfluenceDefinitionListRenderer) current() *listRow {
 	return &r.open[len(r.open)-1]
 }
 
-func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		// A term begins a row, so whatever row is open ends here.
 		r.closeRow(w)
@@ -106,7 +107,7 @@ func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source [
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceDefinitionListRenderer) renderDescription(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDefinitionListRenderer) renderDescription(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

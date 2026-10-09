@@ -7,6 +7,7 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/yuin/goldmark/v2/ast"
 	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -75,7 +76,7 @@ func footnoteRefAnchor(index, refIndex int) string {
 
 // renderFootnoteLink renders the marker in the running text: an anchor for the
 // note to come back to, then a superscript link down to it.
-func (r *ConfluenceFootnoteRenderer) renderFootnoteLink(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnoteLink(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
@@ -107,7 +108,7 @@ func (r *ConfluenceFootnoteRenderer) renderFootnoteLink(w util.BufWriter, source
 
 // renderFootnoteBacklink renders the arrow at the end of a note that leads back
 // to the text that cited it.
-func (r *ConfluenceFootnoteRenderer) renderFootnoteBacklink(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnoteBacklink(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
@@ -140,7 +141,7 @@ func (r *ConfluenceFootnoteRenderer) renderFootnoteBacklink(w util.BufWriter, so
 // The item takes no number of its own: goldmark orders the list by the index it
 // handed each marker, so the numbering <ol> produces is already the numbering
 // the markers show.
-func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	index := ctransformer.FootnoteIndex(node)
 
 	if !entering {
@@ -170,7 +171,7 @@ func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []b
 // neither the element's class nor its ARIA role, so it would arrive as an
 // anonymous div and buy nothing. The rule above the list is what actually
 // survives to mark the section off.
-func (r *ConfluenceFootnoteRenderer) renderFootnoteList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnoteList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		_, _ = w.WriteString("<hr />\n<ol>\n")
 	} else {

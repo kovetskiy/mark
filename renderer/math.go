@@ -7,6 +7,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -51,7 +52,7 @@ func (r *ConfluenceMathRenderer) RendererOptions(cfg *html.Config) []html.Option
 // picture is the same one an inline display formula gets; only where it sits on
 // the page differs, and that is the block structure around it rather than
 // anything here.
-func (r *ConfluenceMathRenderer) renderMathBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceMathRenderer) renderMathBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
@@ -64,7 +65,7 @@ func (r *ConfluenceMathRenderer) renderMathBlock(writer util.BufWriter, source [
 	return r.writeFormula(writer, n.Equation, true)
 }
 
-func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceMathRenderer) renderMath(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

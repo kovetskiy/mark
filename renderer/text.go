@@ -44,7 +44,7 @@ func (r *ConfluenceTextRenderer) RendererOptions(cfg *html.Config) []html.Option
 	r.configure(cfg)
 
 	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
-		ast.KindText: contextNodeRenderer(r.renderText),
+		ast.KindText: nodeRenderer(r.renderText),
 	})}
 }
 

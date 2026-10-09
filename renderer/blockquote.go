@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -183,7 +184,7 @@ func GenerateBlockQuoteLevel(someNode ast.Node) BlockQuoteLevelMap {
 }
 
 // renderBlockQuote will render a BlockQuote
-func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	// Initialize BlockQuote level map
 	if r.LevelMap == nil {
 		r.LevelMap = GenerateBlockQuoteLevel(node)
@@ -209,7 +210,7 @@ func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, s
 	if entering {
 		if node.Attributes() != nil {
 			_, _ = writer.WriteString("<blockquote")
-			html.RenderAttributes(writer, source, node, html.BlockquoteAttributeFilter, nil)
+			html.RenderAttributes(writer, source, node, html.BlockquoteAttributeFilter, rc)
 			_ = writer.WriteByte('>')
 		} else {
 			_, _ = writer.WriteString("<blockquote>\n")
