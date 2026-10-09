@@ -15,6 +15,7 @@ import (
 	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -126,7 +127,7 @@ func (r *ConfluenceImageRenderer) RendererOptions(cfg *html.Config) []html.Optio
 }
 
 // renderImage renders an inline image
-func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/parser"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -54,7 +55,7 @@ func ParseMkDocsAdmonitionType(node ast.Node) AdmonitionType {
 
 // renderMkDocsAdmonition renders an admonition node as a Confluence structured macro.
 // All admonitions (including nested ones) are rendered as Confluence macros.
-func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*parser.Admonition)
 	admonitionType := ParseMkDocsAdmonitionType(node)
 
@@ -81,15 +82,15 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 		}
 		return ast.WalkContinue, nil
 	}
-	return r.renderMkDocsAdmon(writer, source, node, entering)
+	return r.renderMkDocsAdmon(writer, source, node, entering, rc)
 }
 
-func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmon(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmon(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*parser.Admonition)
 	if entering {
 		if len(n.Attributes()) > 0 {
 			_, _ = w.WriteString("<blockquote")
-			html.RenderAttributes(w, source, n, MkDocsAdmonitionAttributeFilter, nil)
+			html.RenderAttributes(w, source, n, MkDocsAdmonitionAttributeFilter, rc)
 			_ = w.WriteByte('>')
 		} else {
 			_, _ = w.WriteString("<blockquote>\n")

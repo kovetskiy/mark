@@ -4,6 +4,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -34,7 +35,7 @@ func (r *ConfluenceHeadingRenderer) RendererOptions(cfg *html.Config) []html.Opt
 	})}
 }
 
-func (r *ConfluenceHeadingRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceHeadingRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.Heading)
 
 	// If this is the first h1 heading of the document and we want to drop it, let's not render it at all.
@@ -45,16 +46,16 @@ func (r *ConfluenceHeadingRenderer) renderHeading(w util.BufWriter, source []byt
 		return ast.WalkSkipChildren, nil
 	}
 
-	return r.goldmarkRenderHeading(w, source, node, entering)
+	return r.goldmarkRenderHeading(w, source, node, entering, rc)
 }
 
-func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.Heading)
 	if entering {
 		_, _ = w.WriteString("<h")
 		_ = w.WriteByte("0123456"[n.Level])
 		if n.Attributes() != nil {
-			html.RenderAttributes(w, source, node, html.HeadingAttributeFilter, nil)
+			html.RenderAttributes(w, source, node, html.HeadingAttributeFilter, rc)
 		}
 		_ = w.WriteByte('>')
 

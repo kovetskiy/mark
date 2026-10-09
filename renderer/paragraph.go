@@ -5,6 +5,7 @@ import (
 
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -29,13 +30,13 @@ func (r *ConfluenceParagraphRenderer) RendererOptions(cfg *html.Config) []html.O
 	})}
 }
 
-func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source []byte, n ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	unwrapped := unwrapParagraph(n, source)
 	if entering {
 		if !unwrapped {
 			if n.Attributes() != nil {
 				_, _ = w.WriteString("<p")
-				html.RenderAttributes(w, source, n, html.ParagraphAttributeFilter, nil)
+				html.RenderAttributes(w, source, n, html.ParagraphAttributeFilter, rc)
 				_ = w.WriteByte('>')
 			} else {
 				_, _ = w.WriteString("<p>")

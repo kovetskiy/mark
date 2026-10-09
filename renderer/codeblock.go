@@ -6,6 +6,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -35,7 +36,7 @@ func (r *ConfluenceCodeBlockRenderer) RendererOptions(cfg *html.Config) []html.O
 }
 
 // renderCodeBlock renders a CodeBlock
-func (r *ConfluenceCodeBlockRenderer) renderCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceCodeBlockRenderer) renderCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

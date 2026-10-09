@@ -164,7 +164,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) decorateCodeBlock(next html.NodeRend
 }
 
 // renderFencedCodeBlock renders a FencedCodeBlock
-func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

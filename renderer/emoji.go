@@ -8,6 +8,7 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	east "github.com/yuin/goldmark-emoji/v2"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -107,7 +108,7 @@ func emojiID(runes []rune) string {
 	return id.String()
 }
 
-func (r *ConfluenceEmojiRenderer) renderEmoji(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceEmojiRenderer) renderEmoji(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

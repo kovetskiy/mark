@@ -6,6 +6,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/parser"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
@@ -23,7 +24,7 @@ func (r *ConfluenceDateRenderer) RendererOptions(cfg *html.Config) []html.Option
 	})}
 }
 
-func (r *ConfluenceDateRenderer) renderDate(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDateRenderer) renderDate(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
