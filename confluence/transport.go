@@ -91,21 +91,33 @@ type retryTransport struct {
 	sleep func(time.Duration)
 }
 
-// wait sleeps for the backoff, or stops early if the request is cancelled.
+// sleepContext sits out d, and returns ctx's error instead if ctx ends first.
 //
-// t.sleep is what the tests replace, so the timer is built from it rather than
-// from time.After: a test that makes the wait instant would otherwise still
-// wait for a real one here.
-func (t *retryTransport) wait(ctx context.Context, d time.Duration) error {
-	if ctx == nil || ctx.Done() == nil {
-		t.sleep(d)
+// sleep, when it is not nil, does the sitting out in place of a timer. It is
+// what the retry transport's tests replace: a test that makes the wait instant
+// would otherwise still wait for a real timer here.
+func sleepContext(ctx context.Context, d time.Duration, sleep func(time.Duration)) error {
+	if sleep == nil {
+		timer := time.NewTimer(d)
+		defer timer.Stop()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return nil
+		}
+	}
+
+	if ctx.Done() == nil {
+		sleep(d)
 
 		return nil
 	}
 
 	done := make(chan struct{})
 	go func() {
-		t.sleep(d)
+		sleep(d)
 		close(done)
 	}()
 
@@ -256,7 +268,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// The wait respects the request's context, so a cancelled run stops
 		// waiting instead of finishing its backoff first. Three retries at the
 		// cap is a minute and a half a caller could not otherwise escape.
-		if err := t.wait(req.Context(), wait); err != nil {
+		if err := sleepContext(req.Context(), wait, t.sleep); err != nil {
 			return nil, err
 		}
 	}
