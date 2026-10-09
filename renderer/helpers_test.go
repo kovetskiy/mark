@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/stretchr/testify/assert"
@@ -27,35 +28,24 @@ import (
 // goldmark's output instead of this repo's.
 //
 // The parser is given the transformers both compile paths run to give the tree
-// the shape these renderers read.
+// the shape these renderers read; a renderer whose nodes exist only once a
+// goldmark extension has parsed them gets it in parserOpts.
 func render(t *testing.T, source string, nodeRenderers []html.Extension, parserOpts ...parser.Option) string {
 	t.Helper()
 
-	return renderExtended(t, source, nil, nodeRenderers, parserOpts...)
-}
-
-// renderExtended is render for a renderer whose nodes exist only once a
-// goldmark extension has parsed them, footnotes being the one in this package.
-func renderExtended(t *testing.T, source string, extensions []parser.Extension, nodeRenderers []html.Extension, parserOpts ...parser.Option) string {
-	t.Helper()
-
-	opts := []parser.Option{
-		parser.WithExtensions(extensions...),
-		parser.WithASTTransformers(ctransformer.ShapeTransformers()...),
-	}
-	p := parser.New(append(opts, parserOpts...)...)
-
-	r := html.New(
-		html.WithUnsafe(),
-		html.WithXHTML(),
-		html.WithExtensions(ctransformer.NewHTMLRenderer()),
-		html.WithExtensions(nodeRenderers...),
+	md := goldmarktest.New(
+		goldmarktest.WithParserOptions(parser.WithASTTransformers(ctransformer.ShapeTransformers()...)),
+		goldmarktest.WithParserOptions(parserOpts...),
+		goldmarktest.WithRendererOptions(
+			html.WithUnsafe(),
+			html.WithXHTML(),
+			html.WithExtensions(ctransformer.NewHTMLRenderer()),
+			html.WithExtensions(nodeRenderers...),
+		),
 	)
 
-	src := []byte(source)
-
 	var buf bytes.Buffer
-	require.NoError(t, r.Render(&buf, src, p.Parse(src)))
+	require.NoError(t, md.Convert([]byte(source), &buf))
 
 	return buf.String()
 }

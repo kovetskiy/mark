@@ -7,7 +7,6 @@
 package goldmarktest
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -73,12 +72,5 @@ func (m *Markdown) Parse(source []byte) ast.Node {
 
 // Convert parses source and renders it to w.
 func (m *Markdown) Convert(source []byte, w io.Writer) error {
-	var buf bytes.Buffer
-	if err := html.New(m.rendererOptions...).Render(&buf, source, m.Parse(source)); err != nil {
-		return err
-	}
-
-	_, err := w.Write(buf.Bytes())
-
-	return err
+	return html.New(m.rendererOptions...).Render(w, source, m.Parse(source))
 }
