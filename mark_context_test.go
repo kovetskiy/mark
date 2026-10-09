@@ -136,6 +136,45 @@ func TestRunContextStopsARunBlockedOnASlowRequest(t *testing.T) {
 		"the manifest saved by the cancelled run found the page it made")
 }
 
+// TestContinueOnErrorDoesNotSwallowACancellation: with --continue-on-error a
+// failed file is logged and the run moves on, but a file that failed because
+// the run was cancelled is not a file failure. Cancelled while the last file
+// publishes, the run used to carry on past it and end by reporting that some
+// files failed, rather than that it was stopped.
+func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First"))
+	writeFile(t, dir, "b.md", markdownWithTitle("Second"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	blocked := make(chan struct{})
+	var once sync.Once
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Query().Get("title") != "Second" {
+			return 0, "", false
+		}
+		once.Do(func() { close(blocked) })
+		<-r.Context().Done()
+		return http.StatusServiceUnavailable, `{"message":"too late"}`, true
+	})
+
+	go func() {
+		<-blocked
+		cancel()
+	}()
+
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.ContinueOnError = true
+
+	err := RunContext(ctx, config)
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 // findPageTitled looks a page up with a client of its own, for the reason
 // countPagesTitled gives.
 func findPageTitled(t *testing.T, server *confluencetest.Server, title string) *confluence.PageInfo {

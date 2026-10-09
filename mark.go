@@ -549,7 +549,9 @@ func run(ctx context.Context, config Config) (err error) {
 				File: file, Status: report.StatusFailed, Reason: err.Error(),
 			})
 
-			if config.ContinueOnError {
+			// A file that failed because the run was cancelled is not a file
+			// failure to step past: stop, so the run reports the cancellation.
+			if config.ContinueOnError && ctx.Err() == nil {
 				log.Error().Err(err).Msgf("processing %s", file)
 				hasErrors = true
 				continue
@@ -619,7 +621,7 @@ func run(ctx context.Context, config Config) (err error) {
 					File: file, Status: report.StatusFailed, Reason: err.Error(),
 				})
 
-				if config.ContinueOnError {
+				if config.ContinueOnError && ctx.Err() == nil {
 					log.Error().Err(err).Msgf("processing %s", file)
 					hasErrors = true
 
