@@ -1,7 +1,10 @@
 package mark
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -10,6 +13,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -142,4 +146,65 @@ func findPageTitled(t *testing.T, server *confluencetest.Server, title string) *
 	require.NotNil(t, page, "no page titled %q", title)
 
 	return page
+}
+
+// TestACancelledExplicitManifestSaveIsNotReportedOnceSaved: under
+// --continue-on-error a run cancelled while its last file publishes still
+// reaches the explicit save at the end. Made under the run's own context, that
+// save was refused before it was sent and went into the report and the error;
+// the save on the way out then wrote the manifest under a detached context,
+// and nothing took the complaint back, so the report said a manifest that had
+// been saved was not.
+func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First"))
+	writeFile(t, dir, "b.md", markdownWithTitle("Second"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The last file's first lookup cancels the run and is held until the
+	// client gives up on it, so that file fails on the cancellation and the
+	// run goes on to the end, as --continue-on-error has it do.
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Query().Get("title") != "Second" {
+			return 0, "", false
+		}
+		cancel()
+		<-r.Context().Done()
+		return http.StatusServiceUnavailable, `{"message":"too late"}`, true
+	})
+
+	var out bytes.Buffer
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.TrackPages = true
+	config.ContinueOnError = true
+	config.OutputFormat = report.FormatJSON
+	config.Output = &out
+
+	err := RunContext(ctx, config)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "unable to save page manifest")
+
+	var parsed report.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &parsed))
+	for _, line := range parsed.Errors {
+		assert.NotContains(t, line, "unable to save page manifest", out.String())
+	}
+
+	// And it was saved: the next run finds the first page after its title
+	// changed.
+	server.SetFail(nil)
+	first := findPageTitled(t, server, "First")
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First Renamed"))
+	config.ContinueOnError = false
+	config.OutputFormat = ""
+	config.Output = io.Discard
+	require.NoError(t, RunContext(context.Background(), config))
+
+	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
+		"the manifest saved by the cancelled run found the page it made")
 }

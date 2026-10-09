@@ -475,8 +475,9 @@ func run(ctx context.Context, config Config) (err error) {
 		// out under a context that keeps ctx's values and drops its
 		// cancellation. A second signal, which ends the process outright, is
 		// what stops a save that hangs; the transport's own timeouts bound it
-		// otherwise. When the run was not stopped, the explicit save below has
-		// already written everything, and this one sends nothing.
+		// otherwise. When the run got as far as the explicit save below, that
+		// one was made under the same detached context, has already written
+		// everything unless it failed, and this one then sends nothing.
 		if ctx.Err() != nil {
 			api.SetContext(context.WithoutCancel(ctx))
 		}
@@ -661,6 +662,16 @@ func run(ctx context.Context, config Config) (err error) {
 		if err := handleOrphans(tracker, api, config, onOrphan, hasErrors, results); err != nil {
 			return err
 		}
+
+		// Under the same detached context as the save on the way out, and for
+		// the same reason. Under ctx, a run stopped while its last file
+		// published (with --continue-on-error), or a signal arriving during
+		// this save, had it refused and reported as not saved -- and the
+		// deferred save then wrote the manifest after all, leaving the report
+		// and the returned error saying otherwise. Nothing after this point
+		// talks to Confluence but that deferred save, which this makes a
+		// no-op whenever this one succeeds.
+		api.SetContext(context.WithoutCancel(ctx))
 		if saveErr = tracker.Save(); saveErr != nil {
 			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)
 
