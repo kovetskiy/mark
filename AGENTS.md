@@ -108,10 +108,11 @@ Getting this wrong silently produces the default rendering, with no error anywhe
 
 `transformer.ShapeTransformers()` (priorities `1`--`3`, and `999`) give the tree the
 shape goldmark v1's parser built and everything here was written against: tight
-paragraphs as `transformer.TextBlock`, a task's `[x]` as `transformer.TaskCheckBox`, and
-the footnotes gathered into a `transformer.FootnoteList` at the end with backlinks.
-`transformer.String` stands in for v1's `ast.String`, and `transformer.NewHTMLRenderer`
-renders all three the way v1 did. Both compile paths register them. goldmark v2 also
+paragraphs as `transformer.TextBlock`, and the footnotes gathered into a
+`transformer.FootnoteList` at the end with backlinks. `transformer.String` stands in for
+v1's `ast.String`, and `transformer.NewHTMLRenderer` renders it and `TextBlock` the way
+v1 did. Both compile paths register them. A task's status is read straight off the list
+item with `extension.TaskStatusOf`; there is no checkbox node. goldmark v2 also
 keeps text as a `text.Value`: `Str(source)` is the text as written, which is what this
 code reads, and `Value(source)` the decoded text.
 

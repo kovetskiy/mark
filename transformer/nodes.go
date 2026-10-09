@@ -3,7 +3,6 @@ package transformer
 import (
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/yuin/goldmark/v2/ast"
-	"github.com/yuin/goldmark/v2/extension"
 	extast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -181,90 +180,16 @@ func parseSubDocument(source []byte) ast.Node {
 	).Parse(source)
 }
 
-// TaskCheckBox is the "[ ]" or "[x]" a task list item opens with.
-//
-// goldmark v1's task list parser left one of these at the head of the item's
-// first block, and the task list renderer reads the item's status from there.
-// v2 records the status on the list item instead; TaskCheckBoxTransformer puts
-// the node back.
-type TaskCheckBox struct {
-	ast.BaseInline
-
-	// IsChecked says the box was written "[x]".
-	IsChecked bool
-}
-
-// KindTaskCheckBox is the ast.NodeKind of a TaskCheckBox.
-var KindTaskCheckBox = ast.NewNodeKind("MarkTaskCheckBox")
-
-// Kind implements ast.Node.
-func (n *TaskCheckBox) Kind() ast.NodeKind {
-	return KindTaskCheckBox
-}
-
-// Dump implements ast.Node.
-func (n *TaskCheckBox) Dump(_ []byte) *ast.NodeDump {
-	return ast.NewNodeDump(n, map[string]any{
-		"Checked": n.IsChecked,
-	})
-}
-
-// NewTaskCheckBox returns a TaskCheckBox.
-func NewTaskCheckBox(checked bool) *TaskCheckBox {
-	n := &TaskCheckBox{IsChecked: checked}
-	n.Init(n)
-
-	return n
-}
-
-// TaskCheckBoxTransformer puts a TaskCheckBox at the head of the first block
-// of every task list item, where goldmark v1 parsed one.
-type TaskCheckBoxTransformer struct{}
-
-// NewTaskCheckBoxTransformer returns a TaskCheckBoxTransformer.
-func NewTaskCheckBoxTransformer() *TaskCheckBoxTransformer {
-	return &TaskCheckBoxTransformer{}
-}
-
-// Transform implements parser.ASTTransformer.
-func (t *TaskCheckBoxTransformer) Transform(doc *ast.Document, _ text.Reader, _ parser.Context) {
-	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		status, ok := extension.TaskStatusOf(node)
-		if !ok {
-			return ast.WalkContinue, nil
-		}
-
-		block := node.FirstChild()
-		if block == nil {
-			return ast.WalkContinue, nil
-		}
-
-		checkbox := NewTaskCheckBox(status == extension.TaskStatusCompleted)
-		if first := block.FirstChild(); first != nil {
-			block.InsertBefore(first, checkbox)
-		} else {
-			block.AppendChild(checkbox)
-		}
-
-		return ast.WalkContinue, nil
-	})
-}
-
 // ShapeTransformers put back the parts of the tree goldmark v1's parser built
 // and v2's does not, which the transformers and renderers here were written
-// against: tight paragraphs as TextBlocks, a task's checkbox as a node, and
-// the footnotes gathered into one list. The first three run before anything
-// else looks at the tree, where v1 had already done it while parsing; the last
+// against: tight paragraphs as TextBlocks, and the footnotes gathered into one
+// list. The first two run before anything else looks at the tree, where v1 had
+// already done it while parsing; the last
 // runs after everything, at the priority v1's own footnote transformer had.
 // Both compile paths register them.
 func ShapeTransformers() []util.PrioritizedValue[parser.ASTTransformer] {
 	return []util.PrioritizedValue[parser.ASTTransformer]{
 		util.Prioritized[parser.ASTTransformer](NewTightBlockTransformer(), 1),
-		util.Prioritized[parser.ASTTransformer](NewTaskCheckBoxTransformer(), 2),
 		util.Prioritized[parser.ASTTransformer](NewFootnoteListTransformer(), 3),
 		util.Prioritized[parser.ASTTransformer](NewFootnoteBacklinkTransformer(), 999),
 	}
