@@ -161,7 +161,7 @@ func (c *client) doWithHeader(
 		if err != nil {
 			c.trace.Printf("dump request failed: %s", err)
 		} else {
-			c.trace.Printf("%s", dump)
+			c.trace.dump(dump)
 		}
 	}
 
@@ -180,7 +180,7 @@ func (c *client) doWithHeader(
 		if dumpErr != nil {
 			c.trace.Printf("dump response failed: %s", dumpErr)
 		} else {
-			c.trace.Printf("%s", dump)
+			c.trace.dump(dump)
 		}
 	}
 
