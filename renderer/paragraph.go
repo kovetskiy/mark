@@ -3,6 +3,7 @@ package renderer
 import (
 	"bytes"
 
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
@@ -45,6 +46,7 @@ func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source [
 				_, _ = w.WriteString("<p>")
 			}
 		}
+		_, _ = w.WriteString(taskMarker(n))
 	} else {
 		if !unwrapped {
 			_, _ = w.WriteString("</p>")
@@ -69,7 +71,13 @@ func (r *ConfluenceParagraphRenderer) renderParagraph(w util.BufWriter, source [
 //     which is how <b>bold</b> arrives here;
 //   - one half of a Confluence element the author spread over several blocks,
 //     where a <p> would interleave with the element being built.
+//
+// A task's paragraph never is: it opens with the checkbox.
 func unwrapParagraph(n ast.Node, source []byte) bool {
+	if ctransformer.OpensTask(n) {
+		return false
+	}
+
 	first, ok := n.FirstChild().(*ast.RawHTML)
 	if !ok {
 		return false

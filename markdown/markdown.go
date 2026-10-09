@@ -63,7 +63,6 @@ func (c *ConfluenceLegacyExtension) Attach(a attachment.Attachment) {
 // they name, which is what the smaller priority number did in v1.
 func (c *ConfluenceLegacyExtension) RendererOptions(cfg *html.Config) []html.Option {
 	renderers := []html.Extension{
-		// First, so that the task list renderer below takes the checkbox.
 		ctransformer.NewHTMLRenderer(),
 		crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines),
 		crenderer.NewConfluenceBlockQuoteRenderer(),
@@ -671,8 +670,7 @@ func (c *ConfluenceExtension) Attach(a attachment.Attachment) {
 // legacy extension's do.
 func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 	renderers := []html.Extension{
-		// The nodes the transformers stand in for goldmark v1's with. First,
-		// so that the task list renderer below takes the checkbox.
+		// The nodes the transformers stand in for goldmark v1's with.
 		ctransformer.NewHTMLRenderer(),
 
 		// Core renderers (excluding blockquote and text which are replaced below)

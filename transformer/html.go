@@ -4,15 +4,14 @@ import (
 	"io"
 
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// HTMLRenderer renders the nodes this package puts in the tree in place of
-// goldmark v1's String, TextBlock and TaskCheckBox, the way goldmark v1's own
-// HTML renderer rendered those. Both compile paths register it ahead of their
-// own renderers, so that the task list renderer still takes the checkbox.
+// HTMLRenderer renders this package's String and TextBlock nodes the way
+// goldmark v1 rendered its own. Both compile paths register it.
 type HTMLRenderer struct{}
 
 // NewHTMLRenderer returns an HTMLRenderer.
@@ -46,11 +45,20 @@ func (r *HTMLRenderer) renderString(w io.Writer, _ []byte, node ast.Node, enteri
 }
 
 // renderTextBlock writes the block's content with no element of its own, and
-// a newline before whatever follows it.
+// a newline before whatever follows it. A task's block counts its checkbox as
+// content, as v1's tree held it as a child.
 func (r *HTMLRenderer) renderTextBlock(w io.Writer, _ []byte, n ast.Node, entering bool, _ renderer.Context) (ast.WalkStatus, error) {
-	if !entering && n.NextSibling() != nil && n.FirstChild() != nil {
+	if !entering && n.NextSibling() != nil && (n.FirstChild() != nil || OpensTask(n)) {
 		_ = w.(util.BufWriter).WriteByte('\n')
 	}
 
 	return ast.WalkContinue, nil
+}
+
+// OpensTask reports whether block is the first block of a task list item,
+// which goldmark's task list parser opens with the checkbox.
+func OpensTask(block ast.Node) bool {
+	item := block.Parent()
+
+	return item != nil && item.FirstChild() == block && extension.IsTask(item)
 }

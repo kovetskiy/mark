@@ -80,6 +80,8 @@ func (r *ConfluenceHeadingRenderer) goldmarkRenderHeading(w util.BufWriter, sour
 				return ast.WalkStop, err
 			}
 		}
+
+		_, _ = w.WriteString(taskMarker(node))
 	} else {
 		_, _ = w.WriteString("</h")
 		_ = w.WriteByte("0123456"[n.Level])
