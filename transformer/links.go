@@ -72,7 +72,7 @@ func (t *LinkTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 		}
 
 		// The label as written is what the renderer reads for an ac: link.
-		resolved, err := t.Resolve(target, LabelText(link, reader.Source()))
+		resolved, err := t.Resolve(target, NodeText(link, reader.Source()))
 		if err != nil {
 			return ast.WalkStop, err
 		}
