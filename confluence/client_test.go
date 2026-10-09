@@ -56,33 +56,35 @@ func clientServer(
 	return newClient(server.URL+basePath, server.Client(), username, password, ""), got
 }
 
-func TestClientEscapesEachPathSegment(t *testing.T) {
-	c, got := clientServer(t, "/wiki/rest/api", "user", "token", http.StatusOK, "", `{}`)
+func TestClientBuildsThePath(t *testing.T) {
+	for name, test := range map[string]struct {
+		base   string
+		method string
+		path   []string
+		want   string
+	}{
+		"escapes each segment": {
+			"/wiki/rest/api", http.MethodGet,
+			[]string{"content", "a b", "x/y", "q?#", "mark:key"},
+			"/wiki/rest/api/content/a%20b/x%2Fy/q%3F%23/mark:key",
+		},
+		"keeps a trailing slash": {
+			"/rest/api", http.MethodGet, []string{"content", ""}, "/rest/api/content/",
+		},
+		// The site client has no base path of its own.
+		"at the site root": {
+			"", http.MethodPost, []string{"pages", "movepage.action"}, "/pages/movepage.action",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, got := clientServer(t, test.base, "user", "token", http.StatusOK, "", `{}`)
 
-	_, err := c.do(context.Background(), http.MethodGet,
-		[]string{"content", "a b", "x/y", "q?#", "mark:key"}, nil, nil, &map[string]any{})
-	require.NoError(t, err)
+			_, err := c.do(context.Background(), test.method, test.path, nil, nil, &map[string]any{})
+			require.NoError(t, err)
 
-	assert.Equal(t, "/wiki/rest/api/content/a%20b/x%2Fy/q%3F%23/mark:key", got.rawPath)
-}
-
-func TestClientKeepsATrailingSlash(t *testing.T) {
-	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "", `{}`)
-
-	_, err := c.do(context.Background(), http.MethodGet, []string{"content", ""}, nil, nil, &map[string]any{})
-	require.NoError(t, err)
-
-	assert.Equal(t, "/rest/api/content/", got.rawPath)
-}
-
-// TestClientAtTheSiteRoot: the site client has no base path of its own.
-func TestClientAtTheSiteRoot(t *testing.T) {
-	c, got := clientServer(t, "", "user", "token", http.StatusOK, "", `{}`)
-
-	_, err := c.do(context.Background(), http.MethodPost, []string{"pages", "movepage.action"}, nil, nil, &map[string]any{})
-	require.NoError(t, err)
-
-	assert.Equal(t, "/pages/movepage.action", got.rawPath)
+			assert.Equal(t, test.want, got.rawPath)
+		})
+	}
 }
 
 func TestClientEncodesTheQuerySorted(t *testing.T) {
