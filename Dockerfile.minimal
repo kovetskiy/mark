@@ -1,0 +1,13 @@
+FROM golang:1.21.6 as builder
+ENV GOPATH="/go"
+WORKDIR /go/src/github.com/kovetskiy/mark
+COPY / .
+RUN make get \
+&& make build
+
+
+FROM alpine:3.19.1
+
+COPY --from=builder /go/src/github.com/kovetskiy/mark/mark /bin/
+
+ENTRYPOINT [""]
