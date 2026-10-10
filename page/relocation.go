@@ -2,6 +2,7 @@ package page
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
@@ -156,7 +157,7 @@ func WouldMove(
 		return false
 	}
 
-	if len(parents) > 0 && parent.Title != parents[len(parents)-1] {
+	if len(parents) > 0 && !strings.EqualFold(parent.Title, parents[len(parents)-1]) {
 		return true
 	}
 
