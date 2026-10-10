@@ -426,7 +426,7 @@ func EnsureMixedAncestry(
 		// sits now rather than where a real run would put it. A real run
 		// creates the rest of the chain and new folders beneath it, so the
 		// folder parent is one that does not exist yet.
-		if dryRun && len(folders) > 0 && anchor.Title != pages[len(pages)-1] {
+		if dryRun && len(folders) > 0 && !strings.EqualFold(anchor.Title, pages[len(pages)-1]) {
 			log.Info().Msgf(
 				"skipping folder creation due to dry-run mode: MARK_PARENTS chain %q is not there yet, so neither are folders %v",
 				strings.Join(pages, " > "), folders,
