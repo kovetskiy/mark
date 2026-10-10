@@ -952,6 +952,9 @@ Add this to your **article.md**.
 This is my article.
 ```
 
+To put a disclaimer on every page without touching the documents, use
+[`--page-header`](#a-header-on-every-page) instead.
+
 ### Insert Status Badge
 
 ```markdown
@@ -1229,6 +1232,70 @@ The cost is that a label outlives the header that introduced it -- appending
 cannot tell a `Label` header somebody deleted from a label somebody added in
 Confluence. That is visible on the page and can be undone by hand, which the
 deletion it prevents is not.
+
+### A header on every page
+
+`--page-header` names a template that is placed at the top of every page mark
+publishes, above the document and inside its layout. It is set on the command
+line, so the documents themselves say nothing about it -- a warning that a page
+is generated, and where to edit it, is the usual use:
+
+```bash
+mark --page-header generated.md --files "docs/**/*.md"
+```
+
+A file ending in `.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn` or `.mdwn` is
+Markdown, compiled like a document with the same `--features`; anything else is
+Confluence storage format, published as written.
+Either way it is a Go template, executed once per page with:
+
+| field | value |
+| --- | --- |
+| `.Path` | the document's path relative to the working directory, with `/` separators |
+| `.EscapedPath` | `.Path` with each segment escaped for a URL |
+| `.Title` | the page title |
+| `.Space` | the page's space key |
+
+With `--page-id` the file's own headers are ignored, so `.Title` is the title of
+the page being updated and `.Space` is `--space`. `--page-id` with
+`--compile-only` is the one exception: nothing contacts Confluence, so there is
+no page to read the title from and `.Title` is empty. A header that prints the
+title shows it blank in that output only, never in a published page.
+
+The repository's address is written into the template. Linking to a branch
+rather than a commit points readers at the version they can edit, and keeps the
+header the same from one run to the next:
+
+```markdown
+> [!WARNING]
+> This page is generated from
+> [{{ .Path | xmlesc }}](https://github.com/org/repo/blob/main/{{ .EscapedPath }}).
+> Edit it there: changes made in Confluence are overwritten.
+```
+
+A file name can hold `&` or `<`, so `.Path`, `.Title` and `.Space` go through
+`xmlesc` in either format. The same in storage format:
+
+```html
+<ac:structured-macro ac:name="warning">
+  <ac:parameter ac:name="title">Generated from Git</ac:parameter>
+  <ac:rich-text-body>
+    <p>Edit <a href="https://github.com/org/repo/blob/main/{{ .EscapedPath | xmlesc }}">{{ .Path | xmlesc }}</a> instead.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+```
+
+The template cannot read environment variables: the environment holds the
+Confluence password, and a header is published on every page. A value that
+changes from run to run, such as the commit, can be written into the template
+before mark runs, for example with `envsubst`, by the script that knows which
+variables are safe to publish.
+
+The template is executed once before anything is published, so a broken
+template, or a header that does not render to well-formed XML for a title and a
+file name holding `&` and `<`, stops the run instead of every page. The header is part of the page body, so with
+`--changes-only` a change to it republishes every page. Pair it with
+`--edit-lock` to keep people from editing the page in Confluence at all.
 
 ### Reporting what a run did
 
@@ -2004,6 +2071,7 @@ GLOBAL OPTIONS:
    --insecure-skip-tls-verify                     skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --attach-referenced                            upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way. [$MARK_ATTACH_REFERENCED]
    --image-align string                           set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
+   --page-header string                           path to a template placed at the top of every page: Markdown if it ends in .md, .markdown, .mdown, .mkd, .mkdn or .mdwn, Confluence storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space. [$MARK_PAGE_HEADER]
    --help, -h                                     show help
    --version, -v                                  print the version
 ```
