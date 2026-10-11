@@ -185,3 +185,346 @@ func TestFootnoteNumberingMatchesV1(t *testing.T) {
 		},
 	})
 }
+
+// TestFootnoteListTightnessMatchesV1 pins whether a list holding a footnote
+// definition is tight. v1 took the definition out of the item before the list
+// decided, so a definition alone never made a list loose.
+func TestFootnoteListTightnessMatchesV1(t *testing.T) {
+	assertFootnotesAsV1(t, []footnoteV1Case{
+		{
+			name:     "definition after a blank line is the only extra block",
+			markdown: "Text [^x].\n\n- item\n\n  [^x]: in list\n- other\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>item</li>
+<li>other</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in list&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "only item",
+			markdown: "Text [^x].\n\n- item\n\n  [^x]: in list\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>item</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in list&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "definition and a second paragraph stays loose",
+			markdown: "Text [^x].\n\n- item\n\n  [^x]: in list\n\n  second para\n- other\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>
+<p>item</p>
+<p>second para</p>
+</li>
+<li>
+<p>other</p>
+</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in list&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "definition without a blank line",
+			markdown: "Text [^x].\n\n- item\n  [^x]: in list\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>item</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in list&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "definition and a paragraph without blank lines",
+			markdown: "Text [^x].\n\n- item\n  [^x]: in list\n\n  second para\n- other\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>
+<p>item</p>
+<p>second para</p>
+</li>
+<li>
+<p>other</p>
+</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in list&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "definitions in several items",
+			markdown: "Text [^x] [^y].\n\n- a\n  [^x]: X\n- b\n  [^y]: Y\n- c\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link> <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-2</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-2"><ac:link-body><sup>[2]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>a</li>
+<li>b</li>
+<li>c</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>X&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-2</ac:parameter></ac:structured-macro>
+<p>Y&#160;<ac:link ac:anchor="footnote-ref-2"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "two definitions in one item",
+			markdown: "Text [^x] [^y].\n\n- a\n\n  [^x]: X\n\n  [^y]: Y\n- b\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link> <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-2</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-2"><ac:link-body><sup>[2]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>a</li>
+<li>b</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>X&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-2</ac:parameter></ac:structured-macro>
+<p>Y&#160;<ac:link ac:anchor="footnote-ref-2"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "blank line before the next item stays loose",
+			markdown: "Text [^x].\n\n- a\n\n  [^x]: X\n\n- b\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>
+<p>a</p>
+</li>
+<li>
+<p>b</p>
+</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>X&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "already loose list",
+			markdown: "Text [^x].\n\n- a\n\n- b\n  [^x]: in loose\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>
+<p>a</p>
+</li>
+<li>
+<p>b</p>
+</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in loose&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "nested list",
+			markdown: "Text [^x].\n\n- outer\n  - inner\n\n    [^x]: in inner\n  - inner2\n- outer2\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>outer
+<ul>
+<li>inner</li>
+<li>inner2</li>
+</ul>
+</li>
+<li>outer2</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in inner&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "nested list without a blank line",
+			markdown: "Text [^x].\n\n- outer\n  - inner\n    [^x]: in inner\n  - inner2\n- outer2\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>outer
+<ul>
+<li>inner</li>
+<li>inner2</li>
+</ul>
+</li>
+<li>outer2</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in inner&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "outer item of a nested list",
+			markdown: "Text [^x].\n\n- outer\n\n  [^x]: in outer\n- outer2\n  - inner\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>outer</li>
+<li>outer2
+<ul>
+<li>inner</li>
+</ul>
+</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in outer&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "outer item without a blank line",
+			markdown: "Text [^x].\n\n- outer\n  [^x]: in outer\n  - inner\n- outer2\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>outer
+<ul>
+<li>inner</li>
+</ul>
+</li>
+<li>outer2</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in outer&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "ordered list",
+			markdown: "Text [^x].\n\n1. item\n\n   [^x]: in ordered\n2. second\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ol>
+<li>item</li>
+<li>second</li>
+</ol>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in ordered&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "ordered list without a blank line",
+			markdown: "Text [^x].\n\n1. item\n   [^x]: in ordered\n2. second\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ol>
+<li>item</li>
+<li>second</li>
+</ol>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>in ordered&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "definition opens the item",
+			markdown: "Text [^x].\n\n- [^x]: def first\n- item two\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li></li>
+<li>item two</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>def first&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "definition in a blockquote in an item",
+			markdown: "Text [^x].\n\n- a\n  > quote\n  >\n  > [^x]: X\n- b\n",
+			want: `<p>Text <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link>.</p>
+<ul>
+<li>a
+<blockquote>
+<p>quote</p>
+</blockquote>
+</li>
+<li>b</li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>X&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+		{
+			name:     "citations around a definition in a list",
+			markdown: "- a [^y]\n\n  [^x]: X\n- b [^x]\n\n[^y]: Y\n",
+			want: `<ul>
+<li>a <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-1</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-1"><ac:link-body><sup>[1]</sup></ac:link-body></ac:link></li>
+<li>b <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-ref-2</ac:parameter></ac:structured-macro><ac:link ac:anchor="footnote-2"><ac:link-body><sup>[2]</sup></ac:link-body></ac:link></li>
+</ul>
+<hr />
+<ol>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-1</ac:parameter></ac:structured-macro>
+<p>Y&#160;<ac:link ac:anchor="footnote-ref-1"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+<li><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">footnote-2</ac:parameter></ac:structured-macro>
+<p>X&#160;<ac:link ac:anchor="footnote-ref-2"><ac:link-body>&#x21a9;&#xfe0e;</ac:link-body></ac:link></p>
+</li>
+</ol>
+`,
+		},
+	})
+}

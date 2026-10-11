@@ -180,13 +180,14 @@ var subDocumentParser = sync.OnceValue(func() parser.Parser {
 })
 
 // ShapeTransformers give the tree the shape goldmark v1's parser built, which
-// the transformers and renderers here read: TextBlocks first, the
-// FootnoteList right after, and its backlinks last of all. Both compile paths
-// register them.
+// the transformers and renderers here read: the FootnoteList first, TextBlocks
+// right after, and the footnote backlinks last of all. The FootnoteList goes
+// first because taking a footnote definition out of a list can make the list
+// tight again, as it was in v1. Both compile paths register them.
 func ShapeTransformers() []util.PrioritizedValue[parser.ASTTransformer] {
 	return []util.PrioritizedValue[parser.ASTTransformer]{
-		util.Prioritized[parser.ASTTransformer](NewTightBlockTransformer(), 1),
-		util.Prioritized[parser.ASTTransformer](NewFootnoteListTransformer(), 3),
+		util.Prioritized[parser.ASTTransformer](NewFootnoteListTransformer(), 1),
+		util.Prioritized[parser.ASTTransformer](NewTightBlockTransformer(), 3),
 		util.Prioritized[parser.ASTTransformer](NewFootnoteBacklinkTransformer(), 999),
 	}
 }

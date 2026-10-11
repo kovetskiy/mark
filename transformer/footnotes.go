@@ -132,9 +132,20 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 	list := NewFootnoteList()
 	definitions[0].Parent().InsertBefore(definitions[0], list)
 
+	var lists []*ast.List
 	for _, definition := range definitions {
+		for ancestor := definition.Parent(); ancestor != nil; ancestor = ancestor.Parent() {
+			if l, ok := ancestor.(*ast.List); ok && !slices.Contains(lists, l) {
+				lists = append(lists, l)
+			}
+		}
+
 		definition.Parent().RemoveChild(definition)
 		list.AppendChild(definition)
+	}
+
+	for _, l := range lists {
+		l.IsTight = isTightList(l)
 	}
 
 	indices := renumberFootnoteReferences(doc, source)
@@ -148,6 +159,43 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 		}
 		seen[label] = true
 	}
+}
+
+// isTightList decides whether list is tight by the rule goldmark's list parser
+// applies when it closes the list: loose if an item but the first follows a
+// blank line, or a block of an item but its first does. goldmark v1 took a
+// footnote definition out of its parent as the definition closed, which is
+// before the list around it closed, so v1 decided without the definition;
+// v2 decides with it, and a definition after a blank line made the list
+// loose. Asked again once the definitions are gone, the rule answers as v1's
+// did. The FootnoteList left where the first definition stood counts, as it
+// did in v1, but it never follows a blank line.
+func isTightList(list *ast.List) bool {
+	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
+		if item != list.FirstChild() && hasBlankPreviousLines(item) {
+			return false
+		}
+
+		if item.FirstChild() == nil {
+			continue
+		}
+
+		for block := item.FirstChild().NextSibling(); block != nil; block = block.NextSibling() {
+			if hasBlankPreviousLines(block) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// hasBlankPreviousLines reports whether node is a block that follows a blank
+// line.
+func hasBlankPreviousLines(node ast.Node) bool {
+	block, ok := node.(ast.BlockNode)
+
+	return ok && block.HasBlankPreviousLines()
 }
 
 // renumberFootnoteReferences numbers the citations the way goldmark v1 did,
