@@ -8,8 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/parser"
 )
 
 func TestExtractDocumentLeadingH1(t *testing.T) {
@@ -27,13 +26,30 @@ func TestExtractDocumentLeadingH1(t *testing.T) {
 		panic(err)
 	}
 
-	reader := text.NewReader(markdown)
-	parser := goldmark.DefaultParser()
-	doc := parser.Parse(reader)
+	doc := parser.New().Parse(markdown)
 	actual := ExtractDocumentLeadingH1(doc, markdown)
 
 	assert.Equal(t, "a", actual)
 }
+
+// TestExtractDocumentLeadingH1KeepsInlineCode: the title is the heading's
+// text as written, inline code included. goldmark v2 keeps a code span's text
+// on the span rather than in Text children; the expected titles are what v1
+// produced, since the title is how an existing page is found again.
+func TestExtractDocumentLeadingH1KeepsInlineCode(t *testing.T) {
+	for source, want := range map[string]string{
+		"# Only `x`\n":                  "Only x",
+		"# A ` x ` b\n":                 "A x b",
+		"# H1 `code` &amp; \\*esc\\*\n": "H1 code &amp; \\*esc\\*",
+		"# `a`b`c`\n":                   "abc",
+		"# Code `` a`b `` end\n":        "Code a`b end",
+		"# Raw <b>x</b> y\n":            "Raw x y",
+	} {
+		markdown := []byte(source)
+		assert.Equal(t, want, ExtractDocumentLeadingH1(parser.New().Parse(markdown), markdown), source)
+	}
+}
+
 func TestSetTitleFromFilename(t *testing.T) {
 	t.Run("set title from filename", func(t *testing.T) {
 		meta := &Meta{Title: ""}

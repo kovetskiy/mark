@@ -5,7 +5,7 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // TestTextSoftBreak covers --strip-linebreaks, which exists because Confluence
@@ -27,7 +27,7 @@ func TestTextSoftBreak(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := render(t, source, []renderer.NodeRenderer{
+			actual := render(t, source, []html.Extension{
 				crenderer.NewConfluenceTextRenderer(tt.strip),
 				crenderer.NewConfluenceParagraphRenderer(),
 			})
@@ -43,7 +43,7 @@ func TestTextHardBreakSurvivesStripping(t *testing.T) {
 	const source = "first line  \nsecond line\n"
 
 	for _, strip := range []bool{false, true} {
-		actual := render(t, source, []renderer.NodeRenderer{
+		actual := render(t, source, []html.Extension{
 			crenderer.NewConfluenceTextRenderer(strip),
 			crenderer.NewConfluenceParagraphRenderer(),
 		})
@@ -57,7 +57,7 @@ func TestTextHardBreakSurvivesStripping(t *testing.T) {
 // relies on: prose reaches the page through this one, and an unescaped "&" or
 // "<" makes the whole body malformed, which Confluence rejects outright.
 func TestTextEscapesMarkupCharacters(t *testing.T) {
-	actual := render(t, "A & B, 3 < 4, \"quoted\"\n", []renderer.NodeRenderer{
+	actual := render(t, "A & B, 3 < 4, \"quoted\"\n", []html.Extension{
 		crenderer.NewConfluenceTextRenderer(false),
 		crenderer.NewConfluenceParagraphRenderer(),
 	})

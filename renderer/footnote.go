@@ -4,10 +4,12 @@ import (
 	"strconv"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/yuin/goldmark/ast"
-	ext_ast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/yuin/goldmark/v2/ast"
+	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceFootnoteRenderer renders Markdown footnotes as something Confluence
@@ -28,18 +30,26 @@ type ConfluenceFootnoteRenderer struct {
 }
 
 // NewConfluenceFootnoteRenderer creates a new instance of the ConfluenceFootnoteRenderer.
-func NewConfluenceFootnoteRenderer(stdlib *stdlib.Lib) renderer.NodeRenderer {
+func NewConfluenceFootnoteRenderer(stdlib *stdlib.Lib) html.Extension {
 	return &ConfluenceFootnoteRenderer{
 		Stdlib: stdlib,
 	}
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceFootnoteRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ext_ast.KindFootnoteLink, r.renderFootnoteLink)
-	reg.Register(ext_ast.KindFootnoteBacklink, r.renderFootnoteBacklink)
-	reg.Register(ext_ast.KindFootnote, r.renderFootnote)
-	reg.Register(ext_ast.KindFootnoteList, r.renderFootnoteList)
+// RendererOptions implements html.Extension.
+//
+// goldmark's own footnote renderer is not registered at all: it writes the
+// notes out from a decorator on the document, which would put them on the page
+// a second time. The parser's FootnoteDefinition and FootnoteReference nodes
+// are rendered here, and FootnoteListTransformer and
+// FootnoteBacklinkTransformer give them the list and the backlinks.
+func (r *ConfluenceFootnoteRenderer) RendererOptions(_ *html.Config) []html.Option {
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ext_ast.KindFootnoteReference:     nodeRenderer(r.renderFootnoteLink),
+		ctransformer.KindFootnoteBacklink: nodeRenderer(r.renderFootnoteBacklink),
+		ext_ast.KindFootnoteDefinition:    nodeRenderer(r.renderFootnote),
+		ctransformer.KindFootnoteList:     nodeRenderer(r.renderFootnoteList),
+	})}
 }
 
 // footnoteAnchor names the anchor sitting with the note itself.
@@ -66,12 +76,12 @@ func footnoteRefAnchor(index, refIndex int) string {
 
 // renderFootnoteLink renders the marker in the running text: an anchor for the
 // note to come back to, then a superscript link down to it.
-func (r *ConfluenceFootnoteRenderer) renderFootnoteLink(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnoteLink(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
 
-	n := node.(*ext_ast.FootnoteLink)
+	n := node.(*ext_ast.FootnoteReference)
 
 	err := r.Stdlib.Templates.ExecuteTemplate(w, "ac:footnote:anchor", struct {
 		Anchor string
@@ -98,12 +108,12 @@ func (r *ConfluenceFootnoteRenderer) renderFootnoteLink(w util.BufWriter, source
 
 // renderFootnoteBacklink renders the arrow at the end of a note that leads back
 // to the text that cited it.
-func (r *ConfluenceFootnoteRenderer) renderFootnoteBacklink(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnoteBacklink(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
 
-	n := node.(*ext_ast.FootnoteBacklink)
+	n := node.(*ctransformer.FootnoteBacklink)
 
 	// One arrow per citation, numbered only when there is more than one to
 	// choose between.
@@ -131,8 +141,8 @@ func (r *ConfluenceFootnoteRenderer) renderFootnoteBacklink(w util.BufWriter, so
 // The item takes no number of its own: goldmark orders the list by the index it
 // handed each marker, so the numbering <ol> produces is already the numbering
 // the markers show.
-func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	n := node.(*ext_ast.Footnote)
+func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
+	index := ctransformer.FootnoteIndex(node)
 
 	if !entering {
 		_, _ = w.WriteString("</li>\n")
@@ -144,7 +154,7 @@ func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []b
 	err := r.Stdlib.Templates.ExecuteTemplate(w, "ac:footnote:anchor", struct {
 		Anchor string
 	}{
-		Anchor: footnoteAnchor(n.Index),
+		Anchor: footnoteAnchor(index),
 	})
 	if err != nil {
 		return ast.WalkStop, err
@@ -161,7 +171,7 @@ func (r *ConfluenceFootnoteRenderer) renderFootnote(w util.BufWriter, source []b
 // neither the element's class nor its ARIA role, so it would arrive as an
 // anonymous div and buy nothing. The rule above the list is what actually
 // survives to mark the section off.
-func (r *ConfluenceFootnoteRenderer) renderFootnoteList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceFootnoteRenderer) renderFootnoteList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		_, _ = w.WriteString("<hr />\n<ol>\n")
 	} else {

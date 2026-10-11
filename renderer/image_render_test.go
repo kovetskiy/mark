@@ -7,15 +7,15 @@ import (
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // imageRenderers renders images as if the document were testdata/doc.md, which
 // is what makes "test.png" beside it resolvable as a local attachment.
-func imageRenderers(t *testing.T, attacher attachment.Attacher) []renderer.NodeRenderer {
+func imageRenderers(t *testing.T, attacher attachment.Attacher) []html.Extension {
 	t.Helper()
 
-	return []renderer.NodeRenderer{
+	return []html.Extension{
 		crenderer.NewConfluenceImageRenderer(newStdlib(t), attacher, "../testdata/doc.md", ""),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),
