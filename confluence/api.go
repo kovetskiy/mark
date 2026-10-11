@@ -1076,46 +1076,19 @@ func (api *API) GetAttachments(ctx context.Context, pageID string) ([]Attachment
 		return api.getAttachmentsV2(ctx, pageID)
 	}
 
-	const pageSize = 100
-	var all []AttachmentInfo
-	start := 0
-
-	for {
-		result, err := get[listing[AttachmentInfo]](
-			ctx, api.v1, []string{"content", pageID, "child", "attachment"},
-			url.Values{
-				"expand": {"version,container"},
-				"limit":  {strconv.Itoa(pageSize)},
-				"start":  {strconv.Itoa(start)},
-			},
-		)
-		if err != nil {
-			return nil, requestError("list attachments of page "+pageID, err)
-		}
-
-		for i, info := range result.Results {
-			if info.Links.Context == "" {
-				info.Links.Context = result.Links.Context
+	return listV1(
+		ctx, api, []string{"content", pageID, "child", "attachment"},
+		url.Values{"expand": {"version,container"}}, 100,
+		"list attachments of page "+pageID, false,
+		func(page *listing[AttachmentInfo]) {
+			for i, info := range page.Results {
+				if info.Links.Context == "" {
+					info.Links.Context = page.Links.Context
+				}
+				page.Results[i] = info
 			}
-			result.Results[i] = info
-		}
-
-		all = append(all, result.Results...)
-
-		// A short page does not mean the end: Confluence caps limit at its
-		// max-results setting and answers a capped request with a short page
-		// and a next link both. Nor does a missing link, since deployments that
-		// omit it only ever go short. Stop when neither says there is more, and
-		// on an empty page whatever they say.
-		if len(result.Results) == 0 ||
-			(result.Links.Next == "" && len(result.Results) < pageSize) {
-			break
-		}
-
-		start += len(result.Results)
-	}
-
-	return all, nil
+		},
+	)
 }
 
 func (api *API) GetPageByID(ctx context.Context, pageID string) (*PageInfo, error) {
@@ -1136,41 +1109,23 @@ func (api *API) GetPageByIDExpanded(ctx context.Context, pageID string, expand s
 }
 
 func (api *API) GetInlineComments(ctx context.Context, pageID string) (*InlineComments, error) {
-	const pageSize = 100
 	all := &InlineComments{}
-	start := 0
 
-	for {
-		result, err := get[InlineComments](
-			ctx, api.v1, []string{"content", pageID, "child", "comment"},
-			url.Values{
-				"expand": {"extensions.inlineProperties"},
-				"limit":  {strconv.Itoa(pageSize)},
-				"start":  {strconv.Itoa(start)},
-			},
-		)
-		if err != nil {
-			return nil, requestError("read inline comments of page "+pageID, err)
-		}
-
-		if all.Links.Context == "" {
-			all.Links = result.Links
-		}
-
-		all.Results = append(all.Results, result.Results...)
-
-		// A short page does not mean the end: Confluence caps limit at its
-		// max-results setting and answers a capped request with a short page
-		// and a next link both. Nor does a missing link, since deployments that
-		// omit it only ever go short. Stop when neither says there is more, and
-		// on an empty page whatever they say.
-		if len(result.Results) == 0 ||
-			(result.Links.Next == "" && len(result.Results) < pageSize) {
-			break
-		}
-
-		start += len(result.Results)
+	results, err := listV1(
+		ctx, api, []string{"content", pageID, "child", "comment"},
+		url.Values{"expand": {"extensions.inlineProperties"}}, 100,
+		"read inline comments of page "+pageID, false,
+		func(page *listing[InlineCommentResult]) {
+			if all.Links.Context == "" {
+				all.Links.Context, all.Links.Next = page.Links.Context, page.Links.Next
+			}
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
+
+	all.Results = results
 
 	return all, nil
 }
@@ -1583,36 +1538,13 @@ func (api *API) GetPageLabels(ctx context.Context, page *PageInfo, prefix string
 		return api.getPageLabelsV2(ctx, page, prefix)
 	}
 
-	const pageSize = 50
-	var all []Label
-	start := 0
-
-	for {
-		result, err := get[listing[Label]](
-			ctx, api.v1, []string{"content", page.ID, "label"},
-			url.Values{
-				"prefix": {prefix},
-				"limit":  {strconv.Itoa(pageSize)},
-				"start":  {strconv.Itoa(start)},
-			},
-		)
-		if err != nil {
-			return nil, requestError("read labels of page "+page.ID, err)
-		}
-
-		all = append(all, result.Results...)
-
-		// A short page does not mean the end: Confluence caps limit at its
-		// max-results setting and answers a capped request with a short page
-		// and a next link both. Nor does a missing link, since deployments that
-		// omit it only ever go short. Stop when neither says there is more, and
-		// on an empty page whatever they say.
-		if len(result.Results) == 0 ||
-			(result.Links.Next == "" && len(result.Results) < pageSize) {
-			break
-		}
-
-		start += len(result.Results)
+	all, err := listV1[Label](
+		ctx, api, []string{"content", page.ID, "label"},
+		url.Values{"prefix": {prefix}}, 50,
+		"read labels of page "+page.ID, false, nil,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LabelInfo{Labels: all, Size: len(all)}, nil
@@ -2336,42 +2268,10 @@ func (api *API) CreatePageWithFolderParent(
 // absent whenever a branch has never been ordered by hand, and the sequence is
 // the part that matters here.
 func (api *API) GetChildPages(ctx context.Context, parentID string) ([]PageInfo, error) {
-	const pageSize = 100
-
-	var all []PageInfo
-	start := 0
-
-	for {
-		// The listing's next link is its own word on whether more exist.
-		// Without it this loop stopped on a short page, which is what a
-		// deployment that caps max-results answers a full request with.
-		result, err := get[listing[PageInfo]](
-			ctx, api.v1, []string{"content", parentID, "child", "page"},
-			url.Values{
-				"limit": {strconv.Itoa(pageSize)},
-				"start": {strconv.Itoa(start)},
-			},
-		)
-		if err != nil {
-			return nil, requestError("list child pages of "+parentID, err)
-		}
-
-		all = append(all, result.Results...)
-
-		// A short page does not mean the end: Confluence caps limit at its
-		// max-results setting and answers a capped request with a short page
-		// and a next link both. Nor does a missing link, since deployments that
-		// omit it only ever go short. Stop when neither says there is more, and
-		// on an empty page whatever they say.
-		if len(result.Results) == 0 ||
-			(result.Links.Next == "" && len(result.Results) < pageSize) {
-			break
-		}
-
-		start += len(result.Results)
-	}
-
-	return all, nil
+	return listV1[PageInfo](
+		ctx, api, []string{"content", parentID, "child", "page"},
+		nil, 100, "list child pages of "+parentID, false, nil,
+	)
 }
 
 // HasChildFolders reports whether a folder sits directly beneath a page.
