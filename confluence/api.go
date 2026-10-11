@@ -80,8 +80,8 @@ type API struct {
 	// the right collection; see collectionOfV2.
 	contentTypesV2 sync.Map
 
-	// isCloudFlag and isCloudErr are the answer cloud memoises once
-	// isCloudKnown is set, all three guarded by isCloudMutex; see cloud.
+	// isCloudFlag and isCloudErr are the answer Cloud memoises once
+	// isCloudKnown is set, all three guarded by isCloudMutex; see Cloud.
 	isCloudFlag  bool
 	isCloudErr   error
 	isCloudKnown bool
@@ -1917,22 +1917,20 @@ func isCloudHost(host string) bool {
 
 // IsCloud reports whether the target is Confluence Cloud, deciding at most once
 // per API value. A target that could not be identified is reported as not
-// Cloud; cloud says so as an error, for a caller that must not guess.
+// Cloud; Cloud says so as an error, for a caller that must not guess.
 func (api *API) IsCloud() bool {
-	isCloud, _ := api.cloud()
+	isCloud, _ := api.Cloud()
 
 	return isCloud
 }
 
 // Cloud is IsCloud for a caller that must not guess: it says when the target
 // could not be identified, as an error, rather than answering false. A probe
-// cut short by the API's context is reported as such -- the error then wraps
-// the context's own -- and, unlike any other failure, is not remembered.
-func (api *API) Cloud() (bool, error) {
-	return api.cloud()
-}
-
-// cloud identifies the target, at most once per API value: a known Cloud
+// cut short by its context is reported as such -- IsCancellation recognises
+// the error, which wraps the context's own -- and, unlike any other failure,
+// is not remembered.
+//
+// It identifies the target at most once per API value: a known Cloud
 // host answers without a request, otherwise the current user decides --
 // Cloud names it by an Atlassian accountId, Server and Data Center by a
 // username and userKey instead.
@@ -1947,7 +1945,7 @@ func (api *API) Cloud() (bool, error) {
 // of the API's life, and an API reused after a cancelled ProcessFileContext
 // would have taken Cloud for Server from then on. A cancelled probe answers
 // for that call only, and the next call asks again.
-func (api *API) cloud() (bool, error) {
+func (api *API) Cloud() (bool, error) {
 	api.isCloudMutex.Lock()
 	defer api.isCloudMutex.Unlock()
 
@@ -2254,7 +2252,7 @@ func (api *API) eachDirectChild(
 	parentID, parentType, operation string,
 	visit func(id, typ, title string) (stop bool),
 ) error {
-	if isCloud, err := api.cloud(); err == nil && !isCloud {
+	if isCloud, err := api.Cloud(); err == nil && !isCloud {
 		log.Debug().Msgf(
 			"not listing the children of %s %s: Confluence Cloud was ruled out",
 			parentType, parentID,
