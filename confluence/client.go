@@ -99,7 +99,8 @@ type reply struct {
 //     the error. newTransportError reads the nil as "never completed".
 //   - Status 400 and above: the body is not decoded and the error is nil, so
 //     newErrorStatusNotOK can quote it. Only the first maxErrorBody+1 bytes
-//     of it are read, which is all newErrorStatusNotOK looks at.
+//     of it are read, which is all newErrorStatusNotOK looks at, and a body
+//     cut short still leaves the error nil, with what was read.
 //   - Status 204: nothing is decoded.
 //   - Any other status: the body is decoded into out when out is non-nil,
 //     whatever its Content-Type says. A body that is not JSON, or is empty,
@@ -107,8 +108,8 @@ type reply struct {
 //     SSO login page answering 200 is told apart from a network failure, by
 //     newTransportError and by moveByAction's login-page check alike. Only
 //     the first JSON value is read; anything after it is ignored.
-//   - A body that cannot be read in full is the same: the response and the
-//     read error.
+//   - Below 400, a body that cannot be read in full is the same: the response
+//     and the read error.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
@@ -209,6 +210,14 @@ func (c *client) doWithHeader(
 	}
 
 	if err != nil {
+		// A failure status is an answer even when its body could not be read
+		// to the end: callers act on the status, and the bytes that did
+		// arrive are only ever quoted. Unless the run was stopped, which is
+		// what a body cut short then means.
+		if resp.StatusCode >= http.StatusBadRequest && ctx.Err() == nil {
+			return answer, nil
+		}
+
 		return answer, cancellation(ctx, err)
 	}
 
