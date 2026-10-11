@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"regexp"
 	"unicode"
 	"unicode/utf8"
@@ -25,44 +24,12 @@ var reInlineLink = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
 //
 // It returns the base id only. goldmark's parser.IDs keeps the ids a document
 // has used, the ones an author wrote as {#id} included, and numbers a repeat
-// "-1", "-2" and so on, which is what ConfluenceIDs does for itself.
+// "-1", "-2" and so on.
 type ConfluenceIDGenerator struct{}
 
 // Generate implements parser.IDGenerator.
 func (ConfluenceIDGenerator) Generate(value []byte, kind ast.NodeKind) []byte {
 	return confluenceID(value, kind)
-}
-
-// ConfluenceIDs generates Confluence-compatible header anchor IDs and keeps
-// them unique, for a caller that has no parser.IDs to do the second part.
-type ConfluenceIDs struct {
-	Values map[string]bool
-}
-
-// NewConfluenceIDs creates a new ConfluenceIDs instance.
-func NewConfluenceIDs() *ConfluenceIDs {
-	return &ConfluenceIDs{
-		Values: make(map[string]bool),
-	}
-}
-
-// Generate returns the id for value, numbered if it has been used before.
-func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
-	if s.Values == nil {
-		s.Values = make(map[string]bool)
-	}
-	result := confluenceID(value, kind)
-	if _, ok := s.Values[util.BytesToReadOnlyString(result)]; !ok {
-		s.Values[util.BytesToReadOnlyString(result)] = true
-		return result
-	}
-	for i := 1; ; i++ {
-		newResult := fmt.Sprintf("%s-%d", result, i)
-		if _, ok := s.Values[newResult]; !ok {
-			s.Values[newResult] = true
-			return []byte(newResult)
-		}
-	}
 }
 
 // confluenceID is the base id for value: the characters Confluence keeps in an
@@ -97,11 +64,4 @@ func confluenceID(value []byte, kind ast.NodeKind) []byte {
 		return []byte("id")
 	}
 	return result
-}
-
-func (s *ConfluenceIDs) Put(value []byte) {
-	if s.Values == nil {
-		s.Values = make(map[string]bool)
-	}
-	s.Values[util.BytesToReadOnlyString(value)] = true
 }
