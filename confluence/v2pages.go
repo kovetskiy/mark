@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -163,16 +164,11 @@ func listV2[T any](api *API, path []string, query url.Values, describe string) (
 		}
 
 		response, err := api.v2.do(api.Context(), http.MethodGet, path, page, nil, &result)
-		if err != nil {
-			return nil, newTransportError(response, describe, err)
-		}
-
-		if response.StatusCode == http.StatusNotFound && cursor == "" {
+		if errors.Is(err, ErrNotFound) && cursor == "" {
 			return nil, nil
 		}
-
-		if response.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(response)
+		if err != nil {
+			return nil, newTransportError(response, describe, err)
 		}
 
 		all = append(all, result.Results...)
@@ -218,10 +214,6 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 		)
 	}
 
-	if response.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(response)
-	}
-
 	api.learnSiteBase(result.Links.Base)
 
 	if len(result.Results) == 0 {
@@ -243,13 +235,6 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 
 // readContentV2 reads one object out of a v2 collection.
 func (api *API) readContentV2(collection, id string, withBody bool) (*contentV2, error) {
-	content, _, err := api.readContentStatusV2(collection, id, withBody)
-	return content, err
-}
-
-// readContentStatusV2 is readContentV2 that also hands back the status the
-// server answered with, or 0 when there was no answer.
-func (api *API) readContentStatusV2(collection, id string, withBody bool) (*contentV2, int, error) {
 	var result contentV2
 
 	query := url.Values{}
@@ -259,18 +244,10 @@ func (api *API) readContentStatusV2(collection, id string, withBody bool) (*cont
 
 	response, err := api.v2.do(api.Context(), http.MethodGet, []string{collection, id}, query, nil, &result)
 	if err != nil {
-		status := 0
-		if response != nil {
-			status = response.StatusCode
-		}
-		return nil, status, newTransportError(response, "read "+collection+" "+id, err)
+		return nil, newTransportError(response, "read "+collection+" "+id, err)
 	}
 
-	if response.StatusCode != http.StatusOK {
-		return nil, response.StatusCode, newErrorStatusNotOK(response)
-	}
-
-	return &result, response.StatusCode, nil
+	return &result, nil
 }
 
 // lookupContentV2 reads a page or blogpost known only by its id.
@@ -290,12 +267,13 @@ func (api *API) lookupContentV2(id string, withBody bool) (*contentV2, string, e
 		first, second = second, first
 	}
 
-	content, status, err := api.readContentStatusV2(v2Collection(first), id, withBody)
-	if status == http.StatusNotFound {
-		other, otherStatus, otherErr := api.readContentStatusV2(v2Collection(second), id, withBody)
+	content, err := api.readContentV2(v2Collection(first), id, withBody)
+	if errors.Is(err, ErrNotFound) {
+		other, otherErr := api.readContentV2(v2Collection(second), id, withBody)
 		if otherErr == nil {
 			return other, second, nil
 		}
+		otherStatus := statusOf(otherErr)
 		refused := otherStatus == http.StatusNotFound ||
 			otherStatus == http.StatusUnauthorized || otherStatus == http.StatusForbidden
 		if !refused {
@@ -432,14 +410,13 @@ func (api *API) createPageV2(space, pageType, parentID, parentType, title, body 
 	var result contentV2
 
 	response, err := api.v2.do(api.Context(), http.MethodPost, []string{v2Collection(pageType)}, nil, payload, &result)
+	if statusOf(err) != 0 {
+		return nil, api.explainCreateFailure(space, title, pageType, err)
+	}
 	if err != nil {
 		return nil, newTransportError(
 			response, fmt.Sprintf("create page %q in space %s", title, space), err,
 		)
-	}
-
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(response))
 	}
 
 	return api.pageInfoV2(result, pageType), nil
@@ -485,10 +462,6 @@ func (api *API) updatePageV2(
 		return newTransportError(
 			response, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
 		)
-	}
-
-	if response.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(response)
 	}
 
 	return nil

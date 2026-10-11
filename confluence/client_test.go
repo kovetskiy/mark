@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -166,32 +167,69 @@ func TestClientReturnsTheResponseWithADecodeError(t *testing.T) {
 	}
 }
 
-// TestClientDoesNotDecodeAFailure: a 400 or worse is the caller's to report,
-// body and all.
+// TestClientDoesNotDecodeAFailure: a status outside 2xx is a *StatusError
+// carrying the status and the body, and nothing is decoded.
 func TestClientDoesNotDecodeAFailure(t *testing.T) {
 	for _, status := range []int{400, 401, 404, 409, 500, 503} {
 		c, _ := clientServer(t, "/rest/api", "user", "token", status, "", `{"id":"not-decoded","message":"no"}`)
 
 		var page PageInfo
-		response, err := c.do(context.Background(), http.MethodPut, []string{"content", "1"}, nil, map[string]any{}, &page)
-		require.NoError(t, err, "status %d", status)
+		_, err := c.do(context.Background(), http.MethodPut, []string{"content", "1"}, nil, map[string]any{}, &page)
+		var statusErr *StatusError
+		require.ErrorAs(t, err, &statusErr, "status %d", status)
+		assert.Equal(t, status, statusErr.StatusCode)
+		assert.Contains(t, statusErr.URL, "/rest/api/content/1")
 		assert.Empty(t, page.ID, "status %d", status)
 
-		assert.JSONEq(t, `{"id":"not-decoded","message":"no"}`, string(response.Body), "status %d", status)
+		assert.JSONEq(t, `{"id":"not-decoded","message":"no"}`, string(statusErr.Body), "status %d", status)
 	}
 }
 
+// TestStatusErrorMatchesItsSentinels: a caller asks whether something is gone,
+// or whether its write conflicted, with errors.Is.
+func TestStatusErrorMatchesItsSentinels(t *testing.T) {
+	for status, want := range map[int]error{
+		http.StatusNotFound: ErrNotFound,
+		http.StatusConflict: ErrConflict,
+	} {
+		c, _ := clientServer(t, "/rest/api", "user", "token", status, "application/json", `{}`)
+
+		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+		require.ErrorIs(t, err, want, "status %d", status)
+		assert.Equal(t, status, statusOf(err))
+
+		other := ErrConflict
+		if status == http.StatusConflict {
+			other = ErrNotFound
+		}
+		assert.NotErrorIs(t, err, other, "status %d", status)
+
+		wrapped := fmt.Errorf("unable to do the thing: %w", err)
+		assert.ErrorIs(t, wrapped, want, "through a wrap too")
+	}
+
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusInternalServerError, "", `oops`)
+	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	assert.NotErrorIs(t, err, ErrNotFound)
+	assert.NotErrorIs(t, err, ErrConflict)
+	assert.Equal(t, http.StatusInternalServerError, statusOf(err))
+	assert.Contains(t, err.Error(), "500 Internal Server Error")
+	assert.Contains(t, err.Error(), `"oops"`)
+}
+
 // TestClientBoundsAFailureBody: of an error body, the client reads only what
-// newErrorStatusNotOK quotes and the byte that says there was more, however
-// large the page a proxy answered with.
+// a StatusError quotes and the byte that says there was more, however large
+// the page a proxy answered with.
 func TestClientBoundsAFailureBody(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusBadGateway, "text/html", strings.Repeat("x", 1<<20))
 
 	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
-	require.NoError(t, err)
 	assert.Len(t, response.Body, maxErrorBody+1)
 
-	err = newErrorStatusNotOK(response)
+	var statusErr *StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Len(t, statusErr.Body, maxErrorBody)
+	assert.True(t, statusErr.Truncated)
 	assert.Contains(t, err.Error(), "(truncated)")
 	assert.Less(t, len(err.Error()), 2*maxErrorBody)
 }
@@ -211,10 +249,11 @@ func TestClientKeepsAFailureWhoseBodyIsCutShort(t *testing.T) {
 	t.Cleanup(server.Close)
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusNotFound, response.StatusCode)
-	assert.Equal(t, `{"message":"gone"`, string(response.Body), "what was read is kept")
+	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	require.ErrorIs(t, err, ErrNotFound)
+	var statusErr *StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, `{"message":"gone"`, string(statusErr.Body), "what was read is kept")
 }
 
 func TestClientDoesNotDecodeNoContent(t *testing.T) {

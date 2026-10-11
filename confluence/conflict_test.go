@@ -232,7 +232,7 @@ func TestUpdatePagePersistentConflictFails(t *testing.T) {
 
 			err = api.UpdatePage(page, "<p>from mark</p>", false, "", "full-width", "")
 			require.Error(t, err)
-			assert.True(t, errors.Is(err, errConflict))
+			assert.True(t, errors.Is(err, ErrConflict))
 			assert.Contains(t, err.Error(), `page "Busy"`)
 			assert.Contains(t, err.Error(), "again after reading the page afresh")
 			assert.Equal(t, 2, countContentPuts(server, stored.ID), "exactly one retry")
@@ -256,7 +256,7 @@ func TestUpdatePageKeepConcurrentEditsRefusesToOverwrite(t *testing.T) {
 
 	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "full-width", "")
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, errConflict))
+	assert.True(t, errors.Is(err, ErrConflict))
 	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")
 	assert.Equal(t, "<p>by hand</p>", server.Page(stored.ID).Body)
 	assert.Equal(t, 1, countContentPuts(server, stored.ID))
@@ -348,7 +348,7 @@ func TestReparentPersistentConflictFails(t *testing.T) {
 
 	err := api.MoveContentAppend(pageID, newParent.ID)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, errConflict))
+	assert.True(t, errors.Is(err, ErrConflict))
 	assert.Contains(t, err.Error(), "something else is writing to the page")
 	assert.Equal(t, 2, countContentPuts(server, pageID), "exactly one retry")
 	assert.Equal(t, oldParent.ID, server.Page(pageID).ParentID)
