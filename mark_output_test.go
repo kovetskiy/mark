@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -169,7 +170,7 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 

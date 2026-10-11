@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -55,11 +56,11 @@ func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	// install a long-lived header map on the root resource.
 	api := confluence.NewAPI(server.URL, "", "pat-token", false)
 
-	page, err := api.FindPage("DOCS", "Leaky", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Leaky", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "full-width", ""))
 
 	assert.Equal(t, "application/json", putContentType,
 		"the GET response's Content-Type must not survive into the update body")
@@ -84,9 +85,9 @@ func TestAuthorizationIsSentOnEveryRequest(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "", "pat-token", false)
 
-	_, err := api.FindPage("DOCS", "Anything", "page")
+	_, err := api.FindPage(context.Background(), "DOCS", "Anything", "page")
 	require.NoError(t, err)
-	_, err = api.GetFolderByID("2001")
+	_, err = api.GetFolderByID(context.Background(), "2001")
 	require.NoError(t, err)
 
 	require.Len(t, seen, 2)

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -42,7 +43,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(baseURL, "user", "token", false)
-	guide, err := api.FindPage("DOCS", "Guide", "page")
+	guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guide)
 
@@ -60,7 +61,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide Renamed -->\n\nA guide.\n")
 	require.NoError(t, Run(config))
 
-	renamed, err := api.FindPage("DOCS", "Guide Renamed", "page")
+	renamed, err := api.FindPage(context.Background(), "DOCS", "Guide Renamed", "page")
 	require.NoError(t, err)
 	require.NotNil(t, renamed)
 	assert.Equal(t, guide.ID, renamed.ID, "the manifest found the page the first run made")
@@ -93,7 +94,7 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	assert.Contains(t, err.Error(), `"OPS"`)
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	runbook, err := api.FindPage("OPS", "Runbook", "page")
+	runbook, err := api.FindPage(context.Background(), "OPS", "Runbook", "page")
 	require.NoError(t, err)
 	assert.Nil(t, runbook, "refused before anything was published to the second space")
 

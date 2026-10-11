@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,12 +13,13 @@ import (
 )
 
 func ResolvePage(
+	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
 	meta *metadata.Meta,
 	tracker AncestryTracker,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
-	parent, page, _, err := resolvePage(dryRun, api, meta, tracker)
+	parent, page, _, err := resolvePage(ctx, dryRun, api, meta, tracker)
 
 	return parent, page, err
 }
@@ -27,14 +29,16 @@ func ResolvePage(
 // failed the ancestry check, which is what has a real run move it from inside
 // ResolvePage; WouldMove takes it from there.
 func PreviewPage(
+	ctx context.Context,
 	api *confluence.API,
 	meta *metadata.Meta,
 	tracker AncestryTracker,
 ) (parent, page *confluence.PageInfo, misplaced bool, err error) {
-	return resolvePage(true, api, meta, tracker)
+	return resolvePage(ctx, true, api, meta, tracker)
 }
 
 func resolvePage(
+	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
 	meta *metadata.Meta,
@@ -48,7 +52,7 @@ func resolvePage(
 		// well, and refusing the folders over it named the wrong problem and
 		// hid the cancellation from errors.Is. Any other failure to identify
 		// the target is still taken for "not Cloud", as IsCloud has it.
-		isCloud, err := api.Cloud()
+		isCloud, err := api.Cloud(ctx)
 		if confluence.IsCancellation(err) {
 			return nil, nil, false, fmt.Errorf("unable to tell whether folders are supported: %w", err)
 		}
@@ -56,12 +60,12 @@ func resolvePage(
 			return nil, nil, false, fmt.Errorf("folder support is currently only available on Confluence Cloud")
 		}
 	}
-	page, err := api.FindPage(meta.Space, meta.Title, meta.Type)
+	page, err := api.FindPage(ctx, meta.Space, meta.Title, meta.Type)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
 
-	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && offAnchor(api, meta.Space, page, meta.Parents) {
+	if page != nil && len(meta.Folders) > 0 && len(meta.Parents) > 0 && offAnchor(ctx, api, meta.Space, page, meta.Parents) {
 		if len(page.Ancestors) == 0 {
 			// The space home page, or a parentless page that cannot be told
 			// apart from it: not something to move into a folder.
@@ -99,7 +103,7 @@ func resolvePage(
 	// parent -- so a space that will not give one up is not a reason to refuse
 	// the document. Failing on it aborted every file in the space, including
 	// documents whose Parent headers never needed a home page at all.
-	homepage, err := api.FindHomePage(meta.Space)
+	homepage, err := api.FindHomePage(ctx, meta.Space)
 	if err != nil {
 		log.Debug().Err(err).Msgf(
 			"no home page for space %q; publishing without comparing against one",
@@ -137,6 +141,7 @@ func resolvePage(
 			)
 
 		parent, err = EnsureMixedAncestry(
+			ctx,
 			dryRun,
 			api,
 			tracker,
@@ -163,6 +168,7 @@ func resolvePage(
 
 		if len(ancestry) > 0 {
 			existing, err := ValidateAncestry(
+				ctx,
 				api,
 				meta.Space,
 				ancestry,
@@ -204,6 +210,7 @@ func resolvePage(
 		}
 
 		parent, err = EnsureAncestry(
+			ctx,
 			dryRun,
 			api,
 			meta.Space,
@@ -219,7 +226,7 @@ func resolvePage(
 		// parent is somewhere in its ancestry -- and moving those would tear up
 		// hierarchies nobody asked to change.
 		if misplaced && !dryRun && page != nil && parent != nil {
-			if err := EnsurePageUnderParent(api, page, parent.ID); err != nil {
+			if err := EnsurePageUnderParent(ctx, api, page, parent.ID); err != nil {
 				return nil, nil, false, err
 			}
 		}

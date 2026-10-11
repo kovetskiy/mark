@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -37,7 +38,7 @@ func TestGatewayFindPage(t *testing.T) {
 	middle := server.AddPage("DOCS", "Middle", "page", root.ID)
 	leaf := server.AddPage("DOCS", "Leaf", "page", middle.ID)
 
-	page, err := api.FindPage("DOCS", "Leaf", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Leaf", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, leaf.ID, page.ID)
@@ -64,7 +65,7 @@ func TestGatewayFindPageStopsAtAFolder(t *testing.T) {
 	folder := server.AddFolder("DOCS", "Folder", "", "space")
 	server.AddPage("DOCS", "Inside", "page", folder.ID)
 
-	page, err := api.FindPage("DOCS", "Inside", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Inside", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Empty(t, page.Ancestors)
@@ -74,7 +75,7 @@ func TestGatewayFindPageReportsAbsence(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	server.AddSpace("DOCS")
 
-	page, err := api.FindPage("DOCS", "Nope", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Nope", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page)
 }
@@ -85,7 +86,7 @@ func TestGatewayGetPageByID(t *testing.T) {
 	child := server.AddPage("DOCS", "Child", "page", parent.ID)
 	server.EditPage(child.ID, "<p>stored</p>")
 
-	page, err := api.GetPageByIDExpanded(child.ID, "ancestors,version,body.storage")
+	page, err := api.GetPageByIDExpanded(context.Background(), child.ID, "ancestors,version,body.storage")
 	require.NoError(t, err)
 	assert.Equal(t, "Child", page.Title)
 	assert.Equal(t, "<p>stored</p>", page.Body.Storage.Value)
@@ -94,7 +95,7 @@ func TestGatewayGetPageByID(t *testing.T) {
 
 	// Without ancestors in the expand list, no parent is read.
 	server.ResetRequests()
-	page, err = api.GetPageByIDExpanded(child.ID, "version")
+	page, err = api.GetPageByIDExpanded(context.Background(), child.ID, "version")
 	require.NoError(t, err)
 	assert.Empty(t, page.Ancestors)
 	assert.Equal(t, 0, server.CountRequests("GET", "/api/v2/pages/"+parent.ID))
@@ -104,7 +105,7 @@ func TestGatewayCreateAndUpdatePage(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 
-	page, err := api.CreatePage("DOCS", "page", &confluence.PageInfo{ID: parent.ID, Title: "Parent"}, "Child", "<p>one</p>")
+	page, err := api.CreatePage(context.Background(), "DOCS", "page", &confluence.PageInfo{ID: parent.ID, Title: "Parent"}, "Child", "<p>one</p>")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, int64(1), page.Version.Number)
@@ -115,7 +116,7 @@ func TestGatewayCreateAndUpdatePage(t *testing.T) {
 	assert.Equal(t, parent.ID, stored.ParentID)
 	assert.Equal(t, "<p>one</p>", stored.Body)
 
-	require.NoError(t, api.UpdatePage(page, "<p>two</p>", false, "second", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "full-width", "🚀"))
 	assert.Equal(t, int64(2), page.Version.Number)
 
 	stored = server.Page(page.ID)
@@ -132,7 +133,7 @@ func TestGatewayCreateAndUpdatePage(t *testing.T) {
 	assert.JSONEq(t, `"1f680"`, string(emoji.Value))
 
 	// A second update supersedes the properties rather than colliding with them.
-	require.NoError(t, api.UpdatePage(page, "<p>three</p>", false, "third", "fixed-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>three</p>", false, "third", "fixed-width", ""))
 	appearance = server.SpaceProperty(page.ID, "content-appearance-published")
 	require.NotNil(t, appearance)
 	assert.JSONEq(t, `"fixed-width"`, string(appearance.Value))
@@ -145,14 +146,14 @@ func TestGatewayAttachmentsAndLabels(t *testing.T) {
 	server.AddAttachment(page.ID, "diagram.png", "[mark] abc123")
 	server.AddLabel(page.ID, "from-mark")
 
-	attachments, err := api.GetAttachments(page.ID)
+	attachments, err := api.GetAttachments(context.Background(), page.ID)
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
 	assert.Equal(t, "diagram.png", attachments[0].Filename)
 	assert.Equal(t, "[mark] abc123", attachments[0].Metadata.Comment)
 	assert.NotEmpty(t, attachments[0].Links.Download)
 
-	labels, err := api.GetPageLabels(&confluence.PageInfo{ID: page.ID}, "global")
+	labels, err := api.GetPageLabels(context.Background(), &confluence.PageInfo{ID: page.ID}, "global")
 	require.NoError(t, err)
 	require.Len(t, labels.Labels, 1)
 	assert.Equal(t, "from-mark", labels.Labels[0].Name)
@@ -164,7 +165,7 @@ func TestFindPageOutsideTheGatewayStaysOnV1(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Doc", "page", "")
 
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -182,21 +183,21 @@ func TestGatewayLinksUseTheSiteURL(t *testing.T) {
 	server.SiteBase = site
 	home := server.AddPage("DOCS", "Home", "page", "")
 
-	found, err := api.FindPage("DOCS", "Home", "page")
+	found, err := api.FindPage(context.Background(), "DOCS", "Home", "page")
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Equal(t, site, found.Links.Base)
 
-	created, err := api.CreatePage("DOCS", "page", found, "New", "<p/>")
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", found, "New", "<p/>")
 	require.NoError(t, err)
 	assert.Equal(t, site, created.Links.Base)
 
-	cached, err := api.FindPage("DOCS", "New", "page")
+	cached, err := api.FindPage(context.Background(), "DOCS", "New", "page")
 	require.NoError(t, err)
 	require.NotNil(t, cached)
 	assert.Equal(t, site, cached.Links.Base, "the cache populated by CreatePage keeps the site URL")
 
-	byID, err := api.GetPageByID(home.ID)
+	byID, err := api.GetPageByID(context.Background(), home.ID)
 	require.NoError(t, err)
 	assert.Equal(t, site, byID.Links.Base)
 }
@@ -206,7 +207,7 @@ func TestGatewayLinksFallBackToTheBaseURL(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	server.AddPage("DOCS", "Home", "page", "")
 
-	found, err := api.FindPage("DOCS", "Home", "page")
+	found, err := api.FindPage(context.Background(), "DOCS", "Home", "page")
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Equal(t, api.BaseURL, found.Links.Base)
@@ -230,11 +231,11 @@ func TestGatewayUpdateBlogpost(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	post := server.AddPage("DOCS", "Post", "blogpost", "")
 
-	page, err := api.FindPage("DOCS", "Post", "blogpost")
+	page, err := api.FindPage(context.Background(), "DOCS", "Post", "blogpost")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	require.NoError(t, api.UpdatePage(page, "<p>two</p>", false, "second", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "full-width", "🚀"))
 	assert.Equal(t, int64(2), page.Version.Number)
 
 	stored := server.Page(post.ID)
@@ -259,7 +260,7 @@ func TestGatewayUpdateBumpsTheVersionBeforeProperties(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	server.AddPage("DOCS", "Doc", "page", "")
 
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -274,10 +275,10 @@ func TestGatewayUpdateBumpsTheVersionBeforeProperties(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.Error(t, api.UpdatePage(page, "<p>two</p>", false, "second", "full-width", ""))
+	require.Error(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "full-width", ""))
 	assert.Equal(t, int64(2), page.Version.Number)
 
-	cached, err := api.FindPage("DOCS", "Doc", "page")
+	cached, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, cached)
 	assert.Equal(t, int64(2), cached.Version.Number)
@@ -289,16 +290,16 @@ func TestGatewayBlogpostAttachmentsAndLabels(t *testing.T) {
 	server.AddAttachment(post.ID, "diagram.png", "[mark] abc123")
 	server.AddLabel(post.ID, "from-mark")
 
-	page, err := api.FindPage("DOCS", "Post", "blogpost")
+	page, err := api.FindPage(context.Background(), "DOCS", "Post", "blogpost")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	attachments, err := api.GetAttachments(page.ID)
+	attachments, err := api.GetAttachments(context.Background(), page.ID)
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
 	assert.Equal(t, "diagram.png", attachments[0].Filename)
 
-	labels, err := api.GetPageLabels(page, "global")
+	labels, err := api.GetPageLabels(context.Background(), page, "global")
 	require.NoError(t, err)
 	require.Len(t, labels.Labels, 1)
 	assert.Equal(t, "from-mark", labels.Labels[0].Name)
@@ -314,7 +315,7 @@ func TestGatewayAttachmentsOfAnUnseenBlogpost(t *testing.T) {
 	post := server.AddPage("DOCS", "Post", "blogpost", "")
 	server.AddAttachment(post.ID, "diagram.png", "[mark] abc123")
 
-	attachments, err := api.GetAttachments(post.ID)
+	attachments, err := api.GetAttachments(context.Background(), post.ID)
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
 	assert.Equal(t, "diagram.png", attachments[0].Filename)
@@ -326,7 +327,7 @@ func TestGatewayGetBlogpostByID(t *testing.T) {
 	post := server.AddPage("DOCS", "Post", "blogpost", "")
 	server.EditPage(post.ID, "<p>stored</p>")
 
-	page, err := api.GetPageByIDExpanded(post.ID, "ancestors,version,body.storage")
+	page, err := api.GetPageByIDExpanded(context.Background(), post.ID, "ancestors,version,body.storage")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, post.ID, page.ID)
@@ -338,12 +339,12 @@ func TestGatewayGetBlogpostByID(t *testing.T) {
 
 	// Once known to be a blogpost, it is asked of /blogposts straight away.
 	server.ResetRequests()
-	_, err = api.GetPageByID(post.ID)
+	_, err = api.GetPageByID(context.Background(), post.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 0, requestsUnder(server, "/api/v2/pages/"+post.ID))
 
 	// An id in neither collection is still reported as gone.
-	_, err = api.GetPageByID("does-not-exist")
+	_, err = api.GetPageByID(context.Background(), "does-not-exist")
 	require.ErrorIs(t, err, confluence.ErrNotFound)
 }
 
@@ -362,6 +363,6 @@ func TestGatewayGetPageByIDWithoutBlogpostScopes(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.GetPageByID("deleted")
+	_, err := api.GetPageByID(context.Background(), "deleted")
 	require.ErrorIs(t, err, confluence.ErrNotFound)
 }

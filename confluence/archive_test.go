@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -35,7 +36,7 @@ func TestArchivePageSendsANumericID(t *testing.T) {
 	defer server.Close()
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	require.NoError(t, api.ArchivePage("1004"))
+	require.NoError(t, api.ArchivePage(context.Background(), "1004"))
 
 	assert.Equal(t, http.MethodPost, method)
 	assert.Equal(t, "/rest/api/content/archive", path)
@@ -54,7 +55,7 @@ func TestArchivePageSendsANumericID(t *testing.T) {
 func TestArchivePageRejectsSomethingThatIsNotAnID(t *testing.T) {
 	api := confluence.NewAPI("http://127.0.0.1:1", "user", "token", false)
 
-	err := api.ArchivePage("not-a-page")
+	err := api.ArchivePage(context.Background(), "not-a-page")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a page id")
 }
@@ -70,7 +71,7 @@ func TestArchivePageReportsRefusal(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	err := api.ArchivePage("1004")
+	err := api.ArchivePage(context.Background(), "1004")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }

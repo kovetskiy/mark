@@ -1,6 +1,7 @@
 package page_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -26,7 +27,7 @@ func dataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud())
+	require.False(t, api.IsCloud(context.Background()))
 
 	return api, server
 }
@@ -35,6 +36,7 @@ func dataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 // does not sit under is moved there on a self-hosted instance, where there is
 // no move endpoint and the move is an update carrying the new ancestor.
 func TestEnsurePageUnderParentOnDataCenter(t *testing.T) {
+	ctx := t.Context()
 	api, server := dataCenterAPI(t)
 
 	old := server.AddPage("DOCS", "Old Parent", "page", "")
@@ -42,10 +44,10 @@ func TestEnsurePageUnderParentOnDataCenter(t *testing.T) {
 	stored := server.AddPage("DOCS", "Release Notes", "page", old.ID)
 	server.EditPage(stored.ID, "<p>the notes</p>")
 
-	pg, err := api.GetPageByID(stored.ID)
+	pg, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 
-	require.NoError(t, page.EnsurePageUnderParent(api, pg, want.ID))
+	require.NoError(t, page.EnsurePageUnderParent(ctx, api, pg, want.ID))
 
 	assert.Equal(t, want.ID, server.Page(stored.ID).ParentID)
 	assert.Equal(t, "<p>the notes</p>", server.Page(stored.ID).Body)
@@ -58,17 +60,18 @@ func TestEnsurePageUnderParentOnDataCenter(t *testing.T) {
 // document a moment later against the version it holds. A move that left that
 // number behind would have every relocated page refused as a conflict.
 func TestUpdateAfterMoveOnDataCenterIsNotAConflict(t *testing.T) {
+	ctx := t.Context()
 	api, server := dataCenterAPI(t)
 
 	old := server.AddPage("DOCS", "Old Parent", "page", "")
 	want := server.AddPage("DOCS", "New Parent", "page", "")
 	stored := server.AddPage("DOCS", "Release Notes", "page", old.ID)
 
-	pg, err := api.GetPageByID(stored.ID)
+	pg, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
-	require.NoError(t, page.EnsurePageUnderParent(api, pg, want.ID))
+	require.NoError(t, page.EnsurePageUnderParent(ctx, api, pg, want.ID))
 
-	require.NoError(t, api.UpdatePage(pg, "<p>published</p>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), pg, "<p>published</p>", false, "", "full-width", ""))
 
 	after := server.Page(stored.ID)
 	assert.Equal(t, "<p>published</p>", after.Body)

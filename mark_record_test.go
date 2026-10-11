@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 // it -- and the fingerprint is what rename detection matches on, so the next run
 // read a document it had never published as unchanged.
 func TestNothingIsRecordedForAPageThatWasNotWritten(t *testing.T) {
+	ctx := t.Context()
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
 
@@ -32,7 +34,7 @@ Text with an <span>unclosed tag.
 	require.Error(t, Run(trackingConfig(server, file)))
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
-	_, ok, err := store.Lookup("DOCS", filepath.Join(dir, "doc.md"))
+	_, ok, err := store.Lookup(ctx, "DOCS", filepath.Join(dir, "doc.md"))
 	require.NoError(t, err)
 	assert.False(t, ok,
 		"a page whose body was never uploaded must not be in the manifest")
@@ -42,18 +44,19 @@ Text with an <span>unclosed tag.
 // other side: a successful publish still has to record, or tracking stops
 // working altogether.
 func TestRecordedTitleIsTheOneThePageCarries(t *testing.T) {
+	ctx := t.Context()
 	server, api := docsSpace(t)
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Recorded"))
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	published, err := api.FindPage("DOCS", "Recorded", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Recorded", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
-	entry, ok, err := store.Lookup("DOCS", filepath.Join(dir, "doc.md"))
+	entry, ok, err := store.Lookup(ctx, "DOCS", filepath.Join(dir, "doc.md"))
 	require.NoError(t, err)
 	require.True(t, ok)
 

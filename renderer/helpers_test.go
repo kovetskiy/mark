@@ -2,6 +2,7 @@ package renderer_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -63,7 +64,7 @@ func renderExtended(t *testing.T, source string, extensions []goldmark.Extender,
 func newStdlib(t *testing.T) *stdlib.Lib {
 	t.Helper()
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	return lib

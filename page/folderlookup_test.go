@@ -16,6 +16,7 @@ import (
 // create found the same wrong folder again. The run failed on a hierarchy that
 // was already exactly as declared.
 func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
+	ctx := t.Context()
 	page.ResetFolderCache()
 
 	api, server := newAPI(t)
@@ -33,6 +34,7 @@ func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
 	before := len(server.Folders())
 
 	parent, err := page.EnsureFolderAncestry(
+		ctx,
 		false, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID, nil,
 	)
 	require.NoError(t, err)
@@ -47,6 +49,7 @@ func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
 // hid the one at the root, which a run under a new --parents anchor exists to
 // find and move.
 func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
+	ctx := t.Context()
 	page.ResetFolderCache()
 
 	api, server := newAPI(t)
@@ -58,7 +61,7 @@ func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 
 	// A dry run, because the fake does not move folders; it reports the move
 	// and hands back the folder it would have moved.
-	parent, err := page.EnsureFolderAncestry(true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	parent, err := page.EnsureFolderAncestry(ctx, true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, atRoot.ID, parent.ID)

@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"context"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -50,7 +51,7 @@ func TestCloudKeepsTheErrorOfAFailedLookup(t *testing.T) {
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	cloud, err := api.Cloud()
+	cloud, err := api.Cloud(context.Background())
 	assert.False(t, cloud)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unable to identify the Confluence platform")
@@ -71,15 +72,15 @@ func TestGetCurrentUserIsAskedOnce(t *testing.T) {
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	_, err := api.GetCurrentUser()
+	_, err := api.GetCurrentUser(context.Background())
 	require.Error(t, err)
 
 	refuse.Store(false)
 	before := server.CountRequests("GET", "/rest/api/user/current")
 
-	first, err := api.GetCurrentUser()
+	first, err := api.GetCurrentUser(context.Background())
 	require.NoError(t, err)
-	second, err := api.GetCurrentUser()
+	second, err := api.GetCurrentUser(context.Background())
 	require.NoError(t, err)
 
 	assert.Equal(t, before+1, server.CountRequests("GET", "/rest/api/user/current"),
@@ -94,10 +95,10 @@ func TestGetCurrentUserIsAskedOnce(t *testing.T) {
 func TestAnAPIWithoutAClientErrs(t *testing.T) {
 	api := &API{}
 
-	_, err := api.GetCurrentUser()
+	_, err := api.GetCurrentUser(context.Background())
 	require.ErrorIs(t, err, errNoClient)
 
-	cloud, err := api.Cloud()
+	cloud, err := api.Cloud(context.Background())
 	require.ErrorIs(t, err, errNoClient)
 	assert.False(t, cloud)
 }

@@ -1,6 +1,7 @@
 package page_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -21,19 +22,20 @@ func newAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 func titles(t *testing.T, server *confluencetest.Server, api *confluence.API, space string, want ...string) {
 	t.Helper()
 	for _, title := range want {
-		found, err := api.FindPage(space, title, "page")
+		found, err := api.FindPage(context.Background(), space, title, "page")
 		require.NoError(t, err)
 		assert.NotNil(t, found, "expected page %q to exist", title)
 	}
 }
 
 func TestEnsureAncestryAllParentsExist(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 	team := server.AddPage("DOCS", "Team", "page", root.ID)
 	server.AddPage("DOCS", "Guides", "page", team.ID)
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
+	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -43,10 +45,11 @@ func TestEnsureAncestryAllParentsExist(t *testing.T) {
 }
 
 func TestEnsureAncestryCreatesMissingParents(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
+	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -54,9 +57,9 @@ func TestEnsureAncestryCreatesMissingParents(t *testing.T) {
 	titles(t, server, api, "DOCS", "Team", "Guides")
 
 	// Team under Root, Guides under Team.
-	team, err := api.FindPage("DOCS", "Team", "page")
+	team, err := api.FindPage(context.Background(), "DOCS", "Team", "page")
 	require.NoError(t, err)
-	guides, err := api.FindPage("DOCS", "Guides", "page")
+	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 
 	assert.Equal(t, "Root", team.Ancestors[len(team.Ancestors)-1].Title)
@@ -66,10 +69,11 @@ func TestEnsureAncestryCreatesMissingParents(t *testing.T) {
 // TestEnsureAncestryDryRunCreatesNothing is the guard for the class of bug in
 // issue #572: a dry run must not write.
 func TestEnsureAncestryDryRunCreatesNothing(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	_, err := page.EnsureAncestry(true, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
+	_, err := page.EnsureAncestry(ctx, true, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, server.CountRequests("POST", "/rest/api/content"),
@@ -82,15 +86,16 @@ func TestEnsureAncestryDryRunCreatesNothing(t *testing.T) {
 // requested ancestors exist yet in a space that has no home page, so the
 // space's first page anchors the chain.
 func TestEnsureAncestryFallsBackToRootPage(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	existing := server.AddPage("DOCS", "Existing", "page", "")
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Brand New"}, nil)
+	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Brand New"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Brand New", parent.Title)
 
-	created, err := api.FindPage("DOCS", "Brand New", "page")
+	created, err := api.FindPage(context.Background(), "DOCS", "Brand New", "page")
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	require.NotEmpty(t, created.Ancestors)
@@ -103,18 +108,19 @@ func TestEnsureAncestryFallsBackToRootPage(t *testing.T) {
 // page ValidateAncestry measures against -- not under whatever the space
 // listing returns first.
 func TestEnsureAncestryCreatesMissingParentsUnderTheHomePage(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	other := server.AddPage("DOCS", "Archive", "page", "")
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	first, err := api.FindPage("DOCS", "", "page")
+	first, err := api.FindPage(context.Background(), "DOCS", "", "page")
 	require.NoError(t, err)
 	require.NotNil(t, first)
 	require.Equal(t, other.ID, first.ID,
 		"the test needs the other root page listed first to mean anything")
 
-	parent, err := page.EnsureAncestry(false, api, "DOCS", []string{"Team", "Guides"}, nil)
+	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Team", "Guides"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -122,7 +128,7 @@ func TestEnsureAncestryCreatesMissingParentsUnderTheHomePage(t *testing.T) {
 	assert.Equal(t, []string{"Home"}, ancestorTitles(t, api, "Team"))
 	assert.Equal(t, []string{"Home", "Team"}, ancestorTitles(t, api, "Guides"))
 
-	_, err = page.ValidateAncestry(api, "DOCS", []string{"Team", "Guides"})
+	_, err = page.ValidateAncestry(ctx, api, "DOCS", []string{"Team", "Guides"})
 	assert.NoError(t, err, "what was just created must validate against the home page")
 }
 
@@ -131,11 +137,11 @@ func TestEnsureAncestryCreatesMissingParentsUnderTheHomePage(t *testing.T) {
 func ancestorTitles(t *testing.T, api *confluence.API, title string) []string {
 	t.Helper()
 
-	found, err := api.FindPage("DOCS", title, "page")
+	found, err := api.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, found, "page %q should exist", title)
 
-	stored, err := api.GetPageByIDExpanded(found.ID, "ancestors")
+	stored, err := api.GetPageByIDExpanded(context.Background(), found.ID, "ancestors")
 	require.NoError(t, err)
 
 	var titles []string
@@ -147,22 +153,24 @@ func ancestorTitles(t *testing.T, api *confluence.API, title string) []string {
 }
 
 func TestValidateAncestryMatchingChain(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 	team := server.AddPage("DOCS", "Team", "page", root.ID)
 	server.AddPage("DOCS", "Guides", "page", team.ID)
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
+	found, err := page.ValidateAncestry(ctx, api, "DOCS", []string{"Root", "Team", "Guides"})
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Equal(t, "Guides", found.Title)
 }
 
 func TestValidateAncestryMissingPageReturnsNil(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Nope"})
+	found, err := page.ValidateAncestry(ctx, api, "DOCS", []string{"Root", "Nope"})
 	require.NoError(t, err)
 	assert.Nil(t, found)
 }
@@ -171,12 +179,13 @@ func TestValidateAncestryMissingPageReturnsNil(t *testing.T) {
 // being adopted by the wrong branch of the tree -- the failure mode behind
 // issues #450 and #430.
 func TestValidateAncestryWrongParentIsRejected(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 	other := server.AddPage("DOCS", "Other", "page", root.ID)
 	server.AddPage("DOCS", "Guides", "page", other.ID)
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
+	found, err := page.ValidateAncestry(ctx, api, "DOCS", []string{"Root", "Team", "Guides"})
 	require.Error(t, err)
 	// Guides sits two levels deep but three were expected, so the depth check
 	// rejects it before the per-parent comparison runs.
@@ -190,13 +199,14 @@ func TestValidateAncestryWrongParentIsRejected(t *testing.T) {
 // comparison, which the depth check above short-circuits: the chain is as deep
 // as expected but names a different intermediate page.
 func TestValidateAncestryWrongParentAtCorrectDepth(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 	other := server.AddPage("DOCS", "Other", "page", root.ID)
 	extra := server.AddPage("DOCS", "Extra", "page", other.ID)
 	server.AddPage("DOCS", "Guides", "page", extra.ID)
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"Root", "Team", "Guides"})
+	found, err := page.ValidateAncestry(ctx, api, "DOCS", []string{"Root", "Team", "Guides"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, page.ErrAncestryMismatch)
 	assert.Contains(t, err.Error(), `expected parent "Team"`)
@@ -206,11 +216,12 @@ func TestValidateAncestryWrongParentAtCorrectDepth(t *testing.T) {
 // TestValidateAncestryHomepageWithoutAncestors covers the special case where a
 // page legitimately has no parents because it is the space homepage.
 func TestValidateAncestryHomepageWithoutAncestors(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"Home"})
+	found, err := page.ValidateAncestry(ctx, api, "DOCS", []string{"Home"})
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Equal(t, "Home", found.Title)
@@ -226,12 +237,13 @@ func TestValidateAncestryHomepageWithoutAncestors(t *testing.T) {
 // all: declaring the parent it ought to have is exactly what produces this
 // state, so no header could get past it.
 func TestValidateAncestryRootLevelPageIsMisplaced(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	orphan := server.AddPage("DOCS", "Orphan", "page", "")
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"Orphan"})
+	found, err := page.ValidateAncestry(ctx, api, "DOCS", []string{"Orphan"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, page.ErrAncestryMismatch)
 	require.NotNil(t, found, "the page comes back with the error, so it can be moved")
@@ -247,11 +259,11 @@ func TestValidateAncestryIgnoresCase(t *testing.T) {
 	team := server.AddPage("DOCS", "Team", "page", root.ID)
 	guides := server.AddPage("DOCS", "Guides", "page", team.ID)
 
-	found, err := page.ValidateAncestry(api, "DOCS", []string{"root", "TEAM", "guides"})
+	found, err := page.ValidateAncestry(context.Background(), api, "DOCS", []string{"root", "TEAM", "guides"})
 	require.NoError(t, err, "a parent differing only in case is the same parent")
 	require.NotNil(t, found)
 	assert.Equal(t, guides.ID, found.ID)
 
-	_, err = page.ValidateAncestry(api, "DOCS", []string{"Elsewhere", "Team", "Guides"})
+	_, err = page.ValidateAncestry(context.Background(), api, "DOCS", []string{"Elsewhere", "Team", "Guides"})
 	assert.ErrorIs(t, err, page.ErrAncestryMismatch, "a different parent is still a mismatch")
 }

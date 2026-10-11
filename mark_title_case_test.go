@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestHeadersDifferingOnlyInCaseKeepThePage(t *testing.T) {
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	require.NoError(t, Run(config))
 
-	before, err := api.FindPage("DOCS", "Doc", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 	parentID := server.Page(before.ID).ParentID
@@ -32,7 +33,7 @@ func TestHeadersDifferingOnlyInCaseKeepThePage(t *testing.T) {
 	writeFile(t, dir, "doc.md", recased)
 	require.NoError(t, Run(config))
 
-	after, err := api.FindPage("DOCS", "doc", "page")
+	after, err := api.FindPage(context.Background(), "DOCS", "doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, after)
 	assert.Equal(t, before.ID, after.ID, "the page the document published is the one it names")

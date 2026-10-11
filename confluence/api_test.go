@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -30,14 +31,14 @@ func TestPageCache(t *testing.T) {
 	api.pageCache[key] = cachedPage
 
 	// This must not panic (meaning it didn't use api.rest) and must return the cached page.
-	res, err := api.FindPage(space, title, pageType)
+	res, err := api.FindPage(context.Background(), space, title, pageType)
 	assert.NoError(t, err)
 	assert.Equal(t, cachedPage, res)
 	assert.NotSame(t, cachedPage, res) // Verify defensive copy
 
 	// 2. Cache Hit on non-existent page (cached nil result)
 	api.pageCache[key] = nil
-	res, err = api.FindPage(space, title, pageType)
+	res, err = api.FindPage(context.Background(), space, title, pageType)
 	assert.NoError(t, err)
 	assert.Nil(t, res)
 
@@ -71,7 +72,7 @@ func TestPageCache(t *testing.T) {
 		done <- true
 	}()
 	for i := 0; i < 1000; i++ {
-		_, err = api.FindPage(space, title, pageType)
+		_, err = api.FindPage(context.Background(), space, title, pageType)
 		assert.NoError(t, err)
 	}
 	<-done
@@ -109,14 +110,14 @@ func TestPageCacheFindPageMissAndHit(t *testing.T) {
 	pageType := "page"
 
 	// First call: cache miss, triggers HTTP request to server
-	res1, err := api.FindPage(space, title, pageType)
+	res1, err := api.FindPage(context.Background(), space, title, pageType)
 	assert.NoError(t, err)
 	assert.NotNil(t, res1)
 	assert.Equal(t, "12345", res1.ID)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount))
 
 	// Second call: cache hit, should NOT trigger HTTP request
-	res2, err := api.FindPage(space, title, pageType)
+	res2, err := api.FindPage(context.Background(), space, title, pageType)
 	assert.NoError(t, err)
 	assert.NotNil(t, res2)
 	assert.Equal(t, "12345", res2.ID)
@@ -141,13 +142,13 @@ func TestPageCacheFindPageNegativeCache(t *testing.T) {
 	pageType := "page"
 
 	// First call: cache miss, returns nil
-	res1, err := api.FindPage(space, title, pageType)
+	res1, err := api.FindPage(context.Background(), space, title, pageType)
 	assert.NoError(t, err)
 	assert.Nil(t, res1)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount))
 
 	// Second call: cache hit, returns nil without network call
-	res2, err := api.FindPage(space, title, pageType)
+	res2, err := api.FindPage(context.Background(), space, title, pageType)
 	assert.NoError(t, err)
 	assert.Nil(t, res2)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount))

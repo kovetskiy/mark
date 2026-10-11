@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -83,7 +84,7 @@ Some content.
 
 	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 
@@ -120,7 +121,7 @@ Some content.
 
 	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 

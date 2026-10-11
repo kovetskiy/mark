@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"testing"
@@ -38,7 +39,7 @@ func TestSynchronizedFalseHeaderSkipsTheFile(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Draft", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
 }
@@ -58,7 +59,7 @@ func TestSynchronizedFalseFrontMatterSkipsTheFile(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Draft", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
 }
@@ -85,7 +86,7 @@ func TestSynchronizedTrueAndAbsentBothPublish(t *testing.T) {
 			}))
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			page, err := api.FindPage("DOCS", "Doc", "page")
+			page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 			require.NoError(t, err)
 			assert.NotNil(t, page)
 		})
@@ -102,6 +103,7 @@ func TestSynchronizedTrueAndAbsentBothPublish(t *testing.T) {
 // judged missing; it takes one page that does publish to load the mapping and
 // expose the skipped one as unaccounted for.
 func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
+	ctx := t.Context()
 	server := synchronizedServer(t)
 
 	dir := t.TempDir()
@@ -118,7 +120,7 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	published, err := api.FindPage("DOCS", "Draft", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -130,7 +132,7 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 	// a duplicate the next time it publishes.
 	require.NotNil(t, server.Page(published.ID))
 
-	entry, ok, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "draft.md"))
+	entry, ok, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "draft.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the page mapping must survive a document opting out")
 	assert.Equal(t, published.ID, entry.PageID)

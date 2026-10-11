@@ -12,7 +12,8 @@ import (
 // parse, which New reports as an error rather than a panic and which no other
 // test in the repository would catch.
 func TestNewParsesAllTemplates(t *testing.T) {
-	lib, err := New(nil)
+	ctx := t.Context()
+	lib, err := New(ctx, nil)
 	require.NoError(t, err)
 	require.NotNil(t, lib)
 	require.NotNil(t, lib.Templates)
@@ -38,7 +39,8 @@ func TestNewParsesAllTemplates(t *testing.T) {
 // able to close the ac:parameter attribute, and a CDATA end marker in the body
 // must be split across two sections.
 func TestTemplatesEscapeInterpolatedValues(t *testing.T) {
-	lib, err := New(nil)
+	ctx := t.Context()
+	lib, err := New(ctx, nil)
 	require.NoError(t, err)
 
 	var out strings.Builder
@@ -74,7 +76,8 @@ func TestTemplatesEscapeInterpolatedValues(t *testing.T) {
 // regardless of what the document asked for -- and gained an id it never asked
 // for.
 func TestIframeScrollingIsNamedScrolling(t *testing.T) {
-	lib, err := New(nil)
+	ctx := t.Context()
+	lib, err := New(ctx, nil)
 	require.NoError(t, err)
 
 	var out strings.Builder
@@ -95,7 +98,8 @@ func TestIframeScrollingIsNamedScrolling(t *testing.T) {
 // did, put any markup in it on the page as literal text. The width is a plain
 // parameter and stays escaped.
 func TestColumnBodyIsRichText(t *testing.T) {
-	lib, err := New(nil)
+	ctx := t.Context()
+	lib, err := New(ctx, nil)
 	require.NoError(t, err)
 
 	var out strings.Builder
@@ -117,7 +121,8 @@ func TestColumnBodyIsRichText(t *testing.T) {
 // A control character has no escape in XML, so xmlesc and cdata replace it:
 // an ANSI colour code in a code block made the page unpublishable.
 func TestTemplatesReplaceIllegalXMLCharacters(t *testing.T) {
-	lib, err := New(nil)
+	ctx := t.Context()
+	lib, err := New(ctx, nil)
 	require.NoError(t, err)
 
 	var out strings.Builder
@@ -183,8 +188,9 @@ func TestReplaceIllegalXMLChars(t *testing.T) {
 // New once per processed file, so this is the per-file floor for template
 // parsing.
 func BenchmarkNew(b *testing.B) {
+	ctx := b.Context()
 	for b.Loop() {
-		if _, err := New(nil); err != nil {
+		if _, err := New(ctx, nil); err != nil {
 			b.Fatal(err)
 		}
 	}

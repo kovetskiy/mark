@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -139,7 +140,7 @@ func (c *LinkChecker) NotePage(space, title, source string) {
 
 // MissingPages reports the ac: links that named no page, once everything that
 // was going to be published has been.
-func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
+func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]string, error) {
 	if c == nil || len(c.pending) == 0 {
 		return nil, nil
 	}
@@ -158,7 +159,7 @@ func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
 	for _, key := range keys {
 		link := pending[key]
 
-		found, err := finder.FindPage(link.space, link.title, "page")
+		found, err := finder.FindPage(ctx, link.space, link.title, "page")
 		if err != nil {
 			return nil, fmt.Errorf("find confluence page %q: %w", link.title, err)
 		}
@@ -177,7 +178,7 @@ func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
 // PageFinder is the part of the Confluence API this needs, kept narrow so the
 // check can be exercised without one.
 type PageFinder interface {
-	FindPage(space, title, pageType string) (*confluence.PageInfo, error)
+	FindPage(ctx context.Context, space, title, pageType string) (*confluence.PageInfo, error)
 }
 
 // CheckExternal reports whether url answers, or nil if it was not asked.
