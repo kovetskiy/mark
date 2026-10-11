@@ -138,13 +138,10 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 			api.Context(), http.MethodPut, append(properties, existing.ID), nil, payload, &result,
 		)
 	}
-	if err != nil {
-		return newTransportError(
-			response, fmt.Sprintf("write property %q of %s", key, owner), err,
-		)
-	}
-
-	return propertyWriteResult(response, key, owner, existing == nil)
+	return propertyWriteResult(
+		newTransportError(response, fmt.Sprintf("write property %q of %s", key, owner), err),
+		key, owner, existing == nil,
+	)
 }
 
 // ListPageProperties returns every property stored against a page, through the
@@ -188,18 +185,13 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 			},
 			nil, &result,
 		)
-		if err != nil {
-			return nil, newTransportError(response, "read properties of content "+contentID, err)
-		}
-
 		// Only the first page may read 404 as "none set"; one partway through
 		// is a failure, and swallowing it would discard the pages already read.
-		if response.StatusCode == http.StatusNotFound && start == 0 {
+		if errors.Is(err, ErrNotFound) && start == 0 {
 			return nil, nil
 		}
-
-		if response.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(response)
+		if err != nil {
+			return nil, newTransportError(response, "read properties of content "+contentID, err)
 		}
 
 		all = append(all, result.Results...)
@@ -254,41 +246,35 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 			api.Context(), http.MethodPut, append(properties, key), nil, payload, &result,
 		)
 	}
-	if err != nil {
-		return newTransportError(
-			response, fmt.Sprintf("write property %q of content %s", key, contentID), err,
-		)
-	}
-
-	return propertyWriteResult(response, key, "content "+contentID, existing == nil)
+	return propertyWriteResult(
+		newTransportError(response, fmt.Sprintf("write property %q of content %s", key, contentID), err),
+		key, "content "+contentID, existing == nil,
+	)
 }
 
-// propertyWriteResult turns a property write response into an error, singling
-// out the version conflict so a caller can react to losing a race and nothing
-// else.
+// propertyWriteResult turns the error a property write ended with into the one
+// it returns, singling out the version conflict so a caller can react to
+// losing a race and nothing else.
 //
 // creating says whether the caller believed the key was absent, which is what
 // tells the two ways a 409 arrives apart. Losing a race to another writer is
 // ordinary and survivable. Colliding with a key that was there the whole time
 // is neither: it means the listing this run worked from was incomplete, so
 // whatever that property held has already been treated as missing.
-func propertyWriteResult(response *reply, key, subject string, creating bool) error {
-	switch response.StatusCode {
-	case http.StatusOK, http.StatusCreated:
-		return nil
-	case http.StatusConflict:
-		if creating {
-			return fmt.Errorf(
-				"property %q of %s already exists but was not in the listing this run read, "+
-					"so anything it held has been treated as absent: %w",
-				key, subject, ErrPropertyUnseen,
-			)
-		}
-		return fmt.Errorf(
-			"property %q of %s was modified concurrently: %w",
-			key, subject, ErrPropertyConflict,
-		)
-	default:
-		return newErrorStatusNotOK(response)
+func propertyWriteResult(err error, key, subject string, creating bool) error {
+	if !errors.Is(err, ErrConflict) {
+		return err
 	}
+
+	if creating {
+		return fmt.Errorf(
+			"property %q of %s already exists but was not in the listing this run read, "+
+				"so anything it held has been treated as absent: %w",
+			key, subject, ErrPropertyUnseen,
+		)
+	}
+	return fmt.Errorf(
+		"property %q of %s was modified concurrently: %w",
+		key, subject, ErrPropertyConflict,
+	)
 }
