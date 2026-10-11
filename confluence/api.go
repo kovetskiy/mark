@@ -1831,8 +1831,9 @@ func (api *API) RestrictPageUpdates(
 			},
 		},
 	)
-	status := statusOf(err)
-	if (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) && !api.IsCloud(ctx) {
+	// A 501 is not taken for an old release here: unlike the other ways of
+	// saying the endpoint is missing, it falls through to the error as it is.
+	if status, notServed := endpointMissing(err); notServed && status != http.StatusNotImplemented && !api.IsCloud(ctx) {
 		return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", status)
 	}
 	if err != nil {
@@ -2494,16 +2495,16 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		return false, requestError(fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err)
 	}
 
-	// A 401 is about the credentials, not the page, so it too holds for the
-	// rest of the run.
-	switch status := statusOf(err); status {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented, http.StatusUnauthorized:
+	// Beyond the statuses that say the action is not there, a 401 is about
+	// the credentials, not the page, so it too holds for the rest of the run.
+	status, notServed := endpointMissing(err)
+	if notServed || status == http.StatusUnauthorized {
 		missing := fmt.Errorf("%w (status: %d)", errNoMoveAction, status)
 		api.moveActionMissing.Store(&missing)
 
 		return false, missing
-	case 0:
-	default:
+	}
+	if status != 0 {
 		return false, err
 	}
 
@@ -2857,8 +2858,7 @@ func (api *API) moveContent(ctx context.Context, contentID, position, targetID s
 		nil, map[string]any{}, &result,
 	)
 
-	switch status := statusOf(err); status {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+	if status, notServed := endpointMissing(err); notServed {
 		// content/{id}/move is a Cloud endpoint, reached whenever a page's
 		// ancestry stops matching its headers or whenever pages are ordered.
 		// Outside Cloud it is not there, and the answer is reported as such so

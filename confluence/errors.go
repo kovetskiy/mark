@@ -175,6 +175,20 @@ func statusOf(err error) int {
 	return 0
 }
 
+// endpointMissing reports whether a request failed with one of the statuses
+// that say the endpoint is not served here rather than anything about what
+// was asked of it -- 404, 405 or 501 -- along with the status it failed with,
+// or 0 when it did not fail with one.
+func endpointMissing(err error) (status int, ok bool) {
+	status = statusOf(err)
+	switch status {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return status, true
+	default:
+		return status, false
+	}
+}
+
 // maxErrorBody caps how much of a failed response's body a StatusError
 // quotes. Confluence's own JSON errors are a few hundred bytes; what answers
 // with an error is not always Confluence, and a proxy's HTML error page or a
