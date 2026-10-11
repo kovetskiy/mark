@@ -98,7 +98,7 @@ func TestACancelledLookupIsNotRemembered(t *testing.T) {
 
 	_, err := api.GetSpaceID("DOCS")
 	require.ErrorIs(t, err, context.Canceled)
-	_, err = api.cloud()
+	_, err = api.Cloud()
 	require.ErrorIs(t, err, context.Canceled)
 
 	server.SetFail(nil)
@@ -108,7 +108,7 @@ func TestACancelledLookupIsNotRemembered(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, id)
 
-	cloud, err := api.cloud()
+	cloud, err := api.Cloud()
 	require.NoError(t, err)
 	assert.True(t, cloud, "the fake's current user has an accountId")
 }
