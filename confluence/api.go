@@ -542,26 +542,18 @@ func (api *API) Context() context.Context {
 	return api.ctx
 }
 
-// cancelled reports whether err is the caller giving up rather than
-// Confluence answering: a failure while the API's context is done.
-//
-// It asks the context, not the error. net/http's "timeout awaiting response
-// headers" and a dial's "i/o timeout" both satisfy
-// errors.Is(err, context.DeadlineExceeded), and neither is the run being
-// stopped.
-func (api *API) cancelled(err error) bool {
-	return err != nil && api.Context().Err() != nil
-}
-
 // wait sits out d -- the delay before a conflicting write is retried, or
 // between reads of a move that has not settled yet -- and returns the
-// context's error instead if the API's context ends first.
+// context's error instead if the API's context ends first, marked as a
+// cancellation like a request's.
 func (api *API) wait(d time.Duration) error {
 	if d <= 0 {
 		return nil
 	}
 
-	return sleepContext(api.Context(), d, nil)
+	ctx := api.Context()
+
+	return cancellation(ctx, sleepContext(ctx, d, nil))
 }
 
 // FindRootPage returns the page a chain of parents is created under when no
@@ -640,7 +632,7 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 // the v1 refusal that sends a lookup on to v2 -- says nothing about the
 // answer either.
 func (api *API) worthCaching(err error) bool {
-	if api.cancelled(err) {
+	if IsCancellation(err) {
 		return false
 	}
 
@@ -766,7 +758,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		// Nor does v1's answer decide anything when the run was stopped
 		// during the fallback: it was never a conclusion, and wrapping it
 		// would hide the cancellation from errors.Is behind a %v.
-		if api.gateway || api.cancelled(v2Err) {
+		if api.gateway || IsCancellation(v2Err) {
 			return nil, v2Err
 		}
 		if v1Err == nil {
@@ -1979,7 +1971,7 @@ func (api *API) cloud() (bool, error) {
 	} else {
 		isCloud, err = identifyCloud(user)
 	}
-	if api.cancelled(err) {
+	if IsCancellation(err) {
 		return false, err
 	}
 	if err != nil {
@@ -2541,7 +2533,7 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	// being a 404, got a v1 outage cached for the rest of the run. v1's answer
 	// is the one that decides, so v2's is kept for the message only.
 	if err != nil {
-		if api.cancelled(err) {
+		if IsCancellation(err) {
 			return "", err
 		}
 		if v1Err == nil && v1Response != nil && v1Response.StatusCode != http.StatusOK {
@@ -2893,7 +2885,7 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	// A response cut short by the run's context is no answer from the action,
 	// however much of it arrived: judged here, a cancelled move was taken for
 	// a closed action and remembered for the rest of the API's life.
-	if response == nil || api.cancelled(err) {
+	if response == nil || IsCancellation(err) {
 		return false, newTransportError(
 			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
 		)
@@ -3302,12 +3294,12 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		// A 404 that really is a missing page arrives looking exactly the
 		// same, which is why the status stays in the message and why nothing
 		// here concludes anything about the content itself.
-		if !api.IsCloud() {
-			// IsCloud answers false, and remembers nothing, when its probe
+		if isCloud, err := api.Cloud(); !isCloud {
+			// Cloud answers false, and remembers nothing, when its probe
 			// was cancelled. That is no reason to conclude the endpoint is
 			// missing, and remembered, it would send every later Cloud move on
 			// this API down the Data Center fallbacks.
-			if err := api.Context().Err(); err != nil {
+			if IsCancellation(err) {
 				return fmt.Errorf(
 					"unable to move content %s %s %s: %w", contentID, position, targetID, err,
 				)
@@ -3442,7 +3434,7 @@ func newTransportError(response *reply, operation string, err error) error {
 	// Nor is there when the request was cancelled, even with a response in
 	// hand: a body cut short by its context does not decode, and blaming an
 	// SSO page for it would send someone looking for a proxy that is not there.
-	if response == nil || requestCancelled(response) {
+	if response == nil || IsCancellation(err) {
 		return fmt.Errorf("unable to %s: %w", operation, err)
 	}
 
@@ -3452,10 +3444,4 @@ func newTransportError(response *reply, operation string, err error) error {
 			"usual cause): %w",
 		operation, requestTarget(response), response.Status, err,
 	)
-}
-
-// requestCancelled reports whether the context the request behind response
-// carried is done; see API.cancelled.
-func requestCancelled(response *reply) bool {
-	return response != nil && response.Request != nil && response.Request.Context().Err() != nil
 }
