@@ -549,10 +549,7 @@ func run(ctx context.Context, config Config) (err error) {
 				File: file, Status: report.StatusFailed, Reason: err.Error(),
 			})
 
-			// A file that failed because the run was cancelled is not a file
-			// failure to step past: stop, so the run reports the cancellation.
-			if config.ContinueOnError && ctx.Err() == nil {
-				log.Error().Err(err).Msgf("processing %s", file)
+			if stepPast(ctx, config, file, err) {
 				hasErrors = true
 				continue
 			}
@@ -621,8 +618,7 @@ func run(ctx context.Context, config Config) (err error) {
 					File: file, Status: report.StatusFailed, Reason: err.Error(),
 				})
 
-				if config.ContinueOnError && ctx.Err() == nil {
-					log.Error().Err(err).Msgf("processing %s", file)
+				if stepPast(ctx, config, file, err) {
 					hasErrors = true
 
 					continue
@@ -710,6 +706,22 @@ func run(ctx context.Context, config Config) (err error) {
 	}
 
 	return saveErr
+}
+
+// stepPast reports whether the run goes on to the next file after file
+// failed with err, which it does only under --continue-on-error, logging the
+// failure it steps past.
+//
+// A file that failed because the run was cancelled is not a file failure to
+// step past: the run stops, so that it reports the cancellation.
+func stepPast(ctx context.Context, config Config, file string, err error) bool {
+	if !config.ContinueOnError || ctx.Err() != nil {
+		return false
+	}
+
+	log.Error().Err(err).Msgf("processing %s", file)
+
+	return true
 }
 
 // ProcessFile processes a single markdown file and publishes it to Confluence.
