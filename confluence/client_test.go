@@ -157,7 +157,7 @@ func TestClientReturnsTheResponseWithADecodeError(t *testing.T) {
 	require.NotNil(t, response)
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 
-	transport := newTransportError(response, "read things", err)
+	transport := requestError("read things", err)
 	assert.Contains(t, transport.Error(), "body that is not JSON")
 	assert.Contains(t, transport.Error(), "/rest/api/content")
 }
@@ -175,7 +175,7 @@ func TestClientRecognisesALoginPage(t *testing.T) {
 		assert.Contains(t, err.Error(), "/rest/api/content/1")
 		assert.Contains(t, err.Error(), "200 OK")
 
-		transport := newTransportError(response, "read page 1", err)
+		transport := requestError("read page 1", err)
 		require.ErrorIs(t, transport, ErrLoginPage, "newTransportError keeps the sentinel")
 		assert.Contains(t, transport.Error(), "unable to read page 1")
 		assert.Contains(t, transport.Error(), "login page")
@@ -200,12 +200,12 @@ func TestClientRecognisesARedirectToTheLoginPage(t *testing.T) {
 
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &PageInfo{})
+	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &PageInfo{})
 	require.ErrorIs(t, err, ErrLoginPage)
 	assert.Contains(t, err.Error(), server.URL+"/rest/api/content/1", "where the request was sent")
 	assert.Contains(t, err.Error(), "/login.action", "and where it ended up")
 
-	transport := newTransportError(response, "read page 1", err)
+	transport := requestError("read page 1", err)
 	require.ErrorIs(t, transport, ErrLoginPage)
 	assert.Contains(t, transport.Error(), "unable to read page 1")
 	assert.Contains(t, transport.Error(), "redirected to "+server.URL+"/login.action")
@@ -516,11 +516,11 @@ func TestClientRejectsDataAfterTheJSONValue(t *testing.T) {
 		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", body)
 
 		var page PageInfo
-		response, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
 		require.Error(t, err, body)
 		assert.Contains(t, err.Error(), "after the JSON value", body)
 
-		transport := newTransportError(response, "read page 42", err)
+		transport := requestError("read page 42", err)
 		assert.Contains(t, transport.Error(), "body that is not JSON", body)
 	}
 }

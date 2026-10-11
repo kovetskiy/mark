@@ -697,18 +697,14 @@ func (api *API) cachedHomePage(space string) (homePageCacheEntry, bool) {
 }
 
 func (api *API) fetchHomePage(space string) (*PageInfo, error) {
-	var (
-		v1Result   SpaceInfo
-		v1Response *reply
-		v1Err      error
-	)
+	var v1Err error
 
 	// Through the gateway v1 is not asked at all: a scoped token is refused
 	// there, and v2 answers either kind of token.
 	if !api.gateway {
-		v1Response, v1Err = api.v1.do(
-			api.Context(), http.MethodGet, []string{"space", space},
-			url.Values{"expand": {"homepage"}}, nil, &v1Result,
+		var v1Result SpaceInfo
+		v1Result, v1Err = get[SpaceInfo](
+			api.Context(), api.v1, []string{"space", space}, url.Values{"expand": {"homepage"}},
 		)
 		if v1Err == nil {
 			homepage := &v1Result.Homepage
@@ -733,23 +729,11 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// v1 space endpoint answers 404 and every run aborted here. The fallback is
 	// deliberately not narrowed to 404: a token with partial scopes can also
 	// draw 401/403 from v1 while v2 still answers.
-	v2Result := struct {
-		Results []struct {
-			ID         string `json:"id"`
-			HomepageID string `json:"homepageId"`
-		} `json:"results"`
-		Links struct {
-			Base string `json:"base"`
-		} `json:"_links"`
-	}{}
-
-	v2Response, v2Err := api.v2.do(
-		api.Context(), http.MethodGet, []string{"spaces"},
-		url.Values{"keys": {space}}, nil, &v2Result,
-	)
-	if v2Err != nil {
-		v2Err = newTransportError(v2Response, "look up space "+space, v2Err)
-	}
+	v2Result, v2Err := get[listing[struct {
+		ID         string `json:"id"`
+		HomepageID string `json:"homepageId"`
+	}]](api.Context(), api.v2, []string{"spaces"}, url.Values{"keys": {space}})
+	v2Err = requestError("look up space "+space, v2Err)
 
 	// When v2 cannot answer either, report why v1 refused rather than why v2
 	// did. Server/DC has no /api/v2 at all, so every fallback there ends in a
@@ -769,7 +753,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 		if api.gateway || IsCancellation(v2Err) {
 			return nil, v2Err
 		}
-		v1Err = newTransportError(v1Response, "read space "+space, v1Err)
+		v1Err = requestError("read space "+space, v1Err)
 		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, v2Err) //nolint:errorlint // v2's 404 on Server must not reach errors.Is(ErrNotFound)
 	}
 
@@ -852,13 +836,6 @@ func (api *API) FindPage(
 
 // findPageV1 is the lookup behind FindPage: a live page by title, or nil.
 func (api *API) findPageV1(space, title, pageType string) (*PageInfo, error) {
-	result := struct {
-		Results []PageInfo `json:"results"`
-		Links   struct {
-			Base string `json:"base"`
-		} `json:"_links"`
-	}{}
-
 	query := url.Values{
 		"spaceKey": {space},
 		"expand":   {"ancestors,version"},
@@ -873,14 +850,14 @@ func (api *API) findPageV1(space, title, pageType string) (*PageInfo, error) {
 		query.Set("title", title)
 	}
 
-	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"content", ""}, query, nil, &result)
+	result, err := get[listing[PageInfo]](api.Context(), api.v1, []string{"content", ""}, query)
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, newTransportError(response, fmt.Sprintf("find page %q in space %s", title, space), err)
+		return nil, requestError(fmt.Sprintf("find page %q in space %s", title, space), err)
 	}
 
 	if len(result.Results) == 0 {
@@ -920,10 +897,6 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 		return api.findPageV2(space, title, pageType, status)
 	}
 
-	result := struct {
-		Results []PageInfo `json:"results"`
-	}{}
-
 	query := url.Values{
 		"spaceKey": {space},
 		"expand":   {"ancestors,version"},
@@ -935,14 +908,12 @@ func (api *API) findPageWithStatus(space, title, pageType, status string) (*Page
 		query.Set("title", title)
 	}
 
-	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"content", ""}, query, nil, &result)
+	result, err := get[listing[PageInfo]](api.Context(), api.v1, []string{"content", ""}, query)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, newTransportError(
-			response, fmt.Sprintf("find %s page %q in space %s", status, title, space), err,
-		)
+		return nil, requestError(fmt.Sprintf("find %s page %q in space %s", status, title, space), err)
 	}
 
 	if len(result.Results) == 0 {
@@ -1011,21 +982,11 @@ func (api *API) CreateAttachment(
 		return AttachmentInfo{}, err
 	}
 
-	var result struct {
-		Links struct {
-			Context string `json:"context"`
-		} `json:"_links"`
-		Results []AttachmentInfo `json:"results"`
-	}
-
-	response, err := api.v1.do(
-		api.Context(), http.MethodPost, []string{"content", pageID, "child", "attachment"},
-		nil, form, &result,
+	result, err := send[listing[AttachmentInfo]](
+		api.Context(), api.v1, http.MethodPost, []string{"content", pageID, "child", "attachment"}, form,
 	)
 	if err != nil {
-		return info, newTransportError(
-			response, fmt.Sprintf("attach %q to page %s", name, pageID), err,
-		)
+		return info, requestError(fmt.Sprintf("attach %q to page %s", name, pageID), err)
 	}
 
 	if len(result.Results) == 0 || result.Results[0].ID == "" {
@@ -1061,26 +1022,15 @@ func (api *API) UpdateAttachment(
 		return AttachmentInfo{}, err
 	}
 
-	var extendedResponse struct {
-		Links struct {
-			Context string `json:"context"`
-		} `json:"_links"`
-		Results []AttachmentInfo `json:"results"`
-	}
-
-	var result json.RawMessage
-
-	response, err := api.v1.do(
-		api.Context(), http.MethodPost,
-		[]string{"content", pageID, "child", "attachment", attachID, "data"},
-		nil, form, &result,
+	result, err := send[json.RawMessage](
+		api.Context(), api.v1, http.MethodPost,
+		[]string{"content", pageID, "child", "attachment", attachID, "data"}, form,
 	)
 	if err != nil {
-		return info, newTransportError(
-			response, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID), err,
-		)
+		return info, requestError(fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID), err)
 	}
 
+	var extendedResponse listing[AttachmentInfo]
 	err = json.Unmarshal(result, &extendedResponse)
 	if err != nil {
 		return info, fmt.Errorf("unable to unmarshal JSON response as full response format (JSON=%s): %w", string(result), err)
@@ -1162,33 +1112,21 @@ func (api *API) GetAttachments(pageID string) ([]AttachmentInfo, error) {
 		return api.getAttachmentsV2(pageID)
 	}
 
-	type page struct {
-		Links struct {
-			Context string `json:"context"`
-			Next    string `json:"next"`
-		} `json:"_links"`
-		Results []AttachmentInfo `json:"results"`
-	}
-
 	const pageSize = 100
 	var all []AttachmentInfo
 	start := 0
 
 	for {
-		var result page
-
-		query := url.Values{
-			"expand": {"version,container"},
-			"limit":  {strconv.Itoa(pageSize)},
-			"start":  {strconv.Itoa(start)},
-		}
-
-		response, err := api.v1.do(
-			api.Context(), http.MethodGet, []string{"content", pageID, "child", "attachment"},
-			query, nil, &result,
+		result, err := get[listing[AttachmentInfo]](
+			api.Context(), api.v1, []string{"content", pageID, "child", "attachment"},
+			url.Values{
+				"expand": {"version,container"},
+				"limit":  {strconv.Itoa(pageSize)},
+				"start":  {strconv.Itoa(start)},
+			},
 		)
 		if err != nil {
-			return nil, newTransportError(response, "list attachments of page "+pageID, err)
+			return nil, requestError("list attachments of page "+pageID, err)
 		}
 
 		for i, info := range result.Results {
@@ -1225,13 +1163,9 @@ func (api *API) GetPageByIDExpanded(pageID string, expand string) (*PageInfo, er
 		return api.getPageByIDV2(pageID, expand)
 	}
 
-	var page PageInfo
-	response, err := api.v1.do(
-		api.Context(), http.MethodGet, []string{"content", pageID},
-		url.Values{"expand": {expand}}, nil, &page,
-	)
+	page, err := get[PageInfo](api.Context(), api.v1, []string{"content", pageID}, url.Values{"expand": {expand}})
 	if err != nil {
-		return nil, newTransportError(response, "read page "+pageID, err)
+		return nil, requestError("read page "+pageID, err)
 	}
 
 	return &page, nil
@@ -1243,18 +1177,16 @@ func (api *API) GetInlineComments(pageID string) (*InlineComments, error) {
 	start := 0
 
 	for {
-		result := &InlineComments{}
-		response, err := api.v1.do(
-			api.Context(), http.MethodGet, []string{"content", pageID, "child", "comment"},
+		result, err := get[InlineComments](
+			api.Context(), api.v1, []string{"content", pageID, "child", "comment"},
 			url.Values{
 				"expand": {"extensions.inlineProperties"},
 				"limit":  {strconv.Itoa(pageSize)},
 				"start":  {strconv.Itoa(start)},
 			},
-			nil, result,
 		)
 		if err != nil {
-			return nil, newTransportError(response, "read inline comments of page "+pageID, err)
+			return nil, requestError("read inline comments of page "+pageID, err)
 		}
 
 		if all.Links.Context == "" {
@@ -1385,15 +1317,12 @@ func (api *API) createPageV1(space, pageType string, parent *PageInfo, title, bo
 		}
 	}
 
-	var page PageInfo
-	response, err := api.v1.do(api.Context(), http.MethodPost, []string{"content", ""}, nil, payload, &page)
+	page, err := send[PageInfo](api.Context(), api.v1, http.MethodPost, []string{"content", ""}, payload)
 	if statusOf(err) != 0 {
 		return nil, api.explainCreateFailure(space, title, pageType, err)
 	}
 	if err != nil {
-		return nil, newTransportError(
-			response, fmt.Sprintf("create page %q in space %s", title, space), err,
-		)
+		return nil, requestError(fmt.Sprintf("create page %q in space %s", title, space), err)
 	}
 
 	return &page, nil
@@ -1607,13 +1536,11 @@ func (api *API) updatePageV1(
 		}
 	}
 
-	response, err := api.v1.do(
+	_, err := api.v1.do(
 		api.Context(), http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
 	)
 	if err != nil {
-		return newTransportError(
-			response, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
-		)
+		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
 	}
 
 	return nil
@@ -1659,12 +1586,9 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 
 	payload := labels
 
-	var result LabelInfo
-	response, err := api.v1.do(
-		api.Context(), http.MethodPost, []string{"content", page.ID, "label"}, nil, payload, &result,
-	)
+	result, err := send[LabelInfo](api.Context(), api.v1, http.MethodPost, []string{"content", page.ID, "label"}, payload)
 	if err != nil {
-		return nil, newTransportError(response, "add labels to page "+page.ID, err)
+		return nil, requestError("add labels to page "+page.ID, err)
 	}
 
 	return &result, nil
@@ -1677,9 +1601,7 @@ func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error
 		url.Values{"name": {label}}, nil, &result,
 	)
 	if err != nil {
-		return nil, newTransportError(
-			response, fmt.Sprintf("remove label %q from page %s", label, page.ID), err,
-		)
+		return nil, requestError(fmt.Sprintf("remove label %q from page %s", label, page.ID), err)
 	}
 
 	if response.StatusCode == http.StatusNoContent {
@@ -1694,47 +1616,36 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 		return api.getPageLabelsV2(page, prefix)
 	}
 
-	type labelPage struct {
-		Links struct {
-			Next string `json:"next"`
-		} `json:"_links"`
-		Labels []Label `json:"results"`
-		Size   int     `json:"number"`
-	}
-
 	const pageSize = 50
 	var all []Label
 	start := 0
 
 	for {
-		var result labelPage
-
-		response, err := api.v1.do(
-			api.Context(), http.MethodGet, []string{"content", page.ID, "label"},
+		result, err := get[listing[Label]](
+			api.Context(), api.v1, []string{"content", page.ID, "label"},
 			url.Values{
 				"prefix": {prefix},
 				"limit":  {strconv.Itoa(pageSize)},
 				"start":  {strconv.Itoa(start)},
 			},
-			nil, &result,
 		)
 		if err != nil {
-			return nil, newTransportError(response, "read labels of page "+page.ID, err)
+			return nil, requestError("read labels of page "+page.ID, err)
 		}
 
-		all = append(all, result.Labels...)
+		all = append(all, result.Results...)
 
 		// A short page does not mean the end: Confluence caps limit at its
 		// max-results setting and answers a capped request with a short page
 		// and a next link both. Nor does a missing link, since deployments that
 		// omit it only ever go short. Stop when neither says there is more, and
 		// on an empty page whatever they say.
-		if len(result.Labels) == 0 ||
-			(result.Links.Next == "" && len(result.Labels) < pageSize) {
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < pageSize) {
 			break
 		}
 
-		start += len(result.Labels)
+		start += len(result.Results)
 	}
 
 	return &LabelInfo{Labels: all, Size: len(all)}, nil
@@ -1792,16 +1703,16 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 	query := url.Values{"cql": {fmt.Sprintf("user.fullname~%q", name)}}
 
 	// Try the new path first
-	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"search", "user"}, query, nil, &result)
+	_, err := api.v1.do(api.Context(), http.MethodGet, []string{"search", "user"}, query, nil, &result)
 	if err != nil && statusOf(err) == 0 {
-		return nil, newTransportError(response, fmt.Sprintf("look up user %q", name), err)
+		return nil, requestError(fmt.Sprintf("look up user %q", name), err)
 	}
 
 	// Try old path
 	if err != nil || len(result.Results) == 0 {
-		response, err = api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
+		_, err = api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
 		if err != nil {
-			return nil, newTransportError(response, fmt.Sprintf("look up user %q", name), err)
+			return nil, requestError(fmt.Sprintf("look up user %q", name), err)
 		}
 	}
 
@@ -1825,11 +1736,9 @@ func (api *API) GetCurrentUser() (*User, error) {
 		return &user, nil
 	}
 
-	var user User
-
-	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"user", "current"}, nil, nil, &user)
+	user, err := get[User](api.Context(), api.v1, []string{"user", "current"}, nil)
 	if err != nil {
-		return nil, newTransportError(response, "read the current user", err)
+		return nil, requestError("read the current user", err)
 	}
 
 	stored := user
@@ -2003,9 +1912,8 @@ func (api *API) RestrictPageUpdates(
 		userMap["username"] = allowedUser
 	}
 
-	var result any
-	response, err := api.v1.do(
-		api.Context(), http.MethodPost, []string{"content", page.ID, "restriction"}, nil,
+	_, err := send[any](
+		api.Context(), api.v1, http.MethodPost, []string{"content", page.ID, "restriction"},
 		[]map[string]any{
 			{
 				"operation": "update",
@@ -2016,14 +1924,13 @@ func (api *API) RestrictPageUpdates(
 				},
 			},
 		},
-		&result,
 	)
 	status := statusOf(err)
 	if (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) && !api.IsCloud() {
 		return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", status)
 	}
 	if err != nil {
-		return newTransportError(response, "restrict updates of page "+page.ID, err)
+		return requestError("restrict updates of page "+page.ID, err)
 	}
 
 	return nil
@@ -2067,15 +1974,21 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 		payload["parentType"] = parentType
 	}
 
-	var folder FolderInfo
-	response, err := api.v2.do(api.Context(), http.MethodPost, []string{"folders"}, nil, payload, &folder)
+	folder, err := send[FolderInfo](api.Context(), api.v2, http.MethodPost, []string{"folders"}, payload)
 	if err != nil {
-		return nil, newTransportError(
-			response, fmt.Sprintf("create folder %q in space %s", title, spaceID), err,
-		)
+		return nil, requestError(fmt.Sprintf("create folder %q in space %s", title, spaceID), err)
 	}
 
 	return &folder, nil
+}
+
+// searchHit is one result of a CQL search.
+type searchHit struct {
+	Content struct {
+		ID    string `json:"id"`
+		Type  string `json:"type"`
+		Title string `json:"title"`
+	} `json:"content"`
 }
 
 // FindFolder finds a folder with a title anywhere in a space, or anywhere
@@ -2086,16 +1999,6 @@ func (api *API) CreateFolder(spaceID, title string, parentID *string, parentType
 // FindChildFolder; for one at the space root, FindRootFolder.
 func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo, error) {
 	// CQL folder search lives on /rest/api/search (not content/search).
-	result := struct {
-		Results []struct {
-			Content struct {
-				ID    string `json:"id"`
-				Type  string `json:"type"`
-				Title string `json:"title"`
-			} `json:"content"`
-		} `json:"results"`
-	}{}
-
 	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
 	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
 	cql := fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey)
@@ -2109,9 +2012,9 @@ func (api *API) FindFolder(spaceKey, title, underAncestorID string) (*FolderInfo
 		"expand": {"content"},
 	}
 
-	response, err := api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
+	result, err := get[listing[searchHit]](api.Context(), api.v1, []string{"search"}, query)
 	if err != nil {
-		return nil, newTransportError(response, fmt.Sprintf("search for folder %q", title), err)
+		return nil, requestError(fmt.Sprintf("search for folder %q", title), err)
 	}
 
 	if len(result.Results) == 0 || result.Results[0].Content.ID == "" {
@@ -2211,32 +2114,21 @@ func (api *API) eachDirectChild(
 
 	var cursor string
 	for {
-		result := struct {
-			Results []struct {
-				ID    string `json:"id"`
-				Type  string `json:"type"`
-				Title string `json:"title"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
 		query := url.Values{"limit": {strconv.Itoa(pageSize)}}
 		if cursor != "" {
 			query.Set("cursor", cursor)
 		}
 
-		response, err := api.v2.do(
-			api.Context(), http.MethodGet, []string{collection, parentID, "direct-children"},
-			query, nil, &result,
-		)
+		result, err := get[listing[struct {
+			ID    string `json:"id"`
+			Type  string `json:"type"`
+			Title string `json:"title"`
+		}]](api.Context(), api.v2, []string{collection, parentID, "direct-children"}, query)
 		if errors.Is(err, ErrNotFound) && cursor == "" {
 			return nil
 		}
 		if err != nil {
-			return newTransportError(response, operation, err)
+			return requestError(operation, err)
 		}
 
 		for _, child := range result.Results {
@@ -2297,22 +2189,9 @@ func (api *API) searchFolders(spaceKey, title string, visit func(id string) (boo
 	}
 
 	for {
-		result := struct {
-			Results []struct {
-				Content struct {
-					ID   string `json:"id"`
-					Type string `json:"type"`
-				} `json:"content"`
-			} `json:"results"`
-
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
-		response, err := api.v1.do(api.Context(), http.MethodGet, []string{"search"}, query, nil, &result)
+		result, err := get[listing[searchHit]](api.Context(), api.v1, []string{"search"}, query)
 		if err != nil {
-			return newTransportError(response, fmt.Sprintf("search for folder %q", title), err)
+			return requestError(fmt.Sprintf("search for folder %q", title), err)
 		}
 
 		for _, item := range result.Results {
@@ -2352,13 +2231,12 @@ func (api *API) searchFolders(spaceKey, title string, visit func(id string) (boo
 }
 
 func (api *API) GetFolderByID(folderID string) (*FolderInfo, error) {
-	var folder FolderInfo
-	response, err := api.v2.do(api.Context(), http.MethodGet, []string{"folders", folderID}, nil, nil, &folder)
+	folder, err := get[FolderInfo](api.Context(), api.v2, []string{"folders", folderID}, nil)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil // Folder not found
 	}
 	if err != nil {
-		return nil, newTransportError(response, "read folder "+folderID, err)
+		return nil, requestError("read folder "+folderID, err)
 	}
 
 	return &folder, nil
@@ -2412,38 +2290,24 @@ func (api *API) fetchSpaceID(spaceKey string) (string, error) {
 	//
 	// v2 keeps its own string-typed struct: the two APIs genuinely disagree
 	// about this field, which is what made the mismatch easy to miss.
-	var (
-		v1Result SpaceInfo
-		v1Err    error
-	)
+	var v1Err error
 
 	// Through the gateway v1 is not asked at all: a scoped token is refused
 	// there, and v2 answers either kind of token.
 	if !api.gateway {
-		_, v1Err = api.v1.do(api.Context(), http.MethodGet, []string{"space", spaceKey}, nil, nil, &v1Result)
+		var v1Result SpaceInfo
+		v1Result, v1Err = get[SpaceInfo](api.Context(), api.v1, []string{"space", spaceKey}, nil)
 		if v1Err == nil && v1Result.ID != 0 {
 			return strconv.Itoa(v1Result.ID), nil
 		}
 	}
 
 	// Fallback to v2 API with query parameter
-	v2Result := struct {
-		Results []struct {
-			ID  string `json:"id"`
-			Key string `json:"key"`
-		} `json:"results"`
-		Links struct {
-			Base string `json:"base"`
-		} `json:"_links"`
-	}{}
-
-	response, err := api.v2.do(
-		api.Context(), http.MethodGet, []string{"spaces"},
-		url.Values{"keys": {spaceKey}}, nil, &v2Result,
-	)
-	if err != nil {
-		err = newTransportError(response, "look up the id of space "+spaceKey, err)
-	}
+	v2Result, err := get[listing[struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}]](api.Context(), api.v2, []string{"spaces"}, url.Values{"keys": {spaceKey}})
+	err = requestError("look up the id of space "+spaceKey, err)
 
 	// When v2 cannot answer either, report why v1 refused, as FindHomePage
 	// does. Server and Data Center have no /api/v2, so there v2's 404 says
@@ -2506,27 +2370,18 @@ func (api *API) GetChildPages(parentID string) ([]PageInfo, error) {
 	start := 0
 
 	for {
-		result := struct {
-			Results []PageInfo `json:"results"`
-
-			// The listing's own word on whether more exist. Without it this
-			// loop stopped on a short page, which is what a deployment that
-			// caps max-results answers a full request with.
-			Links struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}{}
-
-		response, err := api.v1.do(
-			api.Context(), http.MethodGet, []string{"content", parentID, "child", "page"},
+		// The listing's next link is its own word on whether more exist.
+		// Without it this loop stopped on a short page, which is what a
+		// deployment that caps max-results answers a full request with.
+		result, err := get[listing[PageInfo]](
+			api.Context(), api.v1, []string{"content", parentID, "child", "page"},
 			url.Values{
 				"limit": {strconv.Itoa(pageSize)},
 				"start": {strconv.Itoa(start)},
 			},
-			nil, &result,
 		)
 		if err != nil {
-			return nil, newTransportError(response, "list child pages of "+parentID, err)
+			return nil, requestError("list child pages of "+parentID, err)
 		}
 
 		all = append(all, result.Results...)
@@ -2582,11 +2437,11 @@ func (api *API) HasChildFolders(parentID string) (bool, error) {
 // make. A tool that removes pages because a file left a repository should leave
 // the last word to a person.
 func (api *API) DeletePage(contentID string) error {
-	response, err := api.v1.do(api.Context(), http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
+	_, err := api.v1.do(api.Context(), http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
 	// 204 is the documented answer, though some versions send 200, and a page
 	// already gone is the outcome that was wanted anyway.
 	if err != nil && !errors.Is(err, ErrNotFound) {
-		return newTransportError(response, "delete content "+contentID, err)
+		return requestError("delete content "+contentID, err)
 	}
 
 	return nil
@@ -2618,9 +2473,9 @@ func (api *API) ArchivePage(contentID string) error {
 		"pages": []map[string]any{{"id": id}},
 	}
 
-	response, err := api.v1.do(api.Context(), http.MethodPost, []string{"content", "archive"}, nil, payload, &struct{}{})
+	_, err = api.v1.do(api.Context(), http.MethodPost, []string{"content", "archive"}, nil, payload, &struct{}{})
 	if err != nil {
-		return newTransportError(response, "archive content "+contentID, err)
+		return requestError("archive content "+contentID, err)
 	}
 
 	return nil
@@ -2738,12 +2593,12 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		} `json:"ancestors"`
 	}
 
-	response, err := api.v1.do(
+	_, err = api.v1.do(
 		api.Context(), http.MethodGet, []string{"content", targetID},
 		url.Values{"expand": {"space,ancestors"}}, nil, &target,
 	)
 	if err != nil {
-		return false, newTransportError(response, "read move target "+targetID, err)
+		return false, requestError("read move target "+targetID, err)
 	}
 
 	// The parent the content has to end up under; for before and after that
@@ -2775,7 +2630,7 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	}
 
 	var answer map[string]any
-	response, err = api.site.doWithHeader(
+	response, err := api.site.doWithHeader(
 		api.Context(),
 		http.Header{"X-Atlassian-Token": {"no-check"}, "Accept": {"application/json"}},
 		http.MethodPost, []string{"pages", "movepage.action"}, query, nil, &answer,
@@ -2784,9 +2639,7 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 	// however much of it arrived: judged here, a cancelled move was taken for
 	// a closed action and remembered for the rest of the API's life.
 	if response == nil || IsCancellation(err) {
-		return false, newTransportError(
-			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
-		)
+		return false, requestError(fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err)
 	}
 
 	// A 401 is about the credentials, not the page, so it too holds for the
@@ -3130,13 +2983,11 @@ func (api *API) reparentContentV1(page *PageInfo, parentID string, nextVersion i
 		}
 	}
 
-	response, err := api.v1.do(
+	_, err := api.v1.do(
 		api.Context(), http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
 	)
 	if err != nil {
-		return newTransportError(
-			response, fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err,
-		)
+		return requestError(fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err)
 	}
 
 	return nil
@@ -3148,7 +2999,7 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 	}
 
 	var result map[string]any
-	response, err := api.v1.do(
+	_, err := api.v1.do(
 		api.Context(), http.MethodPut, []string{"content", contentID, "move", position, targetID},
 		nil, map[string]any{}, &result,
 	)
@@ -3182,9 +3033,7 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		}
 	}
 	if err != nil {
-		return newTransportError(
-			response, fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err,
-		)
+		return requestError(fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err)
 	}
 
 	return nil
@@ -3219,50 +3068,3 @@ var errNoMoveAction = errors.New(
 var errNoMoveEndpoint = errors.New(
 	"this Confluence did not serve the content move endpoint, which is Cloud-only",
 )
-
-// newTransportError explains an error the HTTP library returned in place of a
-// status.
-//
-// A StatusError already says what answered and how, and is returned as it
-// is. A login page, which is what a Confluence behind SSO answers an API call
-// with, is put in terms of the operation and of where to look; so is a 2xx
-// whose body does not parse, which used to reach the user as `invalid
-// character '<' looking for beginning of value`: no URL, no status, and no
-// page name.
-func newTransportError(response *reply, operation string, err error) error {
-	if err == nil {
-		return nil
-	}
-
-	// A status is an answer, and its error already says what answered it and
-	// how; the operation adds nothing a caller has not always gone without.
-	var status *StatusError
-	if errors.As(err, &status) {
-		return err
-	}
-
-	// No response at all means the request never completed, and there is
-	// nothing to add beyond what it was trying to do.
-	//
-	// Nor is there when the request was cancelled, even with a response in
-	// hand: a body cut short by its context does not decode, and blaming an
-	// SSO page for it would send someone looking for a proxy that is not there.
-	if response == nil || IsCancellation(err) {
-		return fmt.Errorf("unable to %s: %w", operation, err)
-	}
-
-	if errors.Is(err, ErrLoginPage) {
-		return fmt.Errorf(
-			"unable to %s: %w; SSO or a proxy in front of Confluence is the usual cause, "+
-				"and mark has to reach the API itself",
-			operation, err,
-		)
-	}
-
-	return fmt.Errorf(
-		"unable to %s: %s answered %s with a body that is not JSON "+
-			"(an SSO login page or a proxy interstitial in front of Confluence is the "+
-			"usual cause): %w",
-		operation, requestTarget(response), response.Status, err,
-	)
-}

@@ -228,12 +228,22 @@ func (c *client) doWithHeader(
 		return answer, newStatusError(answer)
 	}
 
+	if err == nil {
+		return answer, nil
+	}
+
+	if ctx.Err() != nil {
+		return answer, cancellation(ctx, err)
+	}
+
 	var login *loginPageError
 	if errors.As(err, &login) {
 		login.answer = answer
+
+		return answer, err
 	}
 
-	return answer, cancellation(ctx, err)
+	return answer, &bodyError{answer: answer, err: err}
 }
 
 // answer reads as much of resp's body as it takes to answer req, through
@@ -357,6 +367,40 @@ func (c *client) traceResponse(resp *http.Response, body *capture) {
 	default:
 		c.trace.write(boundTraceDumpMore(dump, rest))
 	}
+}
+
+// get asks c for path and decodes the answer as a T: do for the request most
+// calls make.
+func get[T any](ctx context.Context, c *client, path []string, query url.Values) (T, error) {
+	var out T
+	_, err := c.do(ctx, http.MethodGet, path, query, nil, &out)
+
+	return out, err
+}
+
+// listing is one page of a collection, as v1 and v2 both answer a listing:
+// the results, and the links that say where it came from and whether more
+// follow.
+type listing[T any] struct {
+	Results []T `json:"results"`
+
+	Links struct {
+		// Next is the next page, empty on the last one -- or, on some
+		// deployments, on every one.
+		Next string `json:"next"`
+
+		// Context and Base are the site's context path and URL.
+		Context string `json:"context"`
+		Base    string `json:"base"`
+	} `json:"_links"`
+}
+
+// send sends body to path with method and decodes the answer as a T.
+func send[T any](ctx context.Context, c *client, method string, path []string, body any) (T, error) {
+	var out T
+	_, err := c.do(ctx, method, path, nil, body, &out)
+
+	return out, err
 }
 
 // cancelledError is an error a request ended with while its context was
