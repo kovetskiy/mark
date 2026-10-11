@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -59,22 +60,25 @@ func newClient(base string, httpClient *http.Client, username, password string, 
 }
 
 // reply is what do hands back of an answer: the parts of an http.Response
-// mark looks at, with the body already read in full and closed, so there is
-// nothing left for a caller to close.
+// mark looks at, with the body already closed, so there is nothing left for a
+// caller to close.
 type reply struct {
 	StatusCode int
 	Status     string
 	Header     http.Header
-	Body       []byte
+
+	// Body is the start of the body: for a failure, what a StatusError
+	// quotes and the byte that says there was more; otherwise what there was
+	// of it up to maxErrorBody bytes, or traceDumpLimit at TRACE.
+	Body []byte
 
 	// Request is the request that got this answer -- after redirects, the
 	// last one.
 	Request *http.Request
 }
 
-// do sends one request and hands back the response, its body read in full, so
-// that a caller can check the status and read the body whatever happened to
-// it here.
+// do sends one request, decodes a successful answer into out, and turns
+// every other answer into an error that says what it was.
 //
 // The behaviours below are the ones gopencils had and mark's error handling
 // is built around; they are kept on purpose.
@@ -94,8 +98,9 @@ type reply struct {
 //   - Body: a *form is sent as its multipart encoding, an io.Reader as it is,
 //     and any other non-nil value as its JSON encoding. Either way it is
 //     buffered, so the retry transport can replay it.
-//   - Trace: at TRACE the request and the response are dumped, bodies
-//     included, through the same tracer and prefixes as before.
+//   - Trace: at TRACE the request is dumped, body included, and the response
+//     is dumped as its headers and as much of the start of its body as do
+//     kept, which a large body is not held whole for.
 //   - No response: a request that got no answer returns a nil response and
 //     the error. newTransportError reads the nil as "never completed".
 //   - Any status outside 2xx: the body is not decoded, and the error is a
@@ -104,18 +109,19 @@ type reply struct {
 //     for a 409. Only the first maxErrorBody+1 bytes of the body are read,
 //     which is all the error quotes, and a body cut short still makes a
 //     StatusError, with what was read.
-//   - Status 204: nothing is decoded.
+//   - Status 204, or any 2xx with an empty body: success, and out is left as
+//     it was.
 //   - Login page: a 2xx that is a login page rather than Confluence's answer
 //     returns an error errors.Is matches against ErrLoginPage, with the
 //     response; see loginEvidence for how one is recognised. A Confluence
 //     behind SSO answers an API call with one, and the error says so rather
 //     than failing to parse it.
-//   - Any other 2xx: the body is decoded into out when out is non-nil,
-//     whatever its Content-Type says. A body that is not JSON, or is empty,
-//     returns the decode error together with the response. Only the first
-//     JSON value is read; anything after it is ignored.
-//   - A 2xx body that cannot be read in full is the same: the response and
-//     the read error.
+//   - Any other 2xx: decoded into out, as it streams in, when its
+//     Content-Type is JSON or there is none; one that names anything else
+//     is an error, and so is a body that is not one JSON value and nothing
+//     after it. With out nil nothing is decoded or looked at. Either way the error comes
+//     with the response, as does one reading a body that cannot be read in
+//     full.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
@@ -186,60 +192,171 @@ func (c *client) doWithHeader(
 	if err != nil {
 		return nil, cancellation(ctx, err)
 	}
-
-	data, err := readBody(resp)
-	_ = resp.Body.Close()
-
-	if c.trace != nil {
-		// DumpResponse reads the body it dumps, and the real one is spent. A
-		// copy, so that a shortened error body can be dumped under a length
-		// that matches it.
-		dumped := *resp
-		dumped.Body = io.NopCloser(bytes.NewReader(data))
-		if resp.ContentLength > int64(len(data)) {
-			dumped.ContentLength = int64(len(data))
-		}
-		dump, dumpErr := httputil.DumpResponse(&dumped, true)
-		if dumpErr != nil {
-			c.trace.Printf("dump response failed: %s", dumpErr)
-		} else {
-			c.trace.dump(dump)
-		}
-	}
+	defer func() { _ = resp.Body.Close() }()
 
 	answer := &reply{
 		StatusCode: resp.StatusCode,
 		Status:     resp.Status,
 		Header:     resp.Header,
-		Body:       data,
 		Request:    resp.Request,
 	}
 
-	if err != nil {
+	// Only the start of the body is kept, for an error to quote and a trace
+	// to show; a success is decoded as it streams in.
+	limit := maxErrorBody + 1
+	if c.trace != nil {
+		limit = traceDumpLimit
+	}
+	received := &capture{reader: resp.Body, limit: limit}
+
+	err = c.answer(ctx, req, resp, received, out)
+	answer.Body = received.prefix
+
+	if c.trace != nil {
+		c.traceResponse(resp, received)
+	}
+
+	if !successful(resp.StatusCode) {
 		// A failure status is an answer even when its body could not be read
 		// to the end: callers act on the status, and the bytes that did
 		// arrive are only ever quoted. Unless the run was stopped, which is
 		// what a body cut short then means.
-		if !successful(resp.StatusCode) && ctx.Err() == nil {
-			return answer, newStatusError(answer)
+		if err != nil && ctx.Err() != nil {
+			return answer, cancellation(ctx, err)
 		}
 
-		return answer, cancellation(ctx, err)
-	}
-
-	if !successful(resp.StatusCode) {
 		return answer, newStatusError(answer)
 	}
 
+	var login *loginPageError
+	if errors.As(err, &login) {
+		login.answer = answer
+	}
+
+	return answer, cancellation(ctx, err)
+}
+
+// answer reads as much of resp's body as it takes to answer req, through
+// body: the start of a failure, the whole of a success decoded into out, or
+// the start of anything else. The error is the read's for a failure status,
+// which do turns into a *StatusError, and otherwise the reason the answer is
+// not one.
+func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Response, body *capture, out any) error {
+	if !successful(resp.StatusCode) {
+		// No more than a StatusError quotes, plus the one byte that tells it
+		// the body went on. What answers with an error is not always
+		// Confluence: a proxy's HTML error page can run to megabytes, which
+		// would otherwise all be held in memory only to be cut down. The rest
+		// is not drained; closing the body drops the connection.
+		return body.readPrefix(maxErrorBody + 1)
+	}
+
+	// Nothing to decode, and nothing to read: success, with out as it was.
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
 	if evidence := loginEvidence(req, resp); evidence != "" {
-		return answer, &loginPageError{answer: answer, requested: req.URL.Redacted(), evidence: evidence}
+		_ = body.readPrefix(body.limit)
+
+		return &loginPageError{requested: req.URL.Redacted(), evidence: evidence}
 	}
 
-	if resp.StatusCode == http.StatusNoContent || out == nil {
-		return answer, nil
+	buffered := bufio.NewReader(body)
+	if resp.ContentLength == 0 {
+		return nil
+	}
+	if _, err := buffered.Peek(1); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+
+		return err
 	}
 
-	return answer, cancellation(ctx, json.NewDecoder(bytes.NewReader(data)).Decode(out))
+	// Nothing asked for, nothing to object to.
+	if out == nil {
+		return nil
+	}
+
+	if mediaType := contentMediaType(resp.Header); mediaType != "" && !isJSONMediaType(mediaType) {
+		_ = body.readPrefix(body.limit)
+
+		return fmt.Errorf("its Content-Type is %s, not JSON", mediaType)
+	}
+
+	decoder := json.NewDecoder(buffered)
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+
+	// One JSON value is the whole of an answer. Anything after it is a body
+	// that is not one, however well its start parsed.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err != nil && ctx.Err() != nil {
+			return err
+		}
+
+		return errors.New("it goes on after the JSON value")
+	}
+
+	return nil
+}
+
+// capture is a response body read through, keeping the first limit bytes of
+// it and counting the rest, so that only that much of a body is ever held,
+// however large it is.
+type capture struct {
+	reader io.Reader
+	limit  int
+
+	prefix []byte
+	total  int64
+
+	// done is set once the body has been read to its end.
+	done bool
+}
+
+func (c *capture) Read(p []byte) (int, error) {
+	n, err := c.reader.Read(p)
+	if room := c.limit - len(c.prefix); room > 0 {
+		c.prefix = append(c.prefix, p[:min(n, room)]...)
+	}
+	c.total += int64(n)
+	if errors.Is(err, io.EOF) {
+		c.done = true
+	}
+
+	return n, err
+}
+
+// readPrefix reads up to n bytes, to be quoted or traced.
+func (c *capture) readPrefix(n int) error {
+	_, err := io.Copy(io.Discard, io.LimitReader(c, int64(n)))
+
+	return err
+}
+
+// traceResponse dumps the headers of resp and the start of its body, which
+// is all of the body there is to dump: a success has been decoded as it
+// arrived, rather than held so that it could be traced.
+func (c *client) traceResponse(resp *http.Response, body *capture) {
+	head, err := httputil.DumpResponse(resp, false)
+	if err != nil {
+		c.trace.Printf("dump response failed: %s", err)
+
+		return
+	}
+
+	dump := append(head, body.prefix...)
+	rest := body.total - int64(len(body.prefix))
+
+	switch {
+	case !body.done:
+		c.trace.write(boundTraceDump(dump) + " (the rest of the body was not read)")
+	default:
+		c.trace.write(boundTraceDumpMore(dump, rest))
+	}
 }
 
 // cancelledError is an error a request ended with while its context was
@@ -283,21 +400,6 @@ func IsCancellation(err error) bool {
 	var cancelled *cancelledError
 
 	return errors.As(err, &cancelled)
-}
-
-// readBody reads the body of resp: in full for a 2xx, and otherwise no more
-// than a StatusError quotes, plus the one byte that tells it the body
-// went on. Nothing reads more of an error body than that, and what answers
-// with an error is not always Confluence: a proxy's HTML error page can run to
-// megabytes, which would otherwise all be held in memory, and copied again at
-// TRACE, only to be cut down to maxErrorBody. The rest is not drained, as
-// gopencils did not drain it either; closing the body drops the connection.
-func readBody(resp *http.Response) ([]byte, error) {
-	if !successful(resp.StatusCode) {
-		return io.ReadAll(io.LimitReader(resp.Body, maxErrorBody+1))
-	}
-
-	return io.ReadAll(resp.Body)
 }
 
 // ErrLoginPage reports that a request was answered with a login page instead
