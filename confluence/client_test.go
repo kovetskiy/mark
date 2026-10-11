@@ -181,6 +181,21 @@ func TestClientDoesNotDecodeAFailure(t *testing.T) {
 	}
 }
 
+// TestClientBoundsAFailureBody: of an error body, the client reads only what
+// newErrorStatusNotOK quotes and the byte that says there was more, however
+// large the page a proxy answered with.
+func TestClientBoundsAFailureBody(t *testing.T) {
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusBadGateway, "text/html", strings.Repeat("x", 1<<20))
+
+	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	require.NoError(t, err)
+	assert.Len(t, response.Body, maxErrorBody+1)
+
+	err = newErrorStatusNotOK(response)
+	assert.Contains(t, err.Error(), "(truncated)")
+	assert.Less(t, len(err.Error()), 2*maxErrorBody)
+}
+
 func TestClientDoesNotDecodeNoContent(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusNoContent, "", "")
 
