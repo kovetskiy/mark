@@ -51,10 +51,19 @@ func getNodeLineNumber(node ast.Node, source []byte) int {
 	return bytes.Count(source[:offset], []byte("\n")) + 1
 }
 
-// extractHTMLBlockBytes returns a block's bytes, its closing line included:
-// goldmark v2 keeps that among the others, where v1 held it apart.
-func extractHTMLBlockBytes(t *ast.HTMLBlock, source []byte) []byte {
-	return bytes.Clone(t.Value.Bytes(source))
+// HTMLBytes returns a copy of the markup an inline raw HTML node or an HTML
+// block holds, as written. A block's bytes include its closing line: goldmark
+// v2 keeps that among the others, where v1 held it apart. Any other node has
+// none.
+func HTMLBytes(node ast.Node, source []byte) []byte {
+	switch n := node.(type) {
+	case *ast.RawHTML:
+		return bytes.Clone(n.Value.Bytes(source))
+	case *ast.HTMLBlock:
+		return bytes.Clone(n.Value.Bytes(source))
+	}
+
+	return nil
 }
 
 // ExtractDirectiveContent is ExtractNodeRawContent with inline code left out.
@@ -104,10 +113,8 @@ func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
 
 func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	switch t := node.(type) {
-	case *ast.HTMLBlock:
-		return extractHTMLBlockBytes(t, source)
-	case *ast.RawHTML:
-		return bytes.Clone(t.Value.Bytes(source))
+	case *ast.HTMLBlock, *ast.RawHTML:
+		return HTMLBytes(t, source)
 	case *ast.Text:
 		return t.Value.Bytes(source)
 	case *ast.CodeSpan:
@@ -209,10 +216,8 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 		switch t := n.(type) {
 		case *ast.Text:
 			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: bytes.Clone(t.Value.Bytes(source)), verbatim: false})
-		case *ast.HTMLBlock:
-			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: extractHTMLBlockBytes(t, source), verbatim: true})
-		case *ast.RawHTML:
-			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: bytes.Clone(t.Value.Bytes(source)), verbatim: true})
+		case *ast.HTMLBlock, *ast.RawHTML:
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: HTMLBytes(t, source), verbatim: true})
 		case *ast.CodeSpan:
 			if !t.Value.IsOwned() {
 				t.Value = PlainValue(strings.Clone(t.Value.Value(source)))

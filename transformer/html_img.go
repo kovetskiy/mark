@@ -270,7 +270,7 @@ func onlyImages(raw []byte) bool {
 }
 
 func (t *HTMLImgTransformer) transformRawHTML(n *ast.RawHTML, reader text.Reader) {
-	rawBytes := n.Value.Bytes(reader.Source())
+	rawBytes := HTMLBytes(n, reader.Source())
 
 	imgNodes := t.parseHTMLImages(rawBytes)
 	if len(imgNodes) == 0 {
