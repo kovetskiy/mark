@@ -196,6 +196,27 @@ func TestClientBoundsAFailureBody(t *testing.T) {
 	assert.Less(t, len(err.Error()), 2*maxErrorBody)
 }
 
+// TestClientKeepsAFailureWhoseBodyIsCutShort: a status of 400 or more is an
+// answer even when its body could not be read to the end, as it was under
+// gopencils. Callers act on the status -- a 404 is "not found", a 409 a
+// conflict to retry -- and a read error in its place turned every one of
+// those into a transport failure.
+func TestClientKeepsAFailureWhoseBodyIsCutShort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Promise more than is sent, so the read ends in io.ErrUnexpectedEOF.
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"gone"`))
+	}))
+	t.Cleanup(server.Close)
+	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
+
+	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+	assert.Equal(t, `{"message":"gone"`, string(response.Body), "what was read is kept")
+}
+
 func TestClientDoesNotDecodeNoContent(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusNoContent, "", "")
 
