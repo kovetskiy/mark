@@ -1953,7 +1953,7 @@ func (api *API) Cloud() (bool, error) {
 		return api.isCloudFlag, api.isCloudErr
 	}
 
-	if api.gateway || (api.v1 != nil && isCloudHost(api.v1.base.Hostname())) {
+	if api.gateway || isCloudHost(api.v1.hostname()) {
 		api.isCloudFlag, api.isCloudKnown = true, true
 		return true, nil
 	}

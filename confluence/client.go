@@ -133,6 +133,10 @@ func (c *client) doWithHeader(
 	query url.Values,
 	body, out any,
 ) (*reply, error) {
+	if c == nil {
+		return nil, errNoClient
+	}
+
 	if c.baseErr != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", c.baseErr)
 	}
@@ -271,6 +275,19 @@ func readBody(resp *http.Response) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// errNoClient is what a request made through an API that NewAPI did not
+// build answers, rather than a nil pointer dereference.
+var errNoClient = errors.New("no Confluence client to send the request with: the API was not made by NewAPI")
+
+// hostname is the host of the base, or "" for no client at all.
+func (c *client) hostname() string {
+	if c == nil {
+		return ""
+	}
+
+	return c.base.Hostname()
 }
 
 // url joins path and query onto the base.

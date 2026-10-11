@@ -87,3 +87,17 @@ func TestGetCurrentUserIsAskedOnce(t *testing.T) {
 	assert.Equal(t, first, second)
 	assert.NotSame(t, first, second, "each caller gets its own copy")
 }
+
+// TestAnAPIWithoutAClientErrs: an API that NewAPI did not build has no client
+// to send a request with, and says so instead of dereferencing nil, whether
+// asked for the current user directly or through the platform probe.
+func TestAnAPIWithoutAClientErrs(t *testing.T) {
+	api := &API{}
+
+	_, err := api.GetCurrentUser()
+	require.ErrorIs(t, err, errNoClient)
+
+	cloud, err := api.Cloud()
+	require.ErrorIs(t, err, errNoClient)
+	assert.False(t, cloud)
+}
