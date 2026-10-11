@@ -6,6 +6,7 @@ import (
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // goldmark v2 keeps a node's text as a text.Value: a position in the source,
@@ -82,7 +83,10 @@ func ownedMulti(v text.MultiLineValue, source []byte) text.MultiLineValue {
 
 // NodeText is a node's text as goldmark v1's Node.Text gave it, which the link
 // renderer and resolver were written against: the inline content as written,
-// escapes and entities included, with a newline where a soft line break was.
+// escapes and entities included, with a newline where a soft line break was
+// and nothing where a hard one was. A code span's text is the source between
+// its backticks with its newlines kept, as v1 had it, where v2's value turns
+// them into spaces.
 func NodeText(node ast.Node, source []byte) string {
 	var b strings.Builder
 	writeNodeText(&b, node, source)
@@ -99,7 +103,7 @@ func writeNodeText(b *strings.Builder, node ast.Node, source []byte) {
 		b.WriteString(n.Value.Str(source))
 		return
 	case *ast.CodeSpan:
-		b.WriteString(n.Value.Str(source))
+		writeCodeSpanText(b, n, source)
 		return
 	case *ast.AutoLink:
 		b.WriteString(n.Label.Str(source))
@@ -118,6 +122,32 @@ func writeNodeText(b *strings.Builder, node ast.Node, source []byte) {
 			b.WriteByte('\n')
 		}
 	}
+}
+
+// writeCodeSpanText writes a code span's text the way goldmark v1 kept it: the
+// source of each line the span covers, newlines included, with one space or
+// newline taken off each end when both ends have one and the span is not blank.
+func writeCodeSpanText(b *strings.Builder, n *ast.CodeSpan, source []byte) {
+	if n.Value.IsOwned() {
+		b.WriteString(n.Value.Str(source))
+		return
+	}
+
+	var raw []byte
+	for _, index := range n.Value.Indices() {
+		raw = append(raw, source[index.Start:index.Stop]...)
+	}
+
+	if len(raw) > 1 && !util.IsBlank(raw) &&
+		isSpaceOrNewline(raw[0]) && isSpaceOrNewline(raw[len(raw)-1]) {
+		raw = raw[1 : len(raw)-1]
+	}
+
+	b.Write(raw)
+}
+
+func isSpaceOrNewline(c byte) bool {
+	return c == ' ' || c == '\n'
 }
 
 // DecodeMarkdown resolves the backslash escapes and the entity and numeric
