@@ -79,7 +79,7 @@ func newHTTPClient(insecureSkipVerify bool) *http.Client {
 
 	return &http.Client{
 		Jar:       jar,
-		Transport: &retryTransport{base: transport, sleep: time.Sleep},
+		Transport: &retryTransport{base: transport},
 	}
 }
 
@@ -87,44 +87,33 @@ func newHTTPClient(insecureSkipVerify bool) *http.Client {
 // them. It sits below client.do, which does not retry on its own, so this is
 // the only place retries happen.
 type retryTransport struct {
-	base  http.RoundTripper
+	base http.RoundTripper
+
+	// sleep stands in for the wait between attempts; see sleepContext. It is
+	// nil outside tests.
 	sleep func(time.Duration)
 }
 
 // sleepContext sits out d, and returns ctx's error instead if ctx ends first.
 //
-// sleep, when it is not nil, does the sitting out in place of a timer. It is
-// what the retry transport's tests replace: a test that makes the wait instant
-// would otherwise still wait for a real timer here.
+// sleep, when it is not nil, does the sitting out in place of a timer, and
+// ctx is asked once it is done. It is what the retry transport's tests
+// replace, so that a test can make the wait instant, or end the context
+// during it.
 func sleepContext(ctx context.Context, d time.Duration, sleep func(time.Duration)) error {
-	if sleep == nil {
-		timer := time.NewTimer(d)
-		defer timer.Stop()
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timer.C:
-			return nil
-		}
-	}
-
-	if ctx.Done() == nil {
+	if sleep != nil {
 		sleep(d)
 
-		return nil
+		return ctx.Err()
 	}
 
-	done := make(chan struct{})
-	go func() {
-		sleep(d)
-		close(done)
-	}()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
+	case <-timer.C:
 		return nil
 	}
 }
