@@ -1,6 +1,7 @@
 package page_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -26,11 +27,11 @@ func folderWithTwoPages(t *testing.T, server *confluencetest.Server) (*confluenc
 // assertNotMoved checks that relocating a page into the folder it already sits
 // in sent no move: the move appends, so it would reshuffle the folder's
 // children on every run.
-func assertNotMoved(t *testing.T, api *confluence.API, server *confluencetest.Server, pg *confluence.PageInfo, folder *confluencetest.Folder, first *confluencetest.Page) {
+func assertNotMoved(ctx context.Context, t *testing.T, api *confluence.API, server *confluencetest.Server, pg *confluence.PageInfo, folder *confluencetest.Folder, first *confluencetest.Page) {
 	t.Helper()
 
 	server.ResetRequests()
-	require.NoError(t, page.EnsurePageUnderFolderParent(api, pg, folder.ID))
+	require.NoError(t, page.EnsurePageUnderFolderParent(ctx, api, pg, folder.ID))
 
 	assert.Equal(t, 0, server.CountRequests(http.MethodPut, "/move/"),
 		"page %s already sits in folder %s; a move request re-appends it", first.ID, folder.ID)
@@ -41,37 +42,40 @@ func assertNotMoved(t *testing.T, api *confluence.API, server *confluencetest.Se
 // page's ancestors, so a page found through it looks parentless, and mark
 // moved it into the folder it was already in on every run.
 func TestAPageAlreadyInItsFolderIsNotMovedAgain(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
-	require.True(t, api.IsCloud())
+	require.True(t, api.IsCloud(context.Background()))
 
 	folder, first := folderWithTwoPages(t, server)
 
-	pg, err := api.FindPage("DOCS", "First", "page")
+	pg, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
 
-	assertNotMoved(t, api, server, pg, folder, first)
+	assertNotMoved(ctx, t, api, server, pg, folder, first)
 }
 
 // TestAPageAlreadyInItsFolderIsNotMovedAgainThroughTheGateway is the same
 // through the api.atlassian.com gateway, where the page is read from v2 and
 // its parent is named outright.
 func TestAPageAlreadyInItsFolderIsNotMovedAgainThroughTheGateway(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
-	require.True(t, api.IsCloud())
+	require.True(t, api.IsCloud(context.Background()))
 
 	folder, first := folderWithTwoPages(t, server)
 
-	pg, err := api.FindPage("DOCS", "First", "page")
+	pg, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
 	require.Equal(t, folder.ID, page.ImmediateParentID(pg), "v2 names the folder as the parent")
 
-	assertNotMoved(t, api, server, pg, folder, first)
+	assertNotMoved(ctx, t, api, server, pg, folder, first)
 }
 
 // TestAPageInAnotherFolderIsStillMoved: the check above must not stop a page
 // that sits in some other folder from being moved.
 func TestAPageInAnotherFolderIsStillMoved(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 
 	anchor := server.AddPage("DOCS", "Anchor", "page", "")
@@ -79,10 +83,10 @@ func TestAPageInAnotherFolderIsStillMoved(t *testing.T) {
 	to := server.AddFolder("DOCS", "New", anchor.ID, "page")
 	stored := server.AddPage("DOCS", "First", "page", from.ID)
 
-	pg, err := api.FindPage("DOCS", "First", "page")
+	pg, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, page.EnsurePageUnderFolderParent(api, pg, to.ID))
+	require.NoError(t, page.EnsurePageUnderFolderParent(ctx, api, pg, to.ID))
 
 	assert.Equal(t, to.ID, server.Page(stored.ID).ParentID)
 }

@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ inline: "<!-- Include: meta_header.md\nname: ${1} -->" -->
 
 Main body text.`)
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	macroTransformer := NewMacroTransformer("test.md", tempDir, "", std.Templates)
@@ -87,7 +88,7 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 	// Main document: Includes inc1.md
 	markdownInput := []byte("<!-- Include: inc1.md -->")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	macroTransformer := NewMacroTransformer("test.md", tempDir, "", std.Templates)
@@ -127,7 +128,7 @@ func TestCircularIncludeLoopErrorPipeline(t *testing.T) {
 
 	markdownInput := []byte("<!-- Include: a.md -->")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	macroTransformer := NewMacroTransformer("test.md", tempDir, "", std.Templates)

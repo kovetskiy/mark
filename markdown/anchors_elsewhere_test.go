@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -12,7 +13,7 @@ import (
 func compileLinkDoc(t *testing.T, src string) string {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})

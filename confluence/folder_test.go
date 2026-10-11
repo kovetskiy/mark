@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestCreateFolderUnderAVanishedParent(t *testing.T) {
 	server.SetHomepage("DOCS", home.ID)
 
 	gone := "no-such-folder"
-	folder, err := api.CreateFolder(space.ID, "Guides", &gone, "folder")
+	folder, err := api.CreateFolder(context.Background(), space.ID, "Guides", &gone, "folder")
 
 	require.NoError(t, err, "a missing parent must not fail the call")
 	require.NotNil(t, folder)
@@ -47,12 +48,12 @@ func TestFindChildFolderReadsEveryPage(t *testing.T) {
 	}
 	want := server.AddFolder("DOCS", "Guides", parent.ID, "page")
 
-	folder, err := api.FindChildFolder(parent.ID, "page", "Guides")
+	folder, err := api.FindChildFolder(context.Background(), parent.ID, "page", "Guides")
 	require.NoError(t, err)
 	require.NotNil(t, folder)
 	assert.Equal(t, want.ID, folder.ID)
 
-	missing, err := api.FindChildFolder(parent.ID, "page", "Nothing")
+	missing, err := api.FindChildFolder(context.Background(), parent.ID, "page", "Nothing")
 	require.NoError(t, err)
 	assert.Nil(t, missing)
 }
@@ -67,12 +68,12 @@ func TestFindChildFolderUnderAFolder(t *testing.T) {
 	middle := server.AddFolder("DOCS", "Middle", top.ID, "folder")
 	server.AddFolder("DOCS", "Guides", middle.ID, "folder")
 
-	folder, err := api.FindChildFolder(top.ID, "folder", "Guides")
+	folder, err := api.FindChildFolder(context.Background(), top.ID, "folder", "Guides")
 	require.NoError(t, err)
 	assert.Nil(t, folder, "a grandchild is not a child")
 
 	want := server.AddFolder("DOCS", "guides", top.ID, "folder")
-	folder, err = api.FindChildFolder(top.ID, "folder", "Guides")
+	folder, err = api.FindChildFolder(context.Background(), top.ID, "folder", "Guides")
 	require.NoError(t, err)
 	require.NotNil(t, folder, "a title differing only in case still matches")
 	assert.Equal(t, want.ID, folder.ID)
@@ -91,12 +92,12 @@ func TestFindRootFolderFollowsTheSearch(t *testing.T) {
 	}
 	want := server.AddFolder("DOCS", "Guides", "", "")
 
-	folder, err := api.FindRootFolder("DOCS", "Guides")
+	folder, err := api.FindRootFolder(context.Background(), "DOCS", "Guides")
 	require.NoError(t, err)
 	require.NotNil(t, folder)
 	assert.Equal(t, want.ID, folder.ID)
 
-	missing, err := api.FindRootFolder("DOCS", "Nothing")
+	missing, err := api.FindRootFolder(context.Background(), "DOCS", "Nothing")
 	require.NoError(t, err)
 	assert.Nil(t, missing)
 }

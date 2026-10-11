@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestStaleParentLookupSucceedsNormally(t *testing.T) {
 
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	published, err := api.FindPage("DOCS", "Child", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 }

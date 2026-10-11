@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -19,6 +20,7 @@ import (
 // The sibling case, --continue-on-error, was fixed long ago and its comment
 // explains exactly why. This is the path that comment did not cover.
 func TestManifestIsSavedWhenAFileFailsHard(t *testing.T) {
+	ctx := t.Context()
 	server, api := docsSpace(t)
 	dir := t.TempDir()
 
@@ -29,12 +31,12 @@ func TestManifestIsSavedWhenAFileFailsHard(t *testing.T) {
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	require.Error(t, Run(config), "the run must still report the failure")
 
-	published, err := api.FindPage("DOCS", "Published", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Published", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published, "the good file published")
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
-	entry, ok, err := store.Lookup("DOCS", filepath.Join(dir, "a-good.md"))
+	entry, ok, err := store.Lookup(ctx, "DOCS", filepath.Join(dir, "a-good.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the page that published must still be in the manifest")
 	assert.Equal(t, published.ID, entry.PageID)

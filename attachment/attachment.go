@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -69,16 +70,17 @@ type Attacher interface {
 // should use ResolveAttachmentsWithRemotes to avoid re-fetching a list they
 // already hold.
 func ResolveAttachments(
+	ctx context.Context,
 	api *confluence.API,
 	page *confluence.PageInfo,
 	attachments []Attachment,
 ) ([]Attachment, error) {
-	remotes, err := api.GetAttachments(page.ID)
+	remotes, err := api.GetAttachments(ctx, page.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get attachments for page %s: %w", page.ID, err)
 	}
 
-	resolved, _, err := ResolveAttachmentsWithRemotes(api, page, attachments, remotes)
+	resolved, _, err := ResolveAttachmentsWithRemotes(ctx, api, page, attachments, remotes)
 	return resolved, err
 }
 
@@ -175,6 +177,7 @@ func classify(
 // and an updated remote list that includes anything created or updated by this
 // call, so a subsequent call can be made without another round-trip.
 func ResolveAttachmentsWithRemotes(
+	ctx context.Context,
 	api *confluence.API,
 	page *confluence.PageInfo,
 	attachments []Attachment,
@@ -188,7 +191,7 @@ func ResolveAttachmentsWithRemotes(
 	for i, attachment := range creating {
 		log.Info().Msgf("creating attachment: %q", attachment.Name)
 
-		info, err := api.CreateAttachment(
+		info, err := api.CreateAttachment(ctx,
 			page.ID,
 			attachment.Filename,
 			AttachmentChecksumPrefix+attachment.Checksum,
@@ -211,7 +214,7 @@ func ResolveAttachmentsWithRemotes(
 	for i, attachment := range updating {
 		log.Info().Msgf("updating attachment: %q", attachment.Name)
 
-		info, err := api.UpdateAttachment(
+		info, err := api.UpdateAttachment(ctx,
 			page.ID,
 			attachment.ID,
 			attachment.Filename,

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +26,7 @@ func TestMovedDocumentKeepsItsPage(t *testing.T) {
 	config.OnOrphan = "delete"
 	require.NoError(t, Run(config))
 
-	before, err := api.FindPage("DOCS", "Moved", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
@@ -57,7 +58,7 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 	config.NoOverwrite = true
 	require.NoError(t, Run(config))
 
-	published, err := api.FindPage("DOCS", "Moved", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 

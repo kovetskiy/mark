@@ -1,6 +1,7 @@
 package macro
 
 import (
+	"context"
 	"testing"
 	"text/template"
 
@@ -14,7 +15,7 @@ import (
 func applyAll(t *testing.T, doc string) (string, error) {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	macros, rest, err := ExtractMacros("", "", []byte(doc), std.Templates)

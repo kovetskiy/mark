@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,7 +59,7 @@ type OrphanScope struct {
 //
 // A title or an id, and a page or a folder, because the thing people want to
 // put a boundary around is a place in the tree and mark's tree has both in it.
-func ResolveScope(api *confluence.API, spaceKey, under string) (string, error) {
+func ResolveScope(ctx context.Context, api *confluence.API, spaceKey, under string) (string, error) {
 	under = strings.TrimSpace(under)
 	if under == "" {
 		return "", nil
@@ -66,12 +67,12 @@ func ResolveScope(api *confluence.API, spaceKey, under string) (string, error) {
 
 	// An id, if it looks like one and something is there.
 	if isNumeric(under) {
-		if found, err := api.GetPageByID(under); err == nil && found != nil {
+		if found, err := api.GetPageByID(ctx, under); err == nil && found != nil {
 			return found.ID, nil
 		}
 	}
 
-	found, err := api.FindPage(spaceKey, under, "page")
+	found, err := api.FindPage(ctx, spaceKey, under, "page")
 	if err != nil {
 		return "", fmt.Errorf("unable to find %q in space %q: %w", under, spaceKey, err)
 	}
@@ -79,7 +80,7 @@ func ResolveScope(api *confluence.API, spaceKey, under string) (string, error) {
 		return found.ID, nil
 	}
 
-	folder, err := api.FindFolder(spaceKey, under, "")
+	folder, err := api.FindFolder(ctx, spaceKey, under, "")
 	if err != nil {
 		return "", fmt.Errorf("unable to find folder %q in space %q: %w", under, spaceKey, err)
 	}
@@ -107,12 +108,12 @@ func isNumeric(s string) bool {
 //
 // Answered from the page's own ancestors rather than by listing the boundary's
 // descendants: there are few orphans and there may be very many descendants.
-func InScope(api *confluence.API, scopeID string, orphan Orphan) (bool, error) {
+func InScope(ctx context.Context, api *confluence.API, scopeID string, orphan Orphan) (bool, error) {
 	if scopeID == "" {
 		return true, nil
 	}
 
-	page, err := api.GetPageByIDExpanded(orphan.PageID, "ancestors")
+	page, err := api.GetPageByIDExpanded(ctx, orphan.PageID, "ancestors")
 	if err != nil {
 		// Already gone from Confluence -- deleted by hand between runs, most
 		// likely. Out of scope for acting on, and the caller forgets it either
@@ -155,6 +156,7 @@ func InScope(api *confluence.API, scopeID string, orphan Orphan) (bool, error) {
 // page that could not be acted on stays in the manifest, so the next run finds
 // it again rather than losing sight of it.
 func HandleOrphans(
+	ctx context.Context,
 	api *confluence.API,
 	action string,
 	orphans []Orphan,
@@ -171,7 +173,7 @@ func HandleOrphans(
 
 		// Trashing a page takes its children with it, and those may be pages
 		// nobody in this repository ever wrote.
-		children, err := api.GetChildPages(orphan.PageID)
+		children, err := api.GetChildPages(ctx, orphan.PageID)
 		if err != nil {
 			return handled, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
 		}
@@ -189,7 +191,7 @@ func HandleOrphans(
 		// folders under pages itself, so a page whose children are all folders
 		// reads as childless there -- and trashing it takes the folders, and
 		// every page inside them, along with it.
-		folders, err := api.HasChildFolders(orphan.PageID)
+		folders, err := api.HasChildFolders(ctx, orphan.PageID)
 		if err != nil {
 			return handled, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
 		}
@@ -213,9 +215,9 @@ func HandleOrphans(
 		log.Info().Msgf("%s page %q (%s)", action, orphan.Title, orphan.PageID)
 
 		if action == OnOrphanArchive {
-			err = api.ArchivePage(orphan.PageID)
+			err = api.ArchivePage(ctx, orphan.PageID)
 		} else {
-			err = api.DeletePage(orphan.PageID)
+			err = api.DeletePage(ctx, orphan.PageID)
 		}
 		if err != nil {
 			return handled, fmt.Errorf("unable to %s page %q: %w", action, orphan.Title, err)

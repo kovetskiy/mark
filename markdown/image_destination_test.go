@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -61,7 +62,7 @@ func TestLocalImageDestinationIsDecoded(t *testing.T) {
 
 				doc := imageDocument(t, "my file.png", "my_file.png")
 
-				std, err := stdlib.New(nil)
+				std, err := stdlib.New(context.Background(), nil)
 				require.NoError(t, err)
 
 				out, attachments, err := compile([]byte(tc.markdown), std, doc, types.MarkConfig{})
@@ -82,7 +83,7 @@ func TestLocalImageDestinationIsDecoded(t *testing.T) {
 func TestLocalImageWithALiteralPercentIsStillFound(t *testing.T) {
 	doc := imageDocument(t, "100%25.png")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("![a](100%25.png)\n"), std, doc, types.MarkConfig{})
@@ -95,7 +96,7 @@ func TestLocalImageWithALiteralPercentIsStillFound(t *testing.T) {
 func TestRemoteImageDestinationKeepsItsEncoding(t *testing.T) {
 	for name, compile := range compilers {
 		t.Run(name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := compile([]byte("![a](https://example.com/my%20file.png)\n"), std, "test.md", types.MarkConfig{})
@@ -112,7 +113,7 @@ func TestRemoteImageDestinationKeepsItsEncoding(t *testing.T) {
 func TestImageTitleAndAltAreUnescapedOnce(t *testing.T) {
 	for name, compile := range compilers {
 		t.Run(name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := compile(
@@ -151,7 +152,7 @@ func TestDeclaredAttachmentMatchesADecodedImageDestination(t *testing.T) {
 		return ""
 	}
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("![a](my%20file.png)\n"), std, "test.md",

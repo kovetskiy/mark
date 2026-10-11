@@ -438,8 +438,7 @@ func cancellation(ctx context.Context, err error) error {
 // awaiting response headers" and a dial's "i/o timeout" both satisfy
 // errors.Is(err, context.DeadlineExceeded), and neither is the run being
 // stopped. And it asks the context the request carried, not whichever one
-// the API holds by the time the error is looked at, which ProcessFileContext
-// may have swapped back in the meantime.
+// the caller holds by the time the error is looked at.
 func IsCancellation(err error) bool {
 	var cancelled *cancelledError
 

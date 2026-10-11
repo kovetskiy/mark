@@ -2,6 +2,7 @@ package confluence_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -46,7 +47,7 @@ func TestCreatePageWithFolderParentIsTheV2Create(t *testing.T) {
 	folder := server.AddFolder("DOCS", "Guides", "", "page")
 	bodies := recordV2Creates(server)
 
-	page, err := api.CreatePageWithFolderParent("DOCS", "page", folder.ID, "In A Folder", "<p/>")
+	page, err := api.CreatePageWithFolderParent(context.Background(), "DOCS", "page", folder.ID, "In A Folder", "<p/>")
 	require.NoError(t, err)
 
 	require.Len(t, *bodies, 1)
@@ -64,7 +65,7 @@ func TestCreatePageWithFolderParentIsTheV2Create(t *testing.T) {
 
 	// Remembered like any other created page: finding it costs no request.
 	server.ResetRequests()
-	found, err := api.FindPage("DOCS", "In A Folder", "page")
+	found, err := api.FindPage(context.Background(), "DOCS", "In A Folder", "page")
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Equal(t, page.ID, found.ID)
@@ -80,7 +81,7 @@ func TestCreateBlogpostWithFolderParentGoesToBlogposts(t *testing.T) {
 	folder := server.AddFolder("DOCS", "Guides", "", "page")
 	bodies := recordV2Creates(server)
 
-	post, err := api.CreatePageWithFolderParent("DOCS", "blogpost", folder.ID, "News", "<p/>")
+	post, err := api.CreatePageWithFolderParent(context.Background(), "DOCS", "blogpost", folder.ID, "News", "<p/>")
 	require.NoError(t, err)
 
 	require.Len(t, *bodies, 1)

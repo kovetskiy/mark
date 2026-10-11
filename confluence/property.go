@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,15 +70,15 @@ var ErrPropertyUnseen = errors.New("property already exists but was not listed")
 // caller holding several related properties would otherwise pay a request per
 // key. A space with none is not an error: the first run of anything that stores
 // state this way finds nothing, and that is the normal case.
-func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
-	return api.listPropertiesV2("spaces", spaceID)
+func (api *API) ListSpaceProperties(ctx context.Context, spaceID string) ([]Property, error) {
+	return api.listPropertiesV2(ctx, "spaces", spaceID)
 }
 
 // listPropertiesV2 returns every property stored against one v2 object -- a
 // space or, on the scoped-token path, a page. A 404 means none are set.
-func (api *API) listPropertiesV2(collection, ownerID string) ([]Property, error) {
+func (api *API) listPropertiesV2(ctx context.Context, collection, ownerID string) ([]Property, error) {
 	return listV2[Property](
-		api,
+		ctx, api,
 		[]string{collection, ownerID, "properties"},
 		url.Values{"limit": {strconv.Itoa(propertyPageSize)}},
 		fmt.Sprintf("read properties of %s %s", strings.TrimSuffix(collection, "s"), ownerID),
@@ -106,13 +107,13 @@ func nextCursor(next string) string {
 }
 
 // SetSpaceProperty writes value to a space property, creating it if absent.
-func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Property) error {
-	return api.setPropertyV2("spaces", spaceID, key, value, existing)
+func (api *API) SetSpaceProperty(ctx context.Context, spaceID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2(ctx, "spaces", spaceID, key, value, existing)
 }
 
 // setPropertyV2 writes value to a property of one v2 object, creating it if
 // absent. existing is the property as listed, or nil.
-func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, existing *Property) error {
+func (api *API) setPropertyV2(ctx context.Context, collection, ownerID, key string, value []byte, existing *Property) error {
 	payload := map[string]any{
 		"key":   key,
 		"value": json.RawMessage(value),
@@ -129,7 +130,7 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 		method, path = http.MethodPut, append(path, existing.ID)
 	}
 
-	_, err := send[Property](api.Context(), api.v2, method, path, payload)
+	_, err := send[Property](ctx, api.v2, method, path, payload)
 
 	return propertyWriteResult(
 		requestError(fmt.Sprintf("write property %q of %s", key, owner), err),
@@ -143,14 +144,14 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 // The same properties ListContentProperties reads through v1, reached the way
 // a scoped API token can: v2 checks the page scopes such a token is minted
 // with, where v1 refuses it. Cloud only, like the rest of v2.
-func (api *API) ListPageProperties(pageID string) ([]Property, error) {
-	return api.listPropertiesV2("pages", pageID)
+func (api *API) ListPageProperties(ctx context.Context, pageID string) ([]Property, error) {
+	return api.listPropertiesV2(ctx, "pages", pageID)
 }
 
 // SetPageProperty writes value to a page property through the v2 API, creating
 // it if absent. See ListPageProperties for when this is the API to use.
-func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Property) error {
-	return api.setPropertyV2("pages", pageID, key, value, existing)
+func (api *API) SetPageProperty(ctx context.Context, pageID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2(ctx, "pages", pageID, key, value, existing)
 }
 
 // ListContentProperties returns every property stored against a page.
@@ -158,13 +159,13 @@ func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Prop
 // Unlike space properties this is a v1 endpoint, present on Server and Data
 // Center as well as Cloud, which is what makes it usable as the storage of last
 // resort on a non-Cloud instance.
-func (api *API) ListContentProperties(contentID string) ([]Property, error) {
+func (api *API) ListContentProperties(ctx context.Context, contentID string) ([]Property, error) {
 	var all []Property
 	start := 0
 
 	for {
 		result, err := get[listing[Property]](
-			api.Context(), api.v1, []string{"content", contentID, "property"},
+			ctx, api.v1, []string{"content", contentID, "property"},
 			url.Values{
 				"limit": {strconv.Itoa(propertyPageSize)},
 				"start": {strconv.Itoa(start)},
@@ -203,7 +204,7 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 }
 
 // SetContentProperty writes value to a page property, creating it if absent.
-func (api *API) SetContentProperty(contentID, key string, value []byte, existing *Property) error {
+func (api *API) SetContentProperty(ctx context.Context, contentID, key string, value []byte, existing *Property) error {
 	payload := map[string]any{
 		"key":   key,
 		"value": json.RawMessage(value),
@@ -221,7 +222,7 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		method, path = http.MethodPut, append(path, key)
 	}
 
-	_, err := send[Property](api.Context(), api.v1, method, path, payload)
+	_, err := send[Property](ctx, api.v1, method, path, payload)
 	return propertyWriteResult(
 		requestError(fmt.Sprintf("write property %q of content %s", key, contentID), err),
 		key, "content "+contentID, existing == nil,

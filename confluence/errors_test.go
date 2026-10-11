@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,7 +36,7 @@ func TestNonJSONSuccessSaysWhatFailed(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := api.FindPage("DOCS", "Getting Started", "page")
+	_, err := api.FindPage(context.Background(), "DOCS", "Getting Started", "page")
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "find page", "the operation has to be named")
@@ -54,13 +55,13 @@ func TestNonJSONSuccessIsExplainedOnEveryVerb(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := api.CreatePage("DOCS", "page", nil, "New Page", "<p/>")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New Page", "<p/>")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create page")
 	assert.Contains(t, err.Error(), "New Page")
 
 	page := &confluence.PageInfo{ID: "1004", Title: "Existing", Type: "page"}
-	err = api.UpdatePage(page, "<p/>", false, "", "full-width", "")
+	err = api.UpdatePage(context.Background(), page, "<p/>", false, "", "full-width", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "update page")
 	assert.Contains(t, err.Error(), "Existing")
@@ -85,7 +86,7 @@ func TestStatusErrorsCarryTheURL(t *testing.T) {
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
 
-			_, err := api.GetPageByID("1004")
+			_, err := api.GetPageByID(context.Background(), "1004")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), server.URL)
 			assert.Contains(t, err.Error(), "/rest/api/content/1004")
@@ -105,7 +106,7 @@ func TestNotFoundStaysASentinel(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := api.GetPageByID("1004")
+	_, err := api.GetPageByID(context.Background(), "1004")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, confluence.ErrNotFound)
 }
@@ -126,7 +127,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 	}{
 		"CreateFolder": {
 			call: func(api *confluence.API) error {
-				_, err := api.CreateFolder("98304", "Guides", nil, "")
+				_, err := api.CreateFolder(context.Background(), "98304", "Guides", nil, "")
 				return err
 			},
 			want: []string{"create folder", "Guides", "98304"},
@@ -134,7 +135,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"FindFolder": {
 			call: func(api *confluence.API) error {
-				_, err := api.FindFolder("DOCS", "Guides", "")
+				_, err := api.FindFolder(context.Background(), "DOCS", "Guides", "")
 				return err
 			},
 			want: []string{"search for folder", "Guides"},
@@ -142,7 +143,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"FindChildFolder": {
 			call: func(api *confluence.API) error {
-				_, err := api.FindChildFolder("1004", "page", "Guides")
+				_, err := api.FindChildFolder(context.Background(), "1004", "page", "Guides")
 				return err
 			},
 			want: []string{"look for folder", "Guides", "1004"},
@@ -150,7 +151,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"FindRootFolder": {
 			call: func(api *confluence.API) error {
-				_, err := api.FindRootFolder("DOCS", "Guides")
+				_, err := api.FindRootFolder(context.Background(), "DOCS", "Guides")
 				return err
 			},
 			want: []string{"search for folder", "Guides"},
@@ -158,7 +159,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"GetFolderByID": {
 			call: func(api *confluence.API) error {
-				_, err := api.GetFolderByID("2001")
+				_, err := api.GetFolderByID(context.Background(), "2001")
 				return err
 			},
 			want: []string{"read folder 2001"},
@@ -166,7 +167,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"GetSpaceID": {
 			call: func(api *confluence.API) error {
-				_, err := api.GetSpaceID("DOCS")
+				_, err := api.GetSpaceID(context.Background(), "DOCS")
 				return err
 			},
 			want: []string{"look up the id of space DOCS"},
@@ -174,7 +175,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"FindHomePage": {
 			call: func(api *confluence.API) error {
-				_, err := api.FindHomePage("DOCS")
+				_, err := api.FindHomePage(context.Background(), "DOCS")
 				return err
 			},
 			want: []string{"read space DOCS", "look up space DOCS"},
@@ -182,7 +183,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"GetChildPages": {
 			call: func(api *confluence.API) error {
-				_, err := api.GetChildPages("1004")
+				_, err := api.GetChildPages(context.Background(), "1004")
 				return err
 			},
 			want: []string{"list child pages of 1004"},
@@ -190,7 +191,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"HasChildFolders": {
 			call: func(api *confluence.API) error {
-				_, err := api.HasChildFolders("1004")
+				_, err := api.HasChildFolders(context.Background(), "1004")
 				return err
 			},
 			want: []string{"list direct children of 1004"},
@@ -198,21 +199,21 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 		},
 		"DeletePage": {
 			call: func(api *confluence.API) error {
-				return api.DeletePage("1004")
+				return api.DeletePage(context.Background(), "1004")
 			},
 			want: []string{"delete content 1004"},
 			path: "/rest/api/content/1004",
 		},
 		"ArchivePage": {
 			call: func(api *confluence.API) error {
-				return api.ArchivePage("1004")
+				return api.ArchivePage(context.Background(), "1004")
 			},
 			want: []string{"archive content 1004"},
 			path: "/rest/api/content/archive",
 		},
 		"MoveContentAppend": {
 			call: func(api *confluence.API) error {
-				return api.MoveContentAppend("1004", "1005")
+				return api.MoveContentAppend(context.Background(), "1004", "1005")
 			},
 			want: []string{"move content 1004 append 1005"},
 			path: "/rest/api/content/1004/move/append/1005",
@@ -270,7 +271,7 @@ func TestStatusErrorBodyIsBounded(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	err := api.DeletePage("1004")
+	err := api.DeletePage(context.Background(), "1004")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "502 Bad Gateway")
 	assert.Contains(t, err.Error(), "(truncated)")
