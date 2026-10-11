@@ -1,9 +1,11 @@
 package confluence
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // ErrNotFound reports that Confluence answered 404. It is a sentinel so a
@@ -36,6 +38,10 @@ type StatusError struct {
 	// it, and Truncated says whether there was more.
 	Body      []byte
 	Truncated bool
+
+	// Message is what Confluence said was wrong, read out of its JSON error
+	// body, or "" when the body is not one of those.
+	Message string
 }
 
 // Error words the status the way mark always has: what answered, and for
@@ -44,6 +50,22 @@ type StatusError struct {
 // them refused.
 func (e *StatusError) Error() string {
 	const prefix = "the Confluence API returned unexpected status: "
+
+	// Confluence's own words, where it gave some, say more than any status
+	// and in less space than the body they came in.
+	if e.Message != "" {
+		status := e.Status
+		switch e.StatusCode {
+		case http.StatusUnauthorized:
+			status = "401 (Unauthorized)"
+		case http.StatusNotFound:
+			status = ErrNotFound.Error()
+		case http.StatusConflict:
+			status = ErrConflict.Error()
+		}
+
+		return fmt.Sprintf(prefix+"%s for %s: %s", status, e.URL, e.Message)
+	}
 
 	switch e.StatusCode {
 	case http.StatusUnauthorized:
@@ -85,13 +107,61 @@ func newStatusError(answer *reply) *StatusError {
 		body = body[:maxErrorBody]
 	}
 
-	return &StatusError{
+	status := &StatusError{
 		StatusCode: answer.StatusCode,
 		Status:     answer.Status,
 		URL:        requestTarget(answer),
 		Body:       body,
 		Truncated:  truncated,
 	}
+	if !truncated {
+		status.Message = confluenceMessage(body)
+	}
+
+	return status
+}
+
+// confluenceMessage reads the message out of an error body in one of the
+// shapes Confluence answers a failure with, or returns "".
+//
+// v1 answers {"statusCode":404,"message":"...","reason":"Not Found"}, with
+// more beside it on some releases, and v2 a list of problems,
+// {"errors":[{"status":404,"code":"NOT_FOUND","title":"...","detail":"..."}]}.
+// Anything else -- a proxy's page, a stack trace -- is quoted as it is
+// instead.
+func confluenceMessage(body []byte) string {
+	var answer struct {
+		Message string `json:"message"`
+		Errors  []struct {
+			Code   string `json:"code"`
+			Title  string `json:"title"`
+			Detail string `json:"detail"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal(body, &answer) != nil {
+		return ""
+	}
+
+	var messages []string
+	if message := strings.TrimSpace(answer.Message); message != "" {
+		messages = append(messages, message)
+	}
+
+	for _, problem := range answer.Errors {
+		title, detail := strings.TrimSpace(problem.Title), strings.TrimSpace(problem.Detail)
+		switch {
+		case title != "" && detail != "" && title != detail:
+			messages = append(messages, title+": "+detail)
+		case detail != "":
+			messages = append(messages, detail)
+		case title != "":
+			messages = append(messages, title)
+		case problem.Code != "":
+			messages = append(messages, problem.Code)
+		}
+	}
+
+	return strings.Join(messages, "; ")
 }
 
 // statusOf is the status a request failed with, or 0 when it did not fail

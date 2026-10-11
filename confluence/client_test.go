@@ -630,3 +630,73 @@ func TestClientStreamsALargeSuccess(t *testing.T) {
 	assert.Contains(t, entry.Message, "more bytes not traced")
 	assert.Less(t, len(entry.Message), traceDumpLimit+1024)
 }
+
+// TestStatusErrorSaysWhatConfluenceSaid: Confluence words a failure in its
+// error body, v1 and v2 each in their own shape, and that is what the error
+// shows rather than the body it came in. A body in neither shape is quoted
+// as it was.
+func TestStatusErrorSaysWhatConfluenceSaid(t *testing.T) {
+	for name, test := range map[string]struct {
+		status   int
+		body     string
+		want     string
+		wantNot  string
+		sentinel error
+	}{
+		"v1": {
+			status: http.StatusBadRequest,
+			body: `{"statusCode":400,"data":{"authorized":true,"valid":false,"errors":[]},` +
+				`"message":"A page with this title already exists","reason":"Bad Request"}`,
+			want:    `400 Bad Request for http://`,
+			wantNot: `statusCode`,
+		},
+		"v1 404": {
+			status:   http.StatusNotFound,
+			body:     `{"statusCode":404,"message":"No content found with id: 1","reason":"Not Found"}`,
+			want:     `404 (Not Found) for http://`,
+			sentinel: ErrNotFound,
+		},
+		"v2": {
+			status: http.StatusConflict,
+			body: `{"errors":[{"status":409,"code":"CONFLICT","title":"Version conflict",` +
+				`"detail":"Version must be incremented on update. Current Version is: 3"}]}`,
+			want:     `409 (Conflict) for http://`,
+			wantNot:  `"errors"`,
+			sentinel: ErrConflict,
+		},
+		"neither": {
+			status: http.StatusBadGateway,
+			body:   `<html>bad gateway</html>`,
+			want:   `502 Bad Gateway for http://`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, _ := clientServer(t, "/rest/api", "user", "token", test.status, "application/json", test.body)
+
+			_, err := c.do(context.Background(), http.MethodPost, []string{"content", "1"}, nil, map[string]any{}, &struct{}{})
+			var statusErr *StatusError
+			require.ErrorAs(t, err, &statusErr)
+			assert.Contains(t, err.Error(), test.want)
+			assert.Contains(t, err.Error(), "/rest/api/content/1")
+			if test.wantNot != "" {
+				assert.NotContains(t, err.Error(), test.wantNot, "the message, not the body it came in")
+			}
+			if test.sentinel != nil {
+				assert.ErrorIs(t, err, test.sentinel)
+			}
+
+			switch name {
+			case "v1":
+				assert.Equal(t, "A page with this title already exists", statusErr.Message)
+				assert.True(t, strings.HasSuffix(err.Error(), ": A page with this title already exists"), err.Error())
+			case "v1 404":
+				assert.Equal(t, "No content found with id: 1", statusErr.Message)
+			case "v2":
+				assert.Equal(t, "Version conflict: Version must be incremented on update. Current Version is: 3", statusErr.Message)
+			case "neither":
+				assert.Empty(t, statusErr.Message)
+				assert.Contains(t, err.Error(), `output: "<html>bad gateway</html>"`)
+			}
+		})
+	}
+}

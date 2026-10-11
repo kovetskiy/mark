@@ -881,3 +881,18 @@ func TestFindHomePageReportsV1ErrorWhenV2Unavailable(t *testing.T) {
 		"the v1 status is the one that explains the failure")
 	assert.Contains(t, err.Error(), "Unauthorized")
 }
+
+// TestStatusErrorCarriesTheFakesMessage: the fake answers a failure the way
+// v1 does, with a message, and that message is what reaches the caller.
+func TestStatusErrorCarriesTheFakesMessage(t *testing.T) {
+	api, _ := newAPI(t)
+
+	_, err := api.GetPageByID("424242")
+	require.ErrorIs(t, err, confluence.ErrNotFound)
+
+	var status *confluence.StatusError
+	require.ErrorAs(t, err, &status)
+	assert.Equal(t, http.StatusNotFound, status.StatusCode)
+	assert.Contains(t, status.Message, "424242")
+	assert.Contains(t, err.Error(), status.Message)
+}
