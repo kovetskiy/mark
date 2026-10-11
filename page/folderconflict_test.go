@@ -17,6 +17,7 @@ import (
 // recoverable collision into a hard failure the moment the wording changed or
 // the instance answered in another language.
 func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
+	ctx := t.Context()
 	page.ResetFolderCache()
 
 	api, server := newAPI(t)
@@ -44,7 +45,7 @@ func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 		return 0, "", false
 	})
 
-	parent, err := page.EnsureFolderAncestry(false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
+	parent, err := page.EnsureFolderAncestry(ctx, false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
 	require.NoError(t, err, "a folder that already exists is not a failure")
 	require.NotNil(t, parent)
 	assert.Equal(t, "Manuals", parent.Title)
@@ -56,6 +57,7 @@ func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 // a lookup must not turn a genuine refusal into silence. Nothing carries the
 // title, so there is nothing to find and the create's own error stands.
 func TestFolderCreateFailureIsStillReported(t *testing.T) {
+	ctx := t.Context()
 	page.ResetFolderCache()
 
 	api, server := newAPI(t)
@@ -69,7 +71,7 @@ func TestFolderCreateFailureIsStillReported(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := page.EnsureFolderAncestry(false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
+	_, err := page.EnsureFolderAncestry(ctx, false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `error creating folder with title "Manuals"`)
 	assert.Contains(t, err.Error(), "403", "the reason the create was refused has to survive")

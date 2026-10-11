@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"testing"
 
 	mark "github.com/kovetskiy/mark/v16/markdown"
@@ -68,7 +69,7 @@ func TestGHAlertsTransformerVsLegacyRenderer(t *testing.T) {
 		},
 	}
 
-	stdlib, err := stdlib.New(nil)
+	stdlib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Failed to create stdlib: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestGHAlertsTransformerVsLegacyRenderer(t *testing.T) {
 func TestBasicTransformerFunctionality(t *testing.T) {
 	testMarkdown := "> [!NOTE]\n> This is a test note."
 
-	stdlib, err := stdlib.New(nil)
+	stdlib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Failed to create stdlib: %v", err)
 	}
@@ -266,7 +267,7 @@ Line 3`,
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Testing: %s", tc.description)
 
-			stdlib, err := stdlib.New(nil)
+			stdlib, err := stdlib.New(context.Background(), nil)
 			if err != nil {
 				t.Fatalf("Failed to create stdlib: %v", err)
 			}

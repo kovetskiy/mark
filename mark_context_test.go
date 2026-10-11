@@ -180,7 +180,7 @@ func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
 func findPageTitled(t *testing.T, server *confluencetest.Server, title string) *confluence.PageInfo {
 	t.Helper()
 
-	page, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage("DOCS", title, "page")
+	page, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, page, "no page titled %q", title)
 

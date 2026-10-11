@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,7 +93,7 @@ func TestDryRunChangesOnlyNewPageWouldBeCreated(t *testing.T) {
 	assert.Contains(t, previewOf(t, config, ""), "fresh")
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	pg, err := api.FindPage("DOCS", "Doc", "page")
+	pg, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	assert.Nil(t, pg, "a dry run must not create the page")
 }
@@ -236,7 +237,7 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	first, err := api.FindPage("DOCS", "First", "page")
+	first, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
 	require.NotNil(t, first)
 
@@ -422,7 +423,7 @@ func decodeReport(t *testing.T, data []byte) *report.Report {
 func mustFind(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	pg, err := api.FindPage("DOCS", title, "page")
+	pg, err := api.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, pg)
 	return pg.ID

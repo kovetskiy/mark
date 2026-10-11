@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,7 @@ func TestLinksResolveOnTheFirstRun(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, a)
 
@@ -65,9 +66,9 @@ func TestSecondPassOnlyRepublishesWhatWaited(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
-	b, err := api.FindPage("DOCS", "B", "page")
+	b, err := api.FindPage(context.Background(), "DOCS", "B", "page")
 	require.NoError(t, err)
 
 	assert.Greater(t, server.Page(a.ID).Version, server.Page(b.ID).Version,
@@ -92,7 +93,7 @@ func TestSecondRunDoesNothingExtra(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	before := server.Page(a.ID).Version
 
@@ -123,7 +124,7 @@ func TestCheckLinksSeesResolvedLinksForPagesThisRunCreates(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, a)
 	assert.Contains(t, server.Page(a.ID).Body, "/x/",
@@ -148,7 +149,7 @@ func TestDryRunDoesNotWaitForPages(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	assert.Nil(t, a, "a dry run publishes nothing")
 }

@@ -61,12 +61,13 @@ func writes(server *confluencetest.Server) int {
 // TestWouldMoveAsksV2WhereAFolderChildSits: v1 cannot show a folder parent, so
 // whether the page is in the folder is only known by asking v2.
 func TestWouldMoveAsksV2WhereAFolderChildSits(t *testing.T) {
+	ctx := t.Context()
 	t.Run("already in the folder", func(t *testing.T) {
 		api, server := newAPI(t)
 		pg, target := folderFixture(t, api, server, true)
 		server.ResetRequests()
 
-		assert.False(t, page.WouldMove(api, pg, target, nil, false))
+		assert.False(t, page.WouldMove(ctx, api, pg, target, nil, false))
 		assert.NotZero(t, v2Reads(server))
 	})
 
@@ -74,14 +75,14 @@ func TestWouldMoveAsksV2WhereAFolderChildSits(t *testing.T) {
 		api, server := newAPI(t)
 		pg, target := folderFixture(t, api, server, false)
 
-		assert.True(t, page.WouldMove(api, pg, target, nil, false))
+		assert.True(t, page.WouldMove(ctx, api, pg, target, nil, false))
 	})
 
 	t.Run("v2 cannot say", func(t *testing.T) {
 		api, server := dataCenterAPI(t)
 		pg, target := folderFixture(t, api, server, true)
 
-		assert.True(t, page.WouldMove(api, pg, target, nil, false),
+		assert.True(t, page.WouldMove(ctx, api, pg, target, nil, false),
 			"not knowing counts as a move, as it does for a real run")
 	})
 
@@ -91,7 +92,7 @@ func TestWouldMoveAsksV2WhereAFolderChildSits(t *testing.T) {
 		pg.Ancestors = ancestors("home", "Home", target.ID, target.Title)
 		server.ResetRequests()
 
-		assert.False(t, page.WouldMove(api, pg, target, nil, false))
+		assert.False(t, page.WouldMove(ctx, api, pg, target, nil, false))
 		assert.Zero(t, v2Reads(server), "nothing to ask when v1 already shows the folder")
 	})
 
@@ -101,7 +102,7 @@ func TestWouldMoveAsksV2WhereAFolderChildSits(t *testing.T) {
 		pg.ParentID = target.ID
 		server.ResetRequests()
 
-		assert.False(t, page.WouldMove(api, pg, target, nil, false))
+		assert.False(t, page.WouldMove(ctx, api, pg, target, nil, false))
 		assert.Zero(t, v2Reads(server))
 	})
 }
@@ -109,12 +110,13 @@ func TestWouldMoveAsksV2WhereAFolderChildSits(t *testing.T) {
 // TestEnsurePageUnderFolderParentMovesOnlyWhenNeeded is the real-run half of
 // the same question, which WouldMove has to answer the way it does.
 func TestEnsurePageUnderFolderParentMovesOnlyWhenNeeded(t *testing.T) {
+	ctx := t.Context()
 	t.Run("already in the folder", func(t *testing.T) {
 		api, server := newAPI(t)
 		pg, target := folderFixture(t, api, server, true)
 		server.ResetRequests()
 
-		require.NoError(t, page.EnsurePageUnderFolderParent(api, pg, target.ID))
+		require.NoError(t, page.EnsurePageUnderFolderParent(ctx, api, pg, target.ID))
 		assert.Zero(t, writes(server), "a page already in its folder is not moved again")
 	})
 
@@ -123,7 +125,7 @@ func TestEnsurePageUnderFolderParentMovesOnlyWhenNeeded(t *testing.T) {
 		pg, target := folderFixture(t, api, server, false)
 		server.ResetRequests()
 
-		require.NoError(t, page.EnsurePageUnderFolderParent(api, pg, target.ID))
+		require.NoError(t, page.EnsurePageUnderFolderParent(ctx, api, pg, target.ID))
 		assert.NotZero(t, writes(server))
 	})
 }

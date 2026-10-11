@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -24,7 +25,7 @@ func TestFenceLanguageWithNonWordCharacters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.info, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown(
@@ -52,7 +53,7 @@ func TestFenceOptionsStillParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.info, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown(

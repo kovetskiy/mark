@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func (b *bufWriter) Flush() error  { return nil }
 
 func newTestRenderer(t *testing.T, imageAlign string, attachments attachment.Attacher, path string) *ConfluenceHTMLBlockRenderer {
 	t.Helper()
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("stdlib.New: %v", err)
 	}

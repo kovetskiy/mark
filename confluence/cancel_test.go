@@ -21,14 +21,47 @@ func holdUntilCancelled(r *http.Request, cancel context.CancelFunc) {
 	}
 }
 
-func TestContextDefaultsToBackground(t *testing.T) {
-	api := &API{}
-	assert.Equal(t, context.Background(), api.Context())
+// TestARequestCarriesTheContextItIsGiven: each request is made under the ctx
+// passed to the method that makes it, and under nothing else. A cancelled one
+// fails at once, without a request; the same API asked under a live one
+// answers as though nothing had happened.
+func TestARequestCarriesTheContextItIsGiven(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	stored := server.AddPage("DOCS", "Existing", "page", "")
+	api := NewAPI(server.URL, "user", "token", false)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api.SetContext(ctx)
-	assert.Equal(t, ctx, api.Context())
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for name, call := range map[string]func(ctx context.Context) error{
+		"GetPageByID": func(ctx context.Context) error {
+			_, err := api.GetPageByID(ctx, stored.ID)
+			return err
+		},
+		"UpdatePage": func(ctx context.Context) error {
+			page, err := api.GetPageByID(context.Background(), stored.ID)
+			require.NoError(t, err)
+			return api.UpdatePage(ctx, page, "<p>new</p>", false, "", "", "")
+		},
+		"GetChildPages": func(ctx context.Context) error {
+			_, err := api.GetChildPages(ctx, stored.ID)
+			return err
+		},
+	} {
+		before := len(server.Requests())
+		err := call(cancelled)
+		require.ErrorIs(t, err, context.Canceled, name)
+		assert.True(t, IsCancellation(err), name)
+
+		requests := server.Requests()[before:]
+		for _, r := range requests {
+			// UpdatePage's own read of the page goes out under Background.
+			assert.NotEqual(t, http.MethodPut, r.Method, "%s: nothing was written under a cancelled context", name)
+		}
+
+		require.NoError(t, call(context.Background()), "%s: the API holds no context of its own", name)
+	}
 }
 
 // TestCancellingTheContextAbortsARequestInFlight: the request a run is
@@ -41,7 +74,6 @@ func TestCancellingTheContextAbortsARequestInFlight(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	api.SetContext(ctx)
 
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		holdUntilCancelled(r, cancel)
@@ -49,7 +81,7 @@ func TestCancellingTheContextAbortsARequestInFlight(t *testing.T) {
 	})
 
 	started := time.Now()
-	_, err := api.FindPage("DOCS", "Anything", "page")
+	_, err := api.FindPage(ctx, "DOCS", "Anything", "page")
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.NotContains(t, err.Error(), "not JSON")
@@ -66,7 +98,6 @@ func TestCancellingTheContextCutsTheBackoffShort(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	api.SetContext(ctx)
 
 	server.SetFail(func(*http.Request) (int, string, bool) {
 		time.AfterFunc(50*time.Millisecond, cancel)
@@ -74,7 +105,7 @@ func TestCancellingTheContextCutsTheBackoffShort(t *testing.T) {
 	})
 
 	started := time.Now()
-	_, err := api.FindPage("DOCS", "Anything", "page")
+	_, err := api.FindPage(ctx, "DOCS", "Anything", "page")
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, time.Since(started), 5*time.Second)
@@ -82,33 +113,31 @@ func TestCancellingTheContextCutsTheBackoffShort(t *testing.T) {
 }
 
 // TestACancelledLookupIsNotRemembered: a lookup the caller stopped is no
-// answer, so neither the space id nor the platform is cached from it, and an
-// API reused under a live context asks again.
+// answer, so neither the space id nor the platform is cached from it, and the
+// same API asked under a live context asks again.
 func TestACancelledLookupIsNotRemembered(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
 	api := NewAPI(server.URL, "user", "token", false)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	api.SetContext(ctx)
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		holdUntilCancelled(r, cancel)
 		return http.StatusServiceUnavailable, `{}`, true
 	})
 
-	_, err := api.GetSpaceID("DOCS")
+	_, err := api.GetSpaceID(ctx, "DOCS")
 	require.ErrorIs(t, err, context.Canceled)
-	_, err = api.Cloud()
+	_, err = api.Cloud(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 
 	server.SetFail(nil)
-	api.SetContext(context.Background())
 
-	id, err := api.GetSpaceID("DOCS")
+	id, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.NoError(t, err)
 	assert.NotEmpty(t, id)
 
-	cloud, err := api.Cloud()
+	cloud, err := api.Cloud(context.Background())
 	require.NoError(t, err)
 	assert.True(t, cloud, "the fake's current user has an accountId")
 }

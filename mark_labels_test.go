@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"testing"
@@ -35,7 +36,7 @@ func labelFixture(t *testing.T, appendLabels bool, labels string) (*confluencete
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 

@@ -2,6 +2,7 @@ package confluence_test
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ func TestFindPage(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Getting Started", "page", "")
 
-	page, err := api.FindPage("DOCS", "Getting Started", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Getting Started", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "Getting Started", page.Title)
@@ -35,7 +36,7 @@ func TestFindPageNotFoundReturnsNilWithoutError(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
-	page, err := api.FindPage("DOCS", "Nope", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Nope", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page)
 }
@@ -47,7 +48,7 @@ func TestFindPageIsCachedAcrossCalls(t *testing.T) {
 	server.AddPage("DOCS", "Cached", "page", "")
 
 	for range 3 {
-		page, err := api.FindPage("DOCS", "Cached", "page")
+		page, err := api.FindPage(context.Background(), "DOCS", "Cached", "page")
 		require.NoError(t, err)
 		require.NotNil(t, page)
 	}
@@ -63,7 +64,7 @@ func TestFindPageNegativeResultIsCached(t *testing.T) {
 	server.AddSpace("DOCS")
 
 	for range 3 {
-		page, err := api.FindPage("DOCS", "Missing", "page")
+		page, err := api.FindPage(context.Background(), "DOCS", "Missing", "page")
 		require.NoError(t, err)
 		require.Nil(t, page)
 	}
@@ -77,7 +78,7 @@ func TestFindPageReturnsAncestors(t *testing.T) {
 	mid := server.AddPage("DOCS", "Mid", "page", root.ID)
 	server.AddPage("DOCS", "Leaf", "page", mid.ID)
 
-	page, err := api.FindPage("DOCS", "Leaf", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Leaf", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	require.Len(t, page.Ancestors, 2)
@@ -90,10 +91,10 @@ func TestCreatePage(t *testing.T) {
 	api, server := newAPI(t)
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 
-	parentInfo, err := api.FindPage("DOCS", "Parent", "page")
+	parentInfo, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 
-	created, err := api.CreatePage("DOCS", "page", parentInfo, "Child", "<p>hi</p>")
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", parentInfo, "Child", "<p>hi</p>")
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	assert.Equal(t, "Child", created.Title)
@@ -115,7 +116,7 @@ func TestCreatePageReadsLinksBaseFromResponse(t *testing.T) {
 	server.SiteBase = site
 	server.AddSpace("DOCS")
 
-	created, err := api.CreatePage("DOCS", "page", nil, "New", "<p/>")
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "<p/>")
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	assert.Equal(t, site, created.Links.Base)
@@ -123,7 +124,7 @@ func TestCreatePageReadsLinksBaseFromResponse(t *testing.T) {
 
 	// Same-run lookup is served from the cache populated by CreatePage, so
 	// it must keep the tenant URL rather than the gateway.
-	cached, err := api.FindPage("DOCS", "New", "page")
+	cached, err := api.FindPage(context.Background(), "DOCS", "New", "page")
 	require.NoError(t, err)
 	require.NotNil(t, cached)
 	assert.Equal(t, site, cached.Links.Base)
@@ -133,7 +134,7 @@ func TestCreatePageFallsBackToAPIBaseURL(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
-	created, err := api.CreatePage("DOCS", "page", nil, "No Base", "<p/>")
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "No Base", "<p/>")
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	assert.Equal(t, api.BaseURL, created.Links.Base)
@@ -143,7 +144,7 @@ func TestCreatePageDuplicateTitleIsAnError(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Taken", "page", "")
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Taken", "")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Taken", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
 }
@@ -152,11 +153,11 @@ func TestUpdatePageIncrementsVersion(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "Target", "page", "")
 
-	page, err := api.FindPage("DOCS", "Target", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.Version.Number)
 
-	err = api.UpdatePage(page, "<p>new</p>", false, "msg", "", "")
+	err = api.UpdatePage(context.Background(), page, "<p>new</p>", false, "msg", "", "")
 	require.NoError(t, err)
 
 	after := server.Page(stored.ID)
@@ -174,10 +175,10 @@ func TestUpdatePageWritesBothAppearanceProperties(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "Target", "page", "")
 
-	page, err := api.FindPage("DOCS", "Target", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(page, "<p>new</p>", false, "", "max", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", false, "", "max", ""))
 
 	for _, key := range []string{"content-appearance-published", "content-appearance-draft"} {
 		prop := server.ContentProperty(stored.ID, key)
@@ -195,10 +196,10 @@ func TestUpdatePageWithoutAppearanceLeavesThePropertiesAlone(t *testing.T) {
 	server.SetSpaceProperty(stored.ID, "content-appearance-published", []byte(`"max"`))
 	server.SetSpaceProperty(stored.ID, "content-appearance-draft", []byte(`"max"`))
 
-	page, err := api.FindPage("DOCS", "Target", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(page, "<p>new</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", false, "", "", ""))
 
 	for _, key := range []string{"content-appearance-published", "content-appearance-draft"} {
 		prop := server.ContentProperty(stored.ID, key)
@@ -214,13 +215,13 @@ func TestUpdatePageKeepsVersionInSync(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "Target", "page", "")
 
-	page, err := api.FindPage("DOCS", "Target", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(page, "<p>first</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>first</p>", false, "", "", ""))
 	assert.EqualValues(t, 2, page.Version.Number)
 
-	require.NoError(t, api.UpdatePage(page, "<p>second</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>second</p>", false, "", "", ""))
 	assert.EqualValues(t, 3, page.Version.Number)
 
 	assert.EqualValues(t, 3, server.Page(stored.ID).Version)
@@ -230,7 +231,7 @@ func TestGetPageByID(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "ByID", "page", "")
 
-	page, err := api.GetPageByID(stored.ID)
+	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "ByID", page.Title)
@@ -239,7 +240,7 @@ func TestGetPageByID(t *testing.T) {
 func TestGetPageByIDMissing(t *testing.T) {
 	api, _ := newAPI(t)
 
-	_, err := api.GetPageByID("does-not-exist")
+	_, err := api.GetPageByID(context.Background(), "does-not-exist")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }
@@ -255,7 +256,7 @@ func TestGetAttachmentsPaginates(t *testing.T) {
 		server.AddAttachment(page.ID, "file-"+strconv.Itoa(i)+".png", "mark:checksum: "+strconv.Itoa(i))
 	}
 
-	attachments, err := api.GetAttachments(page.ID)
+	attachments, err := api.GetAttachments(context.Background(), page.ID)
 	require.NoError(t, err)
 	assert.Len(t, attachments, total)
 	assert.Equal(t, 5, server.CountRequests("GET", "/child/attachment"),
@@ -266,17 +267,17 @@ func TestGetPageLabelsPaginates(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "Labelled", "page", "")
 
-	page, err := api.FindPage("DOCS", "Labelled", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Labelled", "page")
 	require.NoError(t, err)
 
 	labels := make([]string, 0, 120)
 	for i := range 120 {
 		labels = append(labels, "label-"+strconv.Itoa(i))
 	}
-	_, err = api.AddPageLabels(page, labels)
+	_, err = api.AddPageLabels(context.Background(), page, labels)
 	require.NoError(t, err)
 
-	info, err := api.GetPageLabels(page, "global")
+	info, err := api.GetPageLabels(context.Background(), page, "global")
 	require.NoError(t, err)
 	assert.Len(t, info.Labels, 120)
 
@@ -289,13 +290,13 @@ func TestDeletePageLabel(t *testing.T) {
 	api, server := newAPI(t)
 	stored := server.AddPage("DOCS", "Labelled", "page", "")
 
-	page, err := api.FindPage("DOCS", "Labelled", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Labelled", "page")
 	require.NoError(t, err)
 
-	_, err = api.AddPageLabels(page, []string{"keep", "drop"})
+	_, err = api.AddPageLabels(context.Background(), page, []string{"keep", "drop"})
 	require.NoError(t, err)
 
-	_, err = api.DeletePageLabel(page, "drop")
+	_, err = api.DeletePageLabel(context.Background(), page, "drop")
 	require.NoError(t, err)
 
 	after := server.Page(stored.ID)
@@ -316,7 +317,7 @@ func TestGetInlineCommentsPaginates(t *testing.T) {
 		})
 	}
 
-	comments, err := api.GetInlineComments(page.ID)
+	comments, err := api.GetInlineComments(context.Background(), page.ID)
 	require.NoError(t, err)
 	require.NotNil(t, comments)
 	assert.Len(t, comments.Results, total)
@@ -329,7 +330,7 @@ func TestFindHomePage(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	page, err := api.FindHomePage("DOCS")
+	page, err := api.FindHomePage(context.Background(), "DOCS")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "Home", page.Title)
@@ -340,7 +341,7 @@ func TestFindRootPage(t *testing.T) {
 	root := server.AddPage("DOCS", "Root", "page", "")
 	server.AddPage("DOCS", "Leaf", "page", root.ID)
 
-	page, err := api.FindRootPage("DOCS")
+	page, err := api.FindRootPage(context.Background(), "DOCS")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "Root", page.Title)
@@ -355,7 +356,7 @@ func TestFindRootPageIsTheHomePage(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	page, err := api.FindRootPage("DOCS")
+	page, err := api.FindRootPage(context.Background(), "DOCS")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, home.ID, page.ID)
@@ -368,7 +369,7 @@ func TestGatewayFindRootPageIsTheHomePage(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	page, err := api.FindRootPage("DOCS")
+	page, err := api.FindRootPage(context.Background(), "DOCS")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, home.ID, page.ID)
@@ -380,7 +381,7 @@ func TestGatewayFindRootPageIsTheHomePage(t *testing.T) {
 func TestFindRootPageMissingSpace(t *testing.T) {
 	api, _ := newAPI(t)
 
-	_, err := api.FindRootPage("NOPE")
+	_, err := api.FindRootPage(context.Background(), "NOPE")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, confluence.ErrNotFound)
 }
@@ -393,7 +394,7 @@ func TestGetUserByName(t *testing.T) {
 		FullName:  "Jane Doe",
 	})
 
-	user, err := api.GetUserByName("Jane Doe")
+	user, err := api.GetUserByName(context.Background(), "Jane Doe")
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	assert.Equal(t, "acct-1", user.AccountID)
@@ -402,7 +403,7 @@ func TestGetUserByName(t *testing.T) {
 func TestGetUserByNameMissing(t *testing.T) {
 	api, _ := newAPI(t)
 
-	_, err := api.GetUserByName("Nobody At All")
+	_, err := api.GetUserByName(context.Background(), "Nobody At All")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -410,7 +411,7 @@ func TestGetUserByNameMissing(t *testing.T) {
 func TestGetCurrentUser(t *testing.T) {
 	api, _ := newAPI(t)
 
-	user, err := api.GetCurrentUser()
+	user, err := api.GetCurrentUser(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	assert.Equal(t, "current", user.Username)
@@ -420,7 +421,7 @@ func TestCreateAttachment(t *testing.T) {
 	api, server := newAPI(t)
 	page := server.AddPage("DOCS", "Attach", "page", "")
 
-	info, err := api.CreateAttachment(
+	info, err := api.CreateAttachment(context.Background(),
 		page.ID,
 		"diagram.png",
 		"mark:checksum: abc",
@@ -441,7 +442,7 @@ func TestAttachmentUploadsAreMinorEdits(t *testing.T) {
 	api, server := newAPI(t)
 	page := server.AddPage("DOCS", "Attach", "page", "")
 
-	_, err := api.CreateAttachment(
+	_, err := api.CreateAttachment(context.Background(),
 		page.ID, "new.png", "mark:checksum: abc", bytes.NewReader([]byte("v1")),
 	)
 	require.NoError(t, err)
@@ -449,7 +450,7 @@ func TestAttachmentUploadsAreMinorEdits(t *testing.T) {
 	// Put there by hand, so no upload of mark's has set the field on it yet.
 	existing := server.AddAttachment(page.ID, "existing.png", "mark:checksum: old")
 
-	_, err = api.UpdateAttachment(
+	_, err = api.UpdateAttachment(context.Background(),
 		page.ID, existing.ID, "existing.png", "mark:checksum: def", bytes.NewReader([]byte("v2")),
 	)
 	require.NoError(t, err)
@@ -477,7 +478,7 @@ func TestGetSpaceID(t *testing.T) {
 	api, server := newAPI(t)
 	space := server.AddSpace("DOCS")
 
-	id, err := api.GetSpaceID("DOCS")
+	id, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.NoError(t, err)
 	assert.Equal(t, space.ID, id)
 
@@ -495,7 +496,7 @@ func TestGetSpaceIDFallsBackToV2(t *testing.T) {
 	space := server.AddSpace("DOCS")
 	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
 
-	id, err := api.GetSpaceID("DOCS")
+	id, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.NoError(t, err)
 	assert.Equal(t, space.ID, id)
 
@@ -509,7 +510,7 @@ func TestGetSpaceIDMissingSpace(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
-	_, err := api.GetSpaceID("NOPE")
+	_, err := api.GetSpaceID(context.Background(), "NOPE")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NOPE")
 }
@@ -535,7 +536,7 @@ func TestRetriesThroughTheRealClientStack(t *testing.T) {
 		return 0, "", false
 	})
 
-	page, err := api.FindPage("DOCS", "Flaky", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Flaky", "page")
 	require.NoError(t, err, "two 503s should be retried, not surfaced")
 	require.NotNil(t, page)
 	assert.Equal(t, "Flaky", page.Title)
@@ -560,7 +561,7 @@ func TestRateLimitIsRetried(t *testing.T) {
 		return 0, "", false
 	})
 
-	page, err := api.FindPage("DOCS", "Throttled", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Throttled", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, 2, server.CountRequests("GET", "/rest/api/content"))
@@ -579,7 +580,7 @@ func TestPersistent5xxStillFails(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.FindPage("DOCS", "Broken", "page")
+	_, err := api.FindPage(context.Background(), "DOCS", "Broken", "page")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 	assert.Equal(t, 4, server.CountRequests("GET", "/rest/api/content"),
@@ -599,7 +600,7 @@ func TestCreatePageIsNotRetriedOn5xx(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Once Only", "")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Once Only", "")
 	require.Error(t, err)
 	assert.Equal(t, 1, server.CountRequests("POST", "/rest/api/content"),
 		"a create must be attempted exactly once")
@@ -617,7 +618,7 @@ func TestGetUserByNameIsCached(t *testing.T) {
 	})
 
 	for range 20 {
-		user, err := api.GetUserByName("Jane Doe")
+		user, err := api.GetUserByName(context.Background(), "Jane Doe")
 		require.NoError(t, err)
 		require.NotNil(t, user)
 		assert.Equal(t, "acct-1", user.AccountID)
@@ -634,7 +635,7 @@ func TestGetUserByNameCachesMisses(t *testing.T) {
 	api, server := newAPI(t)
 
 	for range 5 {
-		_, err := api.GetUserByName("Nobody At All")
+		_, err := api.GetUserByName(context.Background(), "Nobody At All")
 		require.Error(t, err)
 	}
 
@@ -651,11 +652,11 @@ func TestGetUserByNameCachesPerName(t *testing.T) {
 	server.AddUser(confluencetest.User{AccountID: "b", FullName: "Bob"})
 
 	for range 3 {
-		ann, err := api.GetUserByName("Ann")
+		ann, err := api.GetUserByName(context.Background(), "Ann")
 		require.NoError(t, err)
 		assert.Equal(t, "a", ann.AccountID)
 
-		bob, err := api.GetUserByName("Bob")
+		bob, err := api.GetUserByName(context.Background(), "Bob")
 		require.NoError(t, err)
 		assert.Equal(t, "b", bob.AccountID)
 	}
@@ -684,7 +685,7 @@ func TestIsCloudConcurrentCallsProbeOnce(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start // release them together to maximise contention
-			results[i] = api.IsCloud()
+			results[i] = api.IsCloud(context.Background())
 		}(i)
 	}
 	close(start)
@@ -704,11 +705,11 @@ func TestIsCloudCachesAcrossSequentialCalls(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
-	first := api.IsCloud()
+	first := api.IsCloud(context.Background())
 	before := server.CountRequests("GET", "/rest/api/user/current")
 
 	for range 5 {
-		assert.Equal(t, first, api.IsCloud())
+		assert.Equal(t, first, api.IsCloud(context.Background()))
 	}
 
 	assert.Equal(t, before, server.CountRequests("GET", "/rest/api/user/current"),
@@ -722,14 +723,14 @@ func TestIsCloudReadsTheCurrentUser(t *testing.T) {
 	t.Run("Cloud", func(t *testing.T) {
 		api, _ := newAPI(t)
 
-		assert.True(t, api.IsCloud())
+		assert.True(t, api.IsCloud(context.Background()))
 	})
 
 	t.Run("Data Center", func(t *testing.T) {
 		api, server := newAPI(t)
 		server.SetDataCenter()
 
-		assert.False(t, api.IsCloud())
+		assert.False(t, api.IsCloud(context.Background()))
 	})
 }
 
@@ -755,7 +756,7 @@ func TestIsCloudOnAnUnreadableUserIsNotCloud(t *testing.T) {
 			api, server := newAPI(t)
 			server.SetFail(fail)
 
-			assert.False(t, api.IsCloud())
+			assert.False(t, api.IsCloud(context.Background()))
 		})
 	}
 }
@@ -781,7 +782,7 @@ func TestFindHomePageFallsBackToV2(t *testing.T) {
 	server.SetHomepage("DOCS", home.ID)
 	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
 
-	page, err := api.FindHomePage("DOCS")
+	page, err := api.FindHomePage(context.Background(), "DOCS")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "Home", page.Title)
@@ -804,7 +805,7 @@ func TestFindHomePageFallsBackOnAnyNonOK(t *testing.T) {
 			server.SetHomepage("DOCS", home.ID)
 			server.SetFail(scopedTokenV1Gone(status))
 
-			page, err := api.FindHomePage("DOCS")
+			page, err := api.FindHomePage(context.Background(), "DOCS")
 			require.NoError(t, err)
 			require.NotNil(t, page)
 			assert.Equal(t, "Home", page.Title)
@@ -819,7 +820,7 @@ func TestFindHomePagePrefersV1(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	page, err := api.FindHomePage("DOCS")
+	page, err := api.FindHomePage(context.Background(), "DOCS")
 	require.NoError(t, err)
 	assert.Equal(t, "Home", page.Title)
 
@@ -834,7 +835,7 @@ func TestFindHomePageMissingSpace(t *testing.T) {
 	server.AddSpace("DOCS")
 	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
 
-	_, err := api.FindHomePage("NOPE")
+	_, err := api.FindHomePage(context.Background(), "NOPE")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NOPE")
 	assert.Contains(t, err.Error(), "not found")
@@ -848,7 +849,7 @@ func TestFindHomePageSpaceWithoutHomepage(t *testing.T) {
 	server.AddSpace("DOCS")
 	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
 
-	_, err := api.FindHomePage("DOCS")
+	_, err := api.FindHomePage(context.Background(), "DOCS")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "has no home page")
 	assert.NotContains(t, err.Error(), "not found")
@@ -875,7 +876,7 @@ func TestFindHomePageReportsV1ErrorWhenV2Unavailable(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.FindHomePage("DOCS")
+	_, err := api.FindHomePage(context.Background(), "DOCS")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401",
 		"the v1 status is the one that explains the failure")
@@ -887,7 +888,7 @@ func TestFindHomePageReportsV1ErrorWhenV2Unavailable(t *testing.T) {
 func TestStatusErrorCarriesTheFakesMessage(t *testing.T) {
 	api, _ := newAPI(t)
 
-	_, err := api.GetPageByID("424242")
+	_, err := api.GetPageByID(context.Background(), "424242")
 	require.ErrorIs(t, err, confluence.ErrNotFound)
 
 	var status *confluence.StatusError

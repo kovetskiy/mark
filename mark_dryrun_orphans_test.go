@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -48,10 +49,10 @@ func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
 	b := writeFile(t, dir, "b.md", markdownWithTitle("B"))
 	config := publishTracked(t, server, dir)
 
-	pageA, err := api.FindPage("DOCS", "A", "page")
+	pageA, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageA)
-	pageB, err := api.FindPage("DOCS", "B", "page")
+	pageB, err := api.FindPage(context.Background(), "DOCS", "B", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageB)
 
@@ -92,10 +93,10 @@ func TestDryRunStillReportsRealOrphans(t *testing.T) {
 	b := writeFile(t, dir, "b.md", markdownWithTitle("B"))
 	config := publishTracked(t, server, dir)
 
-	pageA, err := api.FindPage("DOCS", "A", "page")
+	pageA, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageA)
-	pageB, err := api.FindPage("DOCS", "B", "page")
+	pageB, err := api.FindPage(context.Background(), "DOCS", "B", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageB)
 

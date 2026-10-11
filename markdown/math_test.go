@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ import (
 func compileMath(t *testing.T, markdown string, features ...string) (string, []attachment.Attachment, error) {
 	t.Helper()
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	return mark.CompileMarkdown([]byte(markdown), lib, "testdata/test.md", types.MarkConfig{
@@ -123,7 +124,7 @@ func TestMathDoesNotEatPrices(t *testing.T) {
 // browser mermaid already needs, so it is what a document gets unless it asks
 // for the vector picture instead.
 func TestMathPNGFormat(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	actual, attachments, err := mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
@@ -143,7 +144,7 @@ func TestMathPNGFormat(t *testing.T) {
 // CLI rejects it up front; this is the second line of that check, for a caller
 // that reaches CompileMarkdown directly.
 func TestMathRejectsAnUnknownFormat(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	_, _, err = mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
