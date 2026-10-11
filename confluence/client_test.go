@@ -108,12 +108,12 @@ func TestClientEncodesTheQuerySorted(t *testing.T) {
 }
 
 func TestClientSendsAndDecodesJSON(t *testing.T) {
-	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "text/html", `{"id":"42","title":"T"} trailing`)
+	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", `{"id":"42","title":"T"} trailing`)
 
 	var page PageInfo
 	response, err := c.do(context.Background(), http.MethodPost, []string{"content"}, nil,
 		map[string]any{"title": "T"}, &page)
-	require.NoError(t, err, "the answer is decoded whatever its Content-Type, and only its first value")
+	require.NoError(t, err, "only the answer's first value is decoded")
 
 	assert.Equal(t, http.MethodPost, got.method)
 	assert.Equal(t, "application/json", got.header.Get("Content-Type"))
@@ -142,28 +142,102 @@ func TestClientSendsAReaderAsItIs(t *testing.T) {
 	assert.Equal(t, "no-check", got.header.Get("X-Atlassian-Token"))
 }
 
-// TestClientReturnsTheResponseWithADecodeError: an SSO login page answering
-// 200 has to be told apart from a network failure, which only works when the
-// response comes back alongside the error.
+// TestClientReturnsTheResponseWithADecodeError: a 2xx whose body does not
+// parse comes back with the response, and newTransportError says what
+// answered and how.
 func TestClientReturnsTheResponseWithADecodeError(t *testing.T) {
-	for name, body := range map[string]string{
-		"html":  "<html>log in</html>",
-		"empty": "",
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", "not json")
+
+	response, err := c.do(context.Background(), http.MethodGet, []string{"content"}, nil, nil, &map[string]any{})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrLoginPage)
+	require.NotNil(t, response)
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+
+	transport := newTransportError(response, "read things", err)
+	assert.Contains(t, transport.Error(), "body that is not JSON")
+	assert.Contains(t, transport.Error(), "/rest/api/content")
+}
+
+// TestClientRecognisesALoginPage: an SSO proxy answering an API call with its
+// login form, in HTML, is a login page and not a body that fails to parse.
+func TestClientRecognisesALoginPage(t *testing.T) {
+	for _, contentType := range []string{"text/html; charset=utf-8", "application/xhtml+xml"} {
+		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, contentType, "<html>log in</html>")
+
+		var page PageInfo
+		response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &page)
+		require.ErrorIs(t, err, ErrLoginPage, contentType)
+		require.NotNil(t, response)
+		assert.Contains(t, err.Error(), "/rest/api/content/1")
+		assert.Contains(t, err.Error(), "200 OK")
+
+		transport := newTransportError(response, "read page 1", err)
+		require.ErrorIs(t, transport, ErrLoginPage, "newTransportError keeps the sentinel")
+		assert.Contains(t, transport.Error(), "unable to read page 1")
+		assert.Contains(t, transport.Error(), "login page")
+		assert.Contains(t, transport.Error(), "SSO", "and the cause worth checking first")
+	}
+}
+
+// TestClientRecognisesARedirectToTheLoginPage: Seraph sends a request it does
+// not authenticate to /login.action, which the HTTP client follows. Whatever
+// that page answers with, the request ended on a login page, and the error
+// names both where it was sent and where it ended up.
+func TestClientRecognisesARedirectToTheLoginPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/login.action" {
+			http.Redirect(w, r, "/login.action?os_destination=x", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = io.WriteString(w, "please log in")
+	}))
+	t.Cleanup(server.Close)
+
+	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
+
+	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &PageInfo{})
+	require.ErrorIs(t, err, ErrLoginPage)
+	assert.Contains(t, err.Error(), server.URL+"/rest/api/content/1", "where the request was sent")
+	assert.Contains(t, err.Error(), "/login.action", "and where it ended up")
+
+	transport := newTransportError(response, "read page 1", err)
+	require.ErrorIs(t, transport, ErrLoginPage)
+	assert.Contains(t, transport.Error(), "unable to read page 1")
+	assert.Contains(t, transport.Error(), "redirected to "+server.URL+"/login.action")
+	assert.Contains(t, transport.Error(), "SSO")
+}
+
+// TestClientRecognisesARedirectToAnotherHost: an identity provider on another
+// host is a login page too, unless what it answered is JSON.
+func TestClientRecognisesARedirectToAnotherHost(t *testing.T) {
+	for contentType, login := range map[string]bool{
+		"text/plain":       true,
+		"application/json": false,
 	} {
-		t.Run(name, func(t *testing.T) {
-			c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "text/html", body)
+		idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", contentType)
+			_, _ = io.WriteString(w, `{}`)
+		}))
+		t.Cleanup(idp.Close)
 
-			response, err := c.do(context.Background(), http.MethodGet, []string{"content"}, nil, nil, &map[string]any{})
-			require.Error(t, err)
-			require.NotNil(t, response)
-			assert.Equal(t, http.StatusOK, response.StatusCode)
+		// localhost rather than 127.0.0.1: the same server, another host.
+		target := strings.Replace(idp.URL, "127.0.0.1", "localhost", 1)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, target+"/sso", http.StatusFound)
+		}))
+		t.Cleanup(server.Close)
 
-			assert.Equal(t, body, string(response.Body), "the body is still there to read")
+		c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
-			transport := newTransportError(response, "read things", err)
-			assert.Contains(t, transport.Error(), "body that is not JSON")
-			assert.Contains(t, transport.Error(), "/rest/api/content")
-		})
+		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &map[string]any{})
+		if login {
+			require.ErrorIs(t, err, ErrLoginPage, contentType)
+			assert.Contains(t, err.Error(), "redirected to localhost")
+		} else {
+			require.NoError(t, err, contentType)
+		}
 	}
 }
 

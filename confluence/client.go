@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -104,12 +105,15 @@ type reply struct {
 //     which is all the error quotes, and a body cut short still makes a
 //     StatusError, with what was read.
 //   - Status 204: nothing is decoded.
+//   - Login page: a 2xx that is a login page rather than Confluence's answer
+//     returns an error errors.Is matches against ErrLoginPage, with the
+//     response; see loginEvidence for how one is recognised. A Confluence
+//     behind SSO answers an API call with one, and the error says so rather
+//     than failing to parse it.
 //   - Any other 2xx: the body is decoded into out when out is non-nil,
 //     whatever its Content-Type says. A body that is not JSON, or is empty,
-//     returns the decode error *together with* the response: that is how an
-//     SSO login page answering 200 is told apart from a network failure, by
-//     newTransportError and by moveByAction's login-page check alike. Only
-//     the first JSON value is read; anything after it is ignored.
+//     returns the decode error together with the response. Only the first
+//     JSON value is read; anything after it is ignored.
 //   - A 2xx body that cannot be read in full is the same: the response and
 //     the read error.
 //   - Cancellation: any error a request ends with while ctx is done -- no
@@ -227,6 +231,10 @@ func (c *client) doWithHeader(
 		return answer, newStatusError(answer)
 	}
 
+	if evidence := loginEvidence(req, resp); evidence != "" {
+		return answer, &loginPageError{answer: answer, requested: req.URL.Redacted(), evidence: evidence}
+	}
+
 	if resp.StatusCode == http.StatusNoContent || out == nil {
 		return answer, nil
 	}
@@ -290,6 +298,105 @@ func readBody(resp *http.Response) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// ErrLoginPage reports that a request was answered with a login page instead
+// of by Confluence: an SSO proxy, Seraph turning the credentials away, or an
+// identity provider the request was redirected to. errors.Is finds it in the
+// error do returns for such an answer, which also says where the request
+// ended up.
+var ErrLoginPage = errors.New("a login page answered in place of Confluence")
+
+// loginPageError is the error for a 2xx do recognised as a login page.
+type loginPageError struct {
+	answer *reply
+
+	// requested is the URL asked, redacted; the answer's own request is the
+	// one a redirect ended on.
+	requested string
+
+	// evidence says how the answer was recognised; see loginEvidence.
+	evidence string
+}
+
+func (e *loginPageError) Error() string {
+	landed := requestTarget(e.answer)
+	if landed != e.requested {
+		return fmt.Sprintf(
+			"%s was redirected to %s, which answered %s with a login page (%s)",
+			e.requested, landed, e.answer.Status, e.evidence,
+		)
+	}
+
+	return fmt.Sprintf("%s answered %s with a login page (%s)", landed, e.answer.Status, e.evidence)
+}
+
+func (e *loginPageError) Is(target error) bool { return target == ErrLoginPage }
+
+// contentIsHTML is the evidence loginEvidence gives for nothing but an HTML
+// Content-Type. It is the weakest of them: an action that redirects to the
+// page it acted on lands on HTML too; see moveByAction.
+const contentIsHTML = "an HTML Content-Type"
+
+// loginEvidence says why a 2xx answer to req is a login page rather than
+// Confluence's own answer, or "" when it is not one.
+//
+// Confluence's API answers in JSON, so an answer in HTML is a page for a
+// person: an SSO proxy's login form, or the page some proxy or redirect put
+// in front of the API. Beyond that, whatever the answer says it is, a request
+// that ended on Seraph's /login.action was sent to log in; and one that was
+// redirected to another host, or that Seraph says it did not authenticate,
+// was turned away unless it answered in JSON.
+func loginEvidence(req *http.Request, resp *http.Response) string {
+	final := req.URL
+	if resp.Request != nil && resp.Request.URL != nil {
+		final = resp.Request.URL
+	}
+
+	if strings.HasSuffix(final.Path, "/login.action") {
+		return "redirected to /login.action"
+	}
+
+	mediaType := contentMediaType(resp.Header)
+	if !isJSONMediaType(mediaType) {
+		if !strings.EqualFold(final.Hostname(), req.URL.Hostname()) {
+			return "redirected to " + final.Hostname()
+		}
+		if reason := resp.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
+			return "X-Seraph-LoginReason: " + reason
+		}
+		if resp.Header.Get("X-AUSERNAME") == "anonymous" {
+			return "X-AUSERNAME: anonymous"
+		}
+	}
+
+	if mediaType == "text/html" || mediaType == "application/xhtml+xml" {
+		return contentIsHTML
+	}
+
+	return ""
+}
+
+// contentMediaType is the media type of a Content-Type header, lowercased and
+// without parameters, or "" when there is none.
+func contentMediaType(header http.Header) string {
+	value := header.Get("Content-Type")
+	if value == "" {
+		return ""
+	}
+
+	mediaType, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		mediaType, _, _ = strings.Cut(value, ";")
+	}
+
+	return strings.ToLower(strings.TrimSpace(mediaType))
+}
+
+// isJSONMediaType reports whether a media type is JSON: application/json, or
+// a structured +json type.
+func isJSONMediaType(mediaType string) bool {
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
 }
 
 // successful reports whether a status is a 2xx, the only answers do does not
