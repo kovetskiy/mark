@@ -2008,46 +2008,22 @@ func (api *API) eachDirectChild(
 		return nil
 	}
 
-	const pageSize = 100
-
 	collection := "pages"
 	if parentType == "folder" {
 		collection = "folders"
 	}
 
-	var cursor string
-	for {
-		query := url.Values{"limit": {strconv.Itoa(pageSize)}}
-		if cursor != "" {
-			query.Set("cursor", cursor)
-		}
-
-		result, err := get[listing[struct {
-			ID    string `json:"id"`
-			Type  string `json:"type"`
-			Title string `json:"title"`
-		}]](ctx, api.v2, []string{collection, parentID, "direct-children"}, query)
-		if errors.Is(err, ErrNotFound) && cursor == "" {
-			return nil
-		}
-		if err != nil {
-			return requestError(operation, err)
-		}
-
-		for _, child := range result.Results {
-			if visit(child.ID, child.Type, child.Title) {
-				return nil
-			}
-		}
-
-		next := nextCursor(result.Links.Next)
-		// A server that hands back the cursor it was given would otherwise keep
-		// this loop going for as long as it keeps answering.
-		if next == "" || next == cursor || len(result.Results) == 0 {
-			return nil
-		}
-		cursor = next
+	type child struct {
+		ID    string `json:"id"`
+		Type  string `json:"type"`
+		Title string `json:"title"`
 	}
+
+	return eachV2(
+		ctx, api, []string{collection, parentID, "direct-children"},
+		url.Values{"limit": {"100"}}, operation,
+		func(c child) bool { return visit(c.ID, c.Type, c.Title) },
+	)
 }
 
 // FindRootFolder finds the folder with a title at the root of a space --

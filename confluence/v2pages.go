@@ -194,17 +194,38 @@ func listV1[T any](
 	}
 }
 
-// listV2 collects every result of a cursor-paged v2 listing.
+// listV2 collects every result of a cursor-paged v2 listing; see eachV2.
+func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string) ([]T, error) {
+	var all []T
+
+	err := eachV2(ctx, api, path, query, describe, func(result T) bool {
+		all = append(all, result)
+
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return all, nil
+}
+
+// eachV2 hands visit every result of a cursor-paged v2 listing in turn, and
+// stops early once visit says to.
 //
 // A 404 on the first page is read as an empty collection: that is how v2
-// answers for a space or page that has never had a property. Later on, a 404
-// is a failure like any other, since the results already in hand would
-// otherwise be thrown away.
-func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string) ([]T, error) {
-	var (
-		all    []T
-		cursor string
-	)
+// answers for a space or page that has never had a property, and for a
+// deployment without the route at all. Later on, a 404 is a failure like any
+// other, since the results already in hand would otherwise be thrown away.
+func eachV2[T any](
+	ctx context.Context,
+	api *API,
+	path []string,
+	query url.Values,
+	describe string,
+	visit func(result T) (stop bool),
+) error {
+	var cursor string
 
 	for {
 		page := maps.Clone(query)
@@ -217,19 +238,23 @@ func listV2[T any](ctx context.Context, api *API, path []string, query url.Value
 
 		result, err := get[listing[T]](ctx, api.v2, path, page)
 		if errors.Is(err, ErrNotFound) && cursor == "" {
-			return nil, nil
+			return nil
 		}
 		if err != nil {
-			return nil, requestError(describe, err)
+			return requestError(describe, err)
 		}
 
-		all = append(all, result.Results...)
+		for _, item := range result.Results {
+			if visit(item) {
+				return nil
+			}
+		}
 
 		next := nextCursor(result.Links.Next)
 		// A server that hands back the cursor it was given would otherwise
 		// keep this loop going for as long as it keeps answering.
 		if next == "" || next == cursor || len(result.Results) == 0 {
-			return all, nil
+			return nil
 		}
 		cursor = next
 	}
