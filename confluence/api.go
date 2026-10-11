@@ -2793,17 +2793,15 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		return false, err
 	}
 
-	// A body that does not decode is no answer from the action. Seraph's login
-	// page means the action is closed to these credentials, for this page and
-	// every other, so it is not asked again this run. Anything else -- the page
-	// the move redirected to, a proxy's page for this one request -- says
-	// nothing about the next page, and may even follow a move that worked.
+	// A body that does not decode is no answer from the action. A login page
+	// means the action is closed to these credentials, for this page and every
+	// other, so it is not asked again this run. HTML and nothing else to go on
+	// is not that: the action may redirect to the page it moved, and a proxy's
+	// page for this one request says nothing about the next page.
 	notJSON := err != nil
-	if notJSON && loginPage(response) {
-		missing := fmt.Errorf(
-			"%w: it answered with a login page (status: %d)",
-			errNoMoveAction, response.StatusCode,
-		)
+	var login *loginPageError
+	if errors.As(err, &login) && login.evidence != contentIsHTML {
+		missing := fmt.Errorf("%w: it answered with a login page: %w", errNoMoveAction, err)
 		api.moveActionMissing.Store(&missing)
 
 		return false, missing
@@ -2847,21 +2845,6 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		"movepage.action left %s where it was%s",
 		api.describeContent(contentID), actionErrors(answer),
 	)
-}
-
-// loginPage reports whether a response is Seraph turning the request away
-// rather than the action answering it: a login reason other than OK, an
-// anonymous user, or a redirect that ended on the login page.
-func loginPage(response *reply) bool {
-	if reason := response.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
-		return true
-	}
-	if response.Header.Get("X-AUSERNAME") == "anonymous" {
-		return true
-	}
-
-	return response.Request != nil && response.Request.URL != nil &&
-		strings.HasSuffix(response.Request.URL.Path, "/login.action")
 }
 
 // placedAt reads the tree back after movepage.action and reports whether
@@ -3231,12 +3214,12 @@ var errNoMoveEndpoint = errors.New(
 // newTransportError explains an error the HTTP library returned in place of a
 // status.
 //
-// client.do hands the JSON decode error back, together with the response,
-// for any 2xx whose body it cannot parse, where a StatusError -- which says
-// what answered and how -- is not made. The common trigger is a Confluence behind SSO
-// answering 200 with an HTML login page, and what reached the user was
-// `invalid character '<' looking for beginning of value`: no URL, no status,
-// and no page name.
+// A StatusError already says what answered and how, and is returned as it
+// is. A login page, which is what a Confluence behind SSO answers an API call
+// with, is put in terms of the operation and of where to look; so is a 2xx
+// whose body does not parse, which used to reach the user as `invalid
+// character '<' looking for beginning of value`: no URL, no status, and no
+// page name.
 func newTransportError(response *reply, operation string, err error) error {
 	if err == nil {
 		return nil
@@ -3257,6 +3240,14 @@ func newTransportError(response *reply, operation string, err error) error {
 	// SSO page for it would send someone looking for a proxy that is not there.
 	if response == nil || IsCancellation(err) {
 		return fmt.Errorf("unable to %s: %w", operation, err)
+	}
+
+	if errors.Is(err, ErrLoginPage) {
+		return fmt.Errorf(
+			"unable to %s: %w; SSO or a proxy in front of Confluence is the usual cause, "+
+				"and mark has to reach the API itself",
+			operation, err,
+		)
 	}
 
 	return fmt.Errorf(

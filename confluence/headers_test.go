@@ -20,7 +20,7 @@ import (
 // lived for the whole run. Because gopencils sends the *first* value ever
 // recorded for a key, a single odd Content-Type on any sub-400 response pinned
 // that Content-Type on every later PUT and POST body, and Confluence rejects a
-// storage-format update announced as text/html.
+// storage-format update announced as anything but application/json.
 func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	var (
 		putContentType string
@@ -31,9 +31,9 @@ func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			// A proxy interstitial or SSO shim in front of Confluence,
-			// announcing HTML while still passing the JSON body through.
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// An odd Content-Type, still JSON, and a header of no
+			// interest: neither may come back on the update.
+			w.Header().Set("Content-Type", "application/json; charset=iso-8859-1")
 			w.Header().Set("X-Odd-Header", "from-a-response")
 			_, _ = w.Write([]byte(
 				`{"results":[{"id":"1001","title":"Leaky","type":"page",` +
