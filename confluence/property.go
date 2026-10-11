@@ -160,47 +160,10 @@ func (api *API) SetPageProperty(ctx context.Context, pageID, key string, value [
 // Center as well as Cloud, which is what makes it usable as the storage of last
 // resort on a non-Cloud instance.
 func (api *API) ListContentProperties(ctx context.Context, contentID string) ([]Property, error) {
-	var all []Property
-	start := 0
-
-	for {
-		result, err := get[listing[Property]](
-			ctx, api.v1, []string{"content", contentID, "property"},
-			url.Values{
-				"limit": {strconv.Itoa(propertyPageSize)},
-				"start": {strconv.Itoa(start)},
-			},
-		)
-		// Only the first page may read 404 as "none set"; one partway through
-		// is a failure, and swallowing it would discard the pages already read.
-		if errors.Is(err, ErrNotFound) && start == 0 {
-			return nil, nil
-		}
-		if err != nil {
-			return nil, requestError("read properties of content "+contentID, err)
-		}
-
-		all = append(all, result.Results...)
-
-		// Two ways a listing says it is finished, and a deployment may use
-		// either. Confluence caps limit at its max-results setting and answers
-		// a capped request with a short page *and* a next link, so a short page
-		// alone does not mean the end -- that is how the tail of a listing was
-		// being thrown away, silently, on exactly the instances configured to
-		// hand out less than they were asked for. Other deployments omit the
-		// link entirely and only ever go short.
-		//
-		// So: keep going while either says there is more, and stop on an empty
-		// page whatever they say, which is what keeps a server that does
-		// neither from being asked for the same offset forever.
-		if len(result.Results) == 0 ||
-			(result.Links.Next == "" && len(result.Results) < propertyPageSize) {
-			break
-		}
-		start += len(result.Results)
-	}
-
-	return all, nil
+	return listV1[Property](
+		ctx, api, []string{"content", contentID, "property"},
+		nil, propertyPageSize, "read properties of content "+contentID, true, nil,
+	)
 }
 
 // SetContentProperty writes value to a page property, creating it if absent.

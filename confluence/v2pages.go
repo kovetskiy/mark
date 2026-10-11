@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -134,6 +135,63 @@ func v2Collection(pageType string) string {
 	}
 
 	return "pages"
+}
+
+// listV1 collects every result of an offset-paged v1 listing, pageSize at a
+// time. visit, when it is not nil, sees each page before its results are
+// collected, and may change them.
+//
+// With notFoundEmpty, a 404 on the first page is read as an empty listing.
+// Only the first: a 404 partway through is a failure, and swallowing it would
+// discard the pages already read.
+func listV1[T any](
+	ctx context.Context,
+	api *API,
+	path []string,
+	query url.Values,
+	pageSize int,
+	describe string,
+	notFoundEmpty bool,
+	visit func(page *listing[T]),
+) ([]T, error) {
+	var all []T
+	start := 0
+
+	for {
+		page := maps.Clone(query)
+		if page == nil {
+			page = url.Values{}
+		}
+		page.Set("limit", strconv.Itoa(pageSize))
+		page.Set("start", strconv.Itoa(start))
+
+		result, err := get[listing[T]](ctx, api.v1, path, page)
+		if notFoundEmpty && errors.Is(err, ErrNotFound) && start == 0 {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, requestError(describe, err)
+		}
+
+		if visit != nil {
+			visit(&result)
+		}
+
+		all = append(all, result.Results...)
+
+		// A short page does not mean the end: Confluence caps limit at its
+		// max-results setting and answers a capped request with a short page
+		// and a next link both. Nor does a missing link, since deployments that
+		// omit it only ever go short. Stop when neither says there is more, and
+		// on an empty page whatever they say, which is what keeps a server that
+		// does neither from being asked for the same offset forever.
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < pageSize) {
+			return all, nil
+		}
+
+		start += len(result.Results)
+	}
 }
 
 // listV2 collects every result of a cursor-paged v2 listing.
