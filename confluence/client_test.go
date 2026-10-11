@@ -48,6 +48,9 @@ func clientServer(
 
 		if contentType != "" {
 			w.Header().Set("Content-Type", contentType)
+		} else {
+			// None at all, rather than the one net/http would sniff.
+			w.Header()["Content-Type"] = nil
 		}
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, body)
@@ -108,12 +111,12 @@ func TestClientEncodesTheQuerySorted(t *testing.T) {
 }
 
 func TestClientSendsAndDecodesJSON(t *testing.T) {
-	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", `{"id":"42","title":"T"} trailing`)
+	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json; charset=utf-8", `{"id":"42","title":"T"}`+"\n")
 
 	var page PageInfo
 	response, err := c.do(context.Background(), http.MethodPost, []string{"content"}, nil,
 		map[string]any{"title": "T"}, &page)
-	require.NoError(t, err, "only the answer's first value is decoded")
+	require.NoError(t, err)
 
 	assert.Equal(t, http.MethodPost, got.method)
 	assert.Equal(t, "application/json", got.header.Get("Content-Type"))
@@ -464,6 +467,7 @@ func TestClientTracesRequestAndResponse(t *testing.T) {
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"7"}`)
 	}))
 	t.Cleanup(server.Close)
@@ -504,3 +508,125 @@ func TestClientReportsABadBaseURL(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestClientRejectsDataAfterTheJSONValue: an answer is one JSON value. A body
+// that goes on after it is not one, however well its start parsed.
+func TestClientRejectsDataAfterTheJSONValue(t *testing.T) {
+	for _, body := range []string{`{"id":"42"} trailing`, `{"id":"42"}{"id":"43"}`, `{"id":"42"}]`} {
+		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", body)
+
+		var page PageInfo
+		response, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+		require.Error(t, err, body)
+		assert.Contains(t, err.Error(), "after the JSON value", body)
+
+		transport := newTransportError(response, "read page 42", err)
+		assert.Contains(t, transport.Error(), "body that is not JSON", body)
+	}
+}
+
+// TestClientRejectsAContentTypeThatIsNotJSON: a 2xx that names a type other
+// than JSON, and is not a login page, is not decoded as though it were.
+func TestClientRejectsAContentTypeThatIsNotJSON(t *testing.T) {
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "text/plain", `{"id":"42"}`)
+
+	var page PageInfo
+	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrLoginPage)
+	assert.Contains(t, err.Error(), "text/plain")
+	assert.Empty(t, page.ID)
+
+	for _, contentType := range []string{"", "application/vnd.atlassian+json"} {
+		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, contentType, `{"id":"42"}`)
+
+		var page PageInfo
+		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+		require.NoError(t, err, "Content-Type %q", contentType)
+		assert.Equal(t, "42", page.ID)
+	}
+}
+
+// TestClientTakesAnEmptySuccessAsOne: a 2xx with no body has nothing to
+// decode, and is a success whether or not something was asked for, with
+// out left as it was.
+func TestClientTakesAnEmptySuccessAsOne(t *testing.T) {
+	for name, test := range map[string]struct {
+		status      int
+		contentType string
+	}{
+		"204":                  {http.StatusNoContent, ""},
+		"200, no Content-Type": {http.StatusOK, ""},
+		"200, JSON":            {http.StatusOK, "application/json"},
+		"201, a non-JSON type": {http.StatusCreated, "text/plain"},
+		"202, no Content-Type": {http.StatusAccepted, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, _ := clientServer(t, "/rest/api", "user", "token", test.status, test.contentType, "")
+
+			page := PageInfo{ID: "untouched"}
+			response, err := c.do(context.Background(), http.MethodDelete, []string{"content", "1"}, nil, nil, &page)
+			require.NoError(t, err)
+			assert.Equal(t, test.status, response.StatusCode)
+			assert.Equal(t, "untouched", page.ID)
+
+			_, err = c.do(context.Background(), http.MethodDelete, []string{"content", "1"}, nil, nil, nil)
+			require.NoError(t, err)
+		})
+	}
+
+	// No Content-Length either: the body is read and found empty.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header()["Content-Type"] = nil
+		w.(http.Flusher).Flush()
+	}))
+	t.Cleanup(server.Close)
+	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
+
+	page := PageInfo{ID: "untouched"}
+	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &page)
+	require.NoError(t, err)
+	assert.Equal(t, "untouched", page.ID)
+}
+
+// TestClientStreamsALargeSuccess: a success is decoded as it arrives. Only the
+// start of it is kept, and at TRACE only that start is dumped, under a note of
+// how much more there was.
+func TestClientStreamsALargeSuccess(t *testing.T) {
+	var buffer bytes.Buffer
+	previousLogger, previousLevel := log.Logger, zerolog.GlobalLevel()
+	log.Logger = zerolog.New(&buffer)
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() {
+		log.Logger = previousLogger
+		zerolog.SetGlobalLevel(previousLevel)
+	})
+
+	large := strings.Repeat("x", 4<<20)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"7","body":{"storage":{"value":"`+large+`"}}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	c := newClient(server.URL+"/rest/api", server.Client(), "user", "secret", "rest:")
+
+	var page PageInfo
+	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "7"}, nil, nil, &page)
+	require.NoError(t, err)
+	assert.Equal(t, "7", page.ID)
+	assert.Len(t, page.Body.Storage.Value, len(large), "the whole body is decoded")
+
+	assert.LessOrEqual(t, len(response.Body), traceDumpLimit, "only the start of it is kept")
+
+	lines := strings.Split(strings.TrimSpace(buffer.String()), "\n")
+	require.Len(t, lines, 2)
+	var entry struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &entry))
+	assert.True(t, strings.HasPrefix(entry.Message, "rest: HTTP/1.1 200 OK"))
+	assert.Contains(t, entry.Message, `{"id":"7"`)
+	assert.Contains(t, entry.Message, "more bytes not traced")
+	assert.Less(t, len(entry.Message), traceDumpLimit+1024)
+}

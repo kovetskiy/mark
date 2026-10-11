@@ -28,6 +28,7 @@ func TestArchivePageSendsANumericID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method, path = r.Method, r.URL.Path
 		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"id":"task-1","links":{"status":"/rest/api/longtask/task-1"}}`))
 	}))

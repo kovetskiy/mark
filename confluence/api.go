@@ -423,7 +423,16 @@ const traceDumpLimit = 64 << 10
 // boundTraceDump cuts a dump down to traceDumpLimit, on a character boundary,
 // and says how much was left out.
 func boundTraceDump[T string | []byte](dump T) string {
+	return boundTraceDumpMore(dump, 0)
+}
+
+// boundTraceDumpMore is boundTraceDump for a dump that more bytes, already
+// left out of it, followed.
+func boundTraceDumpMore[T string | []byte](dump T, more int64) string {
 	if len(dump) <= traceDumpLimit {
+		if more > 0 {
+			return fmt.Sprintf("%s... (%d more bytes not traced)", dump, more)
+		}
 		return string(dump)
 	}
 
@@ -432,7 +441,7 @@ func boundTraceDump[T string | []byte](dump T) string {
 		cut--
 	}
 
-	return fmt.Sprintf("%s... (%d more bytes not traced)", dump[:cut], len(dump)-cut)
+	return fmt.Sprintf("%s... (%d more bytes not traced)", dump[:cut], int64(len(dump)-cut)+more)
 }
 
 // sensitiveHeaders name the values that are credentials rather than metadata.
