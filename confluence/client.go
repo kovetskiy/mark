@@ -68,8 +68,9 @@ type reply struct {
 	Header     http.Header
 
 	// Body is the start of the body: for a failure, what a StatusError
-	// quotes and the byte that says there was more; otherwise what there was
-	// of it up to maxErrorBody bytes, or traceDumpLimit at TRACE.
+	// quotes and the byte that says there was more. A success keeps none,
+	// since nothing reads it, except at TRACE, where either keeps up to
+	// traceDumpLimit bytes for the dump.
 	Body []byte
 
 	// Request is the request that got this answer -- after redirects, the
@@ -202,8 +203,12 @@ func (c *client) doWithHeader(
 	}
 
 	// Only the start of the body is kept, for an error to quote and a trace
-	// to show; a success is decoded as it streams in.
-	limit := maxErrorBody + 1
+	// to show; a success is decoded as it streams in, and without a trace
+	// nothing of it is kept.
+	limit := 0
+	if !successful(resp.StatusCode) {
+		limit = maxErrorBody + 1
+	}
 	if c.trace != nil {
 		limit = traceDumpLimit
 	}
