@@ -116,21 +116,10 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 	}
 
 	var definitions []*extast.FootnoteDefinition
-	indices := map[string]int{}
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		switch n := node.(type) {
-		case *extast.FootnoteDefinition:
-			definitions = append(definitions, n)
-		case *extast.FootnoteReference:
-			label := n.Label.Str(source)
-			if _, seen := indices[label]; !seen {
-				indices[label] = n.Index
-			}
+		if definition, ok := node.(*extast.FootnoteDefinition); ok && entering {
+			definitions = append(definitions, definition)
 		}
 
 		return ast.WalkContinue, nil
@@ -143,11 +132,15 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 	list := NewFootnoteList()
 	definitions[0].Parent().InsertBefore(definitions[0], list)
 
-	seen := map[string]bool{}
 	for _, definition := range definitions {
 		definition.Parent().RemoveChild(definition)
 		list.AppendChild(definition)
+	}
 
+	indices := renumberFootnoteReferences(doc, source)
+
+	seen := map[string]bool{}
+	for _, definition := range definitions {
 		// A label defined twice is cited by its first definition only.
 		label := definition.Label.Str(source)
 		if index, ok := indices[label]; ok && !seen[label] {
@@ -155,6 +148,42 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 		}
 		seen[label] = true
 	}
+}
+
+// renumberFootnoteReferences numbers the citations the way goldmark v1 did,
+// and returns the number each cited label got. v1 numbered a note when its
+// first citation was parsed, and it parsed the inlines only once every
+// definition had been moved into the FootnoteList, so the citations inside
+// the notes count from where the list stands -- the first definition -- and
+// not from where each note was written. v2 numbers them in place, so a
+// definition written ahead of some citations would otherwise renumber the
+// notes. The numbers follow the tree as it is now, in document order, and so
+// does which citation of a note each one is.
+func renumberFootnoteReferences(doc ast.Node, source []byte) map[string]int {
+	indices := map[string]int{}
+	refCounts := map[string]int{}
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		reference, ok := node.(*extast.FootnoteReference)
+		if !ok || !entering {
+			return ast.WalkContinue, nil
+		}
+
+		label := reference.Label.Str(source)
+		index, seen := indices[label]
+		if !seen {
+			index = len(indices) + 1
+			indices[label] = index
+		}
+
+		reference.Index = index
+		reference.RefIndex = refCounts[label]
+		refCounts[label]++
+
+		return ast.WalkContinue, nil
+	})
+
+	return indices
 }
 
 // FootnoteBacklinkTransformer moves the FootnoteList to the end of the
