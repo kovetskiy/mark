@@ -2146,7 +2146,7 @@ func updateLabels(ctx context.Context, api *confluence.API, target *confluence.P
 	}
 
 	for _, label := range delLabels {
-		if _, err = api.DeletePageLabel(ctx, target, label); err != nil {
+		if err = api.DeletePageLabel(ctx, target, label); err != nil {
 			return fmt.Errorf("error deleting label %q: %w", label, err)
 		}
 	}

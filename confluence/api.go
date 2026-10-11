@@ -1516,21 +1516,15 @@ func (api *API) AddPageLabels(ctx context.Context, page *PageInfo, newLabels []s
 	return &result, nil
 }
 
-func (api *API) DeletePageLabel(ctx context.Context, page *PageInfo, label string) (*LabelInfo, error) {
-	var result LabelInfo
-	response, err := api.v1.do(
+func (api *API) DeletePageLabel(ctx context.Context, page *PageInfo, label string) error {
+	// The answer is decoded only to hold it to being JSON; nothing in it is
+	// used.
+	_, err := api.v1.do(
 		ctx, http.MethodDelete, []string{"content", page.ID, "label"},
-		url.Values{"name": {label}}, nil, &result,
+		url.Values{"name": {label}}, nil, &struct{}{},
 	)
-	if err != nil {
-		return nil, requestError(fmt.Sprintf("remove label %q from page %s", label, page.ID), err)
-	}
 
-	if response.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
-
-	return &result, nil
+	return requestError(fmt.Sprintf("remove label %q from page %s", label, page.ID), err)
 }
 
 func (api *API) GetPageLabels(ctx context.Context, page *PageInfo, prefix string) (*LabelInfo, error) {

@@ -296,7 +296,7 @@ func TestDeletePageLabel(t *testing.T) {
 	_, err = api.AddPageLabels(context.Background(), page, []string{"keep", "drop"})
 	require.NoError(t, err)
 
-	_, err = api.DeletePageLabel(context.Background(), page, "drop")
+	err = api.DeletePageLabel(context.Background(), page, "drop")
 	require.NoError(t, err)
 
 	after := server.Page(stored.ID)
