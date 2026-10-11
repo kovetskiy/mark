@@ -148,13 +148,6 @@ func listV2[T any](api *API, path []string, query url.Values, describe string) (
 	)
 
 	for {
-		var result struct {
-			Results []T `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
 		page := maps.Clone(query)
 		if page == nil {
 			page = url.Values{}
@@ -163,12 +156,12 @@ func listV2[T any](api *API, path []string, query url.Values, describe string) (
 			page.Set("cursor", cursor)
 		}
 
-		response, err := api.v2.do(api.Context(), http.MethodGet, path, page, nil, &result)
+		result, err := get[listing[T]](api.Context(), api.v2, path, page)
 		if errors.Is(err, ErrNotFound) && cursor == "" {
 			return nil, nil
 		}
 		if err != nil {
-			return nil, newTransportError(response, describe, err)
+			return nil, requestError(describe, err)
 		}
 
 		all = append(all, result.Results...)
@@ -200,18 +193,9 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 	}
 
 	// One request, not a paged walk: as on v1, the first result is the answer.
-	var result struct {
-		Results []contentV2 `json:"results"`
-		Links   struct {
-			Base string `json:"base"`
-		} `json:"_links"`
-	}
-
-	response, err := api.v2.do(api.Context(), http.MethodGet, []string{v2Collection(pageType)}, query, nil, &result)
+	result, err := get[listing[contentV2]](api.Context(), api.v2, []string{v2Collection(pageType)}, query)
 	if err != nil {
-		return nil, newTransportError(
-			response, fmt.Sprintf("find page %q in space %s", title, space), err,
-		)
+		return nil, requestError(fmt.Sprintf("find page %q in space %s", title, space), err)
 	}
 
 	api.learnSiteBase(result.Links.Base)
@@ -235,16 +219,14 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 
 // readContentV2 reads one object out of a v2 collection.
 func (api *API) readContentV2(collection, id string, withBody bool) (*contentV2, error) {
-	var result contentV2
-
 	query := url.Values{}
 	if withBody {
 		query.Set("body-format", "storage")
 	}
 
-	response, err := api.v2.do(api.Context(), http.MethodGet, []string{collection, id}, query, nil, &result)
+	result, err := get[contentV2](api.Context(), api.v2, []string{collection, id}, query)
 	if err != nil {
-		return nil, newTransportError(response, "read "+collection+" "+id, err)
+		return nil, requestError("read "+collection+" "+id, err)
 	}
 
 	return &result, nil
@@ -407,16 +389,12 @@ func (api *API) createPageV2(space, pageType, parentID, parentType, title, body 
 		}
 	}
 
-	var result contentV2
-
-	response, err := api.v2.do(api.Context(), http.MethodPost, []string{v2Collection(pageType)}, nil, payload, &result)
+	result, err := send[contentV2](api.Context(), api.v2, http.MethodPost, []string{v2Collection(pageType)}, payload)
 	if statusOf(err) != 0 {
 		return nil, api.explainCreateFailure(space, title, pageType, err)
 	}
 	if err != nil {
-		return nil, newTransportError(
-			response, fmt.Sprintf("create page %q in space %s", title, space), err,
-		)
+		return nil, requestError(fmt.Sprintf("create page %q in space %s", title, space), err)
 	}
 
 	return api.pageInfoV2(result, pageType), nil
@@ -455,13 +433,11 @@ func (api *API) updatePageV2(
 		payload["parentId"] = page.Ancestors[len(page.Ancestors)-1].ID
 	}
 
-	response, err := api.v2.do(
+	_, err := api.v2.do(
 		api.Context(), http.MethodPut, []string{v2Collection(page.Type), page.ID}, nil, payload, &map[string]any{},
 	)
 	if err != nil {
-		return newTransportError(
-			response, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
-		)
+		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
 	}
 
 	return nil

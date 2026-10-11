@@ -120,3 +120,63 @@ func requestTarget(response *reply) string {
 
 	return response.Request.URL.Redacted()
 }
+
+// requestError puts an error a request ended with in terms of the operation
+// it was part of, or returns nil for none.
+//
+// A StatusError already says what answered and how, and is returned as it
+// is. A login page, which is what a Confluence behind SSO answers an API call
+// with, is put in terms of the operation and of where to look; so is a 2xx
+// whose body does not parse, which used to reach the user as `invalid
+// character '<' looking for beginning of value`: no URL, no status, and no
+// page name. Anything else -- no answer at all, or a cancelled one -- has
+// nothing to add beyond what the request was trying to do.
+func requestError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var status *StatusError
+	if errors.As(err, &status) {
+		return err
+	}
+
+	// A cancelled request is that, whatever else is in the error: a body cut
+	// short by its context does not decode, and blaming an SSO page for it
+	// would send someone looking for a proxy that is not there.
+	if IsCancellation(err) {
+		return fmt.Errorf("unable to %s: %w", operation, err)
+	}
+
+	if errors.Is(err, ErrLoginPage) {
+		return fmt.Errorf(
+			"unable to %s: %w; SSO or a proxy in front of Confluence is the usual cause, "+
+				"and mark has to reach the API itself",
+			operation, err,
+		)
+	}
+
+	var body *bodyError
+	if errors.As(err, &body) {
+		return fmt.Errorf(
+			"unable to %s: %s answered %s with a body that is not JSON "+
+				"(an SSO login page or a proxy interstitial in front of Confluence is the "+
+				"usual cause): %w",
+			operation, requestTarget(body.answer), body.answer.Status, body.err,
+		)
+	}
+
+	return fmt.Errorf("unable to %s: %w", operation, err)
+}
+
+// bodyError is a 2xx whose body is not the one JSON value do expected: one
+// that does not parse, goes on after its value, names another Content-Type,
+// or could not be read to its end.
+type bodyError struct {
+	answer *reply
+	err    error
+}
+
+func (e *bodyError) Error() string { return e.err.Error() }
+
+func (e *bodyError) Unwrap() error { return e.err }
