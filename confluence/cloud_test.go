@@ -50,7 +50,7 @@ func TestCloudKeepsTheErrorOfAFailedLookup(t *testing.T) {
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	cloud, err := api.cloud()
+	cloud, err := api.Cloud()
 	assert.False(t, cloud)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unable to identify the Confluence platform")
