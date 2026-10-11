@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/internal/htmlblock"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
@@ -142,7 +143,7 @@ func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
 			if node.Kind() == ast.KindHTMLBlock {
 
 				n := node.(*ast.HTMLBlock)
-				for _, line := range n.Value.Segments() {
+				for _, line := range htmlblock.Lines(n, source) {
 					t = legacyClassifier.ClassifyingBlockQuote(line.Str(source))
 					if t != AdmonitionNone {
 						break
