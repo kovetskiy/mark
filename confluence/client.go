@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -108,6 +109,10 @@ type reply struct {
 //     the first JSON value is read; anything after it is ignored.
 //   - A body that cannot be read in full is the same: the response and the
 //     read error.
+//   - Cancellation: any error a request ends with while ctx is done -- no
+//     response, a body cut short, or one that does not decode -- is marked
+//     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
+//     it.
 func (c *client) do(
 	ctx context.Context,
 	method string,
@@ -168,7 +173,7 @@ func (c *client) doWithHeader(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, cancellation(ctx, err)
 	}
 
 	data, err := readBody(resp)
@@ -200,14 +205,57 @@ func (c *client) doWithHeader(
 	}
 
 	if err != nil {
-		return answer, err
+		return answer, cancellation(ctx, err)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest || resp.StatusCode == http.StatusNoContent || out == nil {
 		return answer, nil
 	}
 
-	return answer, json.NewDecoder(bytes.NewReader(data)).Decode(out)
+	return answer, cancellation(ctx, json.NewDecoder(bytes.NewReader(data)).Decode(out))
+}
+
+// cancelledError is an error a request ended with while its context was
+// done. It reads as err, which net/http already words as a cancellation, and
+// unwraps to both err and the context's own error, so errors.Is finds
+// context.Canceled or context.DeadlineExceeded in it whatever err was -- a
+// body cut short, or that body failing to decode.
+type cancelledError struct {
+	err, ctxErr error
+}
+
+func (e *cancelledError) Error() string { return e.err.Error() }
+
+func (e *cancelledError) Unwrap() []error { return []error{e.err, e.ctxErr} }
+
+// cancellation marks err as a cancellation when ctx is done, and returns it
+// unchanged otherwise. A nil err stays nil: an exchange that completed is an
+// answer, however soon after it the context ended.
+func cancellation(ctx context.Context, err error) error {
+	ctxErr := ctx.Err()
+	if err == nil || ctxErr == nil {
+		return err
+	}
+
+	return &cancelledError{err: err, ctxErr: ctxErr}
+}
+
+// IsCancellation reports whether err is the caller giving up rather than
+// Confluence answering: a request, or a wait between requests, that ended
+// because its context was done. Nothing that remembers an answer for later
+// -- a cache, a flag that an endpoint is missing, the platform -- may
+// remember one of these.
+//
+// It asks how the error was made, not what it wraps. net/http's "timeout
+// awaiting response headers" and a dial's "i/o timeout" both satisfy
+// errors.Is(err, context.DeadlineExceeded), and neither is the run being
+// stopped. And it asks the context the request carried, not whichever one
+// the API holds by the time the error is looked at, which ProcessFileContext
+// may have swapped back in the meantime.
+func IsCancellation(err error) bool {
+	var cancelled *cancelledError
+
+	return errors.As(err, &cancelled)
 }
 
 // readBody reads the body of resp: in full below 400, and otherwise no more

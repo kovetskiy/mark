@@ -211,6 +211,7 @@ func TestClientWithoutAResponseReturnsNone(t *testing.T) {
 
 	response, err := c.do(context.Background(), http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
 	require.Error(t, err)
+	assert.False(t, IsCancellation(err), "a refused connection is not the caller giving up")
 	assert.Nil(t, response)
 }
 
@@ -272,8 +273,48 @@ func TestClientIsAbortedByItsContext(t *testing.T) {
 	response, err := c.do(ctx, http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
 
 	require.ErrorIs(t, err, context.Canceled)
+	assert.True(t, IsCancellation(err))
 	assert.Nil(t, response)
 	assert.Less(t, time.Since(started), 5*time.Second)
+}
+
+// TestClientMarksABodyCutShortAsACancellation: a response that arrived and
+// then lost its body to the context is a cancellation too, not a body that
+// is not JSON.
+func TestClientMarksABodyCutShortAsACancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":`)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(30 * time.Second):
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	// Cancelled the moment the response is handed back, before its body is
+	// read.
+	httpClient := server.Client()
+	base := httpClient.Transport
+	httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		resp, err := base.RoundTrip(r)
+		cancel()
+		return resp, err
+	})
+
+	c := newClient(server.URL+"/rest/api", httpClient, "user", "token", "")
+
+	var page PageInfo
+	response, err := c.do(ctx, http.MethodGet, []string{"content", "1"}, nil, nil, &page)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.True(t, IsCancellation(err))
+	require.NotNil(t, response, "the status arrived before the cancellation")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
 }
 
 // TestClientTracesRequestAndResponse: at TRACE the whole exchange is dumped,
@@ -325,3 +366,7 @@ func TestClientReportsABadBaseURL(t *testing.T) {
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid base URL")
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
