@@ -102,36 +102,50 @@ func NewTightBlockTransformer() *TightBlockTransformer {
 
 // Transform implements parser.ASTTransformer.
 func (t *TightBlockTransformer) Transform(doc *ast.Document, _ text.Reader, _ parser.Context) {
-	var tight []*ast.Paragraph
+	tightenBlocks(doc)
+}
 
-	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
+// tightenBlocks replaces the tight paragraphs under node as it walks them. It
+// visits blocks only: a paragraph holds inlines, and an inline holds no
+// paragraph, so a document without lists costs one pass over its top-level
+// blocks and nothing more. The next sibling is taken before a paragraph is
+// replaced, since replacing it unlinks it from its siblings.
+func tightenBlocks(node ast.Node) {
+	for child := node.FirstChild(); child != nil; {
+		next := child.NextSibling()
+
+		switch c := child.(type) {
+		case *ast.Paragraph:
+			if inTightBlock(c) {
+				replaceWithTextBlock(c)
+			}
+		case ast.InlineNode:
+			// Nothing under an inline is a paragraph.
+		default:
+			tightenBlocks(c)
 		}
 
-		if paragraph, ok := node.(*ast.Paragraph); ok && inTightBlock(paragraph) {
-			tight = append(tight, paragraph)
-		}
-
-		return ast.WalkContinue, nil
-	})
-
-	for _, paragraph := range tight {
-		block := NewTextBlock()
-		block.SetSource(paragraph.Source())
-		block.SetBlankPreviousLines(paragraph.HasBlankPreviousLines())
-		block.SetPos(paragraph.Pos())
-
-		for child := paragraph.FirstChild(); child != nil; child = paragraph.FirstChild() {
-			block.AppendChild(child)
-		}
-
-		for _, attribute := range paragraph.Attributes() {
-			block.SetAttribute(attribute.Name, attribute.Value)
-		}
-
-		paragraph.Parent().ReplaceChild(paragraph, block)
+		child = next
 	}
+}
+
+// replaceWithTextBlock puts a TextBlock holding paragraph's children and
+// attributes in its place.
+func replaceWithTextBlock(paragraph *ast.Paragraph) {
+	block := NewTextBlock()
+	block.SetSource(paragraph.Source())
+	block.SetBlankPreviousLines(paragraph.HasBlankPreviousLines())
+	block.SetPos(paragraph.Pos())
+
+	for child := paragraph.FirstChild(); child != nil; child = paragraph.FirstChild() {
+		block.AppendChild(child)
+	}
+
+	for _, attribute := range paragraph.Attributes() {
+		block.SetAttribute(attribute.Name, attribute.Value)
+	}
+
+	paragraph.Parent().ReplaceChild(paragraph, block)
 }
 
 // inTightBlock reports whether goldmark v1 would have parsed paragraph as a
