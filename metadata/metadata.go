@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/internal/htmlblock"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
@@ -540,7 +541,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
 		if htmlBlock, ok := child.(*ast.HTMLBlock); ok {
-			lines := htmlBlock.Value.Segments()
+			lines := htmlblock.Lines(htmlBlock, data)
 			if len(lines) > 0 {
 				if lastStop > 0 && !onlyWhitespace(data, lastStop, lines[0].Start) {
 					break

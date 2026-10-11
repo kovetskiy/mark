@@ -43,6 +43,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `renderer/` | goldmark node renderers → storage format |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
+| `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve/create page + ancestry → resolve attachments → `CompileMarkdown` →
