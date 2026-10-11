@@ -97,7 +97,8 @@ type reply struct {
 //   - No response: a request that got no answer returns a nil response and
 //     the error. newTransportError reads the nil as "never completed".
 //   - Status 400 and above: the body is not decoded and the error is nil, so
-//     newErrorStatusNotOK can quote it.
+//     newErrorStatusNotOK can quote it. Only the first maxErrorBody+1 bytes
+//     of it are read, which is all newErrorStatusNotOK looks at.
 //   - Status 204: nothing is decoded.
 //   - Any other status: the body is decoded into out when out is non-nil,
 //     whatever its Content-Type says. A body that is not JSON, or is empty,
@@ -170,13 +171,19 @@ func (c *client) doWithHeader(
 		return nil, err
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readBody(resp)
 	_ = resp.Body.Close()
 
 	if c.trace != nil {
-		// DumpResponse reads the body it dumps, and the real one is spent.
-		resp.Body = io.NopCloser(bytes.NewReader(data))
-		dump, dumpErr := httputil.DumpResponse(resp, true)
+		// DumpResponse reads the body it dumps, and the real one is spent. A
+		// copy, so that a shortened error body can be dumped under a length
+		// that matches it.
+		dumped := *resp
+		dumped.Body = io.NopCloser(bytes.NewReader(data))
+		if resp.ContentLength > int64(len(data)) {
+			dumped.ContentLength = int64(len(data))
+		}
+		dump, dumpErr := httputil.DumpResponse(&dumped, true)
 		if dumpErr != nil {
 			c.trace.Printf("dump response failed: %s", dumpErr)
 		} else {
@@ -201,6 +208,21 @@ func (c *client) doWithHeader(
 	}
 
 	return answer, json.NewDecoder(bytes.NewReader(data)).Decode(out)
+}
+
+// readBody reads the body of resp: in full below 400, and otherwise no more
+// than newErrorStatusNotOK quotes, plus the one byte that tells it the body
+// went on. Nothing reads more of an error body than that, and what answers
+// with an error is not always Confluence: a proxy's HTML error page can run to
+// megabytes, which would otherwise all be held in memory, and copied again at
+// TRACE, only to be cut down to maxErrorBody. The rest is not drained, as
+// gopencils did not drain it either; closing the body drops the connection.
+func readBody(resp *http.Response) ([]byte, error) {
+	if resp.StatusCode >= http.StatusBadRequest {
+		return io.ReadAll(io.LimitReader(resp.Body, maxErrorBody+1))
+	}
+
+	return io.ReadAll(resp.Body)
 }
 
 // url joins path and query onto the base.
