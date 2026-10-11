@@ -97,19 +97,21 @@ type reply struct {
 //     included, through the same tracer and prefixes as before.
 //   - No response: a request that got no answer returns a nil response and
 //     the error. newTransportError reads the nil as "never completed".
-//   - Status 400 and above: the body is not decoded and the error is nil, so
-//     newErrorStatusNotOK can quote it. Only the first maxErrorBody+1 bytes
-//     of it are read, which is all newErrorStatusNotOK looks at, and a body
-//     cut short still leaves the error nil, with what was read.
+//   - Any status outside 2xx: the body is not decoded, and the error is a
+//     *StatusError carrying the status, the URL and the start of the body,
+//     which errors.Is matches against ErrNotFound for a 404 and ErrConflict
+//     for a 409. Only the first maxErrorBody+1 bytes of the body are read,
+//     which is all the error quotes, and a body cut short still makes a
+//     StatusError, with what was read.
 //   - Status 204: nothing is decoded.
-//   - Any other status: the body is decoded into out when out is non-nil,
+//   - Any other 2xx: the body is decoded into out when out is non-nil,
 //     whatever its Content-Type says. A body that is not JSON, or is empty,
 //     returns the decode error *together with* the response: that is how an
 //     SSO login page answering 200 is told apart from a network failure, by
 //     newTransportError and by moveByAction's login-page check alike. Only
 //     the first JSON value is read; anything after it is ignored.
-//   - Below 400, a body that cannot be read in full is the same: the response
-//     and the read error.
+//   - A 2xx body that cannot be read in full is the same: the response and
+//     the read error.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
@@ -214,14 +216,18 @@ func (c *client) doWithHeader(
 		// to the end: callers act on the status, and the bytes that did
 		// arrive are only ever quoted. Unless the run was stopped, which is
 		// what a body cut short then means.
-		if resp.StatusCode >= http.StatusBadRequest && ctx.Err() == nil {
-			return answer, nil
+		if !successful(resp.StatusCode) && ctx.Err() == nil {
+			return answer, newStatusError(answer)
 		}
 
 		return answer, cancellation(ctx, err)
 	}
 
-	if resp.StatusCode >= http.StatusBadRequest || resp.StatusCode == http.StatusNoContent || out == nil {
+	if !successful(resp.StatusCode) {
+		return answer, newStatusError(answer)
+	}
+
+	if resp.StatusCode == http.StatusNoContent || out == nil {
 		return answer, nil
 	}
 
@@ -271,19 +277,26 @@ func IsCancellation(err error) bool {
 	return errors.As(err, &cancelled)
 }
 
-// readBody reads the body of resp: in full below 400, and otherwise no more
-// than newErrorStatusNotOK quotes, plus the one byte that tells it the body
+// readBody reads the body of resp: in full for a 2xx, and otherwise no more
+// than a StatusError quotes, plus the one byte that tells it the body
 // went on. Nothing reads more of an error body than that, and what answers
 // with an error is not always Confluence: a proxy's HTML error page can run to
 // megabytes, which would otherwise all be held in memory, and copied again at
 // TRACE, only to be cut down to maxErrorBody. The rest is not drained, as
 // gopencils did not drain it either; closing the body drops the connection.
 func readBody(resp *http.Response) ([]byte, error) {
-	if resp.StatusCode >= http.StatusBadRequest {
+	if !successful(resp.StatusCode) {
 		return io.ReadAll(io.LimitReader(resp.Body, maxErrorBody+1))
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// successful reports whether a status is a 2xx, the only answers do does not
+// turn into a *StatusError. Go's client follows redirects on its own, so a 3xx
+// that reaches do is one it could not follow, and no answer either.
+func successful(status int) bool {
+	return status >= 200 && status <= 299
 }
 
 // errNoClient is what a request made through an API that NewAPI did not
