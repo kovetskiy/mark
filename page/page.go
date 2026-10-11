@@ -49,10 +49,7 @@ func resolvePage(
 		// hid the cancellation from errors.Is. Any other failure to identify
 		// the target is still taken for "not Cloud", as IsCloud has it.
 		isCloud, err := api.Cloud()
-		if ctxErr := api.Context().Err(); err != nil && ctxErr != nil {
-			if !errors.Is(err, ctxErr) {
-				err = fmt.Errorf("%w: %w", ctxErr, err)
-			}
+		if confluence.IsCancellation(err) {
 			return nil, nil, false, fmt.Errorf("unable to tell whether folders are supported: %w", err)
 		}
 		if !isCloud {
