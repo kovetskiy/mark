@@ -118,28 +118,21 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 		"value": json.RawMessage(value),
 	}
 
-	var (
-		result   Property
-		response *reply
-		err      error
-	)
-
 	owner := strings.TrimSuffix(collection, "s") + " " + ownerID
-	properties := []string{collection, ownerID, "properties"}
 
-	if existing == nil {
-		// Posted to the collection itself, with no trailing slash, which this
-		// API is not reliably forgiving about.
-		response, err = api.v2.do(api.Context(), http.MethodPost, properties, nil, payload, &result)
-	} else {
+	// Posted to the collection itself, with no trailing slash, which this API
+	// is not reliably forgiving about.
+	method, path := http.MethodPost, []string{collection, ownerID, "properties"}
+	if existing != nil {
 		// v2 addresses an update by property id.
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		response, err = api.v2.do(
-			api.Context(), http.MethodPut, append(properties, existing.ID), nil, payload, &result,
-		)
+		method, path = http.MethodPut, append(path, existing.ID)
 	}
+
+	_, err := send[Property](api.Context(), api.v2, method, path, payload)
+
 	return propertyWriteResult(
-		newTransportError(response, fmt.Sprintf("write property %q of %s", key, owner), err),
+		requestError(fmt.Sprintf("write property %q of %s", key, owner), err),
 		key, owner, existing == nil,
 	)
 }
@@ -170,20 +163,12 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 	start := 0
 
 	for {
-		var result struct {
-			Results []Property `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		response, err := api.v1.do(
-			api.Context(), http.MethodGet, []string{"content", contentID, "property"},
+		result, err := get[listing[Property]](
+			api.Context(), api.v1, []string{"content", contentID, "property"},
 			url.Values{
 				"limit": {strconv.Itoa(propertyPageSize)},
 				"start": {strconv.Itoa(start)},
 			},
-			nil, &result,
 		)
 		// Only the first page may read 404 as "none set"; one partway through
 		// is a failure, and swallowing it would discard the pages already read.
@@ -191,7 +176,7 @@ func (api *API) ListContentProperties(contentID string) ([]Property, error) {
 			return nil, nil
 		}
 		if err != nil {
-			return nil, newTransportError(response, "read properties of content "+contentID, err)
+			return nil, requestError("read properties of content "+contentID, err)
 		}
 
 		all = append(all, result.Results...)
@@ -224,17 +209,8 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		"value": json.RawMessage(value),
 	}
 
-	var (
-		result   Property
-		response *reply
-		err      error
-	)
-
-	properties := []string{"content", contentID, "property"}
-
-	if existing == nil {
-		response, err = api.v1.do(api.Context(), http.MethodPost, properties, nil, payload, &result)
-	} else {
+	method, path := http.MethodPost, []string{"content", contentID, "property"}
+	if existing != nil {
 		// v1 addresses an update by key in the path, but still wants the
 		// property id in the body, and the version being moved to rather than
 		// the one being replaced. Atlassian documents both as required; omitting
@@ -242,12 +218,12 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		// instance will not.
 		payload["id"] = existing.ID
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		response, err = api.v1.do(
-			api.Context(), http.MethodPut, append(properties, key), nil, payload, &result,
-		)
+		method, path = http.MethodPut, append(path, key)
 	}
+
+	_, err := send[Property](api.Context(), api.v1, method, path, payload)
 	return propertyWriteResult(
-		newTransportError(response, fmt.Sprintf("write property %q of content %s", key, contentID), err),
+		requestError(fmt.Sprintf("write property %q of content %s", key, contentID), err),
 		key, "content "+contentID, existing == nil,
 	)
 }
