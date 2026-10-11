@@ -1,7 +1,6 @@
 package confluence
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -277,31 +276,34 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 		return &loginPageError{requested: req.URL.Redacted(), evidence: evidence}
 	}
 
-	buffered := bufio.NewReader(body)
 	if resp.ContentLength == 0 {
 		return nil
 	}
-	if _, err := buffered.Peek(1); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
 
-		return err
-	}
-
-	// Nothing asked for, nothing to object to.
+	// Nothing asked for, nothing to object to -- beyond a body that cannot be
+	// read at all.
 	if out == nil {
-		return nil
+		return body.readPrefix(1)
 	}
 
 	if mediaType := contentMediaType(resp.Header); mediaType != "" && !isJSONMediaType(mediaType) {
-		_ = body.readPrefix(body.limit)
+		err := body.readPrefix(max(body.limit, 1))
+		// An empty body is success whatever it says it is.
+		if body.total == 0 {
+			return err
+		}
 
 		return fmt.Errorf("its Content-Type is %s, not JSON", mediaType)
 	}
 
-	decoder := json.NewDecoder(buffered)
+	decoder := json.NewDecoder(body)
 	if err := decoder.Decode(out); err != nil {
+		// An empty body is success, with out as it was. One with nothing but
+		// white space in it is not JSON.
+		if errors.Is(err, io.EOF) && body.total == 0 {
+			return nil
+		}
+
 		return err
 	}
 
