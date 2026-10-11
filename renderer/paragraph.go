@@ -83,7 +83,7 @@ func unwrapParagraph(n ast.Node, source []byte) bool {
 		return true
 	}
 
-	firstTag := rawHTMLTag(first, source)
+	firstTag := bytes.TrimSpace(ctransformer.HTMLBytes(first, source))
 
 	// Where does the element the first fragment opens close?
 	//
@@ -121,7 +121,7 @@ func closingFragment(n ast.Node, firstTag []byte, source []byte) ast.Node {
 			continue
 		}
 
-		tag := rawHTMLTag(raw, source)
+		tag := bytes.TrimSpace(ctransformer.HTMLBytes(raw, source))
 		if !bytes.EqualFold(tagName(tag), name) {
 			continue
 		}
@@ -138,12 +138,6 @@ func closingFragment(n ast.Node, firstTag []byte, source []byte) ast.Node {
 	}
 
 	return nil
-}
-
-// rawHTMLTag returns the fragment's bytes, which for an inline raw HTML node is
-// a single tag.
-func rawHTMLTag(n *ast.RawHTML, source []byte) []byte {
-	return bytes.TrimSpace(n.Value.Bytes(source))
 }
 
 // spansConfluenceElement reports whether the fragment is the opening or closing

@@ -58,7 +58,7 @@ func (t *ManualAnchorTransformer) Transform(doc *ast.Document, reader text.Reade
 			return ast.WalkContinue, nil
 		}
 
-		tag := bytes.TrimSpace(rawHTMLBytes(raw, source))
+		tag := bytes.TrimSpace(HTMLBytes(raw, source))
 
 		if groups := manualAnchor.FindSubmatch(tag); groups != nil {
 			name := firstNonEmpty(groups[1:])
@@ -104,7 +104,7 @@ func closesAManualAnchor(node ast.Node, source []byte) bool {
 			continue
 		}
 
-		tag := bytes.TrimSpace(rawHTMLBytes(raw, source))
+		tag := bytes.TrimSpace(HTMLBytes(raw, source))
 		if manualAnchorClose.Match(tag) {
 			return false
 		}
@@ -127,11 +127,6 @@ func anchorMacro(name string) []byte {
 			html.EscapeString(name) +
 			`</ac:parameter></ac:structured-macro>`,
 	)
-}
-
-// rawHTMLBytes joins the segments of a raw HTML node.
-func rawHTMLBytes(node *ast.RawHTML, source []byte) []byte {
-	return bytes.Clone(node.Value.Bytes(source))
 }
 
 // firstNonEmpty returns the first group that matched, since the pattern offers
