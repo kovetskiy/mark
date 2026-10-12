@@ -266,7 +266,9 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 		return nil
 	}
 
-	if evidence := loginEvidence(req, resp); evidence != "" {
+	mediaType := contentMediaType(resp.Header)
+
+	if evidence := loginEvidence(req, resp, mediaType); evidence != "" {
 		_ = body.readPrefix(body.limit)
 
 		return &loginPageError{requested: req.URL.Redacted(), evidence: evidence}
@@ -282,7 +284,7 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 		return body.readPrefix(1)
 	}
 
-	if mediaType := contentMediaType(resp.Header); mediaType != "" && !isJSONMediaType(mediaType) {
+	if mediaType != "" && !isJSONMediaType(mediaType) {
 		err := body.readPrefix(max(body.limit, 1))
 		// An empty body is success whatever it says it is.
 		if body.total == 0 {
@@ -501,7 +503,8 @@ func (e *loginPageError) Is(target error) bool { return target == ErrLoginPage }
 const contentIsHTML = "an HTML Content-Type"
 
 // loginEvidence says why a 2xx answer to req is a login page rather than
-// Confluence's own answer, or "" when it is not one.
+// Confluence's own answer, or "" when it is not one. mediaType is the
+// answer's, as contentMediaType reads it.
 //
 // Confluence's API answers in JSON, so an answer in HTML is a page for a
 // person: an SSO proxy's login form, or the page some proxy or redirect put
@@ -509,7 +512,7 @@ const contentIsHTML = "an HTML Content-Type"
 // that ended on Seraph's /login.action was sent to log in; and one that was
 // redirected to another host, or that Seraph says it did not authenticate,
 // was turned away unless it answered in JSON.
-func loginEvidence(req *http.Request, resp *http.Response) string {
+func loginEvidence(req *http.Request, resp *http.Response, mediaType string) string {
 	final := req.URL
 	if resp.Request != nil && resp.Request.URL != nil {
 		final = resp.Request.URL
@@ -519,7 +522,6 @@ func loginEvidence(req *http.Request, resp *http.Response) string {
 		return "redirected to /login.action"
 	}
 
-	mediaType := contentMediaType(resp.Header)
 	if !isJSONMediaType(mediaType) {
 		if !strings.EqualFold(final.Hostname(), req.URL.Hostname()) {
 			return "redirected to " + final.Hostname()
