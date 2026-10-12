@@ -41,11 +41,9 @@ const (
 
 // newHTTPClient builds the client used for every Confluence call.
 //
-// A cookie jar is always installed. Confluence Server hands out a session
-// cookie on the first authenticated call and expects it back; previously the
-// jar was only present in the default case, because gopencils creates one only
-// when it is not given a client, so --insecure-skip-tls-verify silently
-// dropped session affinity.
+// A cookie jar is always installed, --insecure-skip-tls-verify or not.
+// Confluence Server hands out a session cookie on the first authenticated
+// call and expects it back.
 func newHTTPClient(insecureSkipVerify bool) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
