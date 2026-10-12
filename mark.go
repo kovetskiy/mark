@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	// SHA-1 is used only as a content fingerprint for --changes-only, never as
 	// a security primitive. The digest is embedded in the page version message
@@ -27,6 +28,7 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/header"
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
@@ -105,6 +107,9 @@ type Config struct {
 	ImageAlign       string
 	AttachReferenced bool
 	IncludePath      string
+	// PageHeader is a template placed at the top of every page: Markdown
+	// when it has a Markdown extension, storage format otherwise.
+	PageHeader string
 
 	// Output is the writer used for result output (e.g. published page URLs,
 	// compiled HTML). If nil, output is discarded; the CLI sets this to
@@ -374,6 +379,11 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
+	if err != nil {
+		return err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
 	// What the run did, for whatever is reading the output rather than the log.
@@ -517,7 +527,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
+		target, placement, err := processFile(file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -588,7 +598,7 @@ func run(ctx context.Context, config Config) (err error) {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
+				file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
 			); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
@@ -719,9 +729,14 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 		return nil, err
 	}
 
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
+	if err != nil {
+		return nil, err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil)
+	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -775,7 +790,7 @@ func readSource(file string) ([]byte, []byte, error) {
 	return source, markdown, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
 	source, markdown, err := readSource(file)
 	if err != nil {
 		return nil, nil, err
@@ -992,31 +1007,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if config.CompileOnly || config.DryRun {
-		if config.DropH1 {
-			log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
-		}
-
-		imageAlign, err := getImageAlign(config.ImageAlign, meta)
+		cfg, err := config.documentConfig(meta, resolveLink)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
-		}
-
-		cfg := types.MarkConfig{
-			MermaidScale:     config.MermaidScale,
-			MermaidOutput:    config.MermaidOutput,
-			MermaidBundle:    config.MermaidBundle,
-			D2Output:         config.D2Output,
-			D2Scale:          config.D2Scale,
-			D2BundleRemote:   config.D2BundleRemote,
-			MathFormat:       config.MathFormat,
-			MathScale:        config.MathScale,
-			DropFirstH1:      config.DropH1,
-			StripNewlines:    config.StripLinebreaks,
-			Features:         config.Features,
-			ImageAlign:       imageAlign,
-			AttachReferenced: config.AttachReferenced,
-			IncludePath:      config.IncludePath,
-			ResolveLink:      resolveLink,
+			return nil, nil, err
 		}
 
 		// Only a dry run asked to tell changed pages from unchanged ones.
@@ -1056,6 +1049,34 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			html, inline, err = markmd.CompileMarkdown(markdown, std, file, cfg)
 			if err != nil {
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+			}
+
+			var previewedTitle string
+			if previewed != nil {
+				previewedTitle = previewed.Title
+			}
+
+			headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, previewedTitle, config.Space, cfg)
+			if err != nil {
+				return nil, nil, err
+			}
+			html = headerHTML + html
+
+			// The clash a real run refuses, so that this one does not report
+			// success for a page that run will fail on. Declared files are read
+			// only when there is something to clash with them.
+			if len(headerAttachments) > 0 {
+				var declared []attachment.Attachment
+				if meta != nil {
+					declared, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+					if err != nil {
+						return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
+					}
+				}
+
+				if _, err := withHeaderAttachments(file, declared, inline, headerAttachments); err != nil {
+					return nil, nil, err
+				}
 			}
 
 			if compare {
@@ -1303,6 +1324,30 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
+	cfg, err := config.documentConfig(meta, resolveLink)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// With --page-id the file's metadata is discarded, so the page itself and
+	// --space are what the header can name.
+	var targetTitle string
+	if target != nil {
+		targetTitle = target.Title
+	}
+
+	headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, targetTitle, config.Space, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// The header's own files are known now, so a clash with a declared one is
+	// refused before anything is uploaded. One with a file the document only
+	// references can be seen once it is compiled, which needs these uploaded.
+	if _, err := withHeaderAttachments(file, localAttachments, nil, headerAttachments); err != nil {
+		return nil, nil, err
+	}
+
 	// The page's remote attachment list is fetched once and threaded through
 	// both resolve passes. Attachments are resolved twice per page -- declared
 	// attachments here, then diagrams discovered while rendering -- and each
@@ -1321,38 +1366,17 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	attachmentLinks := attachment.NewResolver(attaches)
 
-	if config.DropH1 {
-		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
-	}
-
-	imageAlign, err := getImageAlign(config.ImageAlign, meta)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
-	}
-
-	cfg := types.MarkConfig{
-		MermaidScale:     config.MermaidScale,
-		MermaidOutput:    config.MermaidOutput,
-		MermaidBundle:    config.MermaidBundle,
-		D2Output:         config.D2Output,
-		D2Scale:          config.D2Scale,
-		D2BundleRemote:   config.D2BundleRemote,
-		MathFormat:       config.MathFormat,
-		MathScale:        config.MathScale,
-		DropFirstH1:      config.DropH1,
-		StripNewlines:    config.StripLinebreaks,
-		Features:         config.Features,
-		ImageAlign:       imageAlign,
-		AttachReferenced: config.AttachReferenced,
-		IncludePath:      config.IncludePath,
-		ResolveLink:      resolveLink,
-
-		ResolveAttachment: attachmentLinks.Resolve,
-	}
+	cfg.ResolveAttachment = attachmentLinks.Resolve
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+	}
+
+	html = headerHTML + html
+	inlineAttachments, err = withHeaderAttachments(file, attaches, inlineAttachments, headerAttachments)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Kept for the report as well as the log. Reaching this line with any of
@@ -2995,4 +3019,88 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 	}
 
 	return strings.TrimSpace(pages.Title), nil
+}
+
+// withHeaderAttachments adds what the page header references to the document's
+// own. One filename is one attachment on the page, so a header file that shares
+// a name with a different document file would silently replace it.
+func withHeaderAttachments(file string, declared, inline, fromHeader []attachment.Attachment) ([]attachment.Attachment, error) {
+	taken := make(map[string]attachment.Attachment, len(declared)+len(inline))
+	for _, a := range slices.Concat(declared, inline) {
+		taken[a.Filename] = a
+	}
+
+	for _, a := range fromHeader {
+		other, clash := taken[a.Filename]
+		if !clash {
+			taken[a.Filename] = a
+			inline = append(inline, a)
+
+			continue
+		}
+
+		if !sameAttachment(other, a) {
+			return nil, fmt.Errorf(
+				"page header attachment %q is a different file from the one %s attaches under that name",
+				a.Filename, file,
+			)
+		}
+	}
+
+	return inline, nil
+}
+
+func sameAttachment(a, b attachment.Attachment) bool {
+	if a.Checksum != "" && b.Checksum != "" {
+		return a.Checksum == b.Checksum
+	}
+
+	return bytes.Equal(a.FileBytes, b.FileBytes)
+}
+
+// renderHeader renders the page header for one document, naming it by its
+// metadata where it has some and by fallbackTitle and fallbackSpace where not.
+func renderHeader(
+	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg types.MarkConfig,
+) (string, []attachment.Attachment, error) {
+	return pageHeader.Render(file, cmp.Or(titleOf(meta), fallbackTitle), cmp.Or(spaceOf(meta), fallbackSpace), cfg)
+}
+
+// documentConfig is the compile configuration for one document: the run's,
+// with what its metadata and link resolution add.
+func (c Config) documentConfig(meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
+	if c.DropH1 {
+		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
+	}
+
+	imageAlign, err := getImageAlign(c.ImageAlign, meta)
+	if err != nil {
+		return types.MarkConfig{}, fmt.Errorf("unable to determine image-align: %w", err)
+	}
+
+	cfg := c.markConfig()
+	cfg.DropFirstH1 = c.DropH1
+	cfg.ImageAlign = imageAlign
+	cfg.ResolveLink = resolveLink
+
+	return cfg, nil
+}
+
+// markConfig is the compile configuration the run's flags give every
+// document; the per-document fields are left for the caller to fill in.
+func (c Config) markConfig() types.MarkConfig {
+	return types.MarkConfig{
+		MermaidScale:     c.MermaidScale,
+		MermaidOutput:    c.MermaidOutput,
+		MermaidBundle:    c.MermaidBundle,
+		D2Output:         c.D2Output,
+		D2Scale:          c.D2Scale,
+		D2BundleRemote:   c.D2BundleRemote,
+		MathFormat:       c.MathFormat,
+		MathScale:        c.MathScale,
+		StripNewlines:    c.StripLinebreaks,
+		Features:         c.Features,
+		AttachReferenced: c.AttachReferenced,
+		IncludePath:      c.IncludePath,
+	}
 }
