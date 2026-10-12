@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestPublishThroughTheGateway(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(baseURL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Guide", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 

@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestFindHomePageIsCached(t *testing.T) {
 	server.SetHomepage("DOCS", home.ID)
 
 	for range 20 {
-		page, err := api.FindHomePage("DOCS")
+		page, err := api.FindHomePage(context.Background(), "DOCS")
 		require.NoError(t, err)
 		require.NotNil(t, page)
 		assert.Equal(t, home.ID, page.ID)
@@ -39,7 +40,7 @@ func TestFindHomePageCachesFailures(t *testing.T) {
 	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
 
 	for range 5 {
-		_, err := api.FindHomePage("NOPE")
+		_, err := api.FindHomePage(context.Background(), "NOPE")
 		require.Error(t, err)
 	}
 
@@ -54,7 +55,7 @@ func TestGetSpaceIDIsCached(t *testing.T) {
 	space := server.AddSpace("DOCS")
 
 	for range 20 {
-		id, err := api.GetSpaceID("DOCS")
+		id, err := api.GetSpaceID(context.Background(), "DOCS")
 		require.NoError(t, err)
 		assert.Equal(t, space.ID, id)
 	}
@@ -68,11 +69,11 @@ func TestGetSpaceIDCachesPerKey(t *testing.T) {
 	team := server.AddSpace("TEAM")
 
 	for range 3 {
-		id, err := api.GetSpaceID("DOCS")
+		id, err := api.GetSpaceID(context.Background(), "DOCS")
 		require.NoError(t, err)
 		assert.Equal(t, docs.ID, id)
 
-		id, err = api.GetSpaceID("TEAM")
+		id, err = api.GetSpaceID(context.Background(), "TEAM")
 		require.NoError(t, err)
 		assert.Equal(t, team.ID, id)
 	}
@@ -94,7 +95,7 @@ func TestFindHomePageV1WithoutAHomepageIsAnError(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
-	page, err := api.FindHomePage("DOCS")
+	page, err := api.FindHomePage(context.Background(), "DOCS")
 	require.Error(t, err)
 	assert.Nil(t, page)
 	assert.Contains(t, err.Error(), "has no home page")
@@ -129,18 +130,18 @@ func TestTransientFailureIsNotCached(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.FindHomePage("DOCS")
+	_, err := api.FindHomePage(context.Background(), "DOCS")
 	require.Error(t, err, "the outage is reported")
 
 	// The outage passes, as outages do.
 	failing = false
 
-	found, err := api.FindHomePage("DOCS")
+	found, err := api.FindHomePage(context.Background(), "DOCS")
 	require.NoError(t, err, "the next document must not inherit the failure")
 	require.NotNil(t, found)
 	assert.Equal(t, home.ID, found.ID)
 
-	id, err := api.GetSpaceID("DOCS")
+	id, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.NoError(t, err)
 	assert.Equal(t, space.ID, id)
 }
@@ -176,7 +177,7 @@ func TestFindHomePageServerOutageIsNotCachedAsMissing(t *testing.T) {
 		return http.StatusServiceUnavailable, failing
 	}))
 
-	_, err := api.FindHomePage("DOCS")
+	_, err := api.FindHomePage(context.Background(), "DOCS")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "503", "the outage is what is reported")
 	assert.NotErrorIs(t, err, confluence.ErrNotFound,
@@ -184,7 +185,7 @@ func TestFindHomePageServerOutageIsNotCachedAsMissing(t *testing.T) {
 
 	failing = false
 
-	found, err := api.FindHomePage("DOCS")
+	found, err := api.FindHomePage(context.Background(), "DOCS")
 	require.NoError(t, err, "the next lookup must not inherit the outage")
 	require.NotNil(t, found)
 	assert.Equal(t, home.ID, found.ID)
@@ -201,7 +202,7 @@ func TestFindHomePageServerReportsUnauthorized(t *testing.T) {
 	}))
 
 	for range 2 {
-		_, err := api.FindHomePage("DOCS")
+		_, err := api.FindHomePage(context.Background(), "DOCS")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "401 (Unauthorized)")
 		assert.NotErrorIs(t, err, confluence.ErrNotFound)
@@ -223,7 +224,7 @@ func TestGatewayFindHomePageNotFoundIsCached(t *testing.T) {
 	})
 
 	for range 2 {
-		_, err := api.FindHomePage("NOPE")
+		_, err := api.FindHomePage(context.Background(), "NOPE")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, confluence.ErrNotFound)
 	}

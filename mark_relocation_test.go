@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -115,7 +116,7 @@ func TestATrackedPageIsMovedWhenItsFirstParentIsTheHomePage(t *testing.T) {
 	}
 	require.NoError(t, Run(config))
 
-	published, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage("DOCS", "Doc", "page")
+	published, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 

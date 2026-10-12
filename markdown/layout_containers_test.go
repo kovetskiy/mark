@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -19,7 +20,7 @@ import (
 // output with an error naming XML and never the directive -- leaving the author
 // nothing to go on.
 func TestLayoutDirectiveInsideAContainerIsLeftAlone(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	for name, document := range map[string]string{
@@ -43,7 +44,7 @@ func TestLayoutDirectiveInsideAContainerIsLeftAlone(t *testing.T) {
 // TestLayoutDirectiveAtDocumentLevelStillConverts is the boundary: the whole
 // point of the directives is the layout they build, and that is unaffected.
 func TestLayoutDirectiveAtDocumentLevelStillConverts(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	document := "<!-- ac:layout -->\n" +

@@ -1,6 +1,7 @@
 package page_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 // here": the page would be trashed, and the folders and everything in them
 // with it.
 func TestHandleOrphansKeepsAFolderParentWhenThePlatformIsUnidentified(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	gone := server.AddPage("DOCS", "Gone", "page", "")
 	folder := server.AddFolder("DOCS", "Manuals", gone.ID, "page")
@@ -29,9 +31,9 @@ func TestHandleOrphansKeepsAFolderParentWhenThePlatformIsUnidentified(t *testing
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(), "the platform has to go unidentified for this to mean anything")
+	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
 
-	handled, err := page.HandleOrphans(api, page.OnOrphanDelete, []page.Orphan{
+	handled, err := page.HandleOrphans(ctx, api, page.OnOrphanDelete, []page.Orphan{
 		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
 	}, false)
 	require.NoError(t, err)
@@ -47,6 +49,7 @@ func TestHandleOrphansKeepsAFolderParentWhenThePlatformIsUnidentified(t *testing
 // a 200. That identifies nothing, so it does not rule Cloud out, and the folder
 // check still runs before the page is trashed.
 func TestHandleOrphansKeepsAFolderParentBehindAnSSOProxy(t *testing.T) {
+	ctx := t.Context()
 	api, server := newAPI(t)
 	gone := server.AddPage("DOCS", "Gone", "page", "")
 	server.AddFolder("DOCS", "Manuals", gone.ID, "page")
@@ -58,9 +61,9 @@ func TestHandleOrphansKeepsAFolderParentBehindAnSSOProxy(t *testing.T) {
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(), "the platform has to go unidentified for this to mean anything")
+	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
 
-	handled, err := page.HandleOrphans(api, page.OnOrphanDelete, []page.Orphan{
+	handled, err := page.HandleOrphans(ctx, api, page.OnOrphanDelete, []page.Orphan{
 		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
 	}, false)
 	require.NoError(t, err)

@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -19,10 +20,11 @@ import (
 // straight up. The same repository publishes fine without --orphan-under, which
 // made the flag itself look broken.
 func TestInScopeTreatsADeletedPageAsGone(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	inScope, err := InScope(api, "2000", Orphan{
+	inScope, err := InScope(ctx, api, "2000", Orphan{
 		Path: "gone.md", PageID: "9999", Title: "Gone",
 	})
 
@@ -34,6 +36,7 @@ func TestInScopeTreatsADeletedPageAsGone(t *testing.T) {
 // where the page sits, and answering "not in scope" would quietly leave every
 // orphan alone while looking like a clean run.
 func TestInScopeReportsARealFailure(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	page := server.AddPage("DOCS", "Doc", "page", home.ID)
@@ -48,7 +51,7 @@ func TestInScopeReportsARealFailure(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := InScope(api, home.ID, Orphan{
+	_, err := InScope(ctx, api, home.ID, Orphan{
 		Path: "doc.md", PageID: page.ID, Title: "Doc",
 	})
 
@@ -63,13 +66,13 @@ type stubFolderTracker struct {
 	recorded map[string]string
 }
 
-func (s *stubFolderTracker) LookupFolder(_, path string) (string, bool, error) {
+func (s *stubFolderTracker) LookupFolder(_ context.Context, _, path string) (string, bool, error) {
 	id, ok := s.folders[path]
 
 	return id, ok, nil
 }
 
-func (s *stubFolderTracker) RecordFolder(_, path, id string) error {
+func (s *stubFolderTracker) RecordFolder(_ context.Context, _, path, id string) error {
 	s.recorded[path] = id
 
 	return nil
@@ -85,6 +88,7 @@ func (s *stubFolderTracker) RecordFolder(_, path, id string) error {
 // the first, and published into it: the hierarchy split in two, by a run that
 // looked like it had worked.
 func TestFolderAncestryReportsAFailedRead(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
@@ -110,7 +114,7 @@ func TestFolderAncestryReportsAFailedRead(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := EnsureFolderAncestry(false, api, "DOCS", folders, &anchorID, tracker)
+	_, err := EnsureFolderAncestry(ctx, false, api, "DOCS", folders, &anchorID, tracker)
 
 	require.Error(t, err, "a folder that could not be read is not a folder that is gone")
 	assert.Contains(t, err.Error(), "Manuals-failed-read")
@@ -122,6 +126,7 @@ func TestFolderAncestryReportsAFailedRead(t *testing.T) {
 // recorded folder that Confluence answers 404 for really has been deleted, and
 // creating it again is the right thing to do.
 func TestFolderAncestryRecreatesAFolderThatIsReallyGone(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
@@ -138,7 +143,7 @@ func TestFolderAncestryRecreatesAFolderThatIsReallyGone(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	parent, err := EnsureFolderAncestry(false, api, "DOCS", folders, &anchorID, tracker)
+	parent, err := EnsureFolderAncestry(ctx, false, api, "DOCS", folders, &anchorID, tracker)
 
 	require.NoError(t, err)
 	require.NotNil(t, parent)

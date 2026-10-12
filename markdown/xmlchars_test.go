@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestControlCharactersDoNotBreakThePage(t *testing.T) {
 	} {
 		for name, compile := range compilers {
 			t.Run(name+" "+tc.name, func(t *testing.T) {
-				std, err := stdlib.New(nil)
+				std, err := stdlib.New(context.Background(), nil)
 				require.NoError(t, err)
 
 				out, _, err := compile([]byte(tc.markdown), std, "test.md", types.MarkConfig{})
@@ -60,7 +61,7 @@ func TestControlCharactersDoNotBreakThePage(t *testing.T) {
 func TestControlCharacterReferencesAreLeftInCDATAAndComments(t *testing.T) {
 	for name, compile := range compilers {
 		t.Run(name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := compile([]byte("```\necho '&#1;'\n```\n\n<!-- &#27; -->\n"), std, "test.md", types.MarkConfig{})

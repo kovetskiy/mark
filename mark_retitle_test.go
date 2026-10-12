@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestPreserveCommentsKeepsARetitle(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	original, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Original Title", "page")
+		FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
 	require.NotNil(t, original)
 

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func propertiesFixture(t *testing.T, doc string, config func(*Config)) (*conflue
 	require.NoError(t, Run(cfg))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 

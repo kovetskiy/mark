@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +21,7 @@ import (
 // lived for the whole run. Because gopencils sends the *first* value ever
 // recorded for a key, a single odd Content-Type on any sub-400 response pinned
 // that Content-Type on every later PUT and POST body, and Confluence rejects a
-// storage-format update announced as text/html.
+// storage-format update announced as anything but application/json.
 func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	var (
 		putContentType string
@@ -31,9 +32,9 @@ func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			// A proxy interstitial or SSO shim in front of Confluence,
-			// announcing HTML while still passing the JSON body through.
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// An odd Content-Type, still JSON, and a header of no
+			// interest: neither may come back on the update.
+			w.Header().Set("Content-Type", "application/json; charset=iso-8859-1")
 			w.Header().Set("X-Odd-Header", "from-a-response")
 			_, _ = w.Write([]byte(
 				`{"results":[{"id":"1001","title":"Leaky","type":"page",` +
@@ -55,11 +56,11 @@ func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	// install a long-lived header map on the root resource.
 	api := confluence.NewAPI(server.URL, "", "pat-token", false)
 
-	page, err := api.FindPage("DOCS", "Leaky", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Leaky", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "full-width", ""))
 
 	assert.Equal(t, "application/json", putContentType,
 		"the GET response's Content-Type must not survive into the update body")
@@ -84,9 +85,9 @@ func TestAuthorizationIsSentOnEveryRequest(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "", "pat-token", false)
 
-	_, err := api.FindPage("DOCS", "Anything", "page")
+	_, err := api.FindPage(context.Background(), "DOCS", "Anything", "page")
 	require.NoError(t, err)
-	_, err = api.GetFolderByID("2001")
+	_, err = api.GetFolderByID(context.Background(), "2001")
 	require.NoError(t, err)
 
 	require.Len(t, seen, 2)

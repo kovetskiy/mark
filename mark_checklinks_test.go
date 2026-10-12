@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -247,7 +248,7 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 		}))
 
 		api := confluence.NewAPI(server.URL, "user", "token", false)
-		doc, err := api.FindPage("DOCS", "Doc", "page")
+		doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 		require.NoError(t, err)
 		require.NotNil(t, doc)
 		assert.Contains(t, server.Page(doc.ID).Body, "Body here")

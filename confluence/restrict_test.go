@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -21,7 +22,7 @@ func newCloudRestrictAPI(t *testing.T) (*confluence.API, *confluencetest.Server,
 		Email:     "me@example.com",
 		FullName:  "Mark Bot",
 	})
-	require.True(t, api.IsCloud(), "the fixture has to look like Cloud for this to mean anything")
+	require.True(t, api.IsCloud(context.Background()), "the fixture has to look like Cloud for this to mean anything")
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -31,7 +32,7 @@ func newCloudRestrictAPI(t *testing.T) (*confluence.API, *confluencetest.Server,
 func TestRestrictPageUpdatesUnknownUserFails(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 
-	err := api.RestrictPageUpdates(page, "Nobody Here")
+	err := api.RestrictPageUpdates(context.Background(), page, "Nobody Here")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"Nobody Here"`, "the user that could not be resolved has to be named")
 	assert.Contains(t, err.Error(), page.ID)
@@ -47,7 +48,7 @@ func TestRestrictPageUpdatesUnknownUserFails(t *testing.T) {
 func TestRestrictPageUpdatesCurrentUserByEmail(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 
-	require.NoError(t, api.RestrictPageUpdates(page, "ME@example.com"))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "ME@example.com"))
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
@@ -57,7 +58,7 @@ func TestRestrictPageUpdatesNamedUser(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
 
-	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "Alice Example"))
 	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
@@ -75,7 +76,7 @@ func newCloudLoginAPI(t *testing.T, login, email string) (*confluence.API, *conf
 		Email:     email,
 		FullName:  "Mark Bot",
 	})
-	require.True(t, api.IsCloud(), "the fixture has to look like Cloud for this to mean anything")
+	require.True(t, api.IsCloud(context.Background()), "the fixture has to look like Cloud for this to mean anything")
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -92,7 +93,7 @@ func TestRestrictPageUpdatesOwnLoginWithoutVisibleEmail(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			api, server, page := newCloudLoginAPI(t, "login@example.com", email)
 
-			require.NoError(t, api.RestrictPageUpdates(page, "Login@Example.com"))
+			require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "Login@Example.com"))
 			assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 		})
 	}
@@ -104,7 +105,7 @@ func TestRestrictPageUpdatesOwnLoginWithoutVisibleEmail(t *testing.T) {
 func TestRestrictPageUpdatesOtherNameStillRefused(t *testing.T) {
 	api, server, page := newCloudLoginAPI(t, "login@example.com", "")
 
-	err := api.RestrictPageUpdates(page, "someone-else@example.com")
+	err := api.RestrictPageUpdates(context.Background(), page, "someone-else@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
 	assert.Empty(t, server.Page(page.ID).UpdateRestrictedTo)
@@ -117,10 +118,10 @@ func TestRestrictPageUpdatesOtherNameStillRefused(t *testing.T) {
 func TestRestrictPageUpdatesTokenWithoutUsername(t *testing.T) {
 	api, server, page := newCloudLoginAPI(t, "", "")
 
-	require.NoError(t, api.RestrictPageUpdates(page, ""))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 
-	err := api.RestrictPageUpdates(page, "someone-else@example.com")
+	err := api.RestrictPageUpdates(context.Background(), page, "someone-else@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
 }

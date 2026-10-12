@@ -3,7 +3,6 @@ package confluence
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -41,11 +40,9 @@ const (
 
 // newHTTPClient builds the client used for every Confluence call.
 //
-// A cookie jar is always installed. Confluence Server hands out a session
-// cookie on the first authenticated call and expects it back; previously the
-// jar was only present in the default case, because gopencils creates one only
-// when it is not given a client, so --insecure-skip-tls-verify silently
-// dropped session affinity.
+// A cookie jar is always installed, --insecure-skip-tls-verify or not.
+// Confluence Server hands out a session cookie on the first authenticated
+// call and expects it back.
 func newHTTPClient(insecureSkipVerify bool) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -79,40 +76,41 @@ func newHTTPClient(insecureSkipVerify bool) *http.Client {
 
 	return &http.Client{
 		Jar:       jar,
-		Transport: &retryTransport{base: transport, sleep: time.Sleep},
+		Transport: &retryTransport{base: transport},
 	}
 }
 
 // retryTransport retries requests that Confluence rejected without acting on
-// them. It sits below gopencils, which is configured not to retry, so this is
+// them. It sits below client.do, which does not retry on its own, so this is
 // the only place retries happen.
 type retryTransport struct {
-	base  http.RoundTripper
+	base http.RoundTripper
+
+	// sleep stands in for the wait between attempts; see sleepContext. It is
+	// nil outside tests.
 	sleep func(time.Duration)
 }
 
-// wait sleeps for the backoff, or stops early if the request is cancelled.
+// sleepContext sits out d, and returns ctx's error instead if ctx ends first.
 //
-// t.sleep is what the tests replace, so the timer is built from it rather than
-// from time.After: a test that makes the wait instant would otherwise still
-// wait for a real one here.
-func (t *retryTransport) wait(ctx context.Context, d time.Duration) error {
-	if ctx == nil || ctx.Done() == nil {
-		t.sleep(d)
+// sleep, when it is not nil, does the sitting out in place of a timer, and
+// ctx is asked once it is done. It is what the retry transport's tests
+// replace, so that a test can make the wait instant, or end the context
+// during it.
+func sleepContext(ctx context.Context, d time.Duration, sleep func(time.Duration)) error {
+	if sleep != nil {
+		sleep(d)
 
-		return nil
+		return ctx.Err()
 	}
 
-	done := make(chan struct{})
-	go func() {
-		t.sleep(d)
-		close(done)
-	}()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
+	case <-timer.C:
 		return nil
 	}
 }
@@ -142,21 +140,22 @@ func retryableStatus(status int, method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
 }
 
-// retryableError reports whether a transport-level failure is worth retrying.
-// Only side-effect-free methods qualify: a timeout partway through a POST may
-// mean the server already committed the write.
-func retryableError(err error, method string) bool {
+// retryableError reports whether a transport-level failure of req is worth
+// retrying. Only side-effect-free methods qualify: a timeout partway through a
+// POST may mean the server already committed the write.
+func retryableError(err error, req *http.Request) bool {
 	if err == nil {
 		return false
 	}
-	if method != http.MethodGet && method != http.MethodHead {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return false
 	}
-	// A request cancelled by the caller's context must not be retried.
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	return true
+	// A request whose context is done was given up on by its caller, and
+	// must not be retried. That is asked of the context, not of err:
+	// net/http's response header and dial timeouts satisfy
+	// errors.Is(err, context.DeadlineExceeded) too, and are failures like
+	// any other.
+	return req.Context().Err() == nil
 }
 
 // parseRetryAfter interprets the Retry-After header, which Confluence Cloud
@@ -200,13 +199,10 @@ func backoffFor(attempt int, retryAfter string, now time.Time) time.Duration {
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// A request whose body cannot be rewound must not be replayed. net/http
-	// populates GetBody for the in-memory body types gopencils uses.
+	// populates GetBody for the in-memory body client.do sends.
 	canReplay := req.Body == nil || req.GetBody != nil
 
-	var lastResp *http.Response
-	var lastErr error
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		if attempt > 1 {
 			body, err := rewind(req)
 			if err != nil {
@@ -219,12 +215,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		switch {
 		case err != nil:
-			lastResp, lastErr = nil, err
-			if !canReplay || !retryableError(err, req.Method) || attempt == maxAttempts {
+			if !canReplay || !retryableError(err, req) || attempt == maxAttempts {
 				return nil, err
 			}
 		case retryableStatus(resp.StatusCode, req.Method):
-			lastResp, lastErr = resp, nil
 			if !canReplay || attempt == maxAttempts {
 				return resp, nil
 			}
@@ -233,10 +227,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		var retryAfter string
-		if lastResp != nil {
-			retryAfter = lastResp.Header.Get("Retry-After")
+		if err == nil {
+			retryAfter = resp.Header.Get("Retry-After")
 			// The body must be drained and closed or the connection leaks.
-			drain(lastResp)
+			drain(resp)
 		}
 
 		wait := backoffFor(attempt, retryAfter, time.Now())
@@ -246,25 +240,20 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			Str("url", req.URL.Redacted()).
 			Int("attempt", attempt).
 			Dur("retry_in", wait)
-		if lastErr != nil {
-			event = event.Err(lastErr)
+		if err != nil {
+			event = event.Err(err)
 		} else {
-			event = event.Int("status", lastResp.StatusCode)
+			event = event.Int("status", resp.StatusCode)
 		}
 		event.Msg("Confluence request failed, retrying")
 
 		// The wait respects the request's context, so a cancelled run stops
 		// waiting instead of finishing its backoff first. Three retries at the
 		// cap is a minute and a half a caller could not otherwise escape.
-		if err := t.wait(req.Context(), wait); err != nil {
+		if err := sleepContext(req.Context(), wait, t.sleep); err != nil {
 			return nil, err
 		}
 	}
-
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return lastResp, nil
 }
 
 // rewind returns a copy of req with a fresh body for a retry.

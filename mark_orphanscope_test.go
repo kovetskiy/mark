@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -52,7 +53,7 @@ func TestOrphanScopeIsCheckedOnce(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 

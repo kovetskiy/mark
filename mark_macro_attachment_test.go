@@ -169,11 +169,12 @@ func TestMacroAttachmentDecodingToARootedPathIsWarnedAbout(t *testing.T) {
 
 // TestMacroAttachmentOnLegacyCompilePath keeps both compile paths in step.
 func TestMacroAttachmentOnLegacyCompilePath(t *testing.T) {
+	ctx := t.Context()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), onePixelPNG(), 0o600))
 	path := filepath.Join(dir, "doc.md")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(ctx, nil)
 	require.NoError(t, err)
 
 	source := widthMacro + "\n![Logo](logo.png)<!-- width=300 -->\n"
@@ -206,7 +207,8 @@ func TestMacroAttachmentThatIsAURLIsNotAFile(t *testing.T) {
 // TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead covers the values a
 // project file of the same name must never be uploaded for.
 func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
-	std, err := stdlib.New(nil)
+	ctx := t.Context()
+	std, err := stdlib.New(ctx, nil)
 	require.NoError(t, err)
 
 	for name, value := range map[string]string{
@@ -239,7 +241,8 @@ func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
 // with a plain one: "my%20logo.png" names "my logo.png", and the page has to
 // say so under the name the file is uploaded as.
 func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
-	std, err := stdlib.New(nil)
+	ctx := t.Context()
+	std, err := stdlib.New(ctx, nil)
 	require.NoError(t, err)
 
 	tests := map[string]struct {
@@ -317,11 +320,12 @@ func TestMacroAttachmentEscapedToARootedPathIsWarnedAbout(t *testing.T) {
 // which Linux and macOS allow: it looks as if it opened with a URI scheme, but
 // it is the file the macro writes into the page, so it has to be uploaded.
 func TestMacroAttachmentWithAColonIsUploaded(t *testing.T) {
+	ctx := t.Context()
 	if runtime.GOOS == "windows" {
 		t.Skip("a Windows filename cannot hold a colon")
 	}
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(ctx, nil)
 	require.NoError(t, err)
 
 	dir := t.TempDir()

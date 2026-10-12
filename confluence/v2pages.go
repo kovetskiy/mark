@@ -1,12 +1,15 @@
 package confluence
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -134,54 +137,124 @@ func v2Collection(pageType string) string {
 	return "pages"
 }
 
-// listV2 collects every result of a cursor-paged v2 listing.
+// listV1 collects every result of an offset-paged v1 listing, pageSize at a
+// time. visit, when it is not nil, sees each page before its results are
+// collected, and may change them.
 //
-// A 404 on the first page is read as an empty collection: that is how v2
-// answers for a space or page that has never had a property. Later on, a 404
-// is a failure like any other, since the results already in hand would
-// otherwise be thrown away.
-func listV2[T any](api *API, path string, query map[string]string, describe string) ([]T, error) {
-	var (
-		all    []T
-		cursor string
-	)
+// With notFoundEmpty, a 404 on the first page is read as an empty listing.
+// Only the first: a 404 partway through is a failure, and swallowing it would
+// discard the pages already read.
+func listV1[T any](
+	ctx context.Context,
+	api *API,
+	path []string,
+	query url.Values,
+	pageSize int,
+	describe string,
+	notFoundEmpty bool,
+	visit func(page *listing[T]),
+) ([]T, error) {
+	var all []T
+	start := 0
 
 	for {
-		var result struct {
-			Results []T `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
+		page := maps.Clone(query)
+		if page == nil {
+			page = url.Values{}
 		}
+		page.Set("limit", strconv.Itoa(pageSize))
+		page.Set("start", strconv.Itoa(start))
 
-		page := make(map[string]string, len(query)+1)
-		for key, value := range query {
-			page[key] = value
-		}
-		if cursor != "" {
-			page["cursor"] = cursor
-		}
-
-		request, err := api.v2().Res(path, &result).Get(page)
-		if err != nil {
-			return nil, newTransportError(request, describe, err)
-		}
-
-		if request.Raw.StatusCode == http.StatusNotFound && cursor == "" {
+		result, err := get[listing[T]](ctx, api.v1, path, page)
+		if notFoundEmpty && errors.Is(err, ErrNotFound) && start == 0 {
 			return nil, nil
 		}
+		if err != nil {
+			return nil, requestError(describe, err)
+		}
 
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+		if visit != nil {
+			visit(&result)
 		}
 
 		all = append(all, result.Results...)
+
+		// A short page does not mean the end: Confluence caps limit at its
+		// max-results setting and answers a capped request with a short page
+		// and a next link both. Nor does a missing link, since deployments that
+		// omit it only ever go short. Stop when neither says there is more, and
+		// on an empty page whatever they say, which is what keeps a server that
+		// does neither from being asked for the same offset forever.
+		if len(result.Results) == 0 ||
+			(result.Links.Next == "" && len(result.Results) < pageSize) {
+			return all, nil
+		}
+
+		start += len(result.Results)
+	}
+}
+
+// listV2 collects every result of a cursor-paged v2 listing; see eachV2.
+func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string) ([]T, error) {
+	var all []T
+
+	err := eachV2(ctx, api, path, query, describe, func(result T) bool {
+		all = append(all, result)
+
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return all, nil
+}
+
+// eachV2 hands visit every result of a cursor-paged v2 listing in turn, and
+// stops early once visit says to.
+//
+// A 404 on the first page is read as an empty collection: that is how v2
+// answers for a space or page that has never had a property, and for a
+// deployment without the route at all. Later on, a 404 is a failure like any
+// other, since the results already in hand would otherwise be thrown away.
+func eachV2[T any](
+	ctx context.Context,
+	api *API,
+	path []string,
+	query url.Values,
+	describe string,
+	visit func(result T) (stop bool),
+) error {
+	var cursor string
+
+	for {
+		page := maps.Clone(query)
+		if page == nil {
+			page = url.Values{}
+		}
+		if cursor != "" {
+			page.Set("cursor", cursor)
+		}
+
+		result, err := get[listing[T]](ctx, api.v2, path, page)
+		if errors.Is(err, ErrNotFound) && cursor == "" {
+			return nil
+		}
+		if err != nil {
+			return requestError(describe, err)
+		}
+
+		for _, item := range result.Results {
+			if visit(item) {
+				return nil
+			}
+		}
 
 		next := nextCursor(result.Links.Next)
 		// A server that hands back the cursor it was given would otherwise
 		// keep this loop going for as long as it keeps answering.
 		if next == "" || next == cursor || len(result.Results) == 0 {
-			return all, nil
+			return nil
 		}
 		cursor = next
 	}
@@ -189,37 +262,24 @@ func listV2[T any](api *API, path string, query map[string]string, describe stri
 
 // findPageV2 is FindPage and findPageWithStatus against v2: a title within a
 // space, in one status. v2 filters by space id where v1 filters by key.
-func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, error) {
-	spaceID, err := api.GetSpaceID(space)
+func (api *API) findPageV2(ctx context.Context, space, title, pageType, status string) (*PageInfo, error) {
+	spaceID, err := api.GetSpaceID(ctx, space)
 	if err != nil {
 		return nil, err
 	}
 
-	query := map[string]string{
-		"space-id": spaceID,
-		"status":   status,
+	query := url.Values{
+		"space-id": {spaceID},
+		"status":   {status},
 	}
 	if title != "" {
-		query["title"] = title
+		query.Set("title", title)
 	}
 
 	// One request, not a paged walk: as on v1, the first result is the answer.
-	var result struct {
-		Results []contentV2 `json:"results"`
-		Links   struct {
-			Base string `json:"base"`
-		} `json:"_links"`
-	}
-
-	request, err := api.v2().Res(v2Collection(pageType), &result).Get(query)
+	result, err := get[listing[contentV2]](ctx, api.v2, []string{v2Collection(pageType)}, query)
 	if err != nil {
-		return nil, newTransportError(
-			request, fmt.Sprintf("find page %q in space %s", title, space), err,
-		)
-	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, newErrorStatusNotOK(request)
+		return nil, requestError(fmt.Sprintf("find page %q in space %s", title, space), err)
 	}
 
 	api.learnSiteBase(result.Links.Base)
@@ -233,7 +293,7 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 		page.Status = status
 	}
 
-	page.Ancestors, err = api.ancestorsV2(result.Results[0])
+	page.Ancestors, err = api.ancestorsV2(ctx, result.Results[0])
 	if err != nil {
 		return nil, err
 	}
@@ -242,35 +302,18 @@ func (api *API) findPageV2(space, title, pageType, status string) (*PageInfo, er
 }
 
 // readContentV2 reads one object out of a v2 collection.
-func (api *API) readContentV2(collection, id string, withBody bool) (*contentV2, error) {
-	content, _, err := api.readContentStatusV2(collection, id, withBody)
-	return content, err
-}
-
-// readContentStatusV2 is readContentV2 that also hands back the status the
-// server answered with, or 0 when there was no answer.
-func (api *API) readContentStatusV2(collection, id string, withBody bool) (*contentV2, int, error) {
-	var result contentV2
-
-	query := map[string]string{}
+func (api *API) readContentV2(ctx context.Context, collection, id string, withBody bool) (*contentV2, error) {
+	query := url.Values{}
 	if withBody {
-		query["body-format"] = "storage"
+		query.Set("body-format", "storage")
 	}
 
-	request, err := api.v2().Res(collection+"/"+id, &result).Get(query)
+	result, err := get[contentV2](ctx, api.v2, []string{collection, id}, query)
 	if err != nil {
-		status := 0
-		if request != nil && request.Raw != nil {
-			status = request.Raw.StatusCode
-		}
-		return nil, status, newTransportError(request, "read "+collection+" "+id, err)
+		return nil, requestError("read "+collection+" "+id, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK {
-		return nil, request.Raw.StatusCode, newErrorStatusNotOK(request)
-	}
-
-	return &result, request.Raw.StatusCode, nil
+	return &result, nil
 }
 
 // lookupContentV2 reads a page or blogpost known only by its id.
@@ -284,18 +327,19 @@ func (api *API) readContentStatusV2(collection, id string, withBody bool) (*cont
 // token minted with the page scopes and not the blogpost ones is refused
 // /blogposts outright, and that says nothing about the page that was not found
 // -- which callers act on as gone rather than as a failure.
-func (api *API) lookupContentV2(id string, withBody bool) (*contentV2, string, error) {
+func (api *API) lookupContentV2(ctx context.Context, id string, withBody bool) (*contentV2, string, error) {
 	first, second := "page", "blogpost"
 	if known, ok := api.contentTypesV2.Load(id); ok && known == "blogpost" {
 		first, second = second, first
 	}
 
-	content, status, err := api.readContentStatusV2(v2Collection(first), id, withBody)
-	if status == http.StatusNotFound {
-		other, otherStatus, otherErr := api.readContentStatusV2(v2Collection(second), id, withBody)
+	content, err := api.readContentV2(ctx, v2Collection(first), id, withBody)
+	if errors.Is(err, ErrNotFound) {
+		other, otherErr := api.readContentV2(ctx, v2Collection(second), id, withBody)
 		if otherErr == nil {
 			return other, second, nil
 		}
+		otherStatus := statusOf(otherErr)
 		refused := otherStatus == http.StatusNotFound ||
 			otherStatus == http.StatusUnauthorized || otherStatus == http.StatusForbidden
 		if !refused {
@@ -313,12 +357,12 @@ func (api *API) lookupContentV2(id string, withBody bool) (*contentV2, string, e
 // for the calls that are handed an id alone. mark reaches every page it
 // touches through a find, a create or a read by id first, so the answer is
 // normally already known and costs nothing; otherwise it costs a read.
-func (api *API) collectionOfV2(id string) (string, error) {
+func (api *API) collectionOfV2(ctx context.Context, id string) (string, error) {
 	if known, ok := api.contentTypesV2.Load(id); ok {
 		return v2Collection(known.(string)), nil
 	}
 
-	_, pageType, err := api.lookupContentV2(id, false)
+	_, pageType, err := api.lookupContentV2(ctx, id, false)
 	if err != nil {
 		return "", err
 	}
@@ -331,8 +375,8 @@ func (api *API) collectionOfV2(id string) (string, error) {
 //
 // The expand list is honoured: v2 charges for both of the things it names, the
 // body by a wider response and the ancestors by a request per level.
-func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
-	content, pageType, err := api.lookupContentV2(pageID, strings.Contains(expand, "body.storage"))
+func (api *API) getPageByIDV2(ctx context.Context, pageID, expand string) (*PageInfo, error) {
+	content, pageType, err := api.lookupContentV2(ctx, pageID, strings.Contains(expand, "body.storage"))
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +384,7 @@ func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
 	page := api.pageInfoV2(*content, pageType)
 
 	if strings.Contains(expand, "ancestors") {
-		page.Ancestors, err = api.ancestorsV2(*content)
+		page.Ancestors, err = api.ancestorsV2(ctx, *content)
 		if err != nil {
 			return nil, err
 		}
@@ -354,8 +398,8 @@ func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
 //
 // It is the one way to see a folder parent from a page read through v1, whose
 // ancestors leave folders out. Cloud only: Server and Data Center serve no v2.
-func (api *API) ParentOfV2(id string) (string, string, error) {
-	content, pageType, err := api.lookupContentV2(id, false)
+func (api *API) ParentOfV2(ctx context.Context, id string) (string, string, error) {
+	content, pageType, err := api.lookupContentV2(ctx, id, false)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to read the parent of %s: %w", id, err)
 	}
@@ -372,12 +416,12 @@ func (api *API) ParentOfV2(id string) (string, string, error) {
 // document declares, and a page with no ancestors reads as one sitting at the
 // root of its space. A parent that is not a page ends the walk: folders are not
 // ancestors, which is also how the v1 path behaves.
-func (api *API) ancestorsV2(content contentV2) ([]ancestor, error) {
+func (api *API) ancestorsV2(ctx context.Context, content contentV2) ([]ancestor, error) {
 	var chain []ancestor
 
 	parentID, parentType := content.ParentID, content.ParentType
 	for parentID != "" && (parentType == "" || parentType == "page") && len(chain) < maxAncestorDepth {
-		parent, err := api.readContentV2("pages", parentID, false)
+		parent, err := api.readContentV2(ctx, "pages", parentID, false)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read ancestor %s of page %s: %w", parentID, content.ID, err)
 		}
@@ -405,8 +449,8 @@ type ancestor = struct {
 // parentType is sent only when given: "folder" for a folder parent, which is
 // what CreatePageWithFolderParent has always named, and nothing for a page,
 // v2's default.
-func (api *API) createPageV2(space, pageType, parentID, parentType, title, body string) (*PageInfo, error) {
-	spaceID, err := api.GetSpaceID(space)
+func (api *API) createPageV2(ctx context.Context, space, pageType, parentID, parentType, title, body string) (*PageInfo, error) {
+	spaceID, err := api.GetSpaceID(ctx, space)
 	if err != nil {
 		return nil, err
 	}
@@ -429,17 +473,12 @@ func (api *API) createPageV2(space, pageType, parentID, parentType, title, body 
 		}
 	}
 
-	var result contentV2
-
-	request, err := api.v2().Res(v2Collection(pageType), &result).Post(payload)
-	if err != nil {
-		return nil, newTransportError(
-			request, fmt.Sprintf("create page %q in space %s", title, space), err,
-		)
+	result, err := send[contentV2](ctx, api.v2, http.MethodPost, []string{v2Collection(pageType)}, payload)
+	if statusOf(err) != 0 {
+		return nil, api.explainCreateFailure(ctx, space, title, pageType, err)
 	}
-
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusCreated {
-		return nil, api.explainCreateFailure(space, title, pageType, newErrorStatusNotOK(request))
+	if err != nil {
+		return nil, requestError(fmt.Sprintf("create page %q in space %s", title, space), err)
 	}
 
 	return api.pageInfoV2(result, pageType), nil
@@ -451,6 +490,7 @@ func (api *API) createPageV2(space, pageType, parentID, parentType, title, body 
 // metadata properties. v2 keeps properties on an endpoint of their own, so
 // UpdatePage writes them afterwards with setPagePropertiesV2.
 func (api *API) updatePageV2(
+	ctx context.Context,
 	page *PageInfo,
 	newContent string,
 	minorEdit bool,
@@ -478,15 +518,11 @@ func (api *API) updatePageV2(
 		payload["parentId"] = page.Ancestors[len(page.Ancestors)-1].ID
 	}
 
-	request, err := api.v2().Res(v2Collection(page.Type)+"/"+page.ID, &map[string]any{}).Put(payload)
+	_, err := api.v2.do(
+		ctx, nil, http.MethodPut, []string{v2Collection(page.Type), page.ID}, nil, payload, &struct{}{},
+	)
 	if err != nil {
-		return newTransportError(
-			request, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err,
-		)
-	}
-
-	if request.Raw.StatusCode != http.StatusOK {
-		return newErrorStatusNotOK(request)
+		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
 	}
 
 	return nil
@@ -495,10 +531,10 @@ func (api *API) updatePageV2(
 // setPagePropertiesV2 writes the properties v1 would have carried inside the
 // page update: a map of key to {"value": ...}, as UpdatePage builds it. A
 // blogpost's properties live under /blogposts, and /pages answers 404 for it.
-func (api *API) setPagePropertiesV2(page *PageInfo, properties map[string]any) error {
+func (api *API) setPagePropertiesV2(ctx context.Context, page *PageInfo, properties map[string]any) error {
 	collection, pageID := v2Collection(page.Type), page.ID
 
-	existing, err := api.listPropertiesV2(collection, pageID)
+	existing, err := api.listPropertiesV2(ctx, collection, pageID)
 	if err != nil {
 		return fmt.Errorf("unable to read properties of page %s: %w", pageID, err)
 	}
@@ -516,7 +552,7 @@ func (api *API) setPagePropertiesV2(page *PageInfo, properties map[string]any) e
 			return fmt.Errorf("unable to encode property %q of page %s: %w", key, pageID, err)
 		}
 
-		if err := api.setPropertyV2(collection, pageID, key, value, byKey[key]); err != nil {
+		if err := api.setPropertyV2(ctx, collection, pageID, key, value, byKey[key]); err != nil {
 			return err
 		}
 	}
@@ -530,7 +566,7 @@ func (api *API) setPagePropertiesV2(page *PageInfo, properties map[string]any) e
 // GetAttachments is handed an id alone, and asking the wrong collection is not
 // an error here but an empty listing -- listV2 reads a 404 as one -- so the
 // collection is worked out first rather than guessed.
-func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
+func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]AttachmentInfo, error) {
 	type attachmentV2 struct {
 		ID           string `json:"id"`
 		Title        string `json:"title"`
@@ -538,13 +574,13 @@ func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
 		DownloadLink string `json:"downloadLink"`
 	}
 
-	collection, err := api.collectionOfV2(pageID)
+	collection, err := api.collectionOfV2(ctx, pageID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list attachments of page %s: %w", pageID, err)
 	}
 
 	found, err := listV2[attachmentV2](
-		api, collection+"/"+pageID+"/attachments", map[string]string{"limit": "250"},
+		ctx, api, []string{collection, pageID, "attachments"}, url.Values{"limit": {"250"}},
 		"list attachments of page "+pageID,
 	)
 	if err != nil {
@@ -570,20 +606,20 @@ func (api *API) getAttachmentsV2(pageID string) ([]AttachmentInfo, error) {
 
 // getPageLabelsV2 is GetPageLabels against v2, which hands the label id over as
 // a number where v1 makes it a string.
-func (api *API) getPageLabelsV2(page *PageInfo, prefix string) (*LabelInfo, error) {
+func (api *API) getPageLabelsV2(ctx context.Context, page *PageInfo, prefix string) (*LabelInfo, error) {
 	type labelV2 struct {
 		ID     json.Number `json:"id"`
 		Name   string      `json:"name"`
 		Prefix string      `json:"prefix"`
 	}
 
-	query := map[string]string{"limit": "250"}
+	query := url.Values{"limit": {"250"}}
 	if prefix != "" {
-		query["prefix"] = prefix
+		query.Set("prefix", prefix)
 	}
 
 	found, err := listV2[labelV2](
-		api, v2Collection(page.Type)+"/"+page.ID+"/labels", query, "read labels of page "+page.ID,
+		ctx, api, []string{v2Collection(page.Type), page.ID, "labels"}, query, "read labels of page "+page.ID,
 	)
 	if err != nil {
 		return nil, err

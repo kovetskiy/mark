@@ -33,7 +33,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache |
 | `attachment/` | checksum, upload/update, link rewriting |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
@@ -126,13 +126,25 @@ extensions if applicable), add it to the `Usage` string of the `features` flag i
 `util/flags.go`, and document it in `README.md`.
 
 **9. Everything is sequential today, and one thing still relies on that.**
-The two that used to be named here are done: the folder cache in `page/ancestry.go` sits
-behind an `RWMutex` (`page/concurrency_test.go` races it on purpose), and
-`confluence.API`'s Cloud probe goes through a `sync.Once`, so the field the old wording
-named no longer exists. What is genuinely single-threaded is `page.LinkChecker`:
-`MissingPages` reads `len(c.pending)` before taking the mutex and then reads the map
-itself after releasing it (`page/check.go`). Anything that introduces concurrency across
-files has to fix that first.
+Those that used to be named here are done: the folder cache in `page/ancestry.go` sits
+behind an `RWMutex` (`page/concurrency_test.go` races it on purpose), `confluence.API`'s
+Cloud probe runs under a mutex held for the whole probe, and the context is no longer
+held by the API at all: every `confluence.API` method that makes a request takes
+`ctx context.Context` first, and so does everything above it that makes one later
+(`manifest.Store`, `page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
+What is genuinely single-threaded is `page.LinkChecker`: `MissingPages` reads
+`len(c.pending)` before taking the mutex and then reads the map itself after releasing it
+(`page/check.go`). Anything that introduces concurrency across files has to fix that
+first.
+
+**10. The Confluence client answers in errors, not statuses.** `confluence/client.go`
+turns every non-2xx answer into a `*confluence.StatusError` (`errors.Is` matches
+`ErrNotFound` for a 404 and `ErrConflict` for a 409; its message is Confluence's own when
+the body is v1's or v2's error shape), a login page into `ErrLoginPage`, and decodes a 2xx
+as it streams in: JSON or no Content-Type only, one value and nothing after it, an empty
+body as success. A call site asks `errors.Is`/`statusOf` rather than reading a status, and
+wraps through `requestError`. Anything that remembers an answer -- a cache, a "this
+endpoint is missing" flag, the platform -- must not remember one `IsCancellation` reports.
 
 ## Tests
 

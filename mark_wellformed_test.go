@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"testing"
@@ -60,7 +61,7 @@ Some text with an <span>unclosed tag.
 func bodyOfPageTitled(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	fresh := confluence.NewAPI(server.URL, "user", "token", false)
-	found, err := fresh.FindPage("DOCS", title, "page")
+	found, err := fresh.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if found == nil {
 		return ""

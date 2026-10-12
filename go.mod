@@ -11,7 +11,6 @@ require (
 	github.com/d2lang/mathjax-go v0.1.0
 	github.com/d2lang/util-go v0.2.0
 	github.com/dreampuf/mermaid.go v0.5.0
-	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
