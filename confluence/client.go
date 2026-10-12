@@ -98,9 +98,10 @@ type reply struct {
 //   - Body: a *form is sent as its multipart encoding, an io.Reader as it is,
 //     and any other non-nil value as its JSON encoding. Either way it is
 //     buffered, so the retry transport can replay it.
-//   - Trace: at TRACE the request is dumped, body included, and the response
-//     is dumped as its headers and as much of the start of its body as do
-//     kept, which a large body is not held whole for.
+//   - Trace: at TRACE the request is dumped as its headers and as much of
+//     the start of its body as a trace shows, and the response as its
+//     headers and as much of the start of its body as do kept, which a large
+//     body is not held whole for.
 //   - No response: a request that got no answer returns a nil response and
 //     the error. newTransportError reads the nil as "never completed".
 //   - Any status outside 2xx: the body is not decoded, and the error is a
@@ -180,12 +181,7 @@ func (c *client) doWithHeader(
 	maps.Copy(req.Header, header)
 
 	if c.trace != nil {
-		dump, err := httputil.DumpRequest(req, true)
-		if err != nil {
-			c.trace.Printf("dump request failed: %s", err)
-		} else {
-			c.trace.dump(dump)
-		}
+		c.traceRequest(req, payload)
 	}
 
 	resp, err := c.http.Do(req)
@@ -352,6 +348,20 @@ func (c *capture) readPrefix(n int) error {
 	_, err := io.Copy(io.Discard, io.LimitReader(c, int64(n)))
 
 	return err
+}
+
+// traceRequest dumps the headers of req and the start of its payload: no
+// more of it than a trace shows is copied into the dump.
+func (c *client) traceRequest(req *http.Request, payload []byte) {
+	head, err := httputil.DumpRequest(req, false)
+	if err != nil {
+		c.trace.Printf("dump request failed: %s", err)
+
+		return
+	}
+
+	shown := payload[:min(len(payload), traceDumpLimit)]
+	c.trace.write(boundTraceDumpMore(append(head, shown...), int64(len(payload)-len(shown))))
 }
 
 // traceResponse dumps the headers of resp and the start of its body, which
