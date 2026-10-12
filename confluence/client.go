@@ -257,10 +257,10 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 
 	mediaType := contentMediaType(resp.Header)
 
-	if evidence := loginEvidence(req, resp, mediaType); evidence != "" {
+	if evidence, strong := loginEvidence(req, resp, mediaType); evidence != "" {
 		_ = body.readPrefix(body.limit)
 
-		return &loginPageError{requested: req.URL.Redacted(), evidence: evidence}
+		return &loginPageError{requested: req.URL.Redacted(), evidence: evidence, strong: strong}
 	}
 
 	if resp.ContentLength == 0 {
@@ -467,8 +467,14 @@ type loginPageError struct {
 	// one a redirect ended on.
 	requested string
 
-	// evidence says how the answer was recognised; see loginEvidence.
+	// evidence says how the answer was recognised, for the message; see
+	// loginEvidence.
 	evidence string
+
+	// strong is whether evidence is more than an HTML Content-Type, the
+	// weakest of it: an action that redirects to the page it acted on lands
+	// on HTML too; see moveByAction.
+	strong bool
 }
 
 func (e *loginPageError) Error() string {
@@ -489,13 +495,9 @@ func (e *loginPageError) Error() string {
 
 func (e *loginPageError) Is(target error) bool { return target == ErrLoginPage }
 
-// contentIsHTML is the evidence loginEvidence gives for nothing but an HTML
-// Content-Type. It is the weakest of them: an action that redirects to the
-// page it acted on lands on HTML too; see moveByAction.
-const contentIsHTML = "an HTML Content-Type"
-
 // loginEvidence says why a 2xx answer to req is a login page rather than
-// Confluence's own answer, or "" when it is not one. mediaType is the
+// Confluence's own answer, or "" when it is not one, and whether that is
+// strong evidence: anything but an HTML Content-Type alone. mediaType is the
 // answer's, as contentMediaType reads it.
 //
 // Confluence's API answers in JSON, so an answer in HTML is a page for a
@@ -504,33 +506,33 @@ const contentIsHTML = "an HTML Content-Type"
 // that ended on Seraph's /login.action was sent to log in; and one that was
 // redirected to another host, or that Seraph says it did not authenticate,
 // was turned away unless it answered in JSON.
-func loginEvidence(req *http.Request, resp *http.Response, mediaType string) string {
+func loginEvidence(req *http.Request, resp *http.Response, mediaType string) (evidence string, strong bool) {
 	final := req.URL
 	if resp.Request != nil && resp.Request.URL != nil {
 		final = resp.Request.URL
 	}
 
 	if strings.HasSuffix(final.Path, "/login.action") {
-		return "redirected to /login.action"
+		return "redirected to /login.action", true
 	}
 
 	if !isJSONMediaType(mediaType) {
 		if !strings.EqualFold(final.Hostname(), req.URL.Hostname()) {
-			return "redirected to " + final.Hostname()
+			return "redirected to " + final.Hostname(), true
 		}
 		if reason := resp.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
-			return "X-Seraph-LoginReason: " + reason
+			return "X-Seraph-LoginReason: " + reason, true
 		}
 		if resp.Header.Get("X-AUSERNAME") == "anonymous" {
-			return "X-AUSERNAME: anonymous"
+			return "X-AUSERNAME: anonymous", true
 		}
 	}
 
 	if mediaType == "text/html" || mediaType == "application/xhtml+xml" {
-		return contentIsHTML
+		return "an HTML Content-Type", false
 	}
 
-	return ""
+	return "", false
 }
 
 // contentMediaType is the media type of a Content-Type header, lowercased and

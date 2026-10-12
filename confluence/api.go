@@ -2503,7 +2503,7 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 	// page for this one request says nothing about the next page.
 	notJSON := err != nil
 	var login *loginPageError
-	if errors.As(err, &login) && login.evidence != contentIsHTML {
+	if errors.As(err, &login) && login.strong {
 		missing := fmt.Errorf("%w: it answered with a login page: %w", errNoMoveAction, err)
 		api.moveActionMissing.Store(&missing)
 
