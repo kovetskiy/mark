@@ -388,12 +388,6 @@ func (tracer *tracer) Printf(format string, args ...any) {
 	tracer.write(boundTraceDump(fmt.Sprintf(format, args...)))
 }
 
-// dump traces a request or response dump. Only the part of it that is traced
-// is copied into a string.
-func (tracer *tracer) dump(dump []byte) {
-	tracer.write(boundTraceDump(dump))
-}
-
 // write traces a message that is already bounded. It is passed on as a
 // message rather than as another format string: a dump is arbitrary bytes,
 // and a body containing a percent sign would otherwise come out mangled.
