@@ -38,10 +38,19 @@ type StatusError struct {
 	// it, and Truncated says whether there was more.
 	Body      []byte
 	Truncated bool
+}
 
-	// Message is what Confluence said was wrong, read out of its JSON error
-	// body, or "" when the body is not one of those.
-	Message string
+// Message is what Confluence said was wrong, read out of its JSON error body,
+// or "" when the body is not one of those or was cut short.
+//
+// It is read when it is asked for rather than when the error is made: most
+// failures -- a 404 that means "not there" -- are acted on and never worded.
+func (e *StatusError) Message() string {
+	if e.Truncated {
+		return ""
+	}
+
+	return confluenceMessage(e.Body)
 }
 
 // Error words the status the way mark always has: what answered, and for
@@ -53,7 +62,7 @@ func (e *StatusError) Error() string {
 
 	// Confluence's own words, where it gave some, say more than any status
 	// and in less space than the body they came in.
-	if e.Message != "" {
+	if message := e.Message(); message != "" {
 		status := e.Status
 		switch e.StatusCode {
 		case http.StatusUnauthorized:
@@ -64,7 +73,7 @@ func (e *StatusError) Error() string {
 			status = ErrConflict.Error()
 		}
 
-		return fmt.Sprintf(prefix+"%s for %s: %s", status, e.URL, e.Message)
+		return fmt.Sprintf(prefix+"%s for %s: %s", status, e.URL, message)
 	}
 
 	switch e.StatusCode {
@@ -107,18 +116,13 @@ func newStatusError(answer *reply) *StatusError {
 		body = body[:maxErrorBody]
 	}
 
-	status := &StatusError{
+	return &StatusError{
 		StatusCode: answer.StatusCode,
 		Status:     answer.Status,
 		URL:        requestTarget(answer),
 		Body:       body,
 		Truncated:  truncated,
 	}
-	if !truncated {
-		status.Message = confluenceMessage(body)
-	}
-
-	return status
 }
 
 // confluenceMessage reads the message out of an error body in one of the
