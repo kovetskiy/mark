@@ -60,31 +60,31 @@ func (e *StatusError) Message() string {
 func (e *StatusError) Error() string {
 	const prefix = "the Confluence API returned unexpected status: "
 
+	// The statuses errors.Is matches, and 401, are worded the way mark
+	// always has; any other is net/http's own.
+	label := e.Status
+	switch e.StatusCode {
+	case http.StatusUnauthorized:
+		label = "401 (Unauthorized)"
+	case http.StatusNotFound:
+		label = ErrNotFound.Error()
+	case http.StatusConflict:
+		label = ErrConflict.Error()
+	}
+
 	// Confluence's own words, where it gave some, say more than any status
 	// and in less space than the body they came in.
 	if message := e.Message(); message != "" {
-		status := e.Status
-		switch e.StatusCode {
-		case http.StatusUnauthorized:
-			status = "401 (Unauthorized)"
-		case http.StatusNotFound:
-			status = ErrNotFound.Error()
-		case http.StatusConflict:
-			status = ErrConflict.Error()
-		}
-
-		return fmt.Sprintf(prefix+"%s for %s: %s", status, e.URL, message)
+		return fmt.Sprintf(prefix+"%s for %s: %s", label, e.URL, message)
 	}
 
 	switch e.StatusCode {
-	case http.StatusUnauthorized:
-		return fmt.Sprintf(prefix+"401 (Unauthorized) for %s", e.URL)
-	case http.StatusNotFound:
-		return fmt.Sprintf(prefix+"%s for %s", ErrNotFound, e.URL)
+	case http.StatusUnauthorized, http.StatusNotFound:
+		return fmt.Sprintf(prefix+"%s for %s", label, e.URL)
 	case http.StatusConflict:
 		// The body is kept: Confluence says there which kind of conflict it
 		// was.
-		return fmt.Sprintf(prefix+"%s for %s, output: %q", ErrConflict, e.URL, e.Body)
+		return fmt.Sprintf(prefix+"%s for %s, output: %q", label, e.URL, e.Body)
 	}
 
 	truncated := ""
@@ -92,7 +92,7 @@ func (e *StatusError) Error() string {
 		truncated = " (truncated)"
 	}
 
-	return fmt.Sprintf(prefix+"%s for %s, output: %q%s", e.Status, e.URL, e.Body, truncated)
+	return fmt.Sprintf(prefix+"%s for %s, output: %q%s", label, e.URL, e.Body, truncated)
 }
 
 // Is matches ErrNotFound for a 404 and ErrConflict for a 409.

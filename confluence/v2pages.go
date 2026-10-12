@@ -519,7 +519,7 @@ func (api *API) updatePageV2(
 	}
 
 	_, err := api.v2.do(
-		ctx, http.MethodPut, []string{v2Collection(page.Type), page.ID}, nil, payload, &map[string]any{},
+		ctx, nil, http.MethodPut, []string{v2Collection(page.Type), page.ID}, nil, payload, &map[string]any{},
 	)
 	if err != nil {
 		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
