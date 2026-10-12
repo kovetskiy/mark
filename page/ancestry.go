@@ -623,14 +623,14 @@ func ValidateAncestry(
 		if len(actual) == len(ancestry)-1 {
 			broken := false
 			for i := 0; i < len(actual); i++ {
-				if actual[i] != ancestry[i] {
+				if !strings.EqualFold(actual[i], ancestry[i]) {
 					broken = true
 					break
 				}
 			}
 
 			if !broken {
-				if ancestry[len(ancestry)-1] == page.Title {
+				if strings.EqualFold(ancestry[len(ancestry)-1], page.Title) {
 					valid = true
 				}
 			}
@@ -650,7 +650,7 @@ func ValidateAncestry(
 
 		// skipping root article title
 		for _, ancestor := range page.Ancestors {
-			if ancestor.Title == parent {
+			if strings.EqualFold(ancestor.Title, parent) {
 				found = true
 				break
 			}
