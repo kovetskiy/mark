@@ -595,7 +595,7 @@ func (api *API) firstRootPage(ctx context.Context, space string) (*PageInfo, err
 // an error that wraps a 404 from one call and a cancellation from the next --
 // the v1 refusal that sends a lookup on to v2 -- says nothing about the
 // answer either.
-func (api *API) worthCaching(err error) bool {
+func worthCaching(err error) bool {
 	if IsCancellation(err) {
 		return false
 	}
@@ -630,7 +630,7 @@ func (api *API) FindHomePage(ctx context.Context, space string) (*PageInfo, erro
 
 	page, err := api.fetchHomePage(ctx, space)
 
-	if api.worthCaching(err) {
+	if worthCaching(err) {
 		api.spaceCacheMutex.Lock()
 		if api.homePageCache == nil {
 			api.homePageCache = make(map[string]homePageCacheEntry)
@@ -1563,7 +1563,7 @@ func (api *API) GetUserByName(ctx context.Context, name string) (*User, error) {
 
 	user, err := api.fetchUserByName(ctx, name)
 
-	if !api.worthCaching(err) {
+	if !worthCaching(err) {
 		return user, err
 	}
 
@@ -2127,7 +2127,7 @@ func (api *API) GetSpaceID(ctx context.Context, spaceKey string) (string, error)
 
 	id, err := api.fetchSpaceID(ctx, spaceKey)
 
-	if !api.worthCaching(err) {
+	if !worthCaching(err) {
 		return id, err
 	}
 
