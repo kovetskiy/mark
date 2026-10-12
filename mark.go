@@ -741,7 +741,6 @@ func ProcessFile(file string, api *confluence.API, config Config) (*confluence.P
 // leave behind. A caller looping over files gets the same effect as RunContext
 // by stopping when one fails with it.
 //
-
 // Unlike RunContext this does not shut the shared browser down, since a caller
 // publishing several files would pay to start it again for each. Call Cleanup
 // when the last one is done.
