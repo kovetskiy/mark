@@ -1457,7 +1457,7 @@ func (api *API) updatePageV1(
 	}
 
 	_, err := api.v1.do(
-		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
+		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &struct{}{},
 	)
 	if err != nil {
 		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
@@ -2826,7 +2826,7 @@ func (api *API) reparentContentV1(ctx context.Context, page *PageInfo, parentID 
 	}
 
 	_, err := api.v1.do(
-		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
+		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &struct{}{},
 	)
 	if err != nil {
 		return requestError(fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err)
@@ -2840,10 +2840,9 @@ func (api *API) moveContent(ctx context.Context, contentID, position, targetID s
 		return *missing
 	}
 
-	var result map[string]any
 	_, err := api.v1.do(
 		ctx, nil, http.MethodPut, []string{"content", contentID, "move", position, targetID},
-		nil, map[string]any{}, &result,
+		nil, map[string]any{}, &struct{}{},
 	)
 
 	if status, notServed := endpointMissing(err); notServed {
