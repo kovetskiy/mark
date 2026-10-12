@@ -687,14 +687,14 @@ func TestStatusErrorSaysWhatConfluenceSaid(t *testing.T) {
 
 			switch name {
 			case "v1":
-				assert.Equal(t, "A page with this title already exists", statusErr.Message)
+				assert.Equal(t, "A page with this title already exists", statusErr.Message())
 				assert.True(t, strings.HasSuffix(err.Error(), ": A page with this title already exists"), err.Error())
 			case "v1 404":
-				assert.Equal(t, "No content found with id: 1", statusErr.Message)
+				assert.Equal(t, "No content found with id: 1", statusErr.Message())
 			case "v2":
-				assert.Equal(t, "Version conflict: Version must be incremented on update. Current Version is: 3", statusErr.Message)
+				assert.Equal(t, "Version conflict: Version must be incremented on update. Current Version is: 3", statusErr.Message())
 			case "neither":
-				assert.Empty(t, statusErr.Message)
+				assert.Empty(t, statusErr.Message())
 				assert.Contains(t, err.Error(), `output: "<html>bad gateway</html>"`)
 			}
 		})
