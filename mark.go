@@ -470,19 +470,16 @@ func run(ctx context.Context, config Config) (err error) {
 
 		// A run stopped by ctx still saves: what the manifest records was
 		// published, and is worth keeping however the run ends. Under ctx
-		// itself the save would be refused before a byte was sent, so it goes
-		// out under a context that keeps ctx's values and drops its
-		// cancellation. A second signal, which ends the process outright, is
-		// what stops a save that hangs; the transport's own timeouts bound it
-		// otherwise. When the run got as far as the explicit save below, that
-		// one was made under the same detached context, has already written
-		// everything unless it failed, and this one then sends nothing.
-		saveCtx := ctx
-		if ctx.Err() != nil {
-			saveCtx = context.WithoutCancel(ctx)
-		}
-
-		if err := tracker.Save(saveCtx); err != nil {
+		// itself the save would be refused before a byte was sent, or cut
+		// short half-written by a signal arriving during it, so it goes out
+		// under a context that keeps ctx's values and drops its cancellation,
+		// whether or not ctx has ended yet. A second signal, which ends the
+		// process outright, is what stops a save that hangs; the transport's
+		// own timeouts bound it otherwise. When the run got as far as the
+		// explicit save below, that one was made under the same detached
+		// context, has already written everything unless it failed, and this
+		// one then sends nothing.
+		if err := tracker.Save(context.WithoutCancel(ctx)); err != nil {
 			log.Error().Err(err).Msg("unable to save page manifest")
 
 			// Only when the explicit save did not already fail: that one is
