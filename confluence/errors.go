@@ -108,7 +108,7 @@ func (e *StatusError) Is(target error) bool {
 }
 
 // newStatusError builds the error for an answer outside 2xx. body is what was
-// read of it, which readBody bounds at maxErrorBody+1 bytes.
+// read of it, which do bounds at maxErrorBody+1 bytes.
 func newStatusError(answer *reply) *StatusError {
 	body := answer.Body
 	truncated := len(body) > maxErrorBody

@@ -77,10 +77,8 @@ type reply struct {
 }
 
 // do sends one request, decodes a successful answer into out, and turns
-// every other answer into an error that says what it was.
-//
-// The behaviours below are the ones gopencils had and mark's error handling
-// is built around; they are kept on purpose.
+// every other answer into an error that says what it was. mark's error
+// handling is built around the behaviours below.
 //
 //   - Path: each element of path is escaped as one segment and joined to the
 //     base path with "/". An empty last element leaves a trailing slash, as
@@ -102,7 +100,7 @@ type reply struct {
 //     headers and as much of the start of its body as do kept, which a large
 //     body is not held whole for.
 //   - No response: a request that got no answer returns a nil response and
-//     the error. newTransportError reads the nil as "never completed".
+//     the error.
 //   - Any status outside 2xx: the body is not decoded, and the error is a
 //     *StatusError carrying the status, the URL and the start of the body,
 //     which errors.Is matches against ErrNotFound for a 404 and ErrConflict
@@ -119,9 +117,9 @@ type reply struct {
 //   - Any other 2xx: decoded into out, as it streams in, when its
 //     Content-Type is JSON or there is none; one that names anything else
 //     is an error, and so is a body that is not one JSON value and nothing
-//     after it. With out nil nothing is decoded or looked at. Either way the error comes
-//     with the response, as does one reading a body that cannot be read in
-//     full.
+//     after it. With out nil nothing is decoded or looked at. Either way
+//     the error comes with the response, as does one reading a body that
+//     cannot be read in full.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
