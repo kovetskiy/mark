@@ -204,10 +204,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// populates GetBody for the in-memory body client.do sends.
 	canReplay := req.Body == nil || req.GetBody != nil
 
-	var lastResp *http.Response
-	var lastErr error
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		if attempt > 1 {
 			body, err := rewind(req)
 			if err != nil {
@@ -220,12 +217,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		switch {
 		case err != nil:
-			lastResp, lastErr = nil, err
 			if !canReplay || !retryableError(err, req.Method) || attempt == maxAttempts {
 				return nil, err
 			}
 		case retryableStatus(resp.StatusCode, req.Method):
-			lastResp, lastErr = resp, nil
 			if !canReplay || attempt == maxAttempts {
 				return resp, nil
 			}
@@ -234,10 +229,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		var retryAfter string
-		if lastResp != nil {
-			retryAfter = lastResp.Header.Get("Retry-After")
+		if err == nil {
+			retryAfter = resp.Header.Get("Retry-After")
 			// The body must be drained and closed or the connection leaks.
-			drain(lastResp)
+			drain(resp)
 		}
 
 		wait := backoffFor(attempt, retryAfter, time.Now())
@@ -247,10 +242,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			Str("url", req.URL.Redacted()).
 			Int("attempt", attempt).
 			Dur("retry_in", wait)
-		if lastErr != nil {
-			event = event.Err(lastErr)
+		if err != nil {
+			event = event.Err(err)
 		} else {
-			event = event.Int("status", lastResp.StatusCode)
+			event = event.Int("status", resp.StatusCode)
 		}
 		event.Msg("Confluence request failed, retrying")
 
@@ -261,11 +256,6 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 	}
-
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return lastResp, nil
 }
 
 // rewind returns a copy of req with a fresh body for a retry.
