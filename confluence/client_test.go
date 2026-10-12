@@ -60,6 +60,50 @@ func clientServer(
 	return newClient(server.URL+basePath, server.Client(), username, password, ""), got
 }
 
+// cancelOnAnswer cancels a request's context as soon as its answer's headers
+// are in, which is what a run stopped while the body is read looks like.
+type cancelOnAnswer struct {
+	base   http.RoundTripper
+	cancel context.CancelFunc
+}
+
+func (c cancelOnAnswer) RoundTrip(r *http.Request) (*http.Response, error) {
+	response, err := c.base.RoundTrip(r)
+	c.cancel()
+
+	return response, err
+}
+
+// TestClientWordsALoginPageAnsweredAsTheRunStops: a login page that arrived
+// as the context ended came back as a cancellation before it was given its
+// answer, and formatting it dereferenced the nil answer.
+func TestClientWordsALoginPageAnsweredAsTheRunStops(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<html>Sign in</html>")
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	httpClient := &http.Client{Transport: cancelOnAnswer{base: server.Client().Transport, cancel: cancel}}
+	c := newClient(server.URL+"/rest/api", httpClient, "user", "token", "")
+
+	_, err := c.do(ctx, nil, http.MethodGet, []string{"content", "1"}, nil, nil, &PageInfo{})
+	require.Error(t, err)
+	assert.True(t, IsCancellation(err))
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.ErrorIs(t, err, ErrLoginPage)
+
+	var message string
+	require.NotPanics(t, func() { message = requestError("read page 1", err).Error() })
+	assert.Contains(t, message, "200 OK")
+	assert.Contains(t, message, "/rest/api/content/1")
+
+	require.NotPanics(t, func() { _ = (&loginPageError{requested: "x", evidence: "y"}).Error() })
+}
+
 func TestClientBuildsThePath(t *testing.T) {
 	for name, test := range map[string]struct {
 		base   string

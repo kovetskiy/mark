@@ -216,14 +216,19 @@ func (c *client) do(
 		return answer, nil
 	}
 
+	// A login page names its answer whatever becomes of it next: one that
+	// arrived as the run was stopped is still worded, as a cancellation.
+	var login *loginPageError
+	isLogin := errors.As(err, &login)
+	if isLogin {
+		login.answer = answer
+	}
+
 	if ctx.Err() != nil {
 		return answer, cancellation(ctx, err)
 	}
 
-	var login *loginPageError
-	if errors.As(err, &login) {
-		login.answer = answer
-
+	if isLogin {
 		return answer, err
 	}
 
@@ -467,6 +472,10 @@ type loginPageError struct {
 }
 
 func (e *loginPageError) Error() string {
+	if e.answer == nil {
+		return fmt.Sprintf("%s answered with a login page (%s)", e.requested, e.evidence)
+	}
+
 	landed := requestTarget(e.answer)
 	if landed != e.requested {
 		return fmt.Sprintf(
