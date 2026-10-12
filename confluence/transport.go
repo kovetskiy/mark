@@ -3,7 +3,6 @@ package confluence
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -141,21 +140,22 @@ func retryableStatus(status int, method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
 }
 
-// retryableError reports whether a transport-level failure is worth retrying.
-// Only side-effect-free methods qualify: a timeout partway through a POST may
-// mean the server already committed the write.
-func retryableError(err error, method string) bool {
+// retryableError reports whether a transport-level failure of req is worth
+// retrying. Only side-effect-free methods qualify: a timeout partway through a
+// POST may mean the server already committed the write.
+func retryableError(err error, req *http.Request) bool {
 	if err == nil {
 		return false
 	}
-	if method != http.MethodGet && method != http.MethodHead {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return false
 	}
-	// A request cancelled by the caller's context must not be retried.
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	return true
+	// A request whose context is done was given up on by its caller, and
+	// must not be retried. That is asked of the context, not of err:
+	// net/http's response header and dial timeouts satisfy
+	// errors.Is(err, context.DeadlineExceeded) too, and are failures like
+	// any other.
+	return req.Context().Err() == nil
 }
 
 // parseRetryAfter interprets the Retry-After header, which Confluence Cloud
@@ -215,7 +215,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		switch {
 		case err != nil:
-			if !canReplay || !retryableError(err, req.Method) || attempt == maxAttempts {
+			if !canReplay || !retryableError(err, req) || attempt == maxAttempts {
 				return nil, err
 			}
 		case retryableStatus(resp.StatusCode, req.Method):
