@@ -1453,7 +1453,7 @@ func (api *API) updatePageV1(
 	}
 
 	_, err := api.v1.do(
-		ctx, http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
+		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
 	)
 	if err != nil {
 		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
@@ -1514,7 +1514,7 @@ func (api *API) DeletePageLabel(ctx context.Context, page *PageInfo, label strin
 	// The answer is decoded only to hold it to being JSON; nothing in it is
 	// used.
 	_, err := api.v1.do(
-		ctx, http.MethodDelete, []string{"content", page.ID, "label"},
+		ctx, nil, http.MethodDelete, []string{"content", page.ID, "label"},
 		url.Values{"name": {label}}, nil, &struct{}{},
 	)
 
@@ -1590,14 +1590,14 @@ func (api *API) fetchUserByName(ctx context.Context, name string) (*User, error)
 	query := url.Values{"cql": {fmt.Sprintf("user.fullname~%q", name)}}
 
 	// Try the new path first
-	_, err := api.v1.do(ctx, http.MethodGet, []string{"search", "user"}, query, nil, &result)
+	_, err := api.v1.do(ctx, nil, http.MethodGet, []string{"search", "user"}, query, nil, &result)
 	if err != nil && statusOf(err) == 0 {
 		return nil, requestError(fmt.Sprintf("look up user %q", name), err)
 	}
 
 	// Try old path
 	if err != nil || len(result.Results) == 0 {
-		_, err = api.v1.do(ctx, http.MethodGet, []string{"search"}, query, nil, &result)
+		_, err = api.v1.do(ctx, nil, http.MethodGet, []string{"search"}, query, nil, &result)
 		if err != nil {
 			return nil, requestError(fmt.Sprintf("look up user %q", name), err)
 		}
@@ -2274,7 +2274,7 @@ func (api *API) HasChildFolders(ctx context.Context, parentID string) (bool, err
 // make. A tool that removes pages because a file left a repository should leave
 // the last word to a person.
 func (api *API) DeletePage(ctx context.Context, contentID string) error {
-	_, err := api.v1.do(ctx, http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
+	_, err := api.v1.do(ctx, nil, http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
 	// 204 is the documented answer, though some versions send 200, and a page
 	// already gone is the outcome that was wanted anyway.
 	if err != nil && !errors.Is(err, ErrNotFound) {
@@ -2310,7 +2310,7 @@ func (api *API) ArchivePage(ctx context.Context, contentID string) error {
 		"pages": []map[string]any{{"id": id}},
 	}
 
-	_, err = api.v1.do(ctx, http.MethodPost, []string{"content", "archive"}, nil, payload, &struct{}{})
+	_, err = api.v1.do(ctx, nil, http.MethodPost, []string{"content", "archive"}, nil, payload, &struct{}{})
 	if err != nil {
 		return requestError("archive content "+contentID, err)
 	}
@@ -2431,7 +2431,7 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 	}
 
 	_, err = api.v1.do(
-		ctx, http.MethodGet, []string{"content", targetID},
+		ctx, nil, http.MethodGet, []string{"content", targetID},
 		url.Values{"expand": {"space,ancestors"}}, nil, &target,
 	)
 	if err != nil {
@@ -2467,7 +2467,7 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 	}
 
 	var answer map[string]any
-	response, err := api.site.doWithHeader(
+	response, err := api.site.do(
 		ctx,
 		http.Header{"X-Atlassian-Token": {"no-check"}, "Accept": {"application/json"}},
 		http.MethodPost, []string{"pages", "movepage.action"}, query, nil, &answer,
@@ -2822,7 +2822,7 @@ func (api *API) reparentContentV1(ctx context.Context, page *PageInfo, parentID 
 	}
 
 	_, err := api.v1.do(
-		ctx, http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
+		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &map[string]any{},
 	)
 	if err != nil {
 		return requestError(fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err)
@@ -2838,7 +2838,7 @@ func (api *API) moveContent(ctx context.Context, contentID, position, targetID s
 
 	var result map[string]any
 	_, err := api.v1.do(
-		ctx, http.MethodPut, []string{"content", contentID, "move", position, targetID},
+		ctx, nil, http.MethodPut, []string{"content", contentID, "move", position, targetID},
 		nil, map[string]any{}, &result,
 	)
 

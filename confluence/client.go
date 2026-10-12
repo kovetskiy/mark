@@ -64,7 +64,6 @@ func newClient(base string, httpClient *http.Client, username, password string, 
 type reply struct {
 	StatusCode int
 	Status     string
-	Header     http.Header
 
 	// Body is the start of the body: for a failure, what a StatusError
 	// quotes and the byte that says there was more. A success keeps none,
@@ -93,8 +92,8 @@ type reply struct {
 //   - Headers: none by default, beyond what net/http adds. A JSON body is
 //     announced as application/json, and an attachment form as its multipart
 //     Content-Type together with the token that lets an upload past
-//     Confluence's XSRF check. Anything else a request needs comes through
-//     doWithHeader and overrides those.
+//     Confluence's XSRF check. Anything else a request needs comes in header,
+//     whose keys must be in canonical form, and overrides those.
 //   - Body: a *form is sent as its multipart encoding, an io.Reader as it is,
 //     and any other non-nil value as its JSON encoding. Either way it is
 //     buffered, so the retry transport can replay it.
@@ -128,18 +127,6 @@ type reply struct {
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
 //     it.
 func (c *client) do(
-	ctx context.Context,
-	method string,
-	path []string,
-	query url.Values,
-	body, out any,
-) (*reply, error) {
-	return c.doWithHeader(ctx, nil, method, path, query, body, out)
-}
-
-// doWithHeader is do with header set on the request, over any do sets itself.
-// Its keys must be in canonical form.
-func (c *client) doWithHeader(
 	ctx context.Context,
 	header http.Header,
 	method string,
@@ -193,7 +180,6 @@ func (c *client) doWithHeader(
 	answer := &reply{
 		StatusCode: resp.StatusCode,
 		Status:     resp.Status,
-		Header:     resp.Header,
 		Request:    resp.Request,
 	}
 
@@ -380,11 +366,10 @@ func (c *client) traceResponse(resp *http.Response, body *capture) {
 	dump := append(head, body.prefix...)
 	rest := body.total - int64(len(body.prefix))
 
-	switch {
-	case !body.done:
-		c.trace.write(boundTraceDump(dump) + " (the rest of the body was not read)")
-	default:
+	if body.done {
 		c.trace.write(boundTraceDumpMore(dump, rest))
+	} else {
+		c.trace.write(boundTraceDump(dump) + " (the rest of the body was not read)")
 	}
 }
 
@@ -392,7 +377,7 @@ func (c *client) traceResponse(resp *http.Response, body *capture) {
 // calls make.
 func get[T any](ctx context.Context, c *client, path []string, query url.Values) (T, error) {
 	var out T
-	_, err := c.do(ctx, http.MethodGet, path, query, nil, &out)
+	_, err := c.do(ctx, nil, http.MethodGet, path, query, nil, &out)
 
 	return out, err
 }
@@ -417,7 +402,7 @@ type listing[T any] struct {
 // send sends body to path with method and decodes the answer as a T.
 func send[T any](ctx context.Context, c *client, method string, path []string, body any) (T, error) {
 	var out T
-	_, err := c.do(ctx, method, path, nil, body, &out)
+	_, err := c.do(ctx, nil, method, path, nil, body, &out)
 
 	return out, err
 }

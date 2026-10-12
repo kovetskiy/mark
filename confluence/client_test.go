@@ -83,7 +83,7 @@ func TestClientBuildsThePath(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c, got := clientServer(t, test.base, "user", "token", http.StatusOK, "", `{}`)
 
-			_, err := c.do(context.Background(), test.method, test.path, nil, nil, &map[string]any{})
+			_, err := c.do(context.Background(), nil, test.method, test.path, nil, nil, &map[string]any{})
 			require.NoError(t, err)
 
 			assert.Equal(t, test.want, got.rawPath)
@@ -99,13 +99,13 @@ func TestClientEncodesTheQuerySorted(t *testing.T) {
 		"cql":      {`type=folder AND title="x"`},
 		"spaceKey": {"DOCS"},
 	}
-	_, err := c.do(context.Background(), http.MethodGet, []string{"search"}, query, nil, &map[string]any{})
+	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"search"}, query, nil, &map[string]any{})
 	require.NoError(t, err)
 
 	assert.Equal(t, query.Encode(), got.rawQuery)
 	assert.Equal(t, "cql=type%3Dfolder+AND+title%3D%22x%22&spaceKey=DOCS&title=A+%26+B", got.rawQuery)
 
-	_, err = c.do(context.Background(), http.MethodGet, []string{"search"}, nil, nil, &map[string]any{})
+	_, err = c.do(context.Background(), nil, http.MethodGet, []string{"search"}, nil, nil, &map[string]any{})
 	require.NoError(t, err)
 	assert.Empty(t, got.rawQuery, "no query, no question mark")
 }
@@ -114,7 +114,7 @@ func TestClientSendsAndDecodesJSON(t *testing.T) {
 	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json; charset=utf-8", `{"id":"42","title":"T"}`+"\n")
 
 	var page PageInfo
-	response, err := c.do(context.Background(), http.MethodPost, []string{"content"}, nil,
+	response, err := c.do(context.Background(), nil, http.MethodPost, []string{"content"}, nil,
 		map[string]any{"title": "T"}, &page)
 	require.NoError(t, err)
 
@@ -130,7 +130,7 @@ func TestClientSendsAndDecodesJSON(t *testing.T) {
 func TestClientSendsAReaderAsItIs(t *testing.T) {
 	c, got := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "", `{}`)
 
-	_, err := c.doWithHeader(context.Background(),
+	_, err := c.do(context.Background(),
 		http.Header{
 			"Content-Type":      {"multipart/form-data; boundary=boundary"},
 			"X-Atlassian-Token": {"no-check"},
@@ -151,7 +151,7 @@ func TestClientSendsAReaderAsItIs(t *testing.T) {
 func TestClientReturnsTheResponseWithADecodeError(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", "not json")
 
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content"}, nil, nil, &map[string]any{})
+	response, err := c.do(context.Background(), nil, http.MethodGet, []string{"content"}, nil, nil, &map[string]any{})
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrLoginPage)
 	require.NotNil(t, response)
@@ -169,7 +169,7 @@ func TestClientRecognisesALoginPage(t *testing.T) {
 		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, contentType, "<html>log in</html>")
 
 		var page PageInfo
-		response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &page)
+		response, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &page)
 		require.ErrorIs(t, err, ErrLoginPage, contentType)
 		require.NotNil(t, response)
 		assert.Contains(t, err.Error(), "/rest/api/content/1")
@@ -200,7 +200,7 @@ func TestClientRecognisesARedirectToTheLoginPage(t *testing.T) {
 
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
-	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &PageInfo{})
+	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &PageInfo{})
 	require.ErrorIs(t, err, ErrLoginPage)
 	assert.Contains(t, err.Error(), server.URL+"/rest/api/content/1", "where the request was sent")
 	assert.Contains(t, err.Error(), "/login.action", "and where it ended up")
@@ -234,7 +234,7 @@ func TestClientRecognisesARedirectToAnotherHost(t *testing.T) {
 
 		c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
-		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &map[string]any{})
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &map[string]any{})
 		if login {
 			require.ErrorIs(t, err, ErrLoginPage, contentType)
 			assert.Contains(t, err.Error(), "redirected to localhost")
@@ -251,7 +251,7 @@ func TestClientDoesNotDecodeAFailure(t *testing.T) {
 		c, _ := clientServer(t, "/rest/api", "user", "token", status, "", `{"id":"not-decoded","message":"no"}`)
 
 		var page PageInfo
-		_, err := c.do(context.Background(), http.MethodPut, []string{"content", "1"}, nil, map[string]any{}, &page)
+		_, err := c.do(context.Background(), nil, http.MethodPut, []string{"content", "1"}, nil, map[string]any{}, &page)
 		var statusErr *StatusError
 		require.ErrorAs(t, err, &statusErr, "status %d", status)
 		assert.Equal(t, status, statusErr.StatusCode)
@@ -271,7 +271,7 @@ func TestStatusErrorMatchesItsSentinels(t *testing.T) {
 	} {
 		c, _ := clientServer(t, "/rest/api", "user", "token", status, "application/json", `{}`)
 
-		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
 		require.ErrorIs(t, err, want, "status %d", status)
 		assert.Equal(t, status, statusOf(err))
 
@@ -286,7 +286,7 @@ func TestStatusErrorMatchesItsSentinels(t *testing.T) {
 	}
 
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusInternalServerError, "", `oops`)
-	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
 	assert.NotErrorIs(t, err, ErrNotFound)
 	assert.NotErrorIs(t, err, ErrConflict)
 	assert.Equal(t, http.StatusInternalServerError, statusOf(err))
@@ -300,7 +300,7 @@ func TestStatusErrorMatchesItsSentinels(t *testing.T) {
 func TestClientBoundsAFailureBody(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusBadGateway, "text/html", strings.Repeat("x", 1<<20))
 
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	response, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
 	assert.Len(t, response.Body, maxErrorBody+1)
 
 	var statusErr *StatusError
@@ -326,7 +326,7 @@ func TestClientKeepsAFailureWhoseBodyIsCutShort(t *testing.T) {
 	t.Cleanup(server.Close)
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
-	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
+	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &struct{}{})
 	require.ErrorIs(t, err, ErrNotFound)
 	var statusErr *StatusError
 	require.ErrorAs(t, err, &statusErr)
@@ -336,7 +336,7 @@ func TestClientKeepsAFailureWhoseBodyIsCutShort(t *testing.T) {
 func TestClientDoesNotDecodeNoContent(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusNoContent, "", "")
 
-	response, err := c.do(context.Background(), http.MethodDelete, []string{"content", "1"}, nil, nil, &struct{}{})
+	response, err := c.do(context.Background(), nil, http.MethodDelete, []string{"content", "1"}, nil, nil, &struct{}{})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNoContent, response.StatusCode)
 }
@@ -346,7 +346,7 @@ func TestClientWithoutAResponseReturnsNone(t *testing.T) {
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 	server.Close()
 
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
+	response, err := c.do(context.Background(), nil, http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
 	require.Error(t, err)
 	assert.False(t, IsCancellation(err), "a refused connection is not the caller giving up")
 	assert.Nil(t, response)
@@ -356,7 +356,7 @@ func TestClientAuthenticates(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		c, got := clientServer(t, "/rest/api", "user", "secret", http.StatusOK, "", `{}`)
 
-		_, err := c.do(context.Background(), http.MethodGet, []string{"user", "current"}, nil, nil, &User{})
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"user", "current"}, nil, nil, &User{})
 		require.NoError(t, err)
 
 		assert.True(t, got.basicAuthOK)
@@ -367,7 +367,7 @@ func TestClientAuthenticates(t *testing.T) {
 	t.Run("bearer", func(t *testing.T) {
 		c, got := clientServer(t, "/rest/api", "", "pat", http.StatusOK, "", `{}`)
 
-		_, err := c.do(context.Background(), http.MethodGet, []string{"user", "current"}, nil, nil, &User{})
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"user", "current"}, nil, nil, &User{})
 		require.NoError(t, err)
 
 		assert.False(t, got.basicAuthOK)
@@ -377,7 +377,7 @@ func TestClientAuthenticates(t *testing.T) {
 	t.Run("none", func(t *testing.T) {
 		c, got := clientServer(t, "/rest/api", "", "", http.StatusOK, "", `{}`)
 
-		_, err := c.do(context.Background(), http.MethodGet, []string{"user", "current"}, nil, nil, &User{})
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"user", "current"}, nil, nil, &User{})
 		require.NoError(t, err)
 
 		assert.Empty(t, got.header.Get("Authorization"))
@@ -407,7 +407,7 @@ func TestClientIsAbortedByItsContext(t *testing.T) {
 	}()
 
 	started := time.Now()
-	response, err := c.do(ctx, http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
+	response, err := c.do(ctx, nil, http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.True(t, IsCancellation(err))
@@ -446,7 +446,7 @@ func TestClientMarksABodyCutShortAsACancellation(t *testing.T) {
 	c := newClient(server.URL+"/rest/api", httpClient, "user", "token", "")
 
 	var page PageInfo
-	response, err := c.do(ctx, http.MethodGet, []string{"content", "1"}, nil, nil, &page)
+	response, err := c.do(ctx, nil, http.MethodGet, []string{"content", "1"}, nil, nil, &page)
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.True(t, IsCancellation(err))
@@ -475,7 +475,7 @@ func TestClientTracesRequestAndResponse(t *testing.T) {
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "secret", "rest:")
 
 	var page PageInfo
-	_, err := c.do(context.Background(), http.MethodPut, []string{"content", "7"}, nil, map[string]any{"title": "T"}, &page)
+	_, err := c.do(context.Background(), nil, http.MethodPut, []string{"content", "7"}, nil, map[string]any{"title": "T"}, &page)
 	require.NoError(t, err)
 	assert.Equal(t, "7", page.ID, "the traced response is still decoded")
 
@@ -499,7 +499,7 @@ func TestClientTracesRequestAndResponse(t *testing.T) {
 func TestClientReportsABadBaseURL(t *testing.T) {
 	c := newClient("http://[::1", http.DefaultClient, "user", "token", "")
 
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
+	response, err := c.do(context.Background(), nil, http.MethodGet, []string{"content"}, nil, nil, &struct{}{})
 	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid base URL")
@@ -516,7 +516,7 @@ func TestClientRejectsDataAfterTheJSONValue(t *testing.T) {
 		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", body)
 
 		var page PageInfo
-		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "42"}, nil, nil, &page)
 		require.Error(t, err, body)
 		assert.Contains(t, err.Error(), "after the JSON value", body)
 
@@ -531,7 +531,7 @@ func TestClientRejectsAContentTypeThatIsNotJSON(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "text/plain", `{"id":"42"}`)
 
 	var page PageInfo
-	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "42"}, nil, nil, &page)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrLoginPage)
 	assert.Contains(t, err.Error(), "text/plain")
@@ -541,7 +541,7 @@ func TestClientRejectsAContentTypeThatIsNotJSON(t *testing.T) {
 		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, contentType, `{"id":"42"}`)
 
 		var page PageInfo
-		_, err := c.do(context.Background(), http.MethodGet, []string{"content", "42"}, nil, nil, &page)
+		_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "42"}, nil, nil, &page)
 		require.NoError(t, err, "Content-Type %q", contentType)
 		assert.Equal(t, "42", page.ID)
 	}
@@ -565,12 +565,12 @@ func TestClientTakesAnEmptySuccessAsOne(t *testing.T) {
 			c, _ := clientServer(t, "/rest/api", "user", "token", test.status, test.contentType, "")
 
 			page := PageInfo{ID: "untouched"}
-			response, err := c.do(context.Background(), http.MethodDelete, []string{"content", "1"}, nil, nil, &page)
+			response, err := c.do(context.Background(), nil, http.MethodDelete, []string{"content", "1"}, nil, nil, &page)
 			require.NoError(t, err)
 			assert.Equal(t, test.status, response.StatusCode)
 			assert.Equal(t, "untouched", page.ID)
 
-			_, err = c.do(context.Background(), http.MethodDelete, []string{"content", "1"}, nil, nil, nil)
+			_, err = c.do(context.Background(), nil, http.MethodDelete, []string{"content", "1"}, nil, nil, nil)
 			require.NoError(t, err)
 		})
 	}
@@ -584,7 +584,7 @@ func TestClientTakesAnEmptySuccessAsOne(t *testing.T) {
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
 
 	page := PageInfo{ID: "untouched"}
-	_, err := c.do(context.Background(), http.MethodGet, []string{"content", "1"}, nil, nil, &page)
+	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "1"}, nil, nil, &page)
 	require.NoError(t, err)
 	assert.Equal(t, "untouched", page.ID)
 }
@@ -612,7 +612,7 @@ func TestClientStreamsALargeSuccess(t *testing.T) {
 	c := newClient(server.URL+"/rest/api", server.Client(), "user", "secret", "rest:")
 
 	var page PageInfo
-	response, err := c.do(context.Background(), http.MethodGet, []string{"content", "7"}, nil, nil, &page)
+	response, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "7"}, nil, nil, &page)
 	require.NoError(t, err)
 	assert.Equal(t, "7", page.ID)
 	assert.Len(t, page.Body.Storage.Value, len(large), "the whole body is decoded")
@@ -673,7 +673,7 @@ func TestStatusErrorSaysWhatConfluenceSaid(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c, _ := clientServer(t, "/rest/api", "user", "token", test.status, "application/json", test.body)
 
-			_, err := c.do(context.Background(), http.MethodPost, []string{"content", "1"}, nil, map[string]any{}, &struct{}{})
+			_, err := c.do(context.Background(), nil, http.MethodPost, []string{"content", "1"}, nil, map[string]any{}, &struct{}{})
 			var statusErr *StatusError
 			require.ErrorAs(t, err, &statusErr)
 			assert.Contains(t, err.Error(), test.want)
