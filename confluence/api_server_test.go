@@ -914,6 +914,6 @@ func TestStatusErrorCarriesTheFakesMessage(t *testing.T) {
 	var status *confluence.StatusError
 	require.ErrorAs(t, err, &status)
 	assert.Equal(t, http.StatusNotFound, status.StatusCode)
-	assert.Contains(t, status.Message, "424242")
-	assert.Contains(t, err.Error(), status.Message)
+	assert.Contains(t, status.Message(), "424242")
+	assert.Contains(t, err.Error(), status.Message())
 }
