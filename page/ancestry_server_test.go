@@ -237,3 +237,20 @@ func TestValidateAncestryRootLevelPageIsMisplaced(t *testing.T) {
 	require.NotNil(t, found, "the page comes back with the error, so it can be moved")
 	assert.Equal(t, orphan.ID, found.ID)
 }
+
+// Confluence compares titles without regard to case, so a chain that differs
+// from the stored one only in case names the same pages. The fake server finds
+// a page by exact title, so only the parent chain is exercised here.
+func TestValidateAncestryIgnoresCase(t *testing.T) {
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+	team := server.AddPage("DOCS", "Team", "page", root.ID)
+	server.AddPage("DOCS", "Guides", "page", team.ID)
+
+	found, err := page.ValidateAncestry(api, "DOCS", []string{"root", "TEAM", "Guides"})
+	require.NoError(t, err, "a parent differing only in case is the same parent")
+	require.NotNil(t, found)
+
+	_, err = page.ValidateAncestry(api, "DOCS", []string{"Elsewhere", "Team", "Guides"})
+	assert.ErrorIs(t, err, page.ErrAncestryMismatch, "a different parent is still a mismatch")
+}
