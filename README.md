@@ -687,6 +687,33 @@ editor produces for this shape, and it is what the elements mean.
 Several definitions of one term share its cell rather than each taking a row,
 since a row with no term to head it reads as though something is missing.
 
+### Table column widths
+
+Confluence sizes table columns itself unless it is told otherwise. To set the
+widths, put a `Table-Widths` comment directly before the table, with one width
+in pixels per column:
+
+```markdown
+<!-- Table-Widths: 160,720 -->
+
+| Name | Description |
+|------|-------------|
+| id   | The identifier |
+```
+
+The table is published with a `<colgroup>` that sets each column's width, and
+the comment itself does not appear on the page. GitHub and GitLab show the
+comment as nothing at all, so the table stays an ordinary table there.
+
+* The comment applies to the next table only, and must be the block just before
+  it; blank lines between the two are fine. A comment with anything else
+  between it and a table is left alone, with a warning.
+* Widths are plain positive whole numbers, in pixels. Percentages, `auto` and
+  units such as `px` are not accepted.
+* The number of widths must equal the number of columns. If it does not, or a
+  value is not valid, mark warns and publishes the table without widths.
+* A table without the comment is published exactly as before.
+
 ### Task Lists
 
 Mark supports [GitHub Flavored Markdown task lists](https://github.github.com/gfm/#task-list-items-extension-).

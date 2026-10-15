@@ -170,3 +170,28 @@ Body.
 	assert.Contains(t, body, "<macro>")
 	assert.NotContains(t, body, "<!-- Title:")
 }
+
+// The Table-Widths directive is not a header: it must neither be rejected as a
+// misspelled one nor be taken out of the body.
+func TestTableWidthsDirectiveIsNotAHeader(t *testing.T) {
+	directive := "<!-- Table-Widths: 160,720 -->"
+	table := "| a | b |\n|---|---|\n| 1 | 2 |\n"
+
+	cases := map[string]string{
+		"first line of the document": directive + "\n" + table,
+		"between headers and body":   "<!-- Space: DOC -->\n<!-- Title: Example -->\n\n" + directive + "\n\n" + table,
+		"between two headers":        "<!-- Space: DOC -->\n" + directive + "\n<!-- Title: Example -->\n\n" + table,
+	}
+
+	for name, doc := range cases {
+		t.Run(name, func(t *testing.T) {
+			meta, body, err := ExtractMeta([]byte(doc), "", false, false, "", nil, false, "", false)
+			require.NoError(t, err)
+
+			assert.Contains(t, string(body), directive)
+			if meta != nil && name != "first line of the document" {
+				assert.Equal(t, "DOC", meta.Space)
+			}
+		})
+	}
+}
