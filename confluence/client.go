@@ -74,6 +74,10 @@ type reply struct {
 	// Request is the request that got this answer -- after redirects, the
 	// last one.
 	Request *http.Request
+
+	// Empty is set when the body had nothing in it, and so, for a success,
+	// out was left as it was.
+	Empty bool
 }
 
 // do sends one request, decodes a successful answer into out, and turns
@@ -108,7 +112,8 @@ type reply struct {
 //     which is all the error quotes, and a body cut short still makes a
 //     StatusError, with what was read.
 //   - Status 204, or any 2xx with an empty body: success, and out is left as
-//     it was.
+//     it was. The reply says it was Empty; get and send, which are asked for
+//     a value, take that for an error.
 //   - Login page: a 2xx that is a login page rather than Confluence's answer
 //     returns an error errors.Is matches against ErrLoginPage, with the
 //     response; see loginEvidence for how one is recognised. A Confluence
@@ -117,13 +122,16 @@ type reply struct {
 //   - Any other 2xx: decoded into out, as it streams in, when its
 //     Content-Type is JSON or there is none; one that names anything else
 //     is an error, and so is a body that is not one JSON value and nothing
-//     after it. With out nil nothing is decoded or looked at. Either way
+//     after it -- though not one whose connection fails once the value has
+//     come whole. With out nil nothing is decoded or looked at. Either way
 //     the error comes with the response, as does one reading a body that
 //     cannot be read in full.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
-//     it.
+//     it. Only for a GET or a HEAD, though. Any other method is not sent once
+//     ctx is done, and once sent is not cut short by it: it runs to its
+//     answer, bounded by the transport's timeouts.
 func (c *client) do(
 	ctx context.Context,
 	header http.Header,
@@ -148,6 +156,21 @@ func (c *client) do(
 	var reader io.Reader
 	if payload != nil {
 		reader = bytes.NewReader(payload)
+	}
+
+	// A write is not started once the run is stopped, and not cut short once
+	// it is sent: Confluence may already have applied it, and a run that then
+	// read the answer as a failure would not record what the write did --
+	// under --no-overwrite, a page version it never wrote down reads as an
+	// edit made in Confluence on every later run. From here on ctx is the
+	// request's own, so the checks below that ask whether the run was stopped
+	// ask of a write whether it was, which it never is.
+	if !readOnly(method) {
+		if err := ctx.Err(); err != nil {
+			return nil, cancellation(ctx, err)
+		}
+
+		ctx = context.WithoutCancel(ctx)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, c.url(path, query), reader)
@@ -195,6 +218,7 @@ func (c *client) do(
 
 	err = c.answer(ctx, req, resp, received, out)
 	answer.Body = received.prefix
+	answer.Empty = received.total == 0
 
 	if c.trace != nil {
 		c.traceResponse(resp, received)
@@ -296,15 +320,22 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 
 	// One JSON value is the whole of an answer. Anything after it is a body
 	// that is not one, however well its start parsed.
-	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		if err != nil && ctx.Err() != nil {
-			return err
-		}
-
+	_, err := decoder.Token()
+	switch {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err != nil && ctx.Err() != nil:
+		return err
+	case body.readErr != nil:
+		// Not something after the value, but the connection failing after
+		// it -- a proxy closing it before the end of a chunked body. The
+		// value came whole, and the request, a write as much as a read, did
+		// what it was asked: failing it as a body that is not JSON would
+		// fail a write that happened, and put the blame on an SSO page.
+		return nil //nolint:nilerr // the value is whole; a read failing after it is no fault in it.
+	default:
 		return errors.New("it goes on after the JSON value")
 	}
-
-	return nil
 }
 
 // capture is a response body read through, keeping the first limit bytes of
@@ -319,6 +350,9 @@ type capture struct {
 
 	// done is set once the body has been read to its end.
 	done bool
+
+	// readErr is what reading the body failed with, other than its end.
+	readErr error
 }
 
 func (c *capture) Read(p []byte) (int, error) {
@@ -327,8 +361,11 @@ func (c *capture) Read(p []byte) (int, error) {
 		c.prefix = append(c.prefix, p[:min(n, room)]...)
 	}
 	c.total += int64(n)
-	if errors.Is(err, io.EOF) {
+	switch {
+	case errors.Is(err, io.EOF):
 		c.done = true
+	case err != nil:
+		c.readErr = err
 	}
 
 	return n, err
@@ -377,12 +414,12 @@ func (c *client) traceResponse(resp *http.Response, body *capture) {
 }
 
 // get asks c for path and decodes the answer as a T: do for the request most
-// calls make.
+// calls make. An empty answer is an error, not a zero T.
 func get[T any](ctx context.Context, c *client, path []string, query url.Values) (T, error) {
 	var out T
-	_, err := c.do(ctx, nil, http.MethodGet, path, query, nil, &out)
+	answer, err := c.do(ctx, nil, http.MethodGet, path, query, nil, &out)
 
-	return out, err
+	return out, valueIn(answer, err)
 }
 
 // listing is one page of a collection, as v1 and v2 both answer a listing:
@@ -402,12 +439,26 @@ type listing[T any] struct {
 	} `json:"_links"`
 }
 
-// send sends body to path with method and decodes the answer as a T.
+// send sends body to path with method and decodes the answer as a T. An
+// empty answer is an error, not a zero T.
 func send[T any](ctx context.Context, c *client, method string, path []string, body any) (T, error) {
 	var out T
-	_, err := c.do(ctx, nil, method, path, nil, body, &out)
+	answer, err := c.do(ctx, nil, method, path, nil, body, &out)
 
-	return out, err
+	return out, valueIn(answer, err)
+}
+
+// valueIn is err, or, for a success that came with nothing in it, an
+// *emptyAnswerError. do takes an empty 2xx for success, which it is for a
+// call that wants nothing back. One that wants a T does not get one, and a
+// zero T in its place -- a page whose ID is "" -- is taken for an answer: put
+// in the page cache, and requests then sent to "content/".
+func valueIn(answer *reply, err error) error {
+	if err == nil && answer != nil && answer.Empty {
+		return &emptyAnswerError{answer: answer}
+	}
+
+	return err
 }
 
 // cancelledError is an error a request ended with while its context was

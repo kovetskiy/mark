@@ -137,6 +137,13 @@ func retryableStatus(status int, method string) bool {
 	if status == http.StatusNotImplemented {
 		return false
 	}
+	return readOnly(method)
+}
+
+// readOnly reports whether a request with method has no side effects on
+// Confluence: whether it can be replayed, or abandoned part way through,
+// without leaving behind something done that the run does not know of.
+func readOnly(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
 }
 
@@ -147,7 +154,7 @@ func retryableError(err error, req *http.Request) bool {
 	if err == nil {
 		return false
 	}
-	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+	if !readOnly(req.Method) {
 		return false
 	}
 	// A request whose context is done was given up on by its caller, and
