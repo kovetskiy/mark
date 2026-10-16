@@ -96,6 +96,7 @@ type Config struct {
 	MermaidScale     float64
 	MermaidOutput    string
 	MermaidBundle    bool
+	MermaidMacroName string
 	D2Output         string
 	D2Scale          float64
 	D2BundleRemote   bool
@@ -179,12 +180,6 @@ func RunContext(ctx context.Context, config Config) (err error) {
 // whatever engine happened to be current rather than the one asked for, and
 // published a PNG for a MermaidOutput it did not recognise.
 func (c Config) prepare() (page.LinkChecks, error) {
-	// The engine is chosen before anything is published, because it is built
-	// lazily and shared: a diagram already drawn is not drawn again to match.
-	if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
-		return page.LinkChecks{}, err
-	}
-
 	// Checked here as well as in the CLI, because Config is a public API and a
 	// library caller reaches this without passing a flag at all. A value the
 	// renderer does not know falls to its default branch, so an unrecognised
@@ -192,19 +187,59 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// alongside it down with it. An empty value is not that: it is a caller
 	// that never set the field, and it means the PNG mark has always published.
 	switch c.MermaidOutput {
-	case "", "png", "svg":
+	case "", "png", "svg", "macro":
 		// ok
 	default:
 		return page.LinkChecks{}, fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
+			"invalid MermaidOutput %q: expected \"png\", \"svg\", \"macro\", or \"\" for the default",
 			c.MermaidOutput,
 		)
 	}
 
+	if c.MermaidOutput == "macro" {
+		// Nothing is drawn: the diagram's source is published verbatim inside
+		// the macro body. The settings that drive drawing are therefore
+		// meaningless, and setting them is a mistake worth saying so rather
+		// than silently ignoring.
+		if c.MermaidEngine != "" {
+			return page.LinkChecks{}, errors.New(
+				"MermaidEngine has no effect with MermaidOutput \"macro\": " +
+					"the macro does not draw the diagram",
+			)
+		}
+		if c.MermaidScale != 0 {
+			return page.LinkChecks{}, errors.New(
+				"MermaidScale has no effect with MermaidOutput \"macro\": " +
+					"the macro does not draw the diagram",
+			)
+		}
+	} else {
+		// The engine is chosen before anything is published, because it is built
+		// lazily and shared: a diagram already drawn is not drawn again to match.
+		if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
+			return page.LinkChecks{}, err
+		}
+	}
+
+	// A bundle is only meaningful where there is a rendered file to put the
+	// source into, and only an SVG has room for it. A PNG has nowhere, and the
+	// macro output publishes the source itself, so a bundle asked for alongside
+	// either is contradictory rather than moot.
 	if c.MermaidBundle && c.MermaidOutput != "svg" {
 		return page.LinkChecks{}, errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
-				"there is nowhere in a PNG to keep the diagram's source",
+				"only an SVG has room for the diagram's source",
+		)
+	}
+
+	// A macro name is only meaningful with the macro output, and a caller that
+	// named one alongside an image format asked for something that cannot
+	// happen. Empty is not checked here: it is the caller's way of saying "use
+	// the default", which the renderer honours.
+	if c.MermaidMacroName != "" && c.MermaidOutput != "macro" {
+		return page.LinkChecks{}, errors.New(
+			"MermaidMacroName needs MermaidOutput \"macro\": " +
+				"an image has no macro to name",
 		)
 	}
 
@@ -1005,6 +1040,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			MermaidScale:     config.MermaidScale,
 			MermaidOutput:    config.MermaidOutput,
 			MermaidBundle:    config.MermaidBundle,
+			MermaidMacroName: config.MermaidMacroName,
 			D2Output:         config.D2Output,
 			D2Scale:          config.D2Scale,
 			D2BundleRemote:   config.D2BundleRemote,
@@ -1334,6 +1370,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		MermaidScale:     config.MermaidScale,
 		MermaidOutput:    config.MermaidOutput,
 		MermaidBundle:    config.MermaidBundle,
+		MermaidMacroName: config.MermaidMacroName,
 		D2Output:         config.D2Output,
 		D2Scale:          config.D2Scale,
 		D2BundleRemote:   config.D2BundleRemote,

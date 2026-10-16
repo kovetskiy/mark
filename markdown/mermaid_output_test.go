@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -31,4 +32,121 @@ func TestCompileMarkdownRefusesAnUnknownMermaidOutput(t *testing.T) {
 
 	assert.Contains(t, err.Error(), "mermaid-output")
 	assert.Contains(t, err.Error(), "jpeg")
+}
+
+// TestCompileMarkdownPublishesAMermaidMacro covers the third output the
+// mermaid feature knows: with --mermaid-output=macro the diagram's source is
+// published as a mermaid-macro macro for the instance's own Mermaid macro to
+// draw, instead of an image rendered by mark.
+func TestCompileMarkdownPublishesAMermaidMacro(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	document := []byte("# Mermaid Test\n\nA simple Mermaid diagram:\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n")
+
+	expected := `<h1 id="Mermaid-Test">Mermaid Test</h1>
+<p>A simple Mermaid diagram:</p>
+<ac:structured-macro ac:name="mermaid-macro"><ac:plain-text-body><![CDATA[flowchart TD
+A[Start] --> B[End]]]></ac:plain-text-body></ac:structured-macro>
+`
+
+	actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+		Features:      []string{"mermaid"},
+		MermaidOutput: "macro",
+		MermaidScale:  1,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, strings.TrimSuffix(expected, "\n"), strings.TrimSuffix(actual, "\n"))
+}
+
+// TestCompileMarkdownMermaidMacroDropsH1 checks that --drop-h1 applies to a
+// mermaid-macro page like to any other.
+func TestCompileMarkdownMermaidMacroDropsH1(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	document := []byte("# Mermaid Test\n\nA simple Mermaid diagram:\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n")
+
+	expected := `<p>A simple Mermaid diagram:</p>
+<ac:structured-macro ac:name="mermaid-macro"><ac:plain-text-body><![CDATA[flowchart TD
+A[Start] --> B[End]]]></ac:plain-text-body></ac:structured-macro>
+`
+
+	actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+		Features:      []string{"mermaid"},
+		MermaidOutput: "macro",
+		MermaidScale:  1,
+		DropFirstH1:   true,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, strings.TrimSuffix(expected, "\n"), strings.TrimSuffix(actual, "\n"))
+}
+
+// TestCompileMarkdownMermaidMacroNeedsTheFeature checks that the macro output
+// only applies with the mermaid feature on: without it, a mermaid fence is an
+// ordinary code block regardless of --mermaid-output, like any other feature.
+func TestCompileMarkdownMermaidMacroNeedsTheFeature(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	document := []byte("# Mermaid Test\n\nA simple Mermaid diagram:\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n")
+
+	expected := `<h1 id="Mermaid-Test">Mermaid Test</h1>
+<p>A simple Mermaid diagram:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:parameter ac:name="collapse">false</ac:parameter><ac:plain-text-body><![CDATA[flowchart TD
+A[Start] --> B[End]]]></ac:plain-text-body></ac:structured-macro>
+`
+
+	actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+		Features:      []string{"mention"},
+		MermaidOutput: "macro",
+		MermaidScale:  1,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, strings.TrimSuffix(expected, "\n"), strings.TrimSuffix(actual, "\n"))
+}
+
+// TestCompileMarkdownMermaidMacroName covers the configurable macro key: with
+// MermaidMacroName the ac:name is the one the caller named, escaped like any
+// attribute value, and an empty name falls back to the default.
+func TestCompileMarkdownMermaidMacroName(t *testing.T) {
+	lib, err := stdlib.New(nil)
+	require.NoError(t, err)
+
+	document := []byte("# Mermaid Test\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n")
+
+	t.Run("a named macro", func(t *testing.T) {
+		actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+			Features:         []string{"mermaid"},
+			MermaidOutput:    "macro",
+			MermaidMacroName: "mermaid-diagrams",
+		})
+		require.NoError(t, err)
+
+		assert.Contains(t, actual, `<ac:structured-macro ac:name="mermaid-diagrams">`)
+	})
+
+	t.Run("an empty name falls back to the default", func(t *testing.T) {
+		actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+			Features:      []string{"mermaid"},
+			MermaidOutput: "macro",
+		})
+		require.NoError(t, err)
+
+		assert.Contains(t, actual, `<ac:structured-macro ac:name="mermaid-macro">`)
+	})
+
+	t.Run("the name is escaped", func(t *testing.T) {
+		actual, _, err := CompileMarkdown(document, lib, "doc.md", types.MarkConfig{
+			Features:         []string{"mermaid"},
+			MermaidOutput:    "macro",
+			MermaidMacroName: "mermaid&co",
+		})
+		require.NoError(t, err)
+
+		assert.Contains(t, actual, `ac:name="mermaid&amp;co"`)
+	})
 }
