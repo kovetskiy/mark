@@ -142,7 +142,8 @@ turns every non-2xx answer into a `*confluence.StatusError` (`errors.Is` matches
 `ErrNotFound` for a 404 and `ErrConflict` for a 409; its message is Confluence's own when
 the body is v1's or v2's error shape), a login page into `ErrLoginPage`, and decodes a 2xx
 as it streams in: JSON or no Content-Type only, one value and nothing after it, an empty
-body as success. A call site asks `errors.Is`/`statusOf` rather than reading a status, and
+body as success -- except to `get` and `send`, which are asked for a value. A write is
+not cut short by its context once sent; Confluence may already have applied it. A call site asks `errors.Is`/`statusOf` rather than reading a status, and
 wraps through `requestError`. Anything that remembers an answer -- a cache, a "this
 endpoint is missing" flag, the platform -- must not remember one `IsCancellation` reports.
 

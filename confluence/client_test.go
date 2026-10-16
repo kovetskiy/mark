@@ -744,3 +744,91 @@ func TestStatusErrorSaysWhatConfluenceSaid(t *testing.T) {
 		})
 	}
 }
+
+// TestClientLetsASentWriteFinish: a write that has been sent runs to its
+// answer whatever becomes of the run, since Confluence may have applied it
+// already, and taking its answer for a failure would leave what it did
+// unrecorded. One not yet sent when the run is stopped is not sent at all.
+func TestClientLetsASentWriteFinish(t *testing.T) {
+	received := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received++
+		w.Header().Set("Content-Type", "application/json")
+		w.(http.Flusher).Flush()
+		// Long enough for a cancelled request to have given up on the body.
+		time.Sleep(100 * time.Millisecond)
+		_, _ = io.WriteString(w, `{"id":"42","version":{"number":2}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Stopped the moment the answer's headers are in, before its body is read.
+	httpClient := server.Client()
+	httpClient.Transport = cancelOnAnswer{base: httpClient.Transport, cancel: cancel}
+	c := newClient(server.URL+"/rest/api", httpClient, "user", "token", "")
+
+	var page PageInfo
+	_, err := c.do(ctx, nil, http.MethodPut, []string{"content", "42"}, nil, map[string]any{}, &page)
+	require.NoError(t, err, "the update was applied, and its answer read")
+	assert.Equal(t, "42", page.ID)
+	assert.Equal(t, 1, received)
+
+	_, err = c.do(ctx, nil, http.MethodPut, []string{"content", "42"}, nil, map[string]any{}, &page)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.True(t, IsCancellation(err))
+	assert.Equal(t, 1, received, "a write is not started once the run is stopped")
+}
+
+// TestGetAndSendRefuseAnEmptyAnswer: do takes an empty 2xx for success, but a
+// call asked for a value gets none from it. A zero PageInfo in its place was
+// cached as the page, and the run went on to send requests to "content/".
+func TestGetAndSendRefuseAnEmptyAnswer(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusNoContent} {
+		c, _ := clientServer(t, "/rest/api", "user", "token", status, "application/json", "")
+
+		_, err := get[PageInfo](context.Background(), c, []string{"content", "42"}, nil)
+		var empty *emptyAnswerError
+		require.ErrorAs(t, err, &empty, "get, status %d", status)
+		assert.Contains(t, requestError("read page 42", err).Error(), "with an empty body")
+
+		_, err = send[PageInfo](context.Background(), c, http.MethodPost, []string{"content", ""}, map[string]any{})
+		require.ErrorAs(t, err, &empty, "send, status %d", status)
+	}
+
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", `{"id":"42"}`)
+	page, err := get[PageInfo](context.Background(), c, []string{"content", "42"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "42", page.ID)
+}
+
+// TestClientTakesAValueWhoseConnectionFailsAfterIt: a connection that fails
+// once the JSON value has come whole -- a proxy closing it before the end of a
+// chunked body -- is not a body that goes on after the value. The value is the
+// answer, and a write that got it happened.
+func TestClientTakesAValueWhoseConnectionFailsAfterIt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, buffered, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		value := `{"id":"42"}`
+		_, _ = fmt.Fprintf(buffered,
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n",
+			len(value), value)
+		_ = buffered.Flush()
+		// Closed without the last chunk: reading on fails with
+		// io.ErrUnexpectedEOF.
+	}))
+	t.Cleanup(server.Close)
+	c := newClient(server.URL+"/rest/api", server.Client(), "user", "token", "")
+
+	var page PageInfo
+	_, err := c.do(context.Background(), nil, http.MethodPut, []string{"content", "42"}, nil, map[string]any{}, &page)
+	require.NoError(t, err)
+	assert.Equal(t, "42", page.ID)
+}
