@@ -1802,8 +1802,12 @@ func (api *API) RestrictPageUpdates(
 		userMap["username"] = allowedUser
 	}
 
-	_, err := send[any](
-		ctx, api.v1, http.MethodPost, []string{"content", page.ID, "restriction"},
+	// Through do rather than send: nothing in the answer is used, and Data
+	// Center answers this one with 204 and no body, which send -- asked for a
+	// value -- would take for a failure of a restriction already applied.
+	var answer any
+	_, err := api.v1.do(
+		ctx, nil, http.MethodPost, []string{"content", page.ID, "restriction"}, nil,
 		[]map[string]any{
 			{
 				"operation": "update",
@@ -1814,6 +1818,7 @@ func (api *API) RestrictPageUpdates(
 				},
 			},
 		},
+		&answer,
 	)
 	// A 501 is not taken for an old release here: unlike the other ways of
 	// saying the endpoint is missing, it falls through to the error as it is.

@@ -2,6 +2,8 @@ package confluence_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -124,4 +126,28 @@ func TestRestrictPageUpdatesTokenWithoutUsername(t *testing.T) {
 	err := api.RestrictPageUpdates(context.Background(), page, "someone-else@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
+}
+
+// TestRestrictPageUpdatesTakesNoContent: Server and Data Center answer the
+// restriction with 204 and no body. The restriction is in place by then, and
+// reading the empty answer as a failure failed every page under --edit-lock.
+func TestRestrictPageUpdatesTakesNoContent(t *testing.T) {
+	restricted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rest/api/user/current":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"username":"user","userKey":"key-1"}`))
+		case "/rest/api/content/1/restriction":
+			restricted = r.Method == http.MethodPost
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), &confluence.PageInfo{ID: "1"}, "user"))
+	assert.True(t, restricted)
 }
