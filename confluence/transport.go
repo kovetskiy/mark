@@ -91,6 +91,23 @@ type retryTransport struct {
 	sleep func(time.Duration)
 }
 
+// backoffContextKey is the key under which client.do hands a write's caller
+// context to the retry transport. The write itself goes out on a context that
+// cannot be cancelled, so that what Confluence did with it is not lost; the
+// wait before sending it again does no work on Confluence, and is what a
+// stopped run must not be held up by.
+type backoffContextKey struct{}
+
+// backoffContext is the context the wait before retrying req is cut short by:
+// the caller's, for a write sent on a context of its own, and otherwise req's.
+func backoffContext(req *http.Request) context.Context {
+	if caller, ok := req.Context().Value(backoffContextKey{}).(context.Context); ok {
+		return caller
+	}
+
+	return req.Context()
+}
+
 // sleepContext sits out d, and returns ctx's error instead if ctx ends first.
 //
 // sleep, when it is not nil, does the sitting out in place of a timer, and
@@ -254,10 +271,11 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		event.Msg("Confluence request failed, retrying")
 
-		// The wait respects the request's context, so a cancelled run stops
+		// The wait respects the caller's context, so a cancelled run stops
 		// waiting instead of finishing its backoff first. Three retries at the
-		// cap is a minute and a half a caller could not otherwise escape.
-		if err := sleepContext(req.Context(), wait, t.sleep); err != nil {
+		// cap is a minute and a half a caller could not otherwise escape -- a
+		// write's included, though the write itself is not cut short.
+		if err := sleepContext(backoffContext(req), wait, t.sleep); err != nil {
 			return nil, err
 		}
 	}

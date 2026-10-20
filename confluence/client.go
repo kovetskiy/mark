@@ -131,7 +131,8 @@ type reply struct {
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
 //     it. Only for a GET or a HEAD, though. Any other method is not sent once
 //     ctx is done, and once sent is not cut short by it: it runs to its
-//     answer, bounded by the transport's timeouts.
+//     answer, bounded by the transport's timeouts. The wait before sending
+//     one again after a 429 is cut short, and ends it as a cancellation.
 func (c *client) do(
 	ctx context.Context,
 	header http.Header,
@@ -165,12 +166,18 @@ func (c *client) do(
 	// edit made in Confluence on every later run. From here on ctx is the
 	// request's own, so the checks below that ask whether the run was stopped
 	// ask of a write whether it was, which it never is.
+	//
+	// Only the exchange is shielded, though. The wait before the retry
+	// transport sends a write again -- after a 429, which Confluence answers
+	// before acting -- is on the caller's context still, so a stopped run
+	// does not sit out a throttled tenant's Retry-After for every write.
+	caller := ctx
 	if !readOnly(method) {
 		if err := ctx.Err(); err != nil {
 			return nil, cancellation(ctx, err)
 		}
 
-		ctx = context.WithoutCancel(ctx)
+		ctx = context.WithValue(context.WithoutCancel(ctx), backoffContextKey{}, caller)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, c.url(path, query), reader)
@@ -194,6 +201,11 @@ func (c *client) do(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		// A write given up on in its backoff ends with the caller's error.
+		if stopped := caller.Err(); stopped != nil && errors.Is(err, stopped) {
+			return nil, cancellation(caller, err)
+		}
+
 		return nil, cancellation(ctx, err)
 	}
 	defer func() { _ = resp.Body.Close() }()

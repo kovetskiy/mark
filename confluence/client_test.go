@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -831,4 +832,33 @@ func TestClientTakesAValueWhoseConnectionFailsAfterIt(t *testing.T) {
 	_, err := c.do(context.Background(), nil, http.MethodPut, []string{"content", "42"}, nil, map[string]any{}, &page)
 	require.NoError(t, err)
 	assert.Equal(t, "42", page.ID)
+}
+
+// TestClientCutsShortAWriteBackoff: a write is not cut short once sent, but
+// the wait before sending it again after a 429 does nothing on Confluence, and
+// a stopped run must not sit it out. It held a cancelled run for a throttled
+// tenant's whole Retry-After, three times over, for every write.
+func TestClientCutsShortAWriteBackoff(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var received atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received.Add(1)
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		// Stopped once the throttled answer is on its way.
+		cancel()
+	}))
+	t.Cleanup(server.Close)
+
+	c := newClient(server.URL+"/rest/api", newHTTPClient(false), "user", "token", "")
+
+	started := time.Now()
+	_, err := c.do(ctx, nil, http.MethodDelete, []string{"content", "1"}, nil, nil, &struct{}{})
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.True(t, IsCancellation(err))
+	assert.Less(t, time.Since(started), 5*time.Second, "the backoff is cut short")
+	assert.Equal(t, int32(1), received.Load(), "the write is not sent again")
 }
