@@ -1901,6 +1901,17 @@ func (api *API) CreateFolder(ctx context.Context, spaceID, title string, parentI
 	return &folder, nil
 }
 
+// folderCQL is the CQL search for the folders with a title in a space, which
+// FindFolder and searchFolders both send. The title is a quoted CQL string,
+// so a backslash or a double quote in it is escaped -- the backslash first,
+// or the escape of the quote would be escaped again.
+func folderCQL(spaceKey, title string) string {
+	escaped := strings.ReplaceAll(title, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+
+	return fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escaped, spaceKey)
+}
+
 // searchHit is one result of a CQL search.
 type searchHit struct {
 	Content struct {
@@ -1918,9 +1929,7 @@ type searchHit struct {
 // FindChildFolder; for one at the space root, FindRootFolder.
 func (api *API) FindFolder(ctx context.Context, spaceKey, title, underAncestorID string) (*FolderInfo, error) {
 	// CQL folder search lives on /rest/api/search (not content/search).
-	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
-	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
-	cql := fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey)
+	cql := folderCQL(spaceKey, title)
 	if underAncestorID != "" {
 		cql += fmt.Sprintf(` AND ancestor=%s`, underAncestorID)
 	}
@@ -2075,11 +2084,8 @@ func (api *API) FindRootFolder(ctx context.Context, spaceKey, title string) (*Fo
 // and hands each id to visit, following the result's next link until visit is
 // done or the results run out.
 func (api *API) searchFolders(ctx context.Context, spaceKey, title string, visit func(id string) (bool, error)) error {
-	escapedTitle := strings.ReplaceAll(title, `\`, `\\`)
-	escapedTitle = strings.ReplaceAll(escapedTitle, `"`, `\"`)
-
 	query := url.Values{
-		"cql":    {fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escapedTitle, spaceKey)},
+		"cql":    {folderCQL(spaceKey, title)},
 		"limit":  {"25"},
 		"expand": {"content"},
 	}
