@@ -230,10 +230,10 @@ both unconditionally. There is no `-update` flag; golden files are written by ha
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
 `util/` 89%, `page/` 52%, `parser/` 36%, `chrome/` 54%, and the root
-package 87%. `cmd/mark/` is at 0% on purpose: a thin `main`. `chrome/` has tests of
-its own for the raster bounds and the shared browser, and is otherwise exercised through
-its callers: `PNGFromSVG` by `d2/` and `math/`, and the allocator options and
-`CheckRasterBounds` by `mermaid/`.
+package 87%. `cmd/mark/` is a thin `main`, tested only for how it names its
+version. `chrome/` has tests of its own for the raster bounds and the shared
+browser, and is otherwise exercised through its callers: `PNGFromSVG` by `d2/`
+and `math/`, and the allocator options and `CheckRasterBounds` by `mermaid/`.
 
 Two things to know before reading those numbers. `make test` passes no `-coverpkg`, so a
 package's figure counts only what its *own* tests exercise — renderer code driven by the
