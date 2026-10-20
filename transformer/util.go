@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 var bufferPool = sync.Pool{
@@ -51,19 +52,49 @@ func getNodeLineNumber(node ast.Node, source []byte) int {
 	return bytes.Count(source[:offset], []byte("\n")) + 1
 }
 
-// HTMLBytes returns a copy of the markup an inline raw HTML node or an HTML
-// block holds, as written. A block's bytes include its closing line: goldmark
-// v2 keeps that among the others, where v1 held it apart. Any other node has
-// none.
+// HTMLBytes returns the markup an inline raw HTML node or an HTML block
+// holds, as written. A block's bytes include its closing line: goldmark v2
+// keeps that among the others, where v1 held it apart. Any other node has
+// none, and neither does one that points outside source.
+//
+// The bytes may be source's own, as they were in v1, and are to be read, not
+// written: one that keeps them past the document clones them, as
+// convertSegmentsToStrings does.
 func HTMLBytes(node ast.Node, source []byte) []byte {
 	switch n := node.(type) {
 	case *ast.RawHTML:
-		return bytes.Clone(n.Value.Bytes(source))
+		return valueBytes(n.Value, source)
 	case *ast.HTMLBlock:
-		return bytes.Clone(n.Value.Bytes(source))
+		for _, segment := range n.Value.Segments() {
+			if !withinSource(segment.Start, segment.Stop, source) {
+				return nil
+			}
+		}
+
+		return n.Value.Bytes(source)
 	}
 
 	return nil
+}
+
+// valueBytes is v's bytes, or nil when v points outside source. goldmark v2
+// slices source without asking, so a node that carries offsets into another
+// buffer -- a sub-document's, say -- panicked the whole compile where v1's
+// checks gave it no bytes.
+func valueBytes(v text.Value, source []byte) []byte {
+	if !v.IsOwned() {
+		for _, index := range v.Indices() {
+			if !withinSource(index.Start, index.Stop, source) {
+				return nil
+			}
+		}
+	}
+
+	return v.Bytes(source)
+}
+
+func withinSource(start, stop int, source []byte) bool {
+	return start >= 0 && start <= stop && stop <= len(source)
 }
 
 // ExtractDirectiveContent is ExtractNodeRawContent with inline code left out.
@@ -116,11 +147,11 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	case *ast.HTMLBlock, *ast.RawHTML:
 		return HTMLBytes(t, source)
 	case *ast.Text:
-		return t.Value.Bytes(source)
+		return valueBytes(t.Value, source)
 	case *ast.CodeSpan:
 		// A span's text is its value in goldmark v2, where v1 kept it on Text
 		// children for the default case below to collect.
-		return t.Value.Bytes(source)
+		return valueBytes(t.Value, source)
 	case *String:
 		return t.Value
 	default:
@@ -217,7 +248,7 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 		case *ast.Text:
 			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: bytes.Clone(t.Value.Bytes(source)), verbatim: false})
 		case *ast.HTMLBlock, *ast.RawHTML:
-			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: HTMLBytes(t, source), verbatim: true})
+			nodesToReplace = append(nodesToReplace, replaceItem{node: t, val: bytes.Clone(HTMLBytes(t, source)), verbatim: true})
 		case *ast.CodeSpan:
 			if !t.Value.IsOwned() {
 				t.Value = PlainValue(strings.Clone(t.Value.Value(source)))
