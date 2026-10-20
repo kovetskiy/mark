@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -886,4 +887,29 @@ func TestGetAndSendRefuseAnAnswerNamingNoID(t *testing.T) {
 	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", `{}`)
 	_, err := get[listing[PageInfo]](context.Background(), c, []string{"content"}, nil)
 	require.NoError(t, err)
+}
+
+// TestClientDoesNotTraceAnEmptyAnswerAsUnread: a 204, or a 2xx that says its
+// body is empty, is not read, and has nothing to read. The trace said "the
+// rest of the body was not read" for every one of them, which reads as an
+// exchange cut short when looking at a bug report's log.
+func TestClientDoesNotTraceAnEmptyAnswerAsUnread(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusOK} {
+		var buffer bytes.Buffer
+		previousLogger, previousLevel := log.Logger, zerolog.GlobalLevel()
+		log.Logger = zerolog.New(&buffer)
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+
+		c, _ := clientServer(t, "/rest/api", "user", "token", status, "application/json", "")
+		c.trace = &tracer{"rest:"}
+
+		_, err := c.do(context.Background(), nil, http.MethodDelete, []string{"content", "1"}, nil, nil, &struct{}{})
+
+		log.Logger = previousLogger
+		zerolog.SetGlobalLevel(previousLevel)
+
+		require.NoError(t, err)
+		assert.Contains(t, buffer.String(), strconv.Itoa(status))
+		assert.NotContains(t, buffer.String(), "not read", "status %d", status)
+	}
 }

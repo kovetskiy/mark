@@ -437,7 +437,11 @@ func (c *client) traceResponse(resp *http.Response, body *capture) {
 	dump := append(head, body.prefix...)
 	rest := body.total - int64(len(body.prefix))
 
-	if body.done {
+	// A 204, or an answer that says it has no body, is not read at all, and
+	// there was nothing to read: it is not a body left unread.
+	noBody := resp.StatusCode == http.StatusNoContent || resp.ContentLength == 0
+
+	if body.done || noBody {
 		c.trace.write(boundTraceDumpMore(dump, rest))
 	} else {
 		c.trace.write(boundTraceDump(dump) + " (the rest of the body was not read)")
