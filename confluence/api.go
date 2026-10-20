@@ -651,6 +651,29 @@ func (api *API) cachedHomePage(space string) (homePageCacheEntry, bool) {
 	return entry, ok
 }
 
+// spaceFallbackError is how a space lookup fails when v1 did not answer it and
+// the v2 fallback, which failed with v2Err, did not either: FindHomePage and
+// GetSpaceID ask the same two questions and fail the same way.
+//
+// v1's answer is the one reported and the one that decides what the failure
+// is. Server and Data Center have no /api/v2, so there v2's 404 says nothing
+// about the space, and, being a 404, would get a v1 outage cached as a space
+// that is not there. v2's is kept for the message only. Through the gateway
+// v1 is never asked, and v2's answer stands as it is; so it does when the run
+// was stopped during the fallback, since wrapping it would hide the
+// cancellation from errors.Is behind a %v, and when v1 answered but with
+// nothing to go on. v1's error goes through requestError like any other, so
+// that a body that is not JSON is worded with its URL and status.
+func (api *API) spaceFallbackError(v1Operation string, v1Err, v2Err error) error {
+	if api.gateway || v1Err == nil || IsCancellation(v2Err) {
+		return v2Err
+	}
+
+	v1Err = requestError(v1Operation, v1Err)
+
+	return fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, v2Err) //nolint:errorlint // v2's 404 on Server must not reach errors.Is(ErrNotFound)
+}
+
 func (api *API) fetchHomePage(ctx context.Context, space string) (*PageInfo, error) {
 	var v1Err error
 
@@ -702,14 +725,7 @@ func (api *API) fetchHomePage(ctx context.Context, space string) (*PageInfo, err
 	// space that is not there for the rest of the run. Through the gateway v1
 	// is never asked and v2's answer is the only one, so it stands as it is.
 	if v2Err != nil {
-		// Nor does v1's answer decide anything when the run was stopped
-		// during the fallback: it was never a conclusion, and wrapping it
-		// would hide the cancellation from errors.Is behind a %v.
-		if api.gateway || IsCancellation(v2Err) {
-			return nil, v2Err
-		}
-		v1Err = requestError("read space "+space, v1Err)
-		return nil, fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, v2Err) //nolint:errorlint // v2's 404 on Server must not reach errors.Is(ErrNotFound)
+		return nil, api.spaceFallbackError("read space "+space, v1Err, v2Err)
 	}
 
 	api.learnSiteBase(v2Result.Links.Base)
@@ -2195,13 +2211,7 @@ func (api *API) fetchSpaceID(ctx context.Context, spaceKey string) (string, erro
 	// being a 404, got a v1 outage cached for the rest of the run. v1's answer
 	// is the one that decides, so v2's is kept for the message only.
 	if err != nil {
-		if IsCancellation(err) {
-			return "", err
-		}
-		if v1Err == nil {
-			return "", err
-		}
-		return "", fmt.Errorf("v1 API: %w (v2 fallback also failed: %v)", v1Err, err) //nolint:errorlint // v2's 404 must not reach errors.Is(ErrNotFound)
+		return "", api.spaceFallbackError("read space "+spaceKey, v1Err, err)
 	}
 
 	api.learnSiteBase(v2Result.Links.Base)

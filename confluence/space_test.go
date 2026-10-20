@@ -3,6 +3,7 @@ package confluence_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -231,4 +232,33 @@ func TestGatewayFindHomePageNotFoundIsCached(t *testing.T) {
 
 	assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces"))
 	assert.Zero(t, server.CountRequests("GET", "/rest/api/space/"))
+}
+
+// TestSpaceLookupsWordABodyThatIsNotJSON: GetSpaceID and FindHomePage fall
+// back from v1 to v2 the same way and report v1's error when both fail. Only
+// FindHomePage passed it through requestError, so on Server, where v2 is a
+// 404, GetSpaceID reported a body that was not JSON as a bare decode error,
+// with no URL, status or hint.
+func TestSpaceLookupsWordABodyThatIsNotJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/rest/api/space/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("not JSON at all"))
+
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+
+	_, err := api.GetSpaceID(context.Background(), "DOCS")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "/rest/api/space/DOCS answered 200 OK with a body that is not JSON")
+	assert.NotErrorIs(t, err, confluence.ErrNotFound, "v2's 404 on Server says nothing about the space")
+
+	_, err = api.FindHomePage(context.Background(), "DOCS")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "answered 200 OK with a body that is not JSON")
 }
