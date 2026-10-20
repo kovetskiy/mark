@@ -142,31 +142,24 @@ type markdownExtension interface {
 func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, error) {
 	log.Trace().Msgf(logMessage, string(markdown))
 
-	p := parser.New(
-		parser.WithExtensions(
-			extension.FootnoteParser,
-			extension.DefinitionListParser,
-			extension.TableParser,
-			ext,
-			extension.LinkifyParser,
-			extension.StrikethroughParser,
-			extension.TaskListItemParser,
-		),
-		parser.WithAutoHeadingID(),
+	p := parser.New(append(
+		[]parser.Option{
+			parser.WithExtensions(
+				extension.FootnoteParser,
+				extension.DefinitionListParser,
+				extension.TableParser,
+				ext,
+				extension.LinkifyParser,
+				extension.StrikethroughParser,
+				extension.TaskListItemParser,
+			),
+		},
 		// Lets an author name a heading's anchor themselves, with the
-		// {#custom-id} syntax every other Markdown tool understands.
-		// Without it the braces are not ignored but taken as heading text:
-		// they render visibly in the title and are folded into the
-		// generated id, so "## Title {#custom-id}" becomes a heading called
-		// "Title {#custom-id}" with the id "Title-custom-id".
-		//
-		// goldmark parses attributes on every block element, but each
-		// renderer emits them through its own filter -- HeadingAttributeFilter,
-		// ParagraphAttributeFilter and so on -- so nothing but headings is
-		// affected in practice.
-		parser.WithAttribute(),
-		parser.WithIDGenerator(cparser.ConfluenceIDGenerator{}),
-	)
+		// {#custom-id} syntax every other Markdown tool understands, and
+		// generates the rest. page.headingIDs parses with the same options,
+		// so that a link from another document finds the id given here.
+		cparser.HeadingOptions()...,
+	)...)
 
 	r := html.New(
 		html.WithUnsafe(),
