@@ -28,6 +28,7 @@ const (
 func TestMain(m *testing.M) {
 	switch os.Getenv(helperModeEnv) {
 	case "":
+		clearMarkEnvironment()
 		os.Exit(m.Run())
 
 	case "print":
@@ -702,4 +703,22 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 	assert.Contains(t, string(logged), "password-command: ******")
 	assert.NotContains(t, string(logged), command,
 		"the command must not reach the log in full")
+}
+
+// clearMarkEnvironment unsets every MARK_ variable the suite was started with:
+// anybody who uses mark is likely to have one exported, and a MARK_USERNAME or
+// MARK_CONFIG of their own would decide what the flags resolve to. The tests'
+// own subprocesses are left alone -- their MARK_ variables are the case they
+// were started to run -- and so is anything a test sets for itself.
+func clearMarkEnvironment() {
+	// A subprocess worker is handed MARK_ variables on purpose.
+	if os.Getenv("MARK_TEST_FLAGS") != "" || os.Getenv("MARK_TEST_FEATURES_ARGS") != "" {
+		return
+	}
+	for _, variable := range os.Environ() {
+		name, _, _ := strings.Cut(variable, "=")
+		if strings.HasPrefix(name, "MARK_") {
+			_ = os.Unsetenv(name)
+		}
+	}
 }
