@@ -442,6 +442,10 @@ func TestHelp(t *testing.T) {
 	})
 }
 
+// readmeVersion is what the README's help blocks show for the version: the
+// same for every release, so a release leaves them as they are.
+const readmeVersion = "vX.Y.Z"
+
 var updateREADME = flag.Bool("update-readme", false, "rewrite README.md's help blocks from the binary")
 
 // TestREADMEUsageMatchesHelp keeps the help the README shows in step with what
@@ -474,7 +478,7 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 		found := pattern.FindString(updated)
 		require.NotEmpty(t, found, "README.md has no help block for %q", block.heading)
 
-		want := "```text\n" + shown(helpOutput(t, "v16.x.x", block.args...)) + "```\n"
+		want := "```text\n" + shown(helpOutput(t, readmeVersion, block.args...)) + "```\n"
 		if *updateREADME {
 			updated = strings.Replace(updated, found, want, 1)
 			continue
