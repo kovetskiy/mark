@@ -142,7 +142,7 @@ USAGE:
    mark [global options] [command [command options]]
 
 VERSION:
-   v16.x.x
+   vX.Y.Z
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
