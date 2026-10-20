@@ -308,3 +308,14 @@ func TestEncodeTinyLinkIDLargeIDs(t *testing.T) {
 	// Verify the result is a valid URL-safe base64-like string
 	assert.Regexp(t, `^[A-Za-z0-9_-]+$`, result)
 }
+
+// TestHeadingAnchorReadsTheAttributeBlock: the ids another document's headings
+// are matched against are the ones its page gets. headingIDs parsed without
+// the attribute block, so "## Other {#custom}" was "Other-custom" here and
+// "custom" on the page, and a link to api.md#custom went nowhere.
+func TestHeadingAnchorReadsTheAttributeBlock(t *testing.T) {
+	document := []byte("## Other {#custom}\n\n## GET /users/{id}\n")
+
+	assert.Equal(t, "custom", headingAnchor(document, "custom"))
+	assert.Equal(t, "GET-/users/id", headingAnchor(document, "get-users-id"))
+}
