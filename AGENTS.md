@@ -29,7 +29,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | path | role |
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
-| `util/` | the command tree (`NewCommand`, `Run`), flags, config file/env sourcing, credential resolution |
+| `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
@@ -51,14 +51,17 @@ update page → sync labels.
 The command line is a root command carrying the global flags (config file,
 connection and credentials, logging) and one command per job, today `publish`.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
-belongs to its command. Global flags read the TOML file late, in the root's
-`Before` through `ApplyConfigFile`, because `mark publish --config X` names the
-file only after the root's flags have been resolved; command flags read it
-through their own altsrc `Sources`. A command line naming no command is
-rewritten to `mark publish` by `Run` (the deprecated bare form many pipelines
-still use). `util/command_test.go` fails when the help blocks in `README.md`
-drift from `mark --help` / `mark publish --help`, so regenerate them from the
-binary after touching a flag.
+belongs to its command. Every flag reads the TOML file through a `configFile`
+source (`util/config.go`), which parses it once a run. Global flags' sources stay
+shut until the root's `Before` settles them, because `mark publish --config X`
+names the file only after the root's flags have been resolved. A command line
+naming no command is rewritten to `mark publish` by `Run` (the deprecated bare
+form many pipelines still use); that is why `Run` is the only entry point, and
+the command tree is not exported. `util.Flags`, `util.CheckFlags` and
+`util.RunMark` remain for programs that built mark's single command themselves.
+`util/command_test.go` fails when the help blocks in `README.md` drift from
+`mark --help` / `mark publish --help`, so regenerate them from the binary after
+touching a flag.
 
 ## Invariants
 

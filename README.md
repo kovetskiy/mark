@@ -2056,10 +2056,11 @@ GLOBAL OPTIONS:
 Before it had commands, `mark` took the publish options directly, and that
 still works: `mark -f doc.md` publishes exactly as `mark publish -f doc.md`
 does, reading the same flags, environment variables and configuration file. It
-logs a warning that the form is deprecated, so move pipelines over to
-`mark publish` at your convenience. `mark --help` and `mark --version` on their
-own are about mark as a whole, and a publish option written before `publish`
-(`mark -f doc.md publish`) is an error rather than silently ignored.
+says on standard error, whatever the log level, that the form is deprecated, so
+move pipelines over to `mark publish` at your convenience. `mark --help` and
+`mark --version` on their own are about mark as a whole, and a publish option
+written before `publish` (`mark -f doc.md publish`) is an error rather than
+silently ignored.
 
 You can store user credentials in the configuration file, which should be
 located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):

@@ -23,28 +23,20 @@ const (
 	PublishCommand = "publish"
 )
 
-// NewCommand builds mark's command line: the global flags on the root, and a
-// command for each thing mark does.
-func NewCommand(version string) *cli.Command {
-	// Where the configuration file is. The "config" flag fills it in, and every
-	// other flag reads the file through it.
-	var config string
-
-	global := globalFlags(&config)
-
-	var names []string
-	for _, flag := range global {
-		if name := flag.Names()[0]; name != "config" {
-			names = append(names, name)
-		}
-	}
+// newCommand builds mark's command line: the global flags on the root, and a
+// command for each thing mark does. It is run through run, which reads a
+// command line naming no command the way mark always has; see Run.
+func newCommand(version string) *cli.Command {
+	// Where the configuration file is. The "config" flag fills in its path,
+	// and every other flag reads the file through it.
+	config := newConfigFile(new(string), true)
 
 	return &cli.Command{
 		Name:                  "mark",
 		Usage:                 usage,
 		Description:           description,
 		Version:               version,
-		Flags:                 global,
+		Flags:                 globalFlags(config),
 		EnableShellCompletion: true,
 		// urfave/cli runs every Before in the chain only once the whole
 		// command line has been parsed, so this sees the configuration file
@@ -57,10 +49,10 @@ func NewCommand(version string) *cli.Command {
 			if answersItself(ctx, cmd) {
 				return ctx, nil
 			}
-			if err := CheckConfigFile(cmd); err != nil {
+			if err := config.check(); err != nil {
 				return ctx, err
 			}
-			if err := ApplyConfigFile(cmd, names); err != nil {
+			if err := config.settle(cmd); err != nil {
 				return ctx, err
 			}
 			return ctx, SetUpLogging(cmd)
@@ -71,17 +63,18 @@ func NewCommand(version string) *cli.Command {
 				Usage: "publish markdown files to Confluence",
 				Description: "Compile each markdown file --files names into Confluence storage format and " +
 					"create or update the page its metadata names.",
-				Flags:  publishFlags(&config),
-				Before: CheckFlags,
+				Flags: publishFlags(config),
+				Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+					if answersItself(ctx, cmd) {
+						return ctx, nil
+					}
+					return checkPublishFlags(ctx, cmd)
+				},
 				Action: RunPublish,
 			},
 		},
 	}
 }
-
-// bareInvocation marks, in the context, a run whose command line named no
-// command and was taken to mean "publish".
-type bareInvocation struct{}
 
 // completing marks, in the context, a run a shell started to ask for
 // completions.
@@ -89,127 +82,264 @@ type completing struct{}
 
 // completionFlag is the flag a shell's completion script ends the command
 // line with, to ask for completions rather than a run.
-const completionFlag = "--generate-shell-completion"
+var completionFlag = "--" + cli.GenerateShellCompletionFlag.Names()[0]
 
-// answersItself says whether the root command, from its Before, is running
-// something that prints about mark rather than doing anything: the help or
-// completion command urfave/cli adds, or a shell's completion request.
-func answersItself(ctx context.Context, root *cli.Command) bool {
+// builtInCommands are the names of the commands urfave/cli adds for itself:
+// help, under every command that has a help flag, and the root's completion
+// command. They are not in a command's Commands until it runs.
+//
+// The help command is named as the help flag is -- both come from the same two
+// constants in urfave/cli -- so its names are taken from the flag rather than
+// spelled out again here.
+func builtInCommands(root *cli.Command) map[string]bool {
+	names := map[string]bool{}
+	for _, name := range cli.HelpFlag.Names() {
+		names[name] = true
+	}
+
+	completion := root.ShellCompletionCommandName
+	if completion == "" {
+		completion = "completion"
+	}
+	names[completion] = true
+
+	return names
+}
+
+// answersItself says whether the command line, as cmd's Before sees it, runs
+// something that prints about mark rather than doing anything: a help or
+// completion command urfave/cli adds, at any depth -- "mark help", "mark
+// publish help" -- or a shell's completion request.
+func answersItself(ctx context.Context, cmd *cli.Command) bool {
 	if asking, _ := ctx.Value(completing{}).(bool); asking {
 		return true
 	}
 
-	switch root.Args().First() {
-	case "help", "h", "completion":
-		return true
+	root := cmd.Root()
+	builtIn := builtInCommands(root)
+
+	// Every command in the chain has been parsed by the time a Before runs,
+	// so each one's arguments say which command it went on to.
+	for current := root; current.Args().Present(); {
+		name := current.Args().First()
+		next := current.Command(name)
+		if next == nil {
+			return false
+		}
+		if builtIn[name] && !slices.ContainsFunc(current.Commands, func(c *cli.Command) bool {
+			return c != next && c.HasName(name)
+		}) {
+			return true
+		}
+		current = next
 	}
 
 	return false
 }
 
-// Run runs mark's command line.
+// Run runs mark's command line: args, as os.Args holds it, for a binary of the
+// given version.
 //
 // Before there were commands, "mark <flags>" was the one thing mark did, and it
 // is how mark runs in a great many CI pipelines. A command line that names no
 // command therefore still publishes, exactly as "mark publish <flags>" would,
-// and says that it is deprecated. "--help" and "--version" are the exception:
-// on their own they are about mark as a whole.
-func Run(ctx context.Context, cmd *cli.Command, args []string) error {
+// and says on standard error that it is deprecated. "--help" and "--version"
+// are the exception: on their own they are about mark as a whole.
+//
+// This is the only way in to the command line: reading the bare form takes
+// looking at the arguments before urfave/cli parses them, which a command
+// built and run on its own would not do.
+func Run(ctx context.Context, version string, args []string) error {
+	return run(ctx, newCommand(version), args)
+}
+
+// run is Run, for a command a test has built, and perhaps given writers.
+func run(ctx context.Context, cmd *cli.Command, args []string) error {
 	args, bare := defaultToPublish(cmd, args)
-	if bare {
-		ctx = context.WithValue(ctx, bareInvocation{}, true)
-	}
 	if len(args) > 0 && args[len(args)-1] == completionFlag {
 		ctx = context.WithValue(ctx, completing{}, true)
+	} else if bare && !asksForHelp(args) {
+		// Said here rather than logged, so that it is said whatever the log
+		// level, and before anything can fail: a run that never gets as far
+		// as publishing is one that still has to be migrated.
+		errWriter := cmd.ErrWriter
+		if errWriter == nil {
+			errWriter = os.Stderr
+		}
+		_, _ = fmt.Fprintln(errWriter,
+			`mark: running mark without a command is deprecated: run "mark publish" with the same flags instead`)
 	}
 
 	return cmd.Run(ctx, args)
+}
+
+// flagName is the name a command-line argument gives a flag, and the value
+// written after its "=", if it is a flag at all.
+func flagName(arg string) (name, value string, inline, isFlag bool) {
+	if len(arg) < 2 || arg[0] != '-' {
+		return "", "", false, false
+	}
+
+	name, value, inline = strings.Cut(strings.TrimLeft(arg, "-"), "=")
+
+	return name, value, inline, true
+}
+
+// asksForHelp says whether args, before any "--", holds a help flag.
+func asksForHelp(args []string) bool {
+	help := cli.HelpFlag.Names()
+	for _, arg := range args[1:] {
+		if arg == "--" {
+			break
+		}
+		if name, _, _, isFlag := flagName(arg); isFlag && slices.Contains(help, name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// flagTable is what the flags of the commands in force at some point of a
+// command line say about the arguments there: which names have a value after
+// them, and which belong to the root.
+type flagTable struct {
+	takesValue map[string]bool
+	global     map[string]bool
+}
+
+func (t flagTable) add(flags []cli.Flag, global bool) {
+	for _, flag := range flags {
+		valued, ok := flag.(interface{ TakesValue() bool })
+		for _, name := range flag.Names() {
+			t.takesValue[name] = ok && valued.TakesValue()
+			if global {
+				t.global[name] = true
+			}
+		}
+	}
 }
 
 // defaultToPublish puts "publish" into a command line that names no command,
 // and says whether it did.
 //
 // A command is named by the first argument that is neither a flag nor a flag's
-// value. Telling a value from a command takes knowing which flags have one, so
-// "mark --version-message publish -f doc.md" publishes with the message
-// "publish", as it always did.
+// value. Telling a value from a command takes knowing which flags have one: the
+// root's, and in a command line that names none, publish's, which is the
+// command it then means. So "mark --version-message publish -f doc.md"
+// publishes with the message "publish", as it always did.
 //
 // The version flag is answered by the root command, whatever else the command
 // line holds, so it is all that is passed on: "mark -f doc.md --version" printed
-// the version before there were commands, and the root would otherwise refuse
-// -f as a flag it does not define. The help flag and the one shell completion asks with, when
-// they come with nothing but global flags: "mark --help" is about mark as a
-// whole, and lists the commands and the global flags. Next to a flag only
-// publish has, though, they are about publish -- "mark -f doc.md --help" is
-// read as "mark publish -f doc.md --help", as it would be without the help
-// flag, rather than failing at the root on a flag it does not define.
+// the version before there were commands, and "mark publish --version" prints
+// it now. Not next to a help flag or a shell's completion request, though, which
+// came first before there were commands and still do. A version flag that is
+// false asks for nothing, and is dropped.
+//
+// The help flag and the one shell completion asks with, when they come with
+// nothing but global flags: "mark --help" is about mark as a whole, and lists
+// the commands and the global flags. Next to a flag only publish has, though,
+// they are about publish -- "mark -f doc.md --help" is read as "mark publish -f
+// doc.md --help", as it would be without the help flag, rather than failing at
+// the root on a flag it does not define.
+//
+// A command urfave/cli adds for itself -- help, completion -- named after a flag
+// only publish has is not one: before there were commands, "mark -f doc.md
+// help" published and ignored the stray argument. It still does, and the
+// argument is dropped, since publish would otherwise read it as its own help
+// command.
 func defaultToPublish(root *cli.Command, args []string) ([]string, bool) {
 	if len(args) == 0 {
 		return args, false
 	}
 
-	// Commands urfave/cli adds for itself, which are not in root.Commands
-	// until it runs.
-	commands := map[string]bool{"help": true, "h": true, "completion": true}
-	takesValue := map[string]bool{}
+	builtIn := builtInCommands(root)
+	help := cli.HelpFlag.Names()
+	version := cli.VersionFlag.Names()
+	asksHelp := asksForHelp(args) || args[len(args)-1] == completionFlag
 
-	collect := func(flags []cli.Flag) {
-		for _, flag := range flags {
-			valued, ok := flag.(interface{ TakesValue() bool })
-			for _, name := range flag.Names() {
-				takesValue[name] = ok && valued.TakesValue()
-			}
-		}
+	table := flagTable{takesValue: map[string]bool{}, global: map[string]bool{}}
+	table.add(root.Flags, true)
+	if publish := root.Command(PublishCommand); publish != nil {
+		table.add(publish.Flags, false)
 	}
 
-	collect(root.Flags)
-	global := make(map[string]bool, len(takesValue))
-	for name := range takesValue {
-		global[name] = true
-	}
-	for _, command := range root.Commands {
-		for _, name := range command.Names() {
-			commands[name] = true
-		}
-		collect(command.Flags)
-	}
+	// Whether the command line asks for the version, whether it has a flag the
+	// root does not know, which makes it publish's, which command it names, if
+	// any, and the arguments that ask for nothing.
+	versionArg, commandFlag, named := "", false, false
+	var drop []int
 
-	// Whether the command line asks for help or completion, and whether it
-	// has a flag the root does not know, which makes it publish's.
-	asksRoot, commandFlag := false, false
-
+scan:
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
 			break
 		}
 
-		if len(arg) > 1 && arg[0] == '-' {
-			name, _, inline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-			switch name {
-			case "version", "v":
-				return []string{args[0], arg}, false
-			case "help", "h", strings.TrimPrefix(completionFlag, "--"):
-				asksRoot = true
+		if name, value, inline, isFlag := flagName(arg); isFlag {
+			switch {
+			case slices.Contains(version, name):
+				if inline && value == "false" {
+					drop = append(drop, i)
+				} else {
+					versionArg = arg
+				}
+				continue
+			case slices.Contains(help, name), arg == completionFlag:
 				continue
 			}
-			if !global[name] {
+			if !named && !table.global[name] {
 				commandFlag = true
 			}
-			if takesValue[name] && !inline {
+			if table.takesValue[name] && !inline {
 				i++
 			}
 			continue
 		}
 
-		if commands[arg] {
-			return args, false
+		if named {
+			// A positional argument of the command already named.
+			continue
 		}
 
-		break
+		command := root.Command(arg)
+		switch {
+		case command != nil:
+			// From here on the arguments are that command's, and so are
+			// the flags among them.
+			named = true
+			table = flagTable{takesValue: map[string]bool{}, global: table.global}
+			table.add(root.Flags, true)
+			table.add(command.Flags, false)
+		case builtIn[arg] && commandFlag:
+			drop = append(drop, i)
+			break scan
+		case builtIn[arg]:
+			// Its arguments are its own, and say nothing about the version.
+			named = true
+			break scan
+		default:
+			// A stray argument, which publish ignores.
+			break scan
+		}
 	}
 
-	if asksRoot && !commandFlag {
+	if versionArg != "" && !asksHelp {
+		return []string{args[0], versionArg}, false
+	}
+
+	if len(drop) > 0 {
+		kept := make([]string, 0, len(args))
+		for i, arg := range args {
+			if !slices.Contains(drop, i) {
+				kept = append(kept, arg)
+			}
+		}
+		args = kept
+	}
+
+	if named || (asksHelp && !commandFlag) {
 		return args, false
 	}
 
@@ -280,10 +410,6 @@ func SetUpLogging(cmd *cli.Command) error {
 
 // RunPublish is the action of "mark publish".
 func RunPublish(ctx context.Context, cmd *cli.Command) error {
-	if bare, _ := ctx.Value(bareInvocation{}).(bool); bare {
-		log.Warn().Msg(`running mark without a command is deprecated: run "mark publish" with the same flags instead`)
-	}
-
 	creds, err := GetCredentials(
 		ctx,
 		cmd.String("username"),
@@ -298,13 +424,22 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	log.Debug().Msg("config:")
-	for _, f := range append(slices.Clone(cmd.Root().Flags), cmd.Flags...) {
-		flag := f.Names()
-		// A command can name a token inline, so it leaks the same way the password would.
-		if flag[0] == "password" || flag[0] == "password-command" {
-			log.Debug().Msgf("%20s: %v", flag[0], "******")
-		} else {
-			log.Debug().Msgf("%20s: %v", flag[0], cmd.Value(flag[0]))
+	// Every command from this one up to the root, each flag once: the help
+	// flag, for one, is on all of them.
+	seen := map[string]bool{}
+	for _, command := range cmd.Lineage() {
+		for _, f := range command.Flags {
+			flag := f.Names()
+			if seen[flag[0]] {
+				continue
+			}
+			seen[flag[0]] = true
+			// A command can name a token inline, so it leaks the same way the password would.
+			if flag[0] == "password" || flag[0] == "password-command" {
+				log.Debug().Msgf("%20s: %v", flag[0], "******")
+			} else {
+				log.Debug().Msgf("%20s: %v", flag[0], cmd.Value(flag[0]))
+			}
 		}
 	}
 
@@ -376,9 +511,10 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 
 // ConfigFilePath is the default for --config, or "" when there is none.
 //
-// It is evaluated while the flags are declared, at package initialisation, so
-// failing here fails every invocation -- --version and --help included -- and
-// before any flag could say where the file is. That is exactly the environment
+// It is evaluated whenever the flags are built -- for every run, and for the
+// deprecated Flags at package initialisation -- so failing here would fail
+// every invocation, --version and --help included, and before any flag could
+// say where the file is. That is exactly the environment
 // in which the user config directory is unknown: a minimal container or a
 // systemd unit with neither $XDG_CONFIG_HOME nor $HOME. Having no default file
 // is the honest answer there; --config and MARK_CONFIG still name one.
