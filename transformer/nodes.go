@@ -149,14 +149,32 @@ func replaceWithTextBlock(paragraph *ast.Paragraph) {
 }
 
 // inTightBlock reports whether goldmark v1 would have parsed paragraph as a
-// TextBlock: a child of an item of a tight list, or of a tight definition
-// description.
+// TextBlock: a child of an item of a tight list, or the first paragraph of a
+// tight definition description.
+//
+// The first only: v1 replaced a description's paragraphs in a loop over its
+// children that moved on through the replaced paragraph's next sibling, which
+// replacing it had cleared. So the loop ended at the first paragraph, and a
+// second one stayed a <p> of its own rather than running on into the first.
 func inTightBlock(paragraph *ast.Paragraph) bool {
 	if description, ok := paragraph.Parent().(*extast.DefinitionDescription); ok {
-		return description.IsTight
+		return description.IsTight && !afterAParagraph(paragraph)
 	}
 
 	return html.IsInTightBlock(paragraph)
+}
+
+// afterAParagraph reports whether a paragraph, or the TextBlock that replaced
+// one, comes before node among its siblings.
+func afterAParagraph(node ast.Node) bool {
+	for sibling := node.PreviousSibling(); sibling != nil; sibling = sibling.PreviousSibling() {
+		switch sibling.(type) {
+		case *ast.Paragraph, *TextBlock:
+			return true
+		}
+	}
+
+	return false
 }
 
 // parseSubDocument parses the bytes a macro or an include expanded to, with
