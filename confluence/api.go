@@ -2484,7 +2484,8 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 	response, err := api.site.do(
 		ctx,
 		http.Header{"X-Atlassian-Token": {"no-check"}, "Accept": {"application/json"}},
-		http.MethodPost, []string{"pages", "movepage.action"}, query, nil, &answer,
+		http.MethodPost, []string{"pages", "movepage.action"}, query, nil,
+		&whateverContentType{out: &answer},
 	)
 	// A response cut short by the run's context is no answer from the action,
 	// however much of it arrived: judged here, a cancelled move was taken for

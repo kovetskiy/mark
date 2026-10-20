@@ -534,6 +534,28 @@ func TestActionErrorsReadsEveryShape(t *testing.T) {
 	}
 }
 
+// TestMovePageActionRefusalIsReadUnderAnyContentType: movepage.action is an
+// XWork action, not a REST endpoint, and its JSON does not always say it is
+// JSON. Refused under text/javascript, the reason was thrown away with the
+// body, and the move was waited on before it was reported without it.
+func TestMovePageActionRefusalIsReadUnderAnyContentType(t *testing.T) {
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			return http.StatusOK, `{"actionErrors":["You cannot move this page."]}`, true
+		}
+		return 0, "", false
+	})
+	server.SetFailHeaders(http.Header{"Content-Type": {"text/javascript;charset=UTF-8"}})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "You cannot move this page.")
+}
+
 // TestMovePageActionTargetAnsweredEmptyIsAnError: an empty answer to reading
 // the move target left it with no space and no ancestors. An ordering then
 // said the target was at the root of its space, and an append posted the

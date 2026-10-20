@@ -309,7 +309,14 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 		return body.readPrefix(1)
 	}
 
-	if mediaType != "" && !isJSONMediaType(mediaType) {
+	// A target that takes JSON under any name for it is decoded whatever the
+	// Content-Type says; what is not JSON still fails to decode.
+	lenient, anyType := out.(*whateverContentType)
+	if anyType {
+		out = lenient.out
+	}
+
+	if mediaType != "" && !isJSONMediaType(mediaType) && !anyType {
 		err := body.readPrefix(max(body.limit, 1))
 		// An empty body is success whatever it says it is.
 		if body.total == 0 {
@@ -348,6 +355,18 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 	default:
 		return errors.New("it goes on after the JSON value")
 	}
+}
+
+// whateverContentType is a decode target for an answer that is JSON under
+// whatever Content-Type it is sent with: do decodes into out as it would under
+// application/json, and a body that is not JSON is the same error as ever. A
+// login page is still recognised first.
+//
+// For movepage.action, which is an XWork action rather than a REST endpoint:
+// it answers JSON when asked for it, but under no promise of what it calls
+// it, and its refusal is only in that JSON.
+type whateverContentType struct {
+	out any
 }
 
 // capture is a response body read through, keeping the first limit bytes of
