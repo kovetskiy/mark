@@ -190,7 +190,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				"",
 				displayWidth,
 				explicitHeight,
-				r.imageTitle(n, source),
+				n.Title.Value(source),
 				r.imageAlt(n, source),
 				"",
 				destination,
@@ -225,7 +225,7 @@ func (r *ConfluenceImageRenderer) renderImage(writer util.BufWriter, source []by
 				attached.Height,
 				displayWidth,
 				explicitHeight,
-				r.imageTitle(n, source),
+				n.Title.Value(source),
 				r.imageAlt(n, source),
 				attached.Filename,
 				"",
@@ -265,15 +265,10 @@ func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachm
 	return attachment.Attachment{}, err
 }
 
-// imageTitle is the title as its text, ready to be escaped once by the
-// template. Written as Markdown it still carries its backslash escapes and
-// entity references, and passing those through put `\&#34;` and `&amp;amp;` on
-// the page where `"` and `&` were meant.
-func (r *ConfluenceImageRenderer) imageTitle(n *ast.Image, source []byte) string {
-	return n.Title.Value(source)
-}
-
-// imageAlt is the alt text as its text, read the same way as the title.
+// imageAlt is the alt text as its text, ready to be escaped once by the
+// template, read the way the title's Value is: written as Markdown it still
+// carries its backslash escapes and entity references, and passing those
+// through put `\&#34;` and `&amp;amp;` on the page where `"` and `&` were meant.
 func (r *ConfluenceImageRenderer) imageAlt(n *ast.Image, source []byte) string {
 	var buf bytes.Buffer
 	r.writeAltText(&buf, n, source)
@@ -299,18 +294,13 @@ func (r *ConfluenceImageRenderer) writeAltText(buf *bytes.Buffer, n ast.Node, so
 			// A code span's text, where a backslash is a backslash.
 			buf.WriteString(t.Value.Value(source))
 		case *ast.Text:
-			// Markdown, read the way goldmark reads it.
-			buf.WriteString(r.plainText(t.Value.Bytes(source)))
+			// Markdown, read the way goldmark reads it -- backslash escapes
+			// dropped, entity and numeric references resolved -- as text
+			// rather than HTML. Borrowing goldmark's decoder keeps the edge
+			// cases its own: "\&amp;" is the five characters "&amp;", not "&".
+			_, _ = ctransformer.DecodeMarkdownTo(buf, t.Value.Bytes(source))
 		default:
 			r.writeAltText(buf, c, source)
 		}
 	}
-}
-
-// plainText reads Markdown text the way goldmark does -- backslash escapes
-// dropped, entity and numeric references resolved -- and returns the text
-// itself rather than HTML. Borrowing goldmark's decoder keeps the edge cases
-// its own: "\&amp;" is the five characters "&amp;", not "&".
-func (r *ConfluenceImageRenderer) plainText(markdown []byte) string {
-	return string(ctransformer.DecodeMarkdown(markdown))
 }

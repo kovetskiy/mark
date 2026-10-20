@@ -39,16 +39,11 @@ func isTaskList(list *ast.List) bool {
 	hasChildren := false
 	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
 		hasChildren = true
-		if !isTaskItem(child) {
+		if !extension.IsTask(child) {
 			return false
 		}
 	}
 	return hasChildren
-}
-
-// isTaskItem reports whether a list item carries a checkbox.
-func isTaskItem(item ast.Node) bool {
-	return extension.IsTask(item)
 }
 
 // splitsIntoRuns reports whether a list holds both kinds of item and can be
@@ -70,7 +65,7 @@ func splitsIntoRuns(list *ast.List) bool {
 
 	var tasks, plain bool
 	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
-		if isTaskItem(child) {
+		if extension.IsTask(child) {
 			tasks = true
 		} else {
 			plain = true
@@ -83,7 +78,7 @@ func splitsIntoRuns(list *ast.List) bool {
 // rendersAsTask reports whether an item is published as an ac:task, which is
 // true in a list of nothing but tasks and in the task runs of a split one.
 func rendersAsTask(item ast.Node) bool {
-	if !isTaskItem(item) {
+	if !extension.IsTask(item) {
 		return false
 	}
 
@@ -101,13 +96,13 @@ func rendersAsTask(item ast.Node) bool {
 func opensRun(item ast.Node) bool {
 	previous := item.PreviousSibling()
 
-	return previous == nil || isTaskItem(previous) != isTaskItem(item)
+	return previous == nil || extension.IsTask(previous) != extension.IsTask(item)
 }
 
 func closesRun(item ast.Node) bool {
 	next := item.NextSibling()
 
-	return next == nil || isTaskItem(next) != isTaskItem(item)
+	return next == nil || extension.IsTask(next) != extension.IsTask(item)
 }
 
 // taskMarker is the "[x] " or "[ ] " a task's first block opens with when the
@@ -161,7 +156,7 @@ func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []b
 		return r.renderRunItem(w, source, node, entering, rc)
 	}
 
-	if !isTaskItem(node) || !isTaskList(parentList) {
+	if !extension.IsTask(node) || !isTaskList(parentList) {
 		return r.goldmarkRenderListItem(w, source, node, entering, rc)
 	}
 
@@ -177,7 +172,7 @@ func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []b
 // run's container before the first item of the run and closing it after the
 // last.
 func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
-	task := isTaskItem(node)
+	task := extension.IsTask(node)
 
 	if entering && opensRun(node) {
 		if task {
