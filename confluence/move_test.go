@@ -533,3 +533,35 @@ func TestActionErrorsReadsEveryShape(t *testing.T) {
 		})
 	}
 }
+
+// TestMovePageActionTargetAnsweredEmptyIsAnError: an empty answer to reading
+// the move target left it with no space and no ancestors. An ordering then
+// said the target was at the root of its space, and an append posted the
+// action -- a write -- with a title and space of "".
+func TestMovePageActionTargetAnsweredEmptyIsAnError(t *testing.T) {
+	var targetID string
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Path == "/rest/api/content/"+targetID {
+			return http.StatusOK, "", true
+		}
+		return 0, "", false
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	other := server.AddPage("DOCS", "Other", "page", "")
+
+	targetID = first.ID
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read move target")
+	assert.NotContains(t, err.Error(), "root of its space")
+
+	// An append falls back to an update, which needs nothing from the target.
+	targetID = other.ID
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, other.ID))
+	assert.Equal(t, other.ID, server.Page(second.ID).ParentID)
+	assert.Equal(t, 0, server.CountRequests(http.MethodPost, "/pages/movepage.action"),
+		"the action is not asked to move anything under a target it could not read")
+}

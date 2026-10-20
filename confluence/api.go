@@ -2432,7 +2432,11 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		)
 	}
 
-	var target struct {
+	// Through get, so that an empty answer is an error: it left the target
+	// with no space and no ancestors, so an ordering reported the target as
+	// at the root of its space, and an append asked the action -- a write --
+	// to move the page under a title and space of "".
+	target, err := get[struct {
 		Title string `json:"title"`
 		Space struct {
 			Key string `json:"key"`
@@ -2440,14 +2444,12 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		Ancestors []struct {
 			ID string `json:"id"`
 		} `json:"ancestors"`
-	}
-
-	_, err = api.v1.do(
-		ctx, nil, http.MethodGet, []string{"content", targetID},
-		url.Values{"expand": {"space,ancestors"}}, nil, &target,
-	)
+	}](ctx, api.v1, []string{"content", targetID}, url.Values{"expand": {"space,ancestors"}})
 	if err != nil {
 		return false, requestError("read move target "+targetID, err)
+	}
+	if target.Space.Key == "" {
+		return false, fmt.Errorf("unable to read move target %s: its answer names no space", targetID)
 	}
 
 	// The parent the content has to end up under; for before and after that
