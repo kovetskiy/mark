@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
 )
 
 // TestDefaultToPublish covers how a command line that names no command is
@@ -53,9 +54,23 @@ func TestDefaultToPublish(t *testing.T) {
 		{"help after a publish flag", []string{"mark", "-f", "doc.md", "--help"}, []string{"mark", "publish", "-f", "doc.md", "--help"}, true},
 		{"help before a publish flag", []string{"mark", "-h", "--files=doc.md"}, []string{"mark", "publish", "-h", "--files=doc.md"}, true},
 		{"shell completion after a publish flag", []string{"mark", "-f", "doc.md", "--generate-shell-completion"}, []string{"mark", "publish", "-f", "doc.md", "--generate-shell-completion"}, true},
+		// urfave/cli's own commands, after a flag only publish has, are stray
+		// arguments as they were before there were commands.
+		{"a stray help", []string{"mark", "--compile-only", "-f", "page.md", "help"}, []string{"mark", "publish", "--compile-only", "-f", "page.md"}, true},
+		{"a stray h", []string{"mark", "-f", "page.md", "h", "more"}, []string{"mark", "publish", "-f", "page.md", "more"}, true},
+		{"a stray completion", []string{"mark", "-f", "page.md", "completion"}, []string{"mark", "publish", "-f", "page.md"}, true},
+		// Help and completion came before the version, and still do.
+		{"help and version", []string{"mark", "--help", "--version"}, []string{"mark", "--help", "--version"}, false},
+		{"version and shell completion", []string{"mark", "-v", "--generate-shell-completion"}, []string{"mark", "-v", "--generate-shell-completion"}, false},
+		{"version and publish's help", []string{"mark", "-f", "doc.md", "--version", "--help"}, []string{"mark", "publish", "-f", "doc.md", "--version", "--help"}, true},
+		// The version is mark's after a command too.
+		{"version after publish", []string{"mark", "publish", "-c", "x.toml", "--version"}, []string{"mark", "--version"}, false},
+		{"a value that reads as the version", []string{"mark", "publish", "--version-message", "--version"}, []string{"mark", "publish", "--version-message", "--version"}, false},
+		// A version flag that is false asks for nothing.
+		{"version false", []string{"mark", "-f", "doc.md", "--version=false"}, []string{"mark", "publish", "-f", "doc.md"}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, bare := defaultToPublish(NewCommand("test"), test.args)
+			got, bare := defaultToPublish(newCommand("test"), test.args)
 			assert.Equal(t, test.want, got)
 			assert.Equal(t, test.bare, bare)
 		})
@@ -156,9 +171,9 @@ func TestConfigNamedAfterPublishReplacesTheDefault(t *testing.T) {
 	assert.Equal(t, "http://default.invalid", resolved["base-url"])
 }
 
-// runMark runs mark's command line in this process and returns what it wrote
-// to stdout and stderr.
-func runMark(t *testing.T, args ...string) (string, string, error) {
+// captureOutput runs do with stdout and stderr captured, and returns what it
+// wrote to each, restoring the logger it may set up on the way.
+func captureOutput(t *testing.T, do func() error) (string, string, error) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -176,7 +191,7 @@ func runMark(t *testing.T, args ...string) (string, string, error) {
 		zerolog.SetGlobalLevel(originalLevel)
 	})
 
-	runErr := Run(context.Background(), NewCommand("test"), append([]string{"mark"}, args...))
+	runErr := do()
 
 	os.Stdout, os.Stderr = originalStdout, originalStderr
 	require.NoError(t, stdout.Close())
@@ -188,6 +203,30 @@ func runMark(t *testing.T, args ...string) (string, string, error) {
 	require.NoError(t, err)
 
 	return string(out), string(logged), runErr
+}
+
+// runMark runs mark's command line, as main does, in this process and returns
+// what it wrote to stdout and stderr.
+func runMark(t *testing.T, args ...string) (string, string, error) {
+	t.Helper()
+
+	return captureOutput(t, func() error {
+		return Run(context.Background(), "test", append([]string{"mark"}, args...))
+	})
+}
+
+// publishable is a configuration file and a document that publishes with
+// --compile-only.
+func publishable(t *testing.T) (config, document string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	config = writeConfig(t, dir, "mark.toml", "")
+	document = filepath.Join(dir, "page.md")
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
+
+	return config, document
 }
 
 // TestBareMarkStillPublishes: "mark <flags>" is how mark runs in a great many
@@ -218,10 +257,10 @@ func TestBareMarkStillPublishes(t *testing.T) {
 // TestPublishFlagsBelongAfterPublish: a publish flag written before the
 // command it belongs to is refused rather than silently dropped.
 func TestPublishFlagsBelongAfterPublish(t *testing.T) {
-	cmd := NewCommand("test")
+	cmd := newCommand("test")
 	cmd.Writer, cmd.ErrWriter = &bytes.Buffer{}, &bytes.Buffer{}
 
-	err := Run(context.Background(), cmd, []string{"mark", "--files", "a.md", "publish"})
+	err := run(context.Background(), cmd, []string{"mark", "--files", "a.md", "publish"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "files")
 }
@@ -235,9 +274,9 @@ func TestBrokenConfigFileLeavesHelpAlone(t *testing.T) {
 
 	run := func(args ...string) (string, error) {
 		var out bytes.Buffer
-		cmd := NewCommand("test")
+		cmd := newCommand("test")
 		cmd.Writer, cmd.ErrWriter = &out, &bytes.Buffer{}
-		err := Run(context.Background(), cmd, append([]string{"mark"}, args...))
+		err := run(context.Background(), cmd, append([]string{"mark"}, args...))
 		return out.String(), err
 	}
 
@@ -248,6 +287,8 @@ func TestBrokenConfigFileLeavesHelpAlone(t *testing.T) {
 		{"--generate-shell-completion"},
 		{"publish", "--generate-shell-completion"},
 		{"publish", "--help"},
+		{"publish", "help"},
+		{"publish", "h"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			out, err := run(args...)
@@ -272,10 +313,10 @@ func helpOutput(t *testing.T, version string, args ...string) string {
 	t.Helper()
 
 	var out bytes.Buffer
-	cmd := NewCommand(version)
+	cmd := newCommand(version)
 	cmd.Writer = &out
 
-	require.NoError(t, Run(context.Background(), cmd, append([]string{"mark"}, args...)))
+	require.NoError(t, run(context.Background(), cmd, append([]string{"mark"}, args...)))
 
 	return out.String()
 }
@@ -351,4 +392,139 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 		"README.md's mark --help block has drifted from the binary")
 	assert.Equal(t, find("mark publish"), shown(helpOutput(t, "v16.x.x", "publish", "--help")),
 		"README.md's mark publish --help block has drifted from the binary")
+}
+
+// TestAStrayHelpStillPublishes: before there were commands, an argument that
+// named nothing was ignored, "help" among them. urfave/cli's own commands are
+// real commands now, and the bare form must not have them swallow the run.
+func TestAStrayHelpStillPublishes(t *testing.T) {
+	config, document := publishable(t)
+
+	for _, stray := range []string{"help", "h", "completion"} {
+		t.Run(stray, func(t *testing.T) {
+			out, _, err := runMark(t, "--config", config, "--compile-only", "-f", document, stray)
+			require.NoError(t, err)
+			assert.Contains(t, out, "<p>Body.</p>")
+		})
+	}
+}
+
+// TestPublishHelpLeavesTheFlagsAlone: "mark publish help" prints help, whatever
+// publish's flags would have made of the environment.
+func TestPublishHelpLeavesTheFlagsAlone(t *testing.T) {
+	t.Setenv("MARK_FEATURES", "bogus")
+
+	for _, args := range [][]string{{"publish", "help"}, {"publish", "h"}, {"help", "publish"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			assert.Contains(t, helpOutput(t, "test", args...), "--files")
+		})
+	}
+}
+
+// TestHelpComesBeforeTheVersion: before there were commands, "mark --help
+// --version" printed help, and the version flag was a thing a publish command
+// line could carry. Both still hold, whichever form the command line takes.
+func TestHelpComesBeforeTheVersion(t *testing.T) {
+	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "--help", "--version"), "COMMANDS:")
+	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "--version", "--help"), "COMMANDS:")
+	assert.Equal(t, "mark version v1.2.3@abc\n", helpOutput(t, "v1.2.3@abc", "publish", "--version"))
+	assert.Equal(t, "mark version v1.2.3@abc\n", helpOutput(t, "v1.2.3@abc", "publish", "-c", "x.toml", "-v"))
+}
+
+// TestTheBareFormIsDeprecatedAtEveryLogLevel: the notice is what tells a
+// pipeline it has to move to "mark publish", so it must not depend on the log
+// level the pipeline chose, nor on the run getting far enough to log.
+func TestTheBareFormIsDeprecatedAtEveryLogLevel(t *testing.T) {
+	config, document := publishable(t)
+
+	_, logged, err := runMark(t, "--config", config, "--log-level", "error", "--compile-only", "-f", document)
+	require.NoError(t, err)
+	assert.Contains(t, logged, `deprecated: run "mark publish"`)
+
+	broken := writeConfig(t, t.TempDir(), "broken.toml", "x = [")
+	_, logged, err = runMark(t, "--config", broken, "--compile-only", "-f", document)
+	require.Error(t, err)
+	assert.Contains(t, logged, `deprecated: run "mark publish"`)
+
+	_, logged, err = runMark(t, "-f", document, "--help")
+	require.NoError(t, err)
+	assert.NotContains(t, logged, "deprecated", "asking for help is not a run to migrate")
+}
+
+// TestTheConfigDumpNamesEachFlagOnce: the root and publish both carry a help
+// flag, and the dump went over both lists.
+func TestTheConfigDumpNamesEachFlagOnce(t *testing.T) {
+	config, document := publishable(t)
+
+	_, logged, err := runMark(t, "publish", "--config", config, "--log-level", "debug",
+		"--color", "never", "--compile-only", "-f", document)
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(logged, " help: "), logged)
+	assert.Equal(t, 1, strings.Count(logged, " username: "), logged)
+	assert.Equal(t, 1, strings.Count(logged, " files: "), logged)
+}
+
+// TestFlagsStillMakeACommand: mark's command line before there were commands,
+// as a program built on this package put it together, keeps working.
+func TestFlagsStillMakeACommand(t *testing.T) {
+	_, document := publishable(t)
+	config := writeConfig(t, t.TempDir(), "mark.toml",
+		"username = \"cfguser\"\nfiles = \""+filepath.ToSlash(document)+"\"\n")
+
+	legacy := func(action cli.ActionFunc) *cli.Command {
+		return &cli.Command{Name: "mark", Flags: Flags, Before: CheckFlags, Action: action}
+	}
+
+	t.Run("the file is read, global flags and all", func(t *testing.T) {
+		var username, files string
+		err := legacy(func(_ context.Context, cmd *cli.Command) error {
+			username, files = cmd.String("username"), cmd.String("files")
+			return nil
+		}).Run(context.Background(), []string{"mark", "--config", config})
+		require.NoError(t, err)
+		assert.Equal(t, "cfguser", username)
+		assert.Equal(t, filepath.ToSlash(document), files)
+	})
+
+	t.Run("a file that does not parse is reported", func(t *testing.T) {
+		broken := writeConfig(t, t.TempDir(), "broken.toml", "x = [")
+		err := legacy(RunMark).Run(context.Background(), []string{"mark", "--config", broken})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unable to parse configuration file")
+	})
+
+	// Flags are one set of flags, and urfave/cli remembers that a flag was set
+	// from its source from one run to the next, so only the first run takes
+	// --files from the file. One run a process is what they were for.
+	t.Run("it publishes", func(t *testing.T) {
+		out, _, err := captureOutput(t, func() error {
+			return legacy(RunMark).Run(context.Background(),
+				[]string{"mark", "--config", config, "--color", "never", "--compile-only", "-f", document})
+		})
+		require.NoError(t, err)
+		assert.Contains(t, out, "<p>Body.</p>")
+	})
+}
+
+// TestTheConfigFileIsReadOnce: every flag looks its setting up in the file,
+// and a run reads and parses it the first time, not once a flag. The
+// deprecated Flags read it at every lookup, as they always did.
+func TestTheConfigFileIsReadOnce(t *testing.T) {
+	path := writeConfig(t, t.TempDir(), "mark.toml", "username = \"first\"\n")
+
+	once := newConfigFile(&path, false)
+	every := &configFile{path: &path}
+
+	for _, file := range []*configFile{once, every} {
+		value, found := file.value("username").Lookup()
+		require.True(t, found)
+		assert.Equal(t, "first", value)
+	}
+
+	writeConfig(t, filepath.Dir(path), "mark.toml", "username = \"second\"\n")
+
+	value, _ := once.value("username").Lookup()
+	assert.Equal(t, "first", value, "a run reads the file once")
+	value, _ = every.value("username").Lookup()
+	assert.Equal(t, "second", value)
 }
