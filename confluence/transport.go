@@ -3,6 +3,7 @@ package confluence
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -167,6 +168,14 @@ func readOnly(method string) bool {
 // retryableError reports whether a transport-level failure of req is worth
 // retrying. Only side-effect-free methods qualify: a timeout partway through a
 // POST may mean the server already committed the write.
+//
+// Nor is a timeout retried, a read's included. The response header and dial
+// timeouts are what stop a run against a server that accepts the connection
+// and goes quiet, or one that cannot be reached at all; each attempt waits the
+// whole timeout out, so retrying them made a hung Confluence cost every read
+// four times as long -- about eight minutes rather than two -- before it
+// failed. What is retried is a failure that comes at once: a connection reset
+// or closed under the request.
 func retryableError(err error, req *http.Request) bool {
 	if err == nil {
 		return false
@@ -174,11 +183,12 @@ func retryableError(err error, req *http.Request) bool {
 	if !readOnly(req.Method) {
 		return false
 	}
+	var timeout interface{ Timeout() bool }
+	if errors.As(err, &timeout) && timeout.Timeout() || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 	// A request whose context is done was given up on by its caller, and
-	// must not be retried. That is asked of the context, not of err:
-	// net/http's response header and dial timeouts satisfy
-	// errors.Is(err, context.DeadlineExceeded) too, and are failures like
-	// any other.
+	// must not be retried, whatever error it ended with.
 	return req.Context().Err() == nil
 }
 

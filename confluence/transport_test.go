@@ -66,10 +66,17 @@ func TestRetryableError(t *testing.T) {
 	assert.False(t, retryableError(someErr, request(http.MethodPut)))
 	assert.False(t, retryableError(nil, request(http.MethodGet)))
 
-	// A timeout that is not the caller's is retried, although it matches
-	// context.DeadlineExceeded.
-	assert.True(t, retryableError(context.DeadlineExceeded, request(http.MethodGet)))
+	// A timeout is not retried: each attempt would wait it out again.
+	assert.False(t, retryableError(context.DeadlineExceeded, request(http.MethodGet)))
+	assert.False(t, retryableError(&timeoutError{}, request(http.MethodGet)))
 }
+
+// timeoutError is a net.Error that timed out, as a dial timeout is.
+type timeoutError struct{}
+
+func (*timeoutError) Error() string   { return "i/o timeout" }
+func (*timeoutError) Timeout() bool   { return true }
+func (*timeoutError) Temporary() bool { return true }
 
 // TestRetryStopsForACancelledContext: a request the caller gave up on is not
 // sent again, whatever error it ended with.
@@ -104,52 +111,38 @@ func TestRetryStopsForACancelledContext(t *testing.T) {
 	}
 }
 
-// TestRetryAfterAResponseHeaderTimeout: net/http's response header timeout
-// satisfies errors.Is(err, context.DeadlineExceeded), and was taken for the
-// caller giving up, so a server that went quiet once failed the run. With the
-// caller's context still live it is retried.
-func TestRetryAfterAResponseHeaderTimeout(t *testing.T) {
+// TestNoRetryAfterAResponseHeaderTimeout: a server that accepts the
+// connection and goes quiet is what the response header timeout is there to
+// end. Retried, every read against it waited the timeout out four times, plus
+// the backoff, before the run heard anything.
+func TestNoRetryAfterAResponseHeaderTimeout(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if calls.Add(1) == 1 {
-			// Goes quiet until the client gives up on the headers.
-			select {
-			case <-r.Context().Done():
-			case <-time.After(5 * time.Second):
-			}
-
-			return
+		calls.Add(1)
+		// Goes quiet until the client gives up on the headers.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
 		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)
 
-	var failures []error
 	base := &http.Transport{ResponseHeaderTimeout: 50 * time.Millisecond}
 	t.Cleanup(base.CloseIdleConnections)
 
-	transport, slept := newTestTransport(t, func(r *http.Request) (*http.Response, error) {
-		response, err := base.RoundTrip(r)
-		if err != nil {
-			failures = append(failures, err)
-		}
-
-		return response, err
-	})
+	transport, slept := newTestTransport(t, base.RoundTrip)
 
 	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
 	require.NoError(t, err)
 
 	response, err := transport.RoundTrip(request)
-	require.NoError(t, err)
-	defer response.Body.Close()
+	if response != nil {
+		defer response.Body.Close()
+	}
 
-	assert.Equal(t, http.StatusOK, response.StatusCode)
-	assert.Equal(t, int32(2), calls.Load())
-	assert.Len(t, *slept, 1)
-	require.Len(t, failures, 1)
-	assert.ErrorIs(t, failures[0], context.DeadlineExceeded,
-		"the timeout looks like a deadline, which is why the context is asked instead")
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "a read that timed out is not sent again")
+	assert.Empty(t, *slept)
 }
 
 func TestParseRetryAfterSeconds(t *testing.T) {
