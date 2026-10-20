@@ -862,3 +862,28 @@ func TestClientCutsShortAWriteBackoff(t *testing.T) {
 	assert.Less(t, time.Since(started), 5*time.Second, "the backoff is cut short")
 	assert.Equal(t, int32(1), received.Load(), "the write is not sent again")
 }
+
+// TestGetAndSendRefuseAnAnswerNamingNoID: "null" and "{}" decode, into a page
+// as empty as no body at all. A page or folder Confluence answers with always
+// has its ID, and one without was cached and then sent requests to "content/".
+func TestGetAndSendRefuseAnAnswerNamingNoID(t *testing.T) {
+	for _, body := range []string{`null`, `{}`, `{"title":"Untitled"}`} {
+		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", body)
+
+		_, err := get[PageInfo](context.Background(), c, []string{"content", "42"}, nil)
+		var empty *emptyAnswerError
+		require.ErrorAs(t, err, &empty, "page, %s", body)
+		assert.Contains(t, requestError("read page 42", err).Error(), "naming no id")
+
+		_, err = send[FolderInfo](context.Background(), c, http.MethodPost, []string{"folders"}, map[string]any{})
+		require.ErrorAs(t, err, &empty, "folder, %s", body)
+
+		_, err = get[contentV2](context.Background(), c, []string{"pages", "42"}, nil)
+		require.ErrorAs(t, err, &empty, "v2 content, %s", body)
+	}
+
+	// What is not named by an ID is not asked for one.
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", `{}`)
+	_, err := get[listing[PageInfo]](context.Background(), c, []string{"content"}, nil)
+	require.NoError(t, err)
+}

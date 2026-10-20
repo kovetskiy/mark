@@ -79,7 +79,8 @@ func TestAuthorizationIsSentOnEveryRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[],"_links":{"base":"/wiki"}}`))
+		// One body for both: a listing to the lookup, a folder to the read.
+		_, _ = w.Write([]byte(`{"id":"2001","results":[],"_links":{"base":"/wiki"}}`))
 	}))
 	defer server.Close()
 

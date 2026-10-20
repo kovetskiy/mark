@@ -431,7 +431,7 @@ func get[T any](ctx context.Context, c *client, path []string, query url.Values)
 	var out T
 	answer, err := c.do(ctx, nil, http.MethodGet, path, query, nil, &out)
 
-	return out, valueIn(answer, err)
+	return out, valueIn(answer, &out, err)
 }
 
 // listing is one page of a collection, as v1 and v2 both answer a listing:
@@ -457,21 +457,43 @@ func send[T any](ctx context.Context, c *client, method string, path []string, b
 	var out T
 	answer, err := c.do(ctx, nil, method, path, nil, body, &out)
 
-	return out, valueIn(answer, err)
+	return out, valueIn(answer, &out, err)
 }
 
-// valueIn is err, or, for a success that came with nothing in it, an
-// *emptyAnswerError. do takes an empty 2xx for success, which it is for a
-// call that wants nothing back. One that wants a T does not get one, and a
-// zero T in its place -- a page whose ID is "" -- is taken for an answer: put
-// in the page cache, and requests then sent to "content/".
-func valueIn(answer *reply, err error) error {
-	if err == nil && answer != nil && answer.Empty {
+// valueIn is err, or, for a success that is no value, an *emptyAnswerError.
+// do takes an empty 2xx for success, which it is for a call that wants nothing
+// back. One that wants a T does not get one, and a zero T in its place -- a
+// page whose ID is "" -- is taken for an answer: put in the page cache, and
+// requests then sent to "content/".
+//
+// Nor is a body with nothing in it the only way to answer with no value:
+// "null" and "{}" decode, into a T as empty as no body at all. So a T that is
+// named by an ID -- a page, a folder -- must come with one.
+func valueIn[T any](answer *reply, out *T, err error) error {
+	if err != nil || answer == nil {
+		return err
+	}
+
+	if answer.Empty {
 		return &emptyAnswerError{answer: answer}
 	}
 
-	return err
+	if named, ok := any(out).(identified); ok && named.answeredID() == "" {
+		return &emptyAnswerError{answer: answer, noID: true}
+	}
+
+	return nil
 }
+
+// identified is a value Confluence names by an ID, which an answer that is one
+// always carries.
+type identified interface {
+	answeredID() string
+}
+
+func (p *PageInfo) answeredID() string   { return p.ID }
+func (f *FolderInfo) answeredID() string { return f.ID }
+func (c *contentV2) answeredID() string  { return c.ID }
 
 // cancelledError is an error a request ended with while its context was
 // done. It reads as err, which net/http already words as a cancellation, and

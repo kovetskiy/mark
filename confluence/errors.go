@@ -247,9 +247,9 @@ func requestError(operation string, err error) error {
 	var empty *emptyAnswerError
 	if errors.As(err, &empty) {
 		return fmt.Errorf(
-			"unable to %s: %s answered %s with an empty body where Confluence answers "+
-				"with JSON (a proxy in front of Confluence is the usual cause)",
-			operation, requestTarget(empty.answer), empty.answer.Status,
+			"unable to %s: %s where Confluence answers with what was asked for "+
+				"(a proxy in front of Confluence is the usual cause)",
+			operation, empty,
 		)
 	}
 
@@ -278,12 +278,19 @@ func (e *bodyError) Error() string { return e.err.Error() }
 
 func (e *bodyError) Unwrap() error { return e.err }
 
-// emptyAnswerError is a 2xx with nothing in its body, to a request that was
-// asked for a value: see valueIn.
+// emptyAnswerError is a 2xx that is no value, to a request that was asked for
+// one: a body with nothing in it, or, with noID, one without the ID of what it
+// names. See valueIn.
 type emptyAnswerError struct {
 	answer *reply
+	noID   bool
 }
 
 func (e *emptyAnswerError) Error() string {
-	return fmt.Sprintf("%s answered %s with an empty body", requestTarget(e.answer), e.answer.Status)
+	what := "an empty body"
+	if e.noID {
+		what = "a body naming no id"
+	}
+
+	return fmt.Sprintf("%s answered %s with %s", requestTarget(e.answer), e.answer.Status, what)
 }
