@@ -32,7 +32,7 @@ func TestFeaturesSubprocess(t *testing.T) {
 		Err      string
 	}
 
-	cmd := NewCommand("test")
+	cmd := newCommand("test")
 	var parsed *cli.Command
 	capture := func(_ context.Context, c *cli.Command) error {
 		parsed = c
@@ -43,7 +43,7 @@ func TestFeaturesSubprocess(t *testing.T) {
 		command.Action = capture
 	}
 
-	if err := Run(context.Background(), cmd, append([]string{"mark", "publish"}, args...)); err != nil {
+	if err := run(context.Background(), cmd, append([]string{"mark", "publish"}, args...)); err != nil {
 		result.Err = err.Error()
 	} else {
 		result.Features = EnabledFeatures(parsed)

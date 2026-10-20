@@ -273,7 +273,7 @@ func TestRunPublishStopsWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := Run(ctx, NewCommand("test"), []string{
+	err := run(ctx, newCommand("test"), []string{
 		"mark", "publish",
 		"--config", config,
 		"--compile-only",

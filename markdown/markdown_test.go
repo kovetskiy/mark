@@ -401,7 +401,7 @@ func TestContinueOnError(t *testing.T) {
 		"--files", filePath,
 	}
 
-	err := util.Run(context.TODO(), util.NewCommand("TEST-VERSION"), argList)
+	err := util.Run(context.TODO(), "TEST-VERSION", argList)
 	// --continue-on-error processes all files even when some fail, but still
 	// returns an error to allow callers/CI to detect partial failures.
 	assert.Error(t, err, "App should report partial failure when continue-on-error is enabled and some files fail")
