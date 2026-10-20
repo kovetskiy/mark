@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -417,7 +418,10 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 
 	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
 
-	mermaidBytes := append(mermaidDiagram, scaleAsBytes...)
+	// A new slice, not an append onto the caller's: the diagram is a slice of
+	// the document's own source, and appending the scale onto it, where it
+	// had room to spare, wrote over whatever the document went on with.
+	mermaidBytes := slices.Concat(mermaidDiagram, scaleAsBytes)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidBytes))
 	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)

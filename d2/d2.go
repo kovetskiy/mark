@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -117,7 +118,10 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 
 	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
 
-	d2Bytes := append(d2Diagram, scaleAsBytes...)
+	// A new slice, not an append onto the caller's: the diagram is a slice of
+	// the document's own source, and appending the scale onto it, where it
+	// had room to spare, wrote over whatever the document went on with.
+	d2Bytes := slices.Concat(d2Diagram, scaleAsBytes)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
 
