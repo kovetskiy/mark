@@ -186,7 +186,11 @@ type PageFinder interface {
 // A HEAD is tried first because the body is of no interest. Plenty of servers
 // answer HEAD with 405 or 403 while serving the same URL perfectly well over
 // GET, so that answer is not taken at face value and the request is repeated.
-func (c *LinkChecker) CheckExternal(url string) error {
+//
+// Both carry ctx, so a stopped run does not first wait out every link left on
+// the page -- each up to the client's timeout, twice. A check that ended with
+// the run is no answer from the link, and is not remembered as one.
+func (c *LinkChecker) CheckExternal(ctx context.Context, url string) error {
 	if c == nil || !c.Checks.External {
 		return nil
 	}
@@ -198,13 +202,17 @@ func (c *LinkChecker) CheckExternal(url string) error {
 	}
 	c.mu.Unlock()
 
-	err := c.request(http.MethodHead, url)
-	if err != nil {
-		if getErr := c.request(http.MethodGet, url); getErr == nil {
+	err := c.request(ctx, http.MethodHead, url)
+	if err != nil && ctx.Err() == nil {
+		if getErr := c.request(ctx, http.MethodGet, url); getErr == nil {
 			err = nil
 		} else {
 			err = getErr
 		}
+	}
+
+	if stopped := ctx.Err(); stopped != nil {
+		return stopped
 	}
 
 	c.mu.Lock()
@@ -214,8 +222,8 @@ func (c *LinkChecker) CheckExternal(url string) error {
 	return err
 }
 
-func (c *LinkChecker) request(method, url string) error {
-	req, err := http.NewRequest(method, url, nil)
+func (c *LinkChecker) request(ctx context.Context, method, url string) error {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return fmt.Errorf("not a usable URL: %w", err)
 	}

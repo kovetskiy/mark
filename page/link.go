@@ -132,7 +132,13 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 	// A link somewhere else entirely. It is left as written either way; asked
 	// whether it answers only when external links are being checked.
 	if strings.Contains(target, "://") {
-		if err := r.Checker.CheckExternal(target); err != nil {
+		if err := r.Checker.CheckExternal(ctx, target); err != nil {
+			// The run was stopped, which is not something wrong with the
+			// link: the file stops here, as at its next request.
+			if ctx.Err() != nil {
+				return "", err
+			}
+
 			r.note("%s: %s", target, err)
 		}
 

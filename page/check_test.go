@@ -1,10 +1,12 @@
 package page
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,7 +63,7 @@ func TestLinkCheckerAsksOnce(t *testing.T) {
 
 	checker := NewLinkChecker(LinkChecks{External: true})
 	for range 5 {
-		assert.NoError(t, checker.CheckExternal(server.URL+"/page"))
+		assert.NoError(t, checker.CheckExternal(context.Background(), server.URL+"/page"))
 	}
 
 	assert.Equal(t, int64(1), atomic.LoadInt64(&requests))
@@ -79,7 +81,7 @@ func TestLinkCheckerFallsBackToGet(t *testing.T) {
 	}))
 	defer server.Close()
 
-	assert.NoError(t, NewLinkChecker(LinkChecks{External: true}).CheckExternal(server.URL+"/page"))
+	assert.NoError(t, NewLinkChecker(LinkChecks{External: true}).CheckExternal(context.Background(), server.URL+"/page"))
 }
 
 func TestLinkCheckerReportsFailures(t *testing.T) {
@@ -88,12 +90,12 @@ func TestLinkCheckerReportsFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewLinkChecker(LinkChecks{External: true}).CheckExternal(server.URL + "/gone")
+	err := NewLinkChecker(LinkChecks{External: true}).CheckExternal(context.Background(), server.URL+"/gone")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 
 	// Nothing listening at all.
-	err = NewLinkChecker(LinkChecks{External: true}).CheckExternal("http://127.0.0.1:1/nope")
+	err = NewLinkChecker(LinkChecks{External: true}).CheckExternal(context.Background(), "http://127.0.0.1:1/nope")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unreachable")
 }
@@ -109,9 +111,40 @@ func TestLinkCheckerOffAsksNothing(t *testing.T) {
 	// Asking for internal or Confluence checks must not put mark on the
 	// network; that is the point of the set being a set.
 	for _, checks := range []LinkChecks{{}, {Internal: true}, {Confluence: true}, {Internal: true, Confluence: true}} {
-		assert.NoError(t, NewLinkChecker(checks).CheckExternal(server.URL))
+		assert.NoError(t, NewLinkChecker(checks).CheckExternal(context.Background(), server.URL))
 	}
-	assert.Nil(t, (*LinkChecker)(nil).CheckExternal(server.URL))
+	assert.Nil(t, (*LinkChecker)(nil).CheckExternal(context.Background(), server.URL))
 
 	assert.Zero(t, atomic.LoadInt64(&requests))
+}
+
+// TestCheckExternalStopsWithTheRun: a link check carries the run's context.
+// It used not to, so a stopped run first waited out every external link left
+// on the page, HEAD and then GET, each up to the client's timeout. Nor is a
+// check that ended with the run remembered as the link's answer.
+func TestCheckExternalStopsWithTheRun(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+
+	checker := NewLinkChecker(LinkChecks{External: true})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	err := checker.CheckExternal(ctx, server.URL+"/slow")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(started), 5*time.Second)
+
+	checker.mu.Lock()
+	_, remembered := checker.seen[server.URL+"/slow"]
+	checker.mu.Unlock()
+	assert.False(t, remembered, "a check the run gave up on is not the link's answer")
 }
