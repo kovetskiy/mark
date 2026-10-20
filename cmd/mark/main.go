@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,7 +40,7 @@ func main() {
 		log.Warn().Msgf("%s: cancelling the current file and stopping; send it again to stop at once, skipping the cleanup", context.Cause(ctx))
 	}()
 
-	if err := util.Run(ctx, fmt.Sprintf("%s@%s", version, commit), os.Args); err != nil {
+	if err := util.Run(ctx, buildVersion(version, commit, readBuildInfo()), os.Args); err != nil {
 		// "context canceled" says nothing about who cancelled it.
 		if errors.Is(err, context.Canceled) {
 			err = context.Cause(ctx)
