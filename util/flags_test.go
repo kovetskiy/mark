@@ -234,6 +234,20 @@ func skipWithoutUnixConfigDir(t *testing.T) {
 	}
 }
 
+// userConfigDir is the directory os.UserConfigDir answers with once home is
+// $HOME and XDG_CONFIG_HOME is empty: $HOME/.config on Linux and the BSDs,
+// $HOME/Library/Application Support on macOS.
+func userConfigDir(t *testing.T, home string) string {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	dir, err := os.UserConfigDir()
+	require.NoError(t, err)
+
+	return dir
+}
+
 // TestConfigFilePathWithoutAConfigDir: the default is evaluated while the flags
 // are declared, so it used to log.Fatal during package initialisation and take
 // every invocation down with it -- --version and --help included.
