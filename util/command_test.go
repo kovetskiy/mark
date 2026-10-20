@@ -137,8 +137,9 @@ func TestConfigNamedAfterPublishReplacesTheDefault(t *testing.T) {
 	skipWithoutUnixConfigDir(t)
 
 	home := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(home, ".config"), 0o700))
-	writeConfig(t, filepath.Join(home, ".config"), "mark.toml",
+	configDir := userConfigDir(t, home)
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+	writeConfig(t, configDir, "mark.toml",
 		"username = \"default-user\"\nbase-url = \"http://default.invalid\"\n")
 
 	named := writeConfig(t, t.TempDir(), "named.toml", "username = \"named-user\"\n")
@@ -324,8 +325,12 @@ func TestHelp(t *testing.T) {
 // in the default configuration file.
 func TestREADMEUsageMatchesHelp(t *testing.T) {
 	skipWithoutUnixConfigDir(t)
-	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("HOME", "${HOME}")
+	// The README shows the default file where Linux keeps it. Wherever this
+	// platform keeps it instead, it is that file all the same.
+	defaultFile := filepath.Join(userConfigDir(t, "${HOME}"), "mark.toml")
+	shown := func(help string) string {
+		return strings.ReplaceAll(help, defaultFile, "${HOME}/.config/mark.toml")
+	}
 
 	readme, err := os.ReadFile(filepath.Join("..", "README.md"))
 	require.NoError(t, err)
@@ -342,8 +347,8 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 		return ""
 	}
 
-	assert.Equal(t, find("mark"), helpOutput(t, "v16.x.x", "--help"),
+	assert.Equal(t, find("mark"), shown(helpOutput(t, "v16.x.x", "--help")),
 		"README.md's mark --help block has drifted from the binary")
-	assert.Equal(t, find("mark publish"), helpOutput(t, "v16.x.x", "publish", "--help"),
+	assert.Equal(t, find("mark publish"), shown(helpOutput(t, "v16.x.x", "publish", "--help")),
 		"README.md's mark publish --help block has drifted from the binary")
 }
