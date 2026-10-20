@@ -969,12 +969,20 @@ func (api *API) CreateAttachment(
 		)
 	}
 
-	info = result.Results[0]
-	if info.Links.Context == "" {
-		info.Links.Context = result.Links.Context
-	}
+	withListingContext(&result)
 
-	return info, nil
+	return result.Results[0], nil
+}
+
+// withListingContext gives each attachment in a listing the listing's context
+// path where it names none of its own: the attachment's download link is
+// relative to it, and a listing says it once for all of its results.
+func withListingContext(attachments *listing[AttachmentInfo]) {
+	for i := range attachments.Results {
+		if attachments.Results[i].Links.Context == "" {
+			attachments.Results[i].Links.Context = attachments.Links.Context
+		}
+	}
 }
 
 // UpdateAttachment uploads a new version of the same attachment if the
@@ -1011,10 +1019,8 @@ func (api *API) UpdateAttachment(
 	}
 
 	if len(extendedResponse.Results) > 0 {
+		withListingContext(&extendedResponse)
 		info = extendedResponse.Results[0]
-		if info.Links.Context == "" {
-			info.Links.Context = extendedResponse.Links.Context
-		}
 	} else if err = json.Unmarshal(result, &info); err != nil {
 		return AttachmentInfo{}, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
 	}
@@ -1089,15 +1095,7 @@ func (api *API) GetAttachments(ctx context.Context, pageID string) ([]Attachment
 	return listV1(
 		ctx, api, []string{"content", pageID, "child", "attachment"},
 		url.Values{"expand": {"version,container"}}, 100,
-		"list attachments of page "+pageID, false,
-		func(page *listing[AttachmentInfo]) {
-			for i, info := range page.Results {
-				if info.Links.Context == "" {
-					info.Links.Context = page.Links.Context
-				}
-				page.Results[i] = info
-			}
-		},
+		"list attachments of page "+pageID, false, withListingContext,
 	)
 }
 
