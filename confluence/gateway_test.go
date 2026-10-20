@@ -366,3 +366,51 @@ func TestGatewayGetPageByIDWithoutBlogpostScopes(t *testing.T) {
 	_, err := api.GetPageByID(context.Background(), "deleted")
 	require.ErrorIs(t, err, confluence.ErrNotFound)
 }
+
+// TestGatewayUpdateFinishesItsPropertiesWhenTheRunStops: through the gateway,
+// the properties go in after the content, in requests of their own. A run
+// stopped between the two failed an update whose new version already existed,
+// so it was never recorded, and --no-overwrite then took the page for one
+// edited in Confluence on every later run.
+func TestGatewayUpdateFinishesItsPropertiesWhenTheRunStops(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.AddPage("DOCS", "Doc", "page", "")
+
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Stopped as the content arrives: the write itself is let finish, and the
+	// properties are asked for after it.
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") {
+			return http.StatusUnauthorized,
+				`{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/pages/"+page.ID) {
+			cancel()
+		}
+		return 0, "", false
+	})
+
+	require.NoError(t, api.UpdatePage(ctx, page, "<p>two</p>", false, "second", "full-width", ""))
+	assert.Equal(t, int64(2), page.Version.Number)
+	assert.Positive(t, server.CountRequests(http.MethodPost, "/properties"), "the properties were written")
+}
+
+// TestGatewayUpdateWithoutPropertiesReadsNone: an update that carries no
+// property has none to compare, so the listing is not read.
+func TestGatewayUpdateWithoutPropertiesReadsNone(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	server.AddPage("DOCS", "Doc", "page", "")
+
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "", ""))
+	assert.Equal(t, 0, server.CountRequests(http.MethodGet, "/properties"))
+}

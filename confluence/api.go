@@ -1314,8 +1314,15 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, newContent strin
 	// exists the moment the content is in, and a caller holding the old
 	// number after a failed property write would have its next update refused
 	// as a conflict.
-	if api.gateway {
-		return api.setPagePropertiesV2(ctx, page, properties)
+	//
+	// And they are written whatever becomes of the run, as the content was:
+	// they are the rest of this update, which on v1 goes in the one request.
+	// Cut short by a signal, the update failed after its version existed, so
+	// the caller never recorded it -- under --no-overwrite the page then read
+	// as edited in Confluence on every later run. With none to write there is
+	// nothing to ask, and the listing is not read at all.
+	if api.gateway && len(properties) > 0 {
+		return api.setPagePropertiesV2(context.WithoutCancel(ctx), page, properties)
 	}
 
 	return nil
