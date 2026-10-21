@@ -148,3 +148,36 @@ func TestCheckExternalStopsWithTheRun(t *testing.T) {
 	checker.mu.Unlock()
 	assert.False(t, remembered, "a check the run gave up on is not the link's answer")
 }
+
+// answerThenCancel answers every request 200 and then cancels the run, which
+// is a check that completed just as the run was stopped.
+type answerThenCancel struct{ cancel context.CancelFunc }
+
+func (a answerThenCancel) RoundTrip(r *http.Request) (*http.Response, error) {
+	a.cancel()
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body:       http.NoBody,
+		Request:    r,
+	}, nil
+}
+
+// TestCheckExternalKeepsAnAnswerThatCameAsTheRunStopped: a check that got its
+// answer has it, and is remembered, however soon after it the run stopped.
+func TestCheckExternalKeepsAnAnswerThatCameAsTheRunStopped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	checker := NewLinkChecker(LinkChecks{External: true})
+	checker.Client = &http.Client{Transport: answerThenCancel{cancel: cancel}}
+
+	require.NoError(t, checker.CheckExternal(ctx, "https://example.test/page"))
+
+	checker.mu.Lock()
+	answer, remembered := checker.seen["https://example.test/page"]
+	checker.mu.Unlock()
+	assert.True(t, remembered)
+	assert.NoError(t, answer)
+}

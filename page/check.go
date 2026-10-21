@@ -211,7 +211,9 @@ func (c *LinkChecker) CheckExternal(ctx context.Context, url string) error {
 		}
 	}
 
-	if stopped := ctx.Err(); stopped != nil {
+	// Only a check that failed can have failed because the run stopped; one
+	// that got its answer has it, however soon after the run stopped.
+	if stopped := ctx.Err(); err != nil && stopped != nil {
 		return stopped
 	}
 
