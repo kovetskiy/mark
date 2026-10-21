@@ -153,6 +153,7 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 				extension.StrikethroughParser,
 				extension.TaskListItemParser,
 			),
+			parser.WithInlineParsers(cparser.LinkifyInEmphasis()),
 		},
 		// Lets an author name a heading's anchor themselves, with the
 		// {#custom-id} syntax every other Markdown tool understands, and
