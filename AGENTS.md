@@ -69,9 +69,8 @@ source (`util/config.go`), parsed once a run. The root also carries hidden
 copies of publish's flags, for the deprecated `mark <publish flags>` its action
 still runs. The root's flags are resolved as it is parsed, before
 `mark publish --config X` names X, so their file and environment sources are
-held until a command's action settles them (`configFile.hold`). `util.Flags`,
-`util.CheckFlags` and `util.RunMark` remain for programs that built mark's
-single command themselves. `util/command_test.go` fails when the help blocks in
+held until a command's action settles them (`configFile.hold`).
+`util/command_test.go` fails when the help blocks in
 `README.md` drift from the binary;
 `go test ./util -run TestREADMEUsageMatchesHelp -args -update-readme` rewrites
 them.

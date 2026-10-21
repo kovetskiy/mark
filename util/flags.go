@@ -587,10 +587,6 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 // that does not exist.
 func CheckConfigFile(command *cli.Command) error {
 	path := command.String("config")
-	if path == *legacyConfig.path {
-		// Flags' sources have read it already.
-		return legacyConfig.check()
-	}
 
 	return newConfigFile(&path).check()
 }
@@ -670,7 +666,7 @@ func isEmptyValue(value any) bool {
 }
 
 // CheckFlags reports a configuration file that cannot be used, and then
-// invalid publish flags: the Before of a command built from Flags.
+// invalid publish flags.
 func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if err := CheckConfigFile(command); err != nil {
 		return context, err
