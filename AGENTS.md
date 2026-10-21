@@ -143,10 +143,12 @@ turns every non-2xx answer into a `*confluence.StatusError` (`errors.Is` matches
 the body is v1's or v2's error shape), a login page into `ErrLoginPage`, and decodes a 2xx
 as it streams in: JSON or no Content-Type only, one value and nothing after it, an empty
 body as success -- except to `get` and `send`, which are asked for a value and refuse an
-empty one, or a page or folder that comes without its id. A write is not cut short by its
-context once sent, since Confluence may already have applied it; the backoff before
-retrying one is. A timeout is never retried. A call site asks `errors.Is`/`statusOf` rather than reading a status, and
-wraps through `requestError`. Anything that remembers an answer -- a cache, a "this
+empty one, or a page or folder that comes without its id. A write already sent is given
+`writeGrace` after its context ends to answer, since Confluence may already have applied
+it; the backoff before retrying one is cut short at once. An update or move answered with
+a 2xx that is not JSON is checked by reading the page's version back (`confirmVersion`).
+A timeout is never retried. A call site asks `errors.Is`/`statusOf` rather than reading a
+status, and wraps through `requestError`. Anything that remembers an answer -- a cache, a "this
 endpoint is missing" flag, the platform -- must not remember one `IsCancellation` reports.
 
 ## Tests

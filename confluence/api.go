@@ -1480,9 +1480,41 @@ func (api *API) updatePageV1(
 	_, err := api.v1.do(
 		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &struct{}{},
 	)
-	if err != nil {
-		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
+
+	return api.confirmVersion(
+		ctx, page, nextVersion,
+		requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err),
+	)
+}
+
+// confirmVersion is the error a write that creates version of page ended
+// with, err, unless that is an answer that is not Confluence's -- a 2xx that
+// is not JSON, and not certainly a login page -- and the page is found at
+// version after all. Then the write was applied, whatever answered it, and
+// failing it would leave the version it created unrecorded: under
+// --no-overwrite, read as an edit made in Confluence on every later run.
+//
+// A login page that is only told by its HTML is checked the same way. Behind
+// an SSO proxy that is all one is, and the write did not happen; the page is
+// then not at version, or cannot be read either, and err stands.
+func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int64, err error) error {
+	if !unreadableAnswer(err) {
+		return err
 	}
+
+	settled, release := withGrace(ctx, nil)
+	defer release()
+
+	current, readErr := api.currentPageVersion(settled, page)
+	if readErr != nil || current != version {
+		return err
+	}
+
+	log.Warn().Err(err).Msgf(
+		"page %q (%s) is at version %d, the one the write created, so it was applied; "+
+			"something in front of Confluence answered it instead",
+		page.Title, page.ID, version,
+	)
 
 	return nil
 }
@@ -2857,11 +2889,11 @@ func (api *API) reparentContentV1(ctx context.Context, page *PageInfo, parentID 
 	_, err := api.v1.do(
 		ctx, nil, http.MethodPut, []string{"content", page.ID}, nil, payload, &struct{}{},
 	)
-	if err != nil {
-		return requestError(fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err)
-	}
 
-	return nil
+	return api.confirmVersion(
+		ctx, page, nextVersion,
+		requestError(fmt.Sprintf("move page %q (%s)", page.Title, page.ID), err),
+	)
 }
 
 func (api *API) moveContent(ctx context.Context, contentID, position, targetID string) error {

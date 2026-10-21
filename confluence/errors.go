@@ -259,11 +259,31 @@ func requestError(operation string, err error) error {
 			"unable to %s: %s answered %s with a body that is not JSON "+
 				"(an SSO login page or a proxy interstitial in front of Confluence is the "+
 				"usual cause): %w",
-			operation, requestTarget(body.answer), body.answer.Status, body.err,
+			operation, requestTarget(body.answer), body.answer.Status, err,
 		)
 	}
 
 	return fmt.Errorf("unable to %s: %w", operation, err)
+}
+
+// unreadableAnswer reports whether err is a 2xx that was not the answer do
+// expected -- a body that is not JSON, or a login page told by nothing but its
+// HTML -- rather than a refusal: an answer that may come from something in
+// front of Confluence, which says nothing either way about whether a write
+// was applied.
+func unreadableAnswer(err error) bool {
+	if err == nil || IsCancellation(err) {
+		return false
+	}
+
+	var login *loginPageError
+	if errors.As(err, &login) {
+		return !login.strong
+	}
+
+	var body *bodyError
+
+	return errors.As(err, &body)
 }
 
 // bodyError is a 2xx whose body is not the one JSON value do expected: one

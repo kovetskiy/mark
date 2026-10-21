@@ -521,11 +521,11 @@ func (api *API) updatePageV2(
 	_, err := api.v2.do(
 		ctx, nil, http.MethodPut, []string{v2Collection(page.Type), page.ID}, nil, payload, &struct{}{},
 	)
-	if err != nil {
-		return requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err)
-	}
 
-	return nil
+	return api.confirmVersion(
+		ctx, page, nextVersion,
+		requestError(fmt.Sprintf("update page %q (%s)", page.Title, page.ID), err),
+	)
 }
 
 // setPagePropertiesV2 writes the properties v1 would have carried inside the
