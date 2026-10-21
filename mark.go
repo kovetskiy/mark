@@ -663,10 +663,10 @@ func run(ctx context.Context, config Config) (err error) {
 		// Under the same detached context as the save on the way out, and for
 		// the same reason. Under ctx, a run stopped while its last file
 		// published (with --continue-on-error), or a signal arriving during
-		// this save, had it refused and reported as not saved -- and the
-		// deferred save then wrote the manifest after all, leaving the report
-		// and the returned error saying otherwise. Nothing after this point
-		// talks to Confluence but that deferred save, which this makes a
+		// this save, would have it refused and reported as not saved -- while
+		// the deferred save then writes the manifest after all, leaving the
+		// report and the returned error saying otherwise. Nothing after this
+		// point talks to Confluence but that deferred save, which this makes a
 		// no-op whenever this one succeeds.
 		if saveErr = tracker.Save(context.WithoutCancel(ctx)); saveErr != nil {
 			saveErr = fmt.Errorf("unable to save page manifest: %w", saveErr)

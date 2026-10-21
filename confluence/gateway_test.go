@@ -369,9 +369,9 @@ func TestGatewayGetPageByIDWithoutBlogpostScopes(t *testing.T) {
 
 // TestGatewayUpdateFinishesItsPropertiesWhenTheRunStops: through the gateway,
 // the properties go in after the content, in requests of their own. A run
-// stopped between the two failed an update whose new version already existed,
-// so it was never recorded, and --no-overwrite then took the page for one
-// edited in Confluence on every later run.
+// stopped between the two would fail an update whose new version already
+// exists, so it would not be recorded, and --no-overwrite would then take the
+// page for one edited in Confluence on every later run.
 func TestGatewayUpdateFinishesItsPropertiesWhenTheRunStops(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	server.AddPage("DOCS", "Doc", "page", "")

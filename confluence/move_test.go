@@ -536,8 +536,8 @@ func TestActionErrorsReadsEveryShape(t *testing.T) {
 
 // TestMovePageActionRefusalIsReadUnderAnyContentType: movepage.action is an
 // XWork action, not a REST endpoint, and its JSON does not always say it is
-// JSON. Refused under text/javascript, the reason was thrown away with the
-// body, and the move was waited on before it was reported without it.
+// JSON. A refusal under text/javascript is read for its reason like any
+// other, rather than thrown away with the body and waited on as a move.
 func TestMovePageActionRefusalIsReadUnderAnyContentType(t *testing.T) {
 	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
 		if r.URL.Path == "/pages/movepage.action" {

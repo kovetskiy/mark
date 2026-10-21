@@ -13,9 +13,9 @@ import (
 
 // TestCancellingTheCloudProbeIsNotAFolderRefusal: on a host that does not name
 // itself Cloud, a file with folders asks the server which platform it is. A
-// cancellation that cut that question short used to be read as "not Cloud",
-// and the file failed saying folders need Cloud -- wrong, and not an error
-// errors.Is recognises as the cancellation ProcessFileContext promises.
+// cancellation that cuts that question short is not "not Cloud": failing the
+// file saying folders need Cloud would be wrong, and not an error errors.Is
+// recognises as the cancellation ProcessFileContext promises.
 func TestCancellingTheCloudProbeIsNotAFolderRefusal(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()

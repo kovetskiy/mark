@@ -126,12 +126,12 @@ extensions if applicable), add it to the `Usage` string of the `features` flag i
 `util/flags.go`, and document it in `README.md`.
 
 **9. Everything is sequential today, and one thing still relies on that.**
-Those that used to be named here are done: the folder cache in `page/ancestry.go` sits
-behind an `RWMutex` (`page/concurrency_test.go` races it on purpose), `confluence.API`'s
-Cloud probe runs under a mutex held for the whole probe, and the context is no longer
-held by the API at all: every `confluence.API` method that makes a request takes
-`ctx context.Context` first, and so does everything above it that makes one later
-(`manifest.Store`, `page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
+The folder cache in `page/ancestry.go` sits behind an `RWMutex`
+(`page/concurrency_test.go` races it on purpose), `confluence.API`'s Cloud probe runs
+under a mutex held for the whole probe, and the API holds no context: every
+`confluence.API` method that makes a request takes `ctx context.Context` first, and so
+does everything above it that makes one later (`manifest.Store`,
+`page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
 What is genuinely single-threaded is `page.LinkChecker`: `MissingPages` reads
 `len(c.pending)` before taking the mutex and then reads the map itself after releasing it
 (`page/check.go`). Anything that introduces concurrency across files has to fix that

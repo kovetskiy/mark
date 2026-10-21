@@ -89,7 +89,7 @@ type reply struct {
 //
 //   - Path: each element of path is escaped as one segment and joined to the
 //     base path with "/". An empty last element leaves a trailing slash, as
-//     "content/" always has. The base's own query is dropped.
+//     "content/" needs. The base's own query is dropped.
 //   - Query: encoded with url.Values.Encode, so keys are sorted and spaces
 //     become "+". A nil or empty query sends none.
 //   - Auth: basic auth when a username was given, otherwise "Authorization:

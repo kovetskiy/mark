@@ -358,10 +358,9 @@ func TestClientBoundsAFailureBody(t *testing.T) {
 }
 
 // TestClientKeepsAFailureWhoseBodyIsCutShort: a status of 400 or more is an
-// answer even when its body could not be read to the end, as it was under
-// gopencils. Callers act on the status -- a 404 is "not found", a 409 a
-// conflict to retry -- and a read error in its place turned every one of
-// those into a transport failure.
+// answer even when its body could not be read to the end. Callers act on the
+// status -- a 404 is "not found", a 409 a conflict to retry -- and a read
+// error in its place would turn every one of those into a transport failure.
 func TestClientKeepsAFailureWhoseBodyIsCutShort(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Promise more than is sent, so the read ends in io.ErrUnexpectedEOF.
@@ -784,8 +783,9 @@ func TestClientLetsASentWriteFinish(t *testing.T) {
 }
 
 // TestGetAndSendRefuseAnEmptyAnswer: do takes an empty 2xx for success, but a
-// call asked for a value gets none from it. A zero PageInfo in its place was
-// cached as the page, and the run went on to send requests to "content/".
+// call asked for a value gets none from it. A zero PageInfo in its place would
+// be cached as the page, and the run would go on to send requests to
+// "content/".
 func TestGetAndSendRefuseAnEmptyAnswer(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusNoContent} {
 		c, _ := clientServer(t, "/rest/api", "user", "token", status, "application/json", "")
@@ -866,7 +866,8 @@ func TestClientCutsShortAWriteBackoff(t *testing.T) {
 
 // TestGetAndSendRefuseAnAnswerNamingNoID: "null" and "{}" decode, into a page
 // as empty as no body at all. A page or folder Confluence answers with always
-// has its ID, and one without was cached and then sent requests to "content/".
+// has its ID, and one without would be cached and then sent requests to
+// "content/".
 func TestGetAndSendRefuseAnAnswerNamingNoID(t *testing.T) {
 	for _, body := range []string{`null`, `{}`, `{"title":"Untitled"}`} {
 		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "application/json", body)

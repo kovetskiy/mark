@@ -172,8 +172,8 @@ func readOnly(method string) bool {
 // Nor is a timeout retried, a read's included. The response header and dial
 // timeouts are what stop a run against a server that accepts the connection
 // and goes quiet, or one that cannot be reached at all; each attempt waits the
-// whole timeout out, so retrying them made a hung Confluence cost every read
-// four times as long -- about eight minutes rather than two -- before it
+// whole timeout out, so retrying them would make a hung Confluence cost every
+// read four times as long -- about eight minutes rather than two -- before it
 // failed. What is retried is a failure that comes at once: a connection reset
 // or closed under the request.
 func retryableError(err error, req *http.Request) bool {

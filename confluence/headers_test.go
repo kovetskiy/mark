@@ -12,16 +12,10 @@ import (
 )
 
 // TestResponseHeadersDoNotLeakIntoLaterRequests pins the class of bug where one
-// response's headers are echoed back on every request that follows it.
-//
-// gopencils hands the same http.Header map to a resource and to everything
-// Res() derives from it, and after each response copies that response's headers
-// into the map with Add. With the Authorization header installed on the root
-// resource -- which is what a Personal Access Token used to do -- that map
-// lived for the whole run. Because gopencils sends the *first* value ever
-// recorded for a key, a single odd Content-Type on any sub-400 response pinned
-// that Content-Type on every later PUT and POST body, and Confluence rejects a
-// storage-format update announced as anything but application/json.
+// response's headers are echoed back on every request that follows it: a
+// single odd Content-Type on any sub-400 response would then be pinned on
+// every later PUT and POST body, and Confluence rejects a storage-format
+// update announced as anything but application/json.
 func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	var (
 		putContentType string

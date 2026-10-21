@@ -118,10 +118,10 @@ func TestLinkCheckerOffAsksNothing(t *testing.T) {
 	assert.Zero(t, atomic.LoadInt64(&requests))
 }
 
-// TestCheckExternalStopsWithTheRun: a link check carries the run's context.
-// It used not to, so a stopped run first waited out every external link left
-// on the page, HEAD and then GET, each up to the client's timeout. Nor is a
-// check that ended with the run remembered as the link's answer.
+// TestCheckExternalStopsWithTheRun: a link check carries the run's context,
+// so a stopped run does not first wait out every external link left on the
+// page, HEAD and then GET, each up to the client's timeout. Nor is a check
+// that ended with the run remembered as the link's answer.
 func TestCheckExternalStopsWithTheRun(t *testing.T) {
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

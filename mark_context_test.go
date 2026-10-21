@@ -139,8 +139,8 @@ func TestRunContextStopsARunBlockedOnASlowRequest(t *testing.T) {
 // TestContinueOnErrorDoesNotSwallowACancellation: with --continue-on-error a
 // failed file is logged and the run moves on, but a file that failed because
 // the run was cancelled is not a file failure. Cancelled while the last file
-// publishes, the run used to carry on past it and end by reporting that some
-// files failed, rather than that it was stopped.
+// publishes, the run reports that it was stopped, not that some files
+// failed.
 func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
@@ -190,10 +190,9 @@ func findPageTitled(t *testing.T, server *confluencetest.Server, title string) *
 // TestACancelledExplicitManifestSaveIsNotReportedOnceSaved: under
 // --continue-on-error a run cancelled while its last file publishes still
 // reaches the explicit save at the end. Made under the run's own context, that
-// save was refused before it was sent and went into the report and the error;
-// the save on the way out then wrote the manifest under a detached context,
-// and nothing took the complaint back, so the report said a manifest that had
-// been saved was not.
+// save would be refused before it was sent and go into the report and the
+// error, while the save on the way out wrote the manifest under a detached
+// context -- so the report would say a manifest that had been saved was not.
 func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()

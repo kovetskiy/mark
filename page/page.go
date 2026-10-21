@@ -49,9 +49,9 @@ func resolvePage(
 	}
 	if len(meta.Folders) > 0 {
 		// Not IsCloud: a probe cut short by a cancellation answers false as
-		// well, and refusing the folders over it named the wrong problem and
-		// hid the cancellation from errors.Is. Any other failure to identify
-		// the target is still taken for "not Cloud", as IsCloud has it.
+		// well, and refusing the folders over it would name the wrong problem
+		// and hide the cancellation from errors.Is. Any other failure to
+		// identify the target is still taken for "not Cloud", as IsCloud has it.
 		isCloud, err := api.Cloud(ctx)
 		if confluence.IsCancellation(err) {
 			return nil, nil, false, fmt.Errorf("unable to tell whether folders are supported: %w", err)

@@ -1748,10 +1748,10 @@ func (api *API) IsCloud(ctx context.Context) bool {
 // The probe runs with the ctx of the call that finds the answer unknown.
 //
 // Not a sync.Once, because a probe cut short by its context is not an
-// answer: Once would have remembered it as "could not identify" for the rest
-// of the API's life, and an API reused after a cancelled ProcessFileContext
-// would have taken Cloud for Server from then on. A cancelled probe answers
-// for that call only, and the next call asks again.
+// answer, and Once would remember it as "could not identify" for the rest of
+// the API's life: an API reused after a cancelled ProcessFileContext would
+// take Cloud for Server from then on. A cancelled probe answers for that call
+// only, and the next call asks again.
 func (api *API) Cloud(ctx context.Context) (bool, error) {
 	api.isCloudMutex.Lock()
 	defer api.isCloudMutex.Unlock()
@@ -2217,11 +2217,10 @@ func (api *API) fetchSpaceID(ctx context.Context, spaceKey string) (string, erro
 	// asked for a filtered collection.
 	//
 	// The response is decoded into SpaceInfo rather than a struct declared
-	// here. The local one typed `id` as a string, but v1 returns it as a JSON
-	// *number*, so the decode failed on every single call, the client returned
-	// the error, and this branch was skipped every time -- making the v2
-	// "fallback" below the only path that had ever run. SpaceInfo already types
-	// the field correctly and is exercised against real Confluence by
+	// here: v1 returns `id` as a JSON *number*, and a string-typed one fails
+	// to decode on every call, which skips this branch and leaves the v2
+	// "fallback" below the only path that runs. SpaceInfo already types the
+	// field correctly and is exercised against real Confluence by
 	// FindHomePage, so there is no reason for a second, divergent shape.
 	//
 	// v2 keeps its own string-typed struct: the two APIs genuinely disagree
@@ -2482,10 +2481,10 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		)
 	}
 
-	// Through get, so that an empty answer is an error: it left the target
-	// with no space and no ancestors, so an ordering reported the target as
-	// at the root of its space, and an append asked the action -- a write --
-	// to move the page under a title and space of "".
+	// Through get, so that an empty answer is an error: it would leave the
+	// target with no space and no ancestors, so an ordering would report the
+	// target as at the root of its space, and an append would ask the action
+	// -- a write -- to move the page under a title and space of "".
 	target, err := get[struct {
 		Title string `json:"title"`
 		Space struct {
@@ -2538,8 +2537,8 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		&whateverContentType{out: &answer},
 	)
 	// A response cut short by the run's context is no answer from the action,
-	// however much of it arrived: judged here, a cancelled move was taken for
-	// a closed action and remembered for the rest of the API's life.
+	// however much of it arrived: judged here, a cancelled move would be taken
+	// for a closed action and remembered for the rest of the API's life.
 	if response == nil || IsCancellation(err) {
 		return false, requestError(fmt.Sprintf("move content %s %s %s", contentID, position, targetID), err)
 	}

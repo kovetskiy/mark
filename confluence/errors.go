@@ -53,15 +53,14 @@ func (e *StatusError) Message() string {
 	return confluenceMessage(e.Body)
 }
 
-// Error words the status the way mark always has: what answered, and for
-// most statuses what it said. The URL is part of every one of these. mark
-// makes several calls per page, and a status on its own does not say which of
-// them refused.
+// Error words the status: what answered, and for most statuses what it said.
+// The URL is part of every one of these. mark makes several calls per page,
+// and a status on its own does not say which of them refused.
 func (e *StatusError) Error() string {
 	const prefix = "the Confluence API returned unexpected status: "
 
-	// The statuses errors.Is matches, and 401, are worded the way mark
-	// always has; any other is net/http's own.
+	// The statuses errors.Is matches, and 401, have a label of their own;
+	// any other is net/http's.
 	label := e.Status
 	switch e.StatusCode {
 	case http.StatusUnauthorized:
@@ -215,10 +214,10 @@ func requestTarget(response *reply) string {
 // A StatusError already says what answered and how, and is returned as it
 // is. A login page, which is what a Confluence behind SSO answers an API call
 // with, is put in terms of the operation and of where to look; so is a 2xx
-// whose body does not parse, which used to reach the user as `invalid
-// character '<' looking for beginning of value`: no URL, no status, and no
-// page name. Anything else -- no answer at all, or a cancelled one -- has
-// nothing to add beyond what the request was trying to do.
+// whose body does not parse, whose decode error alone -- `invalid character
+// '<' looking for beginning of value` -- names no URL, no status and no page.
+// Anything else -- no answer at all, or a cancelled one -- has nothing to add
+// beyond what the request was trying to do.
 func requestError(operation string, err error) error {
 	if err == nil {
 		return nil

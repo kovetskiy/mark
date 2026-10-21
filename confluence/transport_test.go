@@ -425,9 +425,8 @@ func TestRoundTripDoesNotRetryTransportErrorOnPost(t *testing.T) {
 		"the write may already have been committed, so it must not be replayed")
 }
 
-// TestNewHTTPClientHasCookieJar guards the regression that made
-// --insecure-skip-tls-verify behave differently from the default: gopencils
-// only creates a jar when it is not handed a client.
+// TestNewHTTPClientHasCookieJar: --insecure-skip-tls-verify keeps session
+// cookies just as the default does.
 func TestNewHTTPClientHasCookieJar(t *testing.T) {
 	for _, insecure := range []bool{false, true} {
 		client := newHTTPClient(insecure)
