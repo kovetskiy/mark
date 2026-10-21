@@ -55,6 +55,4 @@ release:
 
 Reviewed by the team.
 
-```
-plain  preformatted
-```
+<pre>plain  preformatted</pre>

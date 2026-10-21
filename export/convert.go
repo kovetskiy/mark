@@ -81,7 +81,7 @@ func Convert(storage string, opts Options) (*Document, error) {
 		}
 	}
 
-	markdown := strings.TrimSpace(c.blocks(children, blockContext{root: true}))
+	markdown := strings.Trim(c.blocks(children, blockContext{root: true}), " \t\r\n")
 	if markdown != "" {
 		doc.Markdown = markdown + "\n"
 	}

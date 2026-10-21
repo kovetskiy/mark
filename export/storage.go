@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/kovetskiy/mark/v16/stdlib"
 )
 
 // node is one piece of a page's storage format: an element, or the text inside
@@ -42,6 +44,10 @@ type attr struct {
 // element of its own and each name is kept as its prefix and local part. HTML
 // entities (&nbsp;, &rsquo;) are storage format's own and are resolved.
 func parseStorage(body string) (*node, error) {
+	// encoding/xml refuses a control character, raw or as a reference, and
+	// so would Confluence on publishing it back.
+	body, _ = stdlib.SanitizeMarkup(body)
+
 	root, err := decodeStorage(body, true)
 	if err == nil {
 		return root, nil
@@ -73,6 +79,10 @@ func decodeStorage(body string, strict bool) (*node, error) {
 	current := root
 	opened := false
 
+	// Token resolves a declared prefix to its namespace, and the name is
+	// written back with the prefix it was written with.
+	prefixes := map[string]string{xmlNamespace: "xml"}
+
 	for {
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
@@ -89,9 +99,18 @@ func decodeStorage(body string, strict bool) (*node, error) {
 				continue
 			}
 
-			element := &node{kind: elementNode, name: qualifiedName(t.Name), parent: current}
 			for _, a := range t.Attr {
-				element.attrs = append(element.attrs, attr{name: qualifiedName(a.Name), value: a.Value})
+				switch {
+				case a.Name.Space == "xmlns":
+					prefixes[a.Value] = a.Name.Local
+				case a.Name.Space == "" && a.Name.Local == "xmlns":
+					prefixes[a.Value] = ""
+				}
+			}
+
+			element := &node{kind: elementNode, name: qualifiedName(t.Name, prefixes), parent: current}
+			for _, a := range t.Attr {
+				element.attrs = append(element.attrs, attr{name: qualifiedName(a.Name, prefixes), value: a.Value})
 			}
 			current.children = append(current.children, element)
 			current = element
@@ -119,12 +138,20 @@ func decodeStorage(body string, strict bool) (*node, error) {
 	return root, nil
 }
 
-func qualifiedName(name xml.Name) string {
-	if name.Space == "" {
+const xmlNamespace = "http://www.w3.org/XML/1998/namespace"
+
+// qualifiedName is a name as it was written: with its prefix, which is all an
+// undeclared one -- ac:, ri: -- is ever resolved to.
+func qualifiedName(name xml.Name, prefixes map[string]string) string {
+	prefix, declared := prefixes[name.Space]
+	if !declared {
+		prefix = name.Space
+	}
+	if prefix == "" {
 		return name.Local
 	}
 
-	return name.Space + ":" + name.Local
+	return prefix + ":" + name.Local
 }
 
 func lastChild(n *node) *node {

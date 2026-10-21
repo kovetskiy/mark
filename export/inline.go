@@ -6,6 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kovetskiy/mark/v16/renderer"
 	"github.com/kovetskiy/mark/v16/transformer"
 )
 
@@ -193,8 +194,11 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 
 	opens := !isPunct(first) || isSpaceOrPunct(w.lastRune())
 	closes := !isPunct(last) || isSpaceOrPunct(next)
+	// Right after the same delimiter, as in <strong>a</strong><strong>b</strong>,
+	// the two runs would read as one.
+	adjacent := w.lastRune() == rune(delimiter[0])
 
-	if opens && closes && !strings.Contains(core, "\n") {
+	if opens && closes && !adjacent && !strings.Contains(core, "\n") {
 		w.write(delimiter + core + delimiter)
 	} else {
 		w.write("<" + tag + ">" + core + "</" + tag + ">")
@@ -248,6 +252,12 @@ func followingRune(n *node) rune {
 func (w *inlineWriter) codeSpan(n *node) {
 	content := strings.ReplaceAll(n.textContent(), "\n", " ")
 	if content == "" {
+		return
+	}
+
+	// Right after another code span the backticks would run together.
+	if w.lastRune() == '`' {
+		w.raw(n)
 		return
 	}
 
@@ -480,10 +490,9 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 			return "", false
 		}
 
-		// mark reads the part after the last "#" as an anchor when it looks
-		// like one, so a title that ends in such a part cannot be written.
-		if at := strings.LastIndex(title, "#"); at > 0 && at < len(title)-1 &&
-			!strings.ContainsFunc(title[at+1:], unicode.IsSpace) {
+		// A title mark would split into a title and an anchor cannot be
+		// written.
+		if _, misread := renderer.SplitPageAnchor(title); misread != "" {
 			return "", false
 		}
 		if strings.ContainsFunc(anchor, unicode.IsSpace) {
