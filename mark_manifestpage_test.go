@@ -98,7 +98,7 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	assert.Nil(t, runbook, "refused before anything was published to the second space")
 
 	assert.NotNil(t,
-		server.SpaceProperty(handbook.ID, manifest.PropertyKey(manifest.ShardFor(filepath.Join(dir, "a.md")))),
+		server.SpaceProperty(handbook.ID, manifest.PropertyKey(manifest.ShardFor(filepath.ToSlash(filepath.Join(dir, "a.md"))))),
 		"the first space's mapping is saved")
 }
 
