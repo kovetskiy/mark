@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/chrome"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/rs/zerolog/log"
 
 	"github.com/d2lang/d2/d2graph"

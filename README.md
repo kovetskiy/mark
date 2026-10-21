@@ -1910,7 +1910,7 @@ brew install mark
 ### Go Install
 
 ```bash
-go install github.com/kovetskiy/mark/v16/cmd/mark@latest
+go install github.com/kovetskiy/mark/v17/cmd/mark@latest
 ```
 
 ### Releases

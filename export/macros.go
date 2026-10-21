@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/renderer"
+	"github.com/kovetskiy/mark/v17/renderer"
 )
 
 // macro renders a structured macro that stands on its own.

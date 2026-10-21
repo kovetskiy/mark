@@ -12,8 +12,8 @@ import (
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/chrome"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

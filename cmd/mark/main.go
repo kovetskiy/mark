@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/kovetskiy/mark/v16/util"
+	"github.com/kovetskiy/mark/v17/util"
 	"github.com/rs/zerolog/log"
 )
 

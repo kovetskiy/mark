@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
-	"github.com/kovetskiy/mark/v16/report"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"

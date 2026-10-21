@@ -10,8 +10,8 @@ import (
 	"text/template"
 	"text/template/parse"
 
-	"github.com/kovetskiy/mark/v16/includes"
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
