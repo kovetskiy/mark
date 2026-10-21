@@ -310,9 +310,8 @@ func TestEncodeTinyLinkIDLargeIDs(t *testing.T) {
 }
 
 // TestHeadingAnchorReadsTheAttributeBlock: the ids another document's headings
-// are matched against are the ones its page gets. headingIDs parsed without
-// the attribute block, so "## Other {#custom}" was "Other-custom" here and
-// "custom" on the page, and a link to api.md#custom went nowhere.
+// are matched against are the ones its page gets, attribute blocks included,
+// so a link to api.md#custom finds "## Other {#custom}".
 func TestHeadingAnchorReadsTheAttributeBlock(t *testing.T) {
 	document := []byte("## Other {#custom}\n\n## GET /users/{id}\n")
 

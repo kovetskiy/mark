@@ -1,9 +1,8 @@
 // Package goldmarktest builds the parser and renderer pair the tests of the
 // goldmark extensions in this repository convert Markdown with.
 //
-// goldmark v2 has no goldmark.Markdown: a parser.Parser and an html.Renderer
-// are built and called separately. The tests were written against the one
-// object, and keep reading as they did through this one.
+// goldmark builds and calls a parser.Parser and an html.Renderer separately;
+// this pairs them, so that a test configures and converts in one call.
 package goldmarktest
 
 import (

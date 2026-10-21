@@ -33,9 +33,8 @@ func TestExtractDocumentLeadingH1(t *testing.T) {
 }
 
 // TestExtractDocumentLeadingH1KeepsInlineCode: the title is the heading's
-// text as written, inline code included. goldmark v2 keeps a code span's text
-// on the span rather than in Text children; the expected titles are what v1
-// produced, since the title is how an existing page is found again.
+// text as written, inline code included: the title is how an existing page is
+// found again.
 func TestExtractDocumentLeadingH1KeepsInlineCode(t *testing.T) {
 	for source, want := range map[string]string{
 		"# Only `x`\n":                  "Only x",

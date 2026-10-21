@@ -42,9 +42,9 @@ type MathBlock struct {
 	// Value holds the lines between the fences as goldmark recorded them.
 	//
 	// Kept here rather than as the block's Source, which is what goldmark
-	// parses inlines from. Parsed, the formula was published as its picture and
-	// then again, immediately after it, as the TeX source; a code block keeps
-	// its body out of Source for the same reason.
+	// parses inlines from. Parsed, the formula would be published as its
+	// picture and then again, immediately after it, as the TeX source; a code
+	// block keeps its body out of Source for the same reason.
 	Value text.Lines
 
 	// fence is the pair of markers this block was opened with, so the closer

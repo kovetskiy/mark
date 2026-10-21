@@ -172,11 +172,10 @@ Body.
 }
 
 // TestHeaderScanSkipsAClosingLine pins the header scan on a comment that spans
-// lines, to what the goldmark v1 code did with each: goldmark v1 left the line
-// that closed a comment out of the block's lines, and the scan reads the block
-// a line at a time. The first line of such a comment is never a header, as a
-// header line holds the "-->" that would have closed it there, so the scan
-// stops on it either way; these pin that it goes on doing so.
+// lines: the scan reads the block a line at a time, without the line that
+// closed it. The first line of such a comment is never a header, as a header
+// line holds the "-->" that would have closed it there, so the scan stops on
+// it either way.
 func TestHeaderScanSkipsAClosingLine(t *testing.T) {
 	for _, tc := range []struct {
 		name, input, title, space, body string

@@ -9,7 +9,7 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// Every Confluence renderer here is an html.Extension: goldmark v2 has no
+// Every Confluence renderer here is an html.Extension: goldmark has no
 // prioritised node renderers, only a node kind -> renderer map that each
 // extension's RendererOptions writes into in turn. html.New registers its own
 // CommonMark renderers first, so an extension given to it afterwards replaces

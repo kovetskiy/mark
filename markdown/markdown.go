@@ -29,7 +29,7 @@ import (
 // ConfluenceLegacyExtension is the original goldmark extension without GitHub Alerts support
 // This extension is preserved for backward compatibility and testing purposes
 //
-// It is a goldmark parser.Extension and html.Extension at once: goldmark v2
+// It is a goldmark parser.Extension and html.Extension at once: goldmark
 // takes the two halves separately, the first to parser.New and the second to
 // html.New.
 type ConfluenceLegacyExtension struct {
@@ -55,11 +55,11 @@ func (c *ConfluenceLegacyExtension) Attach(a attachment.Attachment) {
 
 // RendererOptions implements html.Extension.
 //
-// goldmark v2 keeps one renderer per node kind and lets the last registration
+// goldmark keeps one renderer per node kind and lets the last registration
 // for a kind win: html.New puts its own CommonMark renderers in first, then
 // every extension in the order it was given. These come after goldmark's own
 // table and strikethrough renderers, so they replace html.New's for every kind
-// they name, which is what the smaller priority number did in v1.
+// they name.
 func (c *ConfluenceLegacyExtension) RendererOptions(cfg *html.Config) []html.Option {
 	renderers := []html.Extension{
 		ctransformer.NewHTMLRenderer(),
@@ -616,7 +616,7 @@ func (c *ConfluenceExtension) Attach(a attachment.Attachment) {
 // legacy extension's do.
 func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 	renderers := []html.Extension{
-		// The nodes the transformers stand in for goldmark v1's with.
+		// The String and TextBlock nodes the transformers build.
 		ctransformer.NewHTMLRenderer(),
 
 		// Core renderers (excluding blockquote and text which are replaced below)

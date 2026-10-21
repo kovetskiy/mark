@@ -204,9 +204,8 @@ func parseAdmonitionOpeningLine(reader text.Reader, left int) *Admonition {
 
 	if ok {
 		for _, attribute := range attributes {
-			// goldmark v2 reads every attribute value as text: {width=5} is
-			// "5" and {open=true} is "true", where v1 handed back a number and
-			// a bool for this parser to spell out.
+			// goldmark reads every attribute value as text: {width=5} is "5"
+			// and {open=true} is "true".
 			if !admonitionAttributeIsText(attribute, reader.Source()) {
 				continue
 			}
@@ -231,10 +230,9 @@ func parseAdmonitionOpeningLine(reader text.Reader, left int) *Admonition {
 }
 
 // admonitionAttributeIsText reports whether an attribute value is one an HTML
-// attribute can carry. goldmark v1 read an unquoted [1,2] as a list, {a=b} as
-// a nested object and null as nothing, none of which has a spelling an HTML
-// attribute could carry, so they were left out; v2 reads every value as text,
-// and these are still left out.
+// attribute can carry: an unquoted [1,2], {a=b} or null is a list, an object
+// or nothing, written in a syntax an HTML attribute has no spelling for, so it
+// is left out.
 func admonitionAttributeIsText(attribute ast.Attribute, source []byte) bool {
 	value := attribute.Value
 	if value.IsOwned() {

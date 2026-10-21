@@ -59,10 +59,9 @@ func headingAnchor(document []byte, fragment string) string {
 // headingIDs lists the ids mark would give the headings of a document, in the
 // order they appear.
 //
-// Parsed with the heading options the publish uses, since an id that is
-// derived differently here would match the wrong heading -- or none: without
-// the attribute block, "## Other {#custom}" was "Other-custom" here and
-// "custom" on the page.
+// Parsed with the heading options the publish uses, attribute blocks
+// included, since an id that is derived differently here would match the
+// wrong heading -- or none.
 func headingIDs(document []byte) []string {
 	md := gparser.New(parser.HeadingOptions()...)
 

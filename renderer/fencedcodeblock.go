@@ -148,7 +148,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) RendererOptions(cfg *html.Config) []
 }
 
 // decorateCodeBlock takes the fenced code blocks for this renderer. goldmark
-// v2 has one node kind for fenced and indented blocks alike, and the indented
+// has one node kind for fenced and indented blocks alike, and the indented
 // ones are left to whichever renderer the kind is registered to -- the
 // ConfluenceCodeBlockRenderer, in both compile paths.
 func (r *ConfluenceFencedCodeBlockRenderer) decorateCodeBlock(next html.NodeRenderer) html.NodeRenderer {

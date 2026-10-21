@@ -10,10 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTightDefinitionDescriptionKeepsItsLaterParagraphs: goldmark v1 made the
-// first paragraph of a tight description a TextBlock and stopped there, so a
-// second paragraph stayed a <p>. Turning every one of them into a TextBlock ran
-// the paragraphs together into one, which Confluence shows as one run of text.
+// TestTightDefinitionDescriptionKeepsItsLaterParagraphs: only the first
+// paragraph of a tight description is a TextBlock. A second stays a <p>,
+// rather than running on into the first as one run of text.
 func TestTightDefinitionDescriptionKeepsItsLaterParagraphs(t *testing.T) {
 	source := []byte("Term\n: first para\n\n    second para\n\n    third para\n")
 	want := "<table>\n<tbody>\n<tr>\n<th>Term</th>\n<td>first para\n<p>second para</p>\n<p>third para</p>\n</td>\n</tr>\n</tbody>\n</table>\n"

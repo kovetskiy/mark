@@ -10,10 +10,8 @@ import (
 )
 
 // TestConstructorsHonourHTMLOptions covers the html options every constructor
-// accepts. Only the HTML block renderer used to apply them; the rest
-// took them and dropped them, so a caller building a renderer by hand and
-// asking for, say, unsafe links or hard wraps got the defaults with nothing to
-// say why.
+// accepts, so that a caller building a renderer by hand and asking for, say,
+// unsafe links or hard wraps gets them.
 //
 // Checked on the Config rather than on rendered output: goldmark hands the
 // options given to the converter to every renderer as well, so a render would

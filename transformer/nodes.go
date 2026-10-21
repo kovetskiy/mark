@@ -13,10 +13,10 @@ import (
 )
 
 // String is an inline node that owns its text: markup written to the page as
-// it stands (Code), or Markdown text decoded and escaped. It stands in for
-// goldmark v1's ast.String, which v2 dropped. A Text or RawHTML node will not
-// do: the <details>, <img> and well-formedness passes rewrite the one, and the
-// paragraph renderer unwraps the other.
+// it stands (Code), or Markdown text decoded and escaped. goldmark has no such
+// node, and a Text or RawHTML node will not do: the <details>, <img> and
+// well-formedness passes rewrite the one, and the paragraph renderer unwraps
+// the other.
 type String struct {
 	ast.BaseInline
 
@@ -62,9 +62,8 @@ func newVerbatim(value []byte) *String {
 }
 
 // TextBlock is a paragraph rendered without a <p>: one of a tight list item or
-// a tight definition description, or the markup an <img> was cut out of.
-// goldmark v1 parsed the first two as a node of their own, which the
-// transformers and renderers here still look for.
+// a tight definition description, or the markup an <img> was cut out of. The
+// transformers and renderers here tell these apart from a paragraph by kind.
 type TextBlock struct {
 	ast.BaseBlock
 }
@@ -148,14 +147,12 @@ func replaceWithTextBlock(paragraph *ast.Paragraph) {
 	paragraph.Parent().ReplaceChild(paragraph, block)
 }
 
-// inTightBlock reports whether goldmark v1 would have parsed paragraph as a
-// TextBlock: a child of an item of a tight list, or the first paragraph of a
-// tight definition description.
+// inTightBlock reports whether paragraph is to be a TextBlock: a child of an
+// item of a tight list, or the first paragraph of a tight definition
+// description.
 //
-// The first only: v1 replaced a description's paragraphs in a loop over its
-// children that moved on through the replaced paragraph's next sibling, which
-// replacing it had cleared. So the loop ended at the first paragraph, and a
-// second one stayed a <p> of its own rather than running on into the first.
+// The first only, so that a second paragraph stays a <p> of its own rather
+// than running on into the first.
 func inTightBlock(paragraph *ast.Paragraph) bool {
 	if description, ok := paragraph.Parent().(*extast.DefinitionDescription); ok {
 		return description.IsTight && !afterAParagraph(paragraph)
@@ -179,7 +176,7 @@ func afterAParagraph(node ast.Node) bool {
 
 // parseSubDocument parses the bytes a macro or an include expanded to, with
 // what the document around them was parsed with that its nodes depend on: the
-// Confluence tag parser, and the tight blocks v1 parsed by itself.
+// Confluence tag parser, and the tight blocks.
 func parseSubDocument(source []byte) ast.Node {
 	return subDocumentParser().Parse(source)
 }
@@ -197,11 +194,11 @@ var subDocumentParser = sync.OnceValue(func() parser.Parser {
 	)
 })
 
-// ShapeTransformers give the tree the shape goldmark v1's parser built, which
-// the transformers and renderers here read: the FootnoteList first, TextBlocks
-// right after, and the footnote backlinks last of all. The FootnoteList goes
-// first because taking a footnote definition out of a list can make the list
-// tight again, as it was in v1. Both compile paths register them.
+// ShapeTransformers give the tree the shape the transformers and renderers
+// here read: the FootnoteList first, TextBlocks right after, and the footnote
+// backlinks last of all. The FootnoteList goes first because taking a footnote
+// definition out of a list can make the list tight again. Both compile paths
+// register them.
 func ShapeTransformers() []util.PrioritizedValue[parser.ASTTransformer] {
 	return []util.PrioritizedValue[parser.ASTTransformer]{
 		util.Prioritized[parser.ASTTransformer](NewFootnoteListTransformer(), 1),

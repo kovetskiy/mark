@@ -18,7 +18,7 @@ type footnoteV1Case struct {
 
 // assertFootnotesAsV1 compiles each case through both compile paths, with the
 // default features and with the parser features on, and expects the body
-// goldmark v1 produced, byte for byte.
+// existing pages were published with, byte for byte.
 func assertFootnotesAsV1(t *testing.T, cases []footnoteV1Case) {
 	t.Helper()
 
@@ -56,10 +56,9 @@ func assertFootnotesAsV1(t *testing.T, cases []footnoteV1Case) {
 	}
 }
 
-// TestFootnoteNumberingMatchesV1 pins the numbers goldmark v1 gave the notes.
-// v1 numbered a note at its first citation as it parsed the inlines, which it
-// did only after every definition had been gathered into one list where the
-// first definition stood, so the citations inside the notes count from there.
+// TestFootnoteNumberingMatchesV1 pins the numbers the notes get: in order of
+// first citation, with the citations inside the notes counted from where the
+// first definition stands.
 func TestFootnoteNumberingMatchesV1(t *testing.T) {
 	assertFootnotesAsV1(t, []footnoteV1Case{
 		{
@@ -187,8 +186,7 @@ func TestFootnoteNumberingMatchesV1(t *testing.T) {
 }
 
 // TestFootnoteListTightnessMatchesV1 pins whether a list holding a footnote
-// definition is tight. v1 took the definition out of the item before the list
-// decided, so a definition alone never made a list loose.
+// definition is tight: a definition alone never makes a list loose.
 func TestFootnoteListTightnessMatchesV1(t *testing.T) {
 	assertFootnotesAsV1(t, []footnoteV1Case{
 		{

@@ -10,11 +10,9 @@ import (
 )
 
 // TestLinkTextIncludesStringNodes: the default path turns an <img> into a
-// String node holding its alt text, and a link's text includes it, as goldmark
-// v1's Node.Text did: for a bare ac: link that text names the page, and it is
-// the link body. NodeText once skipped String nodes, leaving both empty. The
-// legacy path has no <img> transformer and keeps the raw markup as the text.
-// Both expectations are what the v1 code produced for the same input.
+// String node holding its alt text, and a link's text includes it: for a bare
+// ac: link that text names the page, and it is the link body. The legacy path
+// has no <img> transformer and keeps the raw markup as the text.
 func TestLinkTextIncludesStringNodes(t *testing.T) {
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)
@@ -47,11 +45,10 @@ func TestLinkTextIncludesStringNodes(t *testing.T) {
 	}
 }
 
-// TestLinkTextKeepsV1LineBreaks pins a link label broken across lines to what
-// goldmark v1's Node.Text gave: a newline where a soft line break was, nothing
-// where a hard one was, and a code span's own newlines kept as they were
-// written, where goldmark v2's code span value turns them into spaces. Every
-// expectation is what the v1 code produced for the same input, on both paths.
+// TestLinkTextKeepsV1LineBreaks pins a link label broken across lines: a
+// newline where a soft line break is, nothing where a hard one is, and a code
+// span's own newlines kept as written, where its value turns them into
+// spaces. On both paths.
 func TestLinkTextKeepsV1LineBreaks(t *testing.T) {
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)

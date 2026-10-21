@@ -12,7 +12,7 @@ import (
 
 // TestRawContentOutsideTheSourceIsNone: a node that points past the source it
 // is read against -- offsets into a sub-document's bytes, say -- gives no bytes
-// rather than panicking the whole compile, as v1's checks had it.
+// rather than panicking the whole compile.
 func TestRawContentOutsideTheSourceIsNone(t *testing.T) {
 	source := []byte("<b>x</b>")
 	outside := text.NewIndex(4, 40)

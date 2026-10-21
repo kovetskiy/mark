@@ -161,7 +161,7 @@ func (r *ConfluenceEmojiRenderer) renderEmoji(w util.BufWriter, source []byte, n
 
 // emojiShortName is the shortcode as the author spelled it.
 //
-// goldmark-emoji v2 keeps the spelling to itself, but the node sits at the
+// goldmark-emoji keeps the spelling to itself, but the node sits at the
 // ":" the parser was triggered by, and the parser took exactly ":name:" from
 // there. Should the source not say so, the emoji's first shortcode stands in.
 func emojiShortName(n *east.Emoji, source []byte) string {

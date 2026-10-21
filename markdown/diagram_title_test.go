@@ -55,9 +55,8 @@ func TestDiagramWithTitleKeepsCaption(t *testing.T) {
 }
 
 // TestDiagramLeavesTheTextAfterItAlone: a diagram is handed to d2 and mermaid
-// as a slice of the document's own source, and appending its scale onto that
-// slice wrote eight bytes over the start of whatever followed a one-line
-// diagram, so "Next paragraph" was published as "\x00...t paragraph".
+// as a slice of the document's own source, so building its checksum input
+// must not write over whatever follows a one-line diagram.
 func TestDiagramLeavesTheTextAfterItAlone(t *testing.T) {
 	for name, test := range map[string]struct {
 		source string

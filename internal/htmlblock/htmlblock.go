@@ -1,5 +1,5 @@
-// Package htmlblock reads an HTML block's lines the way goldmark v1 handed
-// them out, for the code here that was written against that.
+// Package htmlblock reads an HTML block's content lines, without the line
+// that closed the block.
 package htmlblock
 
 import (
@@ -11,14 +11,13 @@ import (
 
 // Lines returns the lines of an HTML block without the line that closed it.
 //
-// goldmark v1 kept the closing line of a block of kinds 1 to 5 -- the line
-// holding "</script>", "-->", "?>", ">" or "]]>" -- apart from the others, in
-// ClosureLine, and Lines() left it out. goldmark v2 keeps it among the others.
-// A reader that looks at a block line by line, such as the blockquote
-// classifier and the header scan, saw only the lines before it under v1.
+// goldmark keeps the closing line of a block of kinds 1 to 5 -- the line
+// holding "</script>", "-->", "?>", ">" or "]]>" -- among the others. A reader
+// that looks at a block line by line, such as the blockquote classifier and
+// the header scan, wants the lines before it only.
 //
 // The closing line is never the first one: a block whose first line closes it
-// is that one line, and v1 kept it in Lines(). Nor can a line before the last
+// is that one line, and that line is kept. Nor can a line before the last
 // close the block, since it would have ended there; so the last line closed it
 // exactly when it holds the block's closing marker. A block that ran out
 // before closing, at the end of the document or of its container, keeps every

@@ -197,7 +197,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 		_, _ = writer.WriteString("<a href=\"")
 		if r.Unsafe || !html.IsDangerousURL(destination) {
 			// CommonMark escapes and references resolved, then made a URL,
-			// which goldmark v2's URLEscape also makes safe in an attribute.
+			// which goldmark's URLEscape also makes safe in an attribute.
 			_, _ = writer.Write(util.URLEscape([]byte(n.Destination.Value(source))))
 		}
 		_ = writer.WriteByte('"')

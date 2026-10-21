@@ -268,7 +268,8 @@ func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachm
 // imageAlt is the alt text as its text, ready to be escaped once by the
 // template, read the way the title's Value is: written as Markdown it still
 // carries its backslash escapes and entity references, and passing those
-// through put `\&#34;` and `&amp;amp;` on the page where `"` and `&` were meant.
+// through would put `\&#34;` and `&amp;amp;` on the page where `"` and `&` are
+// meant.
 func (r *ConfluenceImageRenderer) imageAlt(n *ast.Image, source []byte) string {
 	var buf bytes.Buffer
 	r.writeAltText(&buf, n, source)

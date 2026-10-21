@@ -10,9 +10,9 @@ import (
 	"github.com/yuin/goldmark/v2/parser"
 )
 
-// TestLines pins the lines of a block to the ones goldmark v1's Lines() held,
-// for each kind of block that has a closing line and for the kinds that end on
-// a blank line instead.
+// TestLines pins the lines of a block, its closing line left out, for each
+// kind of block that has a closing line and for the kinds that end on a blank
+// line instead.
 func TestLines(t *testing.T) {
 	for _, tc := range []struct {
 		name, input string

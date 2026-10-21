@@ -184,7 +184,7 @@ func CodeRegions(data []byte) []Region {
 
 		switch n := node.(type) {
 		case *ast.CodeBlock:
-			// Fenced and indented blocks alike: goldmark v2 has the one node
+			// Fenced and indented blocks alike: goldmark has the one node
 			// for both.
 			lines := n.Value.Segments()
 			if len(lines) == 0 {

@@ -13,12 +13,11 @@ import (
 // derives a heading's id ahead of the publish has to parse with these too, or
 // it derives another id than the page gets.
 //
-// The attribute block is goldmark v2's, less what v1 refused: a name standing
-// alone. v2 takes "{id}" and "{a, b}" for attributes named id, a and b, so the
-// trailing "{id}" of "## GET /users/{id}" -- text, to anyone who wrote it --
-// vanished from the heading and named its anchor "id". A block with a bare
-// name in it stays heading text, as it did under v1; "{#id}", "{.class}" and
-// "{key=value}" are attributes as before.
+// The attribute block is goldmark's, less a name standing alone: goldmark
+// takes "{id}" and "{a, b}" for attributes named id, a and b, but the trailing
+// "{id}" of "## GET /users/{id}" is text to anyone who wrote it. A block with a
+// bare name in it stays heading text; "{#id}", "{.class}" and "{key=value}"
+// are attributes.
 func HeadingOptions() []parser.Option {
 	return []parser.Option{
 		parser.WithAutoHeadingID(),
@@ -153,9 +152,11 @@ func hasBareAttribute(node ast.Node, source []byte) bool {
 }
 
 // anyBare reports whether one of attrs is a name standing alone, rather than
-// "#id", ".class" or "key=value". goldmark v2 gives a bare name a value that is
+// "#id", ".class" or "key=value". goldmark gives a bare name a value that is
 // the name itself, so what comes before the value tells the forms apart: "#",
-// "." or "=" -- the last perhaps with a quote between.
+// "." or "=" -- the last perhaps with a quote between. That depends on how
+// goldmark stores the values, so TestHeadingAttributesTakeNoBareName pins
+// every form.
 func anyBare(attrs []ast.Attribute, source []byte) bool {
 	for _, attr := range attrs {
 		// Two classes merged into one value, which only "." makes.

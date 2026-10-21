@@ -10,10 +10,9 @@ import (
 )
 
 // TestBlockQuoteTypeIgnoresAClosingLine pins the admonition a blockquote
-// opening with a multi-line HTML block becomes. goldmark v1 kept the line that
-// closed the block apart from its other lines, so a marker written there --
-// "Warn -->" -- did not classify the quote; goldmark v2 keeps it among them,
-// and it did. Every expectation is what the v1 code produced, on both paths.
+// opening with a multi-line HTML block becomes: a marker on the line that
+// closes the block -- "Warn -->" -- does not classify the quote, on either
+// path.
 func TestBlockQuoteTypeIgnoresAClosingLine(t *testing.T) {
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)

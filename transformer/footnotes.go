@@ -11,9 +11,9 @@ import (
 )
 
 // The footnote renderer reads the notes gathered into one FootnoteList at the
-// end of the document, with a backlink per citation, as goldmark v1 built
-// them; v2 leaves each definition where it was written. The two transformers
-// below build the list.
+// end of the document, with a backlink per citation, where goldmark leaves
+// each definition where it was written. The two transformers below build the
+// list.
 
 // FootnoteList holds the footnote definitions of a document.
 type FootnoteList struct {
@@ -100,7 +100,7 @@ func NewFootnoteBacklink(index, refCount, refIndex int) *FootnoteBacklink {
 
 // FootnoteListTransformer gathers the footnote definitions into a
 // FootnoteList standing where the first of them was written. It runs before
-// every other transformer, as v1's parser did this while parsing.
+// every other transformer, so that they all see the list.
 type FootnoteListTransformer struct{}
 
 // NewFootnoteListTransformer returns a FootnoteListTransformer.
@@ -163,13 +163,11 @@ func (t *FootnoteListTransformer) Transform(doc *ast.Document, reader text.Reade
 
 // isTightList decides whether list is tight by the rule goldmark's list parser
 // applies when it closes the list: loose if an item but the first follows a
-// blank line, or a block of an item but its first does. goldmark v1 took a
-// footnote definition out of its parent as the definition closed, which is
-// before the list around it closed, so v1 decided without the definition;
-// v2 decides with it, and a definition after a blank line made the list
-// loose. Asked again once the definitions are gone, the rule answers as v1's
-// did. The FootnoteList left where the first definition stood counts, as it
-// did in v1, but it never follows a blank line.
+// blank line, or a block of an item but its first does. goldmark decides with
+// the footnote definitions still in the list, so a definition after a blank
+// line makes it loose; asked again once they are gone, the rule decides by the
+// list's own content. The FootnoteList left where the first definition stood
+// counts, but it never follows a blank line.
 func isTightList(list *ast.List) bool {
 	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
 		if item != list.FirstChild() && hasBlankPreviousLines(item) {
@@ -198,15 +196,13 @@ func hasBlankPreviousLines(node ast.Node) bool {
 	return ok && block.HasBlankPreviousLines()
 }
 
-// renumberFootnoteReferences numbers the citations the way goldmark v1 did,
-// and returns the number each cited label got. v1 numbered a note when its
-// first citation was parsed, and it parsed the inlines only once every
-// definition had been moved into the FootnoteList, so the citations inside
-// the notes count from where the list stands -- the first definition -- and
-// not from where each note was written. v2 numbers them in place, so a
-// definition written ahead of some citations would otherwise renumber the
-// notes. The numbers follow the tree as it is now, in document order, and so
-// does which citation of a note each one is.
+// renumberFootnoteReferences numbers the citations in document order, with
+// the FootnoteList where it stands, and returns the number each cited label
+// got: the citations inside the notes count from where the list stands -- the
+// first definition -- and not from where each note was written. goldmark
+// numbers them in place, so a definition written ahead of some citations
+// would renumber the notes. Which citation of a note each one is follows the
+// same order.
 func renumberFootnoteReferences(doc ast.Node, source []byte) map[string]int {
 	indices := map[string]int{}
 	refCounts := map[string]int{}
@@ -236,8 +232,8 @@ func renumberFootnoteReferences(doc ast.Node, source []byte) map[string]int {
 
 // FootnoteBacklinkTransformer moves the FootnoteList to the end of the
 // document, drops the notes nothing cites, numbers the rest in order and gives
-// each a backlink per citation. It runs after every other transformer, at the
-// priority v1's own footnote transformer had.
+// each a backlink per citation. It runs after every other transformer, so
+// that it numbers the citations they leave.
 type FootnoteBacklinkTransformer struct{}
 
 // NewFootnoteBacklinkTransformer returns a FootnoteBacklinkTransformer.

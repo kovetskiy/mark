@@ -9,11 +9,10 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// goldmark v2 keeps a node's text as a text.Value: a position in the source,
-// or a string the node owns, bound to the decoder that resolves its escapes
-// and entities. Value(source) is the decoded text; Str(source) is the text as
-// written, which is what goldmark v1 handed back as bytes and what every
-// reader in this package was written against.
+// goldmark keeps a node's text as a text.Value: a position in the source, or
+// a string the node owns, bound to the decoder that resolves its escapes and
+// entities. Value(source) is the decoded text; Str(source) is the text as
+// written, which is what the readers in this package expect.
 
 // markdownDecoder resolves backslash escapes and entity and numeric references
 // the way goldmark's parser does, for a value that is Markdown source still to
@@ -81,12 +80,11 @@ func ownedMulti(v text.MultiLineValue, source []byte) text.MultiLineValue {
 	return text.NewMultiLineValueFromString(strings.Clone(v.Str(source)), markdownDecoder)
 }
 
-// NodeText is a node's text as goldmark v1's Node.Text gave it, which the link
-// renderer and resolver were written against: the inline content as written,
-// escapes and entities included, with a newline where a soft line break was
-// and nothing where a hard one was. A code span's text is the source between
-// its backticks with its newlines kept, as v1 had it, where v2's value turns
-// them into spaces.
+// NodeText is a node's text as the link renderer and resolver read it: the
+// inline content as written, escapes and entities included, with a newline
+// where a soft line break is and nothing where a hard one is. A code span's
+// text is the source between its backticks with its newlines kept, where its
+// value would turn them into spaces.
 func NodeText(node ast.Node, source []byte) string {
 	var b strings.Builder
 	writeNodeText(&b, node, source)
@@ -110,7 +108,7 @@ func writeNodeText(b *strings.Builder, node ast.Node, source []byte) {
 		return
 	case *String:
 		// mark's own node for text it built itself, such as an <img>'s alt
-		// text; v1's ast.String gave its value as its text the same way.
+		// text.
 		b.Write(n.Value)
 		return
 	}
@@ -124,9 +122,9 @@ func writeNodeText(b *strings.Builder, node ast.Node, source []byte) {
 	}
 }
 
-// writeCodeSpanText writes a code span's text the way goldmark v1 kept it: the
-// source of each line the span covers, newlines included, with one space or
-// newline taken off each end when both ends have one and the span is not blank.
+// writeCodeSpanText writes a code span's text: the source of each line the
+// span covers, newlines included, with one space or newline taken off each end
+// when both ends have one and the span is not blank.
 func writeCodeSpanText(b *strings.Builder, n *ast.CodeSpan, source []byte) {
 	if n.Value.IsOwned() {
 		b.WriteString(n.Value.Str(source))

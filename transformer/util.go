@@ -148,8 +148,7 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 	case *ast.Text:
 		return valueBytes(t.Value, source)
 	case *ast.CodeSpan:
-		// A span's text is its value in goldmark v2, where v1 kept it on Text
-		// children for the default case below to collect.
+		// A span's text is its value; it has no Text children to collect.
 		return valueBytes(t.Value, source)
 	case *String:
 		return slices.Clip(t.Value)
@@ -203,8 +202,8 @@ func unmovableNode(doc ast.Node) ast.Node {
 	return found
 }
 
-// nodeName names a node's kind as goldmark v1 did, which kept fenced and
-// indented code blocks apart.
+// nodeName names a node's kind for an error message, telling a fenced code
+// block from an indented one, which share a kind.
 func nodeName(n ast.Node) string {
 	if block, ok := n.(*ast.CodeBlock); ok && block.CodeBlockKind == ast.CodeBlockKindFenced {
 		return "FencedCodeBlock"
@@ -218,10 +217,9 @@ func nodeName(n ast.Node) string {
 // refuses, before changing anything, a sub-document holding a node it cannot
 // detach.
 //
-// Text, raw HTML and HTML blocks become Strings, as goldmark v1's ast.String
-// they replace here always did. Everything else that goldmark v2 points into
-// the source -- a link's destination and title, a code span, an attribute --
-// is given its own copy where it stands, since v1 held those as bytes already.
+// Text, raw HTML and HTML blocks become Strings. Everything else that points
+// into the source -- a link's destination and title, a code span, an
+// attribute -- is given its own copy where it stands.
 func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 	if n := unmovableNode(doc); n != nil {
 		return fmt.Errorf("%s %w", nodeName(n), errUnmovableNode)
