@@ -714,15 +714,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 
 	// The api.atlassian.com gateway mounts a site under /ex/confluence/<id>,
-	// and a test that stands in for the gateway uses that base path.
+	// and a test that stands in for the gateway uses that base path. It
+	// proxies the API only, not the site's download servlet.
+	gateway := false
 	if rest, ok := strings.CutPrefix(path, "/ex/confluence/"); ok {
 		_, rest, _ = strings.Cut(rest, "/")
 		path = "/" + rest
+		gateway = true
 	}
 
 	// Attachments are downloaded from the site rather than the API, under the
 	// context the listings name.
-	if rest, ok := strings.CutPrefix(strings.TrimPrefix(path, "/wiki"), "/download/attachments/"); ok {
+	if rest, ok := strings.CutPrefix(strings.TrimPrefix(path, "/wiki"), "/download/attachments/"); ok && !gateway {
 		s.download(w, r, rest)
 		return
 	}
@@ -790,13 +793,17 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		case sub == "child/attachment":
 			s.childAttachment(w, r, id)
 		case strings.HasPrefix(sub, "child/attachment/"):
-			// .../child/attachment/{attachID}/data -- attachment update
+			// .../child/attachment/{attachID}/data -- attachment update, and
+			// .../child/attachment/{attachID}/download -- its content
 			attachID, rest, _ := strings.Cut(strings.TrimPrefix(sub, "child/attachment/"), "/")
-			if rest != "data" {
+			switch rest {
+			case "data":
+				s.updateAttachment(w, r, id, attachID)
+			case "download":
+				s.downloadByID(w, r, id, attachID)
+			default:
 				http.NotFound(w, r)
-				return
 			}
-			s.updateAttachment(w, r, id, attachID)
 		case sub == "child/page":
 			s.childPages(w, r, id)
 		case sub == "child/comment":
@@ -1775,6 +1782,27 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request, rest string) {
 
 	for _, a := range s.attachments {
 		if a.PageID == pageID && a.Filename == filename {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(a.Data)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
+}
+
+// downloadByID serves an attachment's content at the REST download endpoint.
+func (s *Server) downloadByID(w http.ResponseWriter, r *http.Request, pageID, attachID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, a := range s.attachments {
+		if a.PageID == pageID && a.ID == attachID {
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = w.Write(a.Data)
 			return

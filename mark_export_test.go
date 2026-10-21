@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -346,4 +347,113 @@ func TestExportThroughTheGateway(t *testing.T) {
 	logo, err := os.ReadFile(filepath.Join(filepath.Dir(out), "logo.png"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, logo)
+}
+
+// exportPage puts a page with body into a fresh fake Confluence.
+func exportPage(t *testing.T, body string) (*confluencetest.Server, string) {
+	t.Helper()
+
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	page := server.AddPage("DOCS", "Page", "page", home.ID)
+	server.EditPage(page.ID, body)
+
+	return server, page.ID
+}
+
+// TestExportDeclaresOnlyAttachmentsThePageHas: a reference kept as storage
+// format to an attachment the page no longer has is left alone, but not
+// declared: a header naming a file that is not there fails the publish.
+func TestExportDeclaresOnlyAttachmentsThePageHas(t *testing.T) {
+	server, id := exportPage(t,
+		`<table><tbody><tr><td colspan="2"><ac:image><ri:attachment ri:filename="gone.png"/></ac:image>`+
+			`<ac:image><ri:attachment ri:filename="kept.png"/></ac:image></td></tr></tbody></table>`)
+	server.AddAttachmentData(id, "kept.png", []byte("kept"))
+
+	out := filepath.Join(t.TempDir(), "page.md")
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out,
+	})
+	require.NoError(t, err)
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(exported), "<!-- Attachment: kept.png -->")
+	assert.NotContains(t, string(exported), "<!-- Attachment: gone.png -->")
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: out, Output: io.Discard,
+	}), "the export publishes")
+}
+
+// TestExportGivesEveryAttachmentAFile: names that flatten to one local name,
+// or differ only in case, would otherwise share a file, the second download
+// replacing the first.
+func TestExportGivesEveryAttachmentAFile(t *testing.T) {
+	server, id := exportPage(t, `<p><ac:image><ri:attachment ri:filename="a/b.png"/></ac:image>`+
+		`<ac:image><ri:attachment ri:filename="a_b.png"/></ac:image>`+
+		`<ac:image><ri:attachment ri:filename="Image.png"/></ac:image>`+
+		`<ac:image><ri:attachment ri:filename="image.png"/></ac:image></p>`)
+	for _, name := range []string{"a/b.png", "a_b.png", "Image.png", "image.png"} {
+		server.AddAttachmentData(id, name, []byte(name))
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "page.md")
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out,
+	})
+	require.NoError(t, err)
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+	for file, content := range map[string]string{
+		"a_b.png": "a/b.png", "a_b-2.png": "a_b.png", "Image.png": "Image.png", "image-2.png": "image.png",
+	} {
+		assert.Contains(t, string(exported), "("+file+")")
+		data, err := os.ReadFile(filepath.Join(dir, file))
+		require.NoError(t, err, file)
+		assert.Equal(t, content, string(data), file)
+	}
+}
+
+// TestAFailedDownloadWritesNothing: the attachments are moved into place only
+// once every one of them is downloaded, so a retry is not refused for the
+// files a failed export left behind.
+func TestAFailedDownloadWritesNothing(t *testing.T) {
+	server, id := exportPage(t, `<p><ac:image><ri:attachment ri:filename="first.png"/></ac:image>`+
+		`<ac:image><ri:attachment ri:filename="second.png"/></ac:image></p>`)
+	server.AddAttachmentData(id, "first.png", []byte("first"))
+	server.AddAttachmentData(id, "second.png", []byte("second"))
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusNotFound, `{}`, strings.HasSuffix(r.URL.Path, "/second.png")
+	})
+
+	dir := t.TempDir()
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token", PageID: id,
+		Output: filepath.Join(dir, "page.md"),
+	})
+	require.Error(t, err)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+// TestExportKeepsTheMaxAppearance: an appearance mark publishes is written
+// back, so that publishing the export does not make the page full width.
+func TestExportKeepsTheMaxAppearance(t *testing.T) {
+	server, id := exportPage(t, `<p>Body.</p>`)
+	setContentProperty(t, confluence.NewAPI(server.URL, "user", "token", false), id,
+		"content-appearance-published", `"max"`)
+
+	var stdout bytes.Buffer
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Stdout: &stdout,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "<!-- Content-Appearance: max -->")
 }

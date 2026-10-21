@@ -31,19 +31,35 @@ func TestAttachmentURL(t *testing.T) {
 			attachment("", "/download/attachments/1/a.png?version=2"), "https://example.com/download/attachments/1/a.png?version=2"},
 		{"an absolute link on the same host", "https://example.com",
 			attachment("", "https://example.com/download/attachments/1/a.png"), "https://example.com/download/attachments/1/a.png"},
+		{"the default port written out", "https://example.com",
+			attachment("", "https://example.com:443/download/attachments/1/a.png"), "https://example.com:443/download/attachments/1/a.png"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := NewAPI(test.base, "u", "p", false).AttachmentURL(test.info)
+			got, err := NewAPI(test.base, "u", "p", false).AttachmentURL("1", test.info)
 			require.NoError(t, err)
 			assert.Equal(t, test.want, got)
 		})
 	}
 
-	t.Run("an absolute link to another host is refused", func(t *testing.T) {
-		_, err := NewAPI("https://example.com", "u", "p", false).
-			AttachmentURL(attachment("", "https://elsewhere.example/a.png"))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "refusing to send credentials")
+	for name, link := range map[string]string{
+		"another host": "https://elsewhere.example/a.png",
+		"plain http":   "http://example.com/download/attachments/1/a.png",
+		"another port": "https://example.com:8443/download/attachments/1/a.png",
+	} {
+		t.Run("an absolute link to "+name+" is refused", func(t *testing.T) {
+			_, err := NewAPI("https://example.com", "u", "p", false).
+				AttachmentURL("1", attachment("", link))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "refusing to send credentials")
+		})
+	}
+
+	t.Run("through the gateway, the REST download endpoint", func(t *testing.T) {
+		info := attachment("/wiki", "/download/attachments/1/a.png")
+		info.ID = "att2"
+		got, err := NewAPI("https://api.atlassian.com/ex/confluence/cloud", "", "token", false).AttachmentURL("1", info)
+		require.NoError(t, err)
+		assert.Equal(t, "https://api.atlassian.com/ex/confluence/cloud/rest/api/content/1/child/attachment/att2/download", got)
 	})
 }
 
@@ -58,12 +74,12 @@ func TestDownloadAttachment(t *testing.T) {
 	require.Len(t, attachments, 1)
 
 	var got bytes.Buffer
-	require.NoError(t, api.DownloadAttachment(context.Background(), attachments[0], &got))
+	require.NoError(t, api.DownloadAttachment(context.Background(), page.ID, attachments[0], &got))
 	assert.Equal(t, "content", got.String())
 
 	missing := attachments[0]
 	missing.Links.Download = "/download/attachments/" + page.ID + "/gone.png"
-	err = api.DownloadAttachment(context.Background(), missing, &bytes.Buffer{})
+	err = api.DownloadAttachment(context.Background(), page.ID, missing, &bytes.Buffer{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }

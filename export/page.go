@@ -93,22 +93,32 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		attachmentsDir = outputDir
 	}
 
-	relative, err := relativePath(outputDir, attachmentsDir)
-	if err != nil {
-		return nil, fmt.Errorf("unable to refer to %s from %s: %w", attachmentsDir, outputDir, err)
+	names := newLocalNames()
+	// Worked out only for a page that has attachments: on Windows there is no
+	// relative path to another drive.
+	var relative *string
+	pathOf := func(filename string) string {
+		if relative == nil {
+			dir := referTo(outputDir, attachmentsDir)
+			relative = &dir
+		}
+		return filepath.ToSlash(filepath.Join(*relative, names.of(filename)))
 	}
 
-	doc, err := Convert(page.Body.Storage.Value, Options{
-		Space: space,
-		AttachmentPath: func(filename string) string {
-			return filepath.ToSlash(filepath.Join(relative, localName(filename)))
-		},
-	})
+	doc, err := Convert(page.Body.Storage.Value, Options{Space: space, AttachmentPath: pathOf})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
 	}
 
-	header, err := headers(api, page, space, doc)
+	downloads, missing, err := attachmentsToWrite(api, page, doc, attachmentsDir, names, pathOf)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.NoAttachments {
+		downloads = nil
+	}
+
+	header, err := headers(api, page, space, doc, missing)
 	if err != nil {
 		return nil, err
 	}
@@ -116,11 +126,6 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	markdown := header
 	if doc.Markdown != "" {
 		markdown += "\n" + doc.Markdown
-	}
-
-	downloads, err := attachmentsToWrite(api, page, doc, attachmentsDir, cfg.NoAttachments)
-	if err != nil {
-		return nil, err
 	}
 
 	if !cfg.Overwrite {
@@ -138,13 +143,11 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 
 	result := &Result{Page: page, Output: output}
 
-	for _, d := range downloads {
-		if err := download(ctx, api, d); err != nil {
-			return nil, err
-		}
-		log.Info().Msgf("attachment %q written to %s", d.info.Filename, d.path)
-		result.Attachments = append(result.Attachments, d.path)
+	written, err := downloadAll(ctx, api, page.ID, downloads)
+	if err != nil {
+		return nil, err
 	}
+	result.Attachments = written
 
 	if output == "" {
 		if _, err := io.WriteString(cfg.Stdout, markdown); err != nil {
@@ -203,7 +206,13 @@ func findPage(api *confluence.API, cfg Config) (*confluence.PageInfo, error) {
 
 // headers writes the metadata headers that publish the document back to the
 // page it came from.
-func headers(api *confluence.API, page *confluence.PageInfo, space string, doc *Document) (string, error) {
+func headers(
+	api *confluence.API,
+	page *confluence.PageInfo,
+	space string,
+	doc *Document,
+	missing map[string]bool,
+) (string, error) {
 	var lines []string
 	add := func(name, value string) error {
 		value, err := headerValue(name, value)
@@ -278,6 +287,10 @@ func headers(api *confluence.API, page *confluence.PageInfo, space string, doc *
 	}
 
 	for _, name := range doc.Declared {
+		// A header naming a file that is not there fails the publish.
+		if missing[name] {
+			continue
+		}
 		if err := add(metadata.HeaderAttachment, name); err != nil {
 			return "", err
 		}
@@ -344,11 +357,11 @@ func appearanceOf(api *confluence.API, page *confluence.PageInfo) (appearance, e
 
 	// mark publishes a page full width unless told otherwise, so that is the
 	// one appearance there is no need to say.
-	switch appearance {
-	case metadata.FullWidthContentAppearance:
+	if normalized := metadata.NormalizeContentAppearance(appearance); normalized != appearance {
+		log.Warn().Msgf("page %q has the content appearance %q, which mark does not know; publishing it back makes it full width",
+			page.Title, appearance)
 		appearance = ""
-	case metadata.FixedContentAppearance, metadata.DefaultContentAppearance:
-	default:
+	} else if appearance == metadata.FullWidthContentAppearance {
 		appearance = ""
 	}
 
@@ -370,20 +383,26 @@ func emojiFromHex(value string) string {
 	return b.String()
 }
 
-// relativePath is target as seen from base, whether either is absolute or
-// relative to the working directory.
-func relativePath(base, target string) (string, error) {
-	absoluteBase, err := filepath.Abs(base)
-	if err != nil {
-		return "", err
-	}
-
+// referTo is how the Markdown file, in base, refers to the directory target:
+// relative to it where it can be, and absolute where it cannot, such as on
+// another drive.
+func referTo(base, target string) string {
 	absoluteTarget, err := filepath.Abs(target)
 	if err != nil {
-		return "", err
+		return target
 	}
 
-	return filepath.Rel(absoluteBase, absoluteTarget)
+	absoluteBase, err := filepath.Abs(base)
+	if err != nil {
+		return absoluteTarget
+	}
+
+	relative, err := filepath.Rel(absoluteBase, absoluteTarget)
+	if err != nil {
+		return absoluteTarget
+	}
+
+	return relative
 }
 
 // localName is the name an attachment is written under: its own, unless that
@@ -397,27 +416,59 @@ func localName(filename string) string {
 	return name
 }
 
+// localNames gives every attachment a file of its own. Names that flatten to
+// the same local name, or differ only in case and so share a file on macOS and
+// Windows, are told apart by a number before the extension.
+type localNames struct {
+	byName map[string]string
+	taken  map[string]bool
+}
+
+func newLocalNames() *localNames {
+	return &localNames{byName: map[string]string{}, taken: map[string]bool{}}
+}
+
+func (l *localNames) of(filename string) string {
+	if name, ok := l.byName[filename]; ok {
+		return name
+	}
+
+	name := localName(filename)
+	extension := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, extension)
+	for i := 2; l.taken[strings.ToLower(name)]; i++ {
+		name = fmt.Sprintf("%s-%d%s", stem, i, extension)
+	}
+
+	l.byName[filename] = name
+	l.taken[strings.ToLower(name)] = true
+
+	return name
+}
+
 type pendingDownload struct {
 	info confluence.AttachmentInfo
 	path string
 }
 
 // attachmentsToWrite pairs each attachment the body refers to with the file
-// it goes to.
+// it goes to, and says which of them the page does not have, by the path the
+// document refers to them with.
 func attachmentsToWrite(
 	api *confluence.API,
 	page *confluence.PageInfo,
 	doc *Document,
 	dir string,
-	skip bool,
-) ([]pendingDownload, error) {
-	if skip || len(doc.Attachments) == 0 {
-		return nil, nil
+	names *localNames,
+	pathOf func(string) string,
+) ([]pendingDownload, map[string]bool, error) {
+	if len(doc.Attachments) == 0 {
+		return nil, nil, nil
 	}
 
 	remote, err := api.GetAttachments(page.ID)
 	if err != nil {
-		return nil, fmt.Errorf("unable to list the attachments of page %s: %w", page.ID, err)
+		return nil, nil, fmt.Errorf("unable to list the attachments of page %s: %w", page.ID, err)
 	}
 
 	byName := make(map[string]confluence.AttachmentInfo, len(remote))
@@ -426,16 +477,18 @@ func attachmentsToWrite(
 	}
 
 	var downloads []pendingDownload
+	missing := map[string]bool{}
 	for _, name := range doc.Attachments {
 		info, ok := byName[name]
 		if !ok {
 			log.Warn().Msgf("page %q refers to an attachment %q it does not have", page.Title, name)
+			missing[pathOf(name)] = true
 			continue
 		}
-		downloads = append(downloads, pendingDownload{info: info, path: filepath.Join(dir, localName(name))})
+		downloads = append(downloads, pendingDownload{info: info, path: filepath.Join(dir, names.of(name))})
 	}
 
-	return downloads, nil
+	return downloads, missing, nil
 }
 
 // refuseExisting fails when any of the files an export would write is there
@@ -457,38 +510,63 @@ func refuseExisting(paths []string) error {
 	return nil
 }
 
-// download writes an attachment to its file, through a temporary file beside
-// it so that a failed download leaves nothing behind.
-func download(ctx context.Context, api *confluence.API, d pendingDownload) error {
+// downloadAll downloads every attachment to a temporary file beside its own,
+// and only once all of them are there renames them into place, so that a
+// failed download leaves nothing behind.
+func downloadAll(ctx context.Context, api *confluence.API, pageID string, downloads []pendingDownload) ([]string, error) {
+	var temporaries []string
+	defer func() {
+		for _, name := range temporaries {
+			_ = os.Remove(name)
+		}
+	}()
+
+	for _, d := range downloads {
+		name, err := downloadTemporary(ctx, api, pageID, d)
+		if err != nil {
+			return nil, err
+		}
+		temporaries = append(temporaries, name)
+	}
+
+	written := make([]string, 0, len(downloads))
+	for i, d := range downloads {
+		if err := os.Rename(temporaries[i], d.path); err != nil {
+			return written, fmt.Errorf("unable to write attachment %q to %s: %w", d.info.Filename, d.path, err)
+		}
+		log.Info().Msgf("attachment %q written to %s", d.info.Filename, d.path)
+		written = append(written, d.path)
+	}
+
+	return written, nil
+}
+
+// downloadTemporary downloads an attachment to a temporary file in the
+// directory it goes to, and returns the file's name.
+func downloadTemporary(ctx context.Context, api *confluence.API, pageID string, d pendingDownload) (string, error) {
 	dir := filepath.Dir(d.path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("unable to create %s: %w", dir, err)
+		return "", fmt.Errorf("unable to create %s: %w", dir, err)
 	}
 
 	temporary, err := os.CreateTemp(dir, ".mark-export-*")
 	if err != nil {
-		return fmt.Errorf("unable to write attachment %q: %w", d.info.Filename, err)
+		return "", fmt.Errorf("unable to write attachment %q: %w", d.info.Filename, err)
 	}
-	defer func() {
+
+	err = api.DownloadAttachment(ctx, pageID, d.info, temporary)
+	if closeErr := temporary.Close(); err == nil && closeErr != nil {
+		err = fmt.Errorf("unable to write attachment %q: %w", d.info.Filename, closeErr)
+	}
+	if err == nil {
+		if chmodErr := os.Chmod(temporary.Name(), 0o644); chmodErr != nil { //nolint:gosec // G302: a document's image, meant to be read like it
+			err = fmt.Errorf("unable to write attachment %q: %w", d.info.Filename, chmodErr)
+		}
+	}
+	if err != nil {
 		_ = os.Remove(temporary.Name())
-	}()
-
-	if err := api.DownloadAttachment(ctx, d.info, temporary); err != nil {
-		_ = temporary.Close()
-		return err
+		return "", err
 	}
 
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("unable to write attachment %q: %w", d.info.Filename, err)
-	}
-
-	if err := os.Chmod(temporary.Name(), 0o644); err != nil {
-		return fmt.Errorf("unable to write attachment %q: %w", d.info.Filename, err)
-	}
-
-	if err := os.Rename(temporary.Name(), d.path); err != nil {
-		return fmt.Errorf("unable to write attachment %q to %s: %w", d.info.Filename, d.path, err)
-	}
-
-	return nil
+	return temporary.Name(), nil
 }
