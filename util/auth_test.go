@@ -644,7 +644,7 @@ func TestPasswordCommandFlagReachesCredentials(t *testing.T) {
 	restore := log.Logger
 	t.Cleanup(func() { log.Logger = restore })
 
-	err := run(context.Background(), newCommand("test"), []string{
+	err := newCommand("test").Run(context.Background(), []string{
 		"mark", "publish",
 		"--config", config,
 		"--username", "user",
@@ -685,7 +685,7 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 		zerolog.SetGlobalLevel(originalLevel)
 	})
 
-	_ = run(context.Background(), newCommand("test"), []string{
+	_ = newCommand("test").Run(context.Background(), []string{
 		"mark", "publish",
 		"--config", config,
 		"--log-level", "DEBUG",

@@ -34,7 +34,7 @@ func TestCheckConfigFile(t *testing.T) {
 	run := func(t *testing.T, args ...string) error {
 		t.Helper()
 		cmd := &cli.Command{
-			Flags:  globalFlags(newConfigFile(new(string), false)),
+			Flags:  globalFlags(newConfigFile(new(string))),
 			Action: func(context.Context, *cli.Command) error { return nil },
 		}
 		return CheckConfigFile(mustParse(t, cmd, args...))
@@ -86,19 +86,13 @@ func mustParse(t *testing.T, cmd *cli.Command, args ...string) *cli.Command {
 func parseCommandLine(t *testing.T, args ...string) *cli.Command {
 	t.Helper()
 
-	cmd := newCommand("test")
-
 	var parsed *cli.Command
-	capture := func(_ context.Context, c *cli.Command) error {
+	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
 		parsed = c
 		return nil
-	}
-	cmd.Action = capture
-	for _, command := range cmd.Commands {
-		command.Action = capture
-	}
+	})
 
-	require.NoError(t, run(context.Background(), cmd, args))
+	require.NoError(t, cmd.Run(context.Background(), args))
 	require.NotNil(t, parsed)
 
 	return parsed
@@ -216,7 +210,7 @@ func TestConfigOnTheCommandLineStillWins(t *testing.T) {
 	resolved := resolveFlags(t,
 		map[string]string{"MARK_CONFIG": fromEnv},
 		[]string{"username", "config"},
-		"--config", fromFlag,
+		"publish", "--config", fromFlag,
 	)
 
 	assert.Equal(t, "flag", resolved["username"])
@@ -267,13 +261,13 @@ func TestFlagsResolveWithoutAConfigDir(t *testing.T) {
 	skipWithoutUnixConfigDir(t)
 
 	t.Run("there is no default file", func(t *testing.T) {
-		resolved := resolveFlags(t, withoutConfigDir, []string{"config"})
+		resolved := resolveFlags(t, withoutConfigDir, []string{"config"}, "publish")
 		assert.Empty(t, resolved["config"])
 	})
 
 	t.Run("a named file is still read", func(t *testing.T) {
 		path := writeConfig(t, t.TempDir(), "mark.toml", "username = \"cfguser\"\n")
-		resolved := resolveFlags(t, withoutConfigDir, []string{"config", "username"}, "--config", path)
+		resolved := resolveFlags(t, withoutConfigDir, []string{"config", "username"}, "publish", "--config", path)
 		assert.Equal(t, path, resolved["config"])
 		assert.Equal(t, "cfguser", resolved["username"])
 	})
@@ -293,7 +287,7 @@ func TestCheckConfigFileAcceptsNoDefault(t *testing.T) {
 // from a feature deliberately left off -- "--features=mermaidd" published the
 // page with mermaid quietly not running, and said nothing.
 func TestFeaturesRejectsAnUnknownName(t *testing.T) {
-	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string), false))}
+	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
 	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "mermaidd"))
 
 	require.Error(t, err)
@@ -305,7 +299,7 @@ func TestFeaturesRejectsAnUnknownName(t *testing.T) {
 // second one over with its leading space still attached, and it goes
 // unrecognised where it is read. Saying so beats switching it off in silence.
 func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
-	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string), false))}
+	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
 	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "math, mermaid"))
 
 	require.Error(t, err)
@@ -317,7 +311,7 @@ func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
 func TestFeaturesAcceptsEveryKnownName(t *testing.T) {
 	for _, feature := range KnownFeatures {
 		t.Run(feature, func(t *testing.T) {
-			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string), false))}
+			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
 			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", feature))
 			assert.NoError(t, err)
 		})
@@ -363,7 +357,7 @@ func TestSplitParentsDropsEmptyFields(t *testing.T) {
 // gone up. A misspelling therefore left an empty page in Confluence and then
 // failed the run.
 func TestImageAlignIsCheckedBeforeAnythingIsCreated(t *testing.T) {
-	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string), false))}
+	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
 	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", "centre"))
 
 	require.Error(t, err)
@@ -374,7 +368,7 @@ func TestImageAlignIsCheckedBeforeAnythingIsCreated(t *testing.T) {
 func TestImageAlignAcceptsWhatItDocuments(t *testing.T) {
 	for _, align := range []string{"left", "center", "right", "CENTER", " right "} {
 		t.Run(align, func(t *testing.T) {
-			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string), false))}
+			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
 			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", align))
 			assert.NoError(t, err)
 		})

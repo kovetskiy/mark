@@ -13,29 +13,15 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// configFile is the configuration file a run takes its settings from: the one
-// the "config" flag names, read and parsed once, the first time a setting is
-// looked up in it, and reported -- by check -- if it cannot be used.
-//
-// Every flag reads it through a source from value or global, so every flag
-// takes its value from it by the same rules: urfave/cli's own, applied as it
-// applies any source in a flag's chain.
+// configFile is the configuration file the "config" flag names, as every
+// flag's source reads it: parsed at the first lookup, and again only if the
+// path has changed since.
 type configFile struct {
 	// path is the "config" flag's destination.
 	path *string
 
-	// deferGlobals holds the sources from global back until settle. A global
-	// flag is resolved as the root command is parsed, and "mark publish
-	// --config X" names the file only once publish is parsed, after that: a
-	// global flag that read the file straight away would read the default
-	// one instead of X.
-	deferGlobals bool
-	settled      bool
-
-	// once keeps what was read for the rest of the run. A command line is
-	// built afresh for each run; the deprecated Flags are not, and read the
-	// file again at every lookup, as they always did.
-	once bool
+	// settled opens the sources hold wraps. Until then they answer nothing.
+	settled bool
 
 	loaded     bool
 	loadedPath string
@@ -43,17 +29,15 @@ type configFile struct {
 	err        error
 }
 
-// newConfigFile is the file the "config" flag will name, through path, for one
-// run of a command line.
-func newConfigFile(path *string, deferGlobals bool) *configFile {
-	return &configFile{path: path, deferGlobals: deferGlobals, once: true}
+// newConfigFile is the file the "config" flag will name through path, with
+// its held sources shut until settle.
+func newConfigFile(path *string) *configFile {
+	return &configFile{path: path}
 }
 
-// load reads and parses the file the first time it is asked for, and again
-// only should the path have changed since.
 func (c *configFile) load() error {
 	path := *c.path
-	if c.once && c.loaded && c.loadedPath == path {
+	if c.loaded && c.loadedPath == path {
 		return c.err
 	}
 
@@ -63,25 +47,19 @@ func (c *configFile) load() error {
 	return c.err
 }
 
-// check reports a configuration file that cannot be used.
-//
-// A setting is looked up as a flag is resolved, and a file that cannot be read
-// or parsed answers every lookup with nothing. A stray syntax error therefore
-// removes every setting at once and says nothing, and the first sign of
-// trouble is whichever required value went missing with it -- so "confluence
-// password should be specified" is what an unquoted list three lines further
-// down looks like, which is a long way from where the problem is.
+// check reports a file that cannot be used. A lookup in one answers nothing,
+// so without this a syntax error surfaces only as whichever required setting
+// went missing with it.
 func (c *configFile) check() error {
 	return c.load()
 }
 
-// settle releases the global flags' sources, now that the whole command line
-// has been parsed and the file is the one it names, and resolves each global
-// flag of cmd that neither the command line nor the environment has set.
-func (c *configFile) settle(cmd *cli.Command) error {
+// settle opens the held sources and resolves every flag of root that the
+// command line did not set.
+func (c *configFile) settle(root *cli.Command) error {
 	c.settled = true
 
-	for _, flag := range cmd.Root().Flags {
+	for _, flag := range root.Flags {
 		if flag.IsSet() {
 			continue
 		}
@@ -93,31 +71,41 @@ func (c *configFile) settle(cmd *cli.Command) error {
 	return nil
 }
 
-// value is a source for the setting under key, for a flag resolved once the
-// file is known: any flag of a command, as opposed to the root.
+// value is a source for the setting under key.
 func (c *configFile) value(key string) cli.ValueSource {
 	return &configValue{file: c, key: key}
 }
 
-// global is value for a global flag, which settle releases.
-func (c *configFile) global(key string) cli.ValueSource {
-	return &configValue{file: c, key: key, deferred: c.deferGlobals}
+// hold makes source answer nothing until settle. urfave/cli resolves the
+// root's flags as it parses the root, before "mark publish --config X" has
+// named X, and before the root's action can tell which of its flags the
+// command line set.
+func (c *configFile) hold(source cli.ValueSource) cli.ValueSource {
+	return &heldSource{ValueSource: source, file: c}
+}
+
+type heldSource struct {
+	cli.ValueSource
+	file *configFile
+}
+
+func (h *heldSource) Lookup() (string, bool) {
+	if !h.file.settled {
+		return "", false
+	}
+	return h.ValueSource.Lookup()
 }
 
 // configValue is one setting of a configFile, as a flag's source.
 type configValue struct {
-	file     *configFile
-	key      string
-	deferred bool
+	file *configFile
+	key  string
 }
 
 // Lookup is the setting, in the form a flag parses: a list joined with
 // commas, anything else as it prints, as cli-altsrc reads one. A file that
 // cannot be used has no settings; check says why.
 func (v *configValue) Lookup() (string, bool) {
-	if v.deferred && !v.file.settled {
-		return "", false
-	}
 	if v.file.load() != nil {
 		return "", false
 	}
