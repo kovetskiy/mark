@@ -3,6 +3,8 @@ package export
 import (
 	"regexp"
 	"strings"
+
+	"github.com/kovetskiy/mark/v16/stdlib"
 )
 
 // rawMode says where a piece of storage format written out verbatim ends up,
@@ -138,12 +140,9 @@ func cdata(text string) string {
 		if i > 0 {
 			b.WriteString("&#10;")
 		}
-		if line == "" {
-			continue
+		if line != "" {
+			b.WriteString("<![CDATA[" + stdlib.CDATA(line) + "]]>")
 		}
-		// "]]>" is the one thing a CDATA section cannot hold; splitting it
-		// across two sections is the only way to write it.
-		b.WriteString("<![CDATA[" + strings.ReplaceAll(line, "]]>", "]]]]><![CDATA[>") + "]]>")
 	}
 
 	return b.String()
@@ -172,12 +171,20 @@ func rawText(text string, mode rawMode) string {
 
 var blankLine = regexp.MustCompile(`\n[ \t]*\n`)
 
+// escapeXMLText escapes text between tags. Quotes need no escaping there,
+// and are left alone so that the Markdown around the markup reads as written.
 func escapeXMLText(text string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+	clean, _ := stdlib.ReplaceIllegalXMLChars(text)
+
+	return textEscaper.Replace(clean)
 }
 
+var textEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// escapeAttr escapes an attribute value, and writes the whitespace an
+// attribute would otherwise have normalised to spaces as references.
 func escapeAttr(value string) string {
-	return strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "\n", "&#10;", "\r", "&#13;", "\t", "&#9;",
-	).Replace(value)
+	return attrWhitespace.Replace(stdlib.XMLEscape(value))
 }
+
+var attrWhitespace = strings.NewReplacer("\n", "&#10;", "\r", "&#13;", "\t", "&#9;")

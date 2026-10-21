@@ -26,6 +26,6 @@ nested fence
 ```
 ````
 
-<ac:structured-macro ac:name="noformat"><ac:plain-text-body><![CDATA[keep *this*]]>&#10;&#10;<![CDATA[   as ]]]]><![CDATA[> it is]]></ac:plain-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="noformat"><ac:plain-text-body><![CDATA[keep *this*]]>&#10;&#10;<![CDATA[   as ]]><![CDATA[]]]]><![CDATA[> it is]]></ac:plain-text-body></ac:structured-macro>
 
 <blockquote><p>Note: a quote that starts like an admonition</p></blockquote>
