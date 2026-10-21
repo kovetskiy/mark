@@ -118,9 +118,8 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 
 	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
 
-	// A new slice, not an append onto the caller's: the diagram is a slice of
-	// the document's own source, and appending the scale onto it, where it
-	// had room to spare, wrote over whatever the document went on with.
+	// Concat, not append: the diagram may be a slice of the document's
+	// source, with the rest of the source as its spare capacity.
 	d2Bytes := slices.Concat(d2Diagram, scaleAsBytes)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))

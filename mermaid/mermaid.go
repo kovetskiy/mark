@@ -418,9 +418,6 @@ func ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (
 
 	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
 
-	// A new slice, not an append onto the caller's: the diagram is a slice of
-	// the document's own source, and appending the scale onto it, where it
-	// had room to spare, wrote over whatever the document went on with.
 	mermaidBytes := slices.Concat(mermaidDiagram, scaleAsBytes)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidBytes))
@@ -478,9 +475,7 @@ func processMermaidSVG(title string, mermaidDiagram []byte, bundle bool, scale f
 	// PNG side: the same diagram published with and without its source is two
 	// different attachments, and a checksum taken over the diagram alone would
 	// call the second one unchanged and leave the first in place.
-	checksumInput := make([]byte, 0, len(mermaidDiagram)+1)
-	checksumInput = append(checksumInput, mermaidDiagram...)
-	checksumInput = append(checksumInput, boolByte(bundle))
+	checksumInput := slices.Concat(mermaidDiagram, []byte{boolByte(bundle)})
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(checksumInput))
 	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
