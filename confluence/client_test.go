@@ -835,10 +835,10 @@ func TestClientTakesAValueWhoseConnectionFailsAfterIt(t *testing.T) {
 	assert.Equal(t, "42", page.ID)
 }
 
-// TestClientCutsShortAWriteBackoff: a write is not cut short once sent, but
+// TestClientCutsShortAWriteBackoff: a write is given its grace once sent, but
 // the wait before sending it again after a 429 does nothing on Confluence, and
-// a stopped run must not sit it out. It held a cancelled run for a throttled
-// tenant's whole Retry-After, three times over, for every write.
+// a stopped run must not sit it out: a throttled tenant's whole Retry-After,
+// three times over, for every write.
 func TestClientCutsShortAWriteBackoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

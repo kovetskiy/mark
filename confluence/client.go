@@ -13,6 +13,9 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // client sends requests to one root of a Confluence: /rest/api, /api/v2, or
@@ -130,9 +133,9 @@ type reply struct {
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
 //     it. Only for a GET or a HEAD, though. Any other method is not sent once
-//     ctx is done, and once sent is not cut short by it: it runs to its
-//     answer, bounded by the transport's timeouts. The wait before sending
-//     one again after a 429 is cut short, and ends it as a cancellation.
+//     ctx is done, and once sent is given writeGrace after ctx ends to finish
+//     before it is cut short too; see withGrace. The wait before sending one
+//     again after a 429 is cut short at once, and ends it as a cancellation.
 func (c *client) do(
 	ctx context.Context,
 	header http.Header,
@@ -159,13 +162,15 @@ func (c *client) do(
 		reader = bytes.NewReader(payload)
 	}
 
-	// A write is not started once the run is stopped, and not cut short once
-	// it is sent: Confluence may already have applied it, and a run that then
-	// read the answer as a failure would not record what the write did --
-	// under --no-overwrite, a page version it never wrote down reads as an
-	// edit made in Confluence on every later run. From here on ctx is the
-	// request's own, so the checks below that ask whether the run was stopped
-	// ask of a write whether it was, which it never is.
+	// A write is not started once the run is stopped, and not cut short the
+	// moment it is once sent: Confluence may already have applied it, and a
+	// run that then read the answer as a failure would not record what the
+	// write did -- under --no-overwrite, a page version it never wrote down
+	// reads as an edit made in Confluence on every later run. It gets
+	// writeGrace to answer, which is plenty for one Confluence is answering,
+	// and a bound on one that has stalled. From here on ctx is the request's
+	// own, so the checks below that ask whether the run was stopped ask of a
+	// write whether its grace ran out.
 	//
 	// Only the exchange is shielded, though. The wait before the retry
 	// transport sends a write again -- after a 429, which Confluence answers
@@ -176,13 +181,28 @@ func (c *client) do(
 		if err := ctx.Err(); err != nil {
 			return nil, cancellation(ctx, err)
 		}
-
-		ctx = context.WithValue(context.WithoutCancel(ctx), backoffContextKey{}, caller)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, c.url(path, query), reader)
 	if err != nil {
 		return nil, err
+	}
+
+	if !readOnly(method) {
+		if !graced(ctx) {
+			target := req.URL.Redacted()
+			var release context.CancelFunc
+			ctx, release = withGrace(ctx, func(grace time.Duration) {
+				log.Warn().Msgf(
+					"waiting up to %s for Confluence to answer %s %s, which was already sent",
+					grace, method, target,
+				)
+			})
+			defer release()
+		}
+
+		ctx = context.WithValue(ctx, backoffContextKey{}, caller)
+		req = req.WithContext(ctx)
 	}
 
 	maps.Copy(req.Header, bodyHeader)
@@ -201,8 +221,9 @@ func (c *client) do(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		// A write given up on in its backoff ends with the caller's error.
-		if stopped := caller.Err(); stopped != nil && errors.Is(err, stopped) {
+		// A write given up on in its backoff ends with the caller's error;
+		// one whose grace ran out, with its own.
+		if stopped := caller.Err(); stopped != nil && ctx.Err() == nil && errors.Is(err, stopped) {
 			return nil, cancellation(caller, err)
 		}
 
@@ -540,7 +561,66 @@ func cancellation(ctx context.Context, err error) error {
 		return err
 	}
 
+	if cause := context.Cause(ctx); errors.Is(cause, errGraceExpired) {
+		err = fmt.Errorf("%w: %w", cause, err)
+	}
+
 	return &cancelledError{err: err, ctxErr: ctxErr}
+}
+
+// writeGrace is how long a write already sent is given to finish once the
+// run is stopped. A variable so that tests can shorten it.
+var writeGrace = 30 * time.Second
+
+// errGraceExpired is why a write was cut short: the run was stopped, and the
+// write's grace ran out before Confluence answered it.
+var errGraceExpired = errors.New(
+	"stopped waiting for Confluence to answer a write after the run was stopped; " +
+		"it may have been applied",
+)
+
+// graceKey marks a context withGrace made.
+type graceKey struct{}
+
+// graced reports whether ctx was made by withGrace, and a write under it
+// already has its grace.
+func graced(ctx context.Context) bool {
+	_, ok := ctx.Value(graceKey{}).(bool)
+
+	return ok
+}
+
+// withGrace returns a context that keeps parent's values and ends writeGrace
+// after parent does, rather than with it, calling waiting with the grace when
+// parent ends. release ends it at once, and must be called.
+//
+// It is what keeps a write that is already sent, and the requests that finish
+// what it started, from being lost to a stopped run without letting one that
+// has stalled hold that run until TCP gives up: the transport deliberately
+// has no overall timeout, which a large upload on a slow link would exceed.
+func withGrace(parent context.Context, waiting func(grace time.Duration)) (ctx context.Context, release context.CancelFunc) {
+	grace := writeGrace
+	ctx, cancel := context.WithCancelCause(context.WithValue(context.WithoutCancel(parent), graceKey{}, true))
+
+	stop := context.AfterFunc(parent, func() {
+		if waiting != nil {
+			waiting(grace)
+		}
+
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+			cancel(errGraceExpired)
+		case <-ctx.Done():
+		}
+	})
+
+	return ctx, func() {
+		stop()
+		cancel(context.Canceled)
+	}
 }
 
 // IsCancellation reports whether err is the caller giving up rather than

@@ -39,10 +39,11 @@ func main() {
 	// Ctrl-C or a SIGTERM cancels ctx rather than killing the process where it
 	// stands. Every Confluence request carries ctx, so a read in flight, or
 	// the backoff before retrying any request, is cut short -- a write already
-	// sent is let finish -- and the current file stops there; the run then
-	// saves its page manifest, writes its report and shuts down. Killed
-	// outright, it never reached Cleanup, and the headless Chrome drawing its
-	// diagrams was left running along with its temporary profile directory.
+	// sent is given a short grace to answer first -- and the current file
+	// stops there; the run then saves its page manifest, writes its report and
+	// shuts down. Killed outright, it would never reach Cleanup, and the
+	// headless Chrome drawing its diagrams would be left running along with
+	// its temporary profile directory.
 	//
 	// Nothing else cancels ctx, so it is done only once a signal has arrived.
 	// The first signal is all it needs, and while NotifyContext stays

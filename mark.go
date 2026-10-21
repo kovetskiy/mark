@@ -158,11 +158,11 @@ func Run(config Config) error {
 // file being published fails at its next request instead of running to the
 // end. The run then stops, as it does for any file that fails, without
 // starting the next; ctx is also checked between files and before the second
-// pass. A write already sent is let run to its answer, so that what it did is
-// recorded, and is not undone; a page can still be left part way through:
-// created without its attachments, or updated without its labels. The next
-// run completes it. A diagram being drawn is not interrupted, only bounded by
-// its own render timeout.
+// pass. A write already sent is given a short grace to answer, so that what
+// it did is recorded, and is not undone; a page can still be left part way
+// through: created without its attachments, or updated without its labels.
+// The next run completes it. A diagram being drawn is not interrupted, only
+// bounded by its own render timeout.
 //
 // Whatever the run did before it stopped stands. The page manifest and the run
 // report are still written on the way out, as for any other ending; the

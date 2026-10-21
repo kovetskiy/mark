@@ -1329,14 +1329,18 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, newContent strin
 	// number after a failed property write would have its next update refused
 	// as a conflict.
 	//
-	// And they are written whatever becomes of the run, as the content was:
-	// they are the rest of this update, which on v1 goes in the one request.
-	// Cut short by a signal, the update failed after its version existed, so
-	// the caller never recorded it -- under --no-overwrite the page then read
-	// as edited in Confluence on every later run. With none to write there is
-	// nothing to ask, and the listing is not read at all.
+	// And they are given the same grace after the run is stopped as the
+	// content was: they are the rest of this update, which on v1 goes in the
+	// one request. Cut short by a signal, the update would fail after its
+	// version exists, so the caller would not record it -- and under
+	// --no-overwrite the page would read as edited in Confluence on every
+	// later run. With none to write there is nothing to ask, and the listing
+	// is not read at all.
 	if api.gateway && len(properties) > 0 {
-		return api.setPagePropertiesV2(context.WithoutCancel(ctx), page, properties)
+		rest, release := withGrace(ctx, nil)
+		defer release()
+
+		return api.setPagePropertiesV2(rest, page, properties)
 	}
 
 	return nil
