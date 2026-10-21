@@ -2267,7 +2267,7 @@ pages with the v2 API, which needs:
 | `read:space:confluence` | resolving a space key and finding its home page |
 | `read:page:confluence`, `write:page:confluence` | finding, reading, creating and updating pages |
 | `read:blogpost:confluence`, `write:blogpost:confluence` | the same for blog posts (`Type: blogpost`) |
-| `read:attachment:confluence` | listing what is attached to a page |
+| `read:attachment:confluence` | listing what is attached to a page, and `mark export` downloading it |
 | `read:label:confluence` | reading the labels a page carries |
 | `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
 | `read:page:confluence`, `write:page:confluence` | `--track-pages` with `--manifest-page`; without it the mapping is a space property, whose creation a scoped token is refused |
@@ -2348,7 +2348,11 @@ mean to publish it back: mark names an attachment after its path, so
 `--attachments-dir files` turns `chart.png` into `files_chart.png` on the next
 publish, a new attachment next to the old one. The export fails before writing
 anything if a file it would write is already there, unless `--overwrite` is
-given, and `--no-attachments` writes the document alone.
+given, and `--no-attachments` writes the document alone. The attachments are
+moved into place only once all of them have downloaded. Two whose names would
+share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
+are told apart by a number, as `a_b-2.png`. An attachment the page refers to
+but no longer has is reported, and left out of the `Attachment` headers.
 
 ### What becomes Markdown
 
@@ -2364,7 +2368,8 @@ given, and `--no-attachments` writes the document alone.
   `![alt](path)`, or as `<img src width>` when the page shows them at a size of
   their own;
 * tables with a header row and one line of inline content in each cell, as GFM
-  tables, with the column alignment;
+  tables, with the column alignment, when no cell has a colour or an alignment
+  of its own;
 * code macros, as fenced code blocks whose info string carries the language,
   `collapse`, the theme, line numbers, the first line and the title;
 * info, tip, note and warning macros with the title mark gives a GitHub alert,
@@ -2380,8 +2385,9 @@ given, and `--no-attachments` writes the document alone.
 Everything else is written as the storage format it is, which mark publishes as
 it was: other macros (a table of contents, Jira, status, anchors), user
 mentions, emoticons, dates, links to pages in other spaces, tables with merged
-cells or with lists or macros in them, and HTML that Markdown has no syntax for
-(`<u>`, `<sub>`, a coloured `<span>`). An info, tip, note or warning macro
+cells or with lists or macros in them, headings and cells with an alignment or
+a colour, `<pre>` blocks, and HTML that Markdown has no syntax for (`<u>`,
+`<sub>`, a coloured `<span>`). An info, tip, note or warning macro
 without mark's title -- the way Confluence's editor inserts them -- keeps its
 tags, with its body in Markdown between them, since as an alert it would come
 back with a title it did not have. A newline inside kept storage format is

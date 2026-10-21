@@ -31,16 +31,24 @@ func (api *API) ContentProperties(contentID string) ([]Property, error) {
 	return api.listPropertiesV2(collection, contentID)
 }
 
-// AttachmentURL is where an attachment's content is downloaded from.
+// AttachmentURL is where the content of an attachment of page pageID is
+// downloaded from.
 //
-// Confluence names the download path relative to its context -- "/wiki" on
-// Cloud, whatever the instance is mounted under on Server -- and a base URL
-// configured the documented way already ends with that context. It is only
-// added when it does not.
+// Through the api.atlassian.com gateway that is the REST download endpoint:
+// the gateway proxies the API, not the site's download servlet. Elsewhere it
+// is the attachment's download link, which is relative to the instance's
+// context -- "/wiki" on Cloud -- and a base URL configured the documented way
+// already ends with that context.
 //
-// A download link that names a host of its own is refused unless it is the
-// configured one: the credentials go wherever the download does.
-func (api *API) AttachmentURL(info AttachmentInfo) (string, error) {
+// A link that names a server of its own is refused unless it is the
+// configured one, scheme and port included: the credentials go wherever the
+// download does.
+func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error) {
+	if api.gateway && info.ID != "" {
+		return strings.TrimSuffix(api.BaseURL, "/") + "/rest/api/content/" + url.PathEscape(pageID) +
+			"/child/attachment/" + url.PathEscape(info.ID) + "/download", nil
+	}
+
 	link := info.Links.Download
 	if link == "" {
 		return "", fmt.Errorf("attachment %q has no download link", info.Filename)
@@ -57,10 +65,10 @@ func (api *API) AttachmentURL(info AttachmentInfo) (string, error) {
 	}
 
 	if target.IsAbs() {
-		if !strings.EqualFold(target.Host, base.Host) {
+		if !sameServer(target, base) {
 			return "", fmt.Errorf(
-				"attachment %q is served from %s rather than from %s; refusing to send credentials there",
-				info.Filename, target.Host, base.Host,
+				"attachment %q is served from %s://%s rather than from %s://%s; refusing to send credentials there",
+				info.Filename, target.Scheme, target.Host, base.Scheme, base.Host,
 			)
 		}
 
@@ -79,9 +87,30 @@ func (api *API) AttachmentURL(info AttachmentInfo) (string, error) {
 	return prefix + link, nil
 }
 
-// DownloadAttachment writes the content of an attachment to w.
-func (api *API) DownloadAttachment(ctx context.Context, info AttachmentInfo, w io.Writer) error {
-	address, err := api.AttachmentURL(info)
+// sameServer says whether a and b name the same scheme, host and port, with a
+// port left out read as the scheme's default.
+func sameServer(a, b *url.URL) bool {
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
+		}
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			return "80"
+		case "https":
+			return "443"
+		}
+		return ""
+	}
+
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		port(a) == port(b)
+}
+
+// DownloadAttachment writes the content of an attachment of page pageID to w.
+func (api *API) DownloadAttachment(ctx context.Context, pageID string, info AttachmentInfo, w io.Writer) error {
+	address, err := api.AttachmentURL(pageID, info)
 	if err != nil {
 		return err
 	}
