@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
 )
 
@@ -31,4 +33,42 @@ func TestRawContentOutsideTheSourceIsNone(t *testing.T) {
 
 	inside := ast.NewRawHTML(text.NewMultiLineValueFromIndex(text.NewIndex(0, 3), nil))
 	assert.Equal(t, "<b>", string(HTMLBytes(inside, source)))
+}
+
+// TestRawContentAppendLeavesTheSource: the bytes handed out may be the
+// source's own, so an append onto them must copy rather than write over what
+// follows in the document.
+func TestRawContentAppendLeavesTheSource(t *testing.T) {
+	const doc = "<div>\nx\n</div>\n\nafter <b>y</b> z\n"
+
+	source := []byte(doc)
+	root := parser.New().Parse(source)
+
+	var nodes []ast.Node
+	_ = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		switch n.(type) {
+		case *ast.HTMLBlock, *ast.RawHTML, *ast.Text:
+			if entering {
+				nodes = append(nodes, n)
+			}
+		}
+
+		return ast.WalkContinue, nil
+	})
+	require.NotEmpty(t, nodes)
+
+	for _, node := range nodes {
+		for name, read := range map[string]func(ast.Node, []byte) []byte{
+			"HTMLBytes":             HTMLBytes,
+			"ExtractNodeRawContent": ExtractNodeRawContent,
+		} {
+			b := read(node, source)
+			if b == nil {
+				continue
+			}
+
+			_ = append(b, '!')
+			assert.Equal(t, doc, string(source), "%s(%s)", name, node.Kind())
+		}
+	}
 }

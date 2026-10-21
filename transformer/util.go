@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -53,13 +54,12 @@ func getNodeLineNumber(node ast.Node, source []byte) int {
 }
 
 // HTMLBytes returns the markup an inline raw HTML node or an HTML block
-// holds, as written. A block's bytes include its closing line: goldmark v2
-// keeps that among the others, where v1 held it apart. Any other node has
-// none, and neither does one that points outside source.
+// holds, as written, closing line included. Any other node has none, and
+// neither does one that points outside source.
 //
-// The bytes may be source's own, as they were in v1, and are to be read, not
-// written: one that keeps them past the document clones them, as
-// convertSegmentsToStrings does.
+// The bytes may be source's own. They are clipped, so an append copies rather
+// than writing over the source after them; one that keeps them past the
+// document clones them, as convertSegmentsToStrings does.
 func HTMLBytes(node ast.Node, source []byte) []byte {
 	switch n := node.(type) {
 	case *ast.RawHTML:
@@ -71,16 +71,15 @@ func HTMLBytes(node ast.Node, source []byte) []byte {
 			}
 		}
 
-		return n.Value.Bytes(source)
+		return slices.Clip(n.Value.Bytes(source))
 	}
 
 	return nil
 }
 
-// valueBytes is v's bytes, or nil when v points outside source. goldmark v2
-// slices source without asking, so a node that carries offsets into another
-// buffer -- a sub-document's, say -- panicked the whole compile where v1's
-// checks gave it no bytes.
+// valueBytes is v's bytes, clipped, or nil when v points outside source:
+// goldmark slices source without checking, and a node carrying offsets into
+// another buffer -- a sub-document's, say -- would panic the compile.
 func valueBytes(v text.Value, source []byte) []byte {
 	if !v.IsOwned() {
 		for _, index := range v.Indices() {
@@ -90,7 +89,7 @@ func valueBytes(v text.Value, source []byte) []byte {
 		}
 	}
 
-	return v.Bytes(source)
+	return slices.Clip(v.Bytes(source))
 }
 
 func withinSource(start, stop int, source []byte) bool {
@@ -153,7 +152,7 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 		// children for the default case below to collect.
 		return valueBytes(t.Value, source)
 	case *String:
-		return t.Value
+		return slices.Clip(t.Value)
 	default:
 		if node.HasChildren() {
 			buf := getBuffer()
