@@ -6,16 +6,14 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// legacyConfig is the configuration file Flags reads.
-var legacyConfig = &configFile{path: new(string)}
+// legacyConfig is the configuration file Flags reads. A single command has no
+// settle, and knows the file before it resolves any flag.
+var legacyConfig = &configFile{path: new(string), settled: true}
 
 // Flags are mark's flags, global and publish's together, as one command takes
 // them -- mark's command line before there were commands:
 //
 //	&cli.Command{Flags: util.Flags, Before: util.CheckFlags, Action: util.RunMark}
-//
-// Every flag reads the configuration file the "config" flag names, which on a
-// single command is known before any of them is resolved.
 //
 // Deprecated: use Run, which is mark's command line, commands and all.
 var Flags = append(globalFlags(legacyConfig), publishFlags(legacyConfig)...)

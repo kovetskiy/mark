@@ -52,16 +52,16 @@ The command line is a root command carrying the global flags (config file,
 connection and credentials, logging) and one command per job, today `publish`.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
 belongs to its command. Every flag reads the TOML file through a `configFile`
-source (`util/config.go`), which parses it once a run. Global flags' sources stay
-shut until the root's `Before` settles them, because `mark publish --config X`
-names the file only after the root's flags have been resolved. A command line
-naming no command is rewritten to `mark publish` by `Run` (the deprecated bare
-form many pipelines still use); that is why `Run` is the only entry point, and
-the command tree is not exported. `util.Flags`, `util.CheckFlags` and
-`util.RunMark` remain for programs that built mark's single command themselves.
-`util/command_test.go` fails when the help blocks in `README.md` drift from
-`mark --help` / `mark publish --help`, so regenerate them from the binary after
-touching a flag.
+source (`util/config.go`), parsed once a run. The root also carries hidden
+copies of publish's flags, for the deprecated `mark <publish flags>` its action
+still runs. The root's flags are resolved as it is parsed, before
+`mark publish --config X` names X, so their file and environment sources are
+held until a command's action settles them (`configFile.hold`). `util.Flags`,
+`util.CheckFlags` and `util.RunMark` remain for programs that built mark's
+single command themselves. `util/command_test.go` fails when the help blocks in
+`README.md` drift from the binary;
+`go test ./util -run TestREADMEUsageMatchesHelp -args -update-readme` rewrites
+them.
 
 ## Invariants
 

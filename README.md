@@ -2149,12 +2149,19 @@ GLOBAL OPTIONS:
 
 Before it had commands, `mark` took the publish options directly, and that
 still works: `mark -f doc.md` publishes exactly as `mark publish -f doc.md`
-does, reading the same flags, environment variables and configuration file. It
-says on standard error, whatever the log level, that the form is deprecated, so
-move pipelines over to `mark publish` at your convenience. `mark --help` and
-`mark --version` on their own are about mark as a whole, and a publish option
-written before `publish` (`mark -f doc.md publish`) is an error rather than
-silently ignored.
+does, reading the same flags, environment variables and configuration file, and
+logs a deprecation warning, so move pipelines over to `mark publish` at your
+convenience. A few command lines read differently than they used to:
+
+* `mark` on its own publishes what `MARK_FILES` or the configuration file names.
+  With nothing to publish it prints the help and fails.
+* An argument that is not a flag was ignored. One that looks like a mistyped
+  command (`mark publsh -f doc.md`) is now an error, and so is any such
+  argument when `--files` is not given. Others are still ignored, with a
+  warning: usually they are a `--files` glob the shell expanded.
+* A publish option written before a command (`mark -f doc.md publish`) is an
+  error rather than silently ignored.
+* `mark -f doc.md --help` shows `mark publish --help`.
 
 You can store user credentials in the configuration file, which should be
 located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):
