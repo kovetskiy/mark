@@ -54,17 +54,9 @@ func EnabledFeatures(command *cli.Command) []string {
 	return features
 }
 
-// globalFlags are the flags every command shares: where the configuration file
-// is, how to reach and authenticate against Confluence, and how to log. They
-// sit on the root command and are persistent, so "mark --base-url B publish"
-// and "mark publish --base-url B" mean the same thing.
-//
-// They read the configuration file through config.global, not config.value. A
-// persistent flag is resolved while the root command is parsed, and "mark
-// publish --config X" names the file only once the subcommand is parsed, after
-// that -- so a source that read the file then would look in the default file
-// instead of X. The root command's Before settles them once every flag has
-// been parsed and the file is known.
+// globalFlags are the flags every command shares, on the root and persistent,
+// so they work before or after the command's name. Their settings in the file
+// are held until the file is known; see configFile.hold.
 func globalFlags(config *configFile) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
@@ -81,54 +73,50 @@ func globalFlags(config *configFile) []cli.Flag {
 			Aliases: []string{"u"},
 			Value:   "",
 			Usage:   "use specified username to authenticate with Confluence.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_USERNAME"), config.global("username")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_USERNAME"), config.hold(config.value("username"))),
 		},
 		&cli.StringFlag{
 			Name:    "password",
 			Aliases: []string{"p"},
 			Value:   "",
 			Usage:   "use specified token to authenticate with Confluence. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD"), config.global("password")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD"), config.hold(config.value("password"))),
 		},
 		&cli.StringFlag{
 			Name:    "password-command",
 			Value:   "",
 			Usage:   "run the specified command and use the first line of its stdout as the token to authenticate with Confluence. Runs without a shell. Mutually exclusive with password.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD_COMMAND"), config.global("password-command")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PASSWORD_COMMAND"), config.hold(config.value("password-command"))),
 		},
 		&cli.StringFlag{
 			Name:    "base-url",
 			Aliases: []string{"b"},
 			Value:   "",
 			Usage:   "base URL for Confluence. Alternative to the base-url config file key.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_BASE_URL"), config.global("base-url")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_BASE_URL"), config.hold(config.value("base-url"))),
 		},
 		&cli.BoolFlag{
 			Name:    "insecure-skip-tls-verify",
 			Value:   false,
 			Usage:   "skip TLS certificate verification (useful for self-signed certificates)",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), config.global("insecure-skip-tls-verify")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INSECURE_SKIP_TLS_VERIFY"), config.hold(config.value("insecure-skip-tls-verify"))),
 		},
 		&cli.StringFlag{
 			Name:    "log-level",
 			Value:   "info",
 			Usage:   "set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LOG_LEVEL"), config.global("log-level")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LOG_LEVEL"), config.hold(config.value("log-level"))),
 		},
 		&cli.StringFlag{
 			Name:    "color",
 			Value:   "auto",
 			Usage:   "display logs in color. Possible values: auto, never.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COLOR"), config.global("color")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COLOR"), config.hold(config.value("color"))),
 		},
 	}
 }
 
-// publishFlags are the flags of "mark publish". Each reads the configuration
-// file the "config" flag names; that flag belongs to the root command, which
-// is parsed in full before publish is, and publish's flags are resolved only
-// once publish has been parsed too -- so whichever side of "publish" the file
-// is named on, every one of these sees it.
+// publishFlags are the flags of "mark publish".
 func publishFlags(config *configFile) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
@@ -436,13 +424,48 @@ func publishFlags(config *configFile) []cli.Flag {
 	}
 }
 
+// bareFlags are publish's flags as the root takes them, for the deprecated
+// "mark <publish flags>" with no command: hidden from the root's help, not
+// passed on to commands, and with every source held, so that until settle a
+// flag that is set is one the command line set.
+func bareFlags(config *configFile) []cli.Flag {
+	flags := publishFlags(config)
+	for _, flag := range flags {
+		switch flag := flag.(type) {
+		case *cli.StringFlag:
+			onRoot(flag, config)
+		case *cli.BoolFlag:
+			onRoot(flag, config)
+		case *cli.FloatFlag:
+			onRoot(flag, config)
+		case *cli.StringSliceFlag:
+			onRoot(flag, config)
+		default:
+			panic(fmt.Sprintf("bareFlags: no case for %T", flag))
+		}
+	}
+
+	return flags
+}
+
+func onRoot[T, C any, VC cli.ValueCreator[T, C]](flag *cli.FlagBase[T, C, VC], config *configFile) {
+	flag.Hidden, flag.Local = true, true
+	for i, source := range flag.Sources.Chain {
+		flag.Sources.Chain[i] = config.hold(source)
+	}
+}
+
 // CheckConfigFile reports a configuration file the command's "config" flag
 // names that cannot be used: one that does not parse, or a path somebody gave
-// that does not exist. See configFile.check.
+// that does not exist.
 func CheckConfigFile(command *cli.Command) error {
 	path := command.String("config")
+	if path == *legacyConfig.path {
+		// Flags' sources have read it already.
+		return legacyConfig.check()
+	}
 
-	return newConfigFile(&path, false).check()
+	return newConfigFile(&path).check()
 }
 
 // checkEmptyFeatures refuses an empty MARK_FEATURES or features = [], which
@@ -497,8 +520,7 @@ func isEmptyValue(value any) bool {
 }
 
 // CheckFlags reports a configuration file that cannot be used, and then
-// invalid combinations and values of the publish flags: the Before of a command
-// built from Flags.
+// invalid publish flags: the Before of a command built from Flags.
 func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if err := CheckConfigFile(command); err != nil {
 		return context, err
@@ -508,8 +530,6 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 }
 
 // checkPublishFlags validates combinations and values of the publish flags.
-// "mark publish" has had its configuration file checked by then, by the root
-// command's Before.
 func checkPublishFlags(context context.Context, command *cli.Command) (context.Context, error) {
 	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
