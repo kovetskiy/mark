@@ -37,6 +37,16 @@ func (c *converter) table(n *node) string {
 		}
 	}
 
+	// A cell carries nothing a GFM table cannot say: its column's alignment,
+	// and the editor's bookkeeping.
+	for _, row := range rows {
+		for i, cell := range row {
+			if !plainCell(cell, alignment(header[i])) {
+				return c.htmlBlock(n)
+			}
+		}
+	}
+
 	rendered := make([][]string, len(rows))
 	for i, row := range rows {
 		for _, cell := range row {
@@ -149,7 +159,7 @@ func (c *converter) tableCell(cell *node) (string, bool) {
 
 	w := c.inline(inlineContext{singleLine: true, table: true})
 	w.nodes(content)
-	text := strings.TrimSpace(w.finish())
+	text := trimProse(w.finish())
 
 	// A pipe ends the cell wherever it is, an attribute of markup kept as it
 	// was included, and only text can have it escaped.
@@ -159,6 +169,29 @@ func (c *converter) tableCell(cell *node) (string, bool) {
 
 	return text, true
 }
+
+// plainCell says whether a cell's attributes are ones a GFM table cell in a
+// column aligned to align publishes with.
+func plainCell(cell *node, align string) bool {
+	for _, a := range cell.attrs {
+		switch {
+		case a.name == "colspan" || a.name == "rowspan":
+			// tableRows has checked them.
+		case a.name == "style":
+			if m := onlyTextAlign.FindStringSubmatch(a.value); m == nil || m[1] != align {
+				return false
+			}
+		case a.name == "data-highlight-colour", a.name == "class" && strings.Contains(a.value, "highlight"):
+			return false
+		case !ignorableAttr(a.name):
+			return false
+		}
+	}
+
+	return alignment(cell) == align
+}
+
+var onlyTextAlign = regexp.MustCompile(`^\s*text-align:\s*(left|center|right)\s*;?\s*$`)
 
 var unescapedPipe = regexp.MustCompile(`(^|[^\\])\|`)
 

@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/kovetskiy/mark/v16/renderer"
 )
 
 // blockContext is where a run of blocks is written.
@@ -134,7 +136,8 @@ func (c *converter) block(n *node, ctx blockContext, previousList string) block 
 		return block{text: c.blockquote(n)}
 
 	case "pre":
-		return block{text: codeBlock("", n.textContent())}
+		// Not a fenced code block: mark publishes that as a code macro.
+		return block{text: c.htmlBlock(n)}
 
 	case "hr":
 		return block{text: "---"}
@@ -221,7 +224,7 @@ func (c *converter) bareInline(run []*node) string {
 	if len(parts) == 1 && parts[0].kind == elementNode && !parts[0].is("a", "ac:link", "ac:image", "br") {
 		w := c.inline(inlineContext{})
 		w.raw(parts[0])
-		return strings.TrimSpace(w.finish())
+		return strings.Trim(w.finish(), " \t\r\n")
 	}
 
 	return c.paragraph(run)
@@ -238,12 +241,33 @@ func (c *converter) paragraph(nodes []*node) string {
 	w := c.inline(inlineContext{})
 	w.nodes(nodes)
 
-	return escapeLineStarts(strings.TrimSpace(w.finish()))
+	return escapeLineStarts(trimProse(w.finish()))
+}
+
+// trimProse trims the whitespace around prose that Markdown would, and spells
+// out a non-breaking space at either end: Markdown keeps one, but a reader
+// would not see it.
+func trimProse(text string) string {
+	text = strings.Trim(text, " \t\r\n")
+
+	core := strings.TrimLeft(text, "\u00a0")
+	lead := strings.Count(text[:len(text)-len(core)], "\u00a0")
+	trimmed := strings.TrimRight(core, "\u00a0")
+	trail := strings.Count(core[len(trimmed):], "\u00a0")
+
+	return strings.Repeat("&nbsp;", lead) + trimmed + strings.Repeat("&nbsp;", trail)
 }
 
 // heading renders h1 to h6.
 func (c *converter) heading(n *node) string {
 	level, _ := strconv.Atoi(n.name[1:])
+
+	// An alignment, say, which a Markdown heading cannot carry.
+	for _, a := range n.attrs {
+		if !ignorableAttr(a.name) {
+			return c.htmlBlock(n)
+		}
+	}
 
 	// mark puts an anchor macro at the front of a heading when a link on the
 	// page points at it, named after the heading or after the id a {#id}
@@ -268,7 +292,7 @@ func (c *converter) heading(n *node) string {
 
 	w := c.inline(inlineContext{singleLine: true})
 	w.nodes(children)
-	text := strings.TrimSpace(w.finish())
+	text := trimProse(w.finish())
 	if text == "" {
 		return ""
 	}
@@ -484,17 +508,11 @@ func listItem(marker, content string) string {
 	return marker + " " + strings.Join(lines, "\n")
 }
 
-// quoteMarker is what makes mark publish a blockquote as an info, note, tip or
-// warning macro: the words renderer/blockquote.go looks for, or a GitHub
-// alert.
-var quoteMarker = regexp.MustCompile(
-	`^(?i)(?:(?:info|infos|note|notes|warn|warns|warning|warnings|tip|tips)\b[[:punct:]]*(?:\s|$)|\[!)`,
-)
-
 // blockquote renders a blockquote -- as HTML when it opens with a word mark
-// would publish it as a macro for.
+// would publish it as a macro for, or with a GitHub alert's marker.
 func (c *converter) blockquote(n *node) string {
-	if quoteMarker.MatchString(strings.TrimSpace(n.textContent())) {
+	text := strings.TrimSpace(n.textContent())
+	if renderer.AdmonitionMarker(text) != "" || strings.HasPrefix(text, "[!") {
 		return c.htmlBlock(n)
 	}
 

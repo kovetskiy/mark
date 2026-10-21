@@ -152,8 +152,8 @@ func TestFencedCodeBlockDashLanguage(t *testing.T) {
 		"and the options after it are still read")
 }
 
-// TestFencedCodeBlockDashOptions: the first word after the marker was taken
-// for a language, and so lost, whether an option or the "title" keyword.
+// TestFencedCodeBlockDashOptions: after the "-" marker, the first word is an
+// option or the "title" keyword, not a language.
 func TestFencedCodeBlockDashOptions(t *testing.T) {
 	for _, test := range []struct {
 		info string

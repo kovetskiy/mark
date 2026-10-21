@@ -2,8 +2,11 @@ package export
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/kovetskiy/mark/v16/renderer"
 )
 
 // macro renders a structured macro that stands on its own.
@@ -89,47 +92,47 @@ func (c *converter) codeMacro(n *node) (string, bool) {
 		return "", false
 	}
 
-	info := language
-	if len(options) > 0 || title != "" {
-		if info == "" {
-			info = "-"
-		}
-		if len(options) > 0 {
-			info += " " + strings.Join(options, " ")
-		}
-		if title != "" {
-			written, ok := codeTitle(title)
-			if !ok {
-				return "", false
-			}
-			info += " " + written
-		}
+	info, ok := codeInfo(language, options, title)
+	if !ok {
+		return "", false
 	}
 
 	return codeBlock(info, text), true
 }
 
-// titleMisread matches what renderer/fencedcodeblock.go would take out of a
-// title written in the space form, "title T": a "title=" inside it, which it
-// reads as the title, and a "{...}" at its end, which it drops as an
-// attribute block.
-var titleMisread = regexp.MustCompile(`\btitle\s*=|\{[^}]*\}$`)
-
-// codeTitle writes a code block's title so that the info string gives back
-// exactly that title: as "title T", mark's own form, where that reads back
-// as T, and quoted as MkDocs writes it, title="T", where it would not. A
-// title with both kinds of quote in it has no way to be written.
-func codeTitle(title string) (string, bool) {
-	written := "title " + title
-	if !titleMisread.MatchString(written) {
-		return written, true
+// codeInfo writes the info string that publishing reads back as exactly this
+// language, these options and this title, if there is one: with the title as
+// "title T", mark's own form, or quoted as MkDocs writes it where that form
+// would be misread.
+func codeInfo(language string, options []string, title string) (string, bool) {
+	if len(options) == 0 && title == "" {
+		return language, true
 	}
 
-	switch {
-	case !strings.Contains(title, `"`):
-		return `title="` + title + `"`, true
-	case !strings.Contains(title, "'"):
-		return "title='" + title + "'", true
+	prefix := language
+	if prefix == "" {
+		prefix = "-"
+	}
+	if len(options) > 0 {
+		prefix += " " + strings.Join(options, " ")
+	}
+
+	candidates := []string{prefix}
+	if title != "" {
+		candidates = []string{prefix + " title " + title}
+		if !strings.Contains(title, `"`) {
+			candidates = append(candidates, prefix+` title="`+title+`"`)
+		}
+		if !strings.Contains(title, "'") {
+			candidates = append(candidates, prefix+" title='"+title+"'")
+		}
+	}
+
+	for _, info := range candidates {
+		lang, read, readTitle := renderer.ParseCodeBlockInfo(info)
+		if lang == language && readTitle == title && slices.Equal(read, options) {
+			return info, true
+		}
 	}
 
 	return "", false

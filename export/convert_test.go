@@ -197,6 +197,10 @@ func TestParsePageURL(t *testing.T) {
 			PageRef{BaseURL: "https://confluence.example.com", Space: "DOCS", Title: "Some Title?"}},
 		{"https://confluence.example.com/display/DOCS/2024/01/31/Notes",
 			PageRef{BaseURL: "https://confluence.example.com", Space: "DOCS", Title: "Notes"}},
+		// The context path is found as --target-url finds it, any *.action
+		// included.
+		{"https://example.com/confluence/plugins/viewsource/viewpagesrc.action?pageId=77",
+			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},
 	} {
 		got, err := ParsePageURL(test.url)
 		require.NoError(t, err, test.url)
@@ -348,4 +352,95 @@ func TestConvertCodeTitleRoundTrips(t *testing.T) {
 	md, published := republish(t, storage)
 	assert.NotContains(t, md, "```")
 	assert.Equal(t, canonical(t, storage), published)
+}
+
+// TestConvertAdjacentInlineRuns: the closing and opening delimiters of two
+// runs side by side would read as one run with the delimiters as text.
+func TestConvertAdjacentInlineRuns(t *testing.T) {
+	for _, storage := range []string{
+		`<p><strong>a</strong><strong>b</strong></p>`,
+		`<p><em>a</em><em>b</em></p>`,
+		`<p><em>a</em><strong>b</strong></p>`,
+		`<p><s>a</s><s>b</s></p>`,
+		`<p><code>a</code><code>b</code></p>`,
+	} {
+		_, published := republish(t, storage)
+		assert.Equal(t, canonical(t, strings.NewReplacer("<s>", "<del>", "</s>", "</del>").Replace(storage)), published, storage)
+	}
+}
+
+// TestConvertControlCharacters: encoding/xml refuses them, raw or as a
+// reference, and so would Confluence; the page is exported with U+FFFD.
+func TestConvertControlCharacters(t *testing.T) {
+	assert.Equal(t, "a\ufffd\\[0mb c\ufffd\n", convert(t, "<p>a&#27;[0mb c\x1b</p>"))
+}
+
+// TestConvertNamespacedNames are written back with the prefix they had, not
+// the namespace it stands for.
+func TestConvertNamespacedNames(t *testing.T) {
+	for _, storage := range []string{
+		`<p xml:lang="en">x</p>`,
+		`<div xmlns="http://www.w3.org/1999/xhtml"><p>x</p></div>`,
+	} {
+		md := convert(t, storage)
+		assert.NotContains(t, md, "http://www.w3.org/XML/1998/namespace:", storage)
+		assert.NotContains(t, md, "xhtml:p", storage)
+		_, published := republish(t, storage)
+		assert.Equal(t, canonical(t, storage), published, storage)
+	}
+}
+
+// TestConvertKeepsNonBreakingSpaces: Markdown keeps one at either end of a
+// paragraph, so it is written where a reader can see it; a paragraph holding
+// nothing else is a spacer the page's layout relies on.
+func TestConvertKeepsNonBreakingSpaces(t *testing.T) {
+	md, published := republish(t, "<p>&nbsp;</p><p>after</p>")
+	assert.Equal(t, "&nbsp;\n\nafter\n", md)
+	assert.Equal(t, canonical(t, "<p> </p><p>after</p>"), published)
+
+	md, published = republish(t, "<p>&nbsp;lead and trail&nbsp;</p>")
+	assert.Equal(t, "&nbsp;lead and trail&nbsp;\n", md)
+	assert.Equal(t, canonical(t, "<p> lead and trail </p>"), published)
+}
+
+// TestConvertKeepsWhatMarkdownCannotSay: an aligned heading, a highlighted
+// cell, a <pre> -- written as Markdown, each would lose what it had.
+func TestConvertKeepsWhatMarkdownCannotSay(t *testing.T) {
+	for _, storage := range []string{
+		`<h2 style="text-align: center;">Title</h2>`,
+		`<table><tbody><tr><th>a</th></tr><tr><td data-highlight-colour="#e3fcef">b</td></tr></tbody></table>`,
+		`<table><tbody><tr><th class="highlight-green">a</th></tr><tr><td>b</td></tr></tbody></table>`,
+		`<table><tbody><tr><th>a</th></tr><tr><td style="background-color: red;">b</td></tr></tbody></table>`,
+		`<table><tbody><tr><th style="text-align:center">a</th></tr><tr><td>b</td></tr></tbody></table>`,
+		`<pre>a <b>b</b></pre>`,
+	} {
+		_, published := republish(t, storage)
+		assert.Equal(t, canonical(t, storage), published, storage)
+	}
+
+	// mark's own aligned table is still a GFM table.
+	assert.Equal(t, "| a |\n| :---: |\n| b |\n", convert(t,
+		`<table><tbody><tr><th style="text-align:center">a</th></tr><tr><td style="text-align:center">b</td></tr></tbody></table>`))
+}
+
+// TestConvertCodeTitleReadsBack: the info string is the one publishing reads
+// back as the same title, quoted where mark's own form would be misread.
+func TestConvertCodeTitleReadsBack(t *testing.T) {
+	for _, title := range []string{"Plain", "a title=b", "ends {in braces}", `quote " and title=x`} {
+		storage := `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">go</ac:parameter>` +
+			`<ac:parameter ac:name="title">` + escapeXMLText(title) + `</ac:parameter>` +
+			`<ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`
+		md, published := republish(t, storage)
+		assert.True(t, strings.HasPrefix(md, "```go "), md)
+		assert.Contains(t, published, `<ac:parameter ac:name="title">`+escapeXMLText(title)+`</ac:parameter>`, md)
+	}
+}
+
+// TestConvertEscapesThroughStdlib: what is written as storage format has the
+// characters XML cannot carry replaced, in attributes and CDATA too.
+func TestConvertEscapesThroughStdlib(t *testing.T) {
+	md := convert(t, `<p><a href="x" data-x="&quot;a&quot;&#10;b" data-y="c&#27;">t</a></p>`)
+	assert.Contains(t, md, `data-x="&#34;a&#34;&#10;b"`)
+	assert.Contains(t, md, "data-y=\"c\ufffd\"")
+	assert.Equal(t, "<![CDATA[a]]><![CDATA[]]]]><![CDATA[>b]]>", cdata("a]]>b"))
 }
