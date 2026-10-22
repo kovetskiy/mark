@@ -196,31 +196,33 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 	})
 
 	// With macro nothing is drawn, so the settings that drive drawing have no
-	// effect. The bundle is refused like it is with a PNG; the scale and engine
-	// carry defaults, so only an explicit setting is refused.
+	// effect. The bundle is refused like it is with a PNG; the engine and scale
+	// are warned about where the run is configured, not refused, because a
+	// value may come from the configuration file or the environment.
 	t.Run("a bundle in a macro is refused", func(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-bundle"}))
 	})
 
-	t.Run("a scale with macro is refused", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-scale", "2"}))
+	t.Run("a scale with macro asks for nothing", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-scale", "2"}))
 	})
 
-	t.Run("an engine with macro is refused", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-engine", "merman"}))
+	t.Run("an engine with macro asks for nothing", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-engine", "merman"}))
 	})
 }
 
 // TestMermaidMacroNameFlagValidation covers the macro key a diagram is
-// published under with --mermaid-output=macro. It is only meaningful with the
-// macro output, and must not be empty.
+// published under with --mermaid-output=macro. An empty name is refused; a name
+// beside an image output is warned about where the run is configured, not
+// refused, since the value may come from the configuration file.
 func TestMermaidMacroNameFlagValidation(t *testing.T) {
 	t.Run("a name with macro is accepted", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", "mermaid-diagrams"}))
 	})
 
-	t.Run("a name without macro is refused", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-macro-name", "mermaid-diagrams"}))
+	t.Run("a name without macro is not refused", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-macro-name", "mermaid-diagrams"}))
 	})
 
 	t.Run("an empty name is refused", func(t *testing.T) {
@@ -230,6 +232,30 @@ func TestMermaidMacroNameFlagValidation(t *testing.T) {
 	t.Run("the default without macro is accepted", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd"}))
 	})
+}
+
+// TestMermaidMacroOutputNeedsNoDrawingFlags: --mermaid-output=macro on its own
+// goes from the CLI through Config into prepare(), which must accept a run that
+// asked only for the macro without also naming an engine or a scale.
+func TestMermaidMacroOutputNeedsNoDrawingFlags(t *testing.T) {
+	cmd := &cli.Command{
+		Name:   "temp-mark",
+		Flags:  Flags,
+		Action: RunMark,
+	}
+
+	doc := filepath.Join(t.TempDir(), "page.md")
+	if err := os.WriteFile(doc, []byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.Run(context.TODO(), []string{
+		"",
+		"--compile-only",
+		"--mermaid-output", "macro",
+		"--files", doc,
+	})
+	assert.NoError(t, err)
 }
 
 // TestD2OutputFlagValidation covers the format a d2 diagram is published as.

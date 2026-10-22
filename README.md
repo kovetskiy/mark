@@ -1613,7 +1613,7 @@ A plugin that declares its macro under a different key is named with `--mermaid-
 mark --mermaid-output=macro --mermaid-macro-name=my-mermaid
 ```
 
-Nothing is drawn with `macro`, so `--mermaid-engine`, `--mermaid-scale` and `--mermaid-bundle` are refused when given alongside it.
+Nothing is drawn with `macro`, so `--mermaid-engine` and `--mermaid-scale` have no effect alongside it (mark warns), and `--mermaid-bundle` is refused.
 
 ### Render D2 Diagram
 
@@ -2000,9 +2000,9 @@ GLOBAL OPTIONS:
    --content-appearance string                    default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), fixed, default (Narrow), max (Max). [$MARK_CONTENT_APPEARANCE]
    --mermaid-scale float                          defines the scaling factor for mermaid renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_MERMAID_SCALE]
    --mermaid-engine string                        what mermaid diagrams are drawn by: chrome (the default, a headless browser running mermaid.js) or merman (experimental, a native reimplementation that needs no browser and must be installed separately). (default: "chrome") [$MARK_MERMAID_ENGINE]
-   --mermaid-output string                        image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine, --mermaid-scale and --mermaid-bundle are refused with it). (default: "png") [$MARK_MERMAID_OUTPUT]
+   --mermaid-output string                        image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine and --mermaid-scale have no effect with it, and --mermaid-bundle is refused). (default: "png") [$MARK_MERMAID_OUTPUT]
    --mermaid-bundle                               keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and is refused with png or macro. [$MARK_MERMAID_BUNDLE]
-   --mermaid-macro-name string                    the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Needs --mermaid-output=macro. (default: "mermaid-macro") [$MARK_MERMAID_MACRO_NAME]
+   --mermaid-macro-name string                    the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where a name is used verbatim. (default: "mermaid-macro") [$MARK_MERMAID_MACRO_NAME]
    --math-format string                           image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
    --math-scale float                             defines the scaling factor for PNG formula renderings; ignored when math-format is svg. (default: 2) [$MARK_MATH_SCALE]
    --include-path string                          Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]

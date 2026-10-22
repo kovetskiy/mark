@@ -45,7 +45,7 @@ func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	err := Run(config)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "MermaidOutput")
+	assert.Contains(t, err.Error(), "mermaid output")
 }
 
 // TestMermaidBundleNeedsAnSVGToGoIn is the same for the pair of them: a bundle
@@ -58,7 +58,7 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 	err := Run(config)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "MermaidBundle")
+	assert.Contains(t, err.Error(), "mermaid bundle")
 }
 
 // TestMermaidDefaultsPublishAsBefore is the control, and the reason the empty

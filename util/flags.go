@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	mark "github.com/kovetskiy/mark/v16"
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/types"
 
@@ -252,7 +253,7 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "mermaid-output",
 		Value:   "png",
-		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine, --mermaid-scale and --mermaid-bundle are refused with it).",
+		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine and --mermaid-scale have no effect with it, and --mermaid-bundle is refused).",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
@@ -264,7 +265,7 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "mermaid-macro-name",
 		Value:   types.MermaidMacroDefaultName,
-		Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Needs --mermaid-output=macro.",
+		Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where a name is used verbatim.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_MACRO_NAME"), altsrctoml.TOML("mermaid-macro-name", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
@@ -566,49 +567,19 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		}
 	}
 
-	// A bundle that goes nowhere is worth saying out loud rather than dropping:
-	// it was asked for on purpose, and it silently does not happen. Asked of its
-	// value rather than of IsSet, because false is exactly what a bundle nobody
-	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
-	// way at all.
-	//
 	// Only an SVG has room for the source: a PNG has nowhere for it, and the
-	// macro output already publishes the source itself. Either is refused, just
-	// as the PNG always was.
-	if command.Bool("mermaid-bundle") && mermaidOutput != "svg" {
-		return context, errors.New(
-			"--mermaid-bundle needs --mermaid-output=svg: only an SVG has room for the diagram's source",
-		)
+	// macro output publishes the source itself. A bundle asked for alongside
+	// either is contradictory rather than moot.
+	if err := mark.ValidateMermaidBundle(mermaidOutput, command.Bool("mermaid-bundle")); err != nil {
+		return context, err
 	}
 
-	// With --mermaid-output=macro nothing is drawn, so the settings that drive
-	// drawing have no effect. Both carry a default, so a value is only worth
-	// refusing when it was set on purpose -- otherwise a command that never
-	// heard of the flag would fail for carrying its default.
-	if mermaidOutput == "macro" {
-		if command.IsSet("mermaid-engine") {
-			return context, errors.New(
-				"--mermaid-engine has no effect with --mermaid-output=macro, which does not draw the diagram",
-			)
-		}
-		if command.IsSet("mermaid-scale") {
-			return context, errors.New(
-				"--mermaid-scale has no effect with --mermaid-output=macro, which does not draw the diagram",
-			)
-		}
-	}
-
-	// A macro name is only meaningful with the macro output. Empty is refused
-	// when asked for on purpose, and a name set without the macro output names
-	// a macro that never appears.
-	mermaidMacroName := command.String("mermaid-macro-name")
-	if command.IsSet("mermaid-macro-name") {
-		if mermaidMacroName == "" {
-			return context, errors.New("--mermaid-macro-name must not be empty")
-		}
-		if mermaidOutput != "macro" {
-			return context, errors.New("--mermaid-macro-name needs --mermaid-output=macro")
-		}
+	// Empty is a value somebody cleared, not one they never set. The settings
+	// that simply have no effect in a given output are warned about where the
+	// run is configured, not refused here: they may come from the configuration
+	// file or the environment.
+	if command.IsSet("mermaid-macro-name") && command.String("mermaid-macro-name") == "" {
+		return context, errors.New("--mermaid-macro-name must not be empty")
 	}
 
 	// Checked as written, and asked of IsSet as well, so that a value somebody

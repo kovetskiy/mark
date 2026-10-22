@@ -109,7 +109,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/mermaid-macro.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
 			variant = "-droph1"
 		default:
 			variant = ""
@@ -224,6 +224,39 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 
 	actual, _, _ := mark.CompileMarkdown(markdown, lib, "testdata/plantuml.md", cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
+}
+
+// TestCompileMarkdownMermaidMacroGolden pins the macro rendering against a
+// fixture, as the other renderers have one. testdata/mermaid-macro.md is also
+// picked up by the feature-off tests above, which pin the fence staying a plain
+// code block; this pins what reaches the page with the feature and macro on.
+func TestCompileMarkdownMermaidMacroGolden(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	markdown, htmlname, html := loadData(t, "testdata/mermaid-macro.md", "-macro")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		Features:      []string{"mermaid"},
+		MermaidOutput: "macro",
+	}
+
+	actual, _, err := mark.CompileMarkdown(markdown, lib, "testdata/mermaid-macro.md", cfg)
+	test.NoError(err)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "testdata/mermaid-macro.md vs "+htmlname)
 }
 
 func TestCompileMarkdownInlineLinkCard(t *testing.T) {
@@ -418,33 +451,6 @@ func TestContinueOnError(t *testing.T) {
 	// returns an error to allow callers/CI to detect partial failures.
 	assert.Error(t, err, "App should report partial failure when continue-on-error is enabled and some files fail")
 	assert.ErrorContains(t, err, "one or more files failed to process")
-}
-
-// TestMermaidMacroOutputNeedsNoDrawingFlags: --mermaid-output=macro on its own
-// goes from the CLI through Config into prepare(), which used to read the flag
-// defaults (chrome, 1.0) and refuse them as "has no effect with macro". The
-// defaults must stay behind the flags, so a run that asked only for the macro
-// publishes it without also naming an engine or a scale.
-func TestMermaidMacroOutputNeedsNoDrawingFlags(t *testing.T) {
-	cmd := &cli.Command{
-		Name:   "temp-mark",
-		Flags:  util.Flags,
-		Action: util.RunMark,
-	}
-
-	dir := t.TempDir()
-	doc := filepath.Join(dir, "page.md")
-	if err := os.WriteFile(doc, []byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	err := cmd.Run(context.TODO(), []string{
-		"",
-		"--compile-only",
-		"--mermaid-output", "macro",
-		"--files", doc,
-	})
-	assert.NoError(t, err)
 }
 
 // TestDetailsIsNotOptional: <details> is converted whatever --features says.
