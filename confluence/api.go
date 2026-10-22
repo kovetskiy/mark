@@ -1120,6 +1120,14 @@ func (api *API) UpdateAttachment(
 		return info, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
 	}
 
+	if shortResponse.ID == "" {
+		return info, fmt.Errorf(
+			"the Confluence REST API for updating attachments returned "+
+				"no attachment (JSON=%s), expected one with an id",
+			string(result),
+		)
+	}
+
 	return shortResponse, nil
 }
 
