@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -320,11 +321,18 @@ func TestProcessD2SVGWillNotReadOutsideTheProject(t *testing.T) {
 	t.Chdir(project)
 
 	for _, reference := range []string{secret, "../../" + filepath.Base(outside) + "/id_rsa"} {
+		// A drive letter reads as a URL scheme, so d2 refuses a Windows absolute
+		// path as an address before the project boundary is consulted.
+		refused := "outside"
+		if filepath.IsAbs(reference) && runtime.GOOS == "windows" {
+			reference, refused = filepath.ToSlash(reference), "address"
+		}
+
 		_, err := ProcessD2SVG("outside",
 			[]byte("a: {icon: "+reference+"}\na -> b\n"), document, 1.0, false)
 		require.Error(t, err, "reference %q", reference)
 
-		assert.Contains(t, err.Error(), "outside")
+		assert.Contains(t, err.Error(), refused)
 	}
 }
 

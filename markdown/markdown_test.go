@@ -54,6 +54,7 @@ func TestCompileMarkdown(t *testing.T) {
 	}
 
 	for _, filename := range testcases {
+		filename = filepath.ToSlash(filename) // the cases below compare slash paths
 		fmt.Printf("Testing: %v\n", filename)
 		lib, err := stdlib.New(nil)
 		if err != nil {
@@ -101,6 +102,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 	}
 
 	for _, filename := range testcases {
+		filename = filepath.ToSlash(filename) // the cases below compare slash paths
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)
@@ -155,6 +157,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 	}
 
 	for _, filename := range testcases {
+		filename = filepath.ToSlash(filename) // the cases below compare slash paths
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)

@@ -75,3 +75,21 @@ func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
 
 	assert.True(t, moved.Load(), "a real run asks to move the folder")
 }
+
+// TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle: a MARK_PARENTS chain that
+// differs from the existing anchor page only in case names that page, so a dry
+// run finds the folders beneath it rather than standing in for ones a real run
+// would create.
+func TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	anchor := server.AddPage("DOCS", "My Parent", "page", "")
+	folder := server.AddFolder("DOCS", "Manuals", anchor.ID, "page")
+
+	parent, err := page.EnsureMixedAncestry(true, api, nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+
+	assert.Equal(t, folder.ID, parent.ID, "the existing folder under the anchor is the parent")
+}

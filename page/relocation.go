@@ -2,6 +2,7 @@ package page
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
@@ -60,17 +61,25 @@ func UnderDeclaredParents(pg *confluence.PageInfo, parents []string) bool {
 		return true
 	}
 
-	ancestors := make(map[string]struct{}, len(pg.Ancestors))
-	for _, a := range pg.Ancestors {
-		ancestors[a.Title] = struct{}{}
-	}
 	for _, p := range parents {
-		if _, ok := ancestors[p]; !ok {
+		if !hasAncestorTitled(pg, p) {
 			return false
 		}
 	}
 
 	return true
+}
+
+// hasAncestorTitled reports whether one of pg's ancestors has the title,
+// compared without regard to case, as Confluence compares titles.
+func hasAncestorTitled(pg *confluence.PageInfo, title string) bool {
+	for _, a := range pg.Ancestors {
+		if strings.EqualFold(a.Title, title) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // offAnchor reports whether a page that a document with folders found by title
@@ -103,12 +112,8 @@ func pageUnderParents(pg *confluence.PageInfo, parents []string) bool {
 	if pg == nil || len(parents) == 0 {
 		return true
 	}
-	parentSet := make(map[string]struct{}, len(parents))
 	for _, p := range parents {
-		parentSet[p] = struct{}{}
-	}
-	for _, a := range pg.Ancestors {
-		if _, ok := parentSet[a.Title]; ok {
+		if hasAncestorTitled(pg, p) {
 			return true
 		}
 	}
@@ -156,7 +161,7 @@ func WouldMove(
 		return false
 	}
 
-	if len(parents) > 0 && parent.Title != parents[len(parents)-1] {
+	if len(parents) > 0 && !strings.EqualFold(parent.Title, parents[len(parents)-1]) {
 		return true
 	}
 
