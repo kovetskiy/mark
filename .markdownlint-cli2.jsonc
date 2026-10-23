@@ -1,6 +1,7 @@
 {
   "globs": [
     "*.md",
+    "docs/**/*.md",
     ".github/**/*.md"
   ],
 
