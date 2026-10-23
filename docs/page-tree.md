@@ -329,14 +329,16 @@ rather than losing sight of it.
 * `--track-pages` has no effect when publishing straight to a page ID, since the
   mapping is per space and per file and a page ID is neither.
 
-## Moving, renaming, removing and watching a page by hand
+## Listing, moving, copying, renaming, removing and watching pages by hand
 
 `mark page` acts on one page in Confluence directly, without a Markdown file.
 It is experimental: its commands and flags may change between releases.
 
 ```bash
+mark page tree   <page> [--depth N]          # a page, or a folder by id
 mark page move   <page> --parent <page>      # under a page, or a folder by id
 mark page move   <page> --before <sibling>   # or --after, beside a sibling
+mark page copy   <page> --parent <page> [--title T] [--prefix P] [--recursive]
 mark page rename <page> "New title"
 mark page archive <page>                     # Confluence Cloud only
 mark page delete <page> [--recursive]
@@ -352,11 +354,20 @@ nothing.
 
 | command | what it does | what it refuses |
 | --- | --- | --- |
+| `tree` | prints the page and everything beneath it, with ids; folders and, on Cloud, other content such as whiteboards are marked with their type. `--depth` counts the page itself as one level | nothing |
+| `copy` | copies the page under `--parent`, with its attachments, labels and content properties but not its restrictions. `--recursive` copies the pages beneath it too, each under the copy of its parent. Confluence Cloud only | a title its space already has, or that two copies would share; with `--recursive`, a folder or other non-page content in the tree, or a `--parent` inside it |
 | `move` | moves the page, and everything beneath it, under `--parent` or beside a sibling. `--parent` with `--before` or `--after` checks the sibling is that parent's child | a blog post; another space; a page beneath itself; a sibling at the top of the space |
 | `rename` | sets the title and keeps the content, as a minor edit with the version message `renamed from "<old title>"` | a title another page in the space already has |
 | `archive` | asks Confluence to archive the page; Confluence archives it afterwards | a page with children; the space homepage |
 | `delete` | moves the page to the trash. `--recursive` trashes its descendants too, deepest first | a page with children without `--recursive`; a page with a folder beneath it; the space homepage |
 | `watch`, `unwatch` | starts or stops Confluence notifying you of the page's changes, or each `--user`. `--recursive` does the same for every page beneath it, from the top down | a `--user` on Cloud whose full name matches no user, or more than one; with `--recursive`, a page with a folder anywhere beneath it |
+
+`copy` names the top copy `--title`, or else `--prefix` and the page's own
+title, and every copy beneath it `--prefix` and its own title. A copy in the
+same space as its source therefore needs one of them. Every title is checked
+before the first copy is made, so a clash stops the run before it changes
+anything. A copy is as open as the parent it lands under: restrictions are not
+copied, which is worth knowing before copying a restricted page.
 
 `--user` names a user the way a `Restrictions` header does: on Cloud by full
 name, which has to match exactly one user, or as `accountid:<id>`; on Server and

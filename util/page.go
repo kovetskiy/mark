@@ -26,11 +26,23 @@ const pageArgument = "A page is named by its id, by its URL, or by its title tog
 func (line *commandLine) pageCommand() *cli.Command {
 	return &cli.Command{
 		Name:  PageCommand,
-		Usage: "move, rename, archive, delete or watch a Confluence page (experimental)",
+		Usage: "list, move, copy, rename, archive, delete or watch Confluence pages (experimental)",
 		Description: "Experimental: the commands and their flags may change between releases. " +
 			"These act on Confluence directly, not on markdown: a page publish manages is put " +
 			"back the way its file says the next time publish runs. " + pageArgument,
 		Commands: []*cli.Command{
+			{
+				Name:      "tree",
+				Usage:     "list a page, or a folder by id, and everything beneath it, with their ids",
+				ArgsUsage: "<page>",
+				Flags: append(pageFlags(line.config),
+					&cli.IntFlag{
+						Name:  "depth",
+						Usage: "list this many levels, counting the page itself; 0 is every level.",
+					},
+				),
+				Action: line.pageAction(1, checkPageTree, runPageTree),
+			},
 			{
 				Name:      "move",
 				Usage:     "move a page, and the pages beneath it, under another page or folder, or beside a sibling",
@@ -41,6 +53,18 @@ func (line *commandLine) pageCommand() *cli.Command {
 					&cli.StringFlag{Name: "after", Usage: "place the page directly after this sibling, under the sibling's parent."},
 				),
 				Action: line.pageAction(1, checkPageMove, runPageMove),
+			},
+			{
+				Name:      "copy",
+				Usage:     "copy a page under another, with its attachments, labels and content properties but not its restrictions (Confluence Cloud)",
+				ArgsUsage: "<page>",
+				Flags: append(pageFlags(line.config),
+					&cli.StringFlag{Name: "parent", Usage: "the page to copy it under."},
+					&cli.StringFlag{Name: "title", Usage: "the title of the copy. Defaults to --prefix and the page's own title."},
+					&cli.StringFlag{Name: "prefix", Usage: "put this before the title of every copy --title does not name, such as \"Copy of \". A copy cannot take a title its space already has."},
+					&cli.BoolFlag{Name: "recursive", Usage: "copy every page beneath it too, each under the copy of its parent."},
+				),
+				Action: line.pageAction(1, checkPageCopy, runPageCopy),
 			},
 			{
 				Name:      "rename",
@@ -244,6 +268,34 @@ func checkPageMove(cmd *cli.Command) error {
 		return errors.New("say where to move the page with --parent, --before or --after")
 	}
 	return nil
+}
+
+func checkPageTree(cmd *cli.Command) error {
+	if cmd.Int("depth") < 0 {
+		return errors.New("--depth counts levels, and cannot be negative")
+	}
+	return nil
+}
+
+func runPageTree(run pageRun, cmd *cli.Command) error {
+	return page.Tree(run.api, run.refs[cmd.Args().First()], cmd.Int("depth"), run.out)
+}
+
+func checkPageCopy(cmd *cli.Command) error {
+	if cmd.String("parent") == "" {
+		return errors.New("say where to copy the page with --parent")
+	}
+	return nil
+}
+
+func runPageCopy(run pageRun, cmd *cli.Command) error {
+	return page.Copy(run.api, run.refs[cmd.Args().First()], page.CopyOptions{
+		Parent:    *run.ref(cmd, "parent"),
+		Title:     cmd.String("title"),
+		Prefix:    cmd.String("prefix"),
+		Recursive: cmd.Bool("recursive"),
+		DryRun:    cmd.Bool("dry-run"),
+	}, run.out)
 }
 
 func runPageMove(run pageRun, cmd *cli.Command) error {

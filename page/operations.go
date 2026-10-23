@@ -198,13 +198,8 @@ func checkMove(target, destination *confluence.PageInfo) error {
 		return fmt.Errorf("%s is in space %s and %s in space %s: mark moves pages only within their space",
 			describe(target), target.Space.Key, describe(destination), destination.Space.Key)
 	}
-	if destination.ID == target.ID {
+	if destination.ID == target.ID || isAncestor(target.ID, destination) {
 		return fmt.Errorf("cannot move %s beneath itself", describe(target))
-	}
-	for _, ancestor := range destination.Ancestors {
-		if ancestor.ID == target.ID {
-			return fmt.Errorf("cannot move %s beneath itself", describe(target))
-		}
 	}
 	return nil
 }
