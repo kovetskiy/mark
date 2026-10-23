@@ -158,8 +158,10 @@ type spaceIDCacheEntry struct {
 	err error
 }
 
+// pageCacheKey lowercases the title, so every spelling of it shares one
+// entry, as it shares one page in Confluence.
 func pageCacheKey(space, title, pageType string) string {
-	return space + "\x00" + title + "\x00" + pageType
+	return space + "\x00" + strings.ToLower(title) + "\x00" + pageType
 }
 
 func clonePageInfo(page *PageInfo) *PageInfo {
@@ -1655,7 +1657,7 @@ func (api *API) forgetMissesForTitle(title, pageType string) {
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
-	suffix := "\x00" + title + "\x00" + pageType
+	suffix := pageCacheKey("", title, pageType)
 	for key, entry := range api.pageCache {
 		if entry == nil && strings.HasSuffix(key, suffix) {
 			delete(api.pageCache, key)

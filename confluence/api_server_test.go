@@ -881,3 +881,23 @@ func TestFindHomePageReportsV1ErrorWhenV2Unavailable(t *testing.T) {
 		"the v1 status is the one that explains the failure")
 	assert.Contains(t, err.Error(), "Unauthorized")
 }
+
+// A miss cached for "team" must not hide a page created as "Team".
+func TestFindPageCacheIgnoresCase(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Root", "page", "")
+
+	missing, err := api.FindPage("DOCS", "team", "page")
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	parent, err := api.FindPage("DOCS", "Root", "page")
+	require.NoError(t, err)
+	created, err := api.CreatePage("DOCS", "page", parent, "Team", "")
+	require.NoError(t, err)
+
+	found, err := api.FindPage("DOCS", "team", "page")
+	require.NoError(t, err)
+	require.NotNil(t, found, "the page created as Team is the page named team")
+	assert.Equal(t, created.ID, found.ID)
+}
