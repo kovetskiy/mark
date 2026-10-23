@@ -43,8 +43,12 @@ type Page struct {
 	Archived bool
 
 	// UpdateRestrictedTo is who the last update restriction named: the
-	// accountId on Cloud, the username on Server.
+	// accountId on Cloud, the username on Server. ReadRestrictedTo is the same
+	// for read, and RestrictedGroups the groups each operation names. A PUT
+	// replaces all of them, as Confluence's does.
 	UpdateRestrictedTo []string
+	ReadRestrictedTo   []string
+	RestrictedGroups   map[string][]string
 }
 
 // Status is what v1 reports for the page and, more to the point, what it
@@ -1986,18 +1990,16 @@ func (s *Server) childComment(w http.ResponseWriter, r *http.Request, pageID str
 	})
 }
 
-// restriction records who a POSTed update restriction names on the page.
+// restriction records who a POSTed update restriction names on the page, and
+// replaces every restriction with a PUT's.
 func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID string) {
+	if r.Method == http.MethodPut {
+		s.replaceRestrictions(w, r, pageID)
+		return
+	}
+
 	if r.Method == http.MethodPost {
-		var payload []struct {
-			Operation    string `json:"operation"`
-			Restrictions struct {
-				User []struct {
-					AccountID string `json:"accountId"`
-					Username  string `json:"username"`
-				} `json:"user"`
-			} `json:"restrictions"`
-		}
+		var payload []restrictionEntry
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "bad payload", http.StatusBadRequest)
 			return
@@ -2021,6 +2023,59 @@ func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID stri
 		}
 		s.mu.Unlock()
 	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+}
+
+type restrictionEntry struct {
+	Operation    string `json:"operation"`
+	Restrictions struct {
+		User []struct {
+			AccountID string `json:"accountId"`
+			Username  string `json:"username"`
+		} `json:"user"`
+		Group []struct {
+			Name string `json:"name"`
+		} `json:"group"`
+	} `json:"restrictions"`
+}
+
+func (s *Server) replaceRestrictions(w http.ResponseWriter, r *http.Request, pageID string) {
+	var payload []restrictionEntry
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	users := map[string][]string{}
+	groups := map[string][]string{}
+	for _, entry := range payload {
+		if entry.Operation != "read" && entry.Operation != "update" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "unknown operation " + entry.Operation})
+			return
+		}
+		for _, u := range entry.Restrictions.User {
+			if u.AccountID != "" {
+				users[entry.Operation] = append(users[entry.Operation], u.AccountID)
+			} else {
+				users[entry.Operation] = append(users[entry.Operation], u.Username)
+			}
+		}
+		for _, g := range entry.Restrictions.Group {
+			groups[entry.Operation] = append(groups[entry.Operation], g.Name)
+		}
+	}
+
+	p.ReadRestrictedTo, p.UpdateRestrictedTo, p.RestrictedGroups = users["read"], users["update"], groups
 
 	writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
 }

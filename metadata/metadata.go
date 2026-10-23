@@ -200,8 +200,9 @@ type Meta struct {
 	ImageAlign string
 }
 
-// Restrictions declares who may read or update a Confluence page.
-// A nil operation leaves that operation unchanged; an empty operation clears it.
+// Restrictions declares who may read or update a Confluence page. They
+// replace every restriction the page has: a nil operation is left
+// unrestricted, as is one that names nobody.
 type Restrictions struct {
 	Read   *RestrictionSubjects
 	Update *RestrictionSubjects
@@ -335,14 +336,34 @@ func toStringMap(val any) map[string]any {
 	}
 }
 
+// merge is s with the users and groups of other, read from a key that
+// differs from s's only in case, added to it.
+func (s *RestrictionSubjects) merge(other *RestrictionSubjects) *RestrictionSubjects {
+	if other != nil {
+		s.Users = append(other.Users, s.Users...)
+		s.Groups = append(other.Groups, s.Groups...)
+	}
+	return s
+}
+
+// restrictionSubjects reads one operation of the restrictions mapping. An
+// operation or a list with no value -- "read:" on its own -- names nobody, as
+// an empty one does.
 func restrictionSubjects(operation string, val any) (*RestrictionSubjects, error) {
+	subjects := &RestrictionSubjects{}
+	if val == nil {
+		return subjects, nil
+	}
+
 	values := toStringMap(val)
 	if values == nil {
 		return nil, fmt.Errorf("restrictions.%s must be a mapping", operation)
 	}
 
-	subjects := &RestrictionSubjects{}
 	for key, value := range values {
+		if value == nil {
+			value = []any{}
+		}
 		items, ok := value.([]any)
 		if !ok {
 			return nil, fmt.Errorf("restrictions.%s.%s must be a list", operation, key)
@@ -361,10 +382,11 @@ func restrictionSubjects(operation string, val any) (*RestrictionSubjects, error
 		}
 
 		switch strings.ToLower(strings.TrimSpace(key)) {
+		// Keys that differ only in case are one key, so neither hides the other.
 		case "users":
-			subjects.Users = parsed
+			subjects.Users = append(subjects.Users, parsed...)
 		case "groups":
-			subjects.Groups = parsed
+			subjects.Groups = append(subjects.Groups, parsed...)
 		default:
 			return nil, fmt.Errorf(
 				"restrictions.%s supports only users and groups, got %q",
@@ -392,9 +414,9 @@ func parseRestrictions(val any) (*Restrictions, error) {
 
 		switch operation {
 		case "read":
-			restrictions.Read = subjects
+			restrictions.Read = subjects.merge(restrictions.Read)
 		case "update":
-			restrictions.Update = subjects
+			restrictions.Update = subjects.merge(restrictions.Update)
 		default:
 			return nil, fmt.Errorf(
 				"restrictions supports only read and update, got %q", key,
