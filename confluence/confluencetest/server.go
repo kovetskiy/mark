@@ -919,6 +919,8 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			s.moveContent(w, r, id, position, target)
 		case sub == "label":
 			s.label(w, r, id)
+		case sub == "copy":
+			s.copyContent(w, r, id)
 		case sub == "property":
 			// v1 content properties: POST creates, GET without a key lists.
 			s.contentProperties(w, r, id, "")
@@ -1132,6 +1134,99 @@ func (s *Server) putContentProperty(ownerID, key string, value []byte) *SpacePro
 	}
 	s.properties = append(s.properties, p)
 	return p
+}
+
+// copyContent serves v1's copy of a single page: a new page under the
+// destination, with the source's body, and its labels, attachments and
+// content properties when asked for. Restrictions never come along here.
+// Data Center answers 404, as an instance without the endpoint would.
+func (s *Server) copyContent(w http.ResponseWriter, r *http.Request, sourceID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		CopyAttachments bool `json:"copyAttachments"`
+		CopyLabels      bool `json:"copyLabels"`
+		CopyProperties  bool `json:"copyProperties"`
+		Destination     struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"destination"`
+		PageTitle string `json:"pageTitle"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad body"})
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.dataCenter {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such endpoint"})
+		return
+	}
+
+	source, ok := s.pages[sourceID]
+	if !ok || source.Trashed {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + sourceID})
+		return
+	}
+	parent, ok := s.pages[payload.Destination.Value]
+	if payload.Destination.Type != "parent_page" || !ok || parent.Trashed {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "destination must be an existing parent_page"})
+		return
+	}
+
+	title := payload.PageTitle
+	if title == "" {
+		title = source.Title
+	}
+	for _, p := range s.pages {
+		if p.SpaceKey == parent.SpaceKey && strings.EqualFold(p.Title, title) && p.Type == source.Type && !p.Trashed {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"message": fmt.Sprintf("A page with this title already exists: %q", title),
+			})
+			return
+		}
+	}
+
+	made := &Page{
+		ID:       s.newID(),
+		Title:    title,
+		Type:     source.Type,
+		SpaceKey: parent.SpaceKey,
+		ParentID: parent.ID,
+		Version:  1,
+		Body:     source.Body,
+	}
+	if payload.CopyLabels {
+		made.Labels = append([]string(nil), source.Labels...)
+	}
+	s.pages[made.ID] = made
+	s.placeChild(parent.ID, made.ID, "")
+
+	if payload.CopyAttachments {
+		for _, a := range s.attachments {
+			if a.PageID == sourceID {
+				copied := *a
+				copied.ID, copied.PageID = s.newID(), made.ID
+				copied.Data = append([]byte(nil), a.Data...)
+				s.attachments = append(s.attachments, &copied)
+			}
+		}
+	}
+	if payload.CopyProperties {
+		for _, p := range s.properties {
+			if p.OwnerID == sourceID {
+				s.putContentProperty(made.ID, p.Key, p.Value)
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, s.pageJSON(made, fullExpansion))
 }
 
 // moveContent reparents a page, which is how mark puts an existing page inside
@@ -1967,7 +2062,8 @@ func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, collecti
 
 	children := []map[string]any{}
 	for _, id := range s.childOrder[parentID] {
-		if p, ok := s.pages[id]; ok && p.ParentID == parentID {
+		// The trash is not part of the tree, here as in the v1 listing.
+		if p, ok := s.pages[id]; ok && p.ParentID == parentID && !p.Trashed {
 			children = append(children, map[string]any{
 				"id": p.ID, "type": "page", "title": p.Title,
 			})

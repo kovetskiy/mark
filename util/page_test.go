@@ -114,6 +114,22 @@ func TestPageCommands(t *testing.T) {
 		assert.Equal(t, []string{"acct-current"}, server.Watchers(a.ID), "--recursive reaches the children")
 	})
 
+	t.Run("tree and copy", func(t *testing.T) {
+		stdout, err := mark("page", "copy", "-b", server.URL, a.ID, "--parent", home.ID, "--title", "A copy")
+		require.NoError(t, err)
+		assert.Contains(t, stdout, `as "A copy"`)
+
+		stdout, err = mark("page", "tree", "-b", server.URL, home.ID, "--depth", "2")
+		require.NoError(t, err)
+		assert.Contains(t, stdout, "Home ("+home.ID+")\n")
+		assert.Contains(t, stdout, "── A copy (")
+
+		_, err = mark("page", "copy", "-b", server.URL, a.ID)
+		require.ErrorContains(t, err, "--parent")
+		_, err = mark("page", "tree", "-b", server.URL, home.ID, "--depth", "-1")
+		require.ErrorContains(t, err, "cannot be negative")
+	})
+
 	t.Run("the wrong number of arguments", func(t *testing.T) {
 		_, err := mark("page", "rename", "-b", server.URL, a.ID)
 		require.ErrorContains(t, err, "takes 2 argument(s) and got 1")
