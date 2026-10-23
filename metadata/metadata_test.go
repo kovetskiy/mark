@@ -234,18 +234,7 @@ func TestExtractMetaYAMLFrontMatterEmptyRestrictions(t *testing.T) {
 
 	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
 	require.NoError(t, err)
-	assert.Equal(t, &Restrictions{Read: &RestrictionSubjects{}, Update: &RestrictionSubjects{}}, meta.Restrictions)
-}
-
-// TestExtractMetaYAMLFrontMatterRestrictionKeysIgnoreCase: keys that differ
-// only in case are read together, rather than one hiding the other.
-func TestExtractMetaYAMLFrontMatterRestrictionKeysIgnoreCase(t *testing.T) {
-	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n    users: [Jane Doe]\n  Read:\n    Users: [John Smith]\n---\n"
-
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"Jane Doe", "John Smith"}, meta.Restrictions.Read.Users)
-	assert.Nil(t, meta.Restrictions.Update)
+	assert.Equal(t, &Restrictions{Read: &RestrictionSubjects{}, Update: &RestrictionSubjects{Users: []string{}}}, meta.Restrictions)
 }
 
 // TestExtractMetaYAMLFrontMatterRestrictionSingleName: one name is a list of
@@ -256,18 +245,6 @@ func TestExtractMetaYAMLFrontMatterRestrictionSingleName(t *testing.T) {
 	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"docs-readers"}, meta.Restrictions.Read.Groups)
-}
-
-// TestExtractMetaYAMLFrontMatterRestrictionsKeysMerge: restrictions and
-// Restrictions are one key, and both are read rather than whichever Go's map
-// order puts last.
-func TestExtractMetaYAMLFrontMatterRestrictionsKeysMerge(t *testing.T) {
-	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n    groups: [a]\nRestrictions:\n  read:\n    groups: [b]\n  update:\n    users: [c]\n---\n"
-
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"a", "b"}, meta.Restrictions.Read.Groups)
-	assert.Equal(t, []string{"c"}, meta.Restrictions.Update.Users)
 }
 
 // TestExtractMetaRefusesRestrictionsFrontMatterItDoesNotRead: without the
@@ -281,6 +258,21 @@ func TestExtractMetaRefusesRestrictionsFrontMatterItDoesNotRead(t *testing.T) {
 
 	_, _, err = ExtractMeta([]byte("---\nauthor: me\n---\n<!-- Space: DOCS -->\n<!-- Title: Test -->\n"), "", false, false, "", nil, false, "", false)
 	require.NoError(t, err, "other front matter is still passed over")
+}
+
+// TestExtractMetaYAMLFrontMatterRestrictionKeysGivenTwice: keys that read as
+// one, at any level, are refused rather than combined by a guess about who
+// may see or edit the page.
+func TestExtractMetaYAMLFrontMatterRestrictionKeysGivenTwice(t *testing.T) {
+	for want, restrictions := range map[string]string{
+		"restrictions is given twice":            "restrictions:\n  read: {}\nRestrictions:\n  update: {}\n",
+		"restrictions.read is given twice":       "restrictions:\n  read: {}\n  Read: {}\n",
+		"restrictions.read.users is given twice": "restrictions:\n  read:\n    users: [a]\n    Users: [b]\n",
+	} {
+		markdown := "---\nspace: DOCS\ntitle: Test\n" + restrictions + "---\n"
+		_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+		assert.EqualError(t, err, want)
+	}
 }
 
 func TestExtractMetaRestrictionHeadersAreAdditive(t *testing.T) {

@@ -337,31 +337,11 @@ func toStringMap(val any) map[string]any {
 	}
 }
 
-// merge is r with the operations of other, read from a key that differs
-// from r's only in how it is written, added to it.
-func (r *Restrictions) merge(other *Restrictions) *Restrictions {
-	if other != nil {
-		r.Read = mergeSubjects(r.Read, other.Read)
-		r.Update = mergeSubjects(r.Update, other.Update)
-	}
-	return r
-}
-
-func mergeSubjects(s, other *RestrictionSubjects) *RestrictionSubjects {
-	if s == nil {
-		return other
-	}
-	return s.merge(other)
-}
-
-// merge is s with the users and groups of other, read from a key that
-// differs from s's only in case, added to it.
-func (s *RestrictionSubjects) merge(other *RestrictionSubjects) *RestrictionSubjects {
-	if other != nil {
-		s.Users = append(other.Users, s.Users...)
-		s.Groups = append(other.Groups, s.Groups...)
-	}
-	return s
+// errRestrictionGivenTwice refuses a restrictions key written twice in ways
+// that read as one (users and Users). Either way of combining them would be a
+// guess about who may see or edit the page.
+func errRestrictionGivenTwice(path string) error {
+	return fmt.Errorf("%s is given twice", path)
 }
 
 // restrictionSubjects reads one operation of the restrictions mapping. An
@@ -378,7 +358,14 @@ func restrictionSubjects(operation string, val any) (*RestrictionSubjects, error
 		return nil, fmt.Errorf("restrictions.%s must be a mapping", operation)
 	}
 
+	seen := map[string]bool{}
 	for key, value := range values {
+		subject := strings.ToLower(strings.TrimSpace(key))
+		if seen[subject] {
+			return nil, errRestrictionGivenTwice("restrictions." + operation + "." + subject)
+		}
+		seen[subject] = true
+
 		// A single name is a list of one, as it is for every list key.
 		switch v := value.(type) {
 		case nil:
@@ -403,12 +390,11 @@ func restrictionSubjects(operation string, val any) (*RestrictionSubjects, error
 			parsed = append(parsed, strings.TrimSpace(name))
 		}
 
-		switch strings.ToLower(strings.TrimSpace(key)) {
-		// Keys that differ only in case are one key, so neither hides the other.
+		switch subject {
 		case "users":
-			subjects.Users = append(subjects.Users, parsed...)
+			subjects.Users = parsed
 		case "groups":
-			subjects.Groups = append(subjects.Groups, parsed...)
+			subjects.Groups = parsed
 		default:
 			return nil, fmt.Errorf(
 				"restrictions.%s supports only users and groups, got %q",
@@ -434,16 +420,21 @@ func parseRestrictions(val any) (*Restrictions, error) {
 			return nil, err
 		}
 
+		var target **RestrictionSubjects
 		switch operation {
 		case "read":
-			restrictions.Read = subjects.merge(restrictions.Read)
+			target = &restrictions.Read
 		case "update":
-			restrictions.Update = subjects.merge(restrictions.Update)
+			target = &restrictions.Update
 		default:
 			return nil, fmt.Errorf(
 				"restrictions supports only read and update, got %q", key,
 			)
 		}
+		if *target != nil {
+			return nil, errRestrictionGivenTwice("restrictions." + operation)
+		}
+		*target = subjects
 	}
 
 	if restrictions.Read == nil && restrictions.Update == nil {
@@ -724,9 +715,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				if err != nil {
 					return nil, nil, err
 				}
-				// restrictions and Restrictions are one key; neither hides
-				// the other.
-				meta.Restrictions = restrictions.merge(meta.Restrictions)
+				if meta.Restrictions != nil {
+					return nil, nil, errRestrictionGivenTwice("restrictions")
+				}
+				meta.Restrictions = restrictions
 
 			default:
 				unknown = append(unknown, k)
