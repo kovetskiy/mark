@@ -139,6 +139,10 @@ type Server struct {
 	currentUser User
 	requests    []Request
 
+	// watchers holds, for each page, the accountId -- or on Data Center the
+	// username -- of everyone watching it.
+	watchers map[string]map[string]bool
+
 	// dataCenter makes the fake answer as Server or Data Center; see
 	// SetDataCenter.
 	dataCenter bool
@@ -167,6 +171,7 @@ func New(t *testing.T) *Server {
 		pages:    map[string]*Page{},
 		spaces:   map[string]*Space{},
 		comments: map[string][]InlineComment{},
+		watchers: map[string]map[string]bool{},
 		nextID:   1000,
 		currentUser: User{
 			AccountID: "acct-current",
@@ -403,6 +408,70 @@ func (s *Server) SetCurrentUser(u User) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.currentUser = u
+}
+
+// Watchers returns who watches a page, sorted: accountIds, or usernames on
+// Data Center.
+func (s *Server) Watchers(pageID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []string{}
+	for watcher := range s.watchers[pageID] {
+		out = append(out, watcher)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// watch serves /user/watch/content/{id}: GET asks whether the user watches
+// the page, POST starts and DELETE stops. The user is the one accountId or
+// username names, and the authenticated user when neither does; naming
+// anyone else on Cloud takes an accountId, and a username is refused there.
+func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[pageID]; !ok || p.Trashed {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	query := r.URL.Query()
+	user := s.currentUser.AccountID
+	if s.dataCenter {
+		user = s.currentUser.Username
+	}
+	switch {
+	case query.Get("accountId") != "" && !s.dataCenter:
+		user = query.Get("accountId")
+	case query.Get("username") != "" && s.dataCenter:
+		user = query.Get("username")
+	case query.Get("accountId") != "" || query.Get("username") != "":
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "this platform names a user another way"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"watching": s.watchers[pageID][user]})
+	case http.MethodPost:
+		if !checkXSRF(w, r) {
+			return
+		}
+		if s.watchers[pageID] == nil {
+			s.watchers[pageID] = map[string]bool{}
+		}
+		s.watchers[pageID][user] = true
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		if !checkXSRF(w, r) {
+			return
+		}
+		delete(s.watchers[pageID], user)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // SetDataCenter makes the fake answer as Confluence Server or Data Center: the
@@ -801,6 +870,9 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			"displayName": u.FullName,
 			"publicName":  u.FullName,
 		})
+
+	case strings.HasPrefix(path, "/user/watch/content/"):
+		s.watch(w, r, strings.TrimPrefix(path, "/user/watch/content/"))
 
 	case path == "/search/user" || path == "/search":
 		// The same endpoint serves user lookup and the CQL folder search; the

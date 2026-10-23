@@ -168,7 +168,7 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 		for _, name := range restriction.Users {
 			user := name
 			if cloud {
-				user, err = api.restrictedAccountID(name, current)
+				user, err = api.accountIDOf("restricted user", name, current)
 				if err != nil {
 					return nil, err
 				}
@@ -181,28 +181,29 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 	return resolved, nil
 }
 
-// restrictedAccountID is the accountId of the Cloud user name names.
+// accountIDOf is the accountId of the Cloud user name names; role is what the
+// user is to be, for the errors.
 //
 // The user search matches any full name that contains the one it is given, so
 // it is only a candidate list here: access control cannot take the first of
 // two Jane Does, or a Jane Doe-Smith, for the Jane Doe that was meant.
-func (api *API) restrictedAccountID(name string, current *User) (string, error) {
+func (api *API) accountIDOf(role, name string, current *User) (string, error) {
 	if len(name) >= len(accountIDPrefix) && strings.EqualFold(name[:len(accountIDPrefix)], accountIDPrefix) {
 		// The id keeps its own case; only the prefix is matched without it.
 		id := strings.TrimSpace(name[len(accountIDPrefix):])
 		if id == "" {
-			return "", fmt.Errorf("restricted user %q names no accountId", name)
+			return "", fmt.Errorf("%s %q names no accountId", role, name)
 		}
 		return id, nil
 	}
 
-	if current.isNamed(name) || (api.username != "" && strings.EqualFold(name, api.username)) {
+	if (current != nil && current.isNamed(name)) || (api.username != "" && strings.EqualFold(name, api.username)) {
 		return current.AccountID, nil
 	}
 
 	candidates, err := api.searchUsers(name)
 	if err != nil {
-		return "", fmt.Errorf("unable to resolve restricted user %q: %w", name, err)
+		return "", fmt.Errorf("unable to resolve %s %q: %w", role, name, err)
 	}
 
 	var matches []User
@@ -217,15 +218,15 @@ func (api *API) restrictedAccountID(name string, current *User) (string, error) 
 	case 1:
 		return matches[0].AccountID, nil
 	case 0:
-		return "", fmt.Errorf("unable to resolve restricted user %q: no user has exactly that name: %w", name, errNoSuchUser)
+		return "", fmt.Errorf("unable to resolve %s %q: no user has exactly that name: %w", role, name, errNoSuchUser)
 	default:
 		ids := make([]string, len(matches))
 		for i, match := range matches {
 			ids[i] = accountIDPrefix + match.AccountID
 		}
 		return "", fmt.Errorf(
-			"restricted user %q is ambiguous: %d users have that name; name the one meant as one of %s",
-			name, len(matches), strings.Join(ids, ", "),
+			"%s %q is ambiguous: %d users have that name; name the one meant as one of %s",
+			role, name, len(matches), strings.Join(ids, ", "),
 		)
 	}
 }
