@@ -883,6 +883,9 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		}
 		s.searchUser(w, r)
 
+	case strings.HasPrefix(path, "/space/") && strings.HasSuffix(path, "/content/page"):
+		s.spacePages(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/space/"), "/content/page"))
+
 	case strings.HasPrefix(path, "/space/"):
 		s.getSpace(w, r, strings.TrimPrefix(path, "/space/"))
 
@@ -1134,6 +1137,43 @@ func (s *Server) putContentProperty(ownerID, key string, value []byte) *SpacePro
 	}
 	s.properties = append(s.properties, p)
 	return p
+}
+
+// spacePages serves v1's listing of a space's pages. Only depth=root is
+// served: the pages beneath no other, in the order they were added, which is
+// the order of their ids: childOrder keeps no order for the top of a space.
+func (s *Server) spacePages(w http.ResponseWriter, r *http.Request, key string) {
+	if r.Method != http.MethodGet || r.URL.Query().Get("depth") != "root" {
+		http.Error(w, "only depth=root is served", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.spaces[key]; !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with key " + key})
+		return
+	}
+
+	var roots []*Page
+	for _, p := range s.pages {
+		if p.SpaceKey == key && p.ParentID == "" && p.Type == "page" && !p.Trashed {
+			roots = append(roots, p)
+		}
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		a, _ := strconv.Atoi(roots[i].ID)
+		b, _ := strconv.Atoi(roots[j].ID)
+		return a < b
+	})
+
+	page, hasNext := paginate(r, roots)
+	results := []map[string]any{}
+	for _, p := range page {
+		results = append(results, s.pageJSON(p, expansions(r)))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": linksWithNext(hasNext)})
 }
 
 // copyContent serves v1's copy of a single page: a new page under the

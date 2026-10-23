@@ -29,6 +29,13 @@ type Options struct {
 	// relative to the Markdown file and separated by slashes, that it is
 	// written to. Nil keeps the name as it is.
 	AttachmentPath func(filename string) string
+
+	// PagePath maps the title of a page in the same space to the path,
+	// relative to the Markdown file and separated by slashes, of the document
+	// it is exported to, and reports whether it is one. A link to such a page
+	// is written as a relative link to that document rather than as
+	// [text](ac:Title). Nil writes every one as ac:.
+	PagePath func(title string) (string, bool)
 }
 
 // Document is a converted page body.

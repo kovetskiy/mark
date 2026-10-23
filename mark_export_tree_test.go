@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/export"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +44,7 @@ func exportTree(t *testing.T, server *confluencetest.Server, pageID, output stri
 	_, err := ExportTree(context.Background(), ExportConfig{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		PageID: pageID, Output: output, Overwrite: overwrite,
-	}, depth)
+	}, export.TreeOptions{Depth: depth})
 	return err
 }
 
@@ -160,4 +161,88 @@ func TestExportTreeRoundTrip(t *testing.T) {
 		assert.Equal(t, []string{"image.png"}, names, title)
 	}
 	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
+}
+
+func pageLink(title string) string {
+	return `<ac:link><ri:page ri:content-title="` + title + `"/><ac:plain-text-link-body><![CDATA[` + title + `]]></ac:plain-text-link-body></ac:link>`
+}
+
+// TestExportTreeRelativeLinks: with RelativeLinks, a link to a page of the
+// tree points at its document, a link to anything else stays ac:, and the
+// directory still publishes back onto the pages it came from.
+func TestExportTreeRelativeLinks(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	server.EditPage(pages["Guide"].ID, `<p>See `+pageLink("C++")+` and `+pageLink("Home")+`.</p>`)
+	server.EditPage(pages["Deep dive"].ID, `<p>Back to `+pageLink("Guide")+` or `+pageLink("C")+`.</p>`)
+	out := filepath.Join(t.TempDir(), "guide")
+
+	_, err := ExportTree(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		PageID: pages["Guide"].ID, Output: out,
+	}, export.TreeOptions{RelativeLinks: true})
+	require.NoError(t, err)
+
+	guide, err := os.ReadFile(filepath.Join(out, "index.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(guide), "See [C++](c/index.md) and [Home](ac:Home).",
+		"a page outside the tree is still linked by title")
+
+	deep, err := os.ReadFile(filepath.Join(out, "c", "deep-dive", "index.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(deep), "Back to [Guide](../../index.md) or [C](../../c-"+pages["C"].ID+"/index.md).")
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(out, "**", "*.md"), Features: []string{"mention"},
+		Output: io.Discard,
+	}))
+
+	body := server.Page(pages["Guide"].ID).Body
+	assert.Contains(t, body, "/x/", "a relative link is published as a link to the page")
+	assert.Contains(t, body, `ri:content-title="Home"`)
+	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
+}
+
+// TestExportSpace exports a whole space: the home page at the top, and a page
+// at the top of the space beside the home page's children.
+func TestExportSpace(t *testing.T) {
+	server, _ := exportTreeSpace(t)
+	stray := server.AddPage("DOCS", "Stray", "page", "")
+	server.EditPage(stray.ID, "<p>Stray</p>")
+	out := filepath.Join(t.TempDir(), "docs")
+
+	results, err := ExportTree(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Space: "DOCS", Output: out,
+	}, export.TreeOptions{})
+	require.NoError(t, err)
+	assert.Len(t, results, 6)
+
+	for path, title := range map[string]string{
+		"index.md":                   "Home",
+		"guide/index.md":             "Guide",
+		"guide/c/index.md":           "C++",
+		"guide/c/deep-dive/index.md": "Deep dive",
+		"stray/index.md":             "Stray",
+	} {
+		data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(path)))
+		require.NoError(t, err, path)
+		assert.Contains(t, string(data), "<!-- Title: "+title+" -->", path)
+	}
+
+	t.Run("one level", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "docs")
+		results, err := ExportTree(context.Background(), ExportConfig{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			Space: "DOCS", Output: out,
+		}, export.TreeOptions{Depth: 1})
+		require.NoError(t, err)
+
+		var titles []string
+		for _, result := range results {
+			titles = append(titles, result.Page.Title)
+		}
+		assert.ElementsMatch(t, []string{"Home", "Stray"}, titles, "the top of the space")
+	})
+
 }

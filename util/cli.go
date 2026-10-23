@@ -422,7 +422,10 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.Bool("recursive") {
-		results, err := mark.ExportTree(ctx, config, cmd.Int("depth"))
+		results, err := mark.ExportTree(ctx, config, export.TreeOptions{
+			Depth:         cmd.Int("depth"),
+			RelativeLinks: cmd.Bool("relative-links"),
+		})
 		if err == nil {
 			log.Info().Msgf("exported %d page(s) to %s", len(results), config.Output)
 		}
