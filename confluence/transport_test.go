@@ -98,6 +98,15 @@ func TestBackoffForHonoursRetryAfter(t *testing.T) {
 	assert.Equal(t, 5*time.Second, backoffFor(1, "5", now))
 	// Even a server asking for a very long wait is capped.
 	assert.Equal(t, maxBackoff, backoffFor(1, "3600", now))
+
+	// A zero Retry-After can arrive before the next rate-limit refill. It
+	// should fall back to the existing exponential backoff rather than retry
+	// immediately.
+	for range 50 {
+		got := backoffFor(1, "0", now)
+		assert.GreaterOrEqual(t, got, baseBackoff/2)
+		assert.LessOrEqual(t, got, baseBackoff)
+	}
 }
 
 func TestBackoffForGrowsAndIsJittered(t *testing.T) {
