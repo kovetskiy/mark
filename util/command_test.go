@@ -76,6 +76,8 @@ func TestTheBareForm(t *testing.T) {
 		// Arguments that are not flags were ignored, and a --files pattern the
 		// shell expanded still is.
 		{"a stray argument", []string{"-f", "a.md", "b.md"}, &published{true, "a.md"}, ""},
+		// publish has no such history to keep.
+		{"a stray argument after publish", []string{"publish", "-f", "a.md", "b.md"}, nil, `unexpected argument "b.md"`},
 		// A mistyped command is not a stray argument.
 		{"a mistyped command first", []string{"publsh", "--compile-only", "-f", "x.md"}, nil, `unknown command "publsh": did you mean "publish"?`},
 		{"a mistyped command last", []string{"-f", "x.md", "pubish"}, nil, `did you mean "publish"?`},

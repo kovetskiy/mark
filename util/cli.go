@@ -124,6 +124,11 @@ func (line *commandLine) runPublish(ctx context.Context, cmd *cli.Command) error
 	if err := line.prepare(cmd); err != nil {
 		return err
 	}
+	// The bare form has to tolerate these; publish is new and need not. An
+	// unquoted --files glob the shell expanded publishes only its first match.
+	if cmd.NArg() > 0 {
+		return fmt.Errorf("unexpected argument %q: --files takes one pattern, so quote a glob", cmd.Args().First())
+	}
 	if _, err := checkPublishFlags(ctx, cmd); err != nil {
 		return err
 	}
