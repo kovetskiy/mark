@@ -17,7 +17,7 @@ golangci-lint run ./...    # config in .golangci.yml; CI runs this
 markdownlint-cli2          # config in .markdownlint-cli2.jsonc; CI runs this on *.md
 ```
 
-Go 1.27. The module path is `github.com/kovetskiy/mark/v16` — the major version is part
+Go 1.27. The module path is `github.com/kovetskiy/mark/v17` — the major version is part
 of the path, so a major bump means rewriting every internal import.
 
 `d2`, `mermaid`, `math` and `chrome` tests launch headless Chrome and take a few seconds
@@ -29,7 +29,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | path | role |
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
-| `util/` | CLI flags, config file/env sourcing, credential resolution |
+| `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
@@ -41,12 +41,34 @@ tests, which take minutes. There is currently no `-short` skip.
 | `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
 | `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
+| `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve/create page + ancestry → resolve attachments → `CompileMarkdown` →
 resolve inline attachments → wrap in `ac:layout` → optionally merge inline comments →
 update page → sync labels.
+
+The command line is a root command carrying the global flags (config file,
+connection and credentials, logging) and one command per job: `publish` and
+`export`.
+A new flag goes in `globalFlags` only if every command needs it; otherwise it
+belongs to its command. Every flag reads the TOML file through a `configFile`
+source (`util/config.go`), parsed once a run. The root also carries hidden
+copies of publish's flags, for the deprecated `mark <publish flags>` its action
+still runs. The root's flags are resolved as it is parsed, before
+`mark publish --config X` names X, so their file and environment sources are
+held until a command's action settles them (`configFile.hold`).
+`util/command_test.go` fails when the help blocks in
+`README.md` drift from the binary;
+`go test ./util -run TestREADMEUsageMatchesHelp -args -update-readme` rewrites
+them.
+
+`export/` is held to publishing: `export/roundtrip_test.go` exports every
+`testdata/*.html` fixture, compiles the Markdown that comes out, and requires
+the storage format it started from. A renderer change that alters what mark
+publishes for a construct export writes as Markdown shows up there as well as
+in the golden tests.
 
 ## Invariants
 
@@ -149,8 +171,8 @@ both unconditionally. There is no `-update` flag; golden files are written by ha
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
 `util/` 89%, `page/` 52%, `attachment/` 53%, `parser/` 36%, `chrome/` 54%, and the root
-package 87%. `cmd/mark/` and `vfs/` are at 0% on purpose: a thin `main` and a 19-line
-`os.Open` wrapper. `chrome/` has tests of its own for the raster bounds and the shared
+package 87%. `vfs/` is at 0% on purpose: a 19-line `os.Open` wrapper. `cmd/mark/` is a
+thin `main`, tested only for how it names its version. `chrome/` has tests of its own for the raster bounds and the shared
 browser, and is otherwise exercised through its callers: `PNGFromSVG` by `d2/` and
 `math/`, and the allocator options and `CheckRasterBounds` by `mermaid/`.
 

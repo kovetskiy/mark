@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/d2"
-	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v17/d2"
+	"github.com/kovetskiy/mark/v17/mermaid"
 )
 
 // TestMain shuts down the browsers this package starts indirectly.

@@ -1,8 +1,8 @@
 package renderer
 
 import (
-	"github.com/kovetskiy/mark/v16/parser"
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v17/parser"
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/util"

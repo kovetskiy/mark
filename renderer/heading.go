@@ -1,8 +1,8 @@
 package renderer
 
 import (
-	"github.com/kovetskiy/mark/v16/stdlib"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"

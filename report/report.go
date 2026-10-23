@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v17/page"
 )
 
 // The shapes a run's outcome can be written in.

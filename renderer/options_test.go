@@ -3,8 +3,8 @@ package renderer_test
 import (
 	"testing"
 
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
-	"github.com/kovetskiy/mark/v16/types"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
+	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"

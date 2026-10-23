@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 )
 
 const (
@@ -29,6 +28,7 @@ const (
 func TestMain(m *testing.M) {
 	switch os.Getenv(helperModeEnv) {
 	case "":
+		clearMarkEnvironment()
 		os.Exit(m.Run())
 
 	case "print":
@@ -633,7 +633,7 @@ func TestRunPasswordCommandRejectsATruncatedTokenFromAHelperThatLingered(t *test
 }
 
 // TestPasswordCommandFlagReachesCredentials drives the real flag set rather than calling GetCredentials directly.
-// RunMark forwards the flag with a single cmd.String("password-command"), and a name matching no registered flag yields "" instead of an error.
+// RunPublish forwards the flag with a single cmd.String("password-command"), and a name matching no registered flag yields "" instead of an error.
 // That would leave the setting silently inert, so the run has to stop at credential resolution, before any Confluence request.
 func TestPasswordCommandFlagReachesCredentials(t *testing.T) {
 	command := helperCommand(t, "fail", "")
@@ -644,14 +644,8 @@ func TestPasswordCommandFlagReachesCredentials(t *testing.T) {
 	restore := log.Logger
 	t.Cleanup(func() { log.Logger = restore })
 
-	cmd := &cli.Command{
-		Flags:  Flags,
-		Before: CheckFlags,
-		Action: RunMark,
-	}
-
-	err := cmd.Run(context.Background(), []string{
-		"mark",
+	err := newCommand("test").Run(context.Background(), []string{
+		"mark", "publish",
 		"--config", config,
 		"--username", "user",
 		"--base-url", "https://confluence.example.invalid",
@@ -691,14 +685,8 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 		zerolog.SetGlobalLevel(originalLevel)
 	})
 
-	cmd := &cli.Command{
-		Flags:  Flags,
-		Before: CheckFlags,
-		Action: RunMark,
-	}
-
-	_ = cmd.Run(context.Background(), []string{
-		"mark",
+	_ = newCommand("test").Run(context.Background(), []string{
+		"mark", "publish",
 		"--config", config,
 		"--log-level", "DEBUG",
 		"--color", "never",
@@ -715,4 +703,21 @@ func TestPasswordCommandIsMaskedInTheConfigDump(t *testing.T) {
 	assert.Contains(t, string(logged), "password-command: ******")
 	assert.NotContains(t, string(logged), command,
 		"the command must not reach the log in full")
+}
+
+// clearMarkEnvironment unsets every MARK_ variable the suite was started with:
+// anybody who uses mark is likely to have one exported, and a MARK_USERNAME or
+// MARK_CONFIG of their own would decide what the flags resolve to. The tests'
+// own subprocesses are left alone -- their MARK_ variables are the case they
+// were started to run -- and so is anything a test sets for itself.
+func clearMarkEnvironment() {
+	if os.Getenv("MARK_TEST_FLAGS") != "" {
+		return
+	}
+	for _, variable := range os.Environ() {
+		name, _, _ := strings.Cut(variable, "=")
+		if strings.HasPrefix(name, "MARK_") {
+			_ = os.Unsetenv(name)
+		}
+	}
 }

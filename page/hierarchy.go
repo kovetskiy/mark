@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/metadata"
 )
 
 // indexNames are the files that stand for the directory they are in rather than
