@@ -328,3 +328,49 @@ rather than losing sight of it.
   absolute path.
 * `--track-pages` has no effect when publishing straight to a page ID, since the
   mapping is per space and per file and a page ID is neither.
+
+## Moving, renaming, removing and watching a page by hand
+
+`mark page` acts on one page in Confluence directly, without a Markdown file.
+It is experimental: its commands and flags may change between releases.
+
+```bash
+mark page move   <page> --parent <page>      # under a page, or a folder by id
+mark page move   <page> --before <sibling>   # or --after, beside a sibling
+mark page rename <page> "New title"
+mark page archive <page>                     # Confluence Cloud only
+mark page delete <page> [--recursive]
+mark page watch   <page> [--user <name>]...  # or unwatch
+```
+
+A `<page>` is an id, a URL as the browser shows it, or a title together with
+`--space`. A URL also gives the base URL when `--base-url` is not set. A title
+made only of digits is read as an id, so name such a page by its URL.
+
+Every command takes `--dry-run`, which says what it would do and changes
+nothing.
+
+| command | what it does | what it refuses |
+| --- | --- | --- |
+| `move` | moves the page, and everything beneath it, under `--parent` or beside a sibling. `--parent` with `--before` or `--after` checks the sibling is that parent's child | a blog post; another space; a page beneath itself; a sibling at the top of the space |
+| `rename` | sets the title and keeps the content, as a minor edit with the version message `renamed from "<old title>"` | a title another page in the space already has |
+| `archive` | asks Confluence to archive the page; Confluence archives it afterwards | a page with children; the space homepage |
+| `delete` | moves the page to the trash. `--recursive` trashes its descendants too, deepest first | a page with children without `--recursive`; a page with a folder beneath it; the space homepage |
+| `watch`, `unwatch` | starts or stops Confluence notifying you of the page's changes, or each `--user` | a `--user` on Cloud whose full name matches no user, or more than one |
+
+`--user` names a user the way a `Restrictions` header does: on Cloud by full
+name, which has to match exactly one user, or as `accountid:<id>`; on Server and
+Data Center by username. Watching for anyone but yourself takes space
+administration. A user already in the state asked for is reported and left
+alone. Watching is not recursive: it is the page alone, as the Confluence API
+offers it.
+
+Nothing is purged: the trash stays recoverable, as it does for `--on-orphan
+delete`. `--recursive` is read only from the command line, never from the
+configuration file or the environment.
+
+These commands do not read or update what `--track-pages` recorded. A page
+that `publish` manages goes back to what its file says the next time `publish`
+runs: its title, and its parent if the move contradicts the file's `Parent`
+headers. Delete a managed page's file as well, or the next `publish` tries to
+create the page again. To rename or move such a page for good, change the file.

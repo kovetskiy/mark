@@ -38,8 +38,9 @@ The reference is split by topic under [`docs/`](docs/):
   layout and appearance, restrictions, page titles, labels and content
   properties.
 * [Where pages go](docs/page-tree.md): parents and folders, parents from the
-  directory tree, tracking pages across renames, and removing pages whose files
-  are gone.
+  directory tree, tracking pages across renames, removing pages whose files
+  are gone, and moving, renaming, removing and watching a page by hand with
+  `mark page`.
 * [Formatting](docs/formatting.md): how Markdown becomes Confluence content,
   including code blocks, alerts, tables, task lists, Mermaid, D2 and PlantUML
   diagrams, math, footnotes and emoji.
@@ -122,6 +123,7 @@ DESCRIPTION:
 COMMANDS:
    publish  publish markdown files to Confluence
    export   export a Confluence page to a markdown file (experimental)
+   page     move, rename, archive, delete or watch a Confluence page (experimental)
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:

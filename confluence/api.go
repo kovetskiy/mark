@@ -579,7 +579,7 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 			Title: home.Title,
 		}, nil
 	}
-	if !errors.Is(err, errNoHomePage) {
+	if !errors.Is(err, ErrNoHomePage) {
 		return nil, fmt.Errorf("can't obtain home page of space %q: %w", space, err)
 	}
 
@@ -630,13 +630,13 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 func worthCaching(err error) bool {
 	return err == nil ||
 		errors.Is(err, ErrNotFound) ||
-		errors.Is(err, errNoHomePage) ||
+		errors.Is(err, ErrNoHomePage) ||
 		errors.Is(err, errNoSuchUser)
 }
 
-// errNoHomePage is the answer for a space that exists and has no home page.
+// ErrNoHomePage is the answer for a space that exists and has no home page.
 // A conclusion rather than a hiccup, so it is remembered like a success.
-var errNoHomePage = errors.New("space has no home page")
+var ErrNoHomePage = errors.New("space has no home page")
 
 // errNoSuchUser is the answer for a user search that succeeded and matched
 // nobody. Not ErrNotFound: nothing answered 404, and saying so would send
@@ -699,7 +699,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 			// v1 says the same thing here rather than falling through to a v2
 			// that does not exist on Server or Data Center.
 			if homepage.ID == "" {
-				return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
+				return nil, fmt.Errorf("space %s: %w", space, ErrNoHomePage)
 			}
 
 			return homepage, nil
@@ -765,7 +765,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// space that does not exist, and reporting it as "not found" sends people
 	// looking for a typo in a space key that is perfectly correct.
 	if v2Result.Results[0].HomepageID == "" {
-		return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
+		return nil, fmt.Errorf("space %s: %w", space, ErrNoHomePage)
 	}
 
 	return api.GetPageByID(v2Result.Results[0].HomepageID)

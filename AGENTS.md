@@ -52,8 +52,9 @@ wrap in `ac:layout` → optionally merge inline comments → update page → app
 restrictions → sync labels.
 
 The command line is a root command carrying the global flags (config file,
-connection and credentials, logging) and one command per job: `publish` and
-`export`.
+connection and credentials, logging) and one command per job: `publish`,
+`export`, and `page`, whose subcommands (`util/page.go`, `page/operations.go`)
+act on one page in Confluence and never on the `--track-pages` record.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
 belongs to its command. Every flag reads the TOML file through a `configFile`
 source (`util/config.go`), parsed once a run. The root also carries hidden
