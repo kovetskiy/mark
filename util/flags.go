@@ -515,6 +515,17 @@ func exportFlags(config *configFile) []cli.Flag {
 			Usage:   "write the Markdown only, and download no attachments. The document still refers to them where they would have been written.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_NO_ATTACHMENTS"), config.value("no-attachments")),
 		},
+		// Typed for the run, as --recursive is on the page commands: the
+		// name is the same flag's there, and a configuration file setting it
+		// for one would read as setting it for all.
+		&cli.BoolFlag{
+			Name:  "recursive",
+			Usage: "export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.",
+		},
+		&cli.IntFlag{
+			Name:  "depth",
+			Usage: "with --recursive, export this many levels, counting the page itself; 0 is every level.",
+		},
 	}
 }
 
@@ -535,6 +546,14 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 		return ctx, fmt.Errorf("%s each name a page; give only one of them", strings.Join(named, " and "))
 	case command.String("title") != "" && command.String("space") == "":
 		return ctx, errors.New("--title needs --space: a title names a page only within a space")
+	case command.IsSet("depth") && !command.Bool("recursive"):
+		return ctx, errors.New("--depth limits --recursive, and does nothing without it")
+	case command.Int("depth") < 0:
+		return ctx, errors.New("--depth counts levels, and cannot be negative")
+	case command.Bool("recursive") && (command.String("output") == "" || command.String("output") == "-"):
+		return ctx, errors.New("--recursive writes a directory: name it with --output")
+	case command.Bool("recursive") && command.String("attachments-dir") != "":
+		return ctx, errors.New("--recursive writes each page's attachments beside it, so --attachments-dir does not apply")
 	}
 
 	return ctx, nil

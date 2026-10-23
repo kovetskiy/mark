@@ -73,6 +73,10 @@ func TestExportNamesExactlyOnePage(t *testing.T) {
 		{"nothing", nil, "--page-id, --url, or --space and --title"},
 		{"two ways", []string{"--page-id", "1", "--url", "https://example.com/display/A/B"}, "--page-id and --url"},
 		{"a title with no space", []string{"--title", "T"}, "--title needs --space"},
+		{"--recursive to standard output", []string{"--page-id", "1", "--recursive"}, "name it with --output"},
+		{"--recursive with --attachments-dir", []string{"--page-id", "1", "--recursive", "-o", "out", "--attachments-dir", "files"}, "does not apply"},
+		{"--depth without --recursive", []string{"--page-id", "1", "--depth", "2"}, "does nothing without it"},
+		{"a negative --depth", []string{"--page-id", "1", "--recursive", "-o", "out", "--depth", "-1"}, "cannot be negative"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, err := runMark(t, append([]string{"-c", config, "--color", "never", "export"}, test.args...)...)

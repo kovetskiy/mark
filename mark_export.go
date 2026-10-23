@@ -50,7 +50,25 @@ func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 		stdout = io.Discard
 	}
 
-	return export.Page(ctx, api, export.Config{
+	return export.Page(ctx, api, exportConfig(config, stdout))
+}
+
+// ExportTree writes the page config names and the pages beneath it, depth
+// levels deep counting the page itself (0 is every level), into the
+// directory config.Output names. See export.Tree for the layout.
+func ExportTree(ctx context.Context, config ExportConfig, depth int) ([]*export.Result, error) {
+	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+
+	stdout := config.Stdout
+	if stdout == nil {
+		stdout = io.Discard
+	}
+
+	return export.Tree(ctx, api, exportConfig(config, stdout), depth)
+}
+
+func exportConfig(config ExportConfig, stdout io.Writer) export.Config {
+	return export.Config{
 		PageID:         config.PageID,
 		Space:          config.Space,
 		Title:          config.Title,
@@ -59,5 +77,5 @@ func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 		Overwrite:      config.Overwrite,
 		NoAttachments:  config.NoAttachments,
 		Stdout:         stdout,
-	})
+	}
 }

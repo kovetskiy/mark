@@ -73,7 +73,7 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 		Action:                line.runBare,
 		Commands: []*cli.Command{publishCommand, {
 			Name:  ExportCommand,
-			Usage: "export a Confluence page to a markdown file (experimental)",
+			Usage: "export a Confluence page, or a tree of them, to markdown (experimental)",
 			Description: "Experimental: the Markdown it writes may change between releases. " +
 				"Write the page --page-id, --url or --space and --title names as markdown, with the " +
 				"metadata headers that publish it back to the same page, and download the attachments it shows or links to.",
@@ -403,7 +403,7 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 
 	logFlags(cmd)
 
-	_, err = mark.Export(ctx, mark.ExportConfig{
+	config := mark.ExportConfig{
 		BaseURL:               creds.BaseURL,
 		Username:              creds.Username,
 		Password:              creds.Password,
@@ -419,7 +419,17 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		NoAttachments:  cmd.Bool("no-attachments"),
 
 		Stdout: os.Stdout,
-	})
+	}
+
+	if cmd.Bool("recursive") {
+		results, err := mark.ExportTree(ctx, config, cmd.Int("depth"))
+		if err == nil {
+			log.Info().Msgf("exported %d page(s) to %s", len(results), config.Output)
+		}
+		return err
+	}
+
+	_, err = mark.Export(ctx, config)
 
 	return err
 }
