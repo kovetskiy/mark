@@ -184,7 +184,7 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 // server-supplied Retry-After and otherwise using exponential backoff with
 // jitter to avoid synchronising retries across a batch of files.
 func backoffFor(attempt int, retryAfter string, now time.Time) time.Duration {
-	if d, ok := parseRetryAfter(retryAfter, now); ok {
+	if d, ok := parseRetryAfter(retryAfter, now); ok && d > 0 {
 		return min(d, maxBackoff)
 	}
 
