@@ -37,23 +37,51 @@ func TestIdentifyCloud(t *testing.T) {
 	}
 }
 
-// TestCloudKeepsTheErrorOfAFailedLookup: IsCloud answers "not Cloud" for a
-// target it could not identify, and cloud keeps the reason for a caller that
-// must not guess.
-func TestCloudKeepsTheErrorOfAFailedLookup(t *testing.T) {
+// TestCloudKeepsItsFirstAnswer: the platform is decided once, so a lookup that
+// failed is not asked again, and IsCloud reports the same "not Cloud" a run
+// was stopped by rather than switching paths partway through.
+func TestCloudKeepsItsFirstAnswer(t *testing.T) {
+	var refuse atomic.Bool
+	refuse.Store(true)
+
 	server := confluencetest.New(t)
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if r.URL.Path == "/rest/api/user/current" {
+		if refuse.Load() && r.URL.Path == "/rest/api/user/current" {
 			return http.StatusUnauthorized, `{"message":"bad credentials"}`, true
 		}
 		return 0, "", false
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	cloud, err := api.cloud()
+	cloud, err := api.Cloud()
 	assert.False(t, cloud)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unable to identify the Confluence platform")
+
+	refuse.Store(false)
+
+	cloud, err = api.Cloud()
+	assert.False(t, cloud)
+	require.Error(t, err)
+	assert.False(t, api.IsCloud())
+	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/user/current"))
+}
+
+// TestCloudTakesAUserWithNoPlatformForServer: that reply would not change if
+// asked again, so it is an answer, not a failure that stops the run.
+func TestCloudTakesAUserWithNoPlatformForServer(t *testing.T) {
+	server := confluencetest.New(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/rest/api/user/current" {
+			return http.StatusOK, `{"type":"anonymous"}`, true
+		}
+		return 0, "", false
+	})
+	api := NewAPI(server.URL, "user", "token", false)
+
+	cloud, err := api.Cloud()
+	require.NoError(t, err)
+	assert.False(t, cloud)
 }
 
 // TestGetCurrentUserIsAskedOnce: the platform probe and an edit lock both need
