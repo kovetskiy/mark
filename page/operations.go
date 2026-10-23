@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -260,7 +261,7 @@ func Archive(api *confluence.API, ref Ref, dryRun bool, out io.Writer) error {
 		return err
 	}
 
-	children, err := directChildren(api, target)
+	children, err := directChildren(api, target, removeFolders)
 	if err != nil {
 		return err
 	}
@@ -280,6 +281,9 @@ func Archive(api *confluence.API, ref Ref, dryRun bool, out io.Writer) error {
 	return nil
 }
 
+// removeFolders is why removing a page is refused when a folder is beneath it.
+const removeFolders = "mark does not remove folders: move it first"
+
 // Delete moves a page to the trash, where Confluence keeps it recoverable. A
 // page with children is refused unless recursive is set, and then its
 // descendants are trashed first, deepest first, so that every delete is of a
@@ -293,7 +297,7 @@ func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer)
 		return err
 	}
 
-	children, err := directChildren(api, target)
+	children, err := directChildren(api, target, removeFolders)
 	if err != nil {
 		return err
 	}
@@ -304,7 +308,7 @@ func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer)
 
 	var doomed []confluence.PageInfo
 	for _, child := range children {
-		descendants, err := subtree(api, child)
+		descendants, err := subtree(api, child, removeFolders)
 		if err != nil {
 			return err
 		}
@@ -327,16 +331,17 @@ func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer)
 	return nil
 }
 
-// subtree is page and everything beneath it, deepest first.
-func subtree(api *confluence.API, page confluence.PageInfo) ([]confluence.PageInfo, error) {
-	children, err := directChildren(api, &page)
+// subtree is page and everything beneath it, deepest first. A folder anywhere
+// in it is refused, for beyondFolder.
+func subtree(api *confluence.API, page confluence.PageInfo, beyondFolder string) ([]confluence.PageInfo, error) {
+	children, err := directChildren(api, &page, beyondFolder)
 	if err != nil {
 		return nil, err
 	}
 
 	var all []confluence.PageInfo
 	for _, child := range children {
-		descendants, err := subtree(api, child)
+		descendants, err := subtree(api, child, beyondFolder)
 		if err != nil {
 			return nil, err
 		}
@@ -347,9 +352,10 @@ func subtree(api *confluence.API, page confluence.PageInfo) ([]confluence.PageIn
 }
 
 // directChildren lists the pages directly beneath page, and refuses one that
-// holds a folder: trashing the page would take the folder with it, and the
-// page commands do not remove folders.
-func directChildren(api *confluence.API, page *confluence.PageInfo) ([]confluence.PageInfo, error) {
+// holds a folder, for beyondFolder. The listing is of pages, so whatever is
+// inside a folder is out of its sight: trashing the page would take the folder
+// with it, and a recursive watch would miss the pages in it.
+func directChildren(api *confluence.API, page *confluence.PageInfo, beyondFolder string) ([]confluence.PageInfo, error) {
 	children, err := api.GetChildPages(page.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the children of %s: %w", describe(page), err)
@@ -360,7 +366,7 @@ func directChildren(api *confluence.API, page *confluence.PageInfo) ([]confluenc
 		return nil, fmt.Errorf("unable to list the children of %s: %w", describe(page), err)
 	}
 	if folders {
-		return nil, fmt.Errorf("%s has a folder beneath it, and mark does not remove folders: move it first", describe(page))
+		return nil, fmt.Errorf("%s has a folder beneath it, and %s", describe(page), beyondFolder)
 	}
 
 	return children, nil
@@ -402,10 +408,11 @@ func describe(page *confluence.PageInfo) string {
 }
 
 // Watch makes users watch a page, or stop watching it when watch is false,
-// so that Confluence notifies them of its changes. No users means the
+// so that Confluence notifies them of its changes; recursive does the same
+// for every page beneath it, from the top down. No users means the
 // authenticated one; anyone else is named as restrictions name a user, and
 // takes space administration.
-func Watch(api *confluence.API, ref Ref, users []string, watch, dryRun bool, out io.Writer) error {
+func Watch(api *confluence.API, ref Ref, users []string, watch, recursive, dryRun bool, out io.Writer) error {
 	target, err := Resolve(api, ref)
 	if err != nil {
 		return err
@@ -414,44 +421,54 @@ func Watch(api *confluence.API, ref Ref, users []string, watch, dryRun bool, out
 		users = []string{""}
 	}
 
+	pages := []confluence.PageInfo{*target}
+	if recursive {
+		// The whole tree is read before anything changes, so a folder deep
+		// inside it refuses the run rather than stopping it halfway.
+		pages, err = subtree(api, *target, "a recursive watch does not reach into folders")
+		if err != nil {
+			return err
+		}
+		slices.Reverse(pages)
+	}
+
 	verb, state := "watch", "watching"
 	if !watch {
 		verb, state = "unwatch", "not watching"
 	}
 
-	for _, user := range users {
-		who := "you are"
-		if user != "" {
-			who = fmt.Sprintf("%q is", user)
-		}
+	for i := range pages {
+		page := &pages[i]
+		for _, user := range users {
+			who, subject := "you are", "you"
+			if user != "" {
+				who, subject = fmt.Sprintf("%q is", user), fmt.Sprintf("%q", user)
+			}
 
-		watching, err := api.IsWatching(target.ID, user)
-		if err != nil {
-			return fmt.Errorf("unable to read who watches %s: %w", describe(target), err)
-		}
-		if watching == watch {
-			fmt.Fprintf(out, "%s already %s %s\n", who, state, describe(target))
-			continue
-		}
+			watching, err := api.IsWatching(page.ID, user)
+			if err != nil {
+				return fmt.Errorf("unable to read who watches %s: %w", describe(page), err)
+			}
+			if watching == watch {
+				fmt.Fprintf(out, "%s already %s %s\n", who, state, describe(page))
+				continue
+			}
 
-		subject := "you"
-		if user != "" {
-			subject = fmt.Sprintf("%q", user)
-		}
-		if dryRun {
-			fmt.Fprintf(out, "would %s %s for %s\n", verb, describe(target), subject)
-			continue
-		}
+			if dryRun {
+				fmt.Fprintf(out, "would %s %s for %s\n", verb, describe(page), subject)
+				continue
+			}
 
-		if watch {
-			err = api.WatchPage(target.ID, user)
-		} else {
-			err = api.UnwatchPage(target.ID, user)
+			if watch {
+				err = api.WatchPage(page.ID, user)
+			} else {
+				err = api.UnwatchPage(page.ID, user)
+			}
+			if err != nil {
+				return fmt.Errorf("unable to %s %s for %s: %w", verb, describe(page), subject, err)
+			}
+			fmt.Fprintf(out, "%sed %s for %s\n", verb, describe(page), subject)
 		}
-		if err != nil {
-			return fmt.Errorf("unable to %s %s for %s: %w", verb, describe(target), subject, err)
-		}
-		fmt.Fprintf(out, "%sed %s for %s\n", verb, describe(target), subject)
 	}
 
 	return nil

@@ -108,6 +108,10 @@ func TestPageCommands(t *testing.T) {
 		_, err = mark("page", "unwatch", "-b", server.URL, home.ID, "--user", "accountid:acct-jane")
 		require.NoError(t, err)
 		assert.Empty(t, server.Watchers(home.ID))
+
+		_, err = mark("page", "watch", "-b", server.URL, "--recursive", home.ID)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"acct-current"}, server.Watchers(a.ID), "--recursive reaches the children")
 	})
 
 	t.Run("the wrong number of arguments", func(t *testing.T) {

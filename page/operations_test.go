@@ -237,19 +237,60 @@ func TestWatch(t *testing.T) {
 	p := server.AddPage("DOCS", "Page", "page", "")
 
 	var out bytes.Buffer
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, true, &out))
+	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, true, &out))
 	assert.Equal(t, `would watch "Page" (`+p.ID+`) for you`+"\n", out.String())
 	assert.Empty(t, server.Watchers(p.ID))
 
 	out.Reset()
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, &out))
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, &out))
+	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, false, &out))
+	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, false, &out))
 	assert.Equal(t, `watched "Page" (`+p.ID+`) for you`+"\n"+
 		`you are already watching "Page" (`+p.ID+`)`+"\n", out.String())
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(p.ID))
 
 	out.Reset()
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, false, false, &out))
+	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, false, false, false, &out))
 	assert.Equal(t, `unwatched "Page" (`+p.ID+`) for you`+"\n", out.String())
 	assert.Empty(t, server.Watchers(p.ID))
+}
+
+func TestWatchRecursive(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	root := server.AddPage("DOCS", "Root", "page", "")
+	top := server.AddPage("DOCS", "Top", "page", root.ID)
+	child := server.AddPage("DOCS", "Child", "page", top.ID)
+	grandchild := server.AddPage("DOCS", "Grandchild", "page", child.ID)
+	require.NoError(t, api.WatchPage(child.ID, ""))
+
+	var out bytes.Buffer
+	require.NoError(t, page.Watch(api, page.Ref{ID: top.ID}, nil, true, true, false, &out))
+	assert.Equal(t, `watched "Top" (`+top.ID+`) for you
+you are already watching "Child" (`+child.ID+`)
+watched "Grandchild" (`+grandchild.ID+`) for you
+`, out.String(), "from the top down")
+	for _, id := range []string{top.ID, child.ID, grandchild.ID} {
+		assert.Equal(t, []string{"acct-current"}, server.Watchers(id), id)
+	}
+	assert.Empty(t, server.Watchers(root.ID))
+
+	require.NoError(t, page.Watch(api, page.Ref{ID: top.ID}, nil, false, true, false, &bytes.Buffer{}))
+	for _, id := range []string{top.ID, child.ID, grandchild.ID} {
+		assert.Empty(t, server.Watchers(id), id)
+	}
+}
+
+func TestWatchRecursiveRefusesAFolderBeforeWatchingAnything(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	top := server.AddPage("DOCS", "Top", "page", "")
+	child := server.AddPage("DOCS", "Child", "page", top.ID)
+	server.AddFolder("DOCS", "Folder", child.ID, "page")
+
+	err := page.Watch(api, page.Ref{ID: top.ID}, nil, true, true, false, &bytes.Buffer{})
+	require.ErrorContains(t, err, "does not reach into folders")
+	assert.Empty(t, server.Watchers(top.ID), "nothing is watched when the tree cannot be")
+
+	require.NoError(t, page.Watch(api, page.Ref{ID: top.ID}, nil, true, false, false, &bytes.Buffer{}),
+		"without --recursive the folder is no concern")
 }
