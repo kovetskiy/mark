@@ -73,8 +73,9 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 		Action:                line.runBare,
 		Commands: []*cli.Command{publishCommand, {
 			Name:  ExportCommand,
-			Usage: "export a Confluence page to a markdown file",
-			Description: "Write the page --page-id, --url or --space and --title names as markdown, with the " +
+			Usage: "export a Confluence page to a markdown file (experimental)",
+			Description: "Experimental: the Markdown it writes may change between releases. " +
+				"Write the page --page-id, --url or --space and --title names as markdown, with the " +
 				"metadata headers that publish it back to the same page, and download the attachments it shows or links to.",
 			Flags:  exportFlags(config),
 			Action: line.runExport,

@@ -2036,8 +2036,8 @@ publishes them to Confluence:
 mark publish -u user -p token -b https://example.atlassian.net/wiki -f "docs/**/*.md"
 ```
 
-and `mark export` writes a Confluence page out as markdown that publishes back
-to it; see [Exporting a page](#exporting-a-page).
+and the experimental `mark export` writes a Confluence page out as markdown
+that publishes back to it; see [Exporting a page](#exporting-a-page).
 
 The global options -- the configuration file, how to reach and authenticate
 against Confluence, and logging -- belong to every command, and can be given
@@ -2060,7 +2060,7 @@ DESCRIPTION:
 
 COMMANDS:
    publish  publish markdown files to Confluence
-   export   export a Confluence page to a markdown file
+   export   export a Confluence page to a markdown file (experimental)
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
@@ -2153,13 +2153,13 @@ GLOBAL OPTIONS:
 
 ```text
 NAME:
-   mark export - export a Confluence page to a markdown file
+   mark export - export a Confluence page to a markdown file (experimental)
 
 USAGE:
    mark export [options]
 
 DESCRIPTION:
-   Write the page --page-id, --url or --space and --title names as markdown, with the metadata headers that publish it back to the same page, and download the attachments it shows or links to.
+   Experimental: the Markdown it writes may change between releases. Write the page --page-id, --url or --space and --title names as markdown, with the metadata headers that publish it back to the same page, and download the attachments it shows or links to.
 
 OPTIONS:
    --page-id string            export the page or blog post with this id. [$MARK_PAGE_ID]
@@ -2300,6 +2300,11 @@ no default file, and one is read only if `--config` or `MARK_CONFIG` names it.
 as a Markdown document that `mark publish` publishes back to the same page.
 Use it to move a page that was written in Confluence into a repository, or to
 see how mark would write something.
+
+> [!WARNING]
+> `mark export` is experimental. The Markdown it writes, and its flags, may
+> change between releases. Check an export before you commit it or publish it
+> back.
 
 ```bash
 # By id, into a file; the attachments the page shows are written beside it.
