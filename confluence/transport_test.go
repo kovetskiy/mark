@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,13 +52,97 @@ func TestRetryableStatus(t *testing.T) {
 
 func TestRetryableError(t *testing.T) {
 	someErr := errors.New("connection reset")
+	request := func(method string) *http.Request {
+		r, err := http.NewRequestWithContext(context.Background(), method, "http://example.com", nil)
+		require.NoError(t, err)
 
-	assert.True(t, retryableError(someErr, http.MethodGet))
-	assert.True(t, retryableError(someErr, http.MethodHead))
+		return r
+	}
+
+	assert.True(t, retryableError(someErr, request(http.MethodGet)))
+	assert.True(t, retryableError(someErr, request(http.MethodHead)))
 	// A transport error partway through a write may still have been committed.
-	assert.False(t, retryableError(someErr, http.MethodPost))
-	assert.False(t, retryableError(someErr, http.MethodPut))
-	assert.False(t, retryableError(nil, http.MethodGet))
+	assert.False(t, retryableError(someErr, request(http.MethodPost)))
+	assert.False(t, retryableError(someErr, request(http.MethodPut)))
+	assert.False(t, retryableError(nil, request(http.MethodGet)))
+
+	// A timeout is not retried: each attempt would wait it out again.
+	assert.False(t, retryableError(context.DeadlineExceeded, request(http.MethodGet)))
+	assert.False(t, retryableError(&timeoutError{}, request(http.MethodGet)))
+}
+
+// timeoutError is a net.Error that timed out, as a dial timeout is.
+type timeoutError struct{}
+
+func (*timeoutError) Error() string   { return "i/o timeout" }
+func (*timeoutError) Timeout() bool   { return true }
+func (*timeoutError) Temporary() bool { return true }
+
+// TestRetryStopsForACancelledContext: a request the caller gave up on is not
+// sent again, whatever error it ended with.
+func TestRetryStopsForACancelledContext(t *testing.T) {
+	for name, failure := range map[string]error{
+		"its context's error": context.Canceled,
+		"another error":       errors.New("connection reset"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			calls := 0
+			transport, slept := newTestTransport(t, func(*http.Request) (*http.Response, error) {
+				calls++
+
+				return nil, failure
+			})
+
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com", nil)
+			require.NoError(t, err)
+
+			response, err := transport.RoundTrip(request)
+			if response != nil {
+				defer response.Body.Close()
+			}
+
+			require.ErrorIs(t, err, failure)
+			assert.Equal(t, 1, calls, "a cancelled request is not sent again")
+			assert.Empty(t, *slept)
+		})
+	}
+}
+
+// TestNoRetryAfterAResponseHeaderTimeout: a server that accepts the
+// connection and goes quiet is what the response header timeout is there to
+// end. Retried, every read against it waited the timeout out four times, plus
+// the backoff, before the run heard anything.
+func TestNoRetryAfterAResponseHeaderTimeout(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		// Goes quiet until the client gives up on the headers.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	base := &http.Transport{ResponseHeaderTimeout: 50 * time.Millisecond}
+	t.Cleanup(base.CloseIdleConnections)
+
+	transport, slept := newTestTransport(t, base.RoundTrip)
+
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+
+	response, err := transport.RoundTrip(request)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "a read that timed out is not sent again")
+	assert.Empty(t, *slept)
 }
 
 func TestParseRetryAfterSeconds(t *testing.T) {
@@ -213,7 +299,7 @@ func TestRoundTripRetriesPostOn429(t *testing.T) {
 		return respond(http.StatusOK, nil), nil
 	})
 
-	// A *bytes.Buffer body is what gopencils sends, and it is what makes
+	// An in-memory body is what client.do sends, and it is what makes
 	// net/http populate GetBody so the request can be replayed.
 	req, err := http.NewRequest(
 		http.MethodPost,
@@ -339,9 +425,8 @@ func TestRoundTripDoesNotRetryTransportErrorOnPost(t *testing.T) {
 		"the write may already have been committed, so it must not be replayed")
 }
 
-// TestNewHTTPClientHasCookieJar guards the regression that made
-// --insecure-skip-tls-verify behave differently from the default: gopencils
-// only creates a jar when it is not handed a client.
+// TestNewHTTPClientHasCookieJar: --insecure-skip-tls-verify keeps session
+// cookies just as the default does.
 func TestNewHTTPClientHasCookieJar(t *testing.T) {
 	for _, insecure := range []bool{false, true} {
 		client := newHTTPClient(insecure)

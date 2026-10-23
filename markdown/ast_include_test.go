@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +33,7 @@ func writeMacroIncludingFragment(t *testing.T, fragment string) (dir string, doc
 func compileInDir(t *testing.T, dir string, doc string) string {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(doc), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})

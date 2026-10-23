@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 // Confluence renders ac:title as a caption -- so an untitled diagram published
 // with a 64-character hash printed underneath it.
 func TestDiagramWithoutTitleHasNoCaption(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, attachments, err := CompileMarkdown(
@@ -40,7 +41,7 @@ func TestDiagramWithoutTitleHasNoCaption(t *testing.T) {
 
 // An explicit "title" in the info string is still shown.
 func TestDiagramWithTitleKeepsCaption(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, attachments, err := CompileMarkdown(

@@ -86,7 +86,7 @@ func TestWouldMoveIgnoresCaseOfDeclaredParentTitle(t *testing.T) {
 		}{{ID: "1", Title: "My Parent"}},
 	}
 
-	if WouldMove(nil, pg, &confluence.PageInfo{ID: "1", Title: "My Parent"}, []string{"my parent"}, false) {
+	if WouldMove(t.Context(), nil, pg, &confluence.PageInfo{ID: "1", Title: "My Parent"}, []string{"my parent"}, false) {
 		t.Fatal("a parent differing only in case is not a move")
 	}
 
@@ -97,7 +97,7 @@ func TestWouldMoveIgnoresCaseOfDeclaredParentTitle(t *testing.T) {
 			Title string `json:"title"`
 		}{{ID: "8", Title: "Other"}},
 	}
-	if !WouldMove(nil, elsewhere, &confluence.PageInfo{ID: "1", Title: "My Parent"}, []string{"my parent"}, false) {
+	if !WouldMove(t.Context(), nil, elsewhere, &confluence.PageInfo{ID: "1", Title: "My Parent"}, []string{"my parent"}, false) {
 		t.Fatal("a page under another parent is still a move")
 	}
 }

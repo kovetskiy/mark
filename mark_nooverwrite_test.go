@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -39,7 +40,7 @@ func noOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 

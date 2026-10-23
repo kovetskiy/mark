@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -139,7 +140,7 @@ func (c *LinkChecker) NotePage(space, title, source string) {
 
 // MissingPages reports the ac: links that named no page, once everything that
 // was going to be published has been.
-func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
+func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]string, error) {
 	if c == nil || len(c.pending) == 0 {
 		return nil, nil
 	}
@@ -158,7 +159,7 @@ func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
 	for _, key := range keys {
 		link := pending[key]
 
-		found, err := finder.FindPage(link.space, link.title, "page")
+		found, err := finder.FindPage(ctx, link.space, link.title, "page")
 		if err != nil {
 			return nil, fmt.Errorf("find confluence page %q: %w", link.title, err)
 		}
@@ -177,7 +178,7 @@ func (c *LinkChecker) MissingPages(finder PageFinder) ([]string, error) {
 // PageFinder is the part of the Confluence API this needs, kept narrow so the
 // check can be exercised without one.
 type PageFinder interface {
-	FindPage(space, title, pageType string) (*confluence.PageInfo, error)
+	FindPage(ctx context.Context, space, title, pageType string) (*confluence.PageInfo, error)
 }
 
 // CheckExternal reports whether url answers, or nil if it was not asked.
@@ -185,7 +186,11 @@ type PageFinder interface {
 // A HEAD is tried first because the body is of no interest. Plenty of servers
 // answer HEAD with 405 or 403 while serving the same URL perfectly well over
 // GET, so that answer is not taken at face value and the request is repeated.
-func (c *LinkChecker) CheckExternal(url string) error {
+//
+// Both carry ctx, so a stopped run does not first wait out every link left on
+// the page -- each up to the client's timeout, twice. A check that ended with
+// the run is no answer from the link, and is not remembered as one.
+func (c *LinkChecker) CheckExternal(ctx context.Context, url string) error {
 	if c == nil || !c.Checks.External {
 		return nil
 	}
@@ -197,13 +202,19 @@ func (c *LinkChecker) CheckExternal(url string) error {
 	}
 	c.mu.Unlock()
 
-	err := c.request(http.MethodHead, url)
-	if err != nil {
-		if getErr := c.request(http.MethodGet, url); getErr == nil {
+	err := c.request(ctx, http.MethodHead, url)
+	if err != nil && ctx.Err() == nil {
+		if getErr := c.request(ctx, http.MethodGet, url); getErr == nil {
 			err = nil
 		} else {
 			err = getErr
 		}
+	}
+
+	// Only a check that failed can have failed because the run stopped; one
+	// that got its answer has it, however soon after the run stopped.
+	if stopped := ctx.Err(); err != nil && stopped != nil {
+		return stopped
 	}
 
 	c.mu.Lock()
@@ -213,8 +224,8 @@ func (c *LinkChecker) CheckExternal(url string) error {
 	return err
 }
 
-func (c *LinkChecker) request(method, url string) error {
-	req, err := http.NewRequest(method, url, nil)
+func (c *LinkChecker) request(ctx context.Context, method, url string) error {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return fmt.Errorf("not a usable URL: %w", err)
 	}

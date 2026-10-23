@@ -19,6 +19,7 @@ import (
 // mode that promises to write nothing reparented a folder, and every page
 // inside it went with it.
 func TestDryRunDoesNotMoveAFolder(t *testing.T) {
+	ctx := t.Context()
 	page.ResetFolderCache()
 
 	api, server := newAPI(t)
@@ -38,7 +39,7 @@ func TestDryRunDoesNotMoveAFolder(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := page.EnsureFolderAncestry(true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	_, err := page.EnsureFolderAncestry(ctx, true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
 	require.NoError(t, err)
 
 	assert.False(t, moved.Load(), "a dry run must not move anything")
@@ -55,6 +56,7 @@ func TestDryRunDoesNotMoveAFolder(t *testing.T) {
 // the fake Confluence moves pages and not folders -- so the move is observed
 // going out, and whatever it answers is beside the point here.
 func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
+	ctx := t.Context()
 	page.ResetFolderCache()
 
 	api, server := newAPI(t)
@@ -71,7 +73,7 @@ func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, _ = page.EnsureFolderAncestry(false, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	_, _ = page.EnsureFolderAncestry(ctx, false, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
 
 	assert.True(t, moved.Load(), "a real run asks to move the folder")
 }
@@ -87,7 +89,7 @@ func TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle(t *testing.T) {
 	anchor := server.AddPage("DOCS", "My Parent", "page", "")
 	folder := server.AddFolder("DOCS", "Manuals", anchor.ID, "page")
 
-	parent, err := page.EnsureMixedAncestry(true, api, nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
+	parent, err := page.EnsureMixedAncestry(t.Context(), true, api, nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 

@@ -14,6 +14,7 @@ import (
 )
 
 func TestLinkResolverLeavesNonRepositoryTargetsAlone(t *testing.T) {
+	ctx := t.Context()
 	// A resolver with an API set but nothing on disk to point at: every target
 	// here has to come back empty, meaning "leave the link as written".
 	resolver := &LinkResolver{API: &confluence.API{}, Base: t.TempDir()}
@@ -29,19 +30,20 @@ func TestLinkResolverLeavesNonRepositoryTargetsAlone(t *testing.T) {
 		"no-such-file.md#hash",
 		"../outside/missing.md",
 	} {
-		resolved, err := resolver.Resolve(target, "")
+		resolved, err := resolver.Resolve(ctx, target, "")
 		assert.NoError(t, err, "target %q", target)
 		assert.Empty(t, resolved, "target %q should have been left alone", target)
 	}
 }
 
 func TestLinkResolverIgnoresDirectories(t *testing.T) {
+	ctx := t.Context()
 	base := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(base, "docs"), 0o755))
 
 	resolver := &LinkResolver{API: &confluence.API{}, Base: base}
 
-	resolved, err := resolver.Resolve("docs", "")
+	resolved, err := resolver.Resolve(ctx, "docs", "")
 	assert.NoError(t, err)
 	assert.Empty(t, resolved)
 }
@@ -58,6 +60,7 @@ func TestLinkResolverIgnoresDirectories(t *testing.T) {
 // different from nothing: the resolver never looks. Written down because the
 // obvious reading of "resolve a link" is that it goes and finds something.
 func TestLinkResolverLeavesRootedTargetsAlone(t *testing.T) {
+	ctx := t.Context()
 	base := t.TempDir()
 
 	// Everything a rooted target could name, sitting in the base directory so
@@ -75,7 +78,7 @@ func TestLinkResolverLeavesRootedTargetsAlone(t *testing.T) {
 		"/nothing-here",
 		"/example#a-heading",
 	} {
-		resolved, err := resolver.Resolve(target, "")
+		resolved, err := resolver.Resolve(ctx, target, "")
 		assert.NoError(t, err, "target %q", target)
 		assert.Empty(t, resolved, "target %q should have been left as written", target)
 	}
@@ -119,6 +122,7 @@ func TestFindLinkTargetPrefersAFileInALaterSearchDirectory(t *testing.T) {
 }
 
 func TestLinkResolverIgnoresNonTextFiles(t *testing.T) {
+	ctx := t.Context()
 	base := t.TempDir()
 	// A PNG header is enough for http.DetectContentType.
 	require.NoError(t, os.WriteFile(
@@ -129,12 +133,13 @@ func TestLinkResolverIgnoresNonTextFiles(t *testing.T) {
 
 	resolver := &LinkResolver{API: &confluence.API{}, Base: base}
 
-	resolved, err := resolver.Resolve("image.png", "")
+	resolved, err := resolver.Resolve(ctx, "image.png", "")
 	assert.NoError(t, err)
 	assert.Empty(t, resolved)
 }
 
 func TestLinkResolverIgnoresFilesWithoutMetadata(t *testing.T) {
+	ctx := t.Context()
 	base := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(base, "plain.md"),
@@ -146,15 +151,16 @@ func TestLinkResolverIgnoresFilesWithoutMetadata(t *testing.T) {
 
 	// Without metadata there is no space or title to look a page up by, so the
 	// link stays as it is rather than the run failing.
-	resolved, err := resolver.Resolve("plain.md", "")
+	resolved, err := resolver.Resolve(ctx, "plain.md", "")
 	assert.NoError(t, err)
 	assert.Empty(t, resolved)
 }
 
 func TestLinkResolverWithoutAPIDoesNothing(t *testing.T) {
+	ctx := t.Context()
 	var resolver *LinkResolver
 
-	resolved, err := resolver.Resolve("anything.md", "")
+	resolved, err := resolver.Resolve(ctx, "anything.md", "")
 	assert.NoError(t, err)
 	assert.Empty(t, resolved)
 }

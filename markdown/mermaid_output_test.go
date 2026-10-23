@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -17,7 +18,7 @@ import (
 // would otherwise fall to the PNG branch and publish a picture that was not
 // asked for, saying nothing at all.
 func TestCompileMarkdownRefusesAnUnknownMermaidOutput(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	document := []byte("# Title\n\n```mermaid\ngraph TD;\n A-->B;\n```\n")

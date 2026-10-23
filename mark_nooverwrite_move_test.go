@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -67,7 +68,7 @@ func dataCenterMoveFixtureWith(
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 

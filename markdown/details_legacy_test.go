@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -16,7 +17,7 @@ import (
 // rendered the empty node the transformer had put in the element's place and
 // the whole <details> block, summary and body, vanished from the page.
 func TestDetailsSurviveTheLegacyPath(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	tests := []struct {
