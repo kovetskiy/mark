@@ -51,7 +51,8 @@ The reference is split by topic under [`docs/`](docs/):
   templates and examples.
 * [Publishing](docs/publishing.md): page headers, run reports, continuous
   integration, preserving inline comments, and leaving hand-edited pages alone.
-* [Exporting a page](docs/export.md) from Confluence back to Markdown.
+* [Exporting a page](docs/export.md), or a tree of them, from Confluence back to
+  Markdown.
 
 ## Installation
 
@@ -122,7 +123,7 @@ DESCRIPTION:
 
 COMMANDS:
    publish  publish markdown files to Confluence
-   export   export a Confluence page to a markdown file (experimental)
+   export   export a Confluence page, or a tree of them, to markdown (experimental)
    page     list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
    help, h  Shows a list of commands or help for one command
 
@@ -216,7 +217,7 @@ GLOBAL OPTIONS:
 
 ```text
 NAME:
-   mark export - export a Confluence page to a markdown file (experimental)
+   mark export - export a Confluence page, or a tree of them, to markdown (experimental)
 
 USAGE:
    mark export [options]
@@ -233,6 +234,8 @@ OPTIONS:
    --attachments-dir string    write the attachments the page shows or links to into this directory. Defaults to the directory of --output, or the working directory; a directory of their own changes their names when the document is published back, since mark names an attachment after its path. [$MARK_ATTACHMENTS_DIR]
    --overwrite                 replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything. [$MARK_OVERWRITE]
    --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
+   --recursive                 export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
+   --depth int                 with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)
    --help, -h                  show help
 
 GLOBAL OPTIONS:

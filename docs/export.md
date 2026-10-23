@@ -63,6 +63,45 @@ share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
 are told apart by a number, as `a_b-2.png`. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers.
 
+## Exporting a tree of pages
+
+`--recursive` exports the page and every page beneath it into the directory
+`--output` names, and `--depth` stops it that many levels down, counting the
+page itself:
+
+```bash
+mark export --url https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Guides \
+     --recursive -o docs/guides
+mark publish --files "docs/guides/**/*.md" --attach-referenced
+```
+
+```text
+docs/guides/index.md                  Guides
+docs/guides/setup/index.md            Guides > Setup
+docs/guides/setup/image.png           an attachment Setup shows
+docs/guides/setup/tuning/index.md     Guides > Setup > Tuning
+```
+
+Every page gets a directory of its own, named after its title in lower case
+with a dash for anything that is not a letter or digit, and its attachments go
+beside it there. A directory of its own is what keeps two pages' `image.png`
+apart: mark names an attachment after its path, so two pages sharing a
+directory would share their attachments' names too. A title that comes out like
+a sibling's, as `C++` and `C` do, has the page id added to it.
+
+Each document carries the `Parent` headers of the page it came from, so it is
+published back where it was whatever directory it is in, without
+`--parents-from-path`. Links between the pages stay links to their titles,
+which still resolve once they are published back.
+
+The whole tree is read, and every document's path checked, before anything is
+written: a document already there stops the export unless `--overwrite` is
+given, and so does a folder anywhere in the tree, since a page's `Parent`
+headers leave folders out and the pages inside one would be published back
+outside it. Content that is not a page, such as a whiteboard, is skipped with a
+warning. `--attachments-dir` does not apply, and the Markdown cannot go to
+standard output.
+
 ## What becomes Markdown
 
 * headings, paragraphs, emphasis, strong, strikethrough, inline code, line
