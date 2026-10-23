@@ -144,7 +144,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		D2Scale:          cmd.Float("d2-scale"),
 		MathFormat:       cmd.String("math-format"),
 		MathScale:        cmd.Float("math-scale"),
-		Features:         cmd.StringSlice("features"),
+		Features:         EnabledFeatures(cmd),
 		ImageAlign:       cmd.String("image-align"),
 		AttachReferenced: cmd.Bool("attach-referenced"),
 		IncludePath:      cmd.String("include-path"),

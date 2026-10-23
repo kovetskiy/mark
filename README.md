@@ -28,6 +28,10 @@ include the default features explicitly if needed:
 mark --features=mermaid --features=mention --features=frontmatter
 ```
 
+To switch off every optional feature, mermaid and mention included, use
+`--features=none`, `MARK_FEATURES=none` or `features = ["none"]`. An empty
+value is refused rather than read as the defaults.
+
 YAML front matter uses the following format:
 
 ```markdown
@@ -2062,7 +2066,7 @@ GLOBAL OPTIONS:
    --d2-output string                             image a d2 diagram is published as: png (rasterised) or svg (vector and sharp at any zoom, with whatever the diagram references inlined into it, where the instance displays an SVG attachment). (default: "png") [$MARK_D2_OUTPUT]
    --d2-bundle-remote                             let a d2 diagram published as svg have mark fetch the URLs it names, and publish what comes back inside the drawing. Off by default, which refuses a diagram that names a URL: the request is made by the document rather than by you, to any address it likes. [$MARK_D2_BUNDLE_REMOTE]
    --d2-scale float                               defines the scaling factor for d2 renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_D2_SCALE]
-   --features string [ --features string ]        Enables optional features, replacing the defaults (mermaid, mention) rather than adding to them. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
+   --features string [ --features string ]        Enables optional features, replacing the defaults (mermaid, mention) rather than adding to them; none switches every one off. Current features: d2, date, emoji, frontmatter, inline-link-card, math, mention, mermaid, mkdocsadmonitions, plantuml (default: "mermaid", "mention") [$MARK_FEATURES]
    --insecure-skip-tls-verify                     skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --attach-referenced                            upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way. [$MARK_ATTACH_REFERENCED]
    --image-align string                           set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
