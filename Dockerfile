@@ -1,4 +1,4 @@
-FROM golang:1.27.2 AS builder
+FROM golang:1.27.3 AS builder
 ENV GOPATH="/go"
 WORKDIR /go/src/github.com/kovetskiy/mark
 # Modules first, so a source-only change reuses the downloaded dependencies.
