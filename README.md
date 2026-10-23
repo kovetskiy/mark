@@ -952,6 +952,9 @@ Add this to your **article.md**.
 This is my article.
 ```
 
+To put a disclaimer on every page without touching the documents, use
+[`--page-header`](#a-header-on-every-page) instead.
+
 ### Insert Status Badge
 
 ```markdown
@@ -1229,6 +1232,65 @@ The cost is that a label outlives the header that introduced it -- appending
 cannot tell a `Label` header somebody deleted from a label somebody added in
 Confluence. That is visible on the page and can be undone by hand, which the
 deletion it prevents is not.
+
+### A header on every page
+
+`--page-header` names a template that mark places at the top of every page it
+publishes, inside the page's layout. The documents themselves don't change. The
+usual use is a warning that the page is generated, with a link to the file to
+edit:
+
+```bash
+mark --page-header generated.md --files "docs/**/*.md"
+```
+
+A file with a Markdown extension (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`
+or `.mdwn`) is compiled like a document, with the same `--features`. Anything
+else is published as Confluence storage format. Either way it is a Go template,
+executed once per page with:
+
+| field | value |
+| --- | --- |
+| `.Path` | the document's path relative to the working directory, with `/` separators |
+| `.EscapedPath` | `.Path` with each segment escaped for a URL |
+| `.Title` | the page title |
+| `.Space` | the page's space key |
+
+With `--page-id`, `.Title` and `.Space` come from the page being updated and
+`--space`. Combined with `--compile-only`, there is no page to read, so `.Title`
+is empty.
+
+```markdown
+> [!WARNING]
+> This page is generated from
+> [{{ .Path | xmlesc }}](https://github.com/org/repo/blob/main/{{ .EscapedPath }}).
+> Edit it there: changes made in Confluence are overwritten.
+```
+
+The same in storage format:
+
+```html
+<ac:structured-macro ac:name="warning">
+  <ac:parameter ac:name="title">Generated from Git</ac:parameter>
+  <ac:rich-text-body>
+    <p>Edit <a href="https://github.com/org/repo/blob/main/{{ .EscapedPath | xmlesc }}">{{ .Path | xmlesc }}</a> instead.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+```
+
+A file name can hold `&` or `<`, so pass `.Path`, `.Title` and `.Space` through
+`xmlesc`. Before anything is published, mark executes the template with such
+names, so a header that wouldn't be well-formed XML stops the run instead of
+failing page by page.
+
+The template can't read environment variables, because the environment holds
+the Confluence password. To show something that changes per run, such as the
+commit, write it into the template before running mark, for example with
+`envsubst`.
+
+The header is part of the page body, so with `--changes-only` a change to it
+republishes every page. Pair it with `--edit-lock` to keep people from editing
+the pages in Confluence.
 
 ### Reporting what a run did
 
@@ -2004,6 +2066,7 @@ GLOBAL OPTIONS:
    --insecure-skip-tls-verify                     skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --attach-referenced                            upload a local file that a link points at, and link to the attachment. Without it the link is published as the path the document wrote, which means nothing once the page is on Confluence. Images are attached either way. [$MARK_ATTACH_REFERENCED]
    --image-align string                           set image alignment (left, center, right). Can be overridden per-file via the Image-Align header. [$MARK_IMAGE_ALIGN]
+   --page-header string                           path to a template placed at the top of every page: Markdown if it has a Markdown extension such as .md, storage format otherwise. It is given .Path, .EscapedPath, .Title and .Space. [$MARK_PAGE_HEADER]
    --help, -h                                     show help
    --version, -v                                  print the version
 ```
