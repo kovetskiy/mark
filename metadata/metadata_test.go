@@ -226,6 +226,28 @@ func TestExtractMetaYAMLFrontMatterRejectsInvalidRestrictions(t *testing.T) {
 	require.EqualError(t, err, `restrictions supports only read and update, got "write"`)
 }
 
+// TestExtractMetaYAMLFrontMatterEmptyRestrictions: an operation or a list
+// written with no value names nobody, which lifts the operation's
+// restrictions, as "read: {}" does.
+func TestExtractMetaYAMLFrontMatterEmptyRestrictions(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n  update:\n    users:\n---\n"
+
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.NoError(t, err)
+	assert.Equal(t, &Restrictions{Read: &RestrictionSubjects{}, Update: &RestrictionSubjects{}}, meta.Restrictions)
+}
+
+// TestExtractMetaYAMLFrontMatterRestrictionKeysIgnoreCase: keys that differ
+// only in case are read together, rather than one hiding the other.
+func TestExtractMetaYAMLFrontMatterRestrictionKeysIgnoreCase(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n    users: [Jane Doe]\n  Read:\n    Users: [John Smith]\n---\n"
+
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"Jane Doe", "John Smith"}, meta.Restrictions.Read.Users)
+	assert.Nil(t, meta.Restrictions.Update)
+}
+
 func TestExtractMetaRestrictionHeadersAreAdditive(t *testing.T) {
 	markdown := `<!-- Space: DOCS -->
 <!-- Title: Restricted -->

@@ -45,10 +45,16 @@ func (user *User) isNamed(name string) bool {
 	return false
 }
 
+// PageRestriction is who may perform an operation, "read" or "update", on a
+// page. One that names nobody lifts the operation's restrictions.
 type PageRestriction struct {
 	Operation string
 	Users     []string
 	Groups    []string
+}
+
+func (r PageRestriction) restricts() bool {
+	return len(r.Users) > 0 || len(r.Groups) > 0
 }
 
 type API struct {
@@ -2080,70 +2086,83 @@ func (api *API) RestrictPageUpdates(
 	return nil
 }
 
-// SetPageRestrictions replaces the named read or update restrictions on a page.
+// SetPageRestrictions replaces every read and update restriction on a page
+// with restrictions, so an operation they leave out is left unrestricted.
+//
+// The authenticated user is added to each operation that names anyone, so
+// that publishing cannot lock mark out of the page, and nothing is sent when
+// that user cannot be identified. Each user and group is sent once, however
+// often it is named: Confluence refuses a duplicate.
 func (api *API) SetPageRestrictions(page *PageInfo, restrictions []PageRestriction) error {
 	isCloud := api.IsCloud()
-	var currentUser *User
-	for _, restriction := range restrictions {
-		if len(restriction.Users) == 0 && len(restriction.Groups) == 0 {
-			continue
-		}
 
+	// self is how the payload names the authenticated user: an accountId on
+	// Cloud, a username on Server and Data Center.
+	var current *User
+	var self string
+	if slices.ContainsFunc(restrictions, PageRestriction.restricts) {
 		var err error
-		currentUser, err = api.GetCurrentUser()
+		current, err = api.GetCurrentUser()
 		if err != nil {
-			// A named user may not be Mark, so applying restrictions without
-			// Mark's identity could lock out the publisher.
-			return fmt.Errorf("unable to resolve authenticated user; refusing restrictions that could lock out Mark: %w", err)
+			return fmt.Errorf("unable to resolve the authenticated user; refusing restrictions that could lock it out of page %s: %w", page.ID, err)
 		}
-		if isCloud && currentUser.AccountID == "" {
-			return fmt.Errorf("authenticated user has no accountId")
+		self = current.Username
+		if isCloud {
+			self = current.AccountID
 		}
-		if !isCloud && currentUser.Username == "" {
-			return fmt.Errorf("authenticated user has no username")
+		if self == "" {
+			return fmt.Errorf("unable to restrict page %s: the authenticated user has no accountId or username", page.ID)
 		}
-		break
 	}
 
 	payload := make([]map[string]any, 0, len(restrictions))
 
 	for _, restriction := range restrictions {
-		users := make([]map[string]any, 0, len(restriction.Users))
-		currentUserIncluded := false
-		for _, name := range restriction.Users {
-			user := map[string]any{"type": "known"}
-			if isCloud {
-				resolved, err := api.restrictionUserCloud(name, currentUser)
-				if err != nil {
-					return fmt.Errorf("unable to resolve restricted user %q: %w", name, err)
-				}
-				if resolved.AccountID == "" {
-					return fmt.Errorf("resolved restricted user %q has no accountId", name)
-				}
-				user["accountId"] = resolved.AccountID
-				currentUserIncluded = currentUserIncluded ||
-					(currentUser != nil && resolved.AccountID == currentUser.AccountID)
-			} else {
-				user["username"] = name
-				currentUserIncluded = currentUserIncluded ||
-					(currentUser != nil && strings.EqualFold(name, currentUser.Username))
+		users := []map[string]any{}
+		seenUsers := map[string]bool{}
+		addUser := func(id string) {
+			// A Server username matches without regard to case; an accountId
+			// is an identifier.
+			key := id
+			if !isCloud {
+				key = strings.ToLower(id)
 			}
-			users = append(users, user)
-		}
-		if currentUser != nil && !currentUserIncluded &&
-			(len(restriction.Users) > 0 || len(restriction.Groups) > 0) {
-			user := map[string]any{"type": "known"}
-			if isCloud {
-				user["accountId"] = currentUser.AccountID
-			} else {
-				user["username"] = currentUser.Username
+			if seenUsers[key] {
+				return
 			}
-			users = append(users, user)
+			seenUsers[key] = true
+			if isCloud {
+				users = append(users, map[string]any{"type": "known", "accountId": id})
+			} else {
+				users = append(users, map[string]any{"type": "known", "username": id})
+			}
 		}
 
-		groups := make([]map[string]any, 0, len(restriction.Groups))
+		for _, name := range restriction.Users {
+			if !isCloud {
+				addUser(name)
+				continue
+			}
+			resolved, err := api.restrictionUserCloud(name, current)
+			if err != nil {
+				return fmt.Errorf("unable to resolve restricted user %q: %w", name, err)
+			}
+			if resolved.AccountID == "" {
+				return fmt.Errorf("resolved restricted user %q has no accountId", name)
+			}
+			addUser(resolved.AccountID)
+		}
+		if restriction.restricts() {
+			addUser(self)
+		}
+
+		groups := []map[string]any{}
+		seenGroups := map[string]bool{}
 		for _, name := range restriction.Groups {
-			groups = append(groups, map[string]any{"type": "group", "name": name})
+			if key := strings.ToLower(name); !seenGroups[key] {
+				seenGroups[key] = true
+				groups = append(groups, map[string]any{"type": "group", "name": name})
+			}
 		}
 
 		payload = append(payload, map[string]any{
