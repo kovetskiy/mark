@@ -33,7 +33,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache, page restrictions |
 | `attachment/` | checksum, upload/update, link rewriting |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
@@ -43,11 +43,13 @@ tests, which take minutes. There is currently no `-short` skip.
 | `renderer/` | goldmark node renderers → storage format |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
+| `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
-links → resolve/create page + ancestry → resolve attachments → `CompileMarkdown` →
-resolve inline attachments → wrap in `ac:layout` → optionally merge inline comments →
-update page → sync labels.
+links → resolve restricted users and groups → resolve/create page + ancestry → tighten
+restrictions → resolve attachments → `CompileMarkdown` → resolve inline attachments →
+wrap in `ac:layout` → optionally merge inline comments → update page → apply final
+restrictions → sync labels.
 
 The command line is a root command carrying the global flags (config file,
 connection and credentials, logging) and one command per job: `publish` and
@@ -146,7 +148,8 @@ that.
 **8. `--features` replaces the defaults, it does not add to them.** Defaults are
 `mermaid,mention`, and `none` switches every optional feature off. When adding a feature: register it in `markdown/markdown.go` (both
 extensions if applicable), add it to the `Usage` string of the `features` flag in
-`util/flags.go`, and document it in `README.md`.
+`util/flags.go`, and document it under `docs/` (diagrams and other
+rendering in `docs/formatting.md`).
 
 **9. Everything is sequential today, and one thing still relies on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits
