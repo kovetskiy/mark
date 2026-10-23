@@ -526,6 +526,12 @@ func exportFlags(config *configFile) []cli.Flag {
 			Name:  "depth",
 			Usage: "with --recursive, export this many levels, counting the page itself; 0 is every level.",
 		},
+		&cli.BoolFlag{
+			Name: "relative-links",
+			Usage: "with --recursive, write a link between two exported pages as a relative link between their files, " +
+				"which a repository host can follow, rather than as ac:Title. Published back, such a link becomes a " +
+				"link to the page's address rather than Confluence's own page link.",
+		},
 	}
 }
 
@@ -540,14 +546,18 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 	}
 
 	switch {
+	case len(named) == 0 && command.Bool("recursive") && command.String("space") != "":
+		// The whole space.
 	case len(named) == 0:
-		return ctx, errors.New("name the page to export with --page-id, --url, or --space and --title")
+		return ctx, errors.New("name the page to export with --page-id, --url, or --space and --title; or the space alone with --recursive")
 	case len(named) > 1:
 		return ctx, fmt.Errorf("%s each name a page; give only one of them", strings.Join(named, " and "))
 	case command.String("title") != "" && command.String("space") == "":
 		return ctx, errors.New("--title needs --space: a title names a page only within a space")
 	case command.IsSet("depth") && !command.Bool("recursive"):
 		return ctx, errors.New("--depth limits --recursive, and does nothing without it")
+	case command.Bool("relative-links") && !command.Bool("recursive"):
+		return ctx, errors.New("--relative-links links the pages of a --recursive export, and does nothing without it")
 	case command.Int("depth") < 0:
 		return ctx, errors.New("--depth counts levels, and cannot be negative")
 	case command.Bool("recursive") && (command.String("output") == "" || command.String("output") == "-"):

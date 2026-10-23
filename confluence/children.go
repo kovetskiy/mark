@@ -3,6 +3,7 @@ package confluence
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 )
 
 // Child is one item directly beneath a page or a folder: a page, a folder, or
@@ -89,4 +90,49 @@ func (api *API) CopyPage(pageID, parentID, title string) (*PageInfo, error) {
 	default:
 		return nil, newErrorStatusNotOK(request)
 	}
+}
+
+// RootPages lists the pages at the top of a space, beneath no other page: the
+// home page, and any page moved out from under it.
+//
+// It is v1's listing, which Cloud and Data Center both serve.
+func (api *API) RootPages(space string) ([]Child, error) {
+	const pageSize = 100
+
+	var children []Child
+	start := 0
+
+	for {
+		result := struct {
+			Results []PageInfo `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}{}
+
+		request, err := api.v1().Res("space/"+space+"/content/page", &result).Get(map[string]string{
+			"depth": "root",
+			"limit": strconv.Itoa(pageSize),
+			"start": strconv.Itoa(start),
+		})
+		if err != nil {
+			return nil, newTransportError(request, "list the top-level pages of space "+space, err)
+		}
+		if request.Raw.StatusCode != http.StatusOK {
+			return nil, newErrorStatusNotOK(request)
+		}
+
+		for _, page := range result.Results {
+			children = append(children, Child{ID: page.ID, Type: "page", Title: page.Title})
+		}
+
+		// As in GetChildPages: a short page is the end only when no next link
+		// says otherwise.
+		if len(result.Results) == 0 || (result.Links.Next == "" && len(result.Results) < pageSize) {
+			break
+		}
+		start += len(result.Results)
+	}
+
+	return children, nil
 }

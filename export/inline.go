@@ -499,6 +499,21 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 			return "", false
 		}
 
+		text, ok := w.literalLinkText(n, title)
+		if !ok {
+			return "", false
+		}
+
+		if w.c.opts.PagePath != nil {
+			if path, ok := w.c.opts.PagePath(title); ok {
+				dest := pathDestination(path)
+				if anchor != "" {
+					dest += "#" + anchor
+				}
+				return "[" + text + "](" + destination(dest) + ")", true
+			}
+		}
+
 		dest := "ac:" + title
 		if anchor != "" {
 			dest += "#" + anchor
@@ -507,11 +522,6 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 			dest = "(" + dest + ")"
 		} else {
 			dest = "(<" + dest + ">)"
-		}
-
-		text, ok := w.literalLinkText(n, title)
-		if !ok {
-			return "", false
 		}
 
 		return "[" + text + "]" + dest, true

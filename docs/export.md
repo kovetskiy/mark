@@ -63,16 +63,18 @@ share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
 are told apart by a number, as `a_b-2.png`. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers.
 
-## Exporting a tree of pages
+## Exporting a tree of pages, or a whole space
 
 `--recursive` exports the page and every page beneath it into the directory
 `--output` names, and `--depth` stops it that many levels down, counting the
-page itself:
+page itself. With `--space` and no page, it exports the whole space:
 
 ```bash
 mark export --url https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Guides \
      --recursive -o docs/guides
 mark publish --files "docs/guides/**/*.md" --attach-referenced
+
+mark export -b https://example.atlassian.net/wiki --space DOCS --recursive -o docs
 ```
 
 ```text
@@ -89,10 +91,25 @@ apart: mark names an attachment after its path, so two pages sharing a
 directory would share their attachments' names too. A title that comes out like
 a sibling's, as `C++` and `C` do, has the page id added to it.
 
+A whole space puts its home page at `index.md` and the home page's children
+in directories beside it. A page at the top of the space other than the home
+page gets a directory there too, with a warning: mark publishes every page
+below the home page, so that is where it goes when it is published back.
+
 Each document carries the `Parent` headers of the page it came from, so it is
 published back where it was whatever directory it is in, without
-`--parents-from-path`. Links between the pages stay links to their titles,
-which still resolve once they are published back.
+`--parents-from-path`.
+
+Links between the pages stay links to their titles, `[Setup](ac:Setup)`, which
+resolve once they are published back but that a repository host cannot follow.
+`--relative-links` writes a link to another page of the export as a link to
+its file instead, `[Setup](setup/index.md)`, so the directory can be browsed
+where it is kept. A link to a page outside the export stays `ac:`. The price is
+on the way back: mark publishes a relative link as a link to the page's
+address rather than as Confluence's own page link, so the storage format is no
+longer the one the export started from. The link still goes to the same page,
+and survives the page being renamed or moved, but it is why the option is
+off by default.
 
 The whole tree is read, and every document's path checked, before anything is
 written: a document already there stops the export unless `--overwrite` is

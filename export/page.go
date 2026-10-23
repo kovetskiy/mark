@@ -44,6 +44,11 @@ type Config struct {
 
 	// Stdout is where the Markdown goes when Output names no file.
 	Stdout io.Writer
+
+	// Documents maps the title of a page in the space, folded to lower case,
+	// to the file it is exported to. A link to one of them is written as a
+	// relative link to that file. Nil writes every page link as ac:Title.
+	Documents map[string]string
 }
 
 // Result is what Page wrote.
@@ -105,7 +110,22 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		return filepath.ToSlash(filepath.Join(*relative, names.of(filename)))
 	}
 
-	doc, err := Convert(page.Body.Storage.Value, Options{Space: space, AttachmentPath: pathOf})
+	var pagePath func(string) (string, bool)
+	if cfg.Documents != nil {
+		pagePath = func(title string) (string, bool) {
+			target, ok := cfg.Documents[strings.ToLower(title)]
+			if !ok {
+				return "", false
+			}
+			rel, err := filepath.Rel(outputDir, target)
+			if err != nil {
+				return "", false
+			}
+			return filepath.ToSlash(rel), true
+		}
+	}
+
+	doc, err := Convert(page.Body.Storage.Value, Options{Space: space, AttachmentPath: pathOf, PagePath: pagePath})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
 	}
