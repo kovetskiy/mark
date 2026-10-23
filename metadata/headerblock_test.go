@@ -170,3 +170,46 @@ Body.
 	assert.Contains(t, body, "<macro>")
 	assert.NotContains(t, body, "<!-- Title:")
 }
+
+// TestHeaderScanSkipsAClosingLine pins the header scan on a comment that spans
+// lines: the scan reads the block a line at a time, without the line that
+// closed it. The first line of such a comment is never a header, as a header
+// line holds the "-->" that would have closed it there, so the scan stops on
+// it either way.
+func TestHeaderScanSkipsAClosingLine(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, title, space, body string
+	}{
+		{
+			name:  "a header's text on the closing line",
+			input: "<!-- Space: S -->\n<!-- note\nTitle: x -->\n\nbody\n",
+			space: "S",
+			body:  "<!-- note\nTitle: x -->\n\nbody\n",
+		},
+		{
+			name:  "a whole header on the closing line",
+			input: "<!-- Space: S -->\n<!--\n<!-- Title: x -->\nbody\n",
+			space: "S",
+			body:  "<!--\n<!-- Title: x -->\nbody\n",
+		},
+		{
+			name:  "a header on the closing line of the first comment",
+			input: "<!-- note\n<!-- Title: x -->\n\nbody\n",
+			body:  "<!-- note\n<!-- Title: x -->\n\nbody\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			meta, body, err := extract(t, tc.input)
+			require.NoError(t, err)
+
+			if tc.space == "" {
+				assert.Nil(t, meta)
+			} else {
+				require.NotNil(t, meta)
+				assert.Equal(t, tc.space, meta.Space)
+				assert.Equal(t, tc.title, meta.Title)
+			}
+			assert.Equal(t, tc.body, body)
+		})
+	}
+}

@@ -3,9 +3,8 @@ package parser_test
 import (
 	"testing"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/v2/ast"
 )
 
 // TestConfluenceIDsKeepsNonASCII pins the id of a heading written in a script
@@ -30,7 +29,7 @@ func TestConfluenceIDsKeepsNonASCII(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
-			ids := cparser.NewConfluenceIDs()
+			ids := newIDs()
 			assert.Equal(t, tt.want, string(ids.Generate([]byte(tt.value), ast.KindHeading)))
 		})
 	}
@@ -40,7 +39,7 @@ func TestConfluenceIDsKeepsNonASCII(t *testing.T) {
 // above for a page rather than a heading: two headings that differ must get
 // two ids, not one id and a numbered duplicate of it.
 func TestConfluenceIDsSeparatesNonASCIIHeadings(t *testing.T) {
-	ids := cparser.NewConfluenceIDs()
+	ids := newIDs()
 
 	assert.Equal(t, "概要", string(ids.Generate([]byte("概要"), ast.KindHeading)))
 	assert.Equal(t, "詳細", string(ids.Generate([]byte("詳細"), ast.KindHeading)))
@@ -90,7 +89,7 @@ func TestConfluenceIDsBuildsTheIDFromALinkLabel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ids := cparser.NewConfluenceIDs()
+			ids := newIDs()
 			assert.Equal(t, tt.want, string(ids.Generate([]byte(tt.value), ast.KindHeading)))
 		})
 	}
@@ -100,7 +99,7 @@ func TestConfluenceIDsBuildsTheIDFromALinkLabel(t *testing.T) {
 // loop can fail to terminate. A heading read from a file is arbitrary bytes,
 // and a decoder that returned a zero width on a bad one would spin forever.
 func TestConfluenceIDsSurvivesInvalidUTF8(t *testing.T) {
-	ids := cparser.NewConfluenceIDs()
+	ids := newIDs()
 
 	assert.Equal(t, "ab", string(ids.Generate([]byte{'a', 0xff, 0xfe, 'b'}, ast.KindHeading)))
 }

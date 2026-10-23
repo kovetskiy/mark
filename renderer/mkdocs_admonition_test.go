@@ -7,13 +7,13 @@ import (
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
-func admonitionRenderers() []renderer.NodeRenderer {
-	return []renderer.NodeRenderer{
+func admonitionRenderers() []html.Extension {
+	return []html.Extension{
 		crenderer.NewConfluenceMkDocsAdmonitionRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),
