@@ -1049,7 +1049,7 @@ func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
 	var target *Page
 	for _, candidate := range s.pages {
 		if candidate.SpaceKey == query.Get("spaceKey") &&
-			candidate.Title == query.Get("targetTitle") &&
+			strings.EqualFold(candidate.Title, query.Get("targetTitle")) &&
 			!candidate.Trashed && !candidate.Archived {
 			target = candidate
 			break
@@ -1324,7 +1324,7 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 		if pageType != "" && p.Type != pageType {
 			continue
 		}
-		if title != "" && p.Title != title {
+		if title != "" && !strings.EqualFold(p.Title, title) {
 			continue
 		}
 		if !wanted["any"] && !wanted[p.Status()] {
@@ -1389,7 +1389,7 @@ func (s *Server) createContent(w http.ResponseWriter, r *http.Request) {
 
 	// Confluence rejects a duplicate title within a space.
 	for _, p := range s.pages {
-		if p.SpaceKey == payload.Space.Key && p.Title == payload.Title && p.Type == payload.Type {
+		if p.SpaceKey == payload.Space.Key && strings.EqualFold(p.Title, payload.Title) && p.Type == payload.Type {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"message": fmt.Sprintf("A page with this title already exists: %q", payload.Title),
 			})
@@ -2004,7 +2004,7 @@ func (s *Server) searchFolder(w http.ResponseWriter, r *http.Request) {
 
 	matches := []map[string]any{}
 	for _, f := range s.folders {
-		if f.Title != title || (spaceKey != "" && f.SpaceKey != spaceKey) {
+		if !strings.EqualFold(f.Title, title) || (spaceKey != "" && f.SpaceKey != spaceKey) {
 			continue
 		}
 		// ancestor= is any ancestor, as in Confluence, not only the parent.
@@ -2118,7 +2118,7 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 	// Confluence rejects a second folder with the same title under one parent,
 	// which is what makes a stranded reference visible rather than silent.
 	for _, f := range s.folders {
-		if f.Title == payload.Title && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
+		if strings.EqualFold(f.Title, payload.Title) && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
 			writeJSON(w, http.StatusBadRequest,
 				map[string]any{"message": "A folder exists with the same title"})
 			return
@@ -2284,7 +2284,7 @@ func (s *Server) listContentV2(w http.ResponseWriter, r *http.Request, pageType 
 				continue
 			}
 		}
-		if title != "" && p.Title != title {
+		if title != "" && !strings.EqualFold(p.Title, title) {
 			continue
 		}
 		if !wanted[p.Status()] {
@@ -2409,7 +2409,7 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request, pageType s
 	// check is the same one createContent makes, so a create through either
 	// API reaches the client's explainCreateFailure the same way.
 	for _, p := range s.pages {
-		if p.SpaceKey == spaceKey && p.Title == payload.Title && p.Type == pageType {
+		if p.SpaceKey == spaceKey && strings.EqualFold(p.Title, payload.Title) && p.Type == pageType {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"message": fmt.Sprintf("A page with this title already exists: %q", payload.Title),
 			})

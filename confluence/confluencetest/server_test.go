@@ -413,3 +413,32 @@ func TestCreatePageV2RefusesADuplicateTitle(t *testing.T) {
 		t.Fatalf("status %d, want 200 for a free title", status)
 	}
 }
+
+// As in Confluence, a lookup of "root" finds "Root".
+func TestPageLookupIgnoresCase(t *testing.T) {
+	s := New(t)
+	root := s.AddPage("DOCS", "Root", "page", "")
+
+	status, body := get(t, s.URL+"/rest/api/content?spaceKey=DOCS&type=page&title=rOOT")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200", status)
+	}
+	results, _ := body["results"].([]any)
+	if len(results) != 1 || results[0].(map[string]any)["id"] != root.ID {
+		t.Fatalf("results %v, want only page %s", results, root.ID)
+	}
+}
+
+func TestCreatePageRefusesATitleDifferingOnlyInCase(t *testing.T) {
+	s := New(t)
+	s.AddPage("DOCS", "Root", "page", "")
+
+	status, _ := postJSON(t, s.URL+"/rest/api/content", map[string]any{
+		"type":  "page",
+		"title": "root",
+		"space": map[string]any{"key": "DOCS"},
+	})
+	if status != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400 for a title differing only in case", status)
+	}
+}
