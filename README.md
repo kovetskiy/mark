@@ -2161,7 +2161,8 @@ convenience. A few command lines read differently than they used to:
   warning: usually they are a `--files` glob the shell expanded.
 * A publish option written before a command (`mark -f doc.md publish`) is an
   error rather than silently ignored.
-* `mark -f doc.md --help` shows `mark publish --help`.
+* `mark -f doc.md --help` shows mark's own help, which lists the commands; the
+  publish options are under `mark publish --help`.
 
 You can store user credentials in the configuration file, which should be
 located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):
