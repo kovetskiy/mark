@@ -44,6 +44,22 @@ var KnownFeatures = []string{
 // off.
 var defaultFeatures = []string{"mermaid", "mention"}
 
+// noFeatures is the --features value that switches off every optional
+// feature. An empty list cannot say that: urfave reads an empty
+// MARK_FEATURES or features = [] as no value at all, and keeps the defaults.
+const noFeatures = "none"
+
+// EnabledFeatures is the --features list mark compiles with: none of them for
+// "none", which CheckFlags has made sure stands alone.
+func EnabledFeatures(command *cli.Command) []string {
+	features := command.StringSlice("features")
+	if slices.Equal(features, []string{noFeatures}) {
+		return []string{}
+	}
+
+	return features
+}
+
 var Flags = []cli.Flag{
 	// First, and it has to stay first. Every other flag finds the
 	// configuration file through the pointer below, which is filled in as the
@@ -385,7 +401,8 @@ var Flags = []cli.Flag{
 		Name:  "features",
 		Value: []string{"mermaid", "mention"},
 		Usage: "Enables optional features, replacing the defaults (" +
-			strings.Join(defaultFeatures, ", ") + ") rather than adding to them. " +
+			strings.Join(defaultFeatures, ", ") + ") rather than adding to them; " +
+			noFeatures + " switches every one off. " +
 			"Current features: " + strings.Join(KnownFeatures, ", "),
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), altsrctoml.TOML("features", altsrc.NewStringPtrSourcer(&filename))),
 	},
@@ -455,7 +472,32 @@ func CheckConfigFile(command *cli.Command) error {
 		return fmt.Errorf("unable to parse configuration file %q: %w", path, err)
 	}
 
+	if value, ok := parsed["features"]; ok && isEmptyValue(value) && !command.IsSet("features") {
+		return emptyFeatures(fmt.Sprintf("features in configuration file %q", path))
+	}
+
 	return nil
+}
+
+// emptyFeatures reports an empty --features, MARK_FEATURES or features = [].
+// urfave takes the last two for no value and keeps the defaults, which is
+// not what whoever wrote them meant.
+func emptyFeatures(source string) error {
+	return fmt.Errorf(
+		"%s is empty: use %q to switch off every optional feature, or leave it out for the defaults (%s)",
+		source, noFeatures, strings.Join(defaultFeatures, ", "),
+	)
+}
+
+func isEmptyValue(value any) bool {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []any:
+		return len(v) == 0
+	}
+
+	return false
 }
 
 // CheckFlags validates combinations and values of global flags, after
@@ -482,15 +524,28 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 		}
 	}
 
-	for _, feature := range command.StringSlice("features") {
+	if value, ok := os.LookupEnv("MARK_FEATURES"); ok && strings.TrimSpace(value) == "" && !command.IsSet("features") {
+		return context, emptyFeatures("MARK_FEATURES")
+	}
+
+	features := command.StringSlice("features")
+	if slices.Contains(features, noFeatures) && len(features) > 1 {
+		return context, fmt.Errorf("--features %s switches every optional feature off, so it cannot be combined with others", noFeatures)
+	}
+
+	for _, feature := range features {
+		if feature == "" {
+			return context, emptyFeatures("--features")
+		}
+
 		// Compared as written rather than trimmed, because that is how it is
 		// read where it takes effect: --features "math, mermaid" hands the
 		// second one over with its leading space still on, and it would go
 		// unrecognised there just as surely.
-		if !slices.Contains(KnownFeatures, feature) {
+		if feature != noFeatures && !slices.Contains(KnownFeatures, feature) {
 			return context, fmt.Errorf(
-				"invalid value for --features: %q (expected any of: %s)",
-				feature, strings.Join(KnownFeatures, ", "),
+				"invalid value for --features: %q (expected any of: %s, or %s)",
+				feature, strings.Join(KnownFeatures, ", "), noFeatures,
 			)
 		}
 	}

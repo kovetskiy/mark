@@ -121,7 +121,7 @@ deterministic.
 that.
 
 **8. `--features` replaces the defaults, it does not add to them.** Defaults are
-`mermaid,mention`. When adding a feature: register it in `markdown/markdown.go` (both
+`mermaid,mention`, and `none` switches every optional feature off. When adding a feature: register it in `markdown/markdown.go` (both
 extensions if applicable), add it to the `Usage` string of the `features` flag in
 `util/flags.go`, and document it in `README.md`.
 
