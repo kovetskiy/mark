@@ -423,6 +423,30 @@ func TestConvertKeepsWhatMarkdownCannotSay(t *testing.T) {
 		`<table><tbody><tr><th style="text-align:center">a</th></tr><tr><td style="text-align:center">b</td></tr></tbody></table>`))
 }
 
+// TestConvertColumnWidths: a <colgroup> of pixel widths is a Column-Widths
+// comment, and one that comment cannot say keeps the table as it was.
+func TestConvertColumnWidths(t *testing.T) {
+	const rows = `<thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>c</td><td>d</td></tr></tbody></table>`
+
+	md, published := republish(t, `<table><colgroup><col style="width: 226.0px;"/><col style="width: 80px"/></colgroup>`+rows)
+	assert.Equal(t, "<!-- Column-Widths: 226,80 -->\n| a | b |\n| --- | --- |\n| c | d |\n", md)
+	assert.Equal(t, canonical(t, `<table><colgroup><col style="width: 226px;"/><col style="width: 80px;"/></colgroup>`+rows), published)
+
+	assert.Equal(t, "| a | b |\n| --- | --- |\n| c | d |\n", convert(t, `<table><colgroup><col/><col/></colgroup>`+rows),
+		"a colgroup without widths says nothing")
+
+	for _, storage := range []string{
+		`<table><colgroup><col style="width: 50%;"/><col style="width: 50%;"/></colgroup>` + rows,
+		`<table><colgroup><col style="width: 10.5px;"/><col style="width: 80px;"/></colgroup>` + rows,
+		`<table><colgroup><col style="width: 80px;"/><col/></colgroup>` + rows,
+		`<table><colgroup><col style="width: 80px;"/></colgroup>` + rows,
+		`<table><colgroup><col span="2" style="width: 80px;"/></colgroup>` + rows,
+	} {
+		_, published := republish(t, storage)
+		assert.Equal(t, canonical(t, storage), published, storage)
+	}
+}
+
 // TestConvertCodeTitleReadsBack: the info string is the one publishing reads
 // back as the same title, quoted where mark's own form would be misread.
 func TestConvertCodeTitleReadsBack(t *testing.T) {
