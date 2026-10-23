@@ -77,13 +77,24 @@ of one. A value that is neither a string nor a list of strings is ignored, and
 warned about.
 
 The optional `restrictions` mapping controls who may read or update the page.
-It replaces all existing read and update restrictions; an omitted operation
-becomes unrestricted. Omit the whole mapping to leave restrictions unchanged.
-An empty operation removes its restrictions. Mark adds its authenticated user
-to each non-empty operation and refuses to apply one if it cannot identify
-that user, so publishing cannot lock itself out of the page.
+An operation it names gets exactly the users and groups listed; an operation it
+leaves out keeps whatever restrictions the page has, including ones set in the
+Confluence UI. An empty operation (`read: {}`, or `read:` with no value)
+removes its restrictions. A single name may be written without a list. Mark
+adds its authenticated user to each operation that names anyone, and refuses to
+apply one if it cannot identify that user, so publishing cannot lock it out of
+the page.
+
+How a user is named depends on the platform. On Server and Data Center it is
+the username. On Cloud it is the full name, which has to match exactly one
+user; write `accountid:<id>` for someone whose name another user shares, or
+mark's own login or email for itself. A name that matches nobody, or more than
+one person, fails the run -- and a dry run -- before any page is created.
+
 Restrictions have no dedicated feature flag. YAML metadata still requires the
-`frontmatter` feature; legacy restriction headers do not.
+`frontmatter` feature, and a document whose front matter has `restrictions`
+is refused without it, rather than published unrestricted; legacy restriction
+headers work either way.
 
 The legacy HTML header format is also supported:
 
@@ -132,16 +143,24 @@ from the document:
 ```
 
 The singular headers append to any restrictions read from YAML front matter.
-Anyone named under `update` must also be able to read the page.
+Anyone named under `update` must also be able to read the page. Once
+`Restriction` is a header, a comment among the headers that reads like one
+(`<!-- Restriction: internal -->`) is an error rather than an ordinary comment:
+a restriction mark could not read would otherwise leave the page open.
 
-With `--edit-lock`, Mark applies the document's restrictions first, then adds
-the edit-lock user to the `update` restriction. It does not remove users or
-groups named under `update` by the document.
+Mark reads the page's restrictions and changes them only when they differ
+from what the document declares, so an unchanged page is not written. A change
+is made in two steps around the content update: first the page is restricted
+to whoever both its old and its new restrictions allow, then, once the new
+content is up, to exactly what the document declares. New content is never
+shown to someone it is meant to be kept from, old content stays restricted
+until it is replaced, and a run that fails in between leaves the page no more
+open than either. A restriction-only change is still made under
+`--changes-only`, and counts as a change in the run's report.
 
-Restrictions are applied on every run, including when `--changes-only` skips
-an unchanged page body, so restriction-only edits still take effect. This
-adds a restrictions PUT per page and, for non-empty restrictions, a
-current-user lookup.
+With `--edit-lock`, the edit-lock user stays among those who may update the
+page throughout, so the document's restrictions never lift the lock, even
+briefly; users and groups the document names under `update` are kept too.
 
 Headers are read from the run of comments the document opens with, and only
 from there. Blank lines between them are fine, so headers may be grouped —
@@ -1426,6 +1445,8 @@ reported `unchanged` by the real run that makes that change.
 Not compared, so a page differing only in them is `unchanged` although a real
 run still applies them: [content properties](#confluence-content-properties),
 the `--edit-lock` restriction, and the `Order` of a page among its siblings.
+The restrictions a document declares are compared: a page whose restrictions
+would change is `would-update`.
 
 `orphans` lists the [tracked pages whose source file is
 gone](#removing-pages-whose-files-are-gone), under `--track-pages`, with the

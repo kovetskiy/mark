@@ -812,6 +812,23 @@ func readSource(file string) ([]byte, []byte, error) {
 	return source, markdown, nil
 }
 
+// declaredRestrictions is what a document's metadata restricts, for the
+// Confluence client: only the operations it names.
+func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction {
+	var declared []confluence.PageRestriction
+	for operation, subjects := range map[string]*metadata.RestrictionSubjects{
+		confluence.RestrictRead:   r.Read,
+		confluence.RestrictUpdate: r.Update,
+	} {
+		if subjects != nil {
+			declared = append(declared, confluence.PageRestriction{
+				Operation: operation, Users: subjects.Users, Groups: subjects.Groups,
+			})
+		}
+	}
+	return declared
+}
+
 func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
 	source, markdown, err := readSource(file)
 	if err != nil {
@@ -982,6 +999,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	var previewParent *confluence.PageInfo
 	var previewMisplaced bool
 
+	// Resolved before anything is written, and by a dry run too, so that a
+	// user that resolves to nobody, or to more than one person, fails here
+	// rather than after a real run has created an empty, unrestricted page.
+	var restrictions *confluence.ResolvedRestrictions
+	if meta != nil && meta.Restrictions != nil && !config.CompileOnly {
+		resolved, err := api.ResolveRestrictions(declaredRestrictions(meta.Restrictions))
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to resolve the restrictions of %q: %w", file, err)
+		}
+		restrictions = resolved
+	}
+
 	if config.DryRun {
 		if meta != nil {
 			// As a real run does before resolving, or a parent renamed in
@@ -1125,6 +1154,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 					}
 					if len(add) > 0 || len(del) > 0 {
 						others = append(others, "its labels would change")
+					}
+
+					if restrictions != nil {
+						plan, err := api.PlanRestrictions(previewed, restrictions, config.EditLock, false)
+						if err != nil {
+							return nil, nil, err
+						}
+						if plan.Changes() {
+							others = append(others, "its restrictions would change")
+						}
 					}
 				}
 
@@ -1331,23 +1370,20 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
-	// Apply access controls before uploading attachments or page content so a
-	// newly created restricted page is never populated while still unrestricted.
-	if meta != nil && meta.Restrictions != nil {
-		var restrictions []confluence.PageRestriction
-		if subjects := meta.Restrictions.Read; subjects != nil {
-			restrictions = append(restrictions, confluence.PageRestriction{
-				Operation: "read", Users: subjects.Users, Groups: subjects.Groups,
-			})
+	// Restrictions tighten before attachments and content are written and
+	// loosen after, so that new content is never shown to anyone it is to be
+	// kept from, and old content stays restricted until it has been replaced.
+	// A run that fails in between leaves the page no more open than either.
+	var restrictionPlan *confluence.RestrictionPlan
+	if restrictions != nil {
+		plan, err := api.PlanRestrictions(target, restrictions, config.EditLock, pageCreated)
+		if err != nil {
+			return nil, nil, err
 		}
-		if subjects := meta.Restrictions.Update; subjects != nil {
-			restrictions = append(restrictions, confluence.PageRestriction{
-				Operation: "update", Users: subjects.Users, Groups: subjects.Groups,
-			})
-		}
-		if err := api.SetPageRestrictions(target, restrictions); err != nil {
+		if err := api.ApplyInterim(plan); err != nil {
 			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
 		}
+		restrictionPlan = plan
 	}
 
 	// Collect attachments declared via <!-- Attachment: --> directives.
@@ -1532,6 +1568,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
+	if restrictionPlan != nil {
+		if err := api.ApplyFinal(restrictionPlan); err != nil {
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+		}
+	}
+
 	// Recorded after the write, not before it. The mapping asserts what is on
 	// the page -- the title it carries and a fingerprint of the source that
 	// produced its body -- and the manifest is now saved however the run ends,
@@ -1610,7 +1652,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// as published -- and in the second pass, where nothing recorded the
 	// failure over it, that is what the report went on saying.
 	status := report.StatusPublished
-	if !shouldUpdatePage {
+	if !shouldUpdatePage && (restrictionPlan == nil || !restrictionPlan.Changes()) {
 		status = report.StatusUnchanged
 	}
 	results.AddPage(report.Page{

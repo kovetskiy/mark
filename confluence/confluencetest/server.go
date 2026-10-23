@@ -42,10 +42,10 @@ type Page struct {
 	Trashed  bool
 	Archived bool
 
-	// UpdateRestrictedTo is who the last update restriction named: the
-	// accountId on Cloud, the username on Server. ReadRestrictedTo is the same
-	// for read, and RestrictedGroups the groups each operation names. A PUT
-	// replaces all of them, as Confluence's does.
+	// UpdateRestrictedTo is who may update the page: the accountId on Cloud,
+	// the username on Server. ReadRestrictedTo is the same for read, and
+	// RestrictedGroups the groups each operation names. A POST adds users to
+	// an operation and a PUT replaces all of them, as Confluence's do.
 	UpdateRestrictedTo []string
 	ReadRestrictedTo   []string
 	RestrictedGroups   map[string][]string
@@ -429,9 +429,38 @@ func (s *Server) Page(id string) *Page {
 		cp := *p
 		cp.Labels = append([]string(nil), p.Labels...)
 		cp.UpdateRestrictedTo = append([]string(nil), p.UpdateRestrictedTo...)
+		cp.ReadRestrictedTo = append([]string(nil), p.ReadRestrictedTo...)
+		if p.RestrictedGroups != nil {
+			cp.RestrictedGroups = map[string][]string{}
+			for operation, groups := range p.RestrictedGroups {
+				cp.RestrictedGroups[operation] = append([]string(nil), groups...)
+			}
+		}
 		return &cp
 	}
 	return nil
+}
+
+// SetRestrictions restricts an operation on a page to users and groups, as
+// somebody doing it in the Confluence UI would.
+func (s *Server) SetRestrictions(pageID, operation string, users, groups []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		return
+	}
+	switch operation {
+	case "read":
+		p.ReadRestrictedTo = append([]string(nil), users...)
+	case "update":
+		p.UpdateRestrictedTo = append([]string(nil), users...)
+	}
+	if p.RestrictedGroups == nil {
+		p.RestrictedGroups = map[string][]string{}
+	}
+	p.RestrictedGroups[operation] = append([]string(nil), groups...)
 }
 
 // RenamePage retitles a page, as somebody doing it in the Confluence UI would
@@ -1990,11 +2019,16 @@ func (s *Server) childComment(w http.ResponseWriter, r *http.Request, pageID str
 	})
 }
 
-// restriction records who a POSTed update restriction names on the page, and
-// replaces every restriction with a PUT's.
+// restriction answers the page's restriction endpoints: a GET of
+// byOperation reads them, a POST adds the users it names to an operation, and
+// a PUT replaces every restriction with its own.
 func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID string) {
-	if r.Method == http.MethodPut {
+	switch {
+	case r.Method == http.MethodPut:
 		s.replaceRestrictions(w, r, pageID)
+		return
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/restriction/byOperation"):
+		s.restrictionsByOperation(w, pageID)
 		return
 	}
 
@@ -2008,15 +2042,20 @@ func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID stri
 		s.mu.Lock()
 		if p, ok := s.pages[pageID]; ok {
 			for _, entry := range payload {
-				if entry.Operation != "update" {
-					continue
-				}
-				p.UpdateRestrictedTo = nil
 				for _, u := range entry.Restrictions.User {
-					if u.AccountID != "" {
-						p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, u.AccountID)
-					} else {
-						p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, u.Username)
+					id := u.AccountID
+					if id == "" {
+						id = u.Username
+					}
+					switch entry.Operation {
+					case "read":
+						if !contains(p.ReadRestrictedTo, id) {
+							p.ReadRestrictedTo = append(p.ReadRestrictedTo, id)
+						}
+					case "update":
+						if !contains(p.UpdateRestrictedTo, id) {
+							p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, id)
+						}
 					}
 				}
 			}
@@ -2038,6 +2077,42 @@ type restrictionEntry struct {
 			Name string `json:"name"`
 		} `json:"group"`
 	} `json:"restrictions"`
+}
+
+// restrictionsByOperation is the page's restrictions, keyed by operation, as
+// v1 answers with their users and groups expanded.
+func (s *Server) restrictionsByOperation(w http.ResponseWriter, pageID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	out := map[string]any{}
+	for operation, ids := range map[string][]string{"read": p.ReadRestrictedTo, "update": p.UpdateRestrictedTo} {
+		users := []map[string]any{}
+		for _, id := range ids {
+			// The fake keeps whichever of the two the client sent, and the
+			// client reads the one its platform uses.
+			users = append(users, map[string]any{"type": "known", "accountId": id, "username": id})
+		}
+		groups := []map[string]any{}
+		for _, name := range p.RestrictedGroups[operation] {
+			groups = append(groups, map[string]any{"type": "group", "name": name})
+		}
+		out[operation] = map[string]any{
+			"operation": operation,
+			"restrictions": map[string]any{
+				"user":  map[string]any{"results": users, "size": len(users)},
+				"group": map[string]any{"results": groups, "size": len(groups)},
+			},
+		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) replaceRestrictions(w http.ResponseWriter, r *http.Request, pageID string) {
@@ -2614,9 +2689,11 @@ func (s *Server) searchUser(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, map[string]any{
 			"user": map[string]any{
-				"accountId": u.AccountID,
-				"userKey":   u.UserKey,
-				"username":  u.Username,
+				"accountId":   u.AccountID,
+				"userKey":     u.UserKey,
+				"username":    u.Username,
+				"displayName": u.FullName,
+				"publicName":  u.FullName,
 			},
 		})
 	}

@@ -45,18 +45,6 @@ func (user *User) isNamed(name string) bool {
 	return false
 }
 
-// PageRestriction is who may perform an operation, "read" or "update", on a
-// page. One that names nobody lifts the operation's restrictions.
-type PageRestriction struct {
-	Operation string
-	Users     []string
-	Groups    []string
-}
-
-func (r PageRestriction) restricts() bool {
-	return len(r.Users) > 0 || len(r.Groups) > 0
-}
-
 type API struct {
 	rest *gopencils.Resource
 	// v2 API for newer endpoints like folders
@@ -1830,6 +1818,21 @@ func (api *API) cachedUser(name string) (userCacheEntry, bool) {
 }
 
 func (api *API) fetchUserByName(name string) (*User, error) {
+	users, err := api.searchUsers(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(users) == 0 {
+		return nil, fmt.Errorf("user with name %q is not found: %w", name, errNoSuchUser)
+	}
+
+	return &users[0], nil
+}
+
+// searchUsers is every user the user search finds for name: a full name that
+// contains it, so not necessarily one that is it.
+func (api *API) searchUsers(name string) ([]User, error) {
 	var response struct {
 		Results []struct {
 			User User
@@ -1862,12 +1865,12 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 		}
 	}
 
-	if len(response.Results) == 0 {
-
-		return nil, fmt.Errorf("user with name %q is not found: %w", name, errNoSuchUser)
+	users := make([]User, 0, len(response.Results))
+	for _, result := range response.Results {
+		users = append(users, result.User)
 	}
 
-	return &response.Results[0].User, nil
+	return users, nil
 }
 
 // GetCurrentUser returns the user mark authenticates as. The answer does not
@@ -2001,20 +2004,19 @@ func identifyCloud(user *User) (bool, error) {
 // resolves to nobody is an error. It used to fall back to the authenticated
 // user, which quietly locked the page against the very person it was meant to
 // leave editable.
-//
-// current is the authenticated user, or nil when it could not be looked up.
-func (api *API) restrictionUserCloud(name string, current *User) (*User, error) {
+func (api *API) restrictionUserCloud(name string) (*User, error) {
+	current, currentErr := api.GetCurrentUser()
 	isLogin := api.username != "" && strings.EqualFold(name, api.username)
-	if current != nil && (name == "" || isLogin || current.isNamed(name)) {
+	if currentErr == nil && (name == "" || isLogin || current.isNamed(name)) {
 		return current, nil
 	}
 	if name == "" {
-		return nil, errors.New("unable to resolve the current user")
+		return nil, fmt.Errorf("unable to resolve the current user: %w", currentErr)
 	}
 
 	user, err := api.GetUserByName(name)
 	if err != nil {
-		if current == nil {
+		if currentErr != nil {
 			return nil, fmt.Errorf("unable to resolve user %q: %w", name, err)
 		}
 		return nil, fmt.Errorf(
@@ -2036,15 +2038,7 @@ func (api *API) RestrictPageUpdates(
 	}
 
 	if api.IsCloud() {
-		current, currentErr := api.GetCurrentUser()
-		if currentErr != nil && allowedUser == "" {
-			return fmt.Errorf(
-				"unable to restrict updates of page %s: "+
-					"unable to resolve the current user: %w",
-				page.ID, currentErr,
-			)
-		}
-		user, err := api.restrictionUserCloud(allowedUser, current)
+		user, err := api.restrictionUserCloud(allowedUser)
 		if err != nil {
 			return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
 		}
@@ -2076,118 +2070,7 @@ func (api *API) RestrictPageUpdates(
 		return newTransportError(request, "restrict updates of page "+page.ID, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		if !api.IsCloud() && (request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode == http.StatusMethodNotAllowed) {
-			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", request.Raw.StatusCode)
-		}
-		return newErrorStatusNotOK(request)
-	}
-
-	return nil
-}
-
-// SetPageRestrictions replaces every read and update restriction on a page
-// with restrictions, so an operation they leave out is left unrestricted.
-//
-// The authenticated user is added to each operation that names anyone, so
-// that publishing cannot lock mark out of the page, and nothing is sent when
-// that user cannot be identified. Each user and group is sent once, however
-// often it is named: Confluence refuses a duplicate.
-func (api *API) SetPageRestrictions(page *PageInfo, restrictions []PageRestriction) error {
-	isCloud := api.IsCloud()
-
-	// self is how the payload names the authenticated user: an accountId on
-	// Cloud, a username on Server and Data Center.
-	var current *User
-	var self string
-	if slices.ContainsFunc(restrictions, PageRestriction.restricts) {
-		var err error
-		current, err = api.GetCurrentUser()
-		if err != nil {
-			return fmt.Errorf("unable to resolve the authenticated user; refusing restrictions that could lock it out of page %s: %w", page.ID, err)
-		}
-		self = current.Username
-		if isCloud {
-			self = current.AccountID
-		}
-		if self == "" {
-			return fmt.Errorf("unable to restrict page %s: the authenticated user has no accountId or username", page.ID)
-		}
-	}
-
-	payload := make([]map[string]any, 0, len(restrictions))
-
-	for _, restriction := range restrictions {
-		users := []map[string]any{}
-		seenUsers := map[string]bool{}
-		addUser := func(id string) {
-			// A Server username matches without regard to case; an accountId
-			// is an identifier.
-			key := id
-			if !isCloud {
-				key = strings.ToLower(id)
-			}
-			if seenUsers[key] {
-				return
-			}
-			seenUsers[key] = true
-			if isCloud {
-				users = append(users, map[string]any{"type": "known", "accountId": id})
-			} else {
-				users = append(users, map[string]any{"type": "known", "username": id})
-			}
-		}
-
-		for _, name := range restriction.Users {
-			if !isCloud {
-				addUser(name)
-				continue
-			}
-			resolved, err := api.restrictionUserCloud(name, current)
-			if err != nil {
-				return fmt.Errorf("unable to resolve restricted user %q: %w", name, err)
-			}
-			if resolved.AccountID == "" {
-				return fmt.Errorf("resolved restricted user %q has no accountId", name)
-			}
-			addUser(resolved.AccountID)
-		}
-		if restriction.restricts() {
-			addUser(self)
-		}
-
-		groups := []map[string]any{}
-		seenGroups := map[string]bool{}
-		for _, name := range restriction.Groups {
-			if key := strings.ToLower(name); !seenGroups[key] {
-				seenGroups[key] = true
-				groups = append(groups, map[string]any{"type": "group", "name": name})
-			}
-		}
-
-		payload = append(payload, map[string]any{
-			"operation": restriction.Operation,
-			"restrictions": map[string]any{
-				"user":  users,
-				"group": groups,
-			},
-		})
-	}
-
-	var result any
-	request, err := api.v1().
-		Res("content").
-		Id(page.ID).
-		Res("restriction", &result).
-		Put(payload)
-	if err != nil {
-		return newTransportError(request, "set restrictions on page "+page.ID, err)
-	}
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		return newErrorStatusNotOK(request)
-	}
-
-	return nil
+	return api.restrictionStatusError(request)
 }
 
 // CreateFolder creates a folder called title through the v2 API, under
