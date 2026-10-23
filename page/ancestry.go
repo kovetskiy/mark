@@ -618,22 +618,11 @@ func ValidateAncestry(
 			actual = append(actual, ancestor.Title)
 		}
 
-		valid := false
-
-		if len(actual) == len(ancestry)-1 {
-			broken := false
-			for i := 0; i < len(actual); i++ {
-				if !strings.EqualFold(actual[i], ancestry[i]) {
-					broken = true
-					break
-				}
-			}
-
-			if !broken {
-				if strings.EqualFold(ancestry[len(ancestry)-1], page.Title) {
-					valid = true
-				}
-			}
+		// The page's own title is not compared: it was just found by
+		// ancestry[len(ancestry)-1], so it is the title asked for.
+		valid := len(actual) == len(ancestry)-1
+		for i := 0; valid && i < len(actual); i++ {
+			valid = strings.EqualFold(actual[i], ancestry[i])
 		}
 
 		if !valid {
@@ -646,17 +635,7 @@ func ValidateAncestry(
 	}
 
 	for _, parent := range ancestry[:len(ancestry)-1] {
-		found := false
-
-		// skipping root article title
-		for _, ancestor := range page.Ancestors {
-			if strings.EqualFold(ancestor.Title, parent) {
-				found = true
-				break
-			}
-		}
-
-		if !found {
+		if !hasAncestorTitled(page, parent) {
 			list := []string{}
 
 			for _, ancestor := range page.Ancestors {
