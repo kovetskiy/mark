@@ -37,6 +37,7 @@ release:
    - linux
    - darwin
 
+<!-- Column-Widths: 380,380 -->
 | **Platform** | Owner |
 | --- | :---: |
 | linux \| amd64 | <ac:link><ri:user ri:account-id="abc"/></ac:link> |

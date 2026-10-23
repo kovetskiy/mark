@@ -47,6 +47,11 @@ func (c *converter) table(n *node) string {
 		}
 	}
 
+	widths, ok := columnWidths(n, width)
+	if !ok {
+		return c.htmlBlock(n)
+	}
+
 	rendered := make([][]string, len(rows))
 	for i, row := range rows {
 		for _, cell := range row {
@@ -59,6 +64,9 @@ func (c *converter) table(n *node) string {
 	}
 
 	var b strings.Builder
+	if widths != nil {
+		b.WriteString("<!-- Column-Widths: " + strings.Join(widths, ",") + " -->\n")
+	}
 	writeRow := func(cells []string) {
 		b.WriteString("|")
 		for _, cell := range cells {
@@ -142,6 +150,48 @@ func tableRows(table *node) ([][]*node, bool) {
 
 	return rows, true
 }
+
+// columnWidths reads a table's <colgroup> as the widths a Column-Widths
+// comment gives, and says whether it is one: a whole number of pixels for each
+// of the table's columns, or no width on any of them. nil is no widths.
+func columnWidths(table *node, columns int) ([]string, bool) {
+	colgroup := table.child("colgroup")
+	if colgroup == nil {
+		return nil, true
+	}
+
+	var widths []string
+	for _, col := range colgroup.elements() {
+		if !col.is("col") || len(significant(col.children)) > 0 {
+			return nil, false
+		}
+		for _, a := range col.attrs {
+			if a.name != "style" && !ignorableAttr(a.name) {
+				return nil, false
+			}
+		}
+		if style := col.attr("style"); style != "" {
+			m := pixelWidth.FindStringSubmatch(style)
+			if m == nil {
+				return nil, false
+			}
+			widths = append(widths, m[1])
+		}
+	}
+
+	switch len(widths) {
+	case 0:
+		return nil, true
+	case columns:
+		return widths, true
+	}
+
+	return nil, false
+}
+
+// pixelWidth is a width Column-Widths can say. Confluence's editor writes
+// "226.0px", which is the same width.
+var pixelWidth = regexp.MustCompile(`^\s*width:\s*0*([1-9][0-9]{0,8})(?:\.0+)?px\s*;?\s*$`)
 
 // tableCell renders a cell's content on one line, if it is inline content or
 // a single paragraph of it.
