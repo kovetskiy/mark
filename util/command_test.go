@@ -406,18 +406,9 @@ func TestHelp(t *testing.T) {
 	})
 
 	t.Run("mark -f doc.md --help", func(t *testing.T) {
-		help := helpOutput(t, "test", "-f", "doc.md", "--help")
-		assert.Contains(t, help, "mark publish", "a publish flag makes it publish's help")
-		assert.Contains(t, help, "--files")
-	})
-
-	t.Run("mark -h --files=doc.md", func(t *testing.T) {
-		help := helpOutput(t, "test", "-h", "--files=doc.md")
-		assert.Equal(t, helpOutput(t, "test", "publish", "--help"), help, "it is publish's help, word for word")
-	})
-
-	t.Run("mark -f doc.md help", func(t *testing.T) {
-		assert.Contains(t, helpOutput(t, "test", "-f", "doc.md", "help"), "mark publish")
+		want := helpOutput(t, "test", "--help")
+		assert.Equal(t, want, helpOutput(t, "test", "-f", "doc.md", "--help"), "the bare form gets mark's help, which names publish")
+		assert.Equal(t, want, helpOutput(t, "test", "-h", "--files=doc.md"))
 	})
 
 	t.Run("mark help publish", func(t *testing.T) {
@@ -497,7 +488,7 @@ func TestPublishHelpLeavesTheFlagsAlone(t *testing.T) {
 func TestHelpComesBeforeTheVersion(t *testing.T) {
 	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "--help", "--version"), "COMMANDS:")
 	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "--version", "--help"), "COMMANDS:")
-	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "-f", "doc.md", "--version", "--help"), "mark publish")
+	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "-f", "doc.md", "--version", "--help"), "COMMANDS:")
 }
 
 // TestTheDeprecationIsLogged: the notice is a warning, so --log-level

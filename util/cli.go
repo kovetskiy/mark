@@ -67,24 +67,6 @@ func buildCommand(version string, publish cli.ActionFunc) *cli.Command {
 		Commands:              []*cli.Command{publishCommand},
 	}
 
-	// "mark -f doc.md --help" is publish's help, as it would be with publish
-	// named. ExtraInfo is the one hook urfave/cli calls while printing the
-	// root's help, and the template prints what it returns instead.
-	root.CustomRootCommandHelpTemplate = `{{with ExtraInfo}}{{index . "publish"}}{{else}}` +
-		cli.RootCommandHelpTemplate + `{{end}}`
-	root.ExtraInfo = func() map[string]string {
-		// Once settled, the flags have read the environment and the file.
-		if line.config.settled || line.bareFlagSet() == "" {
-			return nil
-		}
-		var help strings.Builder
-		writer := root.Writer
-		root.Writer = &help
-		defer func() { root.Writer = writer }()
-		_ = cli.ShowCommandHelp(context.Background(), root, PublishCommand)
-		return map[string]string{"publish": help.String()}
-	}
-
 	return root
 }
 
