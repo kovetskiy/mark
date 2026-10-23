@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	mark "github.com/kovetskiy/mark/v16"
 	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/types"
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	altsrctoml "github.com/urfave/cli-altsrc/v3/toml"
@@ -251,14 +253,20 @@ var Flags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "mermaid-output",
 		Value:   "png",
-		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+		Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine and --mermaid-scale have no effect with it, and --mermaid-bundle is refused).",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), altsrctoml.TOML("mermaid-output", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.BoolFlag{
 		Name:    "mermaid-bundle",
 		Value:   false,
-		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg.",
+		Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and is refused with png or macro.",
 		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), altsrctoml.TOML("mermaid-bundle", altsrc.NewStringPtrSourcer(&filename))),
+	},
+	&cli.StringFlag{
+		Name:    "mermaid-macro-name",
+		Value:   types.MermaidMacroDefaultName,
+		Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where a name is used verbatim.",
+		Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_MACRO_NAME"), altsrctoml.TOML("mermaid-macro-name", altsrc.NewStringPtrSourcer(&filename))),
 	},
 	&cli.StringFlag{
 		Name:    "math-format",
@@ -549,28 +557,29 @@ func CheckFlags(context context.Context, command *cli.Command) (context.Context,
 	mermaidOutput := command.String("mermaid-output")
 	if mermaidOutput != "" || command.IsSet("mermaid-output") {
 		switch mermaidOutput {
-		case "png", "svg":
+		case "png", "svg", "macro":
 			// ok
 		default:
 			return context, fmt.Errorf(
-				"invalid value for --mermaid-output: %q (expected: png or svg)",
+				"invalid value for --mermaid-output: %q (expected: png, svg or macro)",
 				mermaidOutput,
 			)
 		}
 	}
 
-	// A bundle that goes nowhere is worth saying out loud rather than dropping:
-	// it was asked for on purpose, and it silently does not happen. Asked of its
-	// value rather than of IsSet, because false is exactly what a bundle nobody
-	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
-	// way at all.
-	//
-	// The scale is not checked against the format any more: it applies to both,
-	// multiplying the pixels of a PNG and the size the page shows an SVG at.
-	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
-		return context, errors.New(
-			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
-		)
+	// Only an SVG has room for the source: a PNG has nowhere for it, and the
+	// macro output publishes the source itself. A bundle asked for alongside
+	// either is contradictory rather than moot.
+	if err := mark.ValidateMermaidBundle(mermaidOutput, command.Bool("mermaid-bundle")); err != nil {
+		return context, err
+	}
+
+	// Empty is a value somebody cleared, not one they never set. The settings
+	// that simply have no effect in a given output are warned about where the
+	// run is configured, not refused here: they may come from the configuration
+	// file or the environment.
+	if command.IsSet("mermaid-macro-name") && command.String("mermaid-macro-name") == "" {
+		return context, errors.New("--mermaid-macro-name must not be empty")
 	}
 
 	// Checked as written, and asked of IsSet as well, so that a value somebody

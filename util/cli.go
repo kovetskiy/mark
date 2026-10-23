@@ -139,6 +139,7 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		MermaidScale:     cmd.Float("mermaid-scale"),
 		MermaidOutput:    cmd.String("mermaid-output"),
 		MermaidBundle:    cmd.Bool("mermaid-bundle"),
+		MermaidMacroName: cmd.String("mermaid-macro-name"),
 		D2Output:         cmd.String("d2-output"),
 		D2BundleRemote:   cmd.Bool("d2-bundle-remote"),
 		D2Scale:          cmd.Float("d2-scale"),
@@ -150,6 +151,21 @@ func RunMark(ctx context.Context, cmd *cli.Command) error {
 		IncludePath:      cmd.String("include-path"),
 
 		Output: os.Stdout,
+	}
+
+	// A setting that only means something in one mermaid output has no effect in
+	// another. Said once here rather than refused: the value may come from the
+	// configuration file or the environment, where the operator cannot unset it
+	// for a single run.
+	if config.MermaidOutput == "macro" {
+		if cmd.IsSet("mermaid-engine") {
+			log.Warn().Msg("--mermaid-engine has no effect with --mermaid-output=macro: the macro does not draw the diagram")
+		}
+		if cmd.IsSet("mermaid-scale") {
+			log.Warn().Msg("--mermaid-scale has no effect with --mermaid-output=macro: the macro does not draw the diagram")
+		}
+	} else if cmd.IsSet("mermaid-macro-name") {
+		log.Warn().Msg("--mermaid-macro-name has no effect without --mermaid-output=macro")
 	}
 
 	// RunContext shuts the shared browser down on the way out, however the run

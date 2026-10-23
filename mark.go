@@ -96,6 +96,7 @@ type Config struct {
 	MermaidScale     float64
 	MermaidOutput    string
 	MermaidBundle    bool
+	MermaidMacroName string
 	D2Output         string
 	D2Scale          float64
 	D2BundleRemote   bool
@@ -171,41 +172,67 @@ func RunContext(ctx context.Context, config Config) (err error) {
 	return run(ctx, config)
 }
 
+// ValidateMermaidOutput reports a mermaid output name mark does not publish as.
+// The empty value is the default (PNG) and is not one. Shared by the CLI and
+// the Config path so the two cannot drift.
+func ValidateMermaidOutput(output string) error {
+	switch output {
+	case "", "png", "svg", "macro":
+		return nil
+	}
+
+	return fmt.Errorf(
+		"invalid mermaid output %q: expected \"png\", \"svg\", \"macro\", or \"\" for the default",
+		output,
+	)
+}
+
+// ValidateMermaidBundle reports a bundle that has nowhere to go: only an SVG
+// has room for the diagram's source, and the macro output publishes the source
+// itself. Shared by the CLI and the Config path so the two cannot drift.
+func ValidateMermaidBundle(output string, bundle bool) error {
+	if !bundle || output == "svg" {
+		return nil
+	}
+
+	return errors.New(
+		"a mermaid bundle needs the svg output: only an SVG has room for the diagram's source",
+	)
+}
+
 // prepare checks the settings that decide how a document is rendered and what
 // is done about its links, and sets up the mermaid engine they name. Run and
 // ProcessFile both start here, so that a library caller publishing one file is
-// held to the same settings, and told the same thing about them, as a run is:
-// before this was shared, ProcessFile checked none of it, drew diagrams with
-// whatever engine happened to be current rather than the one asked for, and
-// published a PNG for a MermaidOutput it did not recognise.
+// held to the same settings, and told the same thing about them, as a run is.
 func (c Config) prepare() (page.LinkChecks, error) {
-	// The engine is chosen before anything is published, because it is built
-	// lazily and shared: a diagram already drawn is not drawn again to match.
-	if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
+	// Checked here as well as in the CLI, because Config is a public API and a
+	// library caller reaches this without passing a flag at all. An empty value
+	// is the default (PNG), which is what mark has always published.
+	if err := ValidateMermaidOutput(c.MermaidOutput); err != nil {
 		return page.LinkChecks{}, err
 	}
 
-	// Checked here as well as in the CLI, because Config is a public API and a
-	// library caller reaches this without passing a flag at all. A value the
-	// renderer does not know falls to its default branch, so an unrecognised
-	// format publishes a PNG without a word -- taking a bundle asked for
-	// alongside it down with it. An empty value is not that: it is a caller
-	// that never set the field, and it means the PNG mark has always published.
-	switch c.MermaidOutput {
-	case "", "png", "svg":
-		// ok
-	default:
-		return page.LinkChecks{}, fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			c.MermaidOutput,
-		)
+	if c.MermaidOutput == "macro" {
+		// Nothing is drawn: the source is published verbatim inside the macro
+		// body. The engine is not chosen and the scale is not applied, but
+		// neither is refused -- a configuration file may carry a value that
+		// serves the image outputs too.
+		if !slices.Contains(c.Features, "mermaid") {
+			log.Warn().Msg(
+				"MermaidOutput \"macro\" needs the mermaid feature: " +
+					"without it a mermaid fence stays a plain code block",
+			)
+		}
+	} else {
+		// The engine is chosen before anything is published, because it is built
+		// lazily and shared: a diagram already drawn is not drawn again to match.
+		if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
+			return page.LinkChecks{}, err
+		}
 	}
 
-	if c.MermaidBundle && c.MermaidOutput != "svg" {
-		return page.LinkChecks{}, errors.New(
-			"MermaidBundle needs MermaidOutput \"svg\": " +
-				"there is nowhere in a PNG to keep the diagram's source",
-		)
+	if err := ValidateMermaidBundle(c.MermaidOutput, c.MermaidBundle); err != nil {
+		return page.LinkChecks{}, err
 	}
 
 	// The same for d2, and for the same reason: an unrecognised format falls to
@@ -1005,6 +1032,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			MermaidScale:     config.MermaidScale,
 			MermaidOutput:    config.MermaidOutput,
 			MermaidBundle:    config.MermaidBundle,
+			MermaidMacroName: config.MermaidMacroName,
 			D2Output:         config.D2Output,
 			D2Scale:          config.D2Scale,
 			D2BundleRemote:   config.D2BundleRemote,
@@ -1334,6 +1362,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		MermaidScale:     config.MermaidScale,
 		MermaidOutput:    config.MermaidOutput,
 		MermaidBundle:    config.MermaidBundle,
+		MermaidMacroName: config.MermaidMacroName,
 		D2Output:         config.D2Output,
 		D2Scale:          config.D2Scale,
 		D2BundleRemote:   config.D2BundleRemote,

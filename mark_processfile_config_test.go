@@ -49,7 +49,11 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 		"an unknown mermaid engine": func(c *Config) { c.MermaidEngine = "graphviz" },
 		"an unknown mermaid output": func(c *Config) { c.MermaidOutput = "jpeg" },
 		"a bundle inside a png":     func(c *Config) { c.MermaidBundle = true },
-		"an unknown d2 output":      func(c *Config) { c.D2Output = "jpeg" },
+		"a bundle inside a macro": func(c *Config) {
+			c.MermaidOutput = "macro"
+			c.MermaidBundle = true
+		},
+		"an unknown d2 output": func(c *Config) { c.D2Output = "jpeg" },
 		"a d2 scale of nothing": func(c *Config) {
 			c.Features = []string{"d2"}
 			c.D2Scale = math.NaN()
