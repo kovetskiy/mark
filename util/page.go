@@ -74,14 +74,14 @@ func (line *commandLine) pageCommand() *cli.Command {
 				Name:      "watch",
 				Usage:     "be notified of a page's changes, or have others be",
 				ArgsUsage: "<page>",
-				Flags:     append(pageFlags(line.config), watcherFlag("watch")),
+				Flags:     append(pageFlags(line.config), watcherFlag("watch"), recursiveWatchFlag("watch")),
 				Action:    line.pageAction(1, nil, runPageWatch),
 			},
 			{
 				Name:      "unwatch",
 				Usage:     "stop being notified of a page's changes, or have others stop",
 				ArgsUsage: "<page>",
-				Flags:     append(pageFlags(line.config), watcherFlag("unwatch")),
+				Flags:     append(pageFlags(line.config), watcherFlag("unwatch"), recursiveWatchFlag("unwatch")),
 				Action:    line.pageAction(1, nil, runPageUnwatch),
 			},
 		},
@@ -96,6 +96,15 @@ func watcherFlag(verb string) cli.Flag {
 		Usage: verb + " the page for this user rather than for yourself. Repeat or comma-separate for several. " +
 			"On Cloud a user is named by full name, which has to match exactly one user, or as accountid:<id>; " +
 			"on Server and Data Center by username. Needs space administration for anyone but yourself.",
+	}
+}
+
+// recursiveWatchFlag is --recursive for watch and unwatch, typed for the run
+// like delete's.
+func recursiveWatchFlag(verb string) cli.Flag {
+	return &cli.BoolFlag{
+		Name:  "recursive",
+		Usage: verb + " every page beneath it too. A page with a folder beneath it is refused, since the folder's pages are out of reach.",
 	}
 }
 
@@ -259,9 +268,9 @@ func runPageDelete(run pageRun, cmd *cli.Command) error {
 }
 
 func runPageWatch(run pageRun, cmd *cli.Command) error {
-	return page.Watch(run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), true, cmd.Bool("dry-run"), run.out)
+	return page.Watch(run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), true, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
 }
 
 func runPageUnwatch(run pageRun, cmd *cli.Command) error {
-	return page.Watch(run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), false, cmd.Bool("dry-run"), run.out)
+	return page.Watch(run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), false, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
 }

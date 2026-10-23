@@ -340,7 +340,7 @@ mark page move   <page> --before <sibling>   # or --after, beside a sibling
 mark page rename <page> "New title"
 mark page archive <page>                     # Confluence Cloud only
 mark page delete <page> [--recursive]
-mark page watch   <page> [--user <name>]...  # or unwatch
+mark page watch   <page> [--user <name>]... [--recursive]  # or unwatch
 ```
 
 A `<page>` is an id, a URL as the browser shows it, or a title together with
@@ -356,17 +356,19 @@ nothing.
 | `rename` | sets the title and keeps the content, as a minor edit with the version message `renamed from "<old title>"` | a title another page in the space already has |
 | `archive` | asks Confluence to archive the page; Confluence archives it afterwards | a page with children; the space homepage |
 | `delete` | moves the page to the trash. `--recursive` trashes its descendants too, deepest first | a page with children without `--recursive`; a page with a folder beneath it; the space homepage |
-| `watch`, `unwatch` | starts or stops Confluence notifying you of the page's changes, or each `--user` | a `--user` on Cloud whose full name matches no user, or more than one |
+| `watch`, `unwatch` | starts or stops Confluence notifying you of the page's changes, or each `--user`. `--recursive` does the same for every page beneath it, from the top down | a `--user` on Cloud whose full name matches no user, or more than one; with `--recursive`, a page with a folder anywhere beneath it |
 
 `--user` names a user the way a `Restrictions` header does: on Cloud by full
 name, which has to match exactly one user, or as `accountid:<id>`; on Server and
 Data Center by username. Watching for anyone but yourself takes space
 administration. A user already in the state asked for is reported and left
-alone. Watching is not recursive: it is the page alone, as the Confluence API
-offers it.
+alone. Confluence watches a page alone, so `--recursive` watches each page
+beneath it in turn: pages added later are not watched. It reads the whole tree
+before changing anything, so a folder in it, whose pages it cannot list, stops
+the run before the first watch rather than halfway.
 
 Nothing is purged: the trash stays recoverable, as it does for `--on-orphan
-delete`. `--recursive` is read only from the command line, never from the
+delete`. `--recursive`, on any command, is read only from the command line, never from the
 configuration file or the environment.
 
 These commands do not read or update what `--track-pages` recorded. A page
