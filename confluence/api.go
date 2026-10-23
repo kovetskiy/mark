@@ -1025,22 +1025,17 @@ func (api *API) CreateAttachment(
 		return info, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
+	if len(result.Results) == 0 || result.Results[0].ID == "" {
 		return info, errors.New(
 			"the Confluence REST API for creating attachments returned " +
-				"0 json objects, expected at least 1",
+				"no attachment, expected one with an id",
 		)
 	}
 
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
-		}
-
-		result.Results[i] = info
-	}
-
 	info = result.Results[0]
+	if info.Links.Context == "" {
+		info.Links.Context = result.Links.Context
+	}
 
 	return info, nil
 }
@@ -1101,34 +1096,25 @@ func (api *API) UpdateAttachment(
 	}
 
 	if len(extendedResponse.Results) > 0 {
-		for i, info := range extendedResponse.Results {
-			if info.Links.Context == "" {
-				info.Links.Context = extendedResponse.Links.Context
-			}
-
-			extendedResponse.Results[i] = info
-		}
-
 		info = extendedResponse.Results[0]
-
-		return info, nil
+		if info.Links.Context == "" {
+			info.Links.Context = extendedResponse.Links.Context
+		}
+	} else if err = json.Unmarshal(result, &info); err != nil {
+		return AttachmentInfo{}, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
 	}
 
-	var shortResponse AttachmentInfo
-	err = json.Unmarshal(result, &shortResponse)
-	if err != nil {
-		return info, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
-	}
-
-	if shortResponse.ID == "" {
-		return info, fmt.Errorf(
+	// The caller links the page's attachments from this answer, so one that
+	// names no attachment cannot count as an upload.
+	if info.ID == "" {
+		return AttachmentInfo{}, fmt.Errorf(
 			"the Confluence REST API for updating attachments returned "+
 				"no attachment (JSON=%s), expected one with an id",
 			string(result),
 		)
 	}
 
-	return shortResponse, nil
+	return info, nil
 }
 
 func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error) {
