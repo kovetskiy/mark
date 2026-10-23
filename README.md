@@ -80,7 +80,9 @@ The optional `restrictions` mapping controls who may read or update the page.
 An operation it names gets exactly the users and groups listed; an operation it
 leaves out keeps whatever restrictions the page has, including ones set in the
 Confluence UI. An empty operation (`read: {}`, or `read:` with no value)
-removes its restrictions. A single name may be written without a list. Mark
+removes its restrictions. A single name may be written without a list. A key
+written twice in ways mark reads as one, such as `users` and `Users`, is
+refused rather than guessed at. Mark
 adds its authenticated user to each operation that names anyone, and refuses to
 apply one if it cannot identify that user, so publishing cannot lock it out of
 the page.

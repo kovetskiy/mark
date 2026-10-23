@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -33,21 +34,86 @@ func (r PageRestriction) restricts() bool {
 	return len(r.Users) > 0 || len(r.Groups) > 0
 }
 
-// Subjects are who may perform an operation, as Confluence names them: users
+// names is a set of users or groups, matched without regard to case as
+// Confluence matches usernames and group names (an accountId is never written
+// in two cases), and each kept as it was first spelled. A name is added once,
+// however often it is given: Confluence refuses a duplicate.
+type names map[string]string
+
+func (n names) add(list ...string) names {
+	for _, name := range list {
+		if key := strings.ToLower(name); name != "" && n[key] == "" {
+			n[key] = name
+		}
+	}
+	return n
+}
+
+func (n names) intersect(other names) names {
+	out := names{}
+	for key, name := range n {
+		if other[key] != "" {
+			out[key] = name
+		}
+	}
+	return out
+}
+
+func (n names) equal(other names) bool {
+	return len(n) == len(other) && len(n.intersect(other)) == len(n)
+}
+
+// sorted is the names in a stable order, for a request that says the same
+// thing the same way every time.
+func (n names) sorted() []string {
+	keys := slices.Sorted(maps.Keys(n))
+	out := make([]string, len(keys))
+	for i, key := range keys {
+		out[i] = n[key]
+	}
+	return out
+}
+
+// subjects are who may perform an operation, as Confluence names them: users
 // by accountId on Cloud and by username on Server and Data Center, groups by
 // name. No subjects at all leaves the operation unrestricted.
-type Subjects struct {
-	Users  []string
-	Groups []string
+type subjects struct {
+	users, groups names
 }
 
-func (s Subjects) restricts() bool {
-	return len(s.Users) > 0 || len(s.Groups) > 0
+func newSubjects(users, groups []string) subjects {
+	return subjects{users: names{}.add(users...), groups: names{}.add(groups...)}
 }
 
-// Restrictions are the subjects of each operation. An operation that is not
+func (s subjects) restricts() bool {
+	return len(s.users) > 0 || len(s.groups) > 0
+}
+
+func (s subjects) equal(other subjects) bool {
+	return s.users.equal(other.users) && s.groups.equal(other.groups)
+}
+
+func (s subjects) intersect(other subjects) subjects {
+	return subjects{users: s.users.intersect(other.users), groups: s.groups.intersect(other.groups)}
+}
+
+// with is s with user added, or s itself for no user.
+func (s subjects) with(user string) subjects {
+	return subjects{users: maps.Clone(s.users).add(user), groups: s.groups}
+}
+
+// restrictions are the subjects of each operation. An operation that is not
 // there is unrestricted.
-type Restrictions map[string]Subjects
+type restrictions map[string]subjects
+
+func (r restrictions) equal(other restrictions) bool {
+	for _, operation := range restrictedOperations {
+		if !r[operation].equal(other[operation]) {
+			return false
+		}
+	}
+	return true
+}
 
 // ResolvedRestrictions are a document's restrictions with every user resolved,
 // and the authenticated user added to each operation that names anyone, so
@@ -55,11 +121,10 @@ type Restrictions map[string]Subjects
 // so a dry run does it too, and a name that resolves to nobody fails before a
 // real run creates anything.
 type ResolvedRestrictions struct {
-	declared Restrictions
+	declared restrictions
 	// self is how Confluence names the authenticated user, or "" when no
 	// operation names anyone and nobody had to ask.
-	self  string
-	cloud bool
+	self string
 }
 
 // ResolveRestrictions resolves the users declared restrictions name.
@@ -73,7 +138,7 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 		return nil, err
 	}
 
-	resolved := &ResolvedRestrictions{declared: Restrictions{}, cloud: cloud}
+	resolved := &ResolvedRestrictions{declared: restrictions{}}
 
 	var current *User
 	if slices.ContainsFunc(declared, PageRestriction.restricts) {
@@ -95,7 +160,11 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 			return nil, fmt.Errorf("unknown restriction operation %q", restriction.Operation)
 		}
 
-		subjects := resolved.declared[restriction.Operation]
+		var users []string
+		if restriction.restricts() {
+			// First, so that its own spelling is the one kept.
+			users = append(users, resolved.self)
+		}
 		for _, name := range restriction.Users {
 			user := name
 			if cloud {
@@ -104,14 +173,9 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 					return nil, err
 				}
 			}
-			subjects.Users = append(subjects.Users, user)
+			users = append(users, user)
 		}
-		subjects.Groups = append(subjects.Groups, restriction.Groups...)
-		if subjects.restricts() {
-			// First, so that its own spelling is the one kept.
-			subjects.Users = append([]string{resolved.self}, subjects.Users...)
-		}
-		resolved.declared[restriction.Operation] = resolved.normalise(subjects)
+		resolved.declared[restriction.Operation] = newSubjects(users, restriction.Groups)
 	}
 
 	return resolved, nil
@@ -166,39 +230,6 @@ func (api *API) restrictedAccountID(name string, current *User) (string, error) 
 	}
 }
 
-// normalise sorts subjects and names each once: Confluence refuses a
-// duplicate, and two sets that say the same thing have to compare equal.
-// Usernames and group names match without regard to case; an accountId is an
-// identifier.
-func (r *ResolvedRestrictions) normalise(s Subjects) Subjects {
-	return Subjects{
-		Users:  uniqueSorted(s.Users, !r.cloud),
-		Groups: uniqueSorted(s.Groups, true),
-	}
-}
-
-func uniqueSorted(names []string, foldCase bool) []string {
-	key := func(name string) string {
-		if foldCase {
-			return strings.ToLower(name)
-		}
-		return name
-	}
-
-	seen := map[string]bool{}
-	out := []string{}
-	for _, name := range names {
-		if name == "" || seen[key(name)] {
-			continue
-		}
-		seen[key(name)] = true
-		out = append(out, name)
-	}
-	slices.SortFunc(out, func(a, b string) int { return strings.Compare(key(a), key(b)) })
-
-	return out
-}
-
 // RestrictionPlan is how a page goes from the restrictions it has to the ones
 // its document declares, in two steps around the content update.
 //
@@ -210,7 +241,7 @@ func uniqueSorted(names []string, foldCase bool) []string {
 // page no more open than it was or than it is meant to be.
 type RestrictionPlan struct {
 	pageID                  string
-	current, interim, final Restrictions
+	current, interim, final restrictions
 }
 
 // Changes reports whether the plan changes the page's restrictions at all.
@@ -224,113 +255,51 @@ func (p *RestrictionPlan) Changes() bool {
 // PUT never lifts the edit lock even for a moment. created says the page has
 // just been made, and so has nothing to read back.
 func (api *API) PlanRestrictions(page *PageInfo, resolved *ResolvedRestrictions, lockUpdates, created bool) (*RestrictionPlan, error) {
-	current := Restrictions{}
+	current := restrictions{}
 	if !created {
 		var err error
-		current, err = api.GetPageRestrictions(page.ID)
+		current, err = api.getPageRestrictions(page.ID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	final := Restrictions{}
+	final := restrictions{}
 	for _, operation := range restrictedOperations {
-		subjects, declared := resolved.declared[operation]
-		if !declared {
-			subjects = current[operation]
+		declared, ok := resolved.declared[operation]
+		if !ok {
+			declared = current[operation]
 		}
-		if operation == RestrictUpdate && lockUpdates && resolved.self != "" {
-			subjects.Users = append(slices.Clone(subjects.Users), resolved.self)
+		if operation == RestrictUpdate && lockUpdates {
+			declared = declared.with(resolved.self)
 		}
-		final[operation] = resolved.normalise(subjects)
+		final[operation] = declared
 	}
 
-	interim := Restrictions{}
-	for _, operation := range restrictedOperations {
-		interim[operation] = resolved.narrower(current[operation], final[operation])
-	}
-	// Confluence refuses a user who may update but not read. Current and
-	// final are each as consistent as whoever set them made them, and only a
-	// group's members know whether a user is in it, so an interim that takes
-	// its read from one of them keeps that one's updaters. Updaters taken
-	// from the other are kept only if the interim read names them.
-	if read, update := interim[RestrictRead], interim[RestrictUpdate]; read.restricts() && update.restricts() {
-		var kept Subjects
-		for _, side := range []Restrictions{current, final} {
-			if read.equal(side[RestrictRead]) {
-				kept.Users = append(kept.Users, intersect(update, side[RestrictUpdate], resolved).Users...)
-				kept.Groups = append(kept.Groups, intersect(update, side[RestrictUpdate], resolved).Groups...)
-			}
+	narrower := func(operation string) subjects {
+		a, b := current[operation], final[operation]
+		switch {
+		case !a.restricts():
+			return b
+		case !b.restricts():
+			return a
+		default:
+			// The intersection could leave mark out halfway through its own run.
+			return a.intersect(b).with(resolved.self)
 		}
-		named := intersect(update, read, resolved)
-		kept.Users = append(kept.Users, named.Users...)
-		kept.Groups = append(kept.Groups, named.Groups...)
-		interim[RestrictUpdate] = resolved.withSelf(kept)
 	}
+	read, update := narrower(RestrictRead), narrower(RestrictUpdate)
+	// Confluence refuses a user who may update but not read. Final is as
+	// consistent as the document made it, but an interim read taken from
+	// anything else need not suit the interim updaters, so they are kept only
+	// if it names them. That can narrow updates further for the moment, which
+	// is the safe way to be wrong.
+	if read.restricts() && update.restricts() && !read.equal(final[RestrictRead]) {
+		update = update.intersect(read).with(resolved.self)
+	}
+	interim := restrictions{RestrictRead: read, RestrictUpdate: update}
 
 	return &RestrictionPlan{pageID: page.ID, current: current, interim: interim, final: final}, nil
-}
-
-// narrower is whichever of a and b allows fewer people: an unrestricted
-// operation allows anyone, and of two restricted ones only those both name.
-func (r *ResolvedRestrictions) narrower(a, b Subjects) Subjects {
-	switch {
-	case !a.restricts():
-		return r.normalise(b)
-	case !b.restricts():
-		return r.normalise(a)
-	default:
-		return r.withSelf(intersect(a, b, r))
-	}
-}
-
-// withSelf adds the authenticated user to a restricted operation, which an
-// intersection can otherwise leave mark out of halfway through its own run.
-func (r *ResolvedRestrictions) withSelf(s Subjects) Subjects {
-	if r.self != "" {
-		s.Users = append([]string{r.self}, s.Users...)
-	}
-	return r.normalise(s)
-}
-
-func intersect(a, b Subjects, r *ResolvedRestrictions) Subjects {
-	a, b = r.normalise(a), r.normalise(b)
-	in := func(names []string, foldCase bool) func(string) bool {
-		return func(name string) bool {
-			return slices.ContainsFunc(names, func(other string) bool {
-				return other == name || foldCase && strings.EqualFold(other, name)
-			})
-		}
-	}
-
-	var out Subjects
-	for _, user := range a.Users {
-		if in(b.Users, !r.cloud)(user) {
-			out.Users = append(out.Users, user)
-		}
-	}
-	for _, group := range a.Groups {
-		if in(b.Groups, true)(group) {
-			out.Groups = append(out.Groups, group)
-		}
-	}
-
-	return out
-}
-
-func (r Restrictions) equal(other Restrictions) bool {
-	for _, operation := range restrictedOperations {
-		if !r[operation].equal(other[operation]) {
-			return false
-		}
-	}
-	return true
-}
-
-// equal compares two normalised subjects.
-func (s Subjects) equal(other Subjects) bool {
-	return slices.EqualFunc(s.Users, other.Users, strings.EqualFold) &&
-		slices.EqualFunc(s.Groups, other.Groups, strings.EqualFold)
 }
 
 // ApplyInterim puts the plan's interim restrictions on the page, if they are
@@ -351,8 +320,8 @@ func (api *API) ApplyFinal(plan *RestrictionPlan) error {
 	return api.putPageRestrictions(plan.pageID, plan.final)
 }
 
-// GetPageRestrictions reads who may read and update the page.
-func (api *API) GetPageRestrictions(pageID string) (Restrictions, error) {
+// getPageRestrictions reads who may read and update the page.
+func (api *API) getPageRestrictions(pageID string) (restrictions, error) {
 	// A list that fills its page, or says it is longer than what came back,
 	// may have been cut short.
 	type subjectList[T any] struct {
@@ -392,7 +361,7 @@ func (api *API) GetPageRestrictions(pageID string) (Restrictions, error) {
 	}
 
 	cloud := api.IsCloud()
-	restrictions := Restrictions{}
+	current := restrictions{}
 	for _, name := range restrictedOperations {
 		op := response[name].Restrictions
 		// Comparing against part of a list could lift a restriction nobody
@@ -402,30 +371,27 @@ func (api *API) GetPageRestrictions(pageID string) (Restrictions, error) {
 			return nil, fmt.Errorf("page %s has more %s restrictions than one request returns", pageID, name)
 		}
 
-		var subjects Subjects
+		var users, groups []string
 		for _, user := range op.User.Results {
-			id := user.Username
 			if cloud {
-				id = user.AccountID
+				users = append(users, user.AccountID)
+			} else {
+				users = append(users, user.Username)
 			}
-			subjects.Users = append(subjects.Users, id)
 		}
 		for _, group := range op.Group.Results {
-			subjects.Groups = append(subjects.Groups, group.Name)
+			groups = append(groups, group.Name)
 		}
-		restrictions[name] = Subjects{
-			Users:  uniqueSorted(subjects.Users, !cloud),
-			Groups: uniqueSorted(subjects.Groups, true),
-		}
+		current[name] = newSubjects(users, groups)
 	}
 
-	return restrictions, nil
+	return current, nil
 }
 
 // putPageRestrictions replaces every read and update restriction on the page
 // with restrictions. Both operations are always sent, so that the request
 // says what each one ends up as.
-func (api *API) putPageRestrictions(pageID string, restrictions Restrictions) error {
+func (api *API) putPageRestrictions(pageID string, restrictions restrictions) error {
 	cloud := api.IsCloud()
 
 	payload := make([]map[string]any, 0, len(restrictedOperations))
@@ -433,7 +399,7 @@ func (api *API) putPageRestrictions(pageID string, restrictions Restrictions) er
 		subjects := restrictions[operation]
 
 		users := []map[string]any{}
-		for _, id := range subjects.Users {
+		for _, id := range subjects.users.sorted() {
 			if cloud {
 				users = append(users, map[string]any{"type": "known", "accountId": id})
 			} else {
@@ -441,7 +407,7 @@ func (api *API) putPageRestrictions(pageID string, restrictions Restrictions) er
 			}
 		}
 		groups := []map[string]any{}
-		for _, name := range subjects.Groups {
+		for _, name := range subjects.groups.sorted() {
 			groups = append(groups, map[string]any{"type": "group", "name": name})
 		}
 
