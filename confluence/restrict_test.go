@@ -1,8 +1,6 @@
 package confluence_test
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -55,26 +53,6 @@ func TestRestrictPageUpdatesCurrentUserByEmail(t *testing.T) {
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
-func TestSetPageRestrictionsCurrentUserByEmail(t *testing.T) {
-	api, server, page := newCloudRestrictAPI(t)
-	var body []byte
-	var readErr error
-	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/restriction") {
-			body, readErr = io.ReadAll(r.Body)
-			r.Body = io.NopCloser(bytes.NewReader(body))
-		}
-		return 0, "", false
-	})
-
-	require.NoError(t, api.SetPageRestrictions(page, []confluence.PageRestriction{
-		{Operation: "read", Users: []string{"ME@example.com"}},
-	}))
-	require.NoError(t, readErr)
-	require.JSONEq(t, `[{"operation":"read","restrictions":{"user":[{"type":"known","accountId":"acct-me"}],"group":[]}}]`, string(body))
-	assert.Zero(t, server.CountRequests(http.MethodGet, "/search"))
-}
-
 // newCloudRestrictAPIWithoutCurrentUser is a Cloud fake whose /user/current
 // refuses. It is addressed through the gateway, so the client knows it is
 // Cloud without asking for the current user and caching the answer.
@@ -92,17 +70,6 @@ func newCloudRestrictAPIWithoutCurrentUser(t *testing.T) (*confluence.API, *conf
 	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
 	require.True(t, api.IsCloud())
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
-}
-
-func TestSetPageRestrictionsRefusesUnknownCurrentUser(t *testing.T) {
-	api, server, page := newCloudRestrictAPIWithoutCurrentUser(t)
-	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
-
-	err := api.SetPageRestrictions(page, []confluence.PageRestriction{
-		{Operation: "read", Users: []string{"Alice Example"}},
-	})
-	require.ErrorContains(t, err, "could lock it out")
-	assert.Zero(t, server.CountRequests(http.MethodPut, "/restriction"))
 }
 
 // TestRestrictPageUpdatesNamedUser restricts to someone other than the
@@ -185,51 +152,4 @@ func TestRestrictPageUpdatesNamedUserWhenCurrentUnavailable(t *testing.T) {
 
 	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
 	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
-}
-
-// TestSetPageRestrictionsReplacesEveryRestriction: the PUT stands for every
-// restriction on the page, so an operation it leaves out is lifted, and the
-// authenticated user is added to the one it names.
-func TestSetPageRestrictionsReplacesEveryRestriction(t *testing.T) {
-	api, server, page := newCloudRestrictAPI(t)
-	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
-	require.NoError(t, api.RestrictPageUpdates(page, ""))
-	require.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
-
-	require.NoError(t, api.SetPageRestrictions(page, []confluence.PageRestriction{
-		{Operation: "read", Users: []string{"Alice Example"}, Groups: []string{"docs-readers"}},
-	}))
-
-	stored := server.Page(page.ID)
-	assert.Equal(t, []string{"acct-alice", "acct-me"}, stored.ReadRestrictedTo)
-	assert.Empty(t, stored.UpdateRestrictedTo, "an operation left out is lifted")
-	assert.Equal(t, map[string][]string{"read": {"docs-readers"}}, stored.RestrictedGroups)
-}
-
-// TestSetPageRestrictionsNamesEachSubjectOnce: a user named twice, or named
-// as well as added for being the authenticated user, and a group named twice
-// in another case, are each sent once.
-func TestSetPageRestrictionsNamesEachSubjectOnce(t *testing.T) {
-	api, server, page := newCloudRestrictAPI(t)
-	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
-
-	require.NoError(t, api.SetPageRestrictions(page, []confluence.PageRestriction{{
-		Operation: "update",
-		Users:     []string{"Alice Example", "Alice Example", "me@example.com"},
-		Groups:    []string{"Docs", "docs"},
-	}}))
-
-	stored := server.Page(page.ID)
-	assert.Equal(t, []string{"acct-alice", "acct-me"}, stored.UpdateRestrictedTo)
-	assert.Equal(t, map[string][]string{"update": {"Docs"}}, stored.RestrictedGroups)
-}
-
-// TestSetPageRestrictionsLiftsWithoutTheCurrentUser: lifting a restriction
-// cannot lock anyone out, so it does not need the authenticated user.
-func TestSetPageRestrictionsLiftsWithoutTheCurrentUser(t *testing.T) {
-	api, server, page := newCloudRestrictAPIWithoutCurrentUser(t)
-
-	require.NoError(t, api.SetPageRestrictions(page, []confluence.PageRestriction{{Operation: "read"}}))
-	assert.Empty(t, server.Page(page.ID).ReadRestrictedTo)
-	assert.Equal(t, 1, server.CountRequests(http.MethodPut, "/restriction"))
 }

@@ -3,6 +3,7 @@ package metadata
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -200,9 +201,9 @@ type Meta struct {
 	ImageAlign string
 }
 
-// Restrictions declares who may read or update a Confluence page. They
-// replace every restriction the page has: a nil operation is left
-// unrestricted, as is one that names nobody.
+// Restrictions declares who may read or update a Confluence page. A nil
+// operation keeps whatever the page has, however it was set; one that names
+// nobody lifts the operation's restrictions.
 type Restrictions struct {
 	Read   *RestrictionSubjects
 	Update *RestrictionSubjects
@@ -336,6 +337,23 @@ func toStringMap(val any) map[string]any {
 	}
 }
 
+// merge is r with the operations of other, read from a key that differs
+// from r's only in how it is written, added to it.
+func (r *Restrictions) merge(other *Restrictions) *Restrictions {
+	if other != nil {
+		r.Read = mergeSubjects(r.Read, other.Read)
+		r.Update = mergeSubjects(r.Update, other.Update)
+	}
+	return r
+}
+
+func mergeSubjects(s, other *RestrictionSubjects) *RestrictionSubjects {
+	if s == nil {
+		return other
+	}
+	return s.merge(other)
+}
+
 // merge is s with the users and groups of other, read from a key that
 // differs from s's only in case, added to it.
 func (s *RestrictionSubjects) merge(other *RestrictionSubjects) *RestrictionSubjects {
@@ -361,8 +379,12 @@ func restrictionSubjects(operation string, val any) (*RestrictionSubjects, error
 	}
 
 	for key, value := range values {
-		if value == nil {
+		// A single name is a list of one, as it is for every list key.
+		switch v := value.(type) {
+		case nil:
 			value = []any{}
+		case string:
+			value = []any{v}
 		}
 		items, ok := value.([]any)
 		if !ok {
@@ -564,6 +586,31 @@ func warningPrefix(filename string) string {
 // nothing else, and closes at the next line made of the same dashes; trailing
 // blanks are tolerated on the closing line only. An opening line with no
 // closing one is an error rather than a document without front matter: a page
+// refuseUnreadRestrictions refuses a document whose front matter restricts
+// its page when front matter is not read: the page would go up unrestricted,
+// with the YAML in its body, and nothing would say so.
+func refuseUnreadRestrictions(data []byte) error {
+	// Front matter that does not even split is body text to this run, as it
+	// is whenever the feature is off.
+	frontMatter, _, found, _ := splitFrontMatter(data)
+	if !found {
+		return nil
+	}
+
+	// YAML that does not parse leaves parsed empty, and the run reads the
+	// document as it would anyway.
+	var parsed map[string]any
+	_ = yaml.Unmarshal(frontMatter, &parsed)
+	for key := range parsed {
+		if normaliseFrontMatterKey(key) == "restrictions" {
+			return errors.New("the document's front matter has restrictions, which are only read with the frontmatter feature: " +
+				"add frontmatter to --features, or the page is published unrestricted")
+		}
+	}
+
+	return nil
+}
+
 // whose metadata silently became its body would publish somewhere unexpected.
 func splitFrontMatter(data []byte) (frontMatter, body []byte, found bool, err error) {
 	opening, rest, _ := bytes.Cut(data, []byte("\n"))
@@ -600,6 +647,8 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		if err != nil {
 			return nil, nil, err
 		}
+	} else if err := refuseUnreadRestrictions(data); err != nil {
+		return nil, nil, err
 	}
 
 	// From here on data is the document after any front matter, and every
@@ -675,7 +724,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 				if err != nil {
 					return nil, nil, err
 				}
-				meta.Restrictions = restrictions
+				// restrictions and Restrictions are one key; neither hides
+				// the other.
+				meta.Restrictions = restrictions.merge(meta.Restrictions)
 
 			default:
 				unknown = append(unknown, k)

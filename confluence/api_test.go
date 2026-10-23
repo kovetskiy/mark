@@ -11,7 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetPageRestrictions(t *testing.T) {
+// TestPutPageRestrictionsServer is the body a new page's restrictions are
+// PUT with on Server: users by username, the authenticated user added to each
+// operation that names anyone, each user once, and both operations sent.
+func TestPutPageRestrictionsServer(t *testing.T) {
 	var body []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -32,11 +35,14 @@ func TestSetPageRestrictions(t *testing.T) {
 	defer server.Close()
 
 	api := NewAPI(server.URL, "username", "password", true)
-	err := api.SetPageRestrictions(&PageInfo{ID: "123"}, []PageRestriction{
+	resolved, err := api.ResolveRestrictions([]PageRestriction{
 		{Operation: "read", Groups: []string{"docs-readers"}},
-		{Operation: "update", Users: []string{"jdoe"}},
+		{Operation: "update", Users: []string{"jdoe", "JDoe", "Mark"}},
 	})
 	require.NoError(t, err)
+	plan, err := api.PlanRestrictions(&PageInfo{ID: "123"}, resolved, false, true)
+	require.NoError(t, err)
+	require.NoError(t, api.ApplyInterim(plan))
 
 	require.JSONEq(t, `[
 		{"operation":"read","restrictions":{"user":[{"type":"known","username":"mark"}],"group":[{"type":"group","name":"docs-readers"}]}},
