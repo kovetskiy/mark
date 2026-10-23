@@ -1913,25 +1913,28 @@ func isCloudHost(host string) bool {
 	return false
 }
 
-// IsCloud reports whether the target is Confluence Cloud, deciding at most once
-// per API value. A target that could not be identified is reported as not
-// Cloud; cloud says so as an error, for a caller that must not guess.
+// IsCloud reports whether the target is Confluence Cloud, as Cloud decided it.
+// A target that could not be identified is reported as not Cloud.
 func (api *API) IsCloud() bool {
-	isCloud, _ := api.cloud()
+	isCloud, _ := api.Cloud()
 
 	return isCloud
 }
 
-// cloud identifies the target, at most once per API value: a known Cloud
-// host answers without a request, otherwise the current user decides --
-// Cloud names it by an Atlassian accountId, Server and Data Center by a
-// username and userKey instead.
+// Cloud identifies the target: a known Cloud host answers without a request,
+// otherwise the current user decides -- Cloud names it by an Atlassian
+// accountId, Server and Data Center by a username and userKey instead.
 //
-// Memoised through sync.Once, not a plain bool pair: the slow path issues a
-// request, so racing callers would both ask and write the result
-// concurrently, and Once makes a caller arriving mid-request wait for the
-// answer instead of reading a half-written one.
-func (api *API) cloud() (bool, error) {
+// A failed request is an error. A user that names no platform is not: asking
+// again would give the same reply, so it is taken for Server or Data Center,
+// with a warning.
+//
+// It decides once per API value, and every later call gets the same answer,
+// a failure included. Folders, moves and the page manifest take different
+// paths on each platform, so a run settles the platform before it publishes
+// anything rather than switching paths halfway. sync.Once makes a caller
+// arriving mid-request wait for the answer.
+func (api *API) Cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
 		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
@@ -1941,11 +1944,12 @@ func (api *API) cloud() (bool, error) {
 		user, err := api.GetCurrentUser()
 		if err != nil {
 			api.isCloudErr = fmt.Errorf("unable to identify the Confluence platform: %w", err)
-		} else {
-			api.isCloudFlag, api.isCloudErr = identifyCloud(user)
+			return
 		}
-		if api.isCloudErr != nil {
-			log.Warn().Err(api.isCloudErr).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
+
+		api.isCloudFlag, err = identifyCloud(user)
+		if err != nil {
+			log.Warn().Err(err).Msg("assuming Confluence Server or Data Center")
 		}
 	})
 
@@ -2230,7 +2234,7 @@ func (api *API) eachDirectChild(
 	parentID, parentType, operation string,
 	visit func(id, typ, title string) (stop bool),
 ) error {
-	if isCloud, err := api.cloud(); err == nil && !isCloud {
+	if isCloud, err := api.Cloud(); err == nil && !isCloud {
 		log.Debug().Msgf(
 			"not listing the children of %s %s: Confluence Cloud was ruled out",
 			parentType, parentID,

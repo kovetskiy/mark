@@ -384,6 +384,10 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
+	if err := settlePlatform(api, config); err != nil {
+		return err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
 	// What the run did, for whatever is reading the output rather than the log.
@@ -734,6 +738,10 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 		return nil, err
 	}
 
+	if err := settlePlatform(api, config); err != nil {
+		return nil, err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
 	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil)
@@ -766,6 +774,20 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 // document for its title, and a title read from bytes publishing never sees --
 // a byte-order mark in front of the header, a header inside an ignored region
 // -- is a different title from the one the page is published under.
+// settlePlatform identifies the Confluence platform once the run's local
+// inputs have been checked and before anything is published, so that one
+// failed request cannot send a Cloud tenant down Server's paths for the rest
+// of the run. A compile-only run never contacts Confluence.
+func settlePlatform(api *confluence.API, config Config) error {
+	if config.CompileOnly {
+		return nil
+	}
+
+	_, err := api.Cloud()
+
+	return err
+}
+
 func readSource(file string) ([]byte, []byte, error) {
 	source, err := os.ReadFile(file)
 	if err != nil {
