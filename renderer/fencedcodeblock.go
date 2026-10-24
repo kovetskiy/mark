@@ -394,7 +394,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				Firstline   int
 				Text        string
 			}{
-				lang,
+				CodeLanguage(lang),
 				collapse,
 				title,
 				theme,

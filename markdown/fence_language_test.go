@@ -16,7 +16,7 @@ import (
 func TestFenceLanguageWithNonWordCharacters(t *testing.T) {
 	tests := []struct{ info, lang string }{
 		{"c#", "c#"},
-		{"c++", "c++"},
+		{"c++", "cpp"},
 		{"objective-c", "objective-c"},
 		{"html/xml", "html/xml"},
 		{"go", "go"},

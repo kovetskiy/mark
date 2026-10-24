@@ -76,6 +76,31 @@ Example:
 
 More details at Confluence [Code Block Macro](https://confluence.atlassian.com/doc/code-block-macro-139390.html) doc.
 
+### Language names
+
+Confluence knows each language by one name, so mark lowercases the language
+and replaces the common aliases with it: `sh`, `shell`, `zsh` and `console`
+become `bash`, `yml` becomes `yaml`, `py` becomes `python`, `c++` becomes
+`cpp`, `text` becomes `none`, and so on. Data Center fails to render a code
+block whose language it does not know, and Cloud shows it unhighlighted.
+
+Some aliases name a language only Cloud highlights, such as `golang` for `go`,
+`ts` for `typescript` and `rs` for `rust`; those are renamed as well. A language
+that Cloud and Data Center spell differently is left as written, since mark
+does not know which one it is publishing to: write `javascript`, `csharp` and
+`html/xml` for Data Center, and `js`, `c#` and `html` for Cloud. Any other name
+is passed to Confluence unchanged, lowercased.
+
+A few aliases name the nearest language Confluence has rather than the same
+one: `bazel` and `starlark` become `python`, `console` and `shell-session`
+become `bash`, and `latex` becomes `tex`. Confluence stores only the name it
+was given, so `mark export` writes such a block back with that name, not the
+one in the source.
+
+`mark export` writes a code block whose stored language is one of these aliases
+as the macro rather than as a fence, because the fence would publish back under
+the other name.
+
 ## Block Quotes
 
 ### GitHub Alerts Support
