@@ -80,6 +80,30 @@ func TestGetUserByNameDoesNotCacheTransientFailures(t *testing.T) {
 	}
 }
 
+// TestGetUserByNameDoesNotCacheMissingSearchEndpoint: a 404 from the user
+// search is the endpoint missing, not the user. It used to be cached as a
+// miss, so every later mention of that name failed without asking again, with
+// an error that read as though the user did not exist.
+func TestGetUserByNameDoesNotCacheMissingSearchEndpoint(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddUser(confluencetest.User{AccountID: "acct-1", FullName: "Jane Doe"})
+
+	api, failing := flakyFront(t, server, http.StatusNotFound, func(r *http.Request) bool {
+		return strings.HasPrefix(r.URL.Path, "/rest/api/search")
+	})
+
+	_, err := api.GetUserByName("Jane Doe")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "search endpoint is not served")
+	assert.NotContains(t, err.Error(), "is not found")
+
+	failing.Store(false)
+
+	user, err := api.GetUserByName("Jane Doe")
+	require.NoError(t, err, "a missing endpoint must not be remembered as a missing user")
+	assert.Equal(t, "acct-1", user.AccountID)
+}
+
 // TestGetSpaceIDNotFoundIsCached: a v2 listing that answers with no such space
 // is a conclusion, and remembered like one. It used to be a bare string, which
 // worthCaching did not recognise, so every folder-bearing file asked again.
