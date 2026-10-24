@@ -1784,11 +1784,12 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 // run. Names do not change mid-run, so the lookup is memoised, and so is a
 // search that matched nobody.
 //
-// A search that failed is not: the same rule as the space lookups, through
-// worthCaching. A throttling burst or a gateway error while resolving the first
-// mention of someone otherwise left every later mention of them, in every
-// remaining file, failing with an error Confluence had long since stopped
-// giving.
+// A search that failed is not. A throttling burst or a gateway error while
+// resolving the first mention of someone otherwise left every later mention of
+// them, in every remaining file, failing with an error Confluence had long
+// since stopped giving. Nor is a 404: worthCaching takes that as a conclusion
+// for the space lookups, but here it comes from the search endpoint itself, and
+// says nothing about whether the user exists.
 func (api *API) GetUserByName(name string) (*User, error) {
 	if entry, ok := api.cachedUser(name); ok {
 		return entry.user, entry.err
@@ -1796,7 +1797,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 
 	user, err := api.fetchUserByName(name)
 
-	if !worthCaching(err) {
+	if err != nil && !errors.Is(err, errNoSuchUser) {
 		return user, err
 	}
 
@@ -1861,7 +1862,13 @@ func (api *API) searchUsers(name string) ([]User, error) {
 			return nil, newTransportError(request, fmt.Sprintf("look up user %q", name), err)
 		}
 		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+			err := newErrorStatusNotOK(request)
+			if errors.Is(err, ErrNotFound) {
+				// Neither search path is served: an older release, or a proxy
+				// routing it away. Not the same thing as no such user.
+				return nil, fmt.Errorf("look up user %q: the user search endpoint is not served: %w", name, err)
+			}
+			return nil, err
 		}
 	}
 
