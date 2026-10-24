@@ -318,12 +318,127 @@ func loadTemplate(
 		return nil, false, fmt.Errorf("unable to process template file %q: %w", path, err)
 	}
 
+	body = protectMacroDirectives(body, left, right)
+
 	templates, err = templates.New(cacheName).Delims(left, right).Parse(string(body))
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to parse template %q: %w", name, err)
 	}
 
 	return templates, true, nil
+}
+
+// protectMacroDirectives keeps a file's template pass out of the <!-- Macro: -->
+// directives it holds.
+//
+// A fragment is a template, and it is executed with the include's own data
+// before the document is read for macros. A macro body is a template too, but
+// one for macro.ExtractMacros to run later with the macro's own arguments, so
+// "{{ .Name }}" in it was answered here, by data the include never had, and
+// published as <no value>. Each opening delimiter inside a directive becomes an
+// action that prints it, which leaves the directive as written.
+//
+// The directive's extent is found the way macro.ExtractMacros finds it: the
+// comment closed by its own "-->", nested "<!--" markers counted, and no further
+// than the next Macro directive. A directive shown inside code is only an
+// example, which ExtractMacros leaves alone, so it is expanded as before.
+func protectMacroDirectives(body []byte, left, right string) []byte {
+	if left == "\x00" {
+		// "Delims: none": nothing is an action.
+		return body
+	}
+	if left == "" {
+		left = "{{"
+	}
+	if right == "" {
+		right = "}}"
+	}
+
+	s := string(body)
+	if !strings.Contains(s, left) {
+		return body
+	}
+
+	code := metadata.CodeRegions(body)
+
+	var out strings.Builder
+	last, from := 0, 0
+
+	for {
+		start := nextMacroDirective(s, from)
+		if start == -1 {
+			break
+		}
+
+		end := macroDirectiveEnd(s, start)
+		from = end
+
+		if metadata.InCode(code, start) {
+			continue
+		}
+
+		out.WriteString(s[last:start])
+		out.WriteString(escapeDelims(s[start:end], left, right))
+		last = end
+	}
+
+	out.WriteString(s[last:])
+
+	return []byte(out.String())
+}
+
+// escapeDelims turns each occurrence of left in s into an action printing it.
+func escapeDelims(s, left, right string) string {
+	return strings.ReplaceAll(s, left, left+`"`+left+`"`+right)
+}
+
+// nextMacroDirective is the offset of the first comment at or after from whose
+// text begins with "Macro:", or -1.
+func nextMacroDirective(s string, from int) int {
+	for {
+		idx := strings.Index(s[from:], "<!--")
+		if idx == -1 {
+			return -1
+		}
+
+		start := from + idx
+		if strings.HasPrefix(strings.TrimLeft(s[start+4:], " \t\r\n"), "Macro:") {
+			return start
+		}
+
+		from = start + 4
+	}
+}
+
+// macroDirectiveEnd is the offset just past the directive starting at start.
+func macroDirectiveEnd(s string, start int) int {
+	limit := len(s)
+	if next := nextMacroDirective(s, start+4); next != -1 {
+		limit = next
+	}
+
+	depth := 0
+	for i := start; i < limit; {
+		switch {
+		case strings.HasPrefix(s[i:limit], "<!--"):
+			depth++
+			i += 4
+		case strings.HasPrefix(s[i:limit], "-->"):
+			depth--
+			i += 3
+			if depth <= 0 {
+				return i
+			}
+		default:
+			i++
+		}
+	}
+
+	if idx := strings.Index(s[start:], "-->"); idx != -1 {
+		return start + idx + 3
+	}
+
+	return len(s)
 }
 
 // maxDirectivesPerLevel bounds how many directives a single level of a document
