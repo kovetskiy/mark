@@ -64,7 +64,10 @@ func (c *converter) codeMacro(n *node) (string, bool) {
 	}
 
 	language := strings.TrimSpace(params["language"])
-	if language != "" && (!codeLanguage.MatchString(language) || language == "-" || diagramLanguages[strings.ToLower(language)]) {
+	// A language publishing would rename -- "sh", or "Python" -- could only come
+	// back under the other name, so it is kept as the macro.
+	if language != "" && (!codeLanguage.MatchString(language) || language == "-" ||
+		diagramLanguages[strings.ToLower(language)] || renderer.CodeLanguage(language) != language) {
 		return "", false
 	}
 
