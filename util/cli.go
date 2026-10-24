@@ -79,7 +79,7 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 				"metadata headers that publish it back to the same page, and download the attachments it shows or links to.",
 			Flags:  exportFlags(config),
 			Action: line.runExport,
-		}, line.pageCommand()},
+		}, line.pageCommand(), line.doctorCommand()},
 	}
 
 	return root

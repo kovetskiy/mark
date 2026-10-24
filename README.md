@@ -102,6 +102,27 @@ mark publish -u user -p token -b https://example.atlassian.net/wiki -f "docs/**/
 and the experimental `mark export` writes a Confluence page out as markdown
 that publishes back to it; see [Exporting a page](docs/export.md#exporting-a-page).
 
+`mark doctor` checks a setup without changing anything. It logs in with the
+global options, says which platform answered, and checks that each space it is
+given exists, has a home page, and lets the account create pages and upload
+attachments. When a check fails, it says what to change:
+
+```text
+$ mark doctor -b https://example.atlassian.net/wiki -u jane@example.com -p "$TOKEN" DOCS
+[ok] login: logged in as Jane Doe (jane@example.com, 5b10ac8d82e05b22cc7d4ef5)
+[ok] platform: Confluence Cloud
+[ok] space DOCS: "Documentation" is readable
+[ok] space DOCS: home page "Documentation Home" (98306)
+[ok] space DOCS: can create pages, upload attachments, create blog posts (Type: blogpost)
+[warn] space DOCS: cannot delete pages (--on-orphan delete), archive pages (--on-orphan archive), restrict pages (--edit-lock, Restriction headers)
+       a space administrator grants these under the space's permissions
+```
+
+It exits with an error when any check fails, and without one when there are
+only warnings, so it can also run as the first step of a pipeline. With no
+space given it checks `--space`, from the command line, `MARK_SPACE` or the
+configuration file.
+
 The global options -- the configuration file, how to reach and authenticate
 against Confluence, and logging -- belong to every command, and can be given
 before or after its name: `mark -c ci.toml publish -f doc.md` and
@@ -125,6 +146,7 @@ COMMANDS:
    publish  publish markdown files to Confluence
    export   export a Confluence page, or a tree of them, to markdown (experimental)
    page     list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
+   doctor   check that mark can reach Confluence, log in, and publish to a space
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
