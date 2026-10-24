@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+	"unicode"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
@@ -40,6 +41,10 @@ import (
 //	!!! note "Title" {.class #id key=value}
 //	    Body, indented under the opening line.
 //	!!!
+//
+// MkDocs also writes a collapsible one with '???', which starts collapsed, or
+// '???+', which starts open. They close with a run of '?' the way '!!!' closes
+// with a run of '!'.
 type Admonition struct {
 	ast.BaseBlock
 
@@ -49,6 +54,10 @@ type Admonition struct {
 	// Title is the rest of the opening line before any attributes, quotes
 	// included.
 	Title []byte
+
+	// Collapsed is true for a block opened with '???'. A '???+' block starts
+	// open, which is how a '!!!' block always reads, so it is not Collapsed.
+	Collapsed bool
 }
 
 // Dump implements ast.Node.
@@ -56,6 +65,7 @@ func (n *Admonition) Dump(source []byte, level int) {
 	ast.DumpHelper(n, source, level, map[string]string{
 		"AdmonitionClass": string(n.AdmonitionClass),
 		"Title":           string(n.Title),
+		"Collapsed":       fmt.Sprint(n.Collapsed),
 	}, nil)
 }
 
@@ -87,8 +97,12 @@ type admonitionState struct {
 	// indent is the indentation of the opening line, and so of the closing one.
 	indent int
 
-	// length is the number of '!' that opened it; a closing run has to be at
-	// least as long.
+	// marker is the character of the run that opened it, '!' or '?', and the
+	// only one a closing run is made of.
+	marker byte
+
+	// length is the number of marker characters that opened it; a closing run
+	// has to be at least as long. The '+' of '???+' is not counted.
 	length int
 
 	// contentIndent is the indentation of the first non-blank line of the
@@ -107,26 +121,34 @@ func admonitionStack(pc parser.Context) []*admonitionState {
 }
 
 func (b *admonitionParser) Trigger() []byte {
-	return []byte{'!'}
+	return []byte{'!', '?'}
 }
 
 func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
 	line, _ := reader.PeekLine()
 	pos := pc.BlockOffset()
-	if pos < 0 || line[pos] != '!' {
+	if pos < 0 || pos >= len(line) || (line[pos] != '!' && line[pos] != '?') {
 		return nil, parser.NoChildren
 	}
 	indent := pos
+	marker := line[pos]
 
 	i := pos
-	for ; i < len(line) && line[i] == '!'; i++ {
+	for ; i < len(line) && line[i] == marker; i++ {
 	}
 	length := i - pos
 	if length < 3 {
 		return nil, parser.NoChildren
 	}
 
-	// A run of '!' with nothing after it is not an opening line: there would
+	// '???+' is the open spelling of '???'. The '+' belongs to the opening run.
+	collapsed := marker == '?'
+	if collapsed && i < len(line) && line[i] == '+' {
+		collapsed = false
+		i++
+	}
+
+	// A run of '!' or '?' with nothing after it is not an opening line: there would
 	// be no telling whether a later bare run closes this admonition or opens
 	// another.
 	content := withoutLineEnding(line)
@@ -135,10 +157,31 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 		return nil, parser.NoChildren
 	}
 
+	// '???' and '????' open prose far more often than '!!!' does ("??? what is
+	// this"), and an opening line swallows its text. MkDocs only writes a title
+	// in quotes, so after the class a '?' run takes a quoted title, attributes,
+	// or nothing; anything else is a sentence.
+	if marker == '?' {
+		bare, ok := admonitionTitleOrNothing(content[left:])
+		if !ok {
+			return nil, parser.NoChildren
+		}
+
+		// "??? what" followed by an unindented line is a sentence, not an
+		// empty admonition that swallows the paragraph under it. Only a
+		// document's own lines can be read this way: inside a list or a
+		// blockquote the next line carries a prefix that is not ours to judge.
+		if bare && parent.Kind() == ast.KindDocument && !hasAdmonitionBodyAhead(reader, indent, marker, length) {
+			return nil, parser.NoChildren
+		}
+	}
+
 	node := parseAdmonitionOpeningLine(reader, left)
+	node.Collapsed = collapsed
 
 	state := &admonitionState{
 		node:   node,
+		marker: marker,
 		indent: indent,
 		length: length,
 	}
@@ -151,6 +194,88 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 	}
 
 	return node, parser.HasChildren
+}
+
+// admonitionTitleOrNothing reports whether what follows the opening run, class
+// first, is a class and then nothing, a quoted title, attributes, or both. bare
+// is true when the class stands alone. The class ends where
+// parseAdmonitionOpeningLine ends it, at a space or a '{', and has to be a
+// word: "Really?" and `note"T"` are prose.
+func admonitionTitleOrNothing(rest []byte) (bare bool, ok bool) {
+	end := 0
+	for ; end < len(rest) && rest[end] != ' ' && rest[end] != '{'; end++ {
+	}
+	if end == 0 || !isAdmonitionClass(rest[:end]) {
+		return false, false
+	}
+
+	rest = bytes.TrimLeft(rest[end:], " ")
+	if len(rest) == 0 {
+		return true, true
+	}
+
+	if rest[0] == '"' {
+		// A title is one quoted string, closed on this line.
+		closed := false
+		i := 1
+		for ; i < len(rest); i++ {
+			if rest[i] == '\\' {
+				i++
+			} else if rest[i] == '"' {
+				closed = true
+				i++
+				break
+			}
+		}
+		if !closed {
+			return false, false
+		}
+		rest = bytes.TrimLeft(rest[i:], " ")
+		return false, len(rest) == 0 || rest[0] == '{'
+	}
+
+	return false, rest[0] == '{'
+}
+
+// isAdmonitionClass reports whether class is made of letters, digits, '-' and
+// '_'.
+func isAdmonitionClass(class []byte) bool {
+	for _, r := range string(class) {
+		if r != '-' && r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// hasAdmonitionBodyAhead reports whether the first non-blank line after the one
+// being read is indented deeper than the opening line, or is the run that
+// closes it. That is what an admonition with a body, or an empty one, looks
+// like.
+func hasAdmonitionBodyAhead(reader text.Reader, indent int, marker byte, length int) bool {
+	_, segment := reader.PeekLine()
+	source := reader.Source()
+	state := &admonitionState{marker: marker, indent: indent, length: length}
+
+	for rest := source[min(segment.Stop, len(source)):]; len(rest) > 0; {
+		line := rest
+		if nl := bytes.IndexByte(rest, '\n'); nl >= 0 {
+			line, rest = rest[:nl+1], rest[nl+1:]
+		} else {
+			rest = nil
+		}
+		if util.IsBlank(line) {
+			continue
+		}
+
+		w, pos := util.IndentWidth(line, 0)
+		if closing, _ := hasAdmonitionClosingRun(line, w, pos, state); closing {
+			return true
+		}
+		return w > indent
+	}
+
+	return false
 }
 
 // parseAdmonitionOpeningLine reads the class, title and attributes of an
@@ -324,16 +449,16 @@ func withoutLineEnding(line []byte) []byte {
 }
 
 // hasAdmonitionClosingRun reports whether line closes state: a run of at least
-// as many '!' as opened it, at the opening line's indentation and with nothing
-// after it. newline is 1 when the line ends in one, for the caller to leave it
-// unread.
+// as many of the opening marker ('!' or '?') as opened it, at the opening
+// line's indentation and with nothing after it. newline is 1 when the line ends
+// in one, for the caller to leave it unread.
 func hasAdmonitionClosingRun(line []byte, w int, pos int, state *admonitionState) (closing bool, newline int) {
 	if w != state.indent {
 		return false, 0
 	}
 
 	i := pos
-	for ; i < len(line) && line[i] == '!'; i++ {
+	for ; i < len(line) && line[i] == state.marker; i++ {
 	}
 	if i-pos < state.length || !util.IsBlank(line[i:]) {
 		return false, 0
