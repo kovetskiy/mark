@@ -127,7 +127,8 @@ func (t *retryTransport) wait(ctx context.Context, d time.Duration) error {
 // ambiguous -- the page may well have been created before the error -- and
 // retrying it risks duplicate pages or attachments. A 5xx on PUT is equally
 // ambiguous and would surface as a confusing 409 version conflict on the
-// replay, so it is left alone too.
+// replay, so it is left alone too. retryUnavailable retries the writes that
+// can be checked for having landed.
 func retryableStatus(status int, method string) bool {
 	if status == http.StatusTooManyRequests {
 		return true

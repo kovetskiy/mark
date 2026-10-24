@@ -134,6 +134,10 @@ type API struct {
 	// reading the page again; see retryConflictingUpdate. Tests set it to zero.
 	conflictRetryDelay time.Duration
 
+	// unavailableWait waits before reading whether a write Confluence was
+	// unavailable for landed; see retryUnavailable. Tests make it instant.
+	unavailableWait func(attempt int)
+
 	// moveSettleDelay is how long moveByAction waits between reads of a tree
 	// that movepage.action said it changed but does not show it yet.
 	moveSettleDelay time.Duration
@@ -388,7 +392,7 @@ type FolderInfo struct {
 	} `json:"_links,omitempty"`
 }
 type form struct {
-	buffer io.Reader
+	buffer *bytes.Buffer
 	writer *multipart.Writer
 }
 
@@ -514,6 +518,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 
 		conflictRetryDelay: time.Second,
 		moveSettleDelay:    250 * time.Millisecond,
+		unavailableWait:    waitUnavailable,
 	}
 
 	// A Personal Access Token arrives as the password with no username. It is
@@ -999,12 +1004,46 @@ func (api *API) CreateAttachment(
 	comment string,
 	reader io.Reader,
 ) (AttachmentInfo, error) {
-	var info AttachmentInfo
-
 	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
+
+	send := func() (AttachmentInfo, error) {
+		return api.createAttachment(pageID, name, form)
+	}
+
+	return retryUnavailable(
+		api, fmt.Sprintf("attach %q to page %s", name, pageID),
+		send, api.attachmentLanded(pageID, "", name, comment),
+	)
+}
+
+// attachmentLanded reads whether an upload Confluence was unavailable for
+// landed: the page has the attachment, under attachID when that is given, and
+// it carries the comment the upload did. The comment holds the checksum, so
+// it is the upload's own.
+func (api *API) attachmentLanded(pageID, attachID, name, comment string) func() (AttachmentInfo, bool, error) {
+	return func() (AttachmentInfo, bool, error) {
+		attachments, err := api.GetAttachments(pageID)
+		if err != nil {
+			return AttachmentInfo{}, false, err
+		}
+
+		for _, attachment := range attachments {
+			if (attachID == "" || attachment.ID == attachID) &&
+				attachment.Filename == name &&
+				attachment.Metadata.Comment == comment {
+				return attachment, true, nil
+			}
+		}
+
+		return AttachmentInfo{}, false, nil
+	}
+}
+
+func (api *API) createAttachment(pageID, name string, form *form) (AttachmentInfo, error) {
+	var info AttachmentInfo
 
 	var result struct {
 		Links struct {
@@ -1017,7 +1056,7 @@ func (api *API) CreateAttachment(
 		"content/"+pageID+"/child/attachment", &result,
 	)
 
-	resource.Payload = form.buffer
+	resource.Payload = bytes.NewReader(form.buffer.Bytes())
 	// The multipart Content-Type has to be the only one on the request. It used
 	// to be set on a hand-made replacement header map because the map reached
 	// here carrying every header of every earlier response; resource() now
@@ -1062,12 +1101,23 @@ func (api *API) UpdateAttachment(
 	comment string,
 	reader io.Reader,
 ) (AttachmentInfo, error) {
-	var info AttachmentInfo
-
 	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
+
+	send := func() (AttachmentInfo, error) {
+		return api.updateAttachment(pageID, attachID, name, form)
+	}
+
+	return retryUnavailable(
+		api, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID),
+		send, api.attachmentLanded(pageID, attachID, name, comment),
+	)
+}
+
+func (api *API) updateAttachment(pageID, attachID, name string, form *form) (AttachmentInfo, error) {
+	var info AttachmentInfo
 
 	var extendedResponse struct {
 		Links struct {
@@ -1082,7 +1132,7 @@ func (api *API) UpdateAttachment(
 		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
 	)
 
-	resource.Payload = form.buffer
+	resource.Payload = bytes.NewReader(form.buffer.Bytes())
 	// The multipart Content-Type has to be the only one on the request. It used
 	// to be set on a hand-made replacement header map because the map reached
 	// here carrying every header of every earlier response; resource() now
@@ -1313,19 +1363,25 @@ func (api *API) CreatePage(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	var (
-		page *PageInfo
-		err  error
-	)
-	if api.gateway {
-		parentID := ""
-		if parent != nil {
-			parentID = parent.ID
+	create := func() (*PageInfo, error) {
+		if api.gateway {
+			parentID := ""
+			if parent != nil {
+				parentID = parent.ID
+			}
+			return api.createPageV2(space, pageType, parentID, "", title, body)
 		}
-		page, err = api.createPageV2(space, pageType, parentID, "", title, body)
-	} else {
-		page, err = api.createPageV1(space, pageType, parent, title, body)
+		return api.createPageV1(space, pageType, parent, title, body)
 	}
+
+	// mark creates a page only once it has looked for one with the title and
+	// found none, so one there now is the one this create made.
+	landed := func() (*PageInfo, bool, error) {
+		page, err := api.findPageWithStatus(space, title, pageType, "current")
+		return page, page != nil, err
+	}
+
+	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
 	if err != nil {
 		return nil, err
 	}
@@ -1476,7 +1532,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		return api.updatePageV1(page, newContent, minorEdit, versionMessage, version, properties)
 	}
 
-	err := put(nextPageVersion)
+	err := api.putUnavailable(page, nextPageVersion, put)
 	if errors.Is(err, errConflict) {
 		nextPageVersion, err = api.retryConflictingUpdate(page, nextPageVersion, err, put)
 	}
@@ -1505,6 +1561,35 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	}
 
 	return nil
+}
+
+// putUnavailable sends an update through retryUnavailable. The page's version
+// says whether an unavailable update landed: at the version the update would
+// have created, it did; still at the one mark read, it did not. Any other
+// version is another writer's, which UpdatePage settles as a conflict.
+func (api *API) putUnavailable(page *PageInfo, version int64, put func(version int64) error) error {
+	send := func() (struct{}, error) {
+		return struct{}{}, put(version)
+	}
+
+	landed := func() (struct{}, bool, error) {
+		current, err := api.currentPageVersion(page)
+		switch {
+		case err != nil:
+			return struct{}{}, false, err
+		case current == version:
+			return struct{}{}, true, nil
+		case current == page.Version.Number:
+			return struct{}{}, false, nil
+		default:
+			return struct{}{}, false, fmt.Errorf(
+				"%w: page %q (%s) is now at version %d", errConflict, page.Title, page.ID, current,
+			)
+		}
+	}
+
+	_, err := retryUnavailable(api, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), send, landed)
+	return err
 }
 
 // retryConflictingUpdate recovers from an update Confluence refused with 409.
@@ -3395,11 +3480,16 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		)
 	}
 
-	return fmt.Errorf(
+	err := fmt.Errorf(
 		"the Confluence API returned unexpected status: %v for %s, "+
 			"output: %q%s",
 		request.Raw.Status, target, output, truncated,
 	)
+	if unavailableStatus(request.Raw.StatusCode) {
+		return unavailableError{err}
+	}
+
+	return err
 }
 
 // maxErrorBody caps how much of a failed response's body newErrorStatusNotOK
@@ -3430,7 +3520,7 @@ func newTransportError(request *gopencils.Resource, operation string, err error)
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
 	if request == nil || request.Raw == nil {
-		return fmt.Errorf("unable to %s: %w", operation, err)
+		return unavailableTransport(fmt.Errorf("unable to %s: %w", operation, err))
 	}
 
 	return fmt.Errorf(
