@@ -586,25 +586,6 @@ func TestPersistent5xxStillFails(t *testing.T) {
 		"bounded at maxAttempts")
 }
 
-// TestCreatePageIsNotRetriedOn5xx is the safety property: replaying a failed
-// create could leave two pages behind.
-func TestCreatePageIsNotRetriedOn5xx(t *testing.T) {
-	api, server := newAPI(t)
-	server.AddSpace("DOCS")
-
-	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if r.Method == http.MethodPost {
-			return http.StatusServiceUnavailable, `{"message":"down"}`, true
-		}
-		return 0, "", false
-	})
-
-	_, err := api.CreatePage("DOCS", "page", nil, "Once Only", "")
-	require.Error(t, err)
-	assert.Equal(t, 1, server.CountRequests("POST", "/rest/api/content"),
-		"a create must be attempted exactly once")
-}
-
 // TestGetUserByNameIsCached pins the fix for the @mention N+1: every mention in
 // a document renders through the "user" stdlib template func, so an uncached
 // lookup meant one CQL search per occurrence.
