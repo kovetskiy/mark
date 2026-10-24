@@ -2,10 +2,12 @@ package renderer
 
 import (
 	"fmt"
-	stdhtml "html"
 	"strconv"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/parser"
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
@@ -56,15 +58,26 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 	n := node.(*parser.Admonition)
 	admonitionType := ParseMkDocsAdmonitionType(node)
 
+	// Confluence's expand macro cannot start open, so only '???' is wrapped;
+	// '???+' reads as '!!!'. The expand goes around whatever the block renders
+	// as, a class with no panel included.
+	if entering && n.Collapsed {
+		expand := `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">` +
+			stdlib.XMLEscape(collapsedAdmonitionTitle(n)) +
+			"</ac:parameter><ac:rich-text-body>\n\n"
+		if _, err := writer.Write([]byte(expand)); err != nil {
+			return ast.WalkStop, err
+		}
+	}
+
 	if entering && admonitionType != AdmonitionNone {
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", admonitionType)
 		if _, err := writer.Write([]byte(prefix)); err != nil {
 			return ast.WalkStop, err
 		}
 
-		title, _ := strconv.Unquote(string(n.Title))
-		if title != "" {
-			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", stdhtml.EscapeString(title))
+		if title := admonitionTitle(n); title != "" {
+			titleHTML := fmt.Sprintf("<p><strong>%s</strong></p>\n", stdlib.XMLEscape(title))
 			if _, err := writer.Write([]byte(titleHTML)); err != nil {
 				return ast.WalkStop, err
 			}
@@ -77,9 +90,45 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 		if _, err := writer.Write([]byte(suffix)); err != nil {
 			return ast.WalkStop, err
 		}
-		return ast.WalkContinue, nil
+	} else if status, err := r.renderMkDocsAdmon(writer, source, node, entering, rc); err != nil {
+		return status, err
 	}
-	return r.renderMkDocsAdmon(writer, source, node, entering, rc)
+
+	if !entering && n.Collapsed {
+		if _, err := writer.Write([]byte("\n</ac:rich-text-body></ac:structured-macro>\n")); err != nil {
+			return ast.WalkStop, err
+		}
+	}
+
+	return ast.WalkContinue, nil
+}
+
+// admonitionTitle is the quoted title of an opening line. MkDocs titles are
+// literal text, so one that is not a Go string literal ("C:\path") is read as
+// the text between its quotes.
+func admonitionTitle(n *parser.Admonition) string {
+	raw := string(n.Title)
+	if title, err := strconv.Unquote(raw); err == nil {
+		return title
+	}
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		return raw[1 : len(raw)-1]
+	}
+
+	return ""
+}
+
+// collapsedAdmonitionTitle is the title of the expand macro around a '???'
+// admonition: the quoted title, or the class with its first letter capitalised
+// when there is none.
+func collapsedAdmonitionTitle(n *parser.Admonition) string {
+	if title := admonitionTitle(n); title != "" {
+		return title
+	}
+
+	class := string(n.AdmonitionClass)
+	first, size := utf8.DecodeRuneInString(class)
+	return string(unicode.ToUpper(first)) + class[size:]
 }
 
 func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmon(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {

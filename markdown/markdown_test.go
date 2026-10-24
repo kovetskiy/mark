@@ -107,7 +107,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/admonitions-collapsed.md", "testdata/admonitions-collapsed-unsupported.md", "testdata/plantuml.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
 			variant = "-droph1"
 		default:
 			variant = ""
@@ -162,7 +162,7 @@ func TestCompileMarkdownStripLinebreaks(t *testing.T) {
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/codes.md", "testdata/newlines.md", "testdata/macro-include.md", "testdata/admonitions.md", "testdata/mention.md", "testdata/codeblock-comments.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
+		case "testdata/quotes.md", "testdata/codes.md", "testdata/newlines.md", "testdata/macro-include.md", "testdata/admonitions.md", "testdata/admonitions-collapsed.md", "testdata/admonitions-collapsed-unsupported.md", "testdata/mention.md", "testdata/codeblock-comments.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
 			variant = "-stripnewlines"
 		default:
 			variant = ""
