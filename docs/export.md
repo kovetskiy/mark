@@ -172,7 +172,9 @@ same:
   `--attach-referenced`; without it, it is published as a link to the path.
 * A diagram mark drew from `mermaid`, `d2` or `plantuml` comes back as the image
   mark attached, not as the diagram's source. A code macro in one of those
-  languages stays a macro, so that it is not drawn on the next publish.
+  languages stays a macro, so that it is not drawn on the next publish. So does
+  one whose language publishing would rename, such as `sh` or `Python` (see
+  [Language names](formatting.md#language-names)).
 * An image loses its alignment and placement (`ac:align`, `ac:layout`), and a
   code macro the parameters its info string cannot say (Cloud's breakout
   width).
