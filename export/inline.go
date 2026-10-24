@@ -307,7 +307,10 @@ func (w *inlineWriter) link(n *node) {
 	title := n.attr("title")
 	text := n.textContent()
 
-	if title == "" && len(n.elements()) == 0 && !strings.ContainsAny(href, " <>\n") {
+	dest := destination(href)
+	if path, ok := w.pageURLPath(href); ok {
+		dest = destination(pathDestination(path))
+	} else if title == "" && len(n.elements()) == 0 && !strings.ContainsAny(href, " <>\n") {
 		if (strings.HasPrefix(href, "https://") || strings.HasPrefix(href, "http://")) && text == href {
 			w.write("<" + href + ">")
 			return
@@ -321,7 +324,17 @@ func (w *inlineWriter) link(n *node) {
 	sub := w.c.inline(w.ctx)
 	sub.nodes(n.children)
 
-	w.write("[" + strings.TrimSpace(sub.b.String()) + "](" + destination(href) + linkTitle(title) + ")")
+	w.write("[" + strings.TrimSpace(sub.b.String()) + "](" + dest + linkTitle(title) + ")")
+}
+
+// pageURLPath is the document a URL pasted into the page leads to, when it
+// points at a page that is exported too.
+func (w *inlineWriter) pageURLPath(href string) (string, bool) {
+	if w.c.opts.PageURLPath == nil {
+		return "", false
+	}
+
+	return w.c.opts.PageURLPath(href)
 }
 
 // destination writes a link destination: as it is where it can be, and in
