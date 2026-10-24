@@ -156,6 +156,13 @@ type Server struct {
 	// failHeaders are added to every response a FailFunc handles.
 	failHeaders http.Header
 
+	// denied holds, for each space key, the operations the current user may
+	// not do there, as "operation targetType"; see Deny.
+	denied map[string]map[string]bool
+
+	// hideOperations leaves operations out of a space; see HideOperations.
+	hideOperations bool
+
 	// SiteBase is echoed as `_links.base` on content create/search responses
 	// when set. Empty omits the field so tests can still exercise the client's
 	// api.BaseURL fallback. Real Confluence Cloud puts the tenant wiki URL
@@ -172,6 +179,7 @@ func New(t *testing.T) *Server {
 		spaces:   map[string]*Space{},
 		comments: map[string][]InlineComment{},
 		watchers: map[string]map[string]bool{},
+		denied:   map[string]map[string]bool{},
 		nextID:   1000,
 		currentUser: User{
 			AccountID: "acct-current",
@@ -956,6 +964,7 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 				results = append(results, map[string]any{
 					"id":         sp.ID,
 					"key":        sp.Key,
+					"name":       sp.Key,
 					"homepageId": sp.HomepageID,
 				})
 			}
@@ -1046,6 +1055,10 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 				s.spaceV2ByID(w, spaceID)
 				return
 			}
+			if sub == "operations" && r.Method == http.MethodGet {
+				s.spaceOperationsV2(w, spaceID)
+				return
+			}
 		}
 		http.NotFound(w, r)
 	}
@@ -1063,6 +1076,25 @@ func (s *Server) spaceV2ByID(w http.ResponseWriter, spaceID string) {
 				"key":        sp.Key,
 				"homepageId": sp.HomepageID,
 			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with id " + spaceID})
+}
+
+// spaceOperationsV2 serves GET /spaces/{id}/operations.
+func (s *Server) spaceOperationsV2(w http.ResponseWriter, spaceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, sp := range s.spaces {
+		if sp.ID == spaceID {
+			out := map[string]any{}
+			if !s.hideOperations {
+				out["operations"] = s.operationsJSON(sp.Key)
+			}
+			writeJSON(w, http.StatusOK, out)
 			return
 		}
 	}
@@ -1818,6 +1850,51 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 	}
 }
 
+// spaceOperations are what the current user may do in every space, until
+// Deny takes one away.
+var spaceOperations = [][2]string{
+	{"read", "space"},
+	{"create", "page"},
+	{"create", "blogpost"},
+	{"create", "attachment"},
+	{"create", "comment"},
+	{"delete", "page"},
+	{"archive", "page"},
+	{"restrict_content", "space"},
+	{"administer", "space"},
+}
+
+// Deny takes an operation on a target type away from the current user in a
+// space: Deny("DOCS", "create", "page").
+func (s *Server) Deny(spaceKey, operation, targetType string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.denied[spaceKey] == nil {
+		s.denied[spaceKey] = map[string]bool{}
+	}
+	s.denied[spaceKey][operation+" "+targetType] = true
+}
+
+// HideOperations makes a space answer without operations, as a Confluence
+// that does not report them does.
+func (s *Server) HideOperations() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hideOperations = true
+}
+
+// operationsJSON is what the current user may do in a space. The caller
+// holds s.mu.
+func (s *Server) operationsJSON(spaceKey string) []map[string]any {
+	out := []map[string]any{}
+	for _, op := range spaceOperations {
+		if !s.denied[spaceKey][op[0]+" "+op[1]] {
+			out = append(out, map[string]any{"operation": op[0], "targetType": op[1]})
+		}
+	}
+	return out
+}
+
 func (s *Server) getSpace(w http.ResponseWriter, r *http.Request, key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1838,6 +1915,9 @@ func (s *Server) getSpace(w http.ResponseWriter, r *http.Request, key string) {
 	// The homepage is there only when expanded, and then with only what
 	// homepage.<property> asks of it.
 	expand := expansions(r)
+	if expand["operations"] && !s.hideOperations {
+		out["operations"] = s.operationsJSON(sp.Key)
+	}
 	if sp.HomepageID != "" && expand["homepage"] {
 		if hp, ok := s.pages[sp.HomepageID]; ok {
 			out["homepage"] = s.pageJSON(hp, nestedExpansions(expand, "homepage"))

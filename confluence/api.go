@@ -3311,6 +3311,10 @@ func (api *API) describeContent(contentID string) string {
 // state rather than a failure -- from every other way a request can go wrong.
 var ErrNotFound = errors.New("404 (Not Found)")
 
+// ErrUnauthorized reports that Confluence answered 401: it did not accept the
+// credentials, or the kind of credential, it was given.
+var ErrUnauthorized = errors.New("401 (Unauthorized)")
+
 // errConflict reports that Confluence answered 409: for a page update, that
 // the version sent is not the one after the page's current version.
 var errConflict = errors.New("409 (Conflict)")
@@ -3339,8 +3343,8 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf(
-			"the Confluence API returned unexpected status: 401 (Unauthorized) for %s",
-			target,
+			"the Confluence API returned unexpected status: %w for %s",
+			ErrUnauthorized, target,
 		)
 	}
 

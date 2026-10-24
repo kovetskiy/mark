@@ -42,6 +42,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
+| `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 
@@ -53,7 +54,7 @@ restrictions → sync labels.
 
 The command line is a root command carrying the global flags (config file,
 connection and credentials, logging) and one command per job: `publish`,
-`export`, and `page`, whose subcommands (`util/page.go`, `page/operations.go`,
+`export`, `doctor`, and `page`, whose subcommands (`util/page.go`, `page/operations.go`,
 `page/tree.go`) act on pages in Confluence and never on the `--track-pages`
 record.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
