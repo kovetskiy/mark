@@ -201,6 +201,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Usage:   "don't send notifications while updating Confluence page.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MINOR_EDIT"), config.value("minor-edit")),
 		},
+		&cli.BoolFlag{
+			Name:    "unwatch",
+			Value:   false,
+			Usage:   "stop watching the pages mark creates or edits, which Confluence makes the publishing account watch; pages it watched already stay watched.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_UNWATCH"), config.value("unwatch")),
+		},
 		&cli.StringFlag{
 			Name:    "version-message",
 			Value:   "",

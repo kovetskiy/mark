@@ -318,6 +318,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		ContentAppearance:        cmd.String("content-appearance"),
 
 		MinorEdit:          cmd.Bool("minor-edit"),
+		Unwatch:            cmd.Bool("unwatch"),
 		VersionMessage:     cmd.String("version-message"),
 		EditLock:           cmd.Bool("edit-lock"),
 		ChangesOnly:        cmd.Bool("changes-only"),

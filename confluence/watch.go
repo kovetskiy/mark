@@ -3,6 +3,8 @@ package confluence
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/rs/zerolog/log"
 )
 
 // IsWatching reports whether user watches a page. An empty user is the
@@ -103,4 +105,77 @@ func (api *API) watcher(user string) (map[string]string, error) {
 	}
 
 	return map[string]string{"accountId": id}, nil
+}
+
+// watchBeforeWrite records whether the authenticated user watched a page
+// before mark first wrote to it in this run, for unwatchAfterWrite. Only the
+// first write counts: by the second, mark's own write has made them a watcher.
+func (api *API) watchBeforeWrite(pageID string) {
+	if !api.Unwatch {
+		return
+	}
+
+	api.watchMutex.Lock()
+	_, known := api.watchedBefore[pageID]
+	api.watchMutex.Unlock()
+	if known {
+		return
+	}
+
+	watching, err := api.IsWatching(pageID, "")
+	if err != nil {
+		// Not knowing, the page is left as it is rather than unwatched. The
+		// watch endpoints are v1's, which a scoped token through the gateway
+		// cannot reach, so this would repeat for every page: say it once.
+		api.watchMutex.Lock()
+		warned := api.watchWarned
+		api.watchWarned = true
+		api.watchMutex.Unlock()
+
+		event := log.Debug()
+		if !warned {
+			event = log.Warn()
+		}
+		event.Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
+		watching = true
+	}
+
+	api.rememberWatching(pageID, watching)
+}
+
+// watchCreated records that nobody watched a page before mark created it.
+func (api *API) watchCreated(pageID string) {
+	if api.Unwatch {
+		api.rememberWatching(pageID, false)
+	}
+}
+
+func (api *API) rememberWatching(pageID string, watching bool) {
+	api.watchMutex.Lock()
+	defer api.watchMutex.Unlock()
+	if api.watchedBefore == nil {
+		api.watchedBefore = map[string]bool{}
+	}
+	api.watchedBefore[pageID] = watching
+}
+
+// unwatchAfterWrite stops the authenticated user watching a page mark just
+// wrote, unless they watched it before. A failure is only a warning: the
+// write it follows has been made, and the page is no worse than without
+// Unwatch.
+func (api *API) unwatchAfterWrite(pageID string) {
+	if !api.Unwatch {
+		return
+	}
+
+	api.watchMutex.Lock()
+	watching, known := api.watchedBefore[pageID]
+	api.watchMutex.Unlock()
+	if !known || watching {
+		return
+	}
+
+	if err := api.UnwatchPage(pageID, ""); err != nil {
+		log.Warn().Err(err).Msgf("unable to stop watching page %s", pageID)
+	}
 }

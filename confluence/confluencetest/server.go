@@ -147,6 +147,10 @@ type Server struct {
 	// username -- of everyone watching it.
 	watchers map[string]map[string]bool
 
+	// watchOnWrite makes whoever writes to a page watch it; see
+	// SetWatchOnWrite.
+	watchOnWrite bool
+
 	// dataCenter makes the fake answer as Server or Data Center; see
 	// SetDataCenter.
 	dataCenter bool
@@ -484,6 +488,30 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// SetWatchOnWrite makes the fake do what Confluence does by default: whoever
+// creates or updates a page, or uploads a file to it, starts watching it.
+func (s *Server) SetWatchOnWrite() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.watchOnWrite = true
+}
+
+// wroteTo makes the current user watch a page they wrote to, under
+// SetWatchOnWrite. The caller holds s.mu.
+func (s *Server) wroteTo(pageID string) {
+	if !s.watchOnWrite {
+		return
+	}
+	user := s.currentUser.AccountID
+	if s.dataCenter {
+		user = s.currentUser.Username
+	}
+	if s.watchers[pageID] == nil {
+		s.watchers[pageID] = map[string]bool{}
+	}
+	s.watchers[pageID][user] = true
 }
 
 // SetDataCenter makes the fake answer as Confluence Server or Data Center: the
@@ -1774,6 +1802,7 @@ func (s *Server) createContent(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pages[p.ID] = p
 	s.placeChild(p.ParentID, p.ID, "")
+	s.wroteTo(p.ID)
 	writeJSON(w, http.StatusOK, s.pageJSON(p, fullExpansion))
 }
 
@@ -1853,6 +1882,7 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		}
 		p.Version = payload.Version.Number
 		p.Message = payload.Version.Message
+		s.wroteTo(p.ID)
 		p.Body = payload.Body.Storage.Value
 		if payload.Title != "" {
 			p.Title = payload.Title
@@ -2017,6 +2047,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit, Data: data,
 		}
 		s.attachments = append(s.attachments, a)
+		s.wroteTo(pageID)
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"_links": map[string]any{"context": "/wiki"},
@@ -2064,6 +2095,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 		found.Comment = comment
 		found.MinorEdit = minorEdit
 		found.Data = data
+		s.wroteTo(pageID)
 	}
 	s.mu.Unlock()
 
@@ -2923,6 +2955,7 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 		}
 		p.Version = payload.Version.Number
 		p.Message = payload.Version.Message
+		s.wroteTo(p.ID)
 		p.Body = payload.Body.Value
 		if payload.Title != "" {
 			p.Title = payload.Title
@@ -2992,6 +3025,7 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request, pageType s
 	}
 	s.pages[p.ID] = p
 	s.placeChild(p.ParentID, p.ID, "")
+	s.wroteTo(p.ID)
 	// The version has to come back. Without it the caller computes the version
 	// it is superseding from zero, and its first update is rejected as stale.
 	writeJSON(w, http.StatusOK, s.contentJSONV2(p, false))

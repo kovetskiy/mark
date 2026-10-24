@@ -76,6 +76,7 @@ type Config struct {
 
 	// Page updates
 	MinorEdit          bool
+	Unwatch            bool
 	VersionMessage     string
 	EditLock           bool
 	ChangesOnly        bool
@@ -344,6 +345,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// stop exactly that, so under it the retry goes ahead only when nobody else
 	// has written to the page.
 	api.KeepConcurrentEdits = config.NoOverwrite
+	api.Unwatch = config.Unwatch
 
 	// Folder resolutions are cached in a package-level map that outlives this
 	// call, so a second run in the same process -- against another instance,
