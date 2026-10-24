@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/export"
+	"github.com/kovetskiy/mark/v16/page"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -200,6 +201,62 @@ func TestExportTreeRelativeLinks(t *testing.T) {
 	body := server.Page(pages["Guide"].ID).Body
 	assert.Contains(t, body, "/x/", "a relative link is published as a link to the page")
 	assert.Contains(t, body, `ri:content-title="Home"`)
+	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
+}
+
+// TestExportTreeRelativeLinksFromURLs: with RelativeLinks, a URL of a page of
+// the tree pasted into a body -- a short link, which is what mark publishes a
+// relative link as, or the address a browser shows -- points at its document
+// too, and one showing its own address shows the page's title. One with a
+// fragment, one to another instance, one to a page outside the tree, one to
+// the page's editor and a dated /display/ one, which names a blog post, stay
+// URLs.
+func TestExportTreeRelativeLinksFromURLs(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	tiny, err := page.GenerateTinyLink(server.URL, pages["C++"].ID)
+	require.NoError(t, err)
+	a := func(href, text string) string { return `<a href="` + href + `">` + text + `</a>` }
+
+	server.EditPage(pages["Guide"].ID, `<p>`+
+		a(tiny, "short")+` `+
+		a(server.URL+"/spaces/DOCS/pages/"+pages["C"].ID+"/C", "browser")+` `+
+		a(server.URL+"/pages/viewpage.action?pageId="+pages["Deep dive"].ID, "server")+` `+
+		a(server.URL+"/display/DOCS/Deep+dive", "display")+` `+
+		a(tiny+"#Section", "fragment")+` `+
+		a("https://elsewhere.example.com/x/"+strings.TrimPrefix(tiny, server.URL+"/x/"), "elsewhere")+` `+
+		a(server.URL+"/spaces/DOCS/pages/"+pages["Home"].ID+"/Home", "outside")+` `+
+		a(server.URL+"/pages/editpage.action?pageId="+pages["C"].ID, "edit")+` `+
+		a(server.URL+"/display/DOCS/2024/01/31/Deep+dive", "blog")+` `+
+		a(server.URL+"/pages/viewpage.action?pageId="+pages["Deep dive"].ID,
+			server.URL+"/pages/viewpage.action?pageId="+pages["Deep dive"].ID)+
+		`</p>`)
+	out := filepath.Join(t.TempDir(), "guide")
+
+	_, err = ExportTree(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		PageID: pages["Guide"].ID, Output: out,
+	}, export.TreeOptions{RelativeLinks: true})
+	require.NoError(t, err)
+
+	guide, err := os.ReadFile(filepath.Join(out, "index.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(guide), "[short](c/index.md) "+
+		"[browser](c-"+pages["C"].ID+"/index.md) "+
+		"[server](c/deep-dive/index.md) "+
+		"[display](c/deep-dive/index.md) "+
+		"[fragment]("+tiny+"#Section) "+
+		"[elsewhere](https://elsewhere.example.com/x/")
+	assert.Contains(t, string(guide), "[outside]("+server.URL+"/spaces/DOCS/pages/"+pages["Home"].ID+"/Home) "+
+		"[edit]("+server.URL+"/pages/editpage.action?pageId="+pages["C"].ID+") "+
+		"[blog]("+server.URL+"/display/DOCS/2024/01/31/Deep+dive) "+
+		"[Deep dive](c/deep-dive/index.md)")
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(out, "**", "*.md"), Features: []string{"mention"},
+		Output: io.Discard,
+	}))
+	assert.Contains(t, server.Page(pages["Guide"].ID).Body, tiny, "published back as a link to the page")
 	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
 }
 

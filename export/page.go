@@ -49,6 +49,14 @@ type Config struct {
 	// to the file it is exported to. A link to one of them is written as a
 	// relative link to that file. Nil writes every page link as ac:Title.
 	Documents map[string]string
+
+	// DocumentIDs maps the id of each of those pages to the same file, for a
+	// URL pasted into the page that names the page by its id.
+	DocumentIDs map[string]string
+
+	// DocumentTitles maps each of those files to its page's title, which a
+	// pasted URL showing its own address is written with.
+	DocumentTitles map[string]string
 }
 
 // Result is what Page wrote.
@@ -111,9 +119,9 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	}
 
 	var pagePath func(string) (string, bool)
+	var pageURLPath func(string) (string, string, bool)
 	if cfg.Documents != nil {
-		pagePath = func(title string) (string, bool) {
-			target, ok := cfg.Documents[strings.ToLower(title)]
+		documentPath := func(target string, ok bool) (string, bool) {
 			if !ok {
 				return "", false
 			}
@@ -123,9 +131,35 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 			}
 			return filepath.ToSlash(rel), true
 		}
+
+		pagePath = func(title string) (string, bool) {
+			return documentPath(lookup(cfg.Documents, strings.ToLower(title)))
+		}
+
+		instance := api.BaseURL
+		if strings.HasPrefix(page.Links.Base, "http") {
+			instance = page.Links.Base
+		}
+		pageURLPath = func(href string) (string, string, bool) {
+			ref, ok := pageOnInstance(href, instance)
+			var target string
+			switch {
+			case !ok:
+			case ref.PageID != "":
+				target, ok = cfg.DocumentIDs[ref.PageID]
+			case ref.Space == space:
+				target, ok = cfg.Documents[strings.ToLower(ref.Title)]
+			default:
+				ok = false
+			}
+			path, ok := documentPath(target, ok)
+			return path, cfg.DocumentTitles[target], ok
+		}
 	}
 
-	doc, err := Convert(page.Body.Storage.Value, Options{Space: space, AttachmentPath: pathOf, PagePath: pagePath})
+	doc, err := Convert(page.Body.Storage.Value, Options{
+		Space: space, AttachmentPath: pathOf, PagePath: pagePath, PageURLPath: pageURLPath,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
 	}

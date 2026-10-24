@@ -24,8 +24,9 @@ type TreeOptions struct {
 
 	// RelativeLinks writes a link between two pages of the tree as a relative
 	// link between their documents, which a repository host can follow,
-	// rather than as [text](ac:Title). Published back, such a link becomes a
-	// tiny link to the page rather than the ri:page link it was.
+	// rather than as [text](ac:Title). So does a URL of such a page pasted
+	// into a body: a short link, or the address a browser shows. Published
+	// back, either becomes a tiny link to the page.
 	RelativeLinks bool
 }
 
@@ -75,23 +76,29 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 		}
 	}
 
-	var documents map[string]string
+	var documents, documentIDs, documentTitles map[string]string
 	if options.RelativeLinks {
 		documents = make(map[string]string, len(plan))
+		documentIDs = make(map[string]string, len(plan))
+		documentTitles = make(map[string]string, len(plan))
 		for _, p := range plan {
 			documents[strings.ToLower(p.title)] = p.output
+			documentIDs[p.id] = p.output
+			documentTitles[p.output] = p.title
 		}
 	}
 
 	results := make([]*Result, 0, len(plan))
 	for _, p := range plan {
 		result, err := Page(ctx, api, Config{
-			PageID:        p.id,
-			Output:        p.output,
-			Overwrite:     cfg.Overwrite,
-			NoAttachments: cfg.NoAttachments,
-			Stdout:        cfg.Stdout,
-			Documents:     documents,
+			PageID:         p.id,
+			Output:         p.output,
+			Overwrite:      cfg.Overwrite,
+			NoAttachments:  cfg.NoAttachments,
+			Stdout:         cfg.Stdout,
+			Documents:      documents,
+			DocumentIDs:    documentIDs,
+			DocumentTitles: documentTitles,
 		})
 		if err != nil {
 			return results, fmt.Errorf("unable to export page %s, after exporting %d: %w", p.id, len(results), err)

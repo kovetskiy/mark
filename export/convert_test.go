@@ -201,13 +201,18 @@ func TestParsePageURL(t *testing.T) {
 		// included.
 		{"https://example.com/confluence/plugins/viewsource/viewpagesrc.action?pageId=77",
 			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},
+		// A short link carries the page id, encoded: see page.GenerateTinyLink.
+		{"https://example.atlassian.net/wiki/x/AfIFKgE",
+			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "5000000001"}},
+		{"https://confluence.example.com/x/D4AB/",
+			PageRef{BaseURL: "https://confluence.example.com", PageID: "98319"}},
 	} {
 		got, err := ParsePageURL(test.url)
 		require.NoError(t, err, test.url)
 		assert.Equal(t, test.want, got, test.url)
 	}
 
-	for _, bad := range []string{"not a url", "/wiki/spaces/DOCS/pages/1", "https://example.atlassian.net/wiki/x/AbCd", "https://example.com/"} {
+	for _, bad := range []string{"not a url", "/wiki/spaces/DOCS/pages/1", "https://example.atlassian.net/wiki/x/A", "https://example.atlassian.net/wiki/x/a.b", "https://example.com/"} {
 		_, err := ParsePageURL(bad)
 		assert.Error(t, err, bad)
 	}
