@@ -34,8 +34,23 @@ const (
 // diagram's title -- becomes "_". The ac:image and ac:link templates flatten the
 // name the same way, through this function, so what a page names is always
 // what was uploaded.
+//
+// A "." segment names the directory it is in, so "./x" and "x" are one file and
+// get one name; without that, "./x" flattened to "._x" and a page that wrote
+// both uploaded the file twice.
 func FlattenFilename(name string) string {
-	return strings.ReplaceAll(name, "/", "_")
+	segments := strings.Split(name, "/")
+	kept := segments[:0]
+	for _, segment := range segments {
+		if segment != "." {
+			kept = append(kept, segment)
+		}
+	}
+	if len(kept) == 0 {
+		return strings.ReplaceAll(name, "/", "_")
+	}
+
+	return strings.Join(kept, "_")
 }
 
 type Attachment struct {
