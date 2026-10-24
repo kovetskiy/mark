@@ -24,8 +24,8 @@ mark export -b https://confluence.example.com --space DOCS --title "Release proc
 A page is named one way: `--page-id`, `--url`, or `--space` with `--title`.
 `--url` understands `/spaces/KEY/pages/ID/...` and
 `/spaces/KEY/blog/.../ID/...` on Cloud, and `/display/KEY/Title` and
-`/pages/viewpage.action?pageId=ID` on Server and Data Center; a short `/x/...`
-link has to be opened first. `--space` is the same setting publish uses, so a
+`/pages/viewpage.action?pageId=ID` on Server and Data Center, and a short
+`/x/...` link on either, which carries the page id. `--space` is the same setting publish uses, so a
 configuration file that names a space for publishing serves `--title` too.
 
 The document starts with the headers that name the page, followed by its body:
@@ -104,7 +104,13 @@ Links between the pages stay links to their titles, `[Setup](ac:Setup)`, which
 resolve once they are published back but that a repository host cannot follow.
 `--relative-links` writes a link to another page of the export as a link to
 its file instead, `[Setup](setup/index.md)`, so the directory can be browsed
-where it is kept. A link to a page outside the export stays `ac:`. The price is
+where it is kept. So does a URL of such a page pasted into a body: a short
+`/x/...` link, which is how mark publishes a relative link, or the address a
+browser shows for reading the page, on the same instance and without a `#`
+fragment; one that shows its own address is written with the page's title. The
+editor, page history and the like, and a dated `/display/` address, which names
+a blog post, keep their URL. A link to a page outside the export stays `ac:`,
+or the URL it was. The price is
 on the way back: mark publishes a relative link as a link to the page's
 address rather than as Confluence's own page link, so the storage format is no
 longer the one the export started from. The link still goes to the same page,
