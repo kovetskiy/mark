@@ -2,6 +2,7 @@ package mark
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/page"
@@ -20,7 +21,10 @@ type runTitles struct {
 }
 
 func runTitleKey(space, title string) string {
-	return space + "\x00" + title
+	// Titles are matched without regard to case everywhere else (FindPage, the
+	// claim on a title), so a child naming "parent renamed" still means
+	// "Parent Renamed".
+	return space + "\x00" + strings.ToLower(title)
 }
 
 // newRunTitles reads the title and space each of the run's files declares.
@@ -44,7 +48,9 @@ func newRunTitles(config Config, files []string, hierarchy *page.Hierarchy) *run
 			config.TitleFromFilename,
 			file,
 			config.Parents,
-			false,
+			// As processFile does: with a hierarchy the hash waits for the
+			// parents the path adds.
+			config.TitleAppendGeneratedHash && hierarchy == nil,
 			config.ContentAppearance,
 			frontMatter,
 		)
@@ -54,12 +60,27 @@ func newRunTitles(config Config, files []string, hierarchy *page.Hierarchy) *run
 
 		title := meta.Title
 		if hierarchy != nil {
-			derived, err := hierarchy.Title(file)
+			// The title processFile will publish under, hash included, so it
+			// matches what a child looks for.
+			derived, err := hierarchy.Parents(file)
 			if err != nil {
 				continue
 			}
-			if derived != "" {
-				title = derived
+			dirTitle, err := hierarchy.Title(file)
+			if err != nil {
+				continue
+			}
+			if config.TitleAppendGeneratedHash {
+				derived, dirTitle = hashDirectoryTitles(config.Parents, meta.Space, derived, dirTitle)
+			}
+			if !meta.DeclaredParents {
+				meta.Parents = append(meta.Parents, derived...)
+			}
+			if dirTitle != "" {
+				title = dirTitle
+			} else if config.TitleAppendGeneratedHash {
+				metadata.AppendGeneratedHash(meta)
+				title = meta.Title
 			}
 		}
 		if title == "" || meta.Space == "" {
