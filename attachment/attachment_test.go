@@ -261,3 +261,14 @@ func TestDifferentFilesUnderOneFilenameAreRefused(t *testing.T) {
 		t.Fatal("expected an error for two different files under one filename")
 	}
 }
+
+func TestFlattenFilenameIgnoresDotSegments(t *testing.T) {
+	for in, want := range map[string]string{
+		"x.png": "x.png", "./x.png": "x.png", "images/x.png": "images_x.png",
+		"./images/x.png": "images_x.png", "a/./b": "a_b", "../x": ".._x", "a_b": "a_b", ".": ".",
+	} {
+		if got := FlattenFilename(in); got != want {
+			t.Errorf("FlattenFilename(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
