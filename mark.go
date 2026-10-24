@@ -518,6 +518,13 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
+	// What the run's own documents call themselves, so that a parent retitled in
+	// this very run can be found by the title its children now name.
+	var titles *runTitles
+	if tracker != nil {
+		titles = newRunTitles(config, files, hierarchy)
+	}
+
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
 	// anything alongside the others.
@@ -531,7 +538,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
+		target, placement, err := processFile(file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy, titles)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -602,7 +609,7 @@ func run(ctx context.Context, config Config) (err error) {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
+				file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy, titles,
 			); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
@@ -744,7 +751,7 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil)
+	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -829,7 +836,7 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 	return declared
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy, titles *runTitles) (*confluence.PageInfo, *page.Ordered, error) {
 	source, markdown, err := readSource(file)
 	if err != nil {
 		return nil, nil, err
@@ -1017,7 +1024,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			// Confluence is looked for under its old title and the page is
 			// reported moved on every preview while the real run leaves it be.
 			// It only reads, and a dry run's manifest store saves nothing.
-			if err := refreshStaleParents(tracker, api, meta); err != nil {
+			if err := refreshStaleParents(tracker, api, meta, titles); err != nil {
 				return nil, nil, err
 			}
 
@@ -1254,7 +1261,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// leaves this document pointing at a name nothing carries any more.
 		// Do this before resolution, so ancestry is walked against titles that
 		// exist rather than creating an empty page under the old one.
-		if err := refreshStaleParents(tracker, api, meta); err != nil {
+		if err := refreshStaleParents(tracker, api, meta, titles); err != nil {
 			return nil, nil, err
 		}
 
@@ -1998,7 +2005,7 @@ func resolveTrackedPage(
 // everything downstream compares titles: validation, the decision that a page
 // is misplaced, and the lookup that walks the chain. Repairing the title once,
 // before any of them run, leaves them all agreeing.
-func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *metadata.Meta) error {
+func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *metadata.Meta, titles *runTitles) error {
 	if tracker == nil {
 		return nil
 	}
@@ -2028,9 +2035,20 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 			continue
 		}
 
-		pageID, ok, err := tracker.LookupParent(meta.Space, page.ParentPathKey(declared[:i+1]))
+		// First, the run's own documents: a document that declares this title
+		// is the parent, and the page it published last time is the one it is
+		// about to rename. Without this, a child sorting ahead of its retitled
+		// parent creates an empty page under the new title, and the parent
+		// then publishes there instead of renaming the page it tracks.
+		pageID, ok, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
+		}
+		if !ok {
+			pageID, ok, err = tracker.LookupParent(meta.Space, page.ParentPathKey(declared[:i+1]))
+			if err != nil {
+				return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
+			}
 		}
 		if !ok {
 			pageID, ok, err = tracker.ResolveStaleTitle(meta.Space, title)
@@ -2072,6 +2090,23 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 	}
 
 	return nil
+}
+
+// trackedPageOfDeclaredTitle returns the page recorded for the one document of
+// the run that declares the title, if there is exactly one and it has been
+// published before.
+func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, space, title string) (string, bool, error) {
+	file, ok := titles.declaredBy(space, title)
+	if !ok {
+		return "", false, nil
+	}
+
+	entry, found, err := tracker.Lookup(space, file)
+	if err != nil || !found || entry.PageID == "" {
+		return "", false, err
+	}
+
+	return entry.PageID, true, nil
 }
 
 // resolveRenamedFile returns the page a document published to under a previous
