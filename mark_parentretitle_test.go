@@ -5,6 +5,7 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,4 +99,44 @@ func TestChildNamingOldParentTitleStillFollowsRename(t *testing.T) {
 
 	assert.Equal(t, "Parent Renamed", server.Page(parentID).Title)
 	assert.Empty(t, pageIDTitled(t, server, "Parent"))
+}
+
+// TestRetitledParentAndChildWithGeneratedHash: under
+// --title-append-generated-hash a page is published as "Title - <hash>", and the
+// child names the parent by that title. The run's index has to hold the hashed
+// title too, with and without a path hierarchy, or the child sorting first
+// creates an empty page under the new name.
+func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
+	hashed := func(title string) string {
+		return metadata.GeneratedHashTitle(nil, "DOCS", title)
+	}
+
+	for name, tweak := range map[string]func(*Config, string){
+		"flat":      func(*Config, string) {},
+		"hierarchy": func(c *Config, dir string) { c.ParentsFromPath = true; c.ParentsFromPathRoot = dir },
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			writeFile(t, dir, "parent.md", parentDoc("Parent"))
+			writeFile(t, dir, "a-child.md", childDoc(hashed("Parent")))
+			config := trackingConfig(server, dir+"/*.md")
+			config.TitleAppendGeneratedHash = true
+			tweak(&config, dir)
+			require.NoError(t, Run(config))
+
+			parentID := pageIDTitled(t, server, hashed("Parent"))
+			childID := pageIDTitled(t, server, metadata.GeneratedHashTitle([]string{hashed("Parent")}, "DOCS", "Child"))
+			require.NotEmpty(t, parentID)
+			require.NotEmpty(t, childID)
+
+			writeFile(t, dir, "parent.md", parentDoc("Parent Renamed"))
+			writeFile(t, dir, "a-child.md", childDoc(hashed("Parent Renamed")))
+			require.NoError(t, Run(config))
+
+			assert.Equal(t, parentID, pageIDTitled(t, server, hashed("Parent Renamed")), "renamed in place")
+			assert.Empty(t, pageIDTitled(t, server, hashed("Parent")))
+			assert.Equal(t, parentID, server.Page(childID).ParentID, "child stays under the original page")
+		})
+	}
 }
