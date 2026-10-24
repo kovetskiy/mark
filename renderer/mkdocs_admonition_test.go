@@ -180,3 +180,79 @@ func TestAdmonitionClosedInsideAQuoteWithATab(t *testing.T) {
 	assert.Contains(t, actual, "<p>b</p>\n</ac:rich-text-body></ac:structured-macro>")
 	assert.Contains(t, actual, "<p>after</p>")
 }
+
+// TestAdmonitionCollapsedIsAnExpandAroundThePanel covers '???', which MkDocs
+// renders folded: the same panel '!!!' makes, inside an expand macro.
+func TestAdmonitionCollapsedIsAnExpandAroundThePanel(t *testing.T) {
+	for class, macro := range map[string]string{"info": "info", "note": "info", "warning": "note", "tip": "tip"} {
+		t.Run(class, func(t *testing.T) {
+			actual := render(t, "??? "+class+" \"Fold me\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+			assertWellFormed(t, actual)
+
+			assert.True(t, strings.HasPrefix(actual, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">Fold me</ac:parameter><ac:rich-text-body>`+"\n\n"+`<ac:structured-macro ac:name="`+macro+`">`), actual)
+			assert.True(t, strings.HasSuffix(actual, "</ac:rich-text-body></ac:structured-macro>\n\n</ac:rich-text-body></ac:structured-macro>\n"), actual)
+			assert.Contains(t, actual, "<p><strong>Fold me</strong></p>")
+			assert.Contains(t, actual, "The body.")
+		})
+	}
+}
+
+// TestAdmonitionCollapsedWithoutATitle: the expand macro needs a title, so the
+// class stands in for it.
+func TestAdmonitionCollapsedWithoutATitle(t *testing.T) {
+	actual := render(t, "??? warning\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">Warning</ac:parameter>`)
+	assert.NotContains(t, actual, "<strong>")
+}
+
+// TestAdmonitionOpenCollapsibleReadsAsAPanel: Confluence's expand cannot start
+// open, so '???+' is rendered exactly as '!!!' is.
+func TestAdmonitionOpenCollapsibleReadsAsAPanel(t *testing.T) {
+	open := render(t, "???+ note \"T\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	bang := render(t, "!!! note \"T\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, open)
+
+	assert.Equal(t, bang, open)
+	assert.NotContains(t, open, `ac:name="expand"`)
+}
+
+// TestAdmonitionCollapsedTitleIsEscaped: the title lands in a parameter element
+// as well as the body, and a stray "&" costs the page.
+func TestAdmonitionCollapsedTitleIsEscaped(t *testing.T) {
+	actual := render(t, "??? note \"A & B <script> ]]> \x1b\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">A &amp; B &lt;script&gt; ]]&gt; `)
+	assert.NotContains(t, actual, "\x1b")
+}
+
+// TestAdmonitionCollapsedUnknownClassIsAnExpandAroundAQuote: a class with no
+// panel still folds, with the expand carrying the title.
+func TestAdmonitionCollapsedUnknownClassIsAnExpandAroundAQuote(t *testing.T) {
+	actual := render(t, "??? question \"D\"\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.True(t, strings.HasPrefix(actual, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">D</ac:parameter><ac:rich-text-body>`+"\n\n"+`<blockquote`), actual)
+	assert.True(t, strings.HasSuffix(actual, "</blockquote>\n\n</ac:rich-text-body></ac:structured-macro>\n"), actual)
+	assert.Equal(t, 1, strings.Count(actual, "ac:structured-macro "))
+}
+
+// TestAdmonitionTitleThatIsNotAGoLiteral: MkDocs titles are literal text.
+func TestAdmonitionTitleThatIsNotAGoLiteral(t *testing.T) {
+	actual := render(t, "??? note \"C:\\path\\to\"\n    Body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">C:\path\to</ac:parameter>`)
+	assert.Contains(t, actual, `<p><strong>C:\path\to</strong></p>`)
+}
+
+func TestAdmonitionCollapsedNested(t *testing.T) {
+	actual := render(t, "!!! note \"Outer\"\n    Text.\n\n    ??? tip \"Inner\"\n        Hidden.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Equal(t, 3, strings.Count(actual, "<ac:structured-macro"))
+	assert.Equal(t, 3, strings.Count(actual, "</ac:structured-macro>"))
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">Inner</ac:parameter>`)
+}
