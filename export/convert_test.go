@@ -114,6 +114,18 @@ func TestConvertDiagramCodeStaysAMacro(t *testing.T) {
 		convert(t, storage))
 }
 
+// A fence of "sh" publishes as "bash", so a page holding "sh" -- one mark
+// published before it renamed aliases -- can only come back as the macro.
+func TestConvertCodeLanguageAliasStaysAMacro(t *testing.T) {
+	for _, language := range []string{"sh", "Python"} {
+		storage := `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">` + language +
+			`</ac:parameter><ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`
+		md, published := republish(t, storage)
+		assert.True(t, strings.HasPrefix(md, `<ac:structured-macro ac:name="code">`), md)
+		assert.Equal(t, canonical(t, storage), published)
+	}
+}
+
 func TestConvertCodeInfoString(t *testing.T) {
 	for _, test := range []struct {
 		params string
@@ -124,7 +136,7 @@ func TestConvertCodeInfoString(t *testing.T) {
 		{`<ac:parameter ac:name="collapse">true</ac:parameter>`, "```- collapse\n"},
 		{`<ac:parameter ac:name="language">c#</ac:parameter><ac:parameter ac:name="title">A title</ac:parameter>`, "```c# title A title\n"},
 		{`<ac:parameter ac:name="linenumbers">true</ac:parameter><ac:parameter ac:name="firstline">5</ac:parameter>`, "```- 5\n"},
-		{`<ac:parameter ac:name="language">sh</ac:parameter><ac:parameter ac:name="linenumbers">true</ac:parameter>`, "```sh linenumbers\n"},
+		{`<ac:parameter ac:name="language">bash</ac:parameter><ac:parameter ac:name="linenumbers">true</ac:parameter>`, "```bash linenumbers\n"},
 	} {
 		got := convert(t, `<ac:structured-macro ac:name="code">`+test.params+
 			`<ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`)
@@ -323,7 +335,7 @@ func TestConvertCodeTitleRoundTrips(t *testing.T) {
 		{"A title", "go", "go title A title"},
 		{"A title", "", "- title A title"},
 		{"title linenumbers", "", "- title title linenumbers"},
-		{"title linenumbers", "sh", "sh title title linenumbers"},
+		{"title linenumbers", "bash", "bash title title linenumbers"},
 		{"Config {prod}", "yaml", `yaml title="Config {prod}"`},
 		{"Config {prod}", "", `- title="Config {prod}"`},
 		{"a title=b", "go", `go title="a title=b"`},
