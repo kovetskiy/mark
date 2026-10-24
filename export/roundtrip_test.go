@@ -17,6 +17,9 @@ import (
 // roundTripExcluded are the publish fixtures whose storage format does not
 // come back from Markdown the same way, and why.
 var roundTripExcluded = map[string]string{
+	"admonitions-collapsed-unsupported": "an admonition type Confluence has no panel for, which " +
+		"publishes as <blockquote class=\"admonition adm-...\">; the export drops the class " +
+		"and writes a plain quote",
 	"html-img-block": "an image standing in an expand macro's body with no paragraph around it comes " +
 		"back inside one: Markdown puts an image that stands alone in a paragraph",
 }
