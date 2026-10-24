@@ -58,6 +58,28 @@ func TestRetitledParentAndChildInOneRun(t *testing.T) {
 	assert.Equal(t, parentID, server.Page(childID).ParentID, "the child should stay under the original page")
 }
 
+// TestRetitledParentNamedWithoutRegardToCase: the child spells the new parent
+// title in another case, which Confluence reads as the same title.
+func TestRetitledParentNamedWithoutRegardToCase(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "parent.md", parentDoc("Parent"))
+	writeFile(t, dir, "a-child.md", childDoc("Parent"))
+	config := trackingConfig(server, dir+"/*.md")
+	require.NoError(t, Run(config))
+
+	parentID := pageIDTitled(t, server, "Parent")
+	childID := pageIDTitled(t, server, "Child")
+	require.NotEmpty(t, parentID)
+
+	writeFile(t, dir, "parent.md", parentDoc("Parent Renamed"))
+	writeFile(t, dir, "a-child.md", childDoc("parent renamed"))
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, "Parent Renamed", server.Page(parentID).Title)
+	assert.Equal(t, parentID, server.Page(childID).ParentID)
+}
+
 // TestChildNamingOldParentTitleStillFollowsRename keeps refreshStaleParents
 // working: only the parent is retitled, the child still names the old title.
 func TestChildNamingOldParentTitleStillFollowsRename(t *testing.T) {
