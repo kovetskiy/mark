@@ -1,13 +1,13 @@
 package export
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/page"
 )
 
 // PageRef is a page as a URL names it: by id, or by space and title.
@@ -29,12 +29,13 @@ var (
 	// /display/KEY/Title and /display/KEY/2024/01/31/Title
 	displayPath = regexp.MustCompile(`^/display/([^/]+)/(?:[0-9]{4}/[0-9]{2}/[0-9]{2}/)?([^/]+)/?$`)
 	// /x/AbCd
-	tinyPath = regexp.MustCompile(`^/x/[^/]+/?$`)
+	tinyPath = regexp.MustCompile(`^/x/([^/]+)/?$`)
 )
 
 // ParsePageURL reads the page a Confluence URL points at: the address a
 // browser shows for a page on Cloud or on Server and Data Center. The base URL
-// is read as --target-url reads it.
+// is read as --target-url reads it. A short link (/x/...) names the page by
+// its id, encoded, and is read without asking Confluence.
 func ParsePageURL(raw string) (PageRef, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -80,12 +81,38 @@ func ParsePageURL(raw string) (PageRef, error) {
 		return ref, err
 	}
 
-	if tinyPath.MatchString(path) {
-		return PageRef{}, errors.New(
-			"a short link (/x/...) does not say which page it is without asking Confluence; " +
-				"open it and use the address it leads to, or --page-id",
-		)
+	if m := tinyPath.FindStringSubmatch(path); m != nil {
+		id, err := page.DecodeTinyLinkID(m[1])
+		if err != nil {
+			return PageRef{}, fmt.Errorf("unable to read the short link %q: %w", raw, err)
+		}
+		ref.PageID = id
+		return ref, nil
 	}
 
 	return PageRef{}, fmt.Errorf("%q is not the URL of a Confluence page mark recognises", raw)
+}
+
+// pageOnInstance reads the page a URL pasted into a page points at, when it
+// is a page of the instance at base. A URL carrying a fragment is left alone:
+// it names a place on the page by Confluence's anchor, which mark's own
+// heading anchors need not match.
+func pageOnInstance(href, base string) (PageRef, bool) {
+	parsed, err := url.Parse(href)
+	if err != nil || parsed.Fragment != "" {
+		return PageRef{}, false
+	}
+
+	ref, err := ParsePageURL(href)
+	if err != nil || !strings.EqualFold(strings.TrimSuffix(ref.BaseURL, "/"), strings.TrimSuffix(base, "/")) {
+		return PageRef{}, false
+	}
+
+	return ref, true
+}
+
+// lookup is a map lookup a function can take as its arguments.
+func lookup(m map[string]string, key string) (string, bool) {
+	value, ok := m[key]
+	return value, ok
 }

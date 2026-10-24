@@ -502,6 +502,41 @@ func encodeTinyLinkID(id uint64) string {
 	return result.String()
 }
 
+// tinyLinkCode is the alphabet of a tiny link's code: base64 made URL-safe.
+const tinyLinkCode = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+// DecodeTinyLinkID reads the page ID out of the code a tiny link ends in, the
+// reverse of encodeTinyLinkID. Confluence strips trailing "A"s as well as the
+// padding from the codes it hands out; both stand for zero bits, which are the
+// high bytes of a little-endian ID, so padding with "A" restores either.
+func DecodeTinyLinkID(code string) (string, error) {
+	if code == "" || strings.Trim(code, tinyLinkCode) != "" {
+		return "", fmt.Errorf("%q is not the code of a tiny link", code)
+	}
+
+	code = strings.NewReplacer("-", "/", "_", "+").Replace(code)
+	for len(code)%4 != 0 {
+		code += "A"
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(code)
+	if err != nil {
+		return "", fmt.Errorf("%q is not the code of a tiny link: %w", code, err)
+	}
+
+	for len(raw) > 0 && raw[len(raw)-1] == 0 {
+		raw = raw[:len(raw)-1]
+	}
+	if len(raw) == 0 || len(raw) > 8 {
+		return "", fmt.Errorf("%q is not the code of a tiny link: it names no page ID", code)
+	}
+
+	buf := make([]byte, 8)
+	copy(buf, raw)
+
+	return strconv.FormatUint(binary.LittleEndian.Uint64(buf), 10), nil
+}
+
 // Deferrals remembers which documents linked to pages that did not exist yet.
 //
 // mark resolves a link by finding the page it points at, so a document linking
