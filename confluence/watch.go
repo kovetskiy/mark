@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -124,19 +125,8 @@ func (api *API) watchBeforeWrite(pageID string) {
 
 	watching, err := api.IsWatching(pageID, "")
 	if err != nil {
-		// Not knowing, the page is left as it is rather than unwatched. The
-		// watch endpoints are v1's, which a scoped token through the gateway
-		// cannot reach, so this would repeat for every page: say it once.
-		api.watchMutex.Lock()
-		warned := api.watchWarned
-		api.watchWarned = true
-		api.watchMutex.Unlock()
-
-		event := log.Debug()
-		if !warned {
-			event = log.Warn()
-		}
-		event.Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
+		// Not knowing, the page is left as it is rather than unwatched.
+		api.watchFailed().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
 		watching = true
 	}
 
@@ -176,6 +166,20 @@ func (api *API) unwatchAfterWrite(pageID string) {
 	}
 
 	if err := api.UnwatchPage(pageID, ""); err != nil {
-		log.Warn().Err(err).Msgf("unable to stop watching page %s", pageID)
+		api.watchFailed().Err(err).Msgf("unable to stop watching page %s", pageID)
 	}
+}
+
+// watchFailed is the log event for a watch call that failed: a warning the
+// first time in the run, and debug after. The watch endpoints are v1's, which
+// a scoped token without classic scopes cannot reach through the gateway, so
+// the failure would otherwise repeat for every page and every attachment.
+func (api *API) watchFailed() *zerolog.Event {
+	api.watchMutex.Lock()
+	defer api.watchMutex.Unlock()
+	if api.watchWarned {
+		return log.Debug()
+	}
+	api.watchWarned = true
+	return log.Warn()
 }

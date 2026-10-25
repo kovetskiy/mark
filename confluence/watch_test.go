@@ -1,11 +1,15 @@
 package confluence_test
 
 import (
+	"bytes"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,4 +131,40 @@ func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(created.ID))
 	assert.Zero(t, server.CountRequests("GET", "/user/watch/")+server.CountRequests("DELETE", "/user/watch/"))
+}
+
+// A Confluence that refuses the watch endpoints, as the gateway does a scoped
+// token without classic scopes, is warned about once, not for every page and
+// attachment mark writes.
+func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
+	api, server := newUnwatchAPI(t, false)
+	server.AddSpace("DOCS")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/user/watch/") {
+			return http.StatusForbidden, `{"message":"scope does not match"}`, true
+		}
+		return 0, "", false
+	})
+
+	var buffer bytes.Buffer
+	previousLogger, previousLevel := log.Logger, zerolog.GlobalLevel()
+	log.Logger = zerolog.New(&buffer)
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() {
+		log.Logger = previousLogger
+		zerolog.SetGlobalLevel(previousLevel)
+	})
+
+	created, err := api.CreatePage("DOCS", "page", nil, "New", "")
+	require.NoError(t, err)
+	for _, name := range []string{"a.png", "b.png"} {
+		_, err = api.CreateAttachment(created.ID, name, "c", strings.NewReader("png"))
+		require.NoError(t, err)
+	}
+	existing := server.AddPage("DOCS", "Existing", "page", "")
+	page, err := api.GetPageByID(existing.ID)
+	require.NoError(t, err)
+	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+
+	assert.Equal(t, 1, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
 }
