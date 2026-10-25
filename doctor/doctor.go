@@ -197,13 +197,20 @@ func checkSpace(api *confluence.API, key string) []Check {
 	}
 	checks := []Check{{Status: OK, Name: name, Detail: detail}}
 
+	// Publishing only compares pages against the home page, so a space without
+	// one is published to all the same.
 	home, homeErr := api.FindHomePage(key)
-	if homeErr != nil {
+	switch {
+	case errors.Is(homeErr, confluence.ErrNoHomePage):
 		checks = append(checks, Check{
-			Status: Fail, Name: name, Detail: "no home page: " + homeErr.Error(),
-			Hint: "mark puts pages without a Parent header below the space's home page",
+			Status: Warn, Name: name, Detail: "no home page",
+			Hint: "a page without a Parent header is published at the top of the space",
 		})
-	} else {
+	case homeErr != nil:
+		checks = append(checks, Check{
+			Status: Fail, Name: name, Detail: "unable to find the home page: " + homeErr.Error(),
+		})
+	default:
 		checks = append(checks, Check{
 			Status: OK, Name: name, Detail: fmt.Sprintf("home page %q (%s)", home.Title, home.ID),
 		})
