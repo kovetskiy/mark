@@ -630,8 +630,7 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 func worthCaching(err error) bool {
 	return err == nil ||
 		errors.Is(err, ErrNotFound) ||
-		errors.Is(err, ErrNoHomePage) ||
-		errors.Is(err, errNoSuchUser)
+		errors.Is(err, ErrNoHomePage)
 }
 
 // ErrNoHomePage is the answer for a space that exists and has no home page.
