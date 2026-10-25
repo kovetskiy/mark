@@ -103,8 +103,9 @@ func TestDoctorSpaceWithoutHomePage(t *testing.T) {
 	server.AddSpace("BARE")
 
 	out, err := doctor(t, server, "", "BARE")
-	require.Error(t, err)
-	assert.Contains(t, out, "[fail] space BARE: no home page")
+	require.NoError(t, err, "publishing does not need a home page")
+	assert.Contains(t, out, "[warn] space BARE: no home page")
+	assert.Contains(t, out, "at the top of the space")
 }
 
 func TestDoctorWithoutOperations(t *testing.T) {
