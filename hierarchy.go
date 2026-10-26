@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/fingerprint"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/page"
 	"github.com/rs/zerolog/log"
@@ -82,7 +83,7 @@ func hashDirectoryTitles(prefix []string, space string, derived []string, title 
 // A directory has no content to fingerprint, and an entry sharing a hash with a
 // document could be mistaken for that document under a previous name.
 func directoryHash(key string) string {
-	return sha1Hash("mark:directory:" + key)
+	return fingerprint.SHA1("mark:directory:" + key)
 }
 
 // directoryTitleReader works out what a directory's page should be called.

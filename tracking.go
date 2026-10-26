@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/fingerprint"
 	"github.com/kovetskiy/mark/v16/manifest"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/page"
@@ -258,7 +259,7 @@ func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, spac
 			return "", "", nil //nolint:nilerr // indexed as readable; its own turn reports this
 		}
 
-		_, entry, found, err = tracker.ResolveRenamed(space, sha1Hash(string(source)))
+		_, entry, found, err = tracker.ResolveRenamed(space, fingerprint.SHA1(string(source)))
 		if err != nil || !found {
 			return "", "", err
 		}
