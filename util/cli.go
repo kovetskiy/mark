@@ -290,6 +290,10 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	// Only a false somebody gave: a command built without the flag reads as
+	// false, and keeps watching.
+	unwatch := cmd.IsSet("watch") && !cmd.Bool("watch")
+
 	logFlags(cmd)
 
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
@@ -318,7 +322,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		ContentAppearance:        cmd.String("content-appearance"),
 
 		MinorEdit:          cmd.Bool("minor-edit"),
-		Unwatch:            !cmd.Bool("watch"),
+		Unwatch:            unwatch,
 		VersionMessage:     cmd.String("version-message"),
 		EditLock:           cmd.Bool("edit-lock"),
 		ChangesOnly:        cmd.Bool("changes-only"),
