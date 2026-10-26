@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 )
 
@@ -113,8 +114,7 @@ func (c *converter) openTag(n *node) string {
 	for _, a := range n.attrs {
 		value := a.value
 		if n.is("ri:attachment") && a.name == "ri:filename" && len(n.elements()) == 0 {
-			value = c.useAttachment(a.value, true)
-			value = strings.ReplaceAll(value, "/", "_")
+			value = attachment.UploadName(c.useAttachment(a.value, true))
 		}
 		b.WriteString(" " + a.name + `="` + escapeAttr(value) + `"`)
 	}
