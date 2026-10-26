@@ -131,19 +131,23 @@ type API struct {
 	KeepConcurrentEdits bool
 
 	// Unwatch stops the authenticated user watching the pages mark creates,
-	// updates and attaches files to. Confluence makes whoever writes to a page
-	// watch it, which turns a publishing account into a mailbox for every page
-	// it touches. A page the user watched before mark first wrote to it in the
-	// run stays watched. --unwatch sets it. The writes only record the pages:
-	// UnwatchWritten unwatches them, once the last write is done.
+	// updates, moves, labels and attaches files to. Confluence makes whoever
+	// writes to a page watch it, which turns a publishing account into a
+	// mailbox for every page it touches. A page the user watched before mark
+	// first wrote to it in the run stays watched. --unwatch sets it. The writes
+	// only record the pages: UnwatchWritten unwatches them, once the last
+	// write is done.
 	Unwatch bool
 
 	// watchedBefore records, by page id, every page mark wrote to and whether
 	// the user watched it before the first of those writes; see
 	// watchBeforeWrite.
 	watchedBefore map[string]bool
-	watchWarned   bool
-	watchMutex    sync.Mutex
+	// watchUnread is the pages among them whose watch state could not be
+	// read, which are left watched.
+	watchUnread []string
+	watchErr    error
+	watchMutex  sync.Mutex
 
 	// conflictRetryDelay is how long UpdatePage waits after a conflict before
 	// reading the page again; see retryConflictingUpdate. Tests set it to zero.
@@ -1843,6 +1847,7 @@ func (api *API) forgetMissesForTitle(title, pageType string) {
 }
 
 func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, error) {
+	api.watchBeforeWrite(page.ID)
 
 	labels := []map[string]any{}
 	for _, label := range newLabels {
@@ -1872,6 +1877,7 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 }
 
 func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
+	api.watchBeforeWrite(page.ID)
 
 	request, err := api.v1().Res(
 		"content/"+page.ID+"/label", &LabelInfo{},
@@ -3263,6 +3269,9 @@ func (api *API) reparentContent(contentID, parentID string) error {
 	if err != nil || placed {
 		return err
 	}
+
+	// The move is a version, which makes the user a watcher.
+	api.watchBeforeWrite(page.ID)
 
 	err = api.reparentContentV1(page, parentID, page.Version.Number+1)
 	if errors.Is(err, errConflict) {

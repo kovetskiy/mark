@@ -151,14 +151,7 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 		return 0, "", false
 	})
 
-	var buffer bytes.Buffer
-	previousLogger, previousLevel := log.Logger, zerolog.GlobalLevel()
-	log.Logger = zerolog.New(&buffer)
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	t.Cleanup(func() {
-		log.Logger = previousLogger
-		zerolog.SetGlobalLevel(previousLevel)
-	})
+	buffer := captureLog(t)
 
 	created, err := api.CreatePage("DOCS", "page", nil, "New", "")
 	require.NoError(t, err)
@@ -173,5 +166,96 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 	api.UnwatchWritten()
 
 	assert.Equal(t, 2, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
+	assert.Contains(t, buffer.String(), "unable to read whether 1 of 2 page(s) mark wrote to were watched before")
 	assert.Contains(t, buffer.String(), "unable to stop watching 1 of 1 page(s)")
+}
+
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buffer bytes.Buffer
+	previousLogger, previousLevel := log.Logger, zerolog.GlobalLevel()
+	log.Logger = zerolog.New(&buffer)
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() {
+		log.Logger = previousLogger
+		zerolog.SetGlobalLevel(previousLevel)
+	})
+	return &buffer
+}
+
+// Every page whose watch state could not be read is named in one warning at
+// the end of the run, not only the first.
+func TestUnwatchReportsEveryPageItCouldNotRead(t *testing.T) {
+	api, server := newUnwatchAPI(t, false)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/user/watch/") {
+			return http.StatusForbidden, `{"message":"scope does not match"}`, true
+		}
+		return 0, "", false
+	})
+	buffer := captureLog(t)
+
+	var ids []string
+	for _, title := range []string{"One", "Two"} {
+		stored := server.AddPage("DOCS", title, "page", "")
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		ids = append(ids, stored.ID)
+	}
+	api.UnwatchWritten()
+
+	assert.Equal(t, 1, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
+	assert.Contains(t, buffer.String(), "unable to read whether 2 of 2 page(s)")
+	for _, id := range ids {
+		assert.Contains(t, buffer.String(), id)
+		assert.Equal(t, []string{"acct-current"}, server.Watchers(id), "a page whose state is unknown stays watched")
+	}
+	assert.Zero(t, server.CountRequests("DELETE", "/user/watch/"))
+}
+
+// On Data Center without movepage.action a move is an update, which makes the
+// user watch the page: the page is recorded before it, so the watch that move
+// made is not taken for the user's own.
+func TestUnwatchAfterAMoveByUpdate(t *testing.T) {
+	api, server := newDataCenterAPIWithoutMoveAction(t)
+	server.SetWatchOnWrite()
+	api.Unwatch = true
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	moved := server.AddPage("DOCS", "Moved and updated", "page", "")
+	onlyMoved := server.AddPage("DOCS", "Only moved", "page", "")
+
+	require.NoError(t, api.MoveContentAppend(moved.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(onlyMoved.ID, parent.ID))
+	require.Equal(t, []string{"current"}, server.Watchers(moved.ID), "the move has to be one that makes a watcher")
+
+	page, err := api.GetPageByID(moved.ID)
+	require.NoError(t, err)
+	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+	api.UnwatchWritten()
+
+	assert.Empty(t, server.Watchers(moved.ID))
+	assert.Empty(t, server.Watchers(onlyMoved.ID))
+}
+
+// A page mark only labels, as --changes-only leaves one whose content is
+// unchanged, is recorded like any other write.
+func TestUnwatchAfterLabelWrites(t *testing.T) {
+	api, server := newUnwatchAPI(t, false)
+	added := server.AddPage("DOCS", "Added", "page", "")
+	removed := server.AddPage("DOCS", "Removed", "page", "")
+
+	page, err := api.GetPageByID(added.ID)
+	require.NoError(t, err)
+	_, err = api.AddPageLabels(page, []string{"docs"})
+	require.NoError(t, err)
+	page, err = api.GetPageByID(removed.ID)
+	require.NoError(t, err)
+	_, err = api.DeletePageLabel(page, "docs")
+	require.NoError(t, err)
+	api.UnwatchWritten()
+
+	assert.Equal(t, 1, server.CountRequests("DELETE", "/user/watch/content/"+added.ID))
+	assert.Equal(t, 1, server.CountRequests("DELETE", "/user/watch/content/"+removed.ID))
 }
