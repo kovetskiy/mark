@@ -105,8 +105,12 @@ that publishes back to it; see [Exporting a page](docs/export.md#exporting-a-pag
 
 `mark doctor` checks a setup without changing anything. It logs in with the
 global options, says which platform answered, and checks that each space it is
-given exists, has a home page, and lets the account create pages and upload
-attachments. When a check fails, it says what to change:
+given exists and lets the account create pages and upload attachments. A login
+that Confluence answers as the anonymous user fails, since a proxy that drops
+the credentials looks like a working login otherwise, and so does an empty
+space key, as an unset `$SPACE` gives. A space without a home page is only a
+warning: a page with no `Parent` header is then published at the top of the
+space. When a check fails, it says what to change:
 
 ```text
 $ mark doctor -b https://example.atlassian.net/wiki -u jane@example.com -p "$TOKEN" DOCS
