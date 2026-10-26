@@ -85,6 +85,13 @@ func run(api *confluence.API, baseURL, username string, spaces []string) []Check
 	if err != nil {
 		return []Check{loginFailure(err, host, username)}
 	}
+	if user.Type == "anonymous" {
+		return []Check{{
+			Status: Fail, Name: "login", Detail: "Confluence answered as an anonymous user, so the credentials were not used",
+			Hint: "Server and Data Center before 7.9 take no personal access token, so give --username and a " +
+				"password there; a proxy in front of Confluence may also drop the Authorization header",
+		}}
+	}
 
 	checks := []Check{{Status: OK, Name: "login", Detail: describeUser(user)}}
 
@@ -109,6 +116,13 @@ func run(api *confluence.API, baseURL, username string, spaces []string) []Check
 
 	checked := map[string]bool{}
 	for _, space := range spaces {
+		if space == "" {
+			checks = append(checks, Check{
+				Status: Fail, Name: "space", Detail: "an empty space key",
+				Hint: "a variable meant to hold the key may be unset",
+			})
+			continue
+		}
 		if !checked[space] {
 			checked[space] = true
 			checks = append(checks, checkSpace(api, space)...)
@@ -127,7 +141,9 @@ func loginFailure(err error, host, username string) Check {
 	var unknownAuthority x509.UnknownAuthorityError
 	var hostname x509.HostnameError
 	var timeout net.Error
+	var invalid x509.CertificateInvalidError
 	cloud := confluence.IsCloudHost(host)
+	gateway := host == "api.atlassian.com"
 
 	switch {
 	case errors.As(err, &dns):
@@ -139,13 +155,21 @@ func loginFailure(err error, host, username string) Check {
 	case strings.Contains(err.Error(), "Proxy Authentication Required"):
 		// net/http gives a proxy's refusal of CONNECT no type of its own.
 		check.Hint = "the proxy wants credentials; give them in HTTPS_PROXY, as http://user:password@proxy:port"
+	case errors.As(err, &invalid):
+		check.Hint = "the server's TLS certificate is not valid now: it has expired, is not valid yet, " +
+			"or the clock here is wrong"
+	case strings.Contains(err.Error(), "unsupported protocol scheme"):
+		check.Hint = "--base-url names no scheme; start it with https://"
 	case errors.As(err, &unknownAuthority), errors.As(err, &hostname):
 		check.Hint = "the server's TLS certificate is not trusted; add its CA to the system's " +
 			"trust store (or SSL_CERT_FILE), or use --insecure-skip-tls-verify for a test instance"
+	case errors.Is(err, confluence.ErrNotFound) && gateway:
+		check.Hint = "through the API gateway, --base-url is https://api.atlassian.com/ex/confluence/<cloud id>; " +
+			"check the cloud id, which https://<site>.atlassian.net/_edge/tenant_info gives"
 	case errors.Is(err, confluence.ErrNotFound):
 		check.Hint = "--base-url does not lead to Confluence's REST API; on Cloud it ends in /wiki, " +
 			"and on Server or Data Center it includes any context path, such as /confluence"
-	case errors.Is(err, confluence.ErrUnauthorized) && host == "api.atlassian.com":
+	case errors.Is(err, confluence.ErrUnauthorized) && gateway:
 		check.Hint = "through the API gateway, --username is your Atlassian account email and " +
 			"--password a scoped API token with read:confluence-user among its scopes"
 	case errors.Is(err, confluence.ErrUnauthorized) && cloud && username == "":
