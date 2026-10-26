@@ -150,10 +150,15 @@ func (api *API) watchBeforeWrite(pageID string) {
 	api.rememberWatch(pageID, state, err)
 }
 
-// rememberWatch records a page's state, and err as the first read error.
+// rememberWatch records a page's state, and err as the first read error,
+// unless the page has one already: when two first writes race, the later read
+// can see the watch the earlier write made.
 func (api *API) rememberWatch(pageID string, state watchState, err error) {
 	api.watchMutex.Lock()
 	defer api.watchMutex.Unlock()
+	if _, known := api.watchedBefore[pageID]; known {
+		return
+	}
 	if api.watchedBefore == nil {
 		api.watchedBefore = map[string]watchState{}
 	}
@@ -190,13 +195,21 @@ func (api *API) UnwatchWritten() {
 	slices.Sort(pages)
 	var failed []string
 	var first error
-	for _, pageID := range pages {
-		if err := api.unwatchWritten(pageID); err != nil {
-			log.Debug().Err(err).Msgf("unable to stop watching page %s", pageID)
-			failed = append(failed, pageID)
-			if first == nil {
-				first = err
-			}
+	for i, pageID := range pages {
+		err := api.unwatchWritten(pageID)
+		if err == nil {
+			continue
+		}
+		log.Debug().Err(err).Msgf("unable to stop watching page %s", pageID)
+		failed = append(failed, pageID)
+		if first == nil {
+			first = err
+		}
+		// Still unavailable after every retry: the rest would each wait as
+		// long again, for a run whose writes are done.
+		if isUnavailable(err) {
+			failed = append(failed, pages[i+1:]...)
+			break
 		}
 	}
 
@@ -218,16 +231,16 @@ func warnStayWatched(format string, pages []string, total int, err error) {
 
 // unwatchWritten unwatches a page, sending the request again when Confluence
 // was unavailable for it. A page left watched now stays watched: the next run
-// takes the watch for the user's own.
+// takes the watch for the user's own. An unwatch is safe to repeat, so whether
+// one landed is not asked: it is sent again either way.
 func (api *API) unwatchWritten(pageID string) error {
 	send := func() (struct{}, error) {
 		return struct{}{}, api.UnwatchPage(pageID, "")
 	}
-	landed := func() (struct{}, bool, error) {
-		watching, err := api.IsWatching(pageID, "")
-		return struct{}{}, err == nil && !watching, err
+	resend := func() (struct{}, bool, error) {
+		return struct{}{}, false, nil
 	}
 
-	_, err := retryUnavailable(api, "stop watching page "+pageID, send, landed)
+	_, err := retryUnavailable(api, "stop watching page "+pageID, send, resend)
 	return err
 }
