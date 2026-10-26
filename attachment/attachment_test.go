@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/vfs"
@@ -310,4 +311,16 @@ func TestPreparedAttachmentIsNamedCleaned(t *testing.T) {
 	assert.Equal(t, "f.txt", attachment.Name)
 	assert.Equal(t, "f.txt", attachment.Replace)
 	assert.Equal(t, "f.txt", attachment.Filename)
+}
+
+func TestUploadNameCleansBackslashesOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("a backslash separates only on Windows")
+	}
+
+	for in, want := range map[string]string{
+		`.\x.png`: "x.png", `images\x.png`: "images_x.png", `a\..\x.png`: "x.png",
+	} {
+		assert.Equal(t, want, UploadName(in), "UploadName(%q)", in)
+	}
 }
