@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -136,6 +139,12 @@ func TestDoctorLoginRefused(t *testing.T) {
 	assert.NotContains(t, out, "space DOCS", "nothing more can be checked")
 }
 
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "i/o timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
 var dnsError = net.DNSError{Err: "no such host", Name: "nope.example.com", IsNotFound: true}
 
 func TestLoginFailureHints(t *testing.T) {
@@ -152,6 +161,11 @@ func TestLoginFailureHints(t *testing.T) {
 		{"data center", "confluence.example.com", "jane", unauthorized, "personal access token"},
 		{"wrong path", "confluence.example.com", "jane", fmt.Errorf("x: %w", confluence.ErrNotFound), "context path"},
 		{"no such host", "nope.example.com", "", fmt.Errorf("x: %w", &dnsError), "does not resolve"},
+		{"cloud host with a trailing dot", "example.atlassian.net.", "jane", unauthorized, "not a display name"},
+		{"forbidden", "confluence.example.com", "jane", fmt.Errorf("x: %w", confluence.ErrForbidden), "single sign-on"},
+		{"connection refused", "confluence.example.com", "", fmt.Errorf("x: %w", syscall.ECONNREFUSED), "nothing answers"},
+		{"timeout", "confluence.example.com", "", &url.Error{Op: "Get", URL: "x", Err: timeoutError{}}, "did not answer in time"},
+		{"proxy", "confluence.example.com", "", errors.New("proxyconnect tcp: Proxy Authentication Required"), "HTTPS_PROXY"},
 		{"something else", "confluence.example.com", "", errors.New("boom"), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -164,4 +178,20 @@ func TestLoginFailureHints(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDoctorChecksASpaceOnce(t *testing.T) {
+	out, err := doctor(t, newServer(t), "", "DOCS", "DOCS")
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(out, "space DOCS: home page"))
+}
+
+func TestDoctorAccountWithoutIDs(t *testing.T) {
+	server := newServer(t)
+	server.SetDataCenter()
+	server.SetCurrentUser(confluencetest.User{FullName: "Nobody"})
+
+	out, err := doctor(t, server, "", "DOCS")
+	require.NoError(t, err)
+	assert.Contains(t, out, "[warn] platform: the account has neither an accountId nor a username")
 }

@@ -3,7 +3,6 @@ package util
 import (
 	"context"
 	"errors"
-	"os"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/doctor"
@@ -64,5 +63,5 @@ func (line *commandLine) runDoctor(ctx context.Context, cmd *cli.Command) error 
 	logFlags(cmd)
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify"))
-	return doctor.Run(api, creds.BaseURL, creds.Username, spaces, os.Stdout)
+	return doctor.Run(api, creds.BaseURL, creds.Username, spaces, cmd.Root().Writer)
 }
