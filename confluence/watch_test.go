@@ -56,7 +56,19 @@ func TestWatchDataCenter(t *testing.T) {
 
 func newUnwatchAPI(t *testing.T, dataCenter bool) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
-	api, server := newAPI(t)
+	return newUnwatchAPIAt(t, dataCenter, false)
+}
+
+// newUnwatchAPIAt is newUnwatchAPI, through the gateway a scoped token takes
+// when gateway is set: pages are written with v2 there.
+func newUnwatchAPIAt(t *testing.T, dataCenter, gateway bool) (*confluence.API, *confluencetest.Server) {
+	t.Helper()
+	server := confluencetest.New(t)
+	base := server.URL
+	if gateway {
+		base += "/ex/confluence/cloud-id"
+	}
+	api := confluence.NewAPI(base, "user", "token", false)
 	if dataCenter {
 		server.SetDataCenter()
 	}
@@ -69,12 +81,14 @@ func TestUnwatchAfterWrites(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		dataCenter bool
+		gateway    bool
 	}{
-		{"cloud", false},
-		{"data center", true},
+		{"cloud", false, false},
+		{"data center", true, false},
+		{"gateway", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			api, server := newUnwatchAPI(t, tc.dataCenter)
+			api, server := newUnwatchAPIAt(t, tc.dataCenter, tc.gateway)
 			server.AddSpace("DOCS")
 
 			created, err := api.CreatePage("DOCS", "page", nil, "New", "")
@@ -96,6 +110,10 @@ func TestUnwatchAfterWrites(t *testing.T) {
 			assert.Empty(t, server.Watchers(created.ID), "a page mark created, updated and attached files to")
 			assert.Empty(t, server.Watchers(existing.ID), "a page mark found and updated")
 			assert.Equal(t, 2, server.CountRequests("DELETE", "/user/watch/content/"), "one unwatch per page")
+			if tc.gateway {
+				assert.NotZero(t, server.CountRequests("POST", "/api/v2/pages"), "the page was created with v2")
+				assert.NotZero(t, server.CountRequests("PUT", "/api/v2/pages/"+existing.ID), "and updated with v2")
+			}
 		})
 	}
 }
