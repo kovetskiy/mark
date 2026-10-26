@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/rs/zerolog"
@@ -61,7 +62,7 @@ func newUnavailableAPI(
 
 	api := NewAPI(base, "user", "token", false)
 	api.conflictRetryDelay = 0
-	api.unavailableWait = func(int, string) {}
+	api.unavailableWait = func(context.Context, int, string) {}
 	return api, server
 }
 
@@ -427,7 +428,7 @@ func TestUnavailableWriteWaitsForRetryAfter(t *testing.T) {
 	var id string
 	api, server := newUnavailableAPI(t, false, 1, func(r *http.Request) bool { return isContentPut(r, id) })
 	var waited []string
-	api.unavailableWait = func(_ int, retryAfter string) { waited = append(waited, retryAfter) }
+	api.unavailableWait = func(_ context.Context, _ int, retryAfter string) { waited = append(waited, retryAfter) }
 	id = server.AddPage("DOCS", "Target", "page", "").ID
 
 	page, err := api.GetPageByID(id)
@@ -548,7 +549,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 		page, err := api.GetPageByID(stored.ID)
 		require.NoError(t, err)
 		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
-		api.UnwatchWritten()
+		api.UnwatchWritten(t.Context())
 
 		assert.Empty(t, server.Watchers(stored.ID))
 		assert.Equal(t, int32(2), refused.Load(), "sent again after the refusal")
@@ -563,7 +564,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 		page, err := api.GetPageByID(stored.ID)
 		require.NoError(t, err)
 		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
-		api.UnwatchWritten()
+		api.UnwatchWritten(t.Context())
 
 		assert.Empty(t, server.Watchers(stored.ID))
 		assert.Equal(t, 2, server.CountRequests(http.MethodDelete, "/user/watch/content/"),
@@ -600,7 +601,7 @@ func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
 	previousLogger := log.Logger
 	log.Logger = zerolog.New(&buffer).Level(zerolog.WarnLevel)
 	t.Cleanup(func() { log.Logger = previousLogger })
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, 0, server.CountRequests(http.MethodDelete, "/user/watch/content/"+ids[1])+
 		server.CountRequests(http.MethodDelete, "/user/watch/content/"+ids[2]), "only the first page is tried")
@@ -608,6 +609,52 @@ func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
 	for _, id := range ids {
 		assert.Contains(t, buffer.String(), id)
 	}
+}
+
+// A run interrupted while an unwatch waits to be sent again stops waiting,
+// and sends nothing more.
+func TestUnwatchWrittenStopsWaitingWhenInterrupted(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	server.SetWatchOnWrite()
+	api.Unwatch = true
+
+	var ids []string
+	for _, title := range []string{"One", "Two"} {
+		stored := server.AddPage("DOCS", title, "page", "")
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		ids = append(ids, stored.ID)
+	}
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if isUnwatch(r) {
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	api.unavailableWait = func(context.Context, int, string) { cancel() }
+	var buffer bytes.Buffer
+	previousLogger := log.Logger
+	log.Logger = zerolog.New(&buffer).Level(zerolog.WarnLevel)
+	t.Cleanup(func() { log.Logger = previousLogger })
+	api.UnwatchWritten(ctx)
+
+	assert.Equal(t, 1, server.CountRequests(http.MethodDelete, "/user/watch/content/"), "not sent again")
+	assert.Equal(t, 1, strings.Count(buffer.String(), "unable to stop watching 2 of 2 page(s)"), buffer.String())
+	assert.Contains(t, buffer.String(), "context canceled")
+	for _, id := range ids {
+		assert.Contains(t, buffer.String(), id)
+	}
+}
+
+func TestWaitUnavailableReturnsWhenTheContextIsDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	start := time.Now()
+	waitUnavailable(ctx, 1, "3600")
+	assert.Less(t, time.Since(start), time.Second)
 }
 
 // Two first writes to one page can race, and the later read can see the watch

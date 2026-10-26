@@ -1,6 +1,8 @@
 package confluence
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -172,8 +174,9 @@ func (api *API) rememberWatch(pageID string, state watchState, err error) {
 // under Unwatch, once, unless they watched it before. It goes after the last
 // write, since any write -- content, a property, an attachment -- can make
 // them a watcher again. A failure is only a warning: the writes have been
-// made, and the page is no worse than without Unwatch.
-func (api *API) UnwatchWritten() {
+// made, and the page is no worse than without Unwatch. Once ctx is done, the
+// pages not unwatched yet are left watched and named in that warning.
+func (api *API) UnwatchWritten(ctx context.Context) {
 	api.watchMutex.Lock()
 	var pages, unread []string
 	for pageID, state := range api.watchedBefore {
@@ -196,7 +199,11 @@ func (api *API) UnwatchWritten() {
 	var failed []string
 	var first error
 	for i, pageID := range pages {
-		err := api.unwatchWritten(pageID)
+		if ctx.Err() != nil {
+			failed = append(failed, pages[i:]...)
+			break
+		}
+		err := api.unwatchWritten(ctx, pageID)
 		if err == nil {
 			continue
 		}
@@ -211,6 +218,9 @@ func (api *API) UnwatchWritten() {
 			failed = append(failed, pages[i+1:]...)
 			break
 		}
+	}
+	if err := ctx.Err(); err != nil && len(failed) > 0 && !errors.Is(first, err) {
+		first = errors.Join(first, fmt.Errorf("the run was interrupted: %w", err))
 	}
 
 	warnStayWatched("unable to stop watching %d of %d page(s) mark wrote to",
@@ -233,7 +243,7 @@ func warnStayWatched(format string, pages []string, total int, err error) {
 // was unavailable for it. A page left watched now stays watched: the next run
 // takes the watch for the user's own. An unwatch is safe to repeat, so whether
 // one landed is not asked: it is sent again either way.
-func (api *API) unwatchWritten(pageID string) error {
+func (api *API) unwatchWritten(ctx context.Context, pageID string) error {
 	send := func() (struct{}, error) {
 		return struct{}{}, api.UnwatchPage(pageID, "")
 	}
@@ -241,6 +251,6 @@ func (api *API) unwatchWritten(pageID string) error {
 		return struct{}{}, false, nil
 	}
 
-	_, err := retryUnavailable(api, "stop watching page "+pageID, send, resend)
+	_, err := retryUnavailableContext(ctx, api, "stop watching page "+pageID, send, resend)
 	return err
 }

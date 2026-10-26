@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -149,7 +150,7 @@ type API struct {
 
 	// unavailableWait waits before reading whether a write Confluence was
 	// unavailable for landed; see retryUnavailable. Tests make it instant.
-	unavailableWait func(attempt int, retryAfter string)
+	unavailableWait func(ctx context.Context, attempt int, retryAfter string)
 
 	// moveSettleDelay is how long moveByAction waits between reads of a tree
 	// that movepage.action said it changed but does not show it yet.
