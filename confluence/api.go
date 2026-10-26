@@ -158,8 +158,10 @@ type spaceIDCacheEntry struct {
 	err error
 }
 
+// pageCacheKey lowercases the title, so every spelling of it shares one
+// entry, as it shares one page in Confluence.
 func pageCacheKey(space, title, pageType string) string {
-	return space + "\x00" + title + "\x00" + pageType
+	return space + "\x00" + strings.ToLower(title) + "\x00" + pageType
 }
 
 func clonePageInfo(page *PageInfo) *PageInfo {
@@ -298,6 +300,12 @@ type PageInfo struct {
 			Value string `json:"value"`
 		} `json:"storage"`
 	} `json:"body"`
+
+	// Space is the space the page belongs to. It is only there when it was
+	// asked for, with "space" in the expand list.
+	Space struct {
+		Key string `json:"key"`
+	} `json:"space"`
 
 	Links struct {
 		Full string `json:"webui"`
@@ -571,7 +579,7 @@ func (api *API) FindRootPage(space string) (*PageInfo, error) {
 			Title: home.Title,
 		}, nil
 	}
-	if !errors.Is(err, errNoHomePage) {
+	if !errors.Is(err, ErrNoHomePage) {
 		return nil, fmt.Errorf("can't obtain home page of space %q: %w", space, err)
 	}
 
@@ -622,13 +630,12 @@ func (api *API) firstRootPage(space string) (*PageInfo, error) {
 func worthCaching(err error) bool {
 	return err == nil ||
 		errors.Is(err, ErrNotFound) ||
-		errors.Is(err, errNoHomePage) ||
-		errors.Is(err, errNoSuchUser)
+		errors.Is(err, ErrNoHomePage)
 }
 
-// errNoHomePage is the answer for a space that exists and has no home page.
+// ErrNoHomePage is the answer for a space that exists and has no home page.
 // A conclusion rather than a hiccup, so it is remembered like a success.
-var errNoHomePage = errors.New("space has no home page")
+var ErrNoHomePage = errors.New("space has no home page")
 
 // errNoSuchUser is the answer for a user search that succeeded and matched
 // nobody. Not ErrNotFound: nothing answered 404, and saying so would send
@@ -691,7 +698,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 			// v1 says the same thing here rather than falling through to a v2
 			// that does not exist on Server or Data Center.
 			if homepage.ID == "" {
-				return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
+				return nil, fmt.Errorf("space %s: %w", space, ErrNoHomePage)
 			}
 
 			return homepage, nil
@@ -757,7 +764,7 @@ func (api *API) fetchHomePage(space string) (*PageInfo, error) {
 	// space that does not exist, and reporting it as "not found" sends people
 	// looking for a typo in a space key that is perfectly correct.
 	if v2Result.Results[0].HomepageID == "" {
-		return nil, fmt.Errorf("space %s: %w", space, errNoHomePage)
+		return nil, fmt.Errorf("space %s: %w", space, ErrNoHomePage)
 	}
 
 	return api.GetPageByID(v2Result.Results[0].HomepageID)
@@ -1025,22 +1032,17 @@ func (api *API) CreateAttachment(
 		return info, newErrorStatusNotOK(request)
 	}
 
-	if len(result.Results) == 0 {
+	if len(result.Results) == 0 || result.Results[0].ID == "" {
 		return info, errors.New(
 			"the Confluence REST API for creating attachments returned " +
-				"0 json objects, expected at least 1",
+				"no attachment, expected one with an id",
 		)
 	}
 
-	for i, info := range result.Results {
-		if info.Links.Context == "" {
-			info.Links.Context = result.Links.Context
-		}
-
-		result.Results[i] = info
-	}
-
 	info = result.Results[0]
+	if info.Links.Context == "" {
+		info.Links.Context = result.Links.Context
+	}
 
 	return info, nil
 }
@@ -1101,26 +1103,25 @@ func (api *API) UpdateAttachment(
 	}
 
 	if len(extendedResponse.Results) > 0 {
-		for i, info := range extendedResponse.Results {
-			if info.Links.Context == "" {
-				info.Links.Context = extendedResponse.Links.Context
-			}
-
-			extendedResponse.Results[i] = info
-		}
-
 		info = extendedResponse.Results[0]
-
-		return info, nil
+		if info.Links.Context == "" {
+			info.Links.Context = extendedResponse.Links.Context
+		}
+	} else if err = json.Unmarshal(result, &info); err != nil {
+		return AttachmentInfo{}, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
 	}
 
-	var shortResponse AttachmentInfo
-	err = json.Unmarshal(result, &shortResponse)
-	if err != nil {
-		return info, fmt.Errorf("unable to unmarshal JSON response as short response format (JSON=%s): %w", string(result), err)
+	// The caller links the page's attachments from this answer, so one that
+	// names no attachment cannot count as an upload.
+	if info.ID == "" {
+		return AttachmentInfo{}, fmt.Errorf(
+			"the Confluence REST API for updating attachments returned "+
+				"no attachment (JSON=%s), expected one with an id",
+			string(result),
+		)
 	}
 
-	return shortResponse, nil
+	return info, nil
 }
 
 func getAttachmentPayload(name, comment string, reader io.Reader) (*form, error) {
@@ -1661,7 +1662,7 @@ func (api *API) forgetMissesForTitle(title, pageType string) {
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
-	suffix := "\x00" + title + "\x00" + pageType
+	suffix := pageCacheKey("", title, pageType)
 	for key, entry := range api.pageCache {
 		if entry == nil && strings.HasSuffix(key, suffix) {
 			delete(api.pageCache, key)
@@ -1782,11 +1783,12 @@ func (api *API) GetPageLabels(page *PageInfo, prefix string) (*LabelInfo, error)
 // run. Names do not change mid-run, so the lookup is memoised, and so is a
 // search that matched nobody.
 //
-// A search that failed is not: the same rule as the space lookups, through
-// worthCaching. A throttling burst or a gateway error while resolving the first
-// mention of someone otherwise left every later mention of them, in every
-// remaining file, failing with an error Confluence had long since stopped
-// giving.
+// A search that failed is not. A throttling burst or a gateway error while
+// resolving the first mention of someone otherwise left every later mention of
+// them, in every remaining file, failing with an error Confluence had long
+// since stopped giving. Nor is a 404: worthCaching takes that as a conclusion
+// for the space lookups, but here it comes from the search endpoint itself, and
+// says nothing about whether the user exists.
 func (api *API) GetUserByName(name string) (*User, error) {
 	if entry, ok := api.cachedUser(name); ok {
 		return entry.user, entry.err
@@ -1794,7 +1796,7 @@ func (api *API) GetUserByName(name string) (*User, error) {
 
 	user, err := api.fetchUserByName(name)
 
-	if !worthCaching(err) {
+	if err != nil && !errors.Is(err, errNoSuchUser) {
 		return user, err
 	}
 
@@ -1816,6 +1818,21 @@ func (api *API) cachedUser(name string) (userCacheEntry, bool) {
 }
 
 func (api *API) fetchUserByName(name string) (*User, error) {
+	users, err := api.searchUsers(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(users) == 0 {
+		return nil, fmt.Errorf("user with name %q is not found: %w", name, errNoSuchUser)
+	}
+
+	return &users[0], nil
+}
+
+// searchUsers is every user the user search finds for name: a full name that
+// contains it, so not necessarily one that is it.
+func (api *API) searchUsers(name string) ([]User, error) {
 	var response struct {
 		Results []struct {
 			User User
@@ -1844,16 +1861,22 @@ func (api *API) fetchUserByName(name string) (*User, error) {
 			return nil, newTransportError(request, fmt.Sprintf("look up user %q", name), err)
 		}
 		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
+			err := newErrorStatusNotOK(request)
+			if errors.Is(err, ErrNotFound) {
+				// Neither search path is served: an older release, or a proxy
+				// routing it away. Not the same thing as no such user.
+				return nil, fmt.Errorf("look up user %q: the user search endpoint is not served: %w", name, err)
+			}
+			return nil, err
 		}
 	}
 
-	if len(response.Results) == 0 {
-
-		return nil, fmt.Errorf("user with name %q is not found: %w", name, errNoSuchUser)
+	users := make([]User, 0, len(response.Results))
+	for _, result := range response.Results {
+		users = append(users, result.User)
 	}
 
-	return &response.Results[0].User, nil
+	return users, nil
 }
 
 // GetCurrentUser returns the user mark authenticates as. The answer does not
@@ -1917,25 +1940,28 @@ func isCloudHost(host string) bool {
 	return false
 }
 
-// IsCloud reports whether the target is Confluence Cloud, deciding at most once
-// per API value. A target that could not be identified is reported as not
-// Cloud; cloud says so as an error, for a caller that must not guess.
+// IsCloud reports whether the target is Confluence Cloud, as Cloud decided it.
+// A target that could not be identified is reported as not Cloud.
 func (api *API) IsCloud() bool {
-	isCloud, _ := api.cloud()
+	isCloud, _ := api.Cloud()
 
 	return isCloud
 }
 
-// cloud identifies the target, at most once per API value: a known Cloud
-// host answers without a request, otherwise the current user decides --
-// Cloud names it by an Atlassian accountId, Server and Data Center by a
-// username and userKey instead.
+// Cloud identifies the target: a known Cloud host answers without a request,
+// otherwise the current user decides -- Cloud names it by an Atlassian
+// accountId, Server and Data Center by a username and userKey instead.
 //
-// Memoised through sync.Once, not a plain bool pair: the slow path issues a
-// request, so racing callers would both ask and write the result
-// concurrently, and Once makes a caller arriving mid-request wait for the
-// answer instead of reading a half-written one.
-func (api *API) cloud() (bool, error) {
+// A failed request is an error. A user that names no platform is not: asking
+// again would give the same reply, so it is taken for Server or Data Center,
+// with a warning.
+//
+// It decides once per API value, and every later call gets the same answer,
+// a failure included. Folders, moves and the page manifest take different
+// paths on each platform, so a run settles the platform before it publishes
+// anything rather than switching paths halfway. sync.Once makes a caller
+// arriving mid-request wait for the answer.
+func (api *API) Cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
 		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
@@ -1945,11 +1971,12 @@ func (api *API) cloud() (bool, error) {
 		user, err := api.GetCurrentUser()
 		if err != nil {
 			api.isCloudErr = fmt.Errorf("unable to identify the Confluence platform: %w", err)
-		} else {
-			api.isCloudFlag, api.isCloudErr = identifyCloud(user)
+			return
 		}
-		if api.isCloudErr != nil {
-			log.Warn().Err(api.isCloudErr).Msg("unable to tell Confluence Cloud from Server or Data Center; assuming it is not Cloud")
+
+		api.isCloudFlag, err = identifyCloud(user)
+		if err != nil {
+			log.Warn().Err(err).Msg("assuming Confluence Server or Data Center")
 		}
 	})
 
@@ -2049,14 +2076,7 @@ func (api *API) RestrictPageUpdates(
 		return newTransportError(request, "restrict updates of page "+page.ID, err)
 	}
 
-	if request.Raw.StatusCode != http.StatusOK && request.Raw.StatusCode != http.StatusNoContent {
-		if !api.IsCloud() && (request.Raw.StatusCode == http.StatusNotFound || request.Raw.StatusCode == http.StatusMethodNotAllowed) {
-			return fmt.Errorf("confluence server/datacenter version is too old to support page edit restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", request.Raw.StatusCode)
-		}
-		return newErrorStatusNotOK(request)
-	}
-
-	return nil
+	return api.restrictionStatusError(request)
 }
 
 // CreateFolder creates a folder called title through the v2 API, under
@@ -2234,7 +2254,7 @@ func (api *API) eachDirectChild(
 	parentID, parentType, operation string,
 	visit func(id, typ, title string) (stop bool),
 ) error {
-	if isCloud, err := api.cloud(); err == nil && !isCloud {
+	if isCloud, err := api.Cloud(); err == nil && !isCloud {
 		log.Debug().Msgf(
 			"not listing the children of %s %s: Confluence Cloud was ruled out",
 			parentType, parentID,

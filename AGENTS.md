@@ -29,11 +29,11 @@ tests, which take minutes. There is currently no `-short` skip.
 | path | role |
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
-| `util/` | CLI flags, config file/env sourcing, credential resolution |
+| `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache, page restrictions |
 | `attachment/` | checksum, upload/update, link rewriting |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
@@ -41,12 +41,39 @@ tests, which take minutes. There is currently no `-short` skip.
 | `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
 | `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
+| `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
+| `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
-links → resolve/create page + ancestry → resolve attachments → `CompileMarkdown` →
-resolve inline attachments → wrap in `ac:layout` → optionally merge inline comments →
-update page → sync labels.
+links → resolve restricted users and groups → resolve/create page + ancestry → tighten
+restrictions → resolve attachments → `CompileMarkdown` → resolve inline attachments →
+wrap in `ac:layout` → optionally merge inline comments → update page → apply final
+restrictions → sync labels.
+
+The command line is a root command carrying the global flags (config file,
+connection and credentials, logging) and one command per job: `publish`,
+`export`, and `page`, whose subcommands (`util/page.go`, `page/operations.go`,
+`page/tree.go`) act on pages in Confluence and never on the `--track-pages`
+record.
+A new flag goes in `globalFlags` only if every command needs it; otherwise it
+belongs to its command. Every flag reads the TOML file through a `configFile`
+source (`util/config.go`), parsed once a run. The root also carries hidden
+copies of publish's flags, for the deprecated `mark <publish flags>` its action
+still runs. The root's flags are resolved as it is parsed, before
+`mark publish --config X` names X, so their file and environment sources are
+held until a command's action settles them (`configFile.hold`). `util.Flags`,
+`util.CheckFlags` and `util.RunMark` remain for programs that built mark's
+single command themselves. `util/command_test.go` fails when the help blocks in
+`README.md` drift from the binary;
+`go test ./util -run TestREADMEUsageMatchesHelp -args -update-readme` rewrites
+them.
+
+`export/` is held to publishing: `export/roundtrip_test.go` exports every
+`testdata/*.html` fixture, compiles the Markdown that comes out, and requires
+the storage format it started from. A renderer change that alters what mark
+publishes for a construct export writes as Markdown shows up there as well as
+in the golden tests.
 
 ## Invariants
 
@@ -121,9 +148,10 @@ deterministic.
 that.
 
 **8. `--features` replaces the defaults, it does not add to them.** Defaults are
-`mermaid,mention`. When adding a feature: register it in `markdown/markdown.go` (both
+`mermaid,mention`, and `none` switches every optional feature off. When adding a feature: register it in `markdown/markdown.go` (both
 extensions if applicable), add it to the `Usage` string of the `features` flag in
-`util/flags.go`, and document it in `README.md`.
+`util/flags.go`, and document it under `docs/` (diagrams and other
+rendering in `docs/formatting.md`).
 
 **9. Everything is sequential today, and one thing still relies on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits

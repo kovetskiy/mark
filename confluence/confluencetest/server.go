@@ -14,6 +14,7 @@ package confluencetest
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -41,9 +42,13 @@ type Page struct {
 	Trashed  bool
 	Archived bool
 
-	// UpdateRestrictedTo is who the last update restriction named: the
-	// accountId on Cloud, the username on Server.
+	// UpdateRestrictedTo is who may update the page: the accountId on Cloud,
+	// the username on Server. ReadRestrictedTo is the same for read, and
+	// RestrictedGroups the groups each operation names. A POST adds users to
+	// an operation and a PUT replaces all of them, as Confluence's do.
 	UpdateRestrictedTo []string
+	ReadRestrictedTo   []string
+	RestrictedGroups   map[string][]string
 }
 
 // Status is what v1 reports for the page and, more to the point, what it
@@ -69,6 +74,8 @@ type Attachment struct {
 	// MinorEdit is the minorEdit form field of the latest upload, exactly as
 	// sent: empty when the field was missing.
 	MinorEdit string
+	// Data is the content of the latest upload, served at the download link.
+	Data []byte
 }
 
 // InlineComment is a comment returned by the child/comment endpoint.
@@ -132,6 +139,10 @@ type Server struct {
 	currentUser User
 	requests    []Request
 
+	// watchers holds, for each page, the accountId -- or on Data Center the
+	// username -- of everyone watching it.
+	watchers map[string]map[string]bool
+
 	// dataCenter makes the fake answer as Server or Data Center; see
 	// SetDataCenter.
 	dataCenter bool
@@ -160,6 +171,7 @@ func New(t *testing.T) *Server {
 		pages:    map[string]*Page{},
 		spaces:   map[string]*Space{},
 		comments: map[string][]InlineComment{},
+		watchers: map[string]map[string]bool{},
 		nextID:   1000,
 		currentUser: User{
 			AccountID: "acct-current",
@@ -367,6 +379,16 @@ func (s *Server) AddAttachment(pageID, filename, comment string) *Attachment {
 	return a
 }
 
+// AddAttachmentData attaches a file with content to a page, which its
+// download link then serves.
+func (s *Server) AddAttachmentData(pageID, filename string, data []byte) *Attachment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a := &Attachment{ID: s.newID(), PageID: pageID, Filename: filename, Data: append([]byte(nil), data...)}
+	s.attachments = append(s.attachments, a)
+	return a
+}
+
 // AddComment adds an inline comment to a page.
 func (s *Server) AddComment(pageID string, c InlineComment) {
 	s.mu.Lock()
@@ -386,6 +408,70 @@ func (s *Server) SetCurrentUser(u User) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.currentUser = u
+}
+
+// Watchers returns who watches a page, sorted: accountIds, or usernames on
+// Data Center.
+func (s *Server) Watchers(pageID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []string{}
+	for watcher := range s.watchers[pageID] {
+		out = append(out, watcher)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// watch serves /user/watch/content/{id}: GET asks whether the user watches
+// the page, POST starts and DELETE stops. The user is the one accountId or
+// username names, and the authenticated user when neither does; naming
+// anyone else on Cloud takes an accountId, and a username is refused there.
+func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[pageID]; !ok || p.Trashed {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	query := r.URL.Query()
+	user := s.currentUser.AccountID
+	if s.dataCenter {
+		user = s.currentUser.Username
+	}
+	switch {
+	case query.Get("accountId") != "" && !s.dataCenter:
+		user = query.Get("accountId")
+	case query.Get("username") != "" && s.dataCenter:
+		user = query.Get("username")
+	case query.Get("accountId") != "" || query.Get("username") != "":
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "this platform names a user another way"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"watching": s.watchers[pageID][user]})
+	case http.MethodPost:
+		if !checkXSRF(w, r) {
+			return
+		}
+		if s.watchers[pageID] == nil {
+			s.watchers[pageID] = map[string]bool{}
+		}
+		s.watchers[pageID][user] = true
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		if !checkXSRF(w, r) {
+			return
+		}
+		delete(s.watchers[pageID], user)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // SetDataCenter makes the fake answer as Confluence Server or Data Center: the
@@ -412,9 +498,38 @@ func (s *Server) Page(id string) *Page {
 		cp := *p
 		cp.Labels = append([]string(nil), p.Labels...)
 		cp.UpdateRestrictedTo = append([]string(nil), p.UpdateRestrictedTo...)
+		cp.ReadRestrictedTo = append([]string(nil), p.ReadRestrictedTo...)
+		if p.RestrictedGroups != nil {
+			cp.RestrictedGroups = map[string][]string{}
+			for operation, groups := range p.RestrictedGroups {
+				cp.RestrictedGroups[operation] = append([]string(nil), groups...)
+			}
+		}
 		return &cp
 	}
 	return nil
+}
+
+// SetRestrictions restricts an operation on a page to users and groups, as
+// somebody doing it in the Confluence UI would.
+func (s *Server) SetRestrictions(pageID, operation string, users, groups []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		return
+	}
+	switch operation {
+	case "read":
+		p.ReadRestrictedTo = append([]string(nil), users...)
+	case "update":
+		p.UpdateRestrictedTo = append([]string(nil), users...)
+	}
+	if p.RestrictedGroups == nil {
+		p.RestrictedGroups = map[string][]string{}
+	}
+	p.RestrictedGroups[operation] = append([]string(nil), groups...)
 }
 
 // RenamePage retitles a page, as somebody doing it in the Confluence UI would
@@ -575,6 +690,11 @@ func (s *Server) pageJSON(p *Page, expand map[string]bool) map[string]any {
 	} else {
 		expandable["body"] = ""
 	}
+	if expand["space"] {
+		out["space"] = map[string]any{"key": p.SpaceKey}
+	} else {
+		expandable["space"] = ""
+	}
 	if len(expandable) > 0 {
 		out["_expandable"] = expandable
 	}
@@ -696,10 +816,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 
 	// The api.atlassian.com gateway mounts a site under /ex/confluence/<id>,
-	// and a test that stands in for the gateway uses that base path.
+	// and a test that stands in for the gateway uses that base path. It
+	// proxies the API only, not the site's download servlet.
+	gateway := false
 	if rest, ok := strings.CutPrefix(path, "/ex/confluence/"); ok {
 		_, rest, _ = strings.Cut(rest, "/")
 		path = "/" + rest
+		gateway = true
+	}
+
+	// Attachments are downloaded from the site rather than the API, under the
+	// context the listings name.
+	if rest, ok := strings.CutPrefix(strings.TrimPrefix(path, "/wiki"), "/download/attachments/"); ok && !gateway {
+		s.download(w, r, rest)
+		return
 	}
 
 	switch {
@@ -741,6 +871,9 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			"publicName":  u.FullName,
 		})
 
+	case strings.HasPrefix(path, "/user/watch/content/"):
+		s.watch(w, r, strings.TrimPrefix(path, "/user/watch/content/"))
+
 	case path == "/search/user" || path == "/search":
 		// The same endpoint serves user lookup and the CQL folder search; the
 		// query says which.
@@ -749,6 +882,9 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 		s.searchUser(w, r)
+
+	case strings.HasPrefix(path, "/space/") && strings.HasSuffix(path, "/content/page"):
+		s.spacePages(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/space/"), "/content/page"))
 
 	case strings.HasPrefix(path, "/space/"):
 		s.getSpace(w, r, strings.TrimPrefix(path, "/space/"))
@@ -765,13 +901,17 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 		case sub == "child/attachment":
 			s.childAttachment(w, r, id)
 		case strings.HasPrefix(sub, "child/attachment/"):
-			// .../child/attachment/{attachID}/data -- attachment update
+			// .../child/attachment/{attachID}/data -- attachment update, and
+			// .../child/attachment/{attachID}/download -- its content
 			attachID, rest, _ := strings.Cut(strings.TrimPrefix(sub, "child/attachment/"), "/")
-			if rest != "data" {
+			switch rest {
+			case "data":
+				s.updateAttachment(w, r, id, attachID)
+			case "download":
+				s.downloadByID(w, r, id, attachID)
+			default:
 				http.NotFound(w, r)
-				return
 			}
-			s.updateAttachment(w, r, id, attachID)
 		case sub == "child/page":
 			s.childPages(w, r, id)
 		case sub == "child/comment":
@@ -782,6 +922,8 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			s.moveContent(w, r, id, position, target)
 		case sub == "label":
 			s.label(w, r, id)
+		case sub == "copy":
+			s.copyContent(w, r, id)
 		case sub == "property":
 			// v1 content properties: POST creates, GET without a key lists.
 			s.contentProperties(w, r, id, "")
@@ -900,9 +1042,32 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 				s.spaceProperties(w, r, "spaces", spaceID, strings.TrimPrefix(propertyID, "/"))
 				return
 			}
+			if sub == "" && r.Method == http.MethodGet {
+				s.spaceV2ByID(w, spaceID)
+				return
+			}
 		}
 		http.NotFound(w, r)
 	}
+}
+
+// spaceV2ByID serves GET /spaces/{id}, which names a space by its v2 id.
+func (s *Server) spaceV2ByID(w http.ResponseWriter, spaceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, sp := range s.spaces {
+		if sp.ID == spaceID {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"id":         sp.ID,
+				"key":        sp.Key,
+				"homepageId": sp.HomepageID,
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with id " + spaceID})
 }
 
 // isContentOfType reports whether id names content of the given type.
@@ -972,6 +1137,136 @@ func (s *Server) putContentProperty(ownerID, key string, value []byte) *SpacePro
 	}
 	s.properties = append(s.properties, p)
 	return p
+}
+
+// spacePages serves v1's listing of a space's pages. Only depth=root is
+// served: the pages beneath no other, in the order they were added, which is
+// the order of their ids: childOrder keeps no order for the top of a space.
+func (s *Server) spacePages(w http.ResponseWriter, r *http.Request, key string) {
+	if r.Method != http.MethodGet || r.URL.Query().Get("depth") != "root" {
+		http.Error(w, "only depth=root is served", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.spaces[key]; !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with key " + key})
+		return
+	}
+
+	var roots []*Page
+	for _, p := range s.pages {
+		if p.SpaceKey == key && p.ParentID == "" && p.Type == "page" && !p.Trashed {
+			roots = append(roots, p)
+		}
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		a, _ := strconv.Atoi(roots[i].ID)
+		b, _ := strconv.Atoi(roots[j].ID)
+		return a < b
+	})
+
+	page, hasNext := paginate(r, roots)
+	results := []map[string]any{}
+	for _, p := range page {
+		results = append(results, s.pageJSON(p, expansions(r)))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "_links": linksWithNext(hasNext)})
+}
+
+// copyContent serves v1's copy of a single page: a new page under the
+// destination, with the source's body, and its labels, attachments and
+// content properties when asked for. Restrictions never come along here.
+// Data Center answers 404, as an instance without the endpoint would.
+func (s *Server) copyContent(w http.ResponseWriter, r *http.Request, sourceID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		CopyAttachments bool `json:"copyAttachments"`
+		CopyLabels      bool `json:"copyLabels"`
+		CopyProperties  bool `json:"copyProperties"`
+		Destination     struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"destination"`
+		PageTitle string `json:"pageTitle"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "bad body"})
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.dataCenter {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such endpoint"})
+		return
+	}
+
+	source, ok := s.pages[sourceID]
+	if !ok || source.Trashed {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + sourceID})
+		return
+	}
+	parent, ok := s.pages[payload.Destination.Value]
+	if payload.Destination.Type != "parent_page" || !ok || parent.Trashed {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "destination must be an existing parent_page"})
+		return
+	}
+
+	title := payload.PageTitle
+	if title == "" {
+		title = source.Title
+	}
+	for _, p := range s.pages {
+		if p.SpaceKey == parent.SpaceKey && strings.EqualFold(p.Title, title) && p.Type == source.Type && !p.Trashed {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"message": fmt.Sprintf("A page with this title already exists: %q", title),
+			})
+			return
+		}
+	}
+
+	made := &Page{
+		ID:       s.newID(),
+		Title:    title,
+		Type:     source.Type,
+		SpaceKey: parent.SpaceKey,
+		ParentID: parent.ID,
+		Version:  1,
+		Body:     source.Body,
+	}
+	if payload.CopyLabels {
+		made.Labels = append([]string(nil), source.Labels...)
+	}
+	s.pages[made.ID] = made
+	s.placeChild(parent.ID, made.ID, "")
+
+	if payload.CopyAttachments {
+		for _, a := range s.attachments {
+			if a.PageID == sourceID {
+				copied := *a
+				copied.ID, copied.PageID = s.newID(), made.ID
+				copied.Data = append([]byte(nil), a.Data...)
+				s.attachments = append(s.attachments, &copied)
+			}
+		}
+	}
+	if payload.CopyProperties {
+		for _, p := range s.properties {
+			if p.OwnerID == sourceID {
+				s.putContentProperty(made.ID, p.Key, p.Value)
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, s.pageJSON(made, fullExpansion))
 }
 
 // moveContent reparents a page, which is how mark puts an existing page inside
@@ -1049,7 +1344,7 @@ func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
 	var target *Page
 	for _, candidate := range s.pages {
 		if candidate.SpaceKey == query.Get("spaceKey") &&
-			candidate.Title == query.Get("targetTitle") &&
+			strings.EqualFold(candidate.Title, query.Get("targetTitle")) &&
 			!candidate.Trashed && !candidate.Archived {
 			target = candidate
 			break
@@ -1324,7 +1619,7 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 		if pageType != "" && p.Type != pageType {
 			continue
 		}
-		if title != "" && p.Title != title {
+		if title != "" && !strings.EqualFold(p.Title, title) {
 			continue
 		}
 		if !wanted["any"] && !wanted[p.Status()] {
@@ -1389,7 +1684,7 @@ func (s *Server) createContent(w http.ResponseWriter, r *http.Request) {
 
 	// Confluence rejects a duplicate title within a space.
 	for _, p := range s.pages {
-		if p.SpaceKey == payload.Space.Key && p.Title == payload.Title && p.Type == payload.Type {
+		if p.SpaceKey == payload.Space.Key && strings.EqualFold(p.Title, payload.Title) && p.Type == payload.Type {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"message": fmt.Sprintf("A page with this title already exists: %q", payload.Title),
 			})
@@ -1587,7 +1882,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 		if !checkXSRF(w, r) {
 			return
 		}
-		filename, comment, minorEdit, ok := parseMultipartAttachment(w, r)
+		filename, comment, minorEdit, data, ok := parseMultipartAttachment(w, r)
 		if !ok {
 			return
 		}
@@ -1604,7 +1899,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 			}
 		}
 		a := &Attachment{
-			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit,
+			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit, Data: data,
 		}
 		s.attachments = append(s.attachments, a)
 		s.mu.Unlock()
@@ -1637,7 +1932,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 	if !checkXSRF(w, r) {
 		return
 	}
-	_, comment, minorEdit, ok := parseMultipartAttachment(w, r)
+	_, comment, minorEdit, data, ok := parseMultipartAttachment(w, r)
 	if !ok {
 		return
 	}
@@ -1653,6 +1948,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 	if found != nil {
 		found.Comment = comment
 		found.MinorEdit = minorEdit
+		found.Data = data
 	}
 	s.mu.Unlock()
 
@@ -1684,7 +1980,7 @@ func checkXSRF(w http.ResponseWriter, r *http.Request) bool {
 
 // parseMultipartAttachment reads the file part and the comment of an upload,
 // and answers 400 itself when there is no file in it.
-func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename, comment, minorEdit string, ok bool) {
+func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename, comment, minorEdit string, data []byte, ok bool) {
 	// Test fixtures are small; a tight cap keeps a runaway test from buffering
 	// to disk. Uploads larger than this are not something the fake supports.
 	const maxAttachmentBytes = 8 << 20
@@ -1693,13 +1989,67 @@ func parseMultipartAttachment(w http.ResponseWriter, r *http.Request) (filename,
 		minorEdit = r.FormValue("minorEdit")
 		if headers := r.MultipartForm.File["file"]; len(headers) > 0 {
 			filename = headers[0].Filename
+			if file, err := headers[0].Open(); err == nil {
+				data, _ = io.ReadAll(file)
+				_ = file.Close()
+			}
 		}
 	}
 	if filename == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "no file in the upload"})
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
-	return filename, comment, minorEdit, true
+	return filename, comment, minorEdit, data, true
+}
+
+// download serves an attachment's content at the download link the listings
+// name, under the context and without it.
+func (s *Server) download(w http.ResponseWriter, r *http.Request, rest string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageID, escaped, _ := strings.Cut(rest, "/")
+	filename, err := url.PathUnescape(escaped)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, a := range s.attachments {
+		if a.PageID == pageID && a.Filename == filename {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(a.Data)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
+}
+
+// downloadByID serves an attachment's content at the REST download endpoint.
+func (s *Server) downloadByID(w http.ResponseWriter, r *http.Request, pageID, attachID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, a := range s.attachments {
+		if a.PageID == pageID && a.ID == attachID {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(a.Data)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
 }
 
 // childPages lists a page's children in the order the tree shows them, which
@@ -1752,7 +2102,8 @@ func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, collecti
 
 	children := []map[string]any{}
 	for _, id := range s.childOrder[parentID] {
-		if p, ok := s.pages[id]; ok && p.ParentID == parentID {
+		// The trash is not part of the tree, here as in the v1 listing.
+		if p, ok := s.pages[id]; ok && p.ParentID == parentID && !p.Trashed {
 			children = append(children, map[string]any{
 				"id": p.ID, "type": "page", "title": p.Title,
 			})
@@ -1876,18 +2227,21 @@ func (s *Server) childComment(w http.ResponseWriter, r *http.Request, pageID str
 	})
 }
 
-// restriction records who a POSTed update restriction names on the page.
+// restriction answers the page's restriction endpoints: a GET of
+// byOperation reads them, a POST adds the users it names to an operation, and
+// a PUT replaces every restriction with its own.
 func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID string) {
+	switch {
+	case r.Method == http.MethodPut:
+		s.replaceRestrictions(w, r, pageID)
+		return
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/restriction/byOperation"):
+		s.restrictionsByOperation(w, pageID)
+		return
+	}
+
 	if r.Method == http.MethodPost {
-		var payload []struct {
-			Operation    string `json:"operation"`
-			Restrictions struct {
-				User []struct {
-					AccountID string `json:"accountId"`
-					Username  string `json:"username"`
-				} `json:"user"`
-			} `json:"restrictions"`
-		}
+		var payload []restrictionEntry
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "bad payload", http.StatusBadRequest)
 			return
@@ -1896,21 +2250,115 @@ func (s *Server) restriction(w http.ResponseWriter, r *http.Request, pageID stri
 		s.mu.Lock()
 		if p, ok := s.pages[pageID]; ok {
 			for _, entry := range payload {
-				if entry.Operation != "update" {
-					continue
-				}
-				p.UpdateRestrictedTo = nil
 				for _, u := range entry.Restrictions.User {
-					if u.AccountID != "" {
-						p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, u.AccountID)
-					} else {
-						p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, u.Username)
+					id := u.AccountID
+					if id == "" {
+						id = u.Username
+					}
+					switch entry.Operation {
+					case "read":
+						if !contains(p.ReadRestrictedTo, id) {
+							p.ReadRestrictedTo = append(p.ReadRestrictedTo, id)
+						}
+					case "update":
+						if !contains(p.UpdateRestrictedTo, id) {
+							p.UpdateRestrictedTo = append(p.UpdateRestrictedTo, id)
+						}
 					}
 				}
 			}
 		}
 		s.mu.Unlock()
 	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+}
+
+type restrictionEntry struct {
+	Operation    string `json:"operation"`
+	Restrictions struct {
+		User []struct {
+			AccountID string `json:"accountId"`
+			Username  string `json:"username"`
+		} `json:"user"`
+		Group []struct {
+			Name string `json:"name"`
+		} `json:"group"`
+	} `json:"restrictions"`
+}
+
+// restrictionsByOperation is the page's restrictions, keyed by operation, as
+// v1 answers with their users and groups expanded.
+func (s *Server) restrictionsByOperation(w http.ResponseWriter, pageID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	out := map[string]any{}
+	for operation, ids := range map[string][]string{"read": p.ReadRestrictedTo, "update": p.UpdateRestrictedTo} {
+		users := []map[string]any{}
+		for _, id := range ids {
+			// The fake keeps whichever of the two the client sent, and the
+			// client reads the one its platform uses.
+			users = append(users, map[string]any{"type": "known", "accountId": id, "username": id})
+		}
+		groups := []map[string]any{}
+		for _, name := range p.RestrictedGroups[operation] {
+			groups = append(groups, map[string]any{"type": "group", "name": name})
+		}
+		out[operation] = map[string]any{
+			"operation": operation,
+			"restrictions": map[string]any{
+				"user":  map[string]any{"results": users, "size": len(users)},
+				"group": map[string]any{"results": groups, "size": len(groups)},
+			},
+		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) replaceRestrictions(w http.ResponseWriter, r *http.Request, pageID string) {
+	var payload []restrictionEntry
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.pages[pageID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + pageID})
+		return
+	}
+
+	users := map[string][]string{}
+	groups := map[string][]string{}
+	for _, entry := range payload {
+		if entry.Operation != "read" && entry.Operation != "update" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "unknown operation " + entry.Operation})
+			return
+		}
+		for _, u := range entry.Restrictions.User {
+			if u.AccountID != "" {
+				users[entry.Operation] = append(users[entry.Operation], u.AccountID)
+			} else {
+				users[entry.Operation] = append(users[entry.Operation], u.Username)
+			}
+		}
+		for _, g := range entry.Restrictions.Group {
+			groups[entry.Operation] = append(groups[entry.Operation], g.Name)
+		}
+	}
+
+	p.ReadRestrictedTo, p.UpdateRestrictedTo, p.RestrictedGroups = users["read"], users["update"], groups
 
 	writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
 }
@@ -2004,7 +2452,7 @@ func (s *Server) searchFolder(w http.ResponseWriter, r *http.Request) {
 
 	matches := []map[string]any{}
 	for _, f := range s.folders {
-		if f.Title != title || (spaceKey != "" && f.SpaceKey != spaceKey) {
+		if !strings.EqualFold(f.Title, title) || (spaceKey != "" && f.SpaceKey != spaceKey) {
 			continue
 		}
 		// ancestor= is any ancestor, as in Confluence, not only the parent.
@@ -2118,7 +2566,7 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 	// Confluence rejects a second folder with the same title under one parent,
 	// which is what makes a stranded reference visible rather than silent.
 	for _, f := range s.folders {
-		if f.Title == payload.Title && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
+		if strings.EqualFold(f.Title, payload.Title) && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
 			writeJSON(w, http.StatusBadRequest,
 				map[string]any{"message": "A folder exists with the same title"})
 			return
@@ -2284,7 +2732,7 @@ func (s *Server) listContentV2(w http.ResponseWriter, r *http.Request, pageType 
 				continue
 			}
 		}
-		if title != "" && p.Title != title {
+		if title != "" && !strings.EqualFold(p.Title, title) {
 			continue
 		}
 		if !wanted[p.Status()] {
@@ -2409,7 +2857,7 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request, pageType s
 	// check is the same one createContent makes, so a create through either
 	// API reaches the client's explainCreateFailure the same way.
 	for _, p := range s.pages {
-		if p.SpaceKey == spaceKey && p.Title == payload.Title && p.Type == pageType {
+		if p.SpaceKey == spaceKey && strings.EqualFold(p.Title, payload.Title) && p.Type == pageType {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"message": fmt.Sprintf("A page with this title already exists: %q", payload.Title),
 			})
@@ -2449,9 +2897,11 @@ func (s *Server) searchUser(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, map[string]any{
 			"user": map[string]any{
-				"accountId": u.AccountID,
-				"userKey":   u.UserKey,
-				"username":  u.Username,
+				"accountId":   u.AccountID,
+				"userKey":     u.UserKey,
+				"username":    u.Username,
+				"displayName": u.FullName,
+				"publicName":  u.FullName,
 			},
 		})
 	}

@@ -1,16 +1,16 @@
 module github.com/kovetskiy/mark/v16
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/bmatcuk/doublestar/v4 v4.10.3
-	github.com/chromedp/cdproto v0.158.1
+	github.com/chromedp/cdproto v0.158.4
 	github.com/chromedp/chromedp v0.21.0
 	github.com/d2lang/d2 v0.9.0
 	github.com/d2lang/mathjax-go v0.1.0
 	github.com/d2lang/util-go v0.2.0
-	github.com/dreampuf/mermaid.go v0.5.1
+	github.com/dreampuf/mermaid.go v0.5.2
 	github.com/kovetskiy/gopencils v0.0.0-20250404051442-0b776066936a
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1

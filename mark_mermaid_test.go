@@ -58,7 +58,7 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 	err := Run(config)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "mermaid bundle")
+	assert.Contains(t, err.Error(), "MermaidBundle")
 }
 
 // TestMermaidDefaultsPublishAsBefore is the control, and the reason the empty
@@ -66,6 +66,18 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 // never heard of these fields leaves them zero, and has always got a PNG.
 func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
 	require.NoError(t, Run(mermaidFixture(t)))
+}
+
+// TestMermaidMacroIgnoresDrawingSettings: with the macro output nothing is
+// drawn, so an engine and a scale that drive drawing are ignored -- including
+// the values a configuration file carries for the image outputs.
+func TestMermaidMacroIgnoresDrawingSettings(t *testing.T) {
+	config := mermaidFixture(t)
+	config.MermaidOutput = "macro"
+	config.MermaidEngine = "bogus"
+	config.MermaidScale = -1
+
+	require.NoError(t, Run(config))
 }
 
 // TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:

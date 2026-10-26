@@ -1,13 +1,54 @@
 package confluence
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// TestPutPageRestrictionsServer is the body a new page's restrictions are
+// PUT with on Server: users by username, the authenticated user added to each
+// operation that names anyone, each user once, and both operations sent.
+func TestPutPageRestrictionsServer(t *testing.T) {
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/spaces":
+			http.NotFound(w, r)
+			return
+		case "/rest/api/user/current":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"username":"mark"}`))
+			return
+		}
+		var err error
+		body, err = io.ReadAll(r.Body)
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	api := NewAPI(server.URL, "username", "password", true)
+	resolved, err := api.ResolveRestrictions([]PageRestriction{
+		{Operation: "read", Groups: []string{"docs-readers"}},
+		{Operation: "update", Users: []string{"jdoe", "JDoe", "Mark"}},
+	})
+	require.NoError(t, err)
+	plan, err := api.PlanRestrictions(&PageInfo{ID: "123"}, resolved, false, true)
+	require.NoError(t, err)
+	require.NoError(t, api.ApplyInterim(plan))
+
+	require.JSONEq(t, `[
+		{"operation":"read","restrictions":{"user":[{"type":"known","username":"mark"}],"group":[{"type":"group","name":"docs-readers"}]}},
+		{"operation":"update","restrictions":{"user":[{"type":"known","username":"jdoe"},{"type":"known","username":"mark"}],"group":[]}}
+	]`, string(body))
+}
 
 func TestPageCache(t *testing.T) {
 	api := &API{

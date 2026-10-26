@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	// SHA-1 is used only as a content fingerprint for --changes-only, never as
 	// a security primitive. The digest is embedded in the page version message
@@ -21,12 +22,14 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/header"
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
@@ -106,6 +109,9 @@ type Config struct {
 	ImageAlign       string
 	AttachReferenced bool
 	IncludePath      string
+	// PageHeader is a template placed at the top of every page: Markdown
+	// when it has a Markdown extension, storage format otherwise.
+	PageHeader string
 
 	// Output is the writer used for result output (e.g. published page URLs,
 	// compiled HTML). If nil, output is discarded; the CLI sets this to
@@ -188,16 +194,18 @@ func ValidateMermaidOutput(output string) error {
 }
 
 // ValidateMermaidBundle reports a bundle that has nowhere to go: only an SVG
-// has room for the diagram's source, and the macro output publishes the source
-// itself. Shared by the CLI and the Config path so the two cannot drift.
+// has room for the diagram's source. Shared by the CLI and the Config path so
+// the two cannot drift; the caller names the flag or the field it came from.
 func ValidateMermaidBundle(output string, bundle bool) error {
 	if !bundle || output == "svg" {
 		return nil
 	}
 
-	return errors.New(
-		"a mermaid bundle needs the svg output: only an SVG has room for the diagram's source",
-	)
+	if output == "macro" {
+		return errors.New("the macro publishes the diagram's source itself")
+	}
+
+	return errors.New("a PNG has nowhere to keep the diagram's source")
 }
 
 // prepare checks the settings that decide how a document is rendered and what
@@ -232,7 +240,7 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	}
 
 	if err := ValidateMermaidBundle(c.MermaidOutput, c.MermaidBundle); err != nil {
-		return page.LinkChecks{}, err
+		return page.LinkChecks{}, fmt.Errorf("MermaidBundle needs MermaidOutput \"svg\": %w", err)
 	}
 
 	// The same for d2, and for the same reason: an unrecognised format falls to
@@ -270,8 +278,9 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// always drawn a zero scale at its default of 2, and a caller relying on
 	// that is not wrong. What neither has ever been able to draw is a negative,
 	// NaN or infinite scale, and those are refused here rather than part way
-	// through a run, when the first diagram reaches the browser.
-	if slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
+	// through a run, when the first diagram reaches the browser. The macro
+	// output draws nothing, so it has no scale to refuse.
+	if c.MermaidOutput != "macro" && slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
 		return page.LinkChecks{}, fmt.Errorf(
 			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
 			c.MermaidScale,
@@ -398,6 +407,15 @@ func run(ctx context.Context, config Config) (err error) {
 	// should not be discovered halfway through a repository.
 	globalProperties, err := page.LoadGlobalProperties(config.GlobalProperties)
 	if err != nil {
+		return err
+	}
+
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
+	if err != nil {
+		return err
+	}
+
+	if err := settlePlatform(api, config); err != nil {
 		return err
 	}
 
@@ -544,7 +562,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
+		target, placement, err := processFile(file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -615,7 +633,7 @@ func run(ctx context.Context, config Config) (err error) {
 			// Nil deferrals: this is the last look, so a link that still does
 			// not resolve is reported rather than waited on again.
 			if _, _, err := processFile(
-				file, api, config, std, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
+				file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy,
 			); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
@@ -746,9 +764,18 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 		return nil, err
 	}
 
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := settlePlatform(api, config); err != nil {
+		return nil, err
+	}
+
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, nil, nil, checker, globalProperties, nil, nil, nil)
+	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil)
 	if err != nil {
 		return target, err
 	}
@@ -778,6 +805,20 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 // document for its title, and a title read from bytes publishing never sees --
 // a byte-order mark in front of the header, a header inside an ignored region
 // -- is a different title from the one the page is published under.
+// settlePlatform identifies the Confluence platform once the run's local
+// inputs have been checked and before anything is published, so that one
+// failed request cannot send a Cloud tenant down Server's paths for the rest
+// of the run. A compile-only run never contacts Confluence.
+func settlePlatform(api *confluence.API, config Config) error {
+	if config.CompileOnly {
+		return nil
+	}
+
+	_, err := api.Cloud()
+
+	return err
+}
+
 func readSource(file string) ([]byte, []byte, error) {
 	source, err := os.ReadFile(file)
 	if err != nil {
@@ -802,7 +843,24 @@ func readSource(file string) ([]byte, []byte, error) {
 	return source, markdown, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
+// declaredRestrictions is what a document's metadata restricts, for the
+// Confluence client: only the operations it names.
+func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction {
+	var declared []confluence.PageRestriction
+	for operation, subjects := range map[string]*metadata.RestrictionSubjects{
+		confluence.RestrictRead:   r.Read,
+		confluence.RestrictUpdate: r.Update,
+	} {
+		if subjects != nil {
+			declared = append(declared, confluence.PageRestriction{
+				Operation: operation, Users: subjects.Users, Groups: subjects.Groups,
+			})
+		}
+	}
+	return declared
+}
+
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy) (*confluence.PageInfo, *page.Ordered, error) {
 	source, markdown, err := readSource(file)
 	if err != nil {
 		return nil, nil, err
@@ -936,6 +994,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 					"or the --title-from-h1 / --title-from-filename flags",
 			)
 		}
+		if err := checkTitleLengths(meta); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Links are rewritten while the document is being rendered, by walking the
@@ -971,6 +1032,18 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// check: what page.WouldMove needs to tell whether it would be moved.
 	var previewParent *confluence.PageInfo
 	var previewMisplaced bool
+
+	// Resolved before anything is written, and by a dry run too, so that a
+	// user that resolves to nobody, or to more than one person, fails here
+	// rather than after a real run has created an empty, unrestricted page.
+	var restrictions *confluence.ResolvedRestrictions
+	if meta != nil && meta.Restrictions != nil && !config.CompileOnly {
+		resolved, err := api.ResolveRestrictions(declaredRestrictions(meta.Restrictions))
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to resolve the restrictions of %q: %w", file, err)
+		}
+		restrictions = resolved
+	}
 
 	if config.DryRun {
 		if meta != nil {
@@ -1019,32 +1092,9 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if config.CompileOnly || config.DryRun {
-		if config.DropH1 {
-			log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
-		}
-
-		imageAlign, err := getImageAlign(config.ImageAlign, meta)
+		cfg, err := config.documentConfig(meta, resolveLink)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
-		}
-
-		cfg := types.MarkConfig{
-			MermaidScale:     config.MermaidScale,
-			MermaidOutput:    config.MermaidOutput,
-			MermaidBundle:    config.MermaidBundle,
-			MermaidMacroName: config.MermaidMacroName,
-			D2Output:         config.D2Output,
-			D2Scale:          config.D2Scale,
-			D2BundleRemote:   config.D2BundleRemote,
-			MathFormat:       config.MathFormat,
-			MathScale:        config.MathScale,
-			DropFirstH1:      config.DropH1,
-			StripNewlines:    config.StripLinebreaks,
-			Features:         config.Features,
-			ImageAlign:       imageAlign,
-			AttachReferenced: config.AttachReferenced,
-			IncludePath:      config.IncludePath,
-			ResolveLink:      resolveLink,
+			return nil, nil, err
 		}
 
 		// Only a dry run asked to tell changed pages from unchanged ones.
@@ -1086,6 +1136,34 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
 			}
 
+			var previewedTitle string
+			if previewed != nil {
+				previewedTitle = previewed.Title
+			}
+
+			headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, previewedTitle, config.Space, cfg)
+			if err != nil {
+				return nil, nil, err
+			}
+			html = headerHTML + html
+
+			// The clash a real run refuses, so that this one does not report
+			// success for a page that run will fail on. Declared files are read
+			// only when there is something to clash with them.
+			if len(headerAttachments) > 0 {
+				var declared []attachment.Attachment
+				if meta != nil {
+					declared, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+					if err != nil {
+						return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
+					}
+				}
+
+				if _, err := withHeaderAttachments(file, declared, inline, headerAttachments); err != nil {
+					return nil, nil, err
+				}
+			}
+
 			if compare {
 				var relinked bool
 				html, relinked = attachments.settle(html)
@@ -1110,6 +1188,16 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 					}
 					if len(add) > 0 || len(del) > 0 {
 						others = append(others, "its labels would change")
+					}
+
+					if restrictions != nil {
+						plan, err := api.PlanRestrictions(previewed, restrictions, config.EditLock, false)
+						if err != nil {
+							return nil, nil, err
+						}
+						if plan.Changes() {
+							others = append(others, "its restrictions would change")
+						}
 					}
 				}
 
@@ -1316,6 +1404,22 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
+	// Restrictions tighten before attachments and content are written and
+	// loosen after, so that new content is never shown to anyone it is to be
+	// kept from, and old content stays restricted until it has been replaced.
+	// A run that fails in between leaves the page no more open than either.
+	var restrictionPlan *confluence.RestrictionPlan
+	if restrictions != nil {
+		plan, err := api.PlanRestrictions(target, restrictions, config.EditLock, pageCreated)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := api.ApplyInterim(plan); err != nil {
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+		}
+		restrictionPlan = plan
+	}
+
 	// Collect attachments declared via <!-- Attachment: --> directives.
 	var declaredAttachments []string
 	if meta != nil {
@@ -1329,6 +1433,30 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
+	}
+
+	cfg, err := config.documentConfig(meta, resolveLink)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// With --page-id the file's metadata is discarded, so the page itself and
+	// --space are what the header can name.
+	var targetTitle string
+	if target != nil {
+		targetTitle = target.Title
+	}
+
+	headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, targetTitle, config.Space, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// The header's own files are known now, so a clash with a declared one is
+	// refused before anything is uploaded. One with a file the document only
+	// references can be seen once it is compiled, which needs these uploaded.
+	if _, err := withHeaderAttachments(file, localAttachments, nil, headerAttachments); err != nil {
+		return nil, nil, err
 	}
 
 	// The page's remote attachment list is fetched once and threaded through
@@ -1349,39 +1477,17 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 
 	attachmentLinks := attachment.NewResolver(attaches)
 
-	if config.DropH1 {
-		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
-	}
-
-	imageAlign, err := getImageAlign(config.ImageAlign, meta)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to determine image-align: %w", err)
-	}
-
-	cfg := types.MarkConfig{
-		MermaidScale:     config.MermaidScale,
-		MermaidOutput:    config.MermaidOutput,
-		MermaidBundle:    config.MermaidBundle,
-		MermaidMacroName: config.MermaidMacroName,
-		D2Output:         config.D2Output,
-		D2Scale:          config.D2Scale,
-		D2BundleRemote:   config.D2BundleRemote,
-		MathFormat:       config.MathFormat,
-		MathScale:        config.MathScale,
-		DropFirstH1:      config.DropH1,
-		StripNewlines:    config.StripLinebreaks,
-		Features:         config.Features,
-		ImageAlign:       imageAlign,
-		AttachReferenced: config.AttachReferenced,
-		IncludePath:      config.IncludePath,
-		ResolveLink:      resolveLink,
-
-		ResolveAttachment: attachmentLinks.Resolve,
-	}
+	cfg.ResolveAttachment = attachmentLinks.Resolve
 
 	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+	}
+
+	html = headerHTML + html
+	inlineAttachments, err = withHeaderAttachments(file, attaches, inlineAttachments, headerAttachments)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Kept for the report as well as the log. Reaching this line with any of
@@ -1496,6 +1602,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
+	if restrictionPlan != nil {
+		if err := api.ApplyFinal(restrictionPlan); err != nil {
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+		}
+	}
+
 	// Recorded after the write, not before it. The mapping asserts what is on
 	// the page -- the title it carries and a fingerprint of the source that
 	// produced its body -- and the manifest is now saved however the run ends,
@@ -1574,7 +1686,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// as published -- and in the second pass, where nothing recorded the
 	// failure over it, that is what the report went on saying.
 	status := report.StatusPublished
-	if !shouldUpdatePage {
+	if !shouldUpdatePage && (restrictionPlan == nil || !restrictionPlan.Changes()) {
 		status = report.StatusUnchanged
 	}
 	results.AddPage(report.Page{
@@ -2729,6 +2841,42 @@ func titleOf(meta *metadata.Meta) string {
 	return meta.Title
 }
 
+// maxTitleLength is the longest title Confluence accepts for a page or a
+// folder, counted as Java counts a string: in UTF-16 code units, so a
+// character outside the Basic Multilingual Plane, an emoji, counts twice.
+const maxTitleLength = 255
+
+// checkTitleLengths refuses a document whose page, or a parent or folder mark
+// would create for it, has a title Confluence will not take -- before anything
+// is created, rather than with a 400 once its parents exist.
+func checkTitleLengths(meta *metadata.Meta) error {
+	check := func(what, title string) error {
+		if n := len(utf16.Encode([]rune(title))); n > maxTitleLength {
+			return fmt.Errorf(
+				"%s title %q is %d characters long, and Confluence takes at most %d",
+				what, title, n, maxTitleLength,
+			)
+		}
+		return nil
+	}
+
+	if err := check("page", meta.Title); err != nil {
+		return err
+	}
+	for _, parent := range meta.Parents {
+		if err := check("parent", parent); err != nil {
+			return err
+		}
+	}
+	for _, folder := range meta.Folders {
+		if err := check("folder", folder); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // handleOrphans deals with the pages whose source files were not seen.
 //
 // Reporting, acting and forgetting are one thing because they have to agree
@@ -3024,4 +3172,93 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 	}
 
 	return strings.TrimSpace(pages.Title), nil
+}
+
+// withHeaderAttachments adds what the page header references to the document's
+// own. One filename is one attachment on the page, so a header file that shares
+// a name with a different document file would silently replace it.
+func withHeaderAttachments(file string, declared, inline, fromHeader []attachment.Attachment) ([]attachment.Attachment, error) {
+	taken := make(map[string]attachment.Attachment, len(declared)+len(inline))
+	for _, a := range slices.Concat(declared, inline) {
+		taken[a.Filename] = a
+	}
+
+	for _, a := range fromHeader {
+		other, clash := taken[a.Filename]
+		if !clash {
+			taken[a.Filename] = a
+			inline = append(inline, a)
+
+			continue
+		}
+
+		if !sameAttachment(other, a) {
+			return nil, fmt.Errorf(
+				"page header attachment %q is a different file from the one %s attaches under that name",
+				a.Filename, file,
+			)
+		}
+	}
+
+	return inline, nil
+}
+
+func sameAttachment(a, b attachment.Attachment) bool {
+	if a.Checksum != "" && b.Checksum != "" {
+		return a.Checksum == b.Checksum
+	}
+
+	return bytes.Equal(a.FileBytes, b.FileBytes)
+}
+
+// renderHeader renders the page header for one document, naming it by its
+// metadata where it has some and by fallbackTitle and fallbackSpace where not.
+func renderHeader(
+	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg types.MarkConfig,
+) (string, []attachment.Attachment, error) {
+	return pageHeader.Render(file, cmp.Or(titleOf(meta), fallbackTitle), cmp.Or(spaceOf(meta), fallbackSpace), cfg)
+}
+
+// documentConfig is the compile configuration for one document: the run's,
+// with what its metadata and link resolution add.
+func (c Config) documentConfig(meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
+	if c.DropH1 {
+		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
+	}
+
+	imageAlign, err := getImageAlign(c.ImageAlign, meta)
+	if err != nil {
+		return types.MarkConfig{}, fmt.Errorf("unable to determine image-align: %w", err)
+	}
+
+	cfg := c.markConfig()
+	cfg.DropFirstH1 = c.DropH1
+	cfg.ImageAlign = imageAlign
+	cfg.ResolveLink = resolveLink
+
+	return cfg, nil
+}
+
+// markConfig is the compile configuration the run's flags give every
+// document; the per-document fields are left for the caller to fill in.
+func (c Config) markConfig() types.MarkConfig {
+	// An invalid value is reported by documentConfig, which every page passes.
+	imageAlign, _ := getImageAlign(c.ImageAlign, nil)
+
+	return types.MarkConfig{
+		ImageAlign:       imageAlign,
+		MermaidScale:     c.MermaidScale,
+		MermaidOutput:    c.MermaidOutput,
+		MermaidBundle:    c.MermaidBundle,
+		MermaidMacroName: c.MermaidMacroName,
+		D2Output:         c.D2Output,
+		D2Scale:          c.D2Scale,
+		D2BundleRemote:   c.D2BundleRemote,
+		MathFormat:       c.MathFormat,
+		MathScale:        c.MathScale,
+		StripNewlines:    c.StripLinebreaks,
+		Features:         c.Features,
+		AttachReferenced: c.AttachReferenced,
+		IncludePath:      c.IncludePath,
+	}
 }

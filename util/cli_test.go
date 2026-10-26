@@ -210,6 +210,16 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 	t.Run("an engine with macro asks for nothing", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-engine", "merman"}))
 	})
+
+	// An invalid value is not one either: nothing is drawn, so a negative scale
+	// and a name mark does not know are simply unused.
+	t.Run("an invalid scale with macro asks for nothing", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-scale", "-1"}))
+	})
+
+	t.Run("an invalid engine with macro asks for nothing", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-engine", "bogus"}))
+	})
 }
 
 // TestMermaidMacroNameFlagValidation covers the macro key a diagram is
@@ -229,6 +239,12 @@ func TestMermaidMacroNameFlagValidation(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", ""}))
 	})
 
+	// The name is unused beside an image output, where an emptied one is the
+	// same "has no effect" case as a name that is set: warned about, not refused.
+	t.Run("an empty name beside an image output asks for nothing", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-macro-name", ""}))
+	})
+
 	t.Run("the default without macro is accepted", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd"}))
 	})
@@ -236,25 +252,18 @@ func TestMermaidMacroNameFlagValidation(t *testing.T) {
 
 // TestMermaidMacroOutputNeedsNoDrawingFlags: --mermaid-output=macro on its own
 // goes from the CLI through Config into prepare(), which must accept a run that
-// asked only for the macro without also naming an engine or a scale.
+// asked only for the macro without also naming an engine or a scale. It runs
+// the command line rather than the package's Flags: urfave/cli remembers that a
+// flag was set from one run to the next, and a second run would read them.
 func TestMermaidMacroOutputNeedsNoDrawingFlags(t *testing.T) {
-	cmd := &cli.Command{
-		Name:   "temp-mark",
-		Flags:  Flags,
-		Action: RunMark,
-	}
+	config := writeConfig(t, t.TempDir(), "mark.toml", "")
 
 	doc := filepath.Join(t.TempDir(), "page.md")
 	if err := os.WriteFile(doc, []byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	err := cmd.Run(context.TODO(), []string{
-		"",
-		"--compile-only",
-		"--mermaid-output", "macro",
-		"--files", doc,
-	})
+	_, _, err := runMark(t, "--config", config, "--compile-only", "--mermaid-output", "macro", "--files", doc)
 	assert.NoError(t, err)
 }
 
@@ -322,11 +331,11 @@ func TestMermaidAndMathScaleFlagValidation(t *testing.T) {
 	}
 }
 
-// TestRunMarkStopsWhenCancelled: RunMark called mark.Run, which runs under a
+// TestRunPublishStopsWhenCancelled: the CLI called mark.Run, which runs under a
 // context of its own, so a cancelled one -- which is what Ctrl-C now produces --
 // went unnoticed and every file was processed anyway. Cancelled before the first
 // file, nothing is compiled and the run says why it stopped.
-func TestRunMarkStopsWhenCancelled(t *testing.T) {
+func TestRunPublishStopsWhenCancelled(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "mark.toml")
 	require.NoError(t, os.WriteFile(config, nil, 0o600))
@@ -338,17 +347,11 @@ func TestRunMarkStopsWhenCancelled(t *testing.T) {
 	restore := log.Logger
 	t.Cleanup(func() { log.Logger = restore })
 
-	cmd := &cli.Command{
-		Flags:  Flags,
-		Before: CheckFlags,
-		Action: RunMark,
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := cmd.Run(ctx, []string{
-		"mark",
+	err := newCommand("test").Run(ctx, []string{
+		"mark", "publish",
 		"--config", config,
 		"--compile-only",
 		"--files", document,

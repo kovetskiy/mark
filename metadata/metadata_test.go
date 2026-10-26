@@ -178,6 +178,13 @@ attachments:
 labels:
   - alpha
   - beta
+restrictions:
+  read:
+    groups:
+      - docs-readers
+  update:
+    users:
+      - Jane Doe
 content-appearance: default
 image-align: center
 ---
@@ -187,21 +194,119 @@ image-align: center
 	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
 	assert.NoError(t, err)
 	assert.Equal(t, &Meta{
-		Parents:           []string{"Parent 1", "Parent 2"},
-		Folders:           []string{"Folder 1", "Folder 2"},
-		Space:             "DOCS",
-		Type:              "page",
-		Title:             "Test Page",
-		Layout:            "article",
-		Sidebar:           "<p>Side</p>",
-		Emoji:             "rocket",
-		Attachments:       []string{"image.png"},
-		Labels:            []string{"alpha", "beta"},
+		Parents:     []string{"Parent 1", "Parent 2"},
+		Folders:     []string{"Folder 1", "Folder 2"},
+		Space:       "DOCS",
+		Type:        "page",
+		Title:       "Test Page",
+		Layout:      "article",
+		Sidebar:     "<p>Side</p>",
+		Emoji:       "rocket",
+		Attachments: []string{"image.png"},
+		Labels:      []string{"alpha", "beta"},
+		Restrictions: &Restrictions{
+			Read: &RestrictionSubjects{
+				Groups: []string{"docs-readers"},
+			},
+			Update: &RestrictionSubjects{
+				Users: []string{"Jane Doe"},
+			},
+		},
 		ContentAppearance: DefaultContentAppearance,
 		ImageAlign:        "center",
 		DeclaredParents:   true,
 	}, meta)
 	assert.Equal(t, "# Content\n", string(body))
+}
+
+func TestExtractMetaYAMLFrontMatterRejectsInvalidRestrictions(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  write:\n    users: [Jane Doe]\n---\n"
+
+	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.EqualError(t, err, `restrictions supports only read and update, got "write"`)
+}
+
+// TestExtractMetaYAMLFrontMatterEmptyRestrictions: an operation or a list
+// written with no value names nobody, which lifts the operation's
+// restrictions, as "read: {}" does.
+func TestExtractMetaYAMLFrontMatterEmptyRestrictions(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n  update:\n    users:\n---\n"
+
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.NoError(t, err)
+	assert.Equal(t, &Restrictions{Read: &RestrictionSubjects{}, Update: &RestrictionSubjects{Users: []string{}}}, meta.Restrictions)
+}
+
+// TestExtractMetaYAMLFrontMatterRestrictionSingleName: one name is a list of
+// one, as it is for labels.
+func TestExtractMetaYAMLFrontMatterRestrictionSingleName(t *testing.T) {
+	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n    groups: docs-readers\n---\n"
+
+	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"docs-readers"}, meta.Restrictions.Read.Groups)
+}
+
+// TestExtractMetaRefusesRestrictionsFrontMatterItDoesNotRead: without the
+// frontmatter feature, a restrictions block would publish the page
+// unrestricted with the YAML in its body, so it is refused.
+func TestExtractMetaRefusesRestrictionsFrontMatterItDoesNotRead(t *testing.T) {
+	markdown := "---\nrestrictions:\n  read:\n    groups: [secret]\n---\n<!-- Space: DOCS -->\n<!-- Title: Test -->\n"
+
+	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	require.ErrorContains(t, err, "only read with the frontmatter feature")
+
+	_, _, err = ExtractMeta([]byte("---\nauthor: me\n---\n<!-- Space: DOCS -->\n<!-- Title: Test -->\n"), "", false, false, "", nil, false, "", false)
+	require.NoError(t, err, "other front matter is still passed over")
+}
+
+// TestExtractMetaYAMLFrontMatterRestrictionKeysGivenTwice: keys that read as
+// one, at any level, are refused rather than combined by a guess about who
+// may see or edit the page.
+func TestExtractMetaYAMLFrontMatterRestrictionKeysGivenTwice(t *testing.T) {
+	for want, restrictions := range map[string]string{
+		"restrictions is given twice":            "restrictions:\n  read: {}\nRestrictions:\n  update: {}\n",
+		"restrictions.read is given twice":       "restrictions:\n  read: {}\n  Read: {}\n",
+		"restrictions.read.users is given twice": "restrictions:\n  read:\n    users: [a]\n    Users: [b]\n",
+	} {
+		markdown := "---\nspace: DOCS\ntitle: Test\n" + restrictions + "---\n"
+		_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+		assert.EqualError(t, err, want)
+	}
+}
+
+func TestExtractMetaRestrictionHeadersAreAdditive(t *testing.T) {
+	markdown := `<!-- Space: DOCS -->
+<!-- Title: Restricted -->
+<!-- Restriction: read.user=Jane Doe -->
+<!-- Restriction: read.user=John Smith -->
+<!-- Restriction: read.group=docs-readers -->
+<!-- Restriction: update.user=Jane Doe -->
+<!-- Restriction: update.group=docs-editors -->
+
+# Content
+`
+
+	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	require.NoError(t, err)
+	assert.Equal(t, &Restrictions{
+		Read: &RestrictionSubjects{
+			Users:  []string{"Jane Doe", "John Smith"},
+			Groups: []string{"docs-readers"},
+		},
+		Update: &RestrictionSubjects{
+			Users:  []string{"Jane Doe"},
+			Groups: []string{"docs-editors"},
+		},
+	}, meta.Restrictions)
+	assert.Equal(t, "\n# Content\n", string(body))
+}
+
+func TestExtractMetaRestrictionHeaderRejectsInvalidPath(t *testing.T) {
+	markdown := "<!-- Space: DOCS -->\n<!-- Title: Test -->\n<!-- Restriction: write.user=Jane Doe -->\n"
+
+	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	require.EqualError(t, err, `Restriction header has unsupported operation "write"`)
 }
 
 func TestExtractMetaYAMLFrontMatterScalarAliases(t *testing.T) {

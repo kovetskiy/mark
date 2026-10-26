@@ -73,6 +73,12 @@ var reAttributeLang = regexp.MustCompile(`\.([\w#+./-]+)`)
 // published as the macro's theme.
 var reAssignedTitle = regexp.MustCompile(`\btitle\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))`)
 
+// ParseCodeBlockInfo reads a fence info string into the language, options
+// and title the ac:code macro is given, as publishing does.
+func ParseCodeBlockInfo(info string) (lang string, options []string, title string) {
+	return parseBlockDetails(info)
+}
+
 // parseBlockDetails reads a fence info string into the parts the ac:code macro
 // is given.
 func parseBlockDetails(info string) (lang string, options []string, title string) {
@@ -109,6 +115,11 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 			}
 		}
 		info = strings.TrimSpace(strings.Replace(info, block, " ", 1))
+	}
+
+	// The "-" marker stands for no language and must be present for the match.
+	if noLanguage {
+		info = "- " + info
 	}
 
 	groups := reBlockDetails.FindStringSubmatch(info)

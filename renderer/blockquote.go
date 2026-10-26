@@ -73,6 +73,12 @@ func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
 	}
 }
 
+// AdmonitionMarker returns the word a blockquote's first line opens with that
+// makes mark publish it as an info, note, tip or warning macro, or "".
+func AdmonitionMarker(line string) string {
+	return markerOf(line)
+}
+
 // markerOf returns the admonition marker a line opens with, or "" if the line
 // is ordinary prose.
 //
