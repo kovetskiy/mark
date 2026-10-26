@@ -1363,22 +1363,34 @@ func (api *API) CreatePage(
 	title string,
 	body string,
 ) (*PageInfo, error) {
+	parentID := ""
+	if parent != nil {
+		parentID = parent.ID
+	}
+
 	create := func() (*PageInfo, error) {
 		if api.gateway {
-			parentID := ""
-			if parent != nil {
-				parentID = parent.ID
-			}
 			return api.createPageV2(space, pageType, parentID, "", title, body)
 		}
 		return api.createPageV1(space, pageType, parent, title, body)
 	}
 
 	// mark creates a page only once it has looked for one with the title and
-	// found none, so one there now is the one this create made.
+	// found none, so one there now under the same parent is the one this
+	// create made. A blog post has no parent to compare.
 	landed := func() (*PageInfo, bool, error) {
 		page, err := api.findPageWithStatus(space, title, pageType, "current")
-		return page, page != nil, err
+		if err != nil || page == nil {
+			return nil, false, err
+		}
+		above := ""
+		if n := len(page.Ancestors); n > 0 {
+			above = page.Ancestors[n-1].ID
+		}
+		if pageType != "blogpost" && above != parentID {
+			return nil, false, nil
+		}
+		return page, true, nil
 	}
 
 	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
@@ -3520,7 +3532,9 @@ func newTransportError(request *gopencils.Resource, operation string, err error)
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
 	if request == nil || request.Raw == nil {
-		return unavailableTransport(fmt.Errorf("unable to %s: %w", operation, err))
+		// No request carries a context a caller can cancel, so even a
+		// deadline here is net/http's own timeout waiting for an answer.
+		return unavailableError{fmt.Errorf("unable to %s: %w", operation, err)}
 	}
 
 	return fmt.Errorf(

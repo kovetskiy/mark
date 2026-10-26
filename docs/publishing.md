@@ -176,10 +176,11 @@ A write is different: a gateway that gives up waiting (502, 503 or 504), or a
 connection that drops, does not mean Confluence did not carry the write out.
 Mark therefore sends a page create, a page update, or an attachment upload
 again only after it has read that the first one did not land. A page with the
-title, the version the update would have made, or an attachment with the
-upload's checksum means it did, and Mark goes on from there instead of
-creating a duplicate. Any other failure of a write, a 500 included, fails the
-file straight away.
+title under the same parent, the version the update would have made, or an
+attachment with the upload's checksum means it did, and Mark goes on from
+there instead of creating a duplicate. The same read settles a write sent again
+that Confluence refuses because the first one landed in the meantime. Any other
+failure of a write, a 500 included, fails the file straight away.
 
 ## Continuous Integration
 
