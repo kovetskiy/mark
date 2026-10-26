@@ -16,6 +16,8 @@ func withCacheDir(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir)
 	t.Setenv("HOME", dir)
+	// os.UserCacheDir reads this on Windows instead of either of the above.
+	t.Setenv("LocalAppData", dir)
 
 	// canOpenBrowser is reached whenever a login is actually attempted. On
 	// ubuntu-latest (upstream CI) GOOS is linux and neither DISPLAY nor

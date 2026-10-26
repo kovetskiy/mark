@@ -383,7 +383,9 @@ Confluence take it too, and share the same cached session.
 
 The session is cached in `cookies.json` under your user cache directory
 (`~/.cache/mark` on Linux, `~/Library/Caches/mark` on macOS), readable only by
-you. Delete that file to forget the session.
+you. On Windows it is `%LocalAppData%\mark`, where what keeps it private is the
+access control of your user profile rather than a file mode. Delete that file
+to forget the session.
 
 The cache holds the session cookie in plain text, and anyone who can read the
 file can act as you on Confluence for as long as the session lasts. How long

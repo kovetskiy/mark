@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -12,13 +13,15 @@ import (
 )
 
 // withCacheDir points os.UserCacheDir at a temporary directory for the test.
-// On Linux os.UserCacheDir reads XDG_CACHE_HOME; on macOS it reads HOME and
-// appends Library/Caches. Setting both covers the platforms CI runs on.
+// On Linux os.UserCacheDir reads XDG_CACHE_HOME, on macOS HOME (appending
+// Library/Caches), and on Windows LocalAppData. All three are set: one left
+// out is a test run that reads and overwrites the developer's real cache.
 func withCacheDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir)
 	t.Setenv("HOME", dir)
+	t.Setenv("LocalAppData", dir)
 	return dir
 }
 
@@ -74,6 +77,10 @@ func TestLoadDropsExpiredCookies(t *testing.T) {
 
 // TestSaveIsPrivate holds the file mode: the cache is a bearer credential.
 func TestSaveIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX file modes; the cache is guarded by the ACL of the profile directory it is in")
+	}
+
 	withCacheDir(t)
 
 	require.NoError(t, SaveCookies("https://conf.example.com",
