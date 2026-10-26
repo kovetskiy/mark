@@ -202,10 +202,10 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MINOR_EDIT"), config.value("minor-edit")),
 		},
 		&cli.BoolFlag{
-			Name:    "unwatch",
-			Value:   false,
-			Usage:   "stop watching the pages mark creates or edits, which Confluence makes the publishing account watch; pages it watched already stay watched.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_UNWATCH"), config.value("unwatch")),
+			Name:    "watch",
+			Value:   true,
+			Usage:   "let the publishing account watch the pages mark creates or edits, as Confluence makes it; --watch=false stops it watching them, though pages it watched already stay watched.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_WATCH"), config.value("watch")),
 		},
 		&cli.StringFlag{
 			Name:    "version-message",

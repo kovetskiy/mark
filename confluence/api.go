@@ -131,7 +131,7 @@ type API struct {
 	KeepConcurrentEdits bool
 
 	// Unwatch makes the writes record the pages they touch, for UnwatchWritten
-	// to unwatch once the last write is done. --unwatch sets it.
+	// to unwatch once the last write is done. --watch=false sets it.
 	Unwatch bool
 
 	// watchedBefore records, by page id, every page mark wrote to and whether

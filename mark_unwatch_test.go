@@ -10,7 +10,7 @@ import (
 )
 
 // A publish creates the page and a parent nobody had made yet, and Confluence
-// makes the publishing account watch both. --unwatch leaves it watching
+// makes the publishing account watch both. --watch=false leaves it watching
 // neither.
 func TestUnwatchAfterPublish(t *testing.T) {
 	for _, tc := range []struct {
@@ -18,7 +18,7 @@ func TestUnwatchAfterPublish(t *testing.T) {
 		unwatch bool
 		want    []string
 	}{
-		{"with --unwatch", true, []string{}},
+		{"with --watch=false", true, []string{}},
 		{"without", false, []string{"acct-current"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
