@@ -2,6 +2,7 @@ package confluence_test
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -106,7 +107,7 @@ func TestUnwatchAfterWrites(t *testing.T) {
 
 			assert.NotEmpty(t, server.Watchers(created.ID), "nothing is unwatched before the writes are done")
 
-			api.UnwatchWritten()
+			api.UnwatchWritten(t.Context())
 			assert.Empty(t, server.Watchers(created.ID), "a page mark created, updated and attached files to")
 			assert.Empty(t, server.Watchers(existing.ID), "a page mark found and updated")
 			assert.Equal(t, 2, server.CountRequests("DELETE", "/user/watch/content/"), "one unwatch per page")
@@ -133,7 +134,7 @@ func TestUnwatchLeavesAWatchedPageWatched(t *testing.T) {
 	_, err = api.CreateAttachment(stored.ID, "a.png", "c", strings.NewReader("png"))
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(page, "<p>two</p>", false, "", "", ""))
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(stored.ID))
 	assert.Equal(t, 1, server.CountRequests("GET", "/user/watch/content/"+stored.ID),
@@ -149,7 +150,7 @@ func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
 	created, err := api.CreatePage("DOCS", "page", nil, "New", "")
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(created, "<p>body</p>", false, "", "", ""))
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(created.ID))
 	assert.Zero(t, server.CountRequests("GET", "/user/watch/")+server.CountRequests("DELETE", "/user/watch/"))
@@ -180,11 +181,39 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 	page, err := api.GetPageByID(existing.ID)
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, 2, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
 	assert.Contains(t, buffer.String(), "unable to read whether 1 of 2 page(s) mark wrote to were watched before")
 	assert.Contains(t, buffer.String(), "unable to stop watching 1 of 1 page(s)")
+}
+
+// An interrupted run unwatches nothing more, and names every page it leaves
+// watched in the one warning.
+func TestUnwatchStopsWhenTheRunIsInterrupted(t *testing.T) {
+	api, server := newUnwatchAPI(t, false)
+	var ids []string
+	for _, title := range []string{"One", "Two"} {
+		stored := server.AddPage("DOCS", title, "page", "")
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		ids = append(ids, stored.ID)
+	}
+	buffer := captureLog(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	api.UnwatchWritten(ctx)
+
+	assert.Zero(t, server.CountRequests("DELETE", "/user/watch/"))
+	assert.Equal(t, 1, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
+	assert.Contains(t, buffer.String(), "unable to stop watching 2 of 2 page(s)")
+	assert.Contains(t, buffer.String(), "interrupted: context canceled")
+	for _, id := range ids {
+		assert.Contains(t, buffer.String(), id)
+		assert.Equal(t, []string{"acct-current"}, server.Watchers(id))
+	}
 }
 
 func captureLog(t *testing.T) *bytes.Buffer {
@@ -220,7 +249,7 @@ func TestUnwatchReportsEveryPageItCouldNotRead(t *testing.T) {
 		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
 		ids = append(ids, stored.ID)
 	}
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, 1, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
 	assert.Contains(t, buffer.String(), "unable to read whether 2 of 2 page(s)")
@@ -250,7 +279,7 @@ func TestUnwatchAfterAMoveByUpdate(t *testing.T) {
 	page, err := api.GetPageByID(moved.ID)
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Empty(t, server.Watchers(moved.ID))
 	assert.Empty(t, server.Watchers(onlyMoved.ID))
@@ -291,7 +320,7 @@ func TestUnwatchAfterMoves(t *testing.T) {
 				require.NotEmpty(t, server.Watchers(id), "the move has to be one that makes a watcher")
 			}
 
-			api.UnwatchWritten()
+			api.UnwatchWritten(t.Context())
 
 			for _, id := range []string{appended.ID, before.ID, after.ID} {
 				assert.Empty(t, server.Watchers(id))
@@ -314,7 +343,7 @@ func TestUnwatchSkipsAPageAlreadyInPlace(t *testing.T) {
 
 	require.NoError(t, api.MoveContentAppend(moved.ID, parent.ID))
 	require.NoError(t, api.MoveContentAppend(placed.ID, parent.ID))
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Empty(t, server.Watchers(moved.ID))
 	assert.Zero(t, server.CountRequests("GET", "/user/watch/content/"+placed.ID))
@@ -337,7 +366,7 @@ func TestUnwatchAfterLabelWrites(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, server.Watchers(added.ID), "the label write has to be one that makes a watcher")
 	require.NotEmpty(t, server.Watchers(removed.ID))
-	api.UnwatchWritten()
+	api.UnwatchWritten(t.Context())
 
 	assert.Empty(t, server.Watchers(added.ID))
 	assert.Empty(t, server.Watchers(removed.ID))

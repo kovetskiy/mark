@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -87,6 +88,18 @@ func retryUnavailable[T any](
 	send func() (T, error),
 	landed func() (T, bool, error),
 ) (T, error) {
+	return retryUnavailableContext(context.Background(), api, what, send, landed)
+}
+
+// retryUnavailableContext is retryUnavailable, giving up when ctx is done
+// rather than waiting out the rest of a wait.
+func retryUnavailableContext[T any](
+	ctx context.Context,
+	api *API,
+	what string,
+	send func() (T, error),
+	landed func() (T, bool, error),
+) (T, error) {
 	wait := api.unavailableWait
 	if wait == nil {
 		wait = waitUnavailable
@@ -113,7 +126,11 @@ func retryUnavailable[T any](
 			return result, err
 		}
 
-		wait(attempt, unavailable.retryAfter)
+		wait(ctx, attempt, unavailable.retryAfter)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			var zero T
+			return zero, fmt.Errorf("unable to %s (%w): %w", what, err, ctxErr)
+		}
 
 		landedResult, ok, landedErr := landed()
 		switch {
@@ -132,7 +149,13 @@ func retryUnavailable[T any](
 
 // waitUnavailable is the wait before reading whether an unavailable write
 // landed: the transport's backoff, or as long as Retry-After asks, which gives
-// a gateway that timed out time to let the request finish behind it.
-func waitUnavailable(attempt int, retryAfter string) {
-	time.Sleep(backoffFor(attempt, retryAfter, time.Now()))
+// a gateway that timed out time to let the request finish behind it. It
+// returns early when ctx is done.
+func waitUnavailable(ctx context.Context, attempt int, retryAfter string) {
+	timer := time.NewTimer(backoffFor(attempt, retryAfter, time.Now()))
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }

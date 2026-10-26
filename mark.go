@@ -94,7 +94,8 @@ type Config struct {
 
 	// Unwatch is read by Run, which unwatches as the run ends. ProcessFile
 	// leaves it to the caller: set the API's Unwatch, and call its
-	// UnwatchWritten after the last file.
+	// UnwatchWritten after the last file, with a context that is not done yet,
+	// or nothing is unwatched.
 	Unwatch bool
 
 	// Rendering
@@ -168,7 +169,9 @@ func Run(config Config) error {
 // which is the one place stopping would leave a page half written. Nothing
 // inside a file sees it: the Confluence client builds its own requests without
 // it, so neither a request in flight nor the backoff before retrying one is cut
-// short, and neither is a diagram being drawn.
+// short, and neither is a diagram being drawn. The unwatching --watch=false
+// does as the run ends sees it: pages not unwatched yet stay watched, and are
+// named in a warning.
 //
 // Whatever the run did before it stopped stands, including the page manifest,
 // which is saved on the way out as it is for any other ending.
@@ -351,7 +354,8 @@ func run(ctx context.Context, config Config) (err error) {
 	api.KeepConcurrentEdits = config.NoOverwrite
 	api.Unwatch = config.Unwatch
 	// Deferred, so that a run that fails partway still unwatches what it wrote.
-	defer api.UnwatchWritten()
+	// An interrupted run does not: it warns which pages stay watched.
+	defer api.UnwatchWritten(ctx)
 
 	// Folder resolutions are cached in a package-level map that outlives this
 	// call, so a second run in the same process -- against another instance,
