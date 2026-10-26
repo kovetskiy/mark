@@ -114,7 +114,7 @@ func ParsePageURL(raw string) (PageRef, error) {
 // an old version of the page would be lost.
 func pageOnInstance(href, base string) (PageRef, bool) {
 	parsed, err := url.Parse(href)
-	if err != nil || parsed.Fragment != "" || !onlyPageID(parsed.Query()) {
+	if err != nil || parsed.Fragment != "" || !onlyPageID(parsed) {
 		return PageRef{}, false
 	}
 
@@ -132,24 +132,41 @@ func pageOnInstance(href, base string) (PageRef, bool) {
 	return ref, true
 }
 
-// onlyPageID reports whether a URL's query is empty, or names the page and
-// nothing else.
-func onlyPageID(query url.Values) bool {
-	return len(query) == 0 || (len(query) == 1 && len(query["pageId"]) == 1)
+// onlyPageID reports whether a URL has no query, or is viewpage.action naming
+// the page and nothing else. A pageId on any other form would name another
+// page than its path does, and win.
+func onlyPageID(u *url.URL) bool {
+	query := u.Query()
+	if len(query) == 0 {
+		return true
+	}
+	return strings.HasSuffix(u.Path, "/pages/viewpage.action") && len(query) == 1 && len(query["pageId"]) == 1
 }
 
 // sameInstance reports whether a page URL's base is the instance at base. A
 // base given without the path Confluence is served under, such as
 // https://example.atlassian.net for /wiki, matches it on any path of the host.
+// A host is matched without regard to case or a default port; a path, as a
+// servlet container does, exactly.
 func sameInstance(pageBase, base string) bool {
-	pageBase, base = strings.TrimSuffix(pageBase, "/"), strings.TrimSuffix(base, "/")
-	page, err := url.Parse(pageBase)
+	pageURL, err := url.Parse(strings.TrimSuffix(pageBase, "/"))
 	if err != nil {
 		return false
 	}
-	instance, err := url.Parse(base)
-	if err != nil || !strings.EqualFold(page.Host, instance.Host) {
+	instance, err := url.Parse(strings.TrimSuffix(base, "/"))
+	if err != nil || !strings.EqualFold(pageURL.Hostname(), instance.Hostname()) ||
+		portOf(pageURL) != portOf(instance) {
 		return false
 	}
-	return instance.Path == "" || strings.EqualFold(page.Path, instance.Path)
+	return instance.Path == "" || pageURL.Path == instance.Path
+}
+
+func portOf(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return "80"
+	}
+	return "443"
 }

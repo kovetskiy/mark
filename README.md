@@ -227,7 +227,7 @@ DESCRIPTION:
 
 OPTIONS:
    --page-id string            export the page or blog post with this id. [$MARK_PAGE_ID]
-   --url string                export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set. [$MARK_URL]
+   --url string                export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set. [$MARK_URL]
    --space string              the space key --title looks the page up in. [$MARK_SPACE]
    --title string              export the page or blog post with this title in --space. [$MARK_TITLE]
    --output string, -o string  write the Markdown to this file rather than to standard output ("-"). [$MARK_OUTPUT]
@@ -236,7 +236,7 @@ OPTIONS:
    --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
    --recursive                 export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
    --depth int                 with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)
-   --relative-links            with --recursive, write a link between two exported pages as a relative link between their files, which a repository host can follow, rather than as ac:Title. Published back, such a link becomes a link to the page's address rather than Confluence's own page link.
+   --relative-links            with --recursive, write a link between two exported pages, or a URL of one pasted into a page, as a relative link between their files, which a repository host can follow, rather than as ac:Title or the URL. Published back, such a link becomes a link to the page's address rather than Confluence's own page link.
    --help, -h                  show help
 
 GLOBAL OPTIONS:
