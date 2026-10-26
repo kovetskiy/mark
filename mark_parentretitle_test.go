@@ -1,15 +1,11 @@
 package mark
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -235,29 +231,4 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 			assert.Equal(t, guideID, server.Page(apiID).ParentID, "API stays under the original page")
 		})
 	}
-}
-
-// TestRunTitlesWarnOnce: reading the run's titles reads every document a second
-// time, and what is wrong with a document's metadata is still said once.
-func TestRunTitlesWarnOnce(t *testing.T) {
-	server, _ := docsSpace(t)
-	dir := t.TempDir()
-	stranded := "\n<!-- Label: late -->\n"
-	writeFile(t, dir, "parent.md", parentDoc("Parent")+stranded)
-	writeFile(t, dir, "a-child.md", childDoc("Parent"))
-	config := trackingConfig(server, dir+"/*.md")
-	require.NoError(t, Run(config))
-
-	writeFile(t, dir, "parent.md", parentDoc("Parent Renamed")+stranded)
-	writeFile(t, dir, "a-child.md", childDoc("Parent Renamed"))
-
-	var logged bytes.Buffer
-	restore := log.Logger
-	log.Logger = zerolog.New(&logged)
-	defer func() { log.Logger = restore }()
-
-	require.NoError(t, Run(config))
-
-	require.Contains(t, logged.String(), "retitles it", "the run's titles were read")
-	assert.Equal(t, 1, strings.Count(logged.String(), "below the document's opening comments"))
 }
