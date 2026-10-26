@@ -76,29 +76,24 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 		}
 	}
 
-	var documents, documentIDs, documentTitles map[string]string
+	var documents *Documents
 	if options.RelativeLinks {
-		documents = make(map[string]string, len(plan))
-		documentIDs = make(map[string]string, len(plan))
-		documentTitles = make(map[string]string, len(plan))
-		for _, p := range plan {
-			documents[strings.ToLower(p.title)] = p.output
-			documentIDs[p.id] = p.output
-			documentTitles[p.output] = p.title
+		listed := make([]PageFile, len(plan))
+		for i, p := range plan {
+			listed[i] = PageFile{ID: p.id, Title: p.title, Output: p.output}
 		}
+		documents = NewDocuments(listed)
 	}
 
 	results := make([]*Result, 0, len(plan))
 	for _, p := range plan {
 		result, err := Page(ctx, api, Config{
-			PageID:         p.id,
-			Output:         p.output,
-			Overwrite:      cfg.Overwrite,
-			NoAttachments:  cfg.NoAttachments,
-			Stdout:         cfg.Stdout,
-			Documents:      documents,
-			DocumentIDs:    documentIDs,
-			DocumentTitles: documentTitles,
+			PageID:        p.id,
+			Output:        p.output,
+			Overwrite:     cfg.Overwrite,
+			NoAttachments: cfg.NoAttachments,
+			Stdout:        cfg.Stdout,
+			Documents:     documents,
 		})
 		if err != nil {
 			return results, fmt.Errorf("unable to export page %s, after exporting %d: %w", p.id, len(results), err)

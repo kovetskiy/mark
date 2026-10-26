@@ -312,7 +312,7 @@ func (w *inlineWriter) link(n *node) {
 		dest = destination(pathDestination(path))
 		// A link showing its own address would go on showing the old URL; it
 		// shows the page's title instead.
-		if text == href && len(n.elements()) == 0 && pageTitle != "" {
+		if strings.TrimSuffix(text, "/") == strings.TrimSuffix(href, "/") && len(n.elements()) == 0 && pageTitle != "" {
 			w.write("[" + escapeInline(pageTitle, inlineOptions{table: w.ctx.table}) + "](" + dest + linkTitle(title) + ")")
 			return
 		}
