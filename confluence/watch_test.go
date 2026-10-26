@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -258,6 +259,69 @@ func TestUnwatchReportsEveryPageItCouldNotRead(t *testing.T) {
 		assert.Equal(t, []string{"acct-current"}, server.Watchers(id), "a page whose state is unknown stays watched")
 	}
 	assert.Zero(t, server.CountRequests("DELETE", "/user/watch/"))
+}
+
+// A refusal of the credentials holds for every page, so the watch state is
+// asked for once, and every page is still named in the warning.
+func TestUnwatchAsksOnceWhenReadingIsRefused(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			api, server := newUnwatchAPI(t, false)
+			server.SetFail(func(r *http.Request) (int, string, bool) {
+				if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/user/watch/") {
+					return status, `{"message":"scope does not match"}`, true
+				}
+				return 0, "", false
+			})
+			buffer := captureLog(t)
+
+			var ids []string
+			for _, title := range []string{"One", "Two", "Three"} {
+				stored := server.AddPage("DOCS", title, "page", "")
+				page, err := api.GetPageByID(stored.ID)
+				require.NoError(t, err)
+				require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+				ids = append(ids, stored.ID)
+			}
+			api.UnwatchWritten(t.Context())
+
+			assert.Equal(t, 1, server.CountRequests("GET", "/user/watch/"))
+			assert.Contains(t, buffer.String(), "unable to read whether 3 of 3 page(s)")
+			for _, id := range ids {
+				assert.Contains(t, buffer.String(), id)
+			}
+			assert.Zero(t, server.CountRequests("DELETE", "/user/watch/"))
+		})
+	}
+}
+
+// A read that fails any other way says nothing about the next page, which is
+// asked again.
+func TestUnwatchAsksAgainAfterAnotherReadFailure(t *testing.T) {
+	api, server := newUnwatchAPI(t, false)
+	var reads atomic.Int32
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/user/watch/") {
+			if reads.Add(1) == 1 {
+				return http.StatusBadRequest, `{"message":"try another"}`, true
+			}
+		}
+		return 0, "", false
+	})
+
+	var ids []string
+	for _, title := range []string{"One", "Two"} {
+		stored := server.AddPage("DOCS", title, "page", "")
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		ids = append(ids, stored.ID)
+	}
+	api.UnwatchWritten(t.Context())
+
+	assert.Equal(t, 2, server.CountRequests("GET", "/user/watch/"))
+	assert.Equal(t, []string{"acct-current"}, server.Watchers(ids[0]), "unread, so left watched")
+	assert.Empty(t, server.Watchers(ids[1]))
 }
 
 // On Data Center without movepage.action a move is an update, which makes the

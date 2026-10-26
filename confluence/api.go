@@ -139,9 +139,11 @@ type API struct {
 	// the user watched it before the first of those writes; see
 	// watchBeforeWrite. The writes recorded are a deliberate list, one call
 	// per site: creates, updates, moves, labels and attachments.
-	// watchErr is the first error reading a watch state.
+	// watchErr is the first error reading a watch state, and watchRefused
+	// whether it was a refusal of the credentials, which holds for every page.
 	watchedBefore map[string]watchState
 	watchErr      error
+	watchRefused  bool
 	watchMutex    sync.Mutex
 
 	// conflictRetryDelay is how long UpdatePage waits after a conflict before
