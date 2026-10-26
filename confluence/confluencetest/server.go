@@ -49,6 +49,10 @@ type Page struct {
 	UpdateRestrictedTo []string
 	ReadRestrictedTo   []string
 	RestrictedGroups   map[string][]string
+
+	// handVersion is the version EditPage made last, which somebody other
+	// than the current user wrote.
+	handVersion int64
 }
 
 // Status is what v1 reports for the page and, more to the point, what it
@@ -584,7 +588,37 @@ func (s *Server) EditPage(id, body string) {
 		p.Body = body
 		p.Version++
 		p.Message = "edited by hand"
+		p.handVersion = p.Version
 	}
+}
+
+// WritePage stands in for a write by the current user that a test lets land
+// on the side, such as an update still in flight when its answer was lost.
+func (s *Server) WritePage(id, body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[id]; ok {
+		p.Body = body
+		p.Version++
+	}
+}
+
+// versionBy is who wrote a page's current version: somebody else for one
+// EditPage made, and the current user for any other.
+func (s *Server) versionBy(p *Page) map[string]any {
+	u := s.currentUser
+	if p.handVersion == p.Version {
+		u = User{AccountID: "acct-by-hand", UserKey: "key-by-hand", Username: "by-hand"}
+	}
+
+	by := map[string]any{}
+	for key, value := range map[string]string{"accountId": u.AccountID, "userKey": u.UserKey, "username": u.Username} {
+		if value != "" {
+			by[key] = value
+		}
+	}
+	return by
 }
 
 // Attachments returns the attachments stored for a page.
@@ -682,6 +716,7 @@ func (s *Server) pageJSON(p *Page, expand map[string]bool) map[string]any {
 		out["version"] = map[string]any{
 			"number":  p.Version,
 			"message": p.Message,
+			"by":      s.versionBy(p),
 		}
 	} else {
 		expandable["version"] = ""
@@ -2696,8 +2731,9 @@ func (s *Server) contentJSONV2(p *Page, withBody bool) map[string]any {
 		"parentId":   p.ParentID,
 		"parentType": parentType,
 		"version": map[string]any{
-			"number":  p.Version,
-			"message": p.Message,
+			"number":   p.Version,
+			"message":  p.Message,
+			"authorId": s.versionBy(p)["accountId"],
 		},
 		"_links": s.pageLinks(p),
 	}

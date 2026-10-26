@@ -58,8 +58,9 @@ type contentV2 struct {
 	SpaceID    string `json:"spaceId"`
 
 	Version struct {
-		Number  int64  `json:"number"`
-		Message string `json:"message"`
+		Number   int64  `json:"number"`
+		Message  string `json:"message"`
+		AuthorID string `json:"authorId"`
 	} `json:"version"`
 
 	Body struct {

@@ -136,7 +136,7 @@ type API struct {
 
 	// unavailableWait waits before reading whether a write Confluence was
 	// unavailable for landed; see retryUnavailable. Tests make it instant.
-	unavailableWait func(attempt int)
+	unavailableWait func(attempt int, retryAfter string)
 
 	// moveSettleDelay is how long moveByAction waits between reads of a tree
 	// that movepage.action said it changed but does not show it yet.
@@ -985,6 +985,11 @@ func (api *API) pageHoldingTitle(space, title, pageType string) *PageInfo {
 // decision for a person, and mark has already shown it cannot see the whole
 // picture here.
 func (api *API) explainCreateFailure(space, title, pageType string, err error) error {
+	// Only a refusal can be a title some other page holds.
+	if isUnavailable(err) {
+		return err
+	}
+
 	blocker := api.pageHoldingTitle(space, title, pageType)
 	if blocker == nil {
 		return err
@@ -1009,13 +1014,10 @@ func (api *API) CreateAttachment(
 		return AttachmentInfo{}, err
 	}
 
-	send := func() (AttachmentInfo, error) {
-		return api.createAttachment(pageID, name, form)
-	}
-
 	return retryUnavailable(
 		api, fmt.Sprintf("attach %q to page %s", name, pageID),
-		send, api.attachmentLanded(pageID, "", name, comment),
+		func() (AttachmentInfo, error) { return api.createAttachment(pageID, name, form) },
+		api.attachmentLanded(pageID, "", name, comment),
 	)
 }
 
@@ -1106,13 +1108,10 @@ func (api *API) UpdateAttachment(
 		return AttachmentInfo{}, err
 	}
 
-	send := func() (AttachmentInfo, error) {
-		return api.updateAttachment(pageID, attachID, name, form)
-	}
-
 	return retryUnavailable(
 		api, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID),
-		send, api.attachmentLanded(pageID, attachID, name, comment),
+		func() (AttachmentInfo, error) { return api.updateAttachment(pageID, attachID, name, form) },
+		api.attachmentLanded(pageID, attachID, name, comment),
 	)
 }
 
@@ -1375,23 +1374,14 @@ func (api *API) CreatePage(
 		return api.createPageV1(space, pageType, parent, title, body)
 	}
 
-	// mark creates a page only once it has looked for one with the title and
-	// found none, so one there now under the same parent is the one this
-	// create made. A blog post has no parent to compare.
-	landed := func() (*PageInfo, bool, error) {
-		page, err := api.findPageWithStatus(space, title, pageType, "current")
-		if err != nil || page == nil {
-			return nil, false, err
-		}
-		above := ""
-		if n := len(page.Ancestors); n > 0 {
-			above = page.Ancestors[n-1].ID
-		}
-		if pageType != "blogpost" && above != parentID {
-			return nil, false, nil
-		}
-		return page, true, nil
+	// A blog post has no parent to compare.
+	under := parentID
+	if pageType == "blogpost" {
+		under = ""
 	}
+	landed := createLanded(func() (*PageInfo, error) {
+		return api.findPageWithStatus(space, title, pageType, "current")
+	}, under)
 
 	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
 	if err != nil {
@@ -1426,6 +1416,31 @@ func (api *API) CreatePage(
 	api.rememberCreatedPage(space, pageType, title, page)
 
 	return page, nil
+}
+
+// createLanded reads whether a create Confluence was unavailable for landed.
+// mark creates a page only once it has looked for one with the title and
+// found none, so one find reads now, directly under parentID, is the one the
+// create made. With no parentID any parent will do: where Confluence puts a
+// page created without one is its own choice.
+func createLanded(find func() (*PageInfo, error), parentID string) func() (*PageInfo, bool, error) {
+	return func() (*PageInfo, bool, error) {
+		page, err := find()
+		if err != nil || page == nil {
+			return nil, false, err
+		}
+
+		// v2 names the direct parent, a folder included; v1 lists ancestors.
+		above := page.ParentID
+		if above == "" && len(page.Ancestors) > 0 {
+			above = page.Ancestors[len(page.Ancestors)-1].ID
+		}
+		if parentID != "" && above != parentID {
+			return nil, false, nil
+		}
+
+		return page, true, nil
+	}
 }
 
 // rememberCreatedPage puts a page just created into the page cache, so the
@@ -1577,19 +1592,20 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 
 // putUnavailable sends an update through retryUnavailable. The page's version
 // says whether an unavailable update landed: at the version the update would
-// have created, it did; still at the one mark read, it did not. Any other
-// version is another writer's, which UpdatePage settles as a conflict.
+// have created, and written by mark's account, it did; still at the one mark
+// read, it did not. Any other version is another writer's, which UpdatePage
+// settles as a conflict.
 func (api *API) putUnavailable(page *PageInfo, version int64, put func(version int64) error) error {
 	send := func() (struct{}, error) {
 		return struct{}{}, put(version)
 	}
 
 	landed := func() (struct{}, bool, error) {
-		current, err := api.currentPageVersion(page)
+		current, by, err := api.currentPageVersion(page)
 		switch {
 		case err != nil:
 			return struct{}{}, false, err
-		case current == version:
+		case current == version && !api.writtenByAnother(by):
 			return struct{}{}, true, nil
 		case current == page.Version.Number:
 			return struct{}{}, false, nil
@@ -1631,7 +1647,7 @@ func (api *API) retryConflictingUpdate(
 		time.Sleep(api.conflictRetryDelay)
 	}
 
-	current, err := api.currentPageVersion(page)
+	current, _, err := api.currentPageVersion(page)
 	if err != nil {
 		return 0, fmt.Errorf(
 			"update of page %q (%s) conflicted (%w), and its current version could not be read to retry: %w",
@@ -1669,22 +1685,58 @@ func (api *API) retryConflictingUpdate(
 	return current + 1, nil
 }
 
-// currentPageVersion reads the version a page has right now, bypassing the
-// cache, with the cheapest request that returns it.
-func (api *API) currentPageVersion(page *PageInfo) (int64, error) {
+// currentPageVersion reads the version a page has right now, and who wrote
+// it, bypassing the cache, with the cheapest request that returns them.
+func (api *API) currentPageVersion(page *PageInfo) (int64, User, error) {
 	if api.gateway {
 		content, err := api.readContentV2(v2Collection(page.Type), page.ID, false)
 		if err != nil {
-			return 0, err
+			return 0, User{}, err
 		}
-		return content.Version.Number, nil
+		return content.Version.Number, User{AccountID: content.Version.AuthorID}, nil
 	}
 
-	current, err := api.GetPageByIDExpanded(page.ID, "version")
-	if err != nil {
-		return 0, err
+	var current struct {
+		Version struct {
+			Number int64 `json:"number"`
+			By     User  `json:"by"`
+		} `json:"version"`
 	}
-	return current.Version.Number, nil
+
+	request, err := api.v1().Res("content/"+page.ID, &current).Get(map[string]string{"expand": "version"})
+	if err != nil {
+		return 0, User{}, newTransportError(request, "read page "+page.ID, err)
+	}
+	if request.Raw.StatusCode != http.StatusOK {
+		return 0, User{}, newErrorStatusNotOK(request)
+	}
+
+	return current.Version.Number, current.Version.By, nil
+}
+
+// writtenByAnother reports whether by, the author of a version, is known to be
+// somebody other than the account mark signs in as. An author or a current
+// user that cannot be read says nothing either way.
+func (api *API) writtenByAnother(by User) bool {
+	if by.AccountID == "" && by.UserKey == "" && by.Username == "" {
+		return false
+	}
+
+	me, err := api.GetCurrentUser()
+	if err != nil {
+		return false
+	}
+
+	switch {
+	case by.AccountID != "" && me.AccountID != "":
+		return by.AccountID != me.AccountID
+	case by.UserKey != "" && me.UserKey != "":
+		return by.UserKey != me.UserKey
+	case by.Username != "" && me.Username != "":
+		return by.Username != me.Username
+	default:
+		return false
+	}
 }
 
 // updatePageV1 is the request behind UpdatePage. properties travel inside it,
@@ -2664,7 +2716,15 @@ func (api *API) CreatePageWithFolderParent(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	page, err := api.createPageV2(space, pageType, folderID, "folder", title, body)
+	create := func() (*PageInfo, error) {
+		return api.createPageV2(space, pageType, folderID, "folder", title, body)
+	}
+	// Through v2 as well: v1 does not show a folder among the ancestors.
+	landed := createLanded(func() (*PageInfo, error) {
+		return api.findPageV2(space, title, pageType, "current")
+	}, folderID)
+
+	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
 	if err != nil {
 		return nil, err
 	}
@@ -3497,8 +3557,8 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 			"output: %q%s",
 		request.Raw.Status, target, output, truncated,
 	)
-	if unavailableStatus(request.Raw.StatusCode) {
-		return unavailableError{err}
+	if request.Raw.Request != nil && unavailableAnswer(request.Raw.Request.Method, request.Raw.StatusCode) {
+		return unavailableError{error: err, retryAfter: request.Raw.Header.Get("Retry-After")}
 	}
 
 	return err
@@ -3532,9 +3592,13 @@ func newTransportError(request *gopencils.Resource, operation string, err error)
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
 	if request == nil || request.Raw == nil {
+		err = fmt.Errorf("unable to %s: %w", operation, err)
 		// No request carries a context a caller can cancel, so even a
 		// deadline here is net/http's own timeout waiting for an answer.
-		return unavailableError{fmt.Errorf("unable to %s: %w", operation, err)}
+		if unavailableFailure(err) {
+			return unavailableError{error: err}
+		}
+		return err
 	}
 
 	return fmt.Errorf(

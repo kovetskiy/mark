@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,7 +21,7 @@ import (
 // newUnavailableAPI points an API at a gateway in front of the fake. The
 // gateway hands the request on and then answers the first `times` that match
 // with 504, the way one that gave up waiting does after Confluence has
-// carried the write out. A FailFunc on the fake is the other case: a write
+// carried the write out, asking for a wait of 7 seconds. A FailFunc on the fake is the other case: a write
 // refused before Confluence did anything.
 func newUnavailableAPI(
 	t *testing.T, gateway bool, times int, match func(*http.Request) bool,
@@ -42,6 +43,7 @@ func newUnavailableAPI(
 			resp.ContentLength = -1
 			resp.Header.Del("Content-Length")
 			resp.Header.Set("Content-Type", "text/plain")
+			resp.Header.Set("Retry-After", "7")
 		}
 		return nil
 	}
@@ -55,7 +57,7 @@ func newUnavailableAPI(
 
 	api := NewAPI(base, "user", "token", false)
 	api.conflictRetryDelay = 0
-	api.unavailableWait = func(int) {}
+	api.unavailableWait = func(int, string) {}
 	return api, server
 }
 
@@ -323,7 +325,7 @@ func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
 	api.KeepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 	inFlight(server, func(r *http.Request) bool { return isContentPut(r, id) }, func() {
-		server.EditPage(id, "<p>from mark</p>")
+		server.WritePage(id, "<p>from mark</p>")
 	})
 
 	page, err := api.GetPageByID(id)
@@ -338,6 +340,91 @@ func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
 // net/http's own, such as its wait for response headers, and as ambiguous as
 // a 504.
 func TestATimeoutIsUnavailable(t *testing.T) {
-	err := newTransportError(nil, "update page", fmt.Errorf("timeout awaiting response headers: %w", context.DeadlineExceeded))
+	timeout := fmt.Errorf("timeout awaiting response headers: %w", context.DeadlineExceeded)
+
+	err := newTransportError(nil, "update page", &url.Error{Op: "Put", URL: "https://x", Err: timeout})
 	assert.True(t, isUnavailable(err))
+
+	err = newTransportError(nil, "read page", &url.Error{Op: "Get", URL: "https://x", Err: timeout})
+	assert.False(t, isUnavailable(err), "a read changed nothing, and the transport has retried it")
+
+	err = newTransportError(nil, "update page", &url.Error{Op: "parse", URL: "%", Err: errors.New("bad")})
+	assert.False(t, isUnavailable(err), "a request that could not be built was never sent")
+}
+
+// A single edit by somebody else during the outage makes the version the
+// update would have made, but it is not mark's.
+func TestUpdatePageUnavailableThenEditedOnceIsAConflict(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	api.KeepConcurrentEdits = true
+	id := server.AddPage("DOCS", "Target", "page", "").ID
+
+	page, err := api.GetPageByID(id)
+	require.NoError(t, err)
+
+	var once atomic.Bool
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if isContentPut(r, id) && !once.Swap(true) {
+			server.EditPage(id, "<p>by hand</p>")
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+
+	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "", "")
+	require.ErrorIs(t, err, errConflict)
+	assert.Contains(t, err.Error(), "--no-overwrite")
+	assert.Equal(t, "<p>by hand</p>", server.Page(id).Body)
+}
+
+// The last attempt is checked for having landed like any other.
+func TestCreatePageThatLandedOnTheLastAttemptIsKept(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, maxAttempts, isPost("/rest/api/content/"))
+	failWhen(server, false, nil)
+	server.AddSpace("DOCS")
+	refuse(server, false, maxAttempts-1, isPost("/rest/api/content/"))
+
+	page, err := api.CreatePage("DOCS", "page", nil, "Last", "")
+	require.NoError(t, err)
+	assert.Equal(t, "Last", server.Page(page.ID).Title)
+	assert.Equal(t, maxAttempts, server.CountRequests(http.MethodPost, "/rest/api/content"))
+}
+
+func TestCreatePageUnderAParentThatLandedIsKept(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 1, isPost("/rest/api/content/"))
+	server.AddSpace("DOCS")
+	parent, err := api.GetPageByID(server.AddPage("DOCS", "Parent", "page", "").ID)
+	require.NoError(t, err)
+
+	page, err := api.CreatePage("DOCS", "page", parent, "Child", "")
+	require.NoError(t, err)
+	assert.Equal(t, parent.ID, server.Page(page.ID).ParentID)
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/rest/api/content"))
+}
+
+func TestCreatePageUnderAFolderThatLandedIsKept(t *testing.T) {
+	api, server := newUnavailableAPI(t, true, 1, isPost("/api/v2/pages"))
+	failWhen(server, true, nil)
+	server.AddSpace("DOCS")
+	folder := server.AddFolder("DOCS", "Folder", "", "")
+
+	page, err := api.CreatePageWithFolderParent("DOCS", "page", folder.ID, "In a folder", "")
+	require.NoError(t, err)
+	assert.Equal(t, folder.ID, server.Page(page.ID).ParentID)
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/api/v2/pages"))
+}
+
+// A Retry-After on an unavailable write is waited out before reading whether
+// it landed.
+func TestUnavailableWriteWaitsForRetryAfter(t *testing.T) {
+	var id string
+	api, server := newUnavailableAPI(t, false, 1, func(r *http.Request) bool { return isContentPut(r, id) })
+	var waited []string
+	api.unavailableWait = func(_ int, retryAfter string) { waited = append(waited, retryAfter) }
+	id = server.AddPage("DOCS", "Target", "page", "").ID
+
+	page, err := api.GetPageByID(id)
+	require.NoError(t, err)
+	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	assert.Equal(t, []string{"7"}, waited)
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -12,8 +13,12 @@ import (
 // unavailableError marks a write Confluence may or may not have carried out:
 // it answered 502, 503 or 504, or the connection failed before any answer
 // came. A gateway gives up waiting while Confluence goes on with the request,
-// so neither says the write did not happen.
-type unavailableError struct{ error }
+// so neither says the write did not happen. retryAfter is the answer's
+// Retry-After header, if it had one.
+type unavailableError struct {
+	error
+	retryAfter string
+}
 
 func (e unavailableError) Unwrap() error { return e.error }
 
@@ -22,9 +27,32 @@ func isUnavailable(err error) bool {
 	return errors.As(err, &unavailable)
 }
 
-func unavailableStatus(status int) bool {
+// unavailableAnswer reports whether a response to method says a write may or
+// may not have happened. A read is left unmarked: the transport has retried
+// it already, and it changed nothing.
+func unavailableAnswer(method string, status int) bool {
+	if method == http.MethodGet || method == http.MethodHead {
+		return false
+	}
 	switch status {
 	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// unavailableFailure reports whether err, from a request that got no answer,
+// is a write that reached the network. net/http names the method in the
+// url.Error it returns; a request that could not be built names "parse", and
+// a payload that could not be encoded is no url.Error at all.
+func unavailableFailure(err error) bool {
+	var failed *url.Error
+	if !errors.As(err, &failed) {
+		return false
+	}
+	switch failed.Op {
+	case "Post", "Put", "Patch", "Delete":
 		return true
 	default:
 		return false
@@ -37,42 +65,55 @@ func unavailableStatus(status int) bool {
 // the first one took. So after each unavailable answer, landed is asked
 // whether the write took effect after all, and the write is sent again only
 // when it says no. landed returns an error to stop retrying.
+//
+// A write sent again can also fail because the one before it landed after
+// all, still in flight when landed was asked: a create on the title it took,
+// an update on the version it made. landed is asked once more then too.
 func retryUnavailable[T any](
 	api *API,
 	what string,
 	send func() (T, error),
 	landed func() (T, bool, error),
 ) (T, error) {
+	wait := api.unavailableWait
+	if wait == nil {
+		wait = waitUnavailable
+	}
+
+	adopt := func(result T, err error) (T, error) {
+		log.Warn().Err(err).Msgf("Confluence did %s, though it answered otherwise", what)
+		return result, nil
+	}
+
 	for attempt := 1; ; attempt++ {
 		result, err := send()
-		if err == nil || attempt == maxAttempts {
-			return result, err
+		if err == nil {
+			return result, nil
 		}
-		if !isUnavailable(err) {
-			// A write sent again can fail because the one before it landed
-			// after all, still in flight when landed was asked: a create on
-			// the title it took, an update on the version it made.
+
+		var unavailable unavailableError
+		if !errors.As(err, &unavailable) {
 			if attempt > 1 {
 				if landedResult, ok, landedErr := landed(); landedErr == nil && ok {
-					log.Warn().Err(err).Msgf("Confluence did %s, though it answered otherwise", what)
-					return landedResult, nil
+					return adopt(landedResult, err)
 				}
 			}
 			return result, err
 		}
 
-		api.unavailableWait(attempt)
+		wait(attempt, unavailable.retryAfter)
 
-		result, ok, landedErr := landed()
-		if landedErr != nil {
+		landedResult, ok, landedErr := landed()
+		switch {
+		case landedErr != nil:
 			var zero T
 			return zero, fmt.Errorf(
-				"%w; reading whether Confluence did %s anyway: %w", err, what, landedErr,
+				"unable to %s (%w), nor to read whether it landed: %w", what, err, landedErr,
 			)
-		}
-		if ok {
-			log.Warn().Err(err).Msgf("Confluence did %s, though it answered otherwise", what)
-			return result, nil
+		case ok:
+			return adopt(landedResult, err)
+		case attempt == maxAttempts:
+			return result, err
 		}
 
 		log.Warn().Err(err).Int("attempt", attempt).Msgf("unable to %s, retrying", what)
@@ -80,8 +121,8 @@ func retryUnavailable[T any](
 }
 
 // waitUnavailable is the wait before reading whether an unavailable write
-// landed: the transport's backoff, which gives a gateway that timed out
-// time to let the request finish behind it.
-func waitUnavailable(attempt int) {
-	time.Sleep(backoffFor(attempt, "", time.Now()))
+// landed: the transport's backoff, or as long as Retry-After asks, which gives
+// a gateway that timed out time to let the request finish behind it.
+func waitUnavailable(attempt int, retryAfter string) {
+	time.Sleep(backoffFor(attempt, retryAfter, time.Now()))
 }
