@@ -80,20 +80,23 @@ func TestUnwatchAfterWrites(t *testing.T) {
 
 			created, err := api.CreatePage("DOCS", "page", nil, "New", "")
 			require.NoError(t, err)
-			assert.Empty(t, server.Watchers(created.ID), "a page mark created")
-
 			require.NoError(t, api.UpdatePage(created, "<p>body</p>", false, "", "", ""))
-			assert.Empty(t, server.Watchers(created.ID), "a page mark updated")
-
-			_, err = api.CreateAttachment(created.ID, "a.png", "c", strings.NewReader("png"))
-			require.NoError(t, err)
-			assert.Empty(t, server.Watchers(created.ID), "a page mark attached a file to")
+			for _, name := range []string{"a.png", "b.png"} {
+				_, err = api.CreateAttachment(created.ID, name, "c", strings.NewReader("png"))
+				require.NoError(t, err)
+			}
 
 			existing := server.AddPage("DOCS", "Existing", "page", "")
 			page, err := api.GetPageByID(existing.ID)
 			require.NoError(t, err)
 			require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+
+			assert.NotEmpty(t, server.Watchers(created.ID), "nothing is unwatched before the writes are done")
+
+			api.UnwatchWritten()
+			assert.Empty(t, server.Watchers(created.ID), "a page mark created, updated and attached files to")
 			assert.Empty(t, server.Watchers(existing.ID), "a page mark found and updated")
+			assert.Equal(t, 2, server.CountRequests("DELETE", "/user/watch/content/"), "one unwatch per page")
 		})
 	}
 }
@@ -113,6 +116,7 @@ func TestUnwatchLeavesAWatchedPageWatched(t *testing.T) {
 	_, err = api.CreateAttachment(stored.ID, "a.png", "c", strings.NewReader("png"))
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(page, "<p>two</p>", false, "", "", ""))
+	api.UnwatchWritten()
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(stored.ID))
 	assert.Equal(t, 1, server.CountRequests("GET", "/user/watch/content/"+stored.ID),
@@ -128,6 +132,7 @@ func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
 	created, err := api.CreatePage("DOCS", "page", nil, "New", "")
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(created, "<p>body</p>", false, "", "", ""))
+	api.UnwatchWritten()
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(created.ID))
 	assert.Zero(t, server.CountRequests("GET", "/user/watch/")+server.CountRequests("DELETE", "/user/watch/"))
@@ -165,6 +170,7 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 	page, err := api.GetPageByID(existing.ID)
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+	api.UnwatchWritten()
 
 	assert.Equal(t, 1, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
 }

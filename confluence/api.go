@@ -134,11 +134,13 @@ type API struct {
 	// updates and attaches files to. Confluence makes whoever writes to a page
 	// watch it, which turns a publishing account into a mailbox for every page
 	// it touches. A page the user watched before mark first wrote to it in the
-	// run stays watched. --unwatch sets it.
+	// run stays watched. --unwatch sets it. The writes only record the pages:
+	// UnwatchWritten unwatches them, once the last write is done.
 	Unwatch bool
 
-	// watchedBefore records, by page id, whether the user watched the page
-	// before mark first wrote to it; see watchBeforeWrite.
+	// watchedBefore records, by page id, every page mark wrote to and whether
+	// the user watched it before the first of those writes; see
+	// watchBeforeWrite.
 	watchedBefore map[string]bool
 	watchWarned   bool
 	watchMutex    sync.Mutex
@@ -1028,7 +1030,6 @@ func (api *API) CreateAttachment(
 	}
 
 	api.watchBeforeWrite(pageID)
-	defer api.unwatchAfterWrite(pageID)
 
 	return retryUnavailable(
 		api, fmt.Sprintf("attach %q to page %s", name, pageID),
@@ -1125,7 +1126,6 @@ func (api *API) UpdateAttachment(
 	}
 
 	api.watchBeforeWrite(pageID)
-	defer api.unwatchAfterWrite(pageID)
 
 	return retryUnavailable(
 		api, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID),
@@ -1429,7 +1429,6 @@ func (api *API) CreatePage(
 
 	api.rememberCreatedPage(space, pageType, title, page)
 	api.watchCreated(page.ID)
-	api.unwatchAfterWrite(page.ID)
 
 	return page, nil
 }
@@ -1599,7 +1598,6 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	// one, which Confluence rejects as a duplicate title. Dropping the entry
 	// costs one lookup and keeps the cache from asserting something untrue.
 	api.forgetMissesForTitle(page.Title, page.Type)
-	api.unwatchAfterWrite(page.ID)
 
 	// v2 keeps properties on an endpoint of their own, so they are written
 	// only once the content is. The version is bumped first: the new one
@@ -2751,7 +2749,6 @@ func (api *API) CreatePageWithFolderParent(
 
 	api.rememberCreatedPage(space, pageType, title, page)
 	api.watchCreated(page.ID)
-	api.unwatchAfterWrite(page.ID)
 
 	return page, nil
 }

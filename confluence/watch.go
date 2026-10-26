@@ -3,6 +3,7 @@ package confluence
 import (
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -108,9 +109,10 @@ func (api *API) watcher(user string) (map[string]string, error) {
 	return map[string]string{"accountId": id}, nil
 }
 
-// watchBeforeWrite records whether the authenticated user watched a page
-// before mark first wrote to it in this run, for unwatchAfterWrite. Only the
-// first write counts: by the second, mark's own write has made them a watcher.
+// watchBeforeWrite records a page mark is about to write to, and whether the
+// authenticated user watched it before mark first wrote to it in this run, for
+// UnwatchWritten. Only the first write counts: by the second, mark's own write
+// has made them a watcher.
 func (api *API) watchBeforeWrite(pageID string) {
 	if !api.Unwatch {
 		return
@@ -133,7 +135,7 @@ func (api *API) watchBeforeWrite(pageID string) {
 	api.rememberWatching(pageID, watching)
 }
 
-// watchCreated records that nobody watched a page before mark created it.
+// watchCreated records a page mark created, which nobody watched before.
 func (api *API) watchCreated(pageID string) {
 	if api.Unwatch {
 		api.rememberWatching(pageID, false)
@@ -149,24 +151,27 @@ func (api *API) rememberWatching(pageID string, watching bool) {
 	api.watchedBefore[pageID] = watching
 }
 
-// unwatchAfterWrite stops the authenticated user watching a page mark just
-// wrote, unless they watched it before. A failure is only a warning: the
-// write it follows has been made, and the page is no worse than without
-// Unwatch.
-func (api *API) unwatchAfterWrite(pageID string) {
-	if !api.Unwatch {
-		return
-	}
-
+// UnwatchWritten stops the authenticated user watching each page mark wrote to
+// under Unwatch, once, unless they watched it before. It goes after the last
+// write, since any write -- content, a property, an attachment -- can make
+// them a watcher again. A failure is only a warning: the writes have been
+// made, and the page is no worse than without Unwatch.
+func (api *API) UnwatchWritten() {
 	api.watchMutex.Lock()
-	watching, known := api.watchedBefore[pageID]
-	api.watchMutex.Unlock()
-	if !known || watching {
-		return
+	var pages []string
+	for pageID, watching := range api.watchedBefore {
+		if !watching {
+			pages = append(pages, pageID)
+		}
 	}
+	api.watchedBefore = nil
+	api.watchMutex.Unlock()
 
-	if err := api.UnwatchPage(pageID, ""); err != nil {
-		api.watchFailed().Err(err).Msgf("unable to stop watching page %s", pageID)
+	slices.Sort(pages)
+	for _, pageID := range pages {
+		if err := api.UnwatchPage(pageID, ""); err != nil {
+			api.watchFailed().Err(err).Msgf("unable to stop watching page %s", pageID)
+		}
 	}
 }
 
