@@ -232,3 +232,71 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 		})
 	}
 }
+
+// TestRetitledChainOfThree: every ancestor is retitled with the document below
+// it, and the deepest document sorts first.
+func TestRetitledChainOfThree(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	titled := func(title string, parents ...string) string {
+		doc := "<!-- Space: DOCS -->\n<!-- Title: " + title + " -->\n"
+		for _, parent := range parents {
+			doc += "<!-- Parent: " + parent + " -->\n"
+		}
+		return doc + "\nBody.\n"
+	}
+	write := func(grand, parent string) {
+		writeFile(t, dir, "a-leaf.md", titled("Leaf", grand, parent))
+		writeFile(t, dir, "b-parent.md", titled(parent, grand))
+		writeFile(t, dir, "c-grand.md", titled(grand))
+	}
+	// Published ancestors first, so the first run does not meet the ordering itself.
+	writeFile(t, dir, "b-parent.md", titled("Parent", "Grand"))
+	writeFile(t, dir, "c-grand.md", titled("Grand"))
+	config := trackingConfig(server, dir+"/*.md")
+	require.NoError(t, Run(config))
+	write("Grand", "Parent")
+	require.NoError(t, Run(config))
+
+	grandID := pageIDTitled(t, server, "Grand")
+	parentID := pageIDTitled(t, server, "Parent")
+	leafID := pageIDTitled(t, server, "Leaf")
+	require.NotEmpty(t, leafID)
+
+	write("Grand Renamed", "Parent Renamed")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, grandID, pageIDTitled(t, server, "Grand Renamed"))
+	assert.Equal(t, parentID, pageIDTitled(t, server, "Parent Renamed"))
+	assert.Equal(t, parentID, server.Page(leafID).ParentID)
+	assert.Equal(t, grandID, server.Page(parentID).ParentID)
+}
+
+// TestRetitledParentWithFrontMatter: the same retitle, with titles and parents
+// given as front matter.
+func TestRetitledParentWithFrontMatter(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	parent := func(title string) string {
+		return "---\nspace: DOCS\ntitle: " + title + "\n---\n\nBody.\n"
+	}
+	child := func(parentTitle string) string {
+		return "---\nspace: DOCS\ntitle: Child\nparents:\n  - " + parentTitle + "\n---\n\nBody.\n"
+	}
+	writeFile(t, dir, "parent.md", parent("Parent"))
+	writeFile(t, dir, "a-child.md", child("Parent"))
+	config := trackingConfig(server, dir+"/*.md")
+	config.Features = append(config.Features, "frontmatter")
+	require.NoError(t, Run(config))
+
+	parentID := pageIDTitled(t, server, "Parent")
+	childID := pageIDTitled(t, server, "Child")
+	require.NotEmpty(t, childID)
+
+	writeFile(t, dir, "parent.md", parent("Parent Renamed"))
+	writeFile(t, dir, "a-child.md", child("Parent Renamed"))
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, parentID, pageIDTitled(t, server, "Parent Renamed"))
+	assert.Equal(t, parentID, server.Page(childID).ParentID)
+}
