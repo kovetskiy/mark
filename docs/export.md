@@ -107,7 +107,8 @@ its file instead, `[Setup](setup/index.md)`, so the directory can be browsed
 where it is kept. So does a URL of such a page pasted into a body: a short
 `/x/...` link, which is how mark publishes a relative link, or the address a
 browser shows for reading the page, on the same instance and without a `#`
-fragment; one that shows its own address is written with the page's title. The
+fragment or a query other than `pageId`, such as a focused comment or an old
+version; one that shows its own address is written with the page's title. The
 editor, page history and the like, and a dated `/display/` address, which names
 a blog post, keep their URL. A link to a page outside the export stays `ac:`,
 or the URL it was. The price is

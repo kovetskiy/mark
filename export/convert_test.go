@@ -473,3 +473,45 @@ func TestConvertEscapesThroughStdlib(t *testing.T) {
 	assert.Contains(t, md, "data-y=\"c\ufffd\"")
 	assert.Equal(t, "<![CDATA[a]]><![CDATA[]]]]><![CDATA[>b]]>", cdata("a]]>b"))
 }
+
+// A URL pasted into a page is rewritten only when it opens a page of the
+// instance being exported to be read, and says nothing a relative link would
+// drop.
+func TestPageOnInstance(t *testing.T) {
+	const base = "https://example.atlassian.net/wiki"
+
+	for _, test := range []struct {
+		name, href, base string
+		want             PageRef
+	}{
+		{"page", base + "/spaces/DOCS/pages/123/Title", base, PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+		{"viewpage.action", base + "/pages/viewpage.action?pageId=123", base, PageRef{BaseURL: base, PageID: "123"}},
+		{"short link", base + "/x/ew", base, PageRef{BaseURL: base, PageID: "123"}},
+		{"host in another case", "https://Example.atlassian.net/wiki/display/DOCS/Title", base,
+			PageRef{BaseURL: "https://Example.atlassian.net/wiki", Space: "DOCS", Title: "Title"}},
+		{"base without /wiki", base + "/spaces/DOCS/pages/123/Title", "https://example.atlassian.net",
+			PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := pageOnInstance(test.href, test.base)
+			require.True(t, ok)
+			assert.Equal(t, test.want, got)
+		})
+	}
+
+	for _, test := range []struct{ name, href string }{
+		{"focused comment", base + "/spaces/DOCS/pages/123/Title?focusedCommentId=9"},
+		{"old version", base + "/pages/viewpage.action?pageId=123&pageVersion=2"},
+		{"anchor", base + "/spaces/DOCS/pages/123/Title#Section"},
+		{"another host", "https://other.atlassian.net/wiki/spaces/DOCS/pages/123/Title"},
+		{"another context path", "https://example.atlassian.net/confluence/spaces/DOCS/pages/123/Title"},
+		{"dated blog post", base + "/display/DOCS/2024/01/31/Post"},
+		{"editpage.action", base + "/pages/editpage.action?pageId=123"},
+		{"short link too long", base + "/x/AQAAAAAAAAAB"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, ok := pageOnInstance(test.href, base)
+			assert.False(t, ok)
+		})
+	}
+}

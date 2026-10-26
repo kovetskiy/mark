@@ -109,15 +109,17 @@ func ParsePageURL(raw string) (PageRef, error) {
 // pageOnInstance reads the page a URL pasted into a page points at, when it
 // is a page of the instance at base and the URL opens it to be read. A URL
 // carrying a fragment is left alone: it names a place on the page by
-// Confluence's anchor, which mark's own heading anchors need not match.
+// Confluence's anchor, which mark's own heading anchors need not match. So is
+// one with a query, other than viewpage.action's pageId: a focused comment or
+// an old version of the page would be lost.
 func pageOnInstance(href, base string) (PageRef, bool) {
 	parsed, err := url.Parse(href)
-	if err != nil || parsed.Fragment != "" {
+	if err != nil || parsed.Fragment != "" || !onlyPageID(parsed.Query()) {
 		return PageRef{}, false
 	}
 
 	ref, err := ParsePageURL(href)
-	if err != nil || !strings.EqualFold(strings.TrimSuffix(ref.BaseURL, "/"), strings.TrimSuffix(base, "/")) {
+	if err != nil || !sameInstance(ref.BaseURL, base) {
 		return PageRef{}, false
 	}
 
@@ -130,8 +132,24 @@ func pageOnInstance(href, base string) (PageRef, bool) {
 	return ref, true
 }
 
-// lookup is a map lookup a function can take as its arguments.
-func lookup(m map[string]string, key string) (string, bool) {
-	value, ok := m[key]
-	return value, ok
+// onlyPageID reports whether a URL's query is empty, or names the page and
+// nothing else.
+func onlyPageID(query url.Values) bool {
+	return len(query) == 0 || (len(query) == 1 && len(query["pageId"]) == 1)
+}
+
+// sameInstance reports whether a page URL's base is the instance at base. A
+// base given without the path Confluence is served under, such as
+// https://example.atlassian.net for /wiki, matches it on any path of the host.
+func sameInstance(pageBase, base string) bool {
+	pageBase, base = strings.TrimSuffix(pageBase, "/"), strings.TrimSuffix(base, "/")
+	page, err := url.Parse(pageBase)
+	if err != nil {
+		return false
+	}
+	instance, err := url.Parse(base)
+	if err != nil || !strings.EqualFold(page.Host, instance.Host) {
+		return false
+	}
+	return instance.Path == "" || strings.EqualFold(page.Path, instance.Path)
 }
