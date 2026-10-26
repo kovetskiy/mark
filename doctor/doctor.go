@@ -10,7 +10,9 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 )
@@ -35,7 +37,7 @@ type Check struct {
 
 // permission is an operation publishing needs in a space, and what needs it.
 type permission struct {
-	operation, targetType string
+	confluence.Operation
 	// required permissions fail the check when missing; the others warn, since
 	// only some runs need them.
 	required bool
@@ -43,12 +45,12 @@ type permission struct {
 }
 
 var permissions = []permission{
-	{"create", "page", true, "create pages"},
-	{"create", "attachment", true, "upload attachments"},
-	{"create", "blogpost", false, "create blog posts (Type: blogpost)"},
-	{"delete", "page", false, "delete pages (--on-orphan delete)"},
-	{"archive", "page", false, "archive pages (--on-orphan archive)"},
-	{"restrict_content", "", false, "restrict pages (--edit-lock, Restriction headers)"},
+	{confluence.Operation{Operation: "create", TargetType: "page"}, true, "create pages"},
+	{confluence.Operation{Operation: "create", TargetType: "attachment"}, true, "upload attachments"},
+	{confluence.Operation{Operation: "create", TargetType: "blogpost"}, false, "create blog posts (Type: blogpost)"},
+	{confluence.Operation{Operation: "delete", TargetType: "page"}, false, "delete pages (--on-orphan delete)"},
+	{confluence.Operation{Operation: "archive", TargetType: "page"}, false, "archive pages (--on-orphan archive)"},
+	{confluence.Operation{Operation: "restrict_content", TargetType: "space"}, false, "restrict pages (--edit-lock, Restriction headers)"},
 }
 
 // Run checks the instance api talks to, and each space in spaces, and writes
@@ -86,11 +88,16 @@ func run(api *confluence.API, baseURL, username string, spaces []string) []Check
 
 	checks := []Check{{Status: OK, Name: "login", Detail: describeUser(user)}}
 
-	cloud, err := api.Cloud()
-	if err != nil {
-		checks = append(checks, Check{Status: Warn, Name: "platform", Detail: err.Error()})
+	// Cloud is told apart from Server and Data Center by the account, which
+	// says nothing either way when it has neither id; publishing then assumes
+	// Server or Data Center.
+	if !confluence.IsCloudHost(host) && user.AccountID == "" && user.Username == "" && user.UserKey == "" {
+		checks = append(checks, Check{
+			Status: Warn, Name: "platform", Detail: "the account has neither an accountId nor a username, " +
+				"so mark assumes Confluence Server or Data Center",
+		})
 	} else {
-		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(cloud, host)})
+		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(api.IsCloud(), host)})
 	}
 
 	if len(spaces) == 0 {
@@ -100,8 +107,12 @@ func run(api *confluence.API, baseURL, username string, spaces []string) []Check
 		})
 	}
 
+	checked := map[string]bool{}
 	for _, space := range spaces {
-		checks = append(checks, checkSpace(api, space)...)
+		if !checked[space] {
+			checked[space] = true
+			checks = append(checks, checkSpace(api, space)...)
+		}
 	}
 
 	return checks
@@ -115,11 +126,19 @@ func loginFailure(err error, host, username string) Check {
 	var dns *net.DNSError
 	var unknownAuthority x509.UnknownAuthorityError
 	var hostname x509.HostnameError
-	cloud := host == "api.atlassian.com" || strings.HasSuffix(host, ".atlassian.net") || strings.HasSuffix(host, ".jira.com")
+	var timeout net.Error
+	cloud := confluence.IsCloudHost(host)
 
 	switch {
 	case errors.As(err, &dns):
 		check.Hint = "the host in --base-url does not resolve; check it for typos"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		check.Hint = "nothing answers at --base-url; check its port and scheme, and that Confluence is running"
+	case errors.As(err, &timeout) && timeout.Timeout():
+		check.Hint = "Confluence did not answer in time; a firewall, or a proxy that HTTPS_PROXY should name, may be in the way"
+	case strings.Contains(err.Error(), "Proxy Authentication Required"):
+		// net/http gives a proxy's refusal of CONNECT no type of its own.
+		check.Hint = "the proxy wants credentials; give them in HTTPS_PROXY, as http://user:password@proxy:port"
 	case errors.As(err, &unknownAuthority), errors.As(err, &hostname):
 		check.Hint = "the server's TLS certificate is not trusted; add its CA to the system's " +
 			"trust store (or SSL_CERT_FILE), or use --insecure-skip-tls-verify for a test instance"
@@ -138,6 +157,9 @@ func loginFailure(err error, host, username string) Check {
 	case errors.Is(err, confluence.ErrUnauthorized):
 		check.Hint = "on Server and Data Center, a personal access token goes in --password with no " +
 			"--username; a username takes that user's password"
+	case errors.Is(err, confluence.ErrForbidden):
+		check.Hint = "the credentials were turned away: a single sign-on proxy or firewall in front of " +
+			"Confluence may want a browser session, or the account may be locked or lack the use-Confluence permission"
 	}
 
 	return check
@@ -225,7 +247,7 @@ func checkSpace(api *confluence.API, key string) []Check {
 	var can, cannot []string
 	missingRequired := false
 	for _, p := range permissions {
-		if permitted(operations, p) {
+		if slices.Contains(operations, p.Operation) {
 			can = append(can, p.what)
 			continue
 		}
@@ -248,13 +270,4 @@ func checkSpace(api *confluence.API, key string) []Check {
 	}
 
 	return checks
-}
-
-func permitted(operations []confluence.Operation, p permission) bool {
-	for _, op := range operations {
-		if op.Operation == p.operation && (p.targetType == "" || op.TargetType == p.targetType) {
-			return true
-		}
-	}
-	return false
 }

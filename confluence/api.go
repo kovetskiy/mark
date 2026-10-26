@@ -1907,7 +1907,7 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
-// isCloudHost reports whether a host is a known Confluence Cloud host, without
+// IsCloudHost reports whether a host is a known Confluence Cloud host, without
 // issuing a request.
 //
 // Matching is on a dot boundary rather than a bare suffix: strings.HasSuffix on
@@ -1918,7 +1918,7 @@ func (api *API) GetCurrentUser() (*User, error) {
 // (https://api.atlassian.com/ex/confluence/<cloudId>/wiki). It always fronts
 // Cloud, and matching it here means the common scoped-token setup answers from
 // the fast path instead of paying for a probe.
-func isCloudHost(host string) bool {
+func IsCloudHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 
 	if host == "api.atlassian.com" {
@@ -1957,7 +1957,7 @@ func (api *API) IsCloud() bool {
 // arriving mid-request wait for the answer.
 func (api *API) Cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
-		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
+		if api.gateway || IsCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
@@ -3309,6 +3309,11 @@ var ErrNotFound = errors.New("404 (Not Found)")
 // credentials, or the kind of credential, it was given.
 var ErrUnauthorized = errors.New("401 (Unauthorized)")
 
+// ErrForbidden reports that something answered 403: the credentials were
+// accepted but not for this, or a single sign-on proxy or firewall in front of
+// Confluence turned the request away.
+var ErrForbidden = errors.New("403 (Forbidden)")
+
 // errConflict reports that Confluence answered 409: for a page update, that
 // the version sent is not the one after the page's current version.
 var errConflict = errors.New("409 (Conflict)")
@@ -3360,6 +3365,15 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 	if len(output) > maxErrorBody {
 		output = output[:maxErrorBody]
 		truncated = " (truncated)"
+	}
+
+	if request.Raw.StatusCode == http.StatusForbidden {
+		// The body is kept: it is where Confluence, or whatever refused in its
+		// place, says why.
+		return fmt.Errorf(
+			"the Confluence API returned unexpected status: %w for %s, output: %q%s",
+			ErrForbidden, target, output, truncated,
+		)
 	}
 
 	if request.Raw.StatusCode == http.StatusConflict {
