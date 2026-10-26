@@ -256,6 +256,70 @@ func TestUnwatchAfterAMoveByUpdate(t *testing.T) {
 	assert.Empty(t, server.Watchers(onlyMoved.ID))
 }
 
+// A page mark only moves, through the move endpoint on Cloud or
+// movepage.action on Data Center, is recorded before the move; a page already
+// where it was asked to go is not written to, so it is not recorded.
+func TestUnwatchAfterMoves(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		api    func(t *testing.T) (*confluence.API, *confluencetest.Server)
+		method string
+		path   string
+	}{
+		{"move endpoint", func(t *testing.T) (*confluence.API, *confluencetest.Server) {
+			return newUnwatchAPI(t, false)
+		}, "PUT", "/move/"},
+		{"movepage.action", func(t *testing.T) (*confluence.API, *confluencetest.Server) {
+			api, server := newDataCenterAPI(t)
+			server.SetWatchOnWrite()
+			api.Unwatch = true
+			return api, server
+		}, "POST", "/pages/movepage.action"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api, server := tc.api(t)
+			parent := server.AddPage("DOCS", "Parent", "page", "")
+			appended := server.AddPage("DOCS", "Appended", "page", "")
+			before := server.AddPage("DOCS", "Before", "page", "")
+			after := server.AddPage("DOCS", "After", "page", "")
+
+			require.NoError(t, api.MoveContentAppend(appended.ID, parent.ID))
+			require.NoError(t, api.MoveContentBefore(before.ID, appended.ID))
+			require.NoError(t, api.MoveContentAfter(after.ID, appended.ID))
+			require.NotZero(t, server.CountRequests(tc.method, tc.path), "moved the way this case is about")
+			for _, id := range []string{appended.ID, before.ID, after.ID} {
+				require.NotEmpty(t, server.Watchers(id), "the move has to be one that makes a watcher")
+			}
+
+			api.UnwatchWritten()
+
+			for _, id := range []string{appended.ID, before.ID, after.ID} {
+				assert.Empty(t, server.Watchers(id))
+				assert.Equal(t, 1, server.CountRequests("GET", "/user/watch/content/"+id), "recorded once")
+			}
+			assert.Zero(t, server.CountRequests("GET", "/user/watch/content/"+parent.ID), "the target is not moved")
+		})
+	}
+}
+
+// A page already under the parent it is appended to is not moved on Data
+// Center, so it is not recorded either.
+func TestUnwatchSkipsAPageAlreadyInPlace(t *testing.T) {
+	api, server := newDataCenterAPI(t)
+	server.SetWatchOnWrite()
+	api.Unwatch = true
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	moved := server.AddPage("DOCS", "Moved", "page", "")
+	placed := server.AddPage("DOCS", "Placed", "page", parent.ID)
+
+	require.NoError(t, api.MoveContentAppend(moved.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(placed.ID, parent.ID))
+	api.UnwatchWritten()
+
+	assert.Empty(t, server.Watchers(moved.ID))
+	assert.Zero(t, server.CountRequests("GET", "/user/watch/content/"+placed.ID))
+}
+
 // A page mark only labels, as --changes-only leaves one whose content is
 // unchanged, is recorded like any other write.
 func TestUnwatchAfterLabelWrites(t *testing.T) {
