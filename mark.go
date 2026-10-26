@@ -1100,10 +1100,17 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// A page the drift check above leaves alone is not compiled at all.
 		var html string
 		if status == "" {
+			// Read once, for the preview and for the clash check below.
+			var declared []attachment.Attachment
 			var attachments *attachmentPreview
 			if compare {
 				var err error
-				attachments, err = previewAttachmentLinks(api, previewed, filepath.Dir(file), meta)
+				declared, err = declaredAttachments(file, meta)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				attachments, err = previewAttachmentLinks(api, previewed, declared)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -1133,11 +1140,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			// success for a page that run will fail on. Declared files are read
 			// only when there is something to clash with them.
 			if len(headerAttachments) > 0 || len(inline) > 0 {
-				var declared []attachment.Attachment
-				if meta != nil {
-					declared, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
+				if !compare {
+					declared, err = declaredAttachments(file, meta)
 					if err != nil {
-						return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
+						return nil, nil, err
 					}
 				}
 
@@ -1758,22 +1764,25 @@ func (p *attachmentPreview) uploads(inline []attachment.Attachment) (bool, error
 	return p != nil && (p.declared || len(pending) > 0), nil
 }
 
-func previewAttachmentLinks(
-	api *confluence.API,
-	target *confluence.PageInfo,
-	base string,
-	meta *metadata.Meta,
-) (*attachmentPreview, error) {
-	var declared []string
-	if meta != nil {
-		declared = meta.Attachments
+// declaredAttachments reads the files the document's headers declare.
+func declaredAttachments(file string, meta *metadata.Meta) ([]attachment.Attachment, error) {
+	if meta == nil {
+		return nil, nil
 	}
 
-	local, err := attachment.ResolveLocalAttachments(vfs.LocalOS, base, declared)
+	declared, err := attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
 	if err != nil {
 		return nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
+	return declared, nil
+}
+
+func previewAttachmentLinks(
+	api *confluence.API,
+	target *confluence.PageInfo,
+	local []attachment.Attachment,
+) (*attachmentPreview, error) {
 	if target == nil {
 		// Nothing to link against on a page that does not exist yet, but two
 		// files that flatten to one name still fail a real run before it
@@ -3161,49 +3170,27 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 // with a different one -- declared, found while rendering, or the header's --
 // would silently replace it, and is refused instead.
 func withHeaderAttachments(file string, declared, inline, fromHeader []attachment.Attachment) ([]attachment.Attachment, error) {
-	taken := make(map[string]attachment.Attachment, len(declared)+len(inline))
+	names := make(attachment.Filenames, len(declared)+len(inline)+len(fromHeader))
 	for _, a := range slices.Concat(declared, inline) {
-		other, clash := taken[a.Filename]
-		if !clash {
-			taken[a.Filename] = a
-
-			continue
-		}
-
-		if !sameAttachment(other, a) {
-			return nil, fmt.Errorf(
-				"attachments %q and %q in %s would both be uploaded as %q but differ",
-				other.Name, a.Name, file, a.Filename,
-			)
+		if _, err := names.Claim(a); err != nil {
+			return nil, fmt.Errorf("%s: %w", file, err)
 		}
 	}
 
 	for _, a := range fromHeader {
-		other, clash := taken[a.Filename]
-		if !clash {
-			taken[a.Filename] = a
-			inline = append(inline, a)
-
-			continue
-		}
-
-		if !sameAttachment(other, a) {
+		taken, err := names.Claim(a)
+		if err != nil {
 			return nil, fmt.Errorf(
 				"page header attachment %q is a different file from the one %s attaches under that name",
 				a.Filename, file,
 			)
 		}
+		if !taken {
+			inline = append(inline, a)
+		}
 	}
 
 	return inline, nil
-}
-
-func sameAttachment(a, b attachment.Attachment) bool {
-	if a.Checksum != "" && b.Checksum != "" {
-		return a.Checksum == b.Checksum
-	}
-
-	return bytes.Equal(a.FileBytes, b.FileBytes)
 }
 
 // renderHeader renders the page header for one document, naming it by its
