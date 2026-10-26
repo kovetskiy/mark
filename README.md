@@ -49,7 +49,8 @@ The reference is split by topic under [`docs/`](docs/):
   anchors.
 * [Includes, macros and templates](docs/templates.md), with the built-in
   templates and examples.
-* [Publishing](docs/publishing.md): page headers, run reports, continuous
+* [Publishing](docs/publishing.md): publishing to a page by its URL, page
+  headers, run reports, what happens when Confluence is unavailable, continuous
   integration, preserving inline comments, and leaving hand-edited pages alone.
 * [Exporting a page](docs/export.md), or a tree of them, from Confluence back to
   Markdown.

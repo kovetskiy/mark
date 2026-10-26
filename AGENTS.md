@@ -43,6 +43,10 @@ tests, which take minutes. There is currently no `-short` skip.
 | `renderer/` | goldmark node renderers → storage format |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
 | `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
+| `manifest/` | the `--track-pages` record of which page each source file publishes to, kept in Confluence |
+| `header/` | the `--page-header` template placed at the top of every published page |
+| `report/` | what a run did, for `--output-format` and the run's summary |
+| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 
