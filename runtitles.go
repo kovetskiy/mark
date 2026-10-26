@@ -1,10 +1,8 @@
 package mark
 
 import (
-	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/page"
 	"github.com/rs/zerolog/log"
 )
@@ -33,7 +31,6 @@ func runTitleKey(space, title string) string {
 // title is not recognised as the run's own.
 func newRunTitles(config Config, files []string, hierarchy *page.Hierarchy) *runTitles {
 	index := &runTitles{files: map[string][]string{}}
-	frontMatter := slices.Contains(config.Features, "frontmatter")
 
 	for _, file := range files {
 		_, markdown, err := readSource(file)
@@ -41,48 +38,12 @@ func newRunTitles(config Config, files []string, hierarchy *page.Hierarchy) *run
 			continue
 		}
 
-		meta, _, err := metadata.ExtractMeta(
-			markdown,
-			config.Space,
-			config.TitleFromH1,
-			config.TitleFromFilename,
-			file,
-			config.Parents,
-			// As processFile does: with a hierarchy the hash waits for the
-			// parents the path adds.
-			config.TitleAppendGeneratedHash && hierarchy == nil,
-			config.ContentAppearance,
-			frontMatter,
-		)
+		meta, _, err := documentMeta(config, file, markdown, hierarchy)
 		if err != nil || meta == nil || !meta.Publish() {
 			continue
 		}
 
 		title := meta.Title
-		if hierarchy != nil {
-			// The title processFile will publish under, hash included, so it
-			// matches what a child looks for.
-			derived, err := hierarchy.Parents(file)
-			if err != nil {
-				continue
-			}
-			dirTitle, err := hierarchy.Title(file)
-			if err != nil {
-				continue
-			}
-			if config.TitleAppendGeneratedHash {
-				derived, dirTitle = hashDirectoryTitles(config.Parents, meta.Space, derived, dirTitle)
-			}
-			if !meta.DeclaredParents {
-				meta.Parents = append(meta.Parents, derived...)
-			}
-			if dirTitle != "" {
-				title = dirTitle
-			} else if config.TitleAppendGeneratedHash {
-				metadata.AppendGeneratedHash(meta)
-				title = meta.Title
-			}
-		}
 		if title == "" || meta.Space == "" {
 			continue
 		}
