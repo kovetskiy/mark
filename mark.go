@@ -76,7 +76,6 @@ type Config struct {
 
 	// Page updates
 	MinorEdit          bool
-	Unwatch            bool
 	VersionMessage     string
 	EditLock           bool
 	ChangesOnly        bool
@@ -92,6 +91,11 @@ type Config struct {
 	OnOrphan           string
 	OutputFormat       string
 	OrphanUnder        string
+
+	// Unwatch is read by Run, which unwatches as the run ends. ProcessFile
+	// leaves it to the caller: set the API's Unwatch, and call its
+	// UnwatchWritten after the last file.
+	Unwatch bool
 
 	// Rendering
 	DropH1           bool

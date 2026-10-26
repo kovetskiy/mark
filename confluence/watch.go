@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -168,17 +169,32 @@ func (api *API) UnwatchWritten() {
 	api.watchMutex.Unlock()
 
 	slices.Sort(pages)
+	var failed []string
+	var first error
 	for _, pageID := range pages {
 		if err := api.UnwatchPage(pageID, ""); err != nil {
-			api.watchFailed().Err(err).Msgf("unable to stop watching page %s", pageID)
+			log.Debug().Err(err).Msgf("unable to stop watching page %s", pageID)
+			failed = append(failed, pageID)
+			if first == nil {
+				first = err
+			}
 		}
+	}
+
+	// One line for all of them, whatever was said about reading: a refusal
+	// that holds for every page would otherwise read as one page's trouble.
+	if len(failed) > 0 {
+		log.Warn().Err(first).Msgf(
+			"unable to stop watching %d of %d page(s) mark wrote to, so they stay watched: %s",
+			len(failed), len(pages), strings.Join(failed, ", "),
+		)
 	}
 }
 
-// watchFailed is the log event for a watch call that failed: a warning the
-// first time in the run, and debug after. The watch endpoints are v1's, which
-// a scoped token without classic scopes cannot reach through the gateway, so
-// the failure would otherwise repeat for every page and every attachment.
+// watchFailed is the log event for a failure to read whether a page is
+// watched: a warning the first time in the run, and debug after. The watch
+// endpoints are v1's, which a scoped token without classic scopes cannot reach
+// through the gateway, so the failure would otherwise repeat for every page.
 func (api *API) watchFailed() *zerolog.Event {
 	api.watchMutex.Lock()
 	defer api.watchMutex.Unlock()

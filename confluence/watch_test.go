@@ -139,8 +139,8 @@ func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
 }
 
 // A Confluence that refuses the watch endpoints, as the gateway does a scoped
-// token without classic scopes, is warned about once, not for every page and
-// attachment mark writes.
+// token without classic scopes, is warned about once for reading and once for
+// unwatching, not for every page and attachment mark writes.
 func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 	api, server := newUnwatchAPI(t, false)
 	server.AddSpace("DOCS")
@@ -172,5 +172,6 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
 	api.UnwatchWritten()
 
-	assert.Equal(t, 1, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
+	assert.Equal(t, 2, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
+	assert.Contains(t, buffer.String(), "unable to stop watching 1 of 1 page(s)")
 }

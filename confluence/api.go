@@ -1428,7 +1428,6 @@ func (api *API) CreatePage(
 	}
 
 	api.rememberCreatedPage(space, pageType, title, page)
-	api.watchCreated(page.ID)
 
 	return page, nil
 }
@@ -1465,6 +1464,8 @@ func (api *API) createLanded(find func() (*PageInfo, error), parentID string) fu
 // rememberCreatedPage puts a page just created into the page cache, so the
 // lookups later in the run find it without asking.
 func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInfo) {
+	api.watchCreated(page.ID)
+
 	cacheTitle := title
 	if page.Title != "" {
 		cacheTitle = page.Title
@@ -2748,7 +2749,6 @@ func (api *API) CreatePageWithFolderParent(
 	}
 
 	api.rememberCreatedPage(space, pageType, title, page)
-	api.watchCreated(page.ID)
 
 	return page, nil
 }
