@@ -11,6 +11,7 @@ import (
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/rs/zerolog/log"
 
@@ -20,6 +21,10 @@ import (
 // ErrTimeout is returned when no session authenticated before the deadline.
 // Login wraps it with the timeout it was given; callers match with errors.Is.
 var ErrTimeout = errors.New("no Confluence session appeared before the deadline")
+
+// ErrBrowserClosed is returned when the browser went away -- its window was
+// closed, or the process exited -- before a session authenticated.
+var ErrBrowserClosed = errors.New("the browser was closed before the login completed")
 
 const (
 	defaultInterval = time.Second
@@ -62,39 +67,47 @@ func (o Options) withDefaults() Options {
 func Login(ctx context.Context, baseURL string, opts Options) ([]*http.Cookie, error) {
 	opts = opts.withDefaults()
 
-	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
+	deadline, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(ctx,
+	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(deadline,
 		append(chromedp.DefaultExecAllocatorOptions[:], chrome.HeadfulAllocatorOptions()...)...)
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
 	defer cancelBrowser()
 
-	log.Info().Msgf("opening a browser at %s; log in to continue", baseURL)
-
-	if err := chromedp.Do(browserCtx, chromedp.Navigate(baseURL)); err != nil {
+	// The browser is started on its own, before any page is asked for, so that
+	// one that cannot be launched at all is told apart from a base URL that
+	// does not load. A typo in the host, or a DNS or TLS failure, is not a
+	// missing browser, and saying it was sends people looking in the wrong
+	// place.
+	if err := chromedp.Do(browserCtx); err != nil {
 		return nil, fmt.Errorf(
 			"--login needs a browser mark can open a window with; "+
 				"in CI use --password with a personal access token instead: %w", err)
 	}
 
-	cookies, err := waitForSession(ctx,
-		func() ([]*http.Cookie, error) { return readCookies(browserCtx, baseURL) },
+	log.Info().Msgf("opening a browser at %s; log in to continue", baseURL)
+
+	if err := chromedp.Do(browserCtx, chromedp.Navigate(baseURL)); err != nil {
+		return nil, fmt.Errorf("unable to open %s in the browser: %w", baseURL, err)
+	}
+
+	// Polling stops as soon as the browser goes away, rather than when the
+	// timeout runs out. See watchTab for why that has to be watched for.
+	polling, stopPolling := context.WithCancelCause(browserCtx)
+	defer stopPolling(nil)
+	watchTab(polling, stopPolling)
+
+	cookies, err := waitForSession(polling,
+		func() ([]*http.Cookie, error) { return readCookies(polling, baseURL) },
 		func(cookies []*http.Cookie) bool {
-			return Authenticates(ctx, opts.Client, baseURL, cookies)
+			return Authenticates(polling, opts.Client, baseURL, cookies)
 		},
 		opts.Interval)
 	if err != nil {
-		if errors.Is(err, ErrTimeout) {
-			return nil, fmt.Errorf(
-				"timed out after %s waiting for a Confluence session; "+
-					"if you completed the login and this still failed, "+
-					"the account may lack REST API access: %w", opts.Timeout, err)
-		}
-
-		return nil, err
+		return nil, loginFailure(ctx, deadline, opts.Timeout)
 	}
 
 	log.Info().Msg("Confluence session established")
@@ -102,8 +115,67 @@ func Login(ctx context.Context, baseURL string, opts Options) ([]*http.Cookie, e
 	return cookies, nil
 }
 
+// loginFailure says why a login stopped short of a session. waitForSession
+// only ever stops because its context did, and three different things end
+// that context, each of which wants a different answer.
+//
+// caller is the context Login was given, deadline the one carrying the login
+// timeout. Checked in this order because they overlap: an interrupt also
+// takes Chrome down with it, and a timeout stops the browser too, so a
+// closed browser is the answer only when neither of the other two is.
+func loginFailure(caller, deadline context.Context, timeout time.Duration) error {
+	switch {
+	case caller.Err() != nil:
+		return fmt.Errorf("login cancelled: %w", context.Cause(caller))
+
+	case errors.Is(deadline.Err(), context.DeadlineExceeded):
+		return fmt.Errorf(
+			"timed out after %s waiting for a Confluence session; "+
+				"if you completed the login and this still failed, "+
+				"the account may lack REST API access: %w", timeout, ErrTimeout)
+
+	default:
+		return fmt.Errorf("%w; run mark again to log in", ErrBrowserClosed)
+	}
+}
+
+// watchTab stops polling, with ErrBrowserClosed as the cause, once the tab
+// Login opened is gone.
+//
+// A browser process that exits ends the chromedp context on its own. A closed
+// window does not: Chrome on macOS goes on running with no window at all, and
+// the next read of the tab's cookies does not fail -- it waits, for whatever
+// is left of the login timeout. The tab's session detaching is the only sign.
+func watchTab(ctx context.Context, stop context.CancelCauseFunc) {
+	c := chromedp.FromContext(ctx)
+	if c == nil || c.Browser == nil || c.Target == nil {
+		return
+	}
+
+	// Subscribed here, before returning, rather than in the goroutine: a tab
+	// closed in between would otherwise go unnoticed.
+	detached := cdp.Events(ctx, c.Browser, target.DetachedFromTarget)
+	session := c.Target.SessionID
+
+	go func() {
+		for event, err := range detached {
+			if err != nil {
+				return
+			}
+			if event.SessionID == session {
+				stop(ErrBrowserClosed)
+				return
+			}
+		}
+	}()
+}
+
 // waitForSession polls src until the cookies it returns authenticate, or ctx
 // is done. Chrome is one implementation of src.
+//
+// A ctx that ran out of time gives ErrTimeout; one ended any other way gives
+// the reason it was ended for, so that an interrupt or a closed browser is not
+// reported as a login that took too long.
 //
 // Split out from Login so the policy -- how often to look, what counts as
 // success, what a read error means -- is testable without a browser.
@@ -132,7 +204,11 @@ func waitForSession(
 
 		select {
 		case <-ctx.Done():
-			return nil, ErrTimeout
+			cause := context.Cause(ctx)
+			if errors.Is(cause, context.DeadlineExceeded) {
+				return nil, ErrTimeout
+			}
+			return nil, cause
 		case <-ticker.C:
 		}
 	}

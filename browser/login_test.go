@@ -110,6 +110,65 @@ func TestWaitForSessionHonoursCancellation(t *testing.T) {
 	}
 }
 
+// TestWaitForSessionReportsWhyItWasStopped covers a context ended for a reason
+// other than the deadline -- here a closed browser. Reporting that as a
+// timeout would tell somebody who closed the window that their account may
+// lack API access.
+func TestWaitForSessionReportsWhyItWasStopped(t *testing.T) {
+	ctx, stop := context.WithCancelCause(context.Background())
+	stop(ErrBrowserClosed)
+
+	src := func() ([]*http.Cookie, error) { return cookies("JSESSIONID"), nil }
+	probe := func([]*http.Cookie) bool { return false }
+
+	_, err := waitForSession(ctx, src, probe, time.Hour)
+
+	assert.ErrorIs(t, err, ErrBrowserClosed)
+	assert.NotErrorIs(t, err, ErrTimeout)
+}
+
+// TestLoginFailureForAnInterrupt covers ctrl-c, which reaches Login as its
+// own context ending. It also takes Chrome down, so it has to win over the
+// closed-browser reading.
+func TestLoginFailureForAnInterrupt(t *testing.T) {
+	caller, cancel := context.WithCancel(context.Background())
+	deadline, cancelDeadline := context.WithTimeout(caller, time.Hour)
+	defer cancelDeadline()
+	cancel()
+
+	err := loginFailure(caller, deadline, 5*time.Minute)
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "cancelled")
+	assert.NotErrorIs(t, err, ErrTimeout)
+	assert.NotErrorIs(t, err, ErrBrowserClosed)
+}
+
+// TestLoginFailureForATimeout keeps the existing message, and names the
+// timeout that was used rather than a fixed one.
+func TestLoginFailureForATimeout(t *testing.T) {
+	deadline, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-deadline.Done()
+
+	err := loginFailure(context.Background(), deadline, 90*time.Second)
+
+	assert.ErrorIs(t, err, ErrTimeout)
+	assert.Contains(t, err.Error(), "1m30s")
+}
+
+// TestLoginFailureForAClosedBrowser is what is left when neither the caller
+// nor the deadline ended the login: the browser did.
+func TestLoginFailureForAClosedBrowser(t *testing.T) {
+	deadline, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	err := loginFailure(context.Background(), deadline, 5*time.Minute)
+
+	assert.ErrorIs(t, err, ErrBrowserClosed)
+	assert.NotErrorIs(t, err, ErrTimeout)
+}
+
 // TestConvertCookiesCarriesFieldsAcross covers the ordinary case: nothing
 // gets lost or transposed on the way from a CDP cookie to an http.Cookie.
 func TestConvertCookiesCarriesFieldsAcross(t *testing.T) {
