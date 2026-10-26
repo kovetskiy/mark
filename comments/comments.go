@@ -1,6 +1,6 @@
-// Carrying inline comments over to the new body for --preserve-comments.
-
-package mark
+// Package comments carries inline comments over to a page's new body for
+// --preserve-comments.
+package comments
 
 import (
 	"fmt"
@@ -115,7 +115,7 @@ type commentContext struct {
 	after  string
 }
 
-// maxCandidates is how many occurrences of each selection mergeComments
+// maxCandidates is how many occurrences of each selection Merge
 // evaluates with Levenshtein distance; further occurrences are ignored to bound
 // CPU cost on pages where a selection is short or very common.
 const maxCandidates = 100
@@ -125,12 +125,12 @@ const maxCandidates = 100
 // context from oldBody and when scoring candidates in newBody.
 const contextWindowBytes = 100
 
-// mergeComments re-embeds inline comment markers from the Confluence API into
+// Merge re-embeds inline comment markers from the Confluence API into
 // newBody (the updated storage HTML about to be uploaded). It extracts context
 // from each existing marker in oldBody and uses Levenshtein distance to
 // relocate each marker to the best-matching position in newBody, so comment
 // threads survive page edits even when the surrounding text has shifted.
-func mergeComments(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
+func Merge(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
 	if comments == nil {
 		return newBody, nil
 	}

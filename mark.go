@@ -15,6 +15,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/comments"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
 	"github.com/kovetskiy/mark/v16/header"
@@ -1572,12 +1573,12 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			target.Title = meta.Title
 		}
 
-		comments, err := api.GetInlineComments(target.ID)
+		inlineComments, err := api.GetInlineComments(target.ID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
 		}
 
-		html, err = mergeComments(html, target.Body.Storage.Value, comments)
+		html, err = comments.Merge(html, target.Body.Storage.Value, inlineComments)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to merge inline comments: %w", err)
 		}

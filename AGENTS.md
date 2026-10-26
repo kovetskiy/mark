@@ -30,11 +30,12 @@ tests, which take minutes. There is currently no `-short` skip.
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
 | `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
-| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `hierarchy.go` (`--parents-from-path`), `changes.go` (`--changes-only`, `--no-overwrite`), `comments.go` (`--preserve-comments`), `attachments.go`, `labels.go`, `links.go`, `titles.go`, `runtitles.go` and `export.go` |
+| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `hierarchy.go` (`--parents-from-path`), `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go`, `labels.go`, `links.go`, `titles.go`, `runtitles.go` and `export.go` |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
 | `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache, page restrictions |
 | `attachment/` | checksum, upload/update, link rewriting |
+| `comments/` | `--preserve-comments`: re-places the page's inline-comment markers in the new body |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |

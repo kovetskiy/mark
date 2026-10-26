@@ -1,4 +1,4 @@
-package mark
+package comments
 
 import (
 	"testing"
@@ -90,7 +90,7 @@ func TestMergeComments(t *testing.T) {
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-123">world</ac:inline-comment-marker></p>`
 	comments := makeComments("world", "uuid-123")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-123">world</ac:inline-comment-marker></p>`, result)
 }
@@ -100,7 +100,7 @@ func TestMergeComments_Escaping(t *testing.T) {
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-456">&amp;</ac:inline-comment-marker> world</p>`
 	comments := makeComments("&", "uuid-456")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-456">&amp;</ac:inline-comment-marker> world</p>`, result)
 }
@@ -111,7 +111,7 @@ func TestMergeComments_Disambiguation(t *testing.T) {
 	oldBody := `<p>Item one. Item two. <ac:inline-comment-marker ac:ref="uuid-1">Item one.</ac:inline-comment-marker></p>`
 	comments := makeComments("Item one.", "uuid-1")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	// Context should correctly pick the second occurrence
 	assert.Equal(t, `<p>Item one. Item two. <ac:inline-comment-marker ac:ref="uuid-1">Item one.</ac:inline-comment-marker></p>`, result)
@@ -125,7 +125,7 @@ func TestMergeComments_SelectionMissing(t *testing.T) {
 	oldBody := `<p><ac:inline-comment-marker ac:ref="uuid-gone">old text</ac:inline-comment-marker></p>`
 	comments := makeComments("old text", "uuid-gone")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	// Comment is dropped; body is returned unchanged.
 	assert.Equal(t, body, result)
@@ -143,7 +143,7 @@ func TestMergeComments_OverlappingSelections(t *testing.T) {
 	// They overlap on "bar".  The later match (uuid-B at position 7) wins.
 	comments := makeComments("foo bar", "uuid-A", "bar baz", "uuid-B")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>foo <ac:inline-comment-marker ac:ref="uuid-B">bar baz</ac:inline-comment-marker></p>`, result)
 }
@@ -152,7 +152,7 @@ func TestMergeComments_OverlappingSelections(t *testing.T) {
 // handled gracefully and the new body is returned unchanged.
 func TestMergeComments_NilComments(t *testing.T) {
 	body := "<p>Hello world</p>"
-	result, err := mergeComments(body, "", nil)
+	result, err := Merge(body, "", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, body, result)
 }
@@ -167,14 +167,14 @@ func TestMergeComments_HTMLEntities(t *testing.T) {
 	// The API returns the raw (unescaped) selection text.
 	comments := makeComments("<world>", "uuid-ent")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`, result)
 }
 
 // TestMergeComments_ApostropheEncoded verifies the known limitation: when a
 // selection includes an apostrophe that Confluence stores as the numeric
-// entity &#39; in the page body, mergeComments cannot locate the selection
+// entity &#39; in the page body, Merge cannot locate the selection
 // (htmlEscapeText does not encode ' to &#39;) and the comment is dropped with
 // a warning rather than panicking or producing invalid output.
 func TestMergeComments_ApostropheEncoded(t *testing.T) {
@@ -185,7 +185,7 @@ func TestMergeComments_ApostropheEncoded(t *testing.T) {
 	// The API returns the raw unescaped selection including a literal apostrophe.
 	comments := makeComments("<world> it's", "uuid-apos-enc")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	// The comment is dropped (body unchanged) because htmlEscapeText("it's")
 	// produces "it's", which doesn't match "it&#39;s" in the new body.
@@ -202,7 +202,7 @@ func TestMergeComments_ApostropheSelection(t *testing.T) {
 	// The API returns the raw (unescaped) selection text with a literal apostrophe.
 	comments := makeComments("it's", "uuid-apos")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos">it's</ac:inline-comment-marker> a test</p>`, result)
 }
@@ -218,7 +218,7 @@ func TestMergeComments_NestedTags(t *testing.T) {
 	// The API returns the raw selected text without markup.
 	comments := makeComments("world", "uuid-nested")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <strong><ac:inline-comment-marker ac:ref="uuid-nested">world</ac:inline-comment-marker></strong></p>`, result)
 }
@@ -230,7 +230,7 @@ func TestMergeComments_EmptySelection(t *testing.T) {
 	body := "<p>Hello world</p>"
 	comments := makeComments("", "uuid-empty")
 
-	result, err := mergeComments(body, body, comments)
+	result, err := Merge(body, body, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, body, result)
 }
@@ -244,13 +244,13 @@ func TestMergeComments_DuplicateMarkerRef(t *testing.T) {
 	// Two results with identical ref — simulates threaded replies.
 	comments := makeComments("world", "uuid-dup", "world", "uuid-dup")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-dup">world</ac:inline-comment-marker></p>`, result)
 }
 
 // ---------------------------------------------------------------------------
-// Additional mergeComments scenario tests
+// Additional Merge scenario tests
 // ---------------------------------------------------------------------------
 
 // TestMergeComments_MultipleComments verifies that two non-overlapping comments
@@ -260,7 +260,7 @@ func TestMergeComments_MultipleComments(t *testing.T) {
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-1">world</ac:inline-comment-marker> and foo <ac:inline-comment-marker ac:ref="uuid-2">bar</ac:inline-comment-marker></p>`
 	comments := makeComments("world", "uuid-1", "bar", "uuid-2")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-1">world</ac:inline-comment-marker> and foo <ac:inline-comment-marker ac:ref="uuid-2">bar</ac:inline-comment-marker></p>`, result)
 }
@@ -269,7 +269,7 @@ func TestMergeComments_MultipleComments(t *testing.T) {
 // non-nil but empty Results slice is handled gracefully.
 func TestMergeComments_EmptyResults(t *testing.T) {
 	body := "<p>Hello world</p>"
-	result, err := mergeComments(body, body, &confluence.InlineComments{})
+	result, err := Merge(body, body, &confluence.InlineComments{})
 	assert.NoError(t, err)
 	assert.Equal(t, body, result)
 }
@@ -291,7 +291,7 @@ func TestMergeComments_NonInlineLocation(t *testing.T) {
 			},
 		},
 	}
-	result, err := mergeComments(body, body, comments)
+	result, err := Merge(body, body, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, body, result)
 }
@@ -304,7 +304,7 @@ func TestMergeComments_NoContext(t *testing.T) {
 	oldBody := "<p>foo bar foo</p>" // no markers → no context
 	comments := makeComments("foo", "uuid-noctx")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	// First occurrence of "foo" is at position 3.
 	assert.Equal(t, `<p><ac:inline-comment-marker ac:ref="uuid-noctx">foo</ac:inline-comment-marker> bar foo</p>`, result)
@@ -317,7 +317,7 @@ func TestMergeComments_UTF8(t *testing.T) {
 	oldBody := `<p>こんにちは<ac:inline-comment-marker ac:ref="uuid-jp">世界</ac:inline-comment-marker></p>`
 	comments := makeComments("世界", "uuid-jp")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>こんにちは<ac:inline-comment-marker ac:ref="uuid-jp">世界</ac:inline-comment-marker></p>`, result)
 }
@@ -331,7 +331,7 @@ func TestMergeComments_SelectionWithQuotes(t *testing.T) {
 	oldBody := `<p>It's a <ac:inline-comment-marker ac:ref="uuid-q">"test"</ac:inline-comment-marker> page</p>`
 	comments := makeComments(`"test"`, "uuid-q")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>It's a <ac:inline-comment-marker ac:ref="uuid-q">"test"</ac:inline-comment-marker> page</p>`, result)
 }
@@ -344,7 +344,7 @@ func TestMergeComments_DuplicateMarkerRefDropped(t *testing.T) {
 	// Duplicate refs, but selection "gone" is not present in body or oldBody.
 	comments := makeComments("gone", "uuid-dup2", "gone", "uuid-dup2")
 
-	result, err := mergeComments(body, body, comments)
+	result, err := Merge(body, body, comments)
 	assert.NoError(t, err)
 	assert.Equal(t, body, result) // body unchanged, single warning logged
 }
@@ -361,7 +361,7 @@ func TestMergeComments_CDATASelection(t *testing.T) {
 	// The API returns the raw (unescaped) selection.
 	comments := makeComments("<nil>", "uuid-cdata")
 
-	result, err := mergeComments(body, oldBody, comments)
+	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
 	// The raw selection "<nil>" should be found and wrapped with a marker.
 	assert.Equal(t, `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <ac:inline-comment-marker ac:ref="uuid-cdata"><nil></ac:inline-comment-marker> }]]></ac:plain-text-body></ac:structured-macro>`, result)
