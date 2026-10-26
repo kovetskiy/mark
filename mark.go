@@ -346,6 +346,8 @@ func run(ctx context.Context, config Config) (err error) {
 	// has written to the page.
 	api.KeepConcurrentEdits = config.NoOverwrite
 	api.Unwatch = config.Unwatch
+	// Deferred, so that a run that fails partway still unwatches what it wrote.
+	defer api.UnwatchWritten()
 
 	// Folder resolutions are cached in a package-level map that outlives this
 	// call, so a second run in the same process -- against another instance,
