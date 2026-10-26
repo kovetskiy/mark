@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -524,8 +527,9 @@ func isUnwatch(r *http.Request) bool {
 	return r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/user/watch/content/")
 }
 
-// An unwatch Confluence was unavailable for is sent again, unless it landed:
-// a page left watched now would be taken for the user's own watch next run.
+// An unwatch Confluence was unavailable for is sent again, even if it landed:
+// a page left watched now would be taken for the user's own watch next run,
+// and unwatching twice does no harm.
 func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 	t.Run("refused", func(t *testing.T) {
 		api, server := newUnavailableAPI(t, false, 0, nil)
@@ -562,7 +566,56 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 		api.UnwatchWritten()
 
 		assert.Empty(t, server.Watchers(stored.ID))
-		assert.Equal(t, 1, server.CountRequests(http.MethodDelete, "/user/watch/content/"),
-			"an unwatch that landed is not sent again")
+		assert.Equal(t, 2, server.CountRequests(http.MethodDelete, "/user/watch/content/"),
+			"sent again rather than asked whether it landed")
+		assert.Equal(t, 1, server.CountRequests(http.MethodGet, "/user/watch/content/"),
+			"asked only before the write")
 	})
+}
+
+// A Confluence still unavailable after every retry of one unwatch is not
+// asked for the rest, each of which would wait as long again; every page left
+// watched is named in the one warning.
+func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	server.SetWatchOnWrite()
+	api.Unwatch = true
+
+	var ids []string
+	for _, title := range []string{"One", "Two", "Three"} {
+		stored := server.AddPage("DOCS", title, "page", "")
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		ids = append(ids, stored.ID)
+	}
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if isUnwatch(r) {
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+	var buffer bytes.Buffer
+	previousLogger := log.Logger
+	log.Logger = zerolog.New(&buffer).Level(zerolog.WarnLevel)
+	t.Cleanup(func() { log.Logger = previousLogger })
+	api.UnwatchWritten()
+
+	assert.Equal(t, 0, server.CountRequests(http.MethodDelete, "/user/watch/content/"+ids[1])+
+		server.CountRequests(http.MethodDelete, "/user/watch/content/"+ids[2]), "only the first page is tried")
+	assert.Equal(t, 1, strings.Count(buffer.String(), "unable to stop watching 3 of 3 page(s)"), buffer.String())
+	for _, id := range ids {
+		assert.Contains(t, buffer.String(), id)
+	}
+}
+
+// Two first writes to one page can race, and the later read can see the watch
+// the earlier write made: the state recorded first is the one kept.
+func TestRememberWatchKeepsTheFirstState(t *testing.T) {
+	api := NewAPI("http://127.0.0.1:1", "user", "token", false)
+	api.rememberWatch("1", wasUnwatched, nil)
+	api.rememberWatch("1", wasWatched, nil)
+
+	assert.Equal(t, wasUnwatched, api.watchedBefore["1"])
 }
