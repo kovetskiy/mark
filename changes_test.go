@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -398,34 +399,12 @@ func TestDryRunChangesOnlyReportsTheURL(t *testing.T) {
 	}
 }
 
-// previewOf runs config as a dry run with the given output format and returns
-// what it wrote.
-func previewOf(t *testing.T, config Config, format string) string {
-	t.Helper()
-	var out bytes.Buffer
-	config.DryRun = true
-	config.OutputFormat = format
-	config.Output = &out
-	require.NoError(t, Run(config))
-	return out.String()
-}
-
 // decodeReport reads a JSON report, failing the test if the output is not one.
 func decodeReport(t *testing.T, data []byte) *report.Report {
 	t.Helper()
 	r := &report.Report{}
 	require.NoError(t, json.Unmarshal(data, r), "output is not a JSON report: %s", data)
 	return r
-}
-
-// mustFind returns the id of the page titled title in DOCS.
-func mustFind(t *testing.T, server *confluencetest.Server, title string) string {
-	t.Helper()
-	api := confluence.NewAPI(server.URL, "user", "token", false)
-	pg, err := api.FindPage("DOCS", title, "page")
-	require.NoError(t, err)
-	require.NotNil(t, pg)
-	return pg.ID
 }
 
 // TestDryRunChangesOnlyFailsOnAttachmentsSharingAName keeps the preview from
@@ -580,4 +559,480 @@ func TestDryRunChangesOnlyFollowsARenamedParent(t *testing.T) {
 	for _, w := range nonGET(server)[before:] {
 		assert.NotContains(t, w, "/content/", "the real run should not have written a page: %s", w)
 	}
+}
+
+// TestChangesOnlySeesPagePropertyHeaders: --changes-only compared a hash of
+// the body alone, so a document whose only change was its Emoji or
+// Content-Appearance header was reported "already up to date" and the page
+// kept the old one. Both are published with the body.
+func TestChangesOnlySeesPagePropertyHeaders(t *testing.T) {
+	const header = "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n"
+
+	tests := []struct {
+		name  string
+		extra string
+	}{
+		{"emoji", "<!-- Emoji: 🚀 -->\n"},
+		{"content appearance", "<!-- Content-Appearance: fixed -->\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			file := writeFile(t, dir, "doc.md", header+"\nbody\n")
+
+			config := Config{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				Files: file, Features: []string{"mention"}, Output: io.Discard,
+				ChangesOnly: true,
+			}
+			api := confluence.NewAPI(server.URL, "user", "token", false)
+
+			target, err := ProcessFile(file, api, config)
+			require.NoError(t, err)
+			published := server.Page(target.ID).Version
+
+			// Unchanged: skipped, which is the point of the flag.
+			_, err = ProcessFile(file, confluence.NewAPI(server.URL, "user", "token", false), config)
+			require.NoError(t, err)
+			require.Equal(t, published, server.Page(target.ID).Version)
+
+			writeFile(t, dir, "doc.md", header+tt.extra+"\nbody\n")
+			_, err = ProcessFile(file, confluence.NewAPI(server.URL, "user", "token", false), config)
+			require.NoError(t, err)
+			assert.Greater(t, server.Page(target.ID).Version, published,
+				"a changed %s header must update the page", tt.name)
+
+			// And having been published, it is up to date again.
+			updated := server.Page(target.ID).Version
+			_, err = ProcessFile(file, confluence.NewAPI(server.URL, "user", "token", false), config)
+			require.NoError(t, err)
+			assert.Equal(t, updated, server.Page(target.ID).Version)
+		})
+	}
+}
+
+// TestContentFingerprintOfAPlainPageIsTheBodyHash pins what keeps an upgrade
+// quiet: a page with neither header -- or with the appearance every page gets
+// by default -- is fingerprinted exactly as it was before the headers counted,
+// so the fingerprints already stamped on it still match.
+func TestContentFingerprintOfAPlainPageIsTheBodyHash(t *testing.T) {
+	const body = "<p>body</p>"
+
+	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "", "full-width", ""))
+	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "full-width", "full-width", ""))
+	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "fixed", "full-width", ""))
+	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "full-width", "full-width", "🚀"))
+	assert.NotEqual(t, contentFingerprint(body, "fixed", "full-width", "🚀"), contentFingerprint(body, "default", "full-width", "🚀"))
+
+	// --content-appearance fixed gives every page without the header a fixed
+	// appearance: that is the default, and changes nothing about the hash.
+	assert.Equal(t, sha1Hash(body), contentFingerprint(body, "fixed", "fixed", ""))
+	assert.NotEqual(t, sha1Hash(body), contentFingerprint(body, "full-width", "fixed", ""))
+}
+
+// TestNoOverwriteSkipsAPageEditedInConfluence is the point of the flag: an edit
+// made in the web UI is not silently replaced on the next publish.
+func TestNoOverwriteSkipsAPageEditedInConfluence(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+	edited := server.Page(id)
+
+	require.NoError(t, Run(config))
+
+	after := server.Page(id)
+	assert.Equal(t, "<p>Written by a person.</p>", after.Body,
+		"the hand-written body must survive the run")
+	assert.Equal(t, edited.Version, after.Version,
+		"a skipped page must not gain a version")
+}
+
+// TestNoOverwriteKeepsReportingUntilResolved checks that the warning is not a
+// one-off. The recorded version is deliberately left alone while a page is
+// skipped, so every later run says so again.
+func TestNoOverwriteKeepsReportingUntilResolved(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	require.NoError(t, Run(config))
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the second run must skip the page as well")
+}
+
+// TestNoOverwritePublishesAnUntouchedPage is the control. Without it the fix
+// could be "stop publishing".
+func TestNoOverwritePublishesAnUntouchedPage(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	before := server.Page(id)
+	require.NoError(t, Run(config))
+
+	after := server.Page(id)
+	assert.Contains(t, after.Body, "From mark",
+		"a page nobody touched must still be published")
+	assert.Greater(t, after.Version, before.Version,
+		"an untouched page is updated as usual")
+}
+
+// TestNoOverwriteDoesNotOrphanASkippedPage pins that a skipped page still
+// counts as published. It is still on disk, and deleting it because a run
+// declined to write to it would be the worst possible reading of the flag.
+func TestNoOverwriteDoesNotOrphanASkippedPage(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+	require.NoError(t, Run(config))
+
+	page := server.Page(id)
+	require.NotNil(t, page, "the page must not be deleted")
+	assert.Equal(t, "<p>Written by a person.</p>", page.Body,
+		"the page must have been skipped, which is the case being pinned")
+}
+
+// TestNoOverwriteRequiresTrackPages: without the manifest there is nowhere to
+// have remembered a version, so the flag could only appear to work.
+func TestNoOverwriteRequiresTrackPages(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
+
+	err := Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), NoOverwrite: true, Output: io.Discard,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--track-pages")
+}
+
+// TestNoOverwriteSurvivesTheRunThatReportsIt covers the run after the warning,
+// which is where the protection used to end.
+//
+// Reporting drift records the document as seen, so it is not mistaken for an
+// orphan and deleted -- and recording it rebuilt the entry without the version,
+// erasing the very baseline just reported against. The next run read a zero,
+// concluded nothing had drifted, and overwrote the edit it had refused to touch
+// the run before.
+//
+// The file has to change between the runs: an unchanged one takes an early
+// return that never records, which is why the existing tests never saw this.
+func TestNoOverwriteSurvivesTheRunThatReportsIt(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	// The run that reports the drift, with the document edited too.
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nSecond version.\n")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the page must be left alone on the run that reports it")
+
+	// And the run after that, which had the baseline it needed taken away.
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nThird version.\n")
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the hand-written page must still be there")
+}
+
+// TestNoOverwriteDoesNotRetryOverAnEditMadeMidRun: an update refused as a
+// conflict is retried against the page's current version, which overwrites
+// whatever caused the conflict. An edit that lands after the drift check and
+// before the update is the one --no-overwrite is there for, so the retry must
+// not go over it.
+func TestNoOverwriteDoesNotRetryOverAnEditMadeMidRun(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+
+	writeFile(t, filepath.Dir(config.Files), "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nSecond version.\n")
+
+	edited := false
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/content/"+id) && !edited {
+			edited = true
+			server.EditPage(id, "<p>Written by a person.</p>")
+		}
+		return 0, "", false
+	})
+
+	err := Run(config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the edit made during the run must survive it")
+}
+
+// dataCenterMoveFixture publishes one document under "Parent" on the fake
+// dressed as Server or Data Center -- no /api/v2, no content move endpoint and
+// no movepage.action -- so that moving it later takes the update fallback,
+// which writes a version of its own. It returns the server, the page's id, the
+// "Other" parent's id and the config, whose Output the caller replaces as it
+// needs.
+func dataCenterMoveFixture(
+	t *testing.T, configure func(*Config),
+) (*confluencetest.Server, string, string, Config) {
+	t.Helper()
+
+	return dataCenterMoveFixtureWith(t, false, configure)
+}
+
+// dataCenterMoveFixtureWith is dataCenterMoveFixture, with movepage.action
+// served when withAction is set.
+func dataCenterMoveFixtureWith(
+	t *testing.T, withAction bool, configure func(*Config),
+) (*confluencetest.Server, string, string, Config) {
+	t.Helper()
+
+	server := confluencetest.New(t)
+	server.SetDataCenter()
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/move/") ||
+			(!withAction && r.URL.Path == "/pages/movepage.action") {
+			return http.StatusNotFound, `{"message":"no such endpoint"}`, true
+		}
+		return 0, "", false
+	})
+
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Parent", "page", home.ID)
+	other := server.AddPage("DOCS", "Other", "page", home.ID)
+
+	dir := t.TempDir()
+	writeMovingDoc(t, dir, "Parent", "From mark.")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files:      filepath.Join(dir, "*.md"),
+		Features:   []string{"mention"},
+		TrackPages: true,
+		Output:     io.Discard,
+	}
+	configure(&config)
+
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	doc, err := api.FindPage("DOCS", "Doc", "page")
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+
+	return server, doc.ID, other.ID, config
+}
+
+func writeMovingDoc(t *testing.T, dir, parent, body string) {
+	t.Helper()
+
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: "+parent+" -->\n<!-- Title: Doc -->\n\n"+body+"\n")
+}
+
+// TestNoOverwriteDoesNotMistakeAMoveForAnEdit: on Server/DC a move is an update,
+// and an update is a new version. It happens before --no-overwrite compares the
+// page's version with the one mark recorded, so the version mark had just
+// written by moving the page looked like somebody else's edit: the page was
+// reported as edited in Confluence, left unpublished, and -- since a skipped
+// page keeps its old baseline -- reported again on every run after.
+func TestNoOverwriteDoesNotMistakeAMoveForAnEdit(t *testing.T) {
+	server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
+		c.NoOverwrite = true
+	})
+	dir := filepath.Dir(config.Files)
+
+	writeMovingDoc(t, dir, "Other", "Moved.")
+	moved := runReported(t, config)
+
+	assert.NotEqual(t, report.StatusSkipped, moved.Status, moved.Reason)
+	assert.Equal(t, other, server.Page(id).ParentID)
+	assert.Contains(t, server.Page(id).Body, "Moved.", "the move run has to publish as well")
+
+	writeMovingDoc(t, dir, "Other", "After the move.")
+	after := runReported(t, config)
+
+	assert.NotEqual(t, report.StatusSkipped, after.Status, after.Reason)
+	assert.Contains(t, server.Page(id).Body, "After the move.")
+}
+
+// TestNoOverwriteAfterAChangesOnlyMove: a document whose only change is its
+// parent compiles to the page it already is, so --changes-only moves the page
+// and publishes nothing. The version the move wrote still has to become the
+// baseline, or the next --no-overwrite run finds a version mark never
+// recorded and takes it for an edit.
+func TestNoOverwriteAfterAChangesOnlyMove(t *testing.T) {
+	for _, noOverwrite := range []bool{false, true} {
+		name := map[bool]string{false: "changes-only", true: "changes-only and no-overwrite"}[noOverwrite]
+		t.Run(name, func(t *testing.T) {
+			server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
+				c.ChangesOnly = true
+				c.NoOverwrite = noOverwrite
+			})
+			dir := filepath.Dir(config.Files)
+
+			writeMovingDoc(t, dir, "Other", "From mark.")
+			moved := runReported(t, config)
+			assert.NotEqual(t, report.StatusSkipped, moved.Status, moved.Reason)
+			require.Equal(t, other, server.Page(id).ParentID)
+
+			config.ChangesOnly = false
+			config.NoOverwrite = true
+			writeMovingDoc(t, dir, "Other", "After the move.")
+			after := runReported(t, config)
+
+			assert.NotEqual(t, report.StatusSkipped, after.Status, after.Reason)
+			assert.Contains(t, server.Page(id).Body, "After the move.")
+		})
+	}
+}
+
+// TestNoOverwriteStillSeesAnEditMadeBeforeAMove is the other half: the version
+// a move writes is discounted only when the page was at the version mark
+// recorded before it. An edit made in Confluence and then carried along by the
+// move is still an edit, and is still reported on every run.
+func TestNoOverwriteStillSeesAnEditMadeBeforeAMove(t *testing.T) {
+	server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
+		c.NoOverwrite = true
+	})
+	dir := filepath.Dir(config.Files)
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	writeMovingDoc(t, dir, "Other", "Moved.")
+	moved := runReported(t, config)
+
+	assert.Equal(t, report.StatusSkipped, moved.Status)
+	assert.Contains(t, moved.Reason, "edited in Confluence")
+	assert.Equal(t, other, server.Page(id).ParentID,
+		"moving the page overwrites nothing, so it is still moved")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+
+	writeMovingDoc(t, dir, "Other", "After the move.")
+	after := runReported(t, config)
+
+	assert.Equal(t, report.StatusSkipped, after.Status, "and it is said again until resolved")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+}
+
+// TestNoOverwriteAfterAMoveByAction: movepage.action moves the page without
+// an update, and the publish that follows is not taken for a conflict.
+func TestNoOverwriteAfterAMoveByAction(t *testing.T) {
+	server, id, other, config := dataCenterMoveFixtureWith(t, true, func(c *Config) {
+		c.NoOverwrite = true
+	})
+	dir := filepath.Dir(config.Files)
+
+	writeMovingDoc(t, dir, "Other", "Moved.")
+	moved := runReported(t, config)
+
+	assert.NotEqual(t, report.StatusSkipped, moved.Status, moved.Reason)
+	assert.Equal(t, other, server.Page(id).ParentID)
+	assert.Contains(t, server.Page(id).Body, "Moved.")
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/pages/movepage.action"))
+}
+
+// TestFormatVersionMessage covers the round trip --changes-only depends on:
+// whatever formatVersionMessage writes must be readable by
+// readContentHash on the next run, or the page updates every time.
+func TestFormatVersionMessage(t *testing.T) {
+	const hash = "0123456789abcdef0123456789abcdef01234567"
+
+	t.Run("hash leads so truncation cannot eat it", func(t *testing.T) {
+		// Confluence bounds the version message. With the tag appended, a long
+		// operator message pushed it past the limit and silently disabled
+		// change detection; leading with the tag costs the prose instead.
+		long := strings.Repeat("a very long commit subject ", 40)
+		got := formatVersionMessage(long, hash)
+
+		assert.True(t, strings.HasPrefix(got, "[v"+hash+"]"),
+			"the fingerprint must come first")
+
+		for _, limit := range []int{255, 128, 64, 43} {
+			truncated := got
+			if len(truncated) > limit {
+				truncated = truncated[:limit]
+			}
+			matches := readContentHash(truncated)
+			assert.Equal(t, hash, matches, "hash must survive truncation at %d", limit)
+		}
+	})
+
+	t.Run("empty operator message leaves no stray separator", func(t *testing.T) {
+		assert.Equal(t, "[v"+hash+"]", formatVersionMessage("", hash))
+	})
+
+	t.Run("operator message is preserved", func(t *testing.T) {
+		got := formatVersionMessage("published by CI", hash)
+		assert.Equal(t, "[v"+hash+"] published by CI", got)
+	})
+
+	t.Run("round trips through the reader", func(t *testing.T) {
+		for _, msg := range []string{"", "published by CI", "[brackets] and (parens)"} {
+			assert.Equal(t, hash, readContentHash(formatVersionMessage(msg, hash)),
+				"message %q must round trip", msg)
+		}
+	})
+}
+
+// TestContentHashPatternReadsLegacyTrailingTag pins backward compatibility:
+// pages stamped by an older mark carry the tag at the end. If those stopped
+// matching, every page in every space would take one spurious update on the
+// first run after upgrading.
+func TestContentHashPatternReadsLegacyTrailingTag(t *testing.T) {
+	const hash = "89abcdef0123456789abcdef0123456789abcdef"
+
+	legacy := fmt.Sprintf("%s [v%s]", "published by CI", hash)
+	assert.Equal(t, hash, readContentHash(legacy),
+		"the old trailing format must still be recognised")
+}
+
+// TestContentHashPatternIgnoresNonHashes guards against a version message that
+// merely looks tag-shaped being read as a fingerprint.
+func TestContentHashPatternIgnoresNonHashes(t *testing.T) {
+	for _, msg := range []string{
+		"[v123]", // too short
+		"[vZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ]", // not hex
+		"[v0123456789abcdef0123456789abcdef0123456]",  // 39 chars
+		"no tag at all",
+	} {
+		assert.Empty(t, readContentHash(msg),
+			"%q must not be read as a fingerprint", msg)
+	}
+}
+
+// TestReadContentHashIgnoresTagsInsideTheMessage pins the reason both patterns
+// are anchored.
+//
+// An operator's --version-message can itself contain something tag-shaped --
+// someone quoting a previous version message, most plausibly. An unanchored
+// search would find that copy first and prefer it over the real fingerprint at
+// the end. The result is only an update that was not needed, never a change
+// that was missed, but position is free information and discarding it makes
+// the wrong answer reachable for no benefit.
+func TestReadContentHashIgnoresTagsInsideTheMessage(t *testing.T) {
+	const real = "0123456789abcdef0123456789abcdef01234567"
+	const quoted = "89abcdef0123456789abcdef0123456789abcdef"
+
+	// A page still carrying the legacy trailing layout, whose operator message
+	// quotes an older tag.
+	legacy := fmt.Sprintf("re-publish of [v%s] [v%s]", quoted, real)
+	assert.Equal(t, real, readContentHash(legacy),
+		"the trailing fingerprint is the real one, not the quoted copy")
+
+	// The layout mark writes now: its own tag leads, so it wins outright.
+	current := fmt.Sprintf("[v%s] re-publish of [v%s]", real, quoted)
+	assert.Equal(t, real, readContentHash(current))
+
+	// A tag that is neither leading nor trailing is not a fingerprint at all.
+	buried := fmt.Sprintf("see [v%s] for context", quoted)
+	assert.Empty(t, readContentHash(buried))
 }
