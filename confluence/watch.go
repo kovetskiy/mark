@@ -109,6 +109,18 @@ func (api *API) watcher(user string) (map[string]string, error) {
 	return map[string]string{"accountId": id}, nil
 }
 
+// watchState is whether the authenticated user watched a page before mark
+// first wrote to it in the run.
+type watchState int
+
+const (
+	wasUnwatched watchState = iota
+	wasWatched
+	// wasUnread is a page whose watch state could not be read, which is left
+	// watched rather than unwatched.
+	wasUnread
+)
+
 // watchBeforeWrite records a page mark is about to write to, and whether the
 // authenticated user watched it before mark first wrote to it in this run, for
 // UnwatchWritten. Only the first write counts: by the second, mark's own write
@@ -125,37 +137,30 @@ func (api *API) watchBeforeWrite(pageID string) {
 		return
 	}
 
+	state := wasUnwatched
 	watching, err := api.IsWatching(pageID, "")
-	if err != nil {
-		// Not knowing, the page is left as it is rather than unwatched.
-		// UnwatchWritten reports it with the rest.
+	switch {
+	case err != nil:
 		log.Debug().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
-		api.watchMutex.Lock()
-		api.watchUnread = append(api.watchUnread, pageID)
-		if api.watchErr == nil {
-			api.watchErr = err
-		}
-		api.watchMutex.Unlock()
-		watching = true
+		state = wasUnread
+	case watching:
+		state = wasWatched
 	}
 
-	api.rememberWatching(pageID, watching)
+	api.rememberWatch(pageID, state, err)
 }
 
-// watchCreated records a page mark created, which nobody watched before.
-func (api *API) watchCreated(pageID string) {
-	if api.Unwatch {
-		api.rememberWatching(pageID, false)
-	}
-}
-
-func (api *API) rememberWatching(pageID string, watching bool) {
+// rememberWatch records a page's state, and err as the first read error.
+func (api *API) rememberWatch(pageID string, state watchState, err error) {
 	api.watchMutex.Lock()
 	defer api.watchMutex.Unlock()
 	if api.watchedBefore == nil {
-		api.watchedBefore = map[string]bool{}
+		api.watchedBefore = map[string]watchState{}
 	}
-	api.watchedBefore[pageID] = watching
+	api.watchedBefore[pageID] = state
+	if api.watchErr == nil {
+		api.watchErr = err
+	}
 }
 
 // UnwatchWritten stops the authenticated user watching each page mark wrote to
@@ -165,26 +170,22 @@ func (api *API) rememberWatching(pageID string, watching bool) {
 // made, and the page is no worse than without Unwatch.
 func (api *API) UnwatchWritten() {
 	api.watchMutex.Lock()
-	var pages []string
-	for pageID, watching := range api.watchedBefore {
-		if !watching {
+	var pages, unread []string
+	for pageID, state := range api.watchedBefore {
+		switch state {
+		case wasUnwatched:
 			pages = append(pages, pageID)
+		case wasUnread:
+			unread = append(unread, pageID)
 		}
 	}
-	unread, unreadErr := api.watchUnread, api.watchErr
-	total := len(api.watchedBefore)
-	api.watchedBefore, api.watchUnread, api.watchErr = nil, nil, nil
+	unreadErr, total := api.watchErr, len(api.watchedBefore)
+	// A library caller can reuse the API for another run.
+	api.watchedBefore, api.watchErr = nil, nil
 	api.watchMutex.Unlock()
 
-	// One line for each kind of failure, covering every page: a refusal that
-	// holds for all of them would otherwise read as one page's trouble.
-	if len(unread) > 0 {
-		slices.Sort(unread)
-		log.Warn().Err(unreadErr).Msgf(
-			"unable to read whether %d of %d page(s) mark wrote to were watched before, so they stay watched: %s",
-			len(unread), total, strings.Join(unread, ", "),
-		)
-	}
+	warnStayWatched("unable to read whether %d of %d page(s) mark wrote to were watched before",
+		unread, total, unreadErr)
 
 	slices.Sort(pages)
 	var failed []string
@@ -199,12 +200,20 @@ func (api *API) UnwatchWritten() {
 		}
 	}
 
-	if len(failed) > 0 {
-		log.Warn().Err(first).Msgf(
-			"unable to stop watching %d of %d page(s) mark wrote to, so they stay watched: %s",
-			len(failed), len(pages), strings.Join(failed, ", "),
-		)
+	warnStayWatched("unable to stop watching %d of %d page(s) mark wrote to",
+		failed, len(pages), first)
+}
+
+// warnStayWatched logs one line for each kind of failure, covering every page:
+// a refusal that holds for all of them would otherwise read as one page's
+// trouble. format takes the count of pages and the total.
+func warnStayWatched(format string, pages []string, total int, err error) {
+	if len(pages) == 0 {
+		return
 	}
+	slices.Sort(pages)
+	log.Warn().Err(err).Msgf(format+", so they stay watched: %s",
+		len(pages), total, strings.Join(pages, ", "))
 }
 
 // unwatchWritten unwatches a page, sending the request again when Confluence

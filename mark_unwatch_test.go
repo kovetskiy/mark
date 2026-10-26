@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,10 +22,8 @@ func TestUnwatchAfterPublish(t *testing.T) {
 		{"without", false, []string{"acct-current"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			server := confluencetest.New(t)
+			server, api := docsSpace(t)
 			server.SetWatchOnWrite()
-			home := server.AddPage("DOCS", "Home", "page", "")
-			server.SetHomepage("DOCS", home.ID)
 
 			dir := t.TempDir()
 			writeFile(t, dir, "doc.md",
@@ -41,7 +37,6 @@ func TestUnwatchAfterPublish(t *testing.T) {
 				Output:   io.Discard,
 			}))
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
 			for _, title := range []string{"New Parent", "Doc"} {
 				page, err := api.FindPage("DOCS", title, "page")
 				require.NoError(t, err)

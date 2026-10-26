@@ -130,24 +130,18 @@ type API struct {
 	// between its check and the update is where one could land.
 	KeepConcurrentEdits bool
 
-	// Unwatch stops the authenticated user watching the pages mark creates,
-	// updates, moves, labels and attaches files to. Confluence makes whoever
-	// writes to a page watch it, which turns a publishing account into a
-	// mailbox for every page it touches. A page the user watched before mark
-	// first wrote to it in the run stays watched. --unwatch sets it. The writes
-	// only record the pages: UnwatchWritten unwatches them, once the last
-	// write is done.
+	// Unwatch makes the writes record the pages they touch, for UnwatchWritten
+	// to unwatch once the last write is done. --unwatch sets it.
 	Unwatch bool
 
 	// watchedBefore records, by page id, every page mark wrote to and whether
 	// the user watched it before the first of those writes; see
-	// watchBeforeWrite.
-	watchedBefore map[string]bool
-	// watchUnread is the pages among them whose watch state could not be
-	// read, which are left watched.
-	watchUnread []string
-	watchErr    error
-	watchMutex  sync.Mutex
+	// watchBeforeWrite. The writes recorded are a deliberate list, one call
+	// per site: creates, updates, moves by update, labels and attachments.
+	// watchErr is the first error reading a watch state.
+	watchedBefore map[string]watchState
+	watchErr      error
+	watchMutex    sync.Mutex
 
 	// conflictRetryDelay is how long UpdatePage waits after a conflict before
 	// reading the page again; see retryConflictingUpdate. Tests set it to zero.
@@ -1468,7 +1462,10 @@ func (api *API) createLanded(find func() (*PageInfo, error), parentID string) fu
 // rememberCreatedPage puts a page just created into the page cache, so the
 // lookups later in the run find it without asking.
 func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInfo) {
-	api.watchCreated(page.ID)
+	if api.Unwatch {
+		// Nobody watched a page before it was created.
+		api.rememberWatch(page.ID, wasUnwatched, nil)
+	}
 
 	cacheTitle := title
 	if page.Title != "" {
