@@ -1,6 +1,8 @@
 package confluence
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -256,4 +258,86 @@ func TestUpdateAttachmentThatDidNotLandIsSentAgain(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("new"), server.Attachments(id)[0].Data)
 	assert.Equal(t, 2, server.CountRequests(http.MethodPost, "/data"))
+}
+
+// inFlight answers the first write that matches 503 without carrying it out,
+// and lets land carry it out just before the second one arrives: the first
+// was still on its way when mark read that it had not landed.
+func inFlight(server *confluencetest.Server, match func(*http.Request) bool, land func()) {
+	var seen atomic.Int32
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if !match(r) {
+			return 0, "", false
+		}
+		if seen.Add(1) == 1 {
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		if seen.Load() == 2 {
+			land()
+		}
+		return 0, "", false
+	})
+}
+
+func TestCreatePageThatLandedLateIsKept(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	server.AddSpace("DOCS")
+	var landed *confluencetest.Page
+	inFlight(server, isPost("/rest/api/content/"), func() {
+		landed = server.AddPage("DOCS", "Late", "page", "")
+	})
+
+	page, err := api.CreatePage("DOCS", "page", nil, "Late", "")
+	require.NoError(t, err, "the second create's duplicate title is the first one landing")
+	assert.Equal(t, landed.ID, page.ID)
+}
+
+// A page with the title under another parent is not the one the create made,
+// so mark does not adopt it and write over it.
+func TestCreatePageDoesNotAdoptAPageUnderAnotherParent(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	server.AddSpace("DOCS")
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	other := server.AddPage("DOCS", "Other", "page", "")
+	var taken atomic.Bool
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if isPost("/rest/api/content/")(r) && !taken.Swap(true) {
+			server.AddPage("DOCS", "Taken", "page", other.ID)
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+
+	parentInfo, err := api.GetPageByID(parent.ID)
+	require.NoError(t, err)
+
+	_, err = api.CreatePage("DOCS", "page", parentInfo, "Taken", "")
+	require.ErrorContains(t, err, "already exists")
+}
+
+// The update still in flight lands as the version mark sends again, which
+// Confluence refuses as a conflict. That is mark's own version, not an edit
+// --no-overwrite has to protect.
+func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	api.KeepConcurrentEdits = true
+	id := server.AddPage("DOCS", "Target", "page", "").ID
+	inFlight(server, func(r *http.Request) bool { return isContentPut(r, id) }, func() {
+		server.EditPage(id, "<p>from mark</p>")
+	})
+
+	page, err := api.GetPageByID(id)
+	require.NoError(t, err)
+
+	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	assert.EqualValues(t, 2, server.Page(id).Version, "no version on top of the one that landed")
+	assert.EqualValues(t, 2, page.Version.Number)
+}
+
+// No request carries a context a caller can cancel, so a deadline is
+// net/http's own, such as its wait for response headers, and as ambiguous as
+// a 504.
+func TestATimeoutIsUnavailable(t *testing.T) {
+	err := newTransportError(nil, "update page", fmt.Errorf("timeout awaiting response headers: %w", context.DeadlineExceeded))
+	assert.True(t, isUnavailable(err))
 }

@@ -1,7 +1,6 @@
 package confluence
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -46,7 +45,19 @@ func retryUnavailable[T any](
 ) (T, error) {
 	for attempt := 1; ; attempt++ {
 		result, err := send()
-		if err == nil || !isUnavailable(err) || attempt == maxAttempts {
+		if err == nil || attempt == maxAttempts {
+			return result, err
+		}
+		if !isUnavailable(err) {
+			// A write sent again can fail because the one before it landed
+			// after all, still in flight when landed was asked: a create on
+			// the title it took, an update on the version it made.
+			if attempt > 1 {
+				if landedResult, ok, landedErr := landed(); landedErr == nil && ok {
+					log.Warn().Err(err).Msgf("Confluence did %s, though it answered otherwise", what)
+					return landedResult, nil
+				}
+			}
 			return result, err
 		}
 
@@ -73,13 +84,4 @@ func retryUnavailable[T any](
 // time to let the request finish behind it.
 func waitUnavailable(attempt int) {
 	time.Sleep(backoffFor(attempt, "", time.Now()))
-}
-
-// unavailableTransport wraps a failure that came with no answer at all, which
-// is unavailableError's other half. A cancelled run is left alone.
-func unavailableTransport(err error) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	return unavailableError{err}
 }
