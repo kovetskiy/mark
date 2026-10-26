@@ -519,7 +519,8 @@ func run(ctx context.Context, config Config) (err error) {
 	}
 
 	// What the run's own documents call themselves, so that a parent retitled in
-	// this very run can be found by the title its children now name.
+	// this very run can be found by the title its children now name. Nothing
+	// is read until a parent is missing.
 	var titles *runTitles
 	if tracker != nil {
 		titles = newRunTitles(config, files, hierarchy)
@@ -2005,14 +2006,16 @@ func resolveTrackedPage(
 // beneath it. Tracking makes that more likely rather than less, because the
 // parent is now renamed in place instead of being duplicated somewhere visible.
 //
-// Two records are consulted, in order of how precisely each answers the
-// question. The chain a document declares was recorded when it last resolved,
-// so it names the page that held this exact position -- including a parent
-// nobody publishes from the repository, which is what most parents are. Failing
-// that, a title mark itself published is followed, and only when exactly one
-// page was published under it. Anything ambiguous, or a title neither record
-// has seen, is left exactly as written -- a parent that is genuinely meant to
-// be created still is.
+// Three answers are tried, in order of how precisely each answers the question.
+// A document of this run that publishes the title is the parent itself, about
+// to retitle the page it published last time -- under its path, or under the
+// path it had before a rename. The chain a document declares was recorded when
+// it last resolved, so it names the page that held this exact position --
+// including a parent nobody publishes from the repository, which is what most
+// parents are. Failing that, a title mark itself published is followed, and
+// only when exactly one page was published under it. Anything ambiguous, or a
+// title none of them has seen, is left exactly as written -- a parent that is
+// genuinely meant to be created still is.
 //
 // The rewrite happens here rather than inside ancestry resolution because
 // everything downstream compares titles: validation, the decision that a page
@@ -2053,7 +2056,7 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 		// about to rename. Without this, a child sorting ahead of its retitled
 		// parent creates an empty page under the new title, and the parent
 		// then publishes there instead of renaming the page it tracks.
-		pageID, ok, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
+		pageID, publisher, ok, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 		}
@@ -2095,10 +2098,17 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 			continue
 		}
 
-		log.Info().Msgf(
-			"parent %q was renamed to %q; using it rather than creating a page under the old title",
-			title, renamed.Title,
-		)
+		if publisher != "" {
+			log.Info().Msgf(
+				"parent %q is page %s, titled %q until %s retitles it; using it rather than creating an empty page",
+				title, pageID, renamed.Title, publisher,
+			)
+		} else {
+			log.Info().Msgf(
+				"parent %q was renamed to %q; using it rather than creating a page under the old title",
+				title, renamed.Title,
+			)
+		}
 		meta.Parents[i] = renamed.Title
 	}
 
@@ -2106,20 +2116,30 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 }
 
 // trackedPageOfDeclaredTitle returns the page recorded for the one document of
-// the run that declares the title, if there is exactly one and it has been
-// published before.
-func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, space, title string) (string, bool, error) {
-	file, ok := titles.declaredBy(space, title)
+// the run that publishes the title as a page, and that document, if it has been
+// published before. A document renamed since is found by its content, as
+// resolveRenamedFile finds it when its own turn comes.
+func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, space, title string) (string, string, bool, error) {
+	document, ok := titles.declaredBy(space, "page", title)
 	if !ok {
-		return "", false, nil
+		return "", "", false, nil
 	}
 
-	entry, found, err := tracker.Lookup(space, file)
-	if err != nil || !found || entry.PageID == "" {
-		return "", false, err
+	entry, found, err := tracker.Lookup(space, document.file)
+	if err != nil {
+		return "", "", false, err
+	}
+	if !found {
+		_, entry, found, err = tracker.ResolveRenamed(space, document.hash)
+		if err != nil || !found {
+			return "", "", false, err
+		}
+	}
+	if entry.PageID == "" {
+		return "", "", false, nil
 	}
 
-	return entry.PageID, true, nil
+	return entry.PageID, document.file, true, nil
 }
 
 // resolveRenamedFile returns the page a document published to under a previous
