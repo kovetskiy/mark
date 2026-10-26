@@ -453,10 +453,7 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 	}
 
 	query := r.URL.Query()
-	user := s.currentUser.AccountID
-	if s.dataCenter {
-		user = s.currentUser.Username
-	}
+	user := s.currentWatcher()
 	switch {
 	case query.Get("accountId") != "" && !s.dataCenter:
 		user = query.Get("accountId")
@@ -474,10 +471,7 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 		if !checkXSRF(w, r) {
 			return
 		}
-		if s.watchers[pageID] == nil {
-			s.watchers[pageID] = map[string]bool{}
-		}
-		s.watchers[pageID][user] = true
+		s.addWatcher(pageID, user)
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
 		if !checkXSRF(w, r) {
@@ -504,10 +498,20 @@ func (s *Server) wroteTo(pageID string) {
 	if !s.watchOnWrite {
 		return
 	}
-	user := s.currentUser.AccountID
+	s.addWatcher(pageID, s.currentWatcher())
+}
+
+// currentWatcher is how the watchers record the current user: by accountId on
+// Cloud, by username on Server and Data Center. The caller holds s.mu.
+func (s *Server) currentWatcher() string {
 	if s.dataCenter {
-		user = s.currentUser.Username
+		return s.currentUser.Username
 	}
+	return s.currentUser.AccountID
+}
+
+// addWatcher makes user watch a page. The caller holds s.mu.
+func (s *Server) addWatcher(pageID, user string) {
 	if s.watchers[pageID] == nil {
 		s.watchers[pageID] = map[string]bool{}
 	}

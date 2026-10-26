@@ -56,12 +56,11 @@ func TestWatchDataCenter(t *testing.T) {
 
 func newUnwatchAPI(t *testing.T, dataCenter bool) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
-	server := confluencetest.New(t)
+	api, server := newAPI(t)
 	if dataCenter {
 		server.SetDataCenter()
 	}
 	server.SetWatchOnWrite()
-	api := confluence.NewAPI(server.URL, "user", "token", false)
 	api.Unwatch = true
 	return api, server
 }
