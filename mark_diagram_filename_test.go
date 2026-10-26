@@ -19,28 +19,36 @@ var riFilename = regexp.MustCompile(`ri:filename="([^"]*)"`)
 // Auth/Login.svg and shown as Auth_Login.svg, which is no attachment at all:
 // the page showed a broken image.
 func TestDiagramTitledWithASlashIsUploadedUnderTheNameThePageUses(t *testing.T) {
-	server := confluencetest.New(t)
-	home := server.AddPage("DOCS", "Home", "page", "")
-	server.SetHomepage("DOCS", home.ID)
+	// A title is text, not a path: only its slashes change, and "./" in it
+	// is kept.
+	for title, want := range map[string]string{
+		"Auth/Login": "Auth_Login.svg", "./x": "._x.svg", "Q1/./Q2": "Q1_._Q2.svg",
+	} {
+		t.Run(title, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
 
-	dir := t.TempDir()
-	file := writeFile(t, dir, "doc.md",
-		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n```d2 title Auth/Login\na -> b\n```\n")
+			dir := t.TempDir()
+			file := writeFile(t, dir, "doc.md",
+				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n```d2 title "+title+"\na -> b\n```\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
-	target, err := ProcessFile(file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Output: io.Discard,
-		Features: []string{"d2"}, D2Output: "svg", D2Scale: 1,
-	})
-	require.NoError(t, err)
+			api := confluence.NewAPI(server.URL, "user", "token", false)
+			target, err := ProcessFile(file, api, Config{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				Files: file, Output: io.Discard,
+				Features: []string{"d2"}, D2Output: "svg", D2Scale: 1,
+			})
+			require.NoError(t, err)
 
-	body := server.Page(target.ID).Body
-	stored := server.Attachments(target.ID)
-	require.Len(t, stored, 1)
+			body := server.Page(target.ID).Body
+			stored := server.Attachments(target.ID)
+			require.Len(t, stored, 1)
 
-	m := riFilename.FindStringSubmatch(body)
-	require.NotNil(t, m, body)
-	assert.Equal(t, "Auth_Login.svg", m[1])
-	assert.Equal(t, m[1], stored[0].Filename, "the page names the attachment that was uploaded")
+			m := riFilename.FindStringSubmatch(body)
+			require.NotNil(t, m, body)
+			assert.Equal(t, want, m[1])
+			assert.Equal(t, m[1], stored[0].Filename, "the page names the attachment that was uploaded")
+		})
+	}
 }

@@ -1,7 +1,6 @@
 package mark
 
 import (
-	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,8 +14,6 @@ import (
 	markmd "github.com/kovetskiy/mark/v16/markdown"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,33 +30,12 @@ const widthMacro = `<!-- Macro: \!\[.*\]\((.+)\)\<\!\-\- width=(.*) \-\-\>
 func publishMacroDoc(t *testing.T, header, body string) (*confluencetest.Server, string, string) {
 	t.Helper()
 
-	server := confluencetest.New(t)
-	home := server.AddPage("DOCS", "Home", "page", "")
-	server.SetHomepage("DOCS", home.ID)
+	p := publishBeside(t, map[string][]byte{"images/example.png": onePixelPNG(), "logo.png": onePixelPNG()},
+		header+"\n"+widthMacro, body, Config{})
+	require.NoError(t, p.err)
+	require.NotEmpty(t, p.id)
 
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "images"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "images", "example.png"), onePixelPNG(), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), onePixelPNG(), 0o600))
-
-	file := writeFile(t, dir, "doc.md",
-		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\n"+widthMacro+"\n# Doc\n\n"+body)
-
-	var logged bytes.Buffer
-	restore := log.Logger
-	log.Logger = zerolog.New(&logged)
-	defer func() { log.Logger = restore }()
-
-	api := confluence.NewAPI(server.URL, "user", "token", false)
-
-	target, err := ProcessFile(file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Output: io.Discard,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, target)
-
-	return server, target.ID, logged.String()
+	return p.server, p.id, p.logged
 }
 
 // TestMacroAttachmentIsUploaded covers the README's width recipe: the macro

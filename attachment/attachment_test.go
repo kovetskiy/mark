@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -262,13 +264,50 @@ func TestDifferentFilesUnderOneFilenameAreRefused(t *testing.T) {
 	}
 }
 
-func TestFlattenFilenameIgnoresDotSegments(t *testing.T) {
+// TestUploadNameCleansTheReference covers the spellings of one file: each gets
+// the name the plainest spelling does, and none gets an empty one.
+func TestUploadNameCleansTheReference(t *testing.T) {
 	for in, want := range map[string]string{
 		"x.png": "x.png", "./x.png": "x.png", "images/x.png": "images_x.png",
-		"./images/x.png": "images_x.png", "a/./b": "a_b", "../x": ".._x", "a_b": "a_b", ".": ".",
+		"./images/x.png": "images_x.png", "a/./b": "a_b", "a//b": "a_b",
+		"images/../images/x.png": "images_x.png", "a/../b": "b", "../x": ".._x",
+		"a_b": "a_b", ".": ".", "./": "._", "/.": "_.", "a/..": "a_..",
 	} {
-		if got := FlattenFilename(in); got != want {
-			t.Errorf("FlattenFilename(%q) = %q, want %q", in, got, want)
-		}
+		assert.Equal(t, want, UploadName(in), "UploadName(%q)", in)
 	}
+}
+
+// TestFlattenFilenameKeepsDots: a diagram title is text, not a path, so only
+// its slashes change.
+func TestFlattenFilenameKeepsDots(t *testing.T) {
+	for in, want := range map[string]string{
+		"./x": "._x", "Q1/./Q2": "Q1_._Q2", "a//b": "a__b", "a/../b": "a_.._b",
+	} {
+		assert.Equal(t, want, FlattenFilename(in), "FlattenFilename(%q)", in)
+	}
+}
+
+// TestResolverCleansNames covers a file declared under one spelling and linked
+// under another: the link resolves, and the declared file counts as used.
+func TestResolverCleansNames(t *testing.T) {
+	for declared, linked := range map[string]string{
+		"./f.txt": "f.txt", "f.txt": "./f.txt", "a//b.txt": "a/./b.txt", "a/../f.txt": "attachment://./f.txt",
+	} {
+		attachments := []Attachment{{Replace: declared, Link: "/dl/1/f.txt"}}
+		resolver := NewResolver(attachments)
+
+		assert.Equal(t, "/dl/1/f.txt", resolver.Resolve(linked), "%q declared, %q linked", declared, linked)
+		assert.Empty(t, resolver.Unused(attachments), "%q declared, %q linked", declared, linked)
+	}
+}
+
+func TestPreparedAttachmentIsNamedCleaned(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.txt"), []byte("f"), 0o600))
+
+	attachment, err := ResolveLocalAttachment(vfs.LocalOS, dir, "./f.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "f.txt", attachment.Name)
+	assert.Equal(t, "f.txt", attachment.Replace)
+	assert.Equal(t, "f.txt", attachment.Filename)
 }

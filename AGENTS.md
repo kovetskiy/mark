@@ -87,7 +87,8 @@ an attribute break the entire upload, not just one element.
 - `xmlesc` — any interpolated text or attribute value.
 - `cdata` — any text placed inside `<![CDATA[...]]>`; it splits an embedded `]]>` across
   two CDATA sections, which is the only legal way to escape it.
-- `convertAttachment` — values destined for `ri:filename`; slash-flattens *and* escapes.
+- `convertAttachment` — values destined for `ri:filename`; cleans the path (`./x` is `x`),
+  slash-flattens *and* escapes.
 
 All three also replace the characters XML 1.0 has no spelling for — most C0 controls,
 U+FFFE/U+FFFF, bytes that are not UTF-8 — with U+FFFD; Go code that builds markup itself

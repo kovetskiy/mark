@@ -143,6 +143,9 @@ func TestTemplatesReplaceIllegalXMLCharacters(t *testing.T) {
 	assert.Contains(t, rendered, "�[31mred�[0m� ]]><![CDATA[]]]]><![CDATA[> \U0001F600")
 
 	assert.Equal(t, "a_b�.png", mustExec(t, lib, `{{ convertAttachment "a/b\x00.png" }}`))
+	assert.Equal(t, "a_b.png", mustExec(t, lib, `{{ convertAttachment "./a//b.png" }}`))
+	// A diagram's name is flattened from its title before it gets here.
+	assert.Equal(t, "Q1_._Q2.png", mustExec(t, lib, `{{ convertAttachment "Q1_._Q2.png" }}`))
 }
 
 func mustExec(t *testing.T, lib *Lib, text string) string {

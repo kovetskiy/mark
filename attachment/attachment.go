@@ -31,26 +31,29 @@ const (
 
 // FlattenFilename returns the name an attachment called name is uploaded and
 // referred to by. An attachment has no directory, so a "/" -- in a path, or in a
-// diagram's title -- becomes "_". The ac:image and ac:link templates flatten the
-// name the same way, through this function, so what a page names is always
-// what was uploaded.
-//
-// A "." segment names the directory it is in, so "./x" and "x" are one file and
-// get one name; without that, "./x" flattened to "._x" and a page that wrote
-// both uploaded the file twice.
+// diagram's title -- becomes "_".
 func FlattenFilename(name string) string {
-	segments := strings.Split(name, "/")
-	kept := segments[:0]
-	for _, segment := range segments {
-		if segment != "." {
-			kept = append(kept, segment)
-		}
-	}
-	if len(kept) == 0 {
-		return strings.ReplaceAll(name, "/", "_")
+	return strings.ReplaceAll(name, "/", "_")
+}
+
+// UploadName returns the name the file a document refers to as reference is
+// uploaded under. The ac:image and ac:link templates name it the same way,
+// through this function, so what a page names is always what was uploaded.
+func UploadName(reference string) string {
+	return FlattenFilename(cleanReference(reference))
+}
+
+// cleanReference returns the one spelling of a file reference: "./x", "a//x"
+// and "a/../x" are the file "x" names, and have to be one attachment with one
+// name. A reference that cleans down to no name at all, "." or "/", is kept as
+// written.
+func cleanReference(reference string) string {
+	cleaned := path.Clean(reference)
+	if cleaned == "." || cleaned == "/" {
+		return reference
 	}
 
-	return strings.Join(kept, "_")
+	return cleaned
 }
 
 type Attachment struct {
@@ -601,11 +604,12 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 		return Attachment{}, fmt.Errorf("unable to read file %q: %w", attachmentPath, err)
 	}
 
+	cleaned := cleanReference(name)
 	attachment := Attachment{
-		Name:      name,
-		Filename:  FlattenFilename(name),
+		Name:      cleaned,
+		Filename:  FlattenFilename(cleaned),
 		FileBytes: fileBytes,
-		Replace:   name,
+		Replace:   cleaned,
 	}
 
 	// Try to detect image dimensions if it's an image attachment
@@ -630,14 +634,12 @@ type Resolver struct {
 // NewResolver builds a resolver for the given attachments.
 //
 // Both spellings a document may use are accepted: the plain path, and the
-// legacy "attachment://" form. They map to the same upload, and the legacy one
-// is listed first so that Unused reports the pair once rather than twice.
+// legacy "attachment://" form. They map to the same upload, as does every way
+// of writing the path -- "./f.txt" is "f.txt" -- so names are looked up cleaned.
 func NewResolver(attachments []Attachment) *Resolver {
-	links := make(map[string]string, len(attachments)*2)
+	links := make(map[string]string, len(attachments))
 	for _, attachment := range attachments {
-		link := parseAttachmentLink(attachment.Link)
-		links[attachment.Replace] = link
-		links["attachment://"+attachment.Replace] = link
+		links[cleanReference(attachment.Replace)] = parseAttachmentLink(attachment.Link)
 	}
 
 	return &Resolver{links: links, used: map[string]bool{}}
@@ -650,7 +652,8 @@ func (r *Resolver) Resolve(target string) string {
 		return ""
 	}
 
-	link, ok := r.links[target]
+	name := resolverKey(target)
+	link, ok := r.links[name]
 	if !ok {
 		// A destination is a URL, so a file declared as a#b.png is linked as
 		// a%23b.png. The spelling as written wins, which keeps a file really
@@ -659,16 +662,22 @@ func (r *Resolver) Resolve(target string) string {
 		if !escaped {
 			return ""
 		}
-		if link, ok = r.links[decoded]; !ok {
+		name = resolverKey(decoded)
+		if link, ok = r.links[name]; !ok {
 			return ""
 		}
 		target = decoded
 	}
 
-	r.used[strings.TrimPrefix(target, "attachment://")] = true
+	r.used[name] = true
 	log.Debug().Msgf("replacing link: %q -> %q", target, link)
 
 	return link
+}
+
+// resolverKey is the name a link or image destination is looked up by.
+func resolverKey(target string) string {
+	return cleanReference(strings.TrimPrefix(target, "attachment://"))
 }
 
 // Unused reports the attachments that were uploaded but never referred to.
@@ -690,7 +699,7 @@ func (r *Resolver) Unused(attachments []Attachment) []string {
 			continue
 		}
 
-		if !r.used[attachment.Replace] {
+		if !r.used[cleanReference(attachment.Replace)] {
 			unused = append(unused, attachment.Replace)
 		}
 	}
