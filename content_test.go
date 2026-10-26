@@ -2,28 +2,15 @@ package mark
 
 import (
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// publishConfig is a plain publish with no tracking, for tests about what
-// reaches Confluence rather than about what mark remembers.
-func publishConfig(url, files string) Config {
-	return Config{
-		BaseURL:  url,
-		Username: "user",
-		Password: "token",
-		Files:    files,
-		Features: []string{"mention"},
-		Output:   io.Discard,
-	}
-}
 
 // TestMalformedBodyIsRefusedBeforeUpload: storage format is XML, and Confluence
 // answers a body that is not well-formed by rejecting the whole page with a
@@ -53,19 +40,6 @@ Some text with an <span>unclosed tag.
 	// empty rather than filled with markup Confluence would reject.
 	assert.Empty(t, bodyOfPageTitled(t, server, "Malformed"),
 		"no body should have been uploaded")
-}
-
-// bodyOfPageTitled returns what is actually stored on the page carrying a
-// title, or "" if no page carries it.
-func bodyOfPageTitled(t *testing.T, server *confluencetest.Server, title string) string {
-	t.Helper()
-	fresh := confluence.NewAPI(server.URL, "user", "token", false)
-	found, err := fresh.FindPage("DOCS", title, "page")
-	require.NoError(t, err)
-	if found == nil {
-		return ""
-	}
-	return server.Page(found.ID).Body
 }
 
 // TestWellFormedBodyPublishes is the control: the gate must not stand in the
@@ -168,4 +142,94 @@ A & B, "quoted", 3 < 4, and a table:
 		Files: file, CompileOnly: true,
 		Features: []string{"mention"}, Output: io.Discard,
 	}))
+}
+
+// writeWithBOM writes a document behind a UTF-8 byte-order mark, the way a
+// Windows editor set to "UTF-8 with BOM" does.
+func writeWithBOM(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, append([]byte{0xEF, 0xBB, 0xBF}, content...), 0o600))
+	return path
+}
+
+// storedBody returns what is actually stored on the page carrying a title.
+func storedBody(t *testing.T, server *confluencetest.Server, title string) string {
+	t.Helper()
+	found, err := confluence.NewAPI(server.URL, "user", "token", false).
+		FindPage("DOCS", title, "page")
+	require.NoError(t, err)
+	if found == nil {
+		return ""
+	}
+	return server.Page(found.ID).Body
+}
+
+// TestByteOrderMarkDoesNotHideMetadata: a BOM in front of the first header
+// comment made every parser here see a file with no metadata at all, and the
+// run failed with "doesn't contain metadata" -- pointing away from the headers,
+// which are present and correct. "UTF-8 with BOM" is a one-click setting in VS
+// Code, and PowerShell redirection produces one without being asked.
+func TestByteOrderMarkDoesNotHideMetadata(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	path := writeWithBOM(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: With BOM -->\n\nBody text.\n")
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: path, Features: []string{"mention"}, Output: io.Discard,
+	}))
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "With BOM"))
+	assert.NotContains(t, storedBody(t, server, "With BOM"), "\ufeff",
+		"the mark itself must not reach the page")
+}
+
+// TestByteOrderMarkDoesNotHideFrontMatter covers the other metadata form. The
+// BOM sits in front of the opening "---", so it stops being a front-matter
+// fence and becomes a horizontal rule with the YAML published beneath it as
+// body text.
+func TestByteOrderMarkDoesNotHideFrontMatter(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	path := writeWithBOM(t, dir, "doc.md",
+		"---\nspace: DOCS\ntitle: BOM Front Matter\nparents: [ Parent ]\n---\n\nBody text.\n")
+
+	require.NoError(t, Run(Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: path, Features: []string{"mention", "frontmatter"}, Output: io.Discard,
+	}))
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "BOM Front Matter"))
+	assert.NotContains(t, storedBody(t, server, "BOM Front Matter"), "space: DOCS",
+		"the front matter must be read as metadata, not published as text")
+}
+
+// TestLinkToDocumentWithByteOrderMark: the document being published had its
+// BOM stripped, a document it links to did not. The linked file's headers
+// were invisible behind the mark, so the link was never rewritten to the page
+// and was published pointing at other.md.
+func TestLinkToDocumentWithByteOrderMark(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	other := writeWithBOM(t, dir, "other.md", header+"<!-- Title: Other -->\n\nx\n")
+	doc := writeFile(t, dir, "doc.md", header+"<!-- Title: Doc -->\n\nSee [other](other.md).\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Features: []string{"mention"}, Output: io.Discard,
+	}
+	config.Files = other
+	require.NoError(t, Run(config))
+	config.Files = doc
+	require.NoError(t, Run(config))
+
+	body := storedBody(t, server, "Doc")
+	assert.NotContains(t, body, `href="other.md"`)
+	assert.Contains(t, body, `href="/wiki/x/`, "rewritten to the page it was published as")
 }

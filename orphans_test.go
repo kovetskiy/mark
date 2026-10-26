@@ -1,7 +1,10 @@
 package mark
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +12,8 @@ import (
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/manifest"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -416,4 +421,271 @@ func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
 	page := server.Page(gone.ID)
 	require.NotNil(t, page)
 	assert.False(t, page.Trashed, "a page holding folders must be left alone")
+}
+
+// getsFor counts the GETs the fake received for exactly one content path,
+// which is what a scope check costs: one GetPageByIDExpanded per orphan.
+func getsFor(server *confluencetest.Server, pageID string) int {
+	var n int
+	for _, request := range server.Requests() {
+		if request.Method == http.MethodGet && request.Path == "/rest/api/content/"+pageID {
+			n++
+		}
+	}
+
+	return n
+}
+
+// TestOrphanScopeIsCheckedOnce pins the class of bug where the same remote
+// question is asked twice. handleOrphans filtered its candidates with InScope
+// and HandleOrphans then asked again about every survivor, so the one operation
+// in mark that trashes pages cost twice the API calls it needed -- for an
+// answer that had just been computed.
+func TestOrphanScopeIsCheckedOnce(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Inside", "page", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "gone.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: Gone -->\n\nGone.\n")
+	writeFile(t, dir, "keep.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
+		TrackPages: true, OnOrphan: "delete", OrphanUnder: "Inside",
+		Output: io.Discard,
+	}
+	require.NoError(t, Run(config))
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	gone, err := api.FindPage("DOCS", "Gone", "page")
+	require.NoError(t, err)
+	require.NotNil(t, gone)
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+	server.ResetRequests()
+	require.NoError(t, Run(config))
+
+	assert.True(t, server.Page(gone.ID).Trashed, "the orphan is still acted on")
+	assert.Equal(t, 1, getsFor(server, gone.ID),
+		"an orphan's ancestry should be read once, not once per caller that wants the scope")
+}
+
+// writesTo lists the requests that could have changed something on the server:
+// anything that is not a read. A dry run must send none of them.
+func writesTo(server *confluencetest.Server) []string {
+	var writes []string
+	for _, r := range server.Requests() {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writes = append(writes, r.Method+" "+r.Path)
+		}
+	}
+	return writes
+}
+
+// publishTracked publishes every *.md in dir with tracking on and
+// --on-orphan delete, returning the config so a dry run can repeat it.
+func publishTracked(t *testing.T, server *confluencetest.Server, dir string) Config {
+	t.Helper()
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.OnOrphan = "delete"
+	require.NoError(t, Run(config))
+	return config
+}
+
+// TestDryRunDoesNotReportPublishedPagesAsOrphans: a dry run over documents that
+// are all still present, after a tracked publish, must not read them as gone.
+// The dry run found each page by title and returned before recording it, so
+// every tracked path looked unseen: it reported the whole set as orphans, and
+// with --on-orphan delete only the "nothing was published" guard in mark.go
+// stopped it from listing each one as to be deleted.
+func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+
+	a := writeFile(t, dir, "a.md", markdownWithTitle("A"))
+	b := writeFile(t, dir, "b.md", markdownWithTitle("B"))
+	config := publishTracked(t, server, dir)
+
+	pageA, err := api.FindPage("DOCS", "A", "page")
+	require.NoError(t, err)
+	require.NotNil(t, pageA)
+	pageB, err := api.FindPage("DOCS", "B", "page")
+	require.NoError(t, err)
+	require.NotNil(t, pageB)
+
+	server.ResetRequests()
+
+	dry := config
+	dry.DryRun = true
+	logged := captureLog(t, func() { require.NoError(t, Run(dry)) })
+
+	// The capture works, at the level the orphan report is written at: without
+	// this, a quieter logger would make the assertions below pass vacuously.
+	assert.Contains(t, logged, "processing "+inLog(a))
+	assert.Contains(t, logged, "processing "+inLog(b))
+
+	// What the dry run used to log: every page reported as an orphan, then the
+	// "nothing was published" guard holding the deletion back.
+	assert.NotContains(t, logged, "had no matching source file",
+		"every document is still there")
+	assert.NotContains(t, logged, "nothing was published in this run")
+	// The guard above stopped the original bug short of this line; this
+	// assertion guards against a regression that gets past it. The text comes
+	// from the "page %q would be %sd" format in page/orphan.go.
+	assert.NotContains(t, logged, "would be deleted")
+
+	assert.Empty(t, writesTo(server), "a dry run must not change anything")
+	assert.False(t, server.Page(pageA.ID).Trashed)
+	assert.False(t, server.Page(pageB.ID).Trashed)
+}
+
+// TestDryRunStillReportsRealOrphans is the other half: recording the pages a dry
+// run finds must not hide the one that is really gone. It is reported, and
+// would be deleted, but the dry run leaves it where it is.
+func TestDryRunStillReportsRealOrphans(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+
+	a := writeFile(t, dir, "a.md", markdownWithTitle("A"))
+	b := writeFile(t, dir, "b.md", markdownWithTitle("B"))
+	config := publishTracked(t, server, dir)
+
+	pageA, err := api.FindPage("DOCS", "A", "page")
+	require.NoError(t, err)
+	require.NotNil(t, pageA)
+	pageB, err := api.FindPage("DOCS", "B", "page")
+	require.NoError(t, err)
+	require.NotNil(t, pageB)
+
+	require.NoError(t, os.Remove(b))
+	server.ResetRequests()
+
+	dry := config
+	dry.DryRun = true
+	logged := captureLog(t, func() { require.NoError(t, Run(dry)) })
+
+	assert.Contains(t, logged, "processing "+inLog(a))
+	assert.Contains(t, logged, "1 tracked page(s) had no matching source file in this run: "+filepath.ToSlash(b),
+		"b.md is gone, and only b.md")
+	// "page %q would be %sd" in page/orphan.go; the quotes are escaped because
+	// zerolog writes the message as JSON.
+	assert.Contains(t, logged, `page \"B\" would be deleted`)
+	assert.NotContains(t, logged, `page \"A\" would be deleted`)
+
+	assert.Empty(t, writesTo(server), "a dry run must not change anything")
+	assert.False(t, server.Page(pageA.ID).Trashed)
+	assert.False(t, server.Page(pageB.ID).Trashed, "a dry run only says what it would delete")
+}
+
+// inLog is s as it reads in the captured log, which zerolog writes as JSON: a
+// Windows path has its backslashes doubled.
+func inLog(s string) string {
+	b, _ := json.Marshal(s)
+
+	return string(b[1 : len(b)-1])
+}
+
+// TestTrackingReportsOrphansWithoutDeleting: a file that disappears from the
+// glob is reported, and the page it published to is left completely alone.
+// Phase 1 never deletes.
+func TestTrackingReportsOrphansWithoutDeleting(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
+	writeFile(t, dir, "drop.md", markdownWithTitle("Drop"))
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+
+	dropped, err := api.FindPage("DOCS", "Drop", "page")
+	require.NoError(t, err)
+	require.NotNil(t, dropped)
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "drop.md")))
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+
+	assert.NotNil(t, server.Page(dropped.ID),
+		"the page of a deleted file must survive: phase 1 reports, it does not prune")
+}
+
+// TestTrackingSuppressesOrphanReportOnFailedRuns pins the branch that used to be
+// unreachable. A file that failed to process is indistinguishable from one that
+// was deleted, so reporting it as missing would be actively misleading.
+func TestTrackingSuppressesOrphanReportOnFailedRuns(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", markdownWithTitle("A"))
+	writeFile(t, dir, "b.md", markdownWithTitle("B"))
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+
+	// b.md now fails to process rather than disappearing.
+	writeFile(t, dir, "b.md", "# Broken\n\nNo metadata.\n")
+
+	var logged bytes.Buffer
+	restore := log.Logger
+	log.Logger = zerolog.New(&logged)
+	defer func() { log.Logger = restore }()
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.ContinueOnError = true
+	require.Error(t, Run(config))
+
+	assert.NotContains(t, logged.String(), "had no matching source file",
+		"a run with errors must not report unpublished pages as missing")
+}
+
+// TestOrphansAreScopedToTheGlob: a run narrowed with --files says nothing about
+// files outside it. Reporting them as missing buries the handful of genuine
+// deletions in a list of files that are perfectly present.
+func TestOrphansAreScopedToTheGlob(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "guides"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "notes"), 0o750))
+	writeFile(t, dir, "guides/a.md", markdownWithTitle("A"))
+	writeFile(t, dir, "notes/b.md", markdownWithTitle("B"))
+
+	// Publish each subtree with its own glob.
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "guides", "*.md"))))
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "notes", "*.md"))))
+
+	var logged bytes.Buffer
+	restore := log.Logger
+	log.Logger = zerolog.New(&logged)
+	defer func() { log.Logger = restore }()
+
+	// Re-run only the guides. notes/b.md is untouched and still present.
+	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "guides", "*.md"))))
+
+	assert.NotContains(t, logged.String(), "had no matching source file",
+		"a run scoped to one directory must not report another's files as missing")
+}
+
+// TestDeletedFileIsReportedOnceThenForgotten: left in place, a deletion is
+// reported on every run forever, which teaches people to ignore the one message
+// worth reading.
+func TestDeletedFileIsReportedOnceThenForgotten(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
+	writeFile(t, dir, "drop.md", markdownWithTitle("Drop"))
+	glob := filepath.Join(dir, "*.md")
+	require.NoError(t, Run(trackingConfig(server, glob)))
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "drop.md")))
+
+	first := captureLog(t, func() { require.NoError(t, Run(trackingConfig(server, glob))) })
+	assert.Contains(t, first, "had no matching source file",
+		"the deletion should be reported the first time it is noticed")
+
+	second := captureLog(t, func() { require.NoError(t, Run(trackingConfig(server, glob))) })
+	assert.NotContains(t, second, "had no matching source file",
+		"and not on every run thereafter")
 }
