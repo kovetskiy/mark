@@ -155,12 +155,20 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 			return relativePath(d)
 		}
 
-		instance := api.BaseURL
+		// Confluence's idea of its own address and the one mark was given can
+		// differ, behind a proxy or on a custom domain; a URL may be on either.
+		instances := []string{api.BaseURL}
 		if strings.HasPrefix(page.Links.Base, "http") {
-			instance = page.Links.Base
+			instances = append(instances, page.Links.Base)
 		}
 		pageURLPath = func(href string) (string, string, bool) {
-			ref, ok := pageOnInstance(href, instance)
+			var ref PageRef
+			ok := false
+			for _, instance := range instances {
+				if ref, ok = pageOnInstance(href, instance); ok {
+					break
+				}
+			}
 			if !ok {
 				return "", "", false
 			}

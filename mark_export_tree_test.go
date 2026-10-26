@@ -31,9 +31,9 @@ func exportTreeSpace(t *testing.T) (*confluencetest.Server, map[string]*confluen
 	pages["C"] = server.AddPage("DOCS", "C", "page", pages["Guide"].ID)
 	pages["Deep dive"] = server.AddPage("DOCS", "Deep dive", "page", pages["C++"].ID)
 
-	for title, page := range pages {
-		server.EditPage(page.ID, `<p>`+title+`</p><p><ac:image><ri:attachment ri:filename="image.png"/></ac:image></p>`)
-		server.AddAttachmentData(page.ID, "image.png", []byte("image of "+title))
+	for title, p := range pages {
+		server.EditPage(p.ID, `<p>`+title+`</p><p><ac:image><ri:attachment ri:filename="image.png"/></ac:image></p>`)
+		server.AddAttachmentData(p.ID, "image.png", []byte("image of "+title))
 	}
 
 	return server, pages
@@ -136,9 +136,9 @@ func TestExportTreeRoundTrip(t *testing.T) {
 	require.NoError(t, exportTree(t, server, pages["Guide"].ID, out, 0, false))
 
 	before := map[string]string{}
-	for title, page := range pages {
-		before[title] = server.Page(page.ID).ParentID
-		server.EditPage(page.ID, "<p>edited in Confluence</p>")
+	for title, p := range pages {
+		before[title] = server.Page(p.ID).ParentID
+		server.EditPage(p.ID, "<p>edited in Confluence</p>")
 	}
 
 	require.NoError(t, Run(Config{
@@ -147,16 +147,16 @@ func TestExportTreeRoundTrip(t *testing.T) {
 		Output: io.Discard,
 	}))
 
-	for title, page := range pages {
+	for title, p := range pages {
 		if title == "Home" {
 			continue
 		}
-		got := server.Page(page.ID)
+		got := server.Page(p.ID)
 		assert.Contains(t, got.Body, "<p>"+title+"</p>", "%s is published back to the page it came from", title)
 		assert.Equal(t, before[title], got.ParentID, "%s keeps its parent", title)
 
 		var names []string
-		for _, attachment := range server.Attachments(page.ID) {
+		for _, attachment := range server.Attachments(p.ID) {
 			names = append(names, attachment.Filename)
 		}
 		assert.Equal(t, []string{"image.png"}, names, title)

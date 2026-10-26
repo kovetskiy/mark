@@ -502,7 +502,9 @@ func encodeTinyLinkID(id uint64) string {
 	return result.String()
 }
 
-// tinyLinkCode is the alphabet of a tiny link's code: base64 made URL-safe.
+// tinyLinkCode is every character a tiny link's code may hold, in no order
+// that means anything: Confluence swaps base64's "/" for "-" and "+" for "_",
+// the reverse of base64.URLEncoding.
 const tinyLinkCode = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 // DecodeTinyLinkID reads the page ID out of the code a tiny link ends in, the
@@ -527,8 +529,11 @@ func DecodeTinyLinkID(code string) (string, error) {
 	for len(raw) > 0 && raw[len(raw)-1] == 0 {
 		raw = raw[:len(raw)-1]
 	}
-	if len(raw) == 0 || len(raw) > 8 {
+	switch {
+	case len(raw) == 0:
 		return "", fmt.Errorf("%q is not the code of a tiny link: it names no page ID", code)
+	case len(raw) > 8:
+		return "", fmt.Errorf("%q is not the code of a tiny link: it is too long for a page ID", code)
 	}
 
 	buf := make([]byte, 8)

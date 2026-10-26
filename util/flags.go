@@ -473,7 +473,7 @@ func exportFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "url",
 			Value:   "",
-			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set.",
+			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_URL"), config.value("url")),
 		},
 		&cli.StringFlag{
@@ -528,9 +528,9 @@ func exportFlags(config *configFile) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name: "relative-links",
-			Usage: "with --recursive, write a link between two exported pages as a relative link between their files, " +
-				"which a repository host can follow, rather than as ac:Title. Published back, such a link becomes a " +
-				"link to the page's address rather than Confluence's own page link.",
+			Usage: "with --recursive, write a link between two exported pages, or a URL of one pasted into a page, as a " +
+				"relative link between their files, which a repository host can follow, rather than as ac:Title or the URL. " +
+				"Published back, such a link becomes a link to the page's address rather than Confluence's own page link.",
 		},
 	}
 }

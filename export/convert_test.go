@@ -491,6 +491,8 @@ func TestPageOnInstance(t *testing.T) {
 			PageRef{BaseURL: "https://Example.atlassian.net/wiki", Space: "DOCS", Title: "Title"}},
 		{"base without /wiki", base + "/spaces/DOCS/pages/123/Title", "https://example.atlassian.net",
 			PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+		{"default port", "https://example.atlassian.net:443/wiki/x/ew", base,
+			PageRef{BaseURL: "https://example.atlassian.net:443/wiki", PageID: "123"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, ok := pageOnInstance(test.href, test.base)
@@ -508,10 +510,20 @@ func TestPageOnInstance(t *testing.T) {
 		{"dated blog post", base + "/display/DOCS/2024/01/31/Post"},
 		{"editpage.action", base + "/pages/editpage.action?pageId=123"},
 		{"short link too long", base + "/x/AQAAAAAAAAAB"},
+		{"pageId beside a path that names another page", base + "/spaces/DOCS/pages/123/Title?pageId=456"},
+		{"pageId on a short link", base + "/x/ew?pageId=999"},
+		{"context path in another case", "https://example.atlassian.net/WIKI/x/ew"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, ok := pageOnInstance(test.href, base)
 			assert.False(t, ok)
 		})
 	}
+}
+
+// A "!" just before a link would make it an image.
+func TestConvertEscapesABangBeforeALink(t *testing.T) {
+	doc, err := Convert(`<p>Wow!<a href="https://example.com/">site</a></p>`, Options{})
+	require.NoError(t, err)
+	assert.Equal(t, "Wow\\![site](https://example.com/)\n", doc.Markdown)
 }
