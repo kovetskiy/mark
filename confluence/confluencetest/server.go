@@ -485,8 +485,8 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 }
 
 // SetWatchOnWrite makes the fake do what Confluence does by default: whoever
-// creates, updates or moves a page, or uploads a file to it, starts watching
-// it.
+// creates, updates, moves or labels a page, or uploads a file to it, starts
+// watching it.
 func (s *Server) SetWatchOnWrite() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2542,6 +2542,7 @@ func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {
 				p.Labels = append(p.Labels, l.Name)
 			}
 		}
+		s.wroteTo(pageID)
 
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
@@ -2552,6 +2553,7 @@ func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {
 			}
 		}
 		p.Labels = kept
+		s.wroteTo(pageID)
 	}
 
 	labels := append([]string(nil), p.Labels...)
