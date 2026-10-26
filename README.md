@@ -188,7 +188,7 @@ OPTIONS:
    --parents-from-path-root string                the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard. [$MARK_PARENTS_FROM_PATH_ROOT]
    --title-append-generated-hash                  appends a short hash generated from the path of the page (space, parents, and title) to the title [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                   don't send notifications while updating Confluence page. [$MARK_MINOR_EDIT]
-   --unwatch                                      stop watching the pages mark creates or edits, which Confluence makes the publishing account watch; pages it watched already stay watched. [$MARK_UNWATCH]
+   --watch                                        let the publishing account watch the pages mark creates or edits, as Confluence makes it; --watch=false stops it watching them, though pages it watched already stay watched. [$MARK_WATCH]
    --version-message string                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --target-url string, -l string                 edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
@@ -364,7 +364,7 @@ pages with the v2 API, which needs:
 | `read:folder:confluence`, `write:folder:confluence`, `read:hierarchical-content:confluence` | `Folder` headers: reading and creating folders, and finding one among its parent's direct children |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
-`--on-orphan`, `--unwatch`, page restrictions, mentions, moving a page among its siblings and
+`--on-orphan`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and
 finding a folder left at the space root have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
 classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 `read:confluence-user`) alongside the granular ones.
@@ -377,14 +377,14 @@ them, which `--minor-edit` controls, rather than once more for every file.
 
 **NOTE**: Confluence makes whoever creates or edits a page watch it, so the
 account Mark publishes with is notified of every later change to every page it
-touched. `--unwatch` stops it watching the pages it creates, updates, moves,
-labels or attaches files to, parents included, once the run's last write is
-done. A page
-the account already watched before Mark first wrote to it in the run stays
-watched, and so does a page an earlier run left watched: Confluence does not say
-why an account watches a page. Where the account can be changed, turning off its
-own preference to watch what it creates or edits does the same with no requests,
-and `mark page unwatch --recursive` stops it watching pages it already does.
+touched. `--watch=false` stops it watching the pages it creates, updates,
+moves, labels or attaches files to, parents included, once the run's last write
+is done. A page the account already watched before Mark first wrote to it in the
+run stays watched, and so does a page an earlier run left watched: Confluence
+does not say why an account watches a page. Where the account can be changed,
+turning off its own preference to watch what it creates or edits does the same
+with no requests, and `mark page unwatch --recursive` stops it watching pages it
+already does.
 
 **NOTE**: See [Preserving Inline Comments](docs/publishing.md#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.
 
