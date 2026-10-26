@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/kovetskiy/mark/v16/page"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -54,12 +53,6 @@ func runTitleKey(space, kind, title string) string {
 func (r *runTitles) index() {
 	r.documents = map[string][]runDocument{}
 
-	// processFile reads every file too and warns about its metadata then;
-	// warning here as well would say everything twice.
-	previous := log.Logger
-	log.Logger = log.Logger.Level(zerolog.ErrorLevel)
-	defer func() { log.Logger = previous }()
-
 	var count int
 	for _, file := range r.files {
 		source, markdown, err := readSource(file)
@@ -77,7 +70,7 @@ func (r *runTitles) index() {
 		count++
 	}
 
-	previous.Debug().Msgf("indexed the titles of %d document(s) in the run", count)
+	log.Debug().Msgf("indexed the titles of %d document(s) in the run", count)
 }
 
 // declaredBy returns the one document of the run that publishes content of
