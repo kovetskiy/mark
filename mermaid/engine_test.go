@@ -101,13 +101,13 @@ func TestVersionFloor(t *testing.T) {
 	// be older is worth nothing once the floor has moved past it.
 	floor := "v" + MinimumMermanVersion
 
-	for _, version := range []string{"0.7.0", "0.8.0-alpha.5"} {
+	for _, version := range []string{"0.7.0", "0.8.0-alpha.6", "0.9.1", "0.9.2-rc.1"} {
 		require.Negative(t, semver.Compare("v"+version, floor),
 			"%s is only a useful fixture while it is older than %s", version, MinimumMermanVersion)
 		require.Error(t, checkMermanVersion(version))
 	}
 
-	for _, version := range []string{MinimumMermanVersion, "0.8.0-alpha.7", "0.8.0", "0.9.0", "1.0.0", "v0.8.0"} {
+	for _, version := range []string{MinimumMermanVersion, "0.9.3", "0.10.0", "1.0.0", "v0.9.2"} {
 		require.GreaterOrEqual(t, semver.Compare("v"+strings.TrimPrefix(version, "v"), floor), 0,
 			"%s is only a useful fixture while it is at least %s", version, MinimumMermanVersion)
 		require.NoError(t, checkMermanVersion(version))
