@@ -19,30 +19,11 @@ import (
 func attachFixture(t *testing.T, body string, attachReferenced bool) (*confluencetest.Server, string, string) {
 	t.Helper()
 
-	server := confluencetest.New(t)
-	home := server.AddPage("DOCS", "Home", "page", "")
-	server.SetHomepage("DOCS", home.ID)
+	p := publishBeside(t, map[string][]byte{"files/report.pdf": []byte("a report\n")}, "", body,
+		Config{AttachReferenced: attachReferenced})
+	require.NoError(t, p.err)
 
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "files"), 0o755))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "files", "report.pdf"), []byte("a report\n"), 0o600))
-
-	file := writeFile(t, dir, "doc.md",
-		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\n"+body)
-
-	api := confluence.NewAPI(server.URL, "user", "token", false)
-
-	target, err := ProcessFile(file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files:            file,
-		AttachReferenced: attachReferenced,
-		Output:           io.Discard,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, target)
-
-	return server, target.ID, server.Page(target.ID).Body
+	return p.server, p.id, p.body
 }
 
 // TestLinkedFileIsAttached covers what the flag is for. A link to a file beside
