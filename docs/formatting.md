@@ -238,8 +238,7 @@ well and then draws differently. The version is in `mermaid/merman-version.txt`,
 which mark embeds and which the Dockerfile and CI both read, so it is written
 down once.
 
-The published Docker image carries merman on `amd64`, which is where it
-publishes a Linux build; an `arm64` image draws with Chrome.
+The published Docker image carries merman on `amd64` and `arm64`.
 
 ## Render D2 Diagram
 
