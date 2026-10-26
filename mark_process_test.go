@@ -208,19 +208,29 @@ func docsSpace(t *testing.T) (*confluencetest.Server, *confluence.API) {
 	return server, api
 }
 
-// countPagesTitled reports whether any page in the space carries a title, which
-// is what tells a retitle apart from a duplicate.
+// pageIDTitled returns the id of the page in the space carrying a title, or ""
+// when none does.
 //
 // It builds its own client on purpose. confluence.API memoises FindPage by
 // (space, title, type), so asking a client that has already looked this title up
 // would be answered from that cache and report a page that has since been
 // renamed out from under it.
-func countPagesTitled(t *testing.T, server *confluencetest.Server, title string) int {
+func pageIDTitled(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	fresh := confluence.NewAPI(server.URL, "user", "token", false)
 	page, err := fresh.FindPage("DOCS", title, "page")
 	require.NoError(t, err)
 	if page == nil {
+		return ""
+	}
+	return page.ID
+}
+
+// countPagesTitled reports whether any page in the space carries a title, which
+// is what tells a retitle apart from a duplicate.
+func countPagesTitled(t *testing.T, server *confluencetest.Server, title string) int {
+	t.Helper()
+	if pageIDTitled(t, server, title) == "" {
 		return 0
 	}
 	return 1

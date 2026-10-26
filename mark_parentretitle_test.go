@@ -1,11 +1,15 @@
 package mark
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,18 +20,6 @@ func parentDoc(title string) string {
 
 func childDoc(parent string) string {
 	return "<!-- Space: DOCS -->\n<!-- Parent: " + parent + " -->\n<!-- Title: Child -->\n\n# Child\n\nChild body.\n"
-}
-
-// pageIDTitled looks a title up through a client of its own, because a shared
-// one memoises FindPage and would answer from before the run.
-func pageIDTitled(t *testing.T, server *confluencetest.Server, title string) string {
-	t.Helper()
-	pg, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage("DOCS", title, "page")
-	require.NoError(t, err)
-	if pg == nil {
-		return ""
-	}
-	return pg.ID
 }
 
 // TestRetitledParentAndChildInOneRun: a document and the child naming it as
@@ -139,4 +131,133 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 			assert.Equal(t, parentID, server.Page(childID).ParentID, "child stays under the original page")
 		})
 	}
+}
+
+// TestRetitledParentByRenamingItsFile: the parent takes its title from its
+// filename, so renaming the file is what retitles it. Its path is not recorded
+// yet, and the page it published is found by its content, as the parent's own
+// turn will find it.
+func TestRetitledParentByRenamingItsFile(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	parent := "<!-- Space: DOCS -->\n\nParent body.\n"
+	writeFile(t, dir, "parent-doc.md", parent)
+	writeFile(t, dir, "a-child.md", childDoc("Parent Doc"))
+	config := trackingConfig(server, dir+"/*.md")
+	config.TitleFromFilename = true
+	require.NoError(t, Run(config))
+
+	parentID := pageIDTitled(t, server, "Parent Doc")
+	childID := pageIDTitled(t, server, "Child")
+	require.NotEmpty(t, parentID)
+	require.NotEmpty(t, childID)
+
+	require.NoError(t, os.Rename(filepath.Join(dir, "parent-doc.md"), filepath.Join(dir, "renamed-doc.md")))
+	writeFile(t, dir, "a-child.md", childDoc("Renamed Doc"))
+	require.NoError(t, Run(config))
+
+	assert.Equal(t, parentID, pageIDTitled(t, server, "Renamed Doc"), "renamed in place")
+	assert.Empty(t, pageIDTitled(t, server, "Parent Doc"))
+	assert.Equal(t, parentID, server.Page(childID).ParentID, "child stays under the original page")
+}
+
+// TestRetitledBlogPostIsNotAParent: a blog post retitled to the title a child
+// now names is not that child's parent. The parent is a page that does not
+// exist yet, and is created.
+func TestRetitledBlogPostIsNotAParent(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	post := func(title string) string {
+		return "<!-- Space: DOCS -->\n<!-- Type: blogpost -->\n<!-- Title: " + title + " -->\n\nNews.\n"
+	}
+	writeFile(t, dir, "news.md", post("News"))
+	writeFile(t, dir, "a-child.md", childDoc("Parent"))
+	config := trackingConfig(server, dir+"/*.md")
+	require.NoError(t, Run(config))
+
+	childID := pageIDTitled(t, server, "Child")
+	require.NotEmpty(t, childID)
+
+	writeFile(t, dir, "news.md", post("Section"))
+	writeFile(t, dir, "a-child.md", childDoc("Section"))
+	require.NoError(t, Run(config))
+
+	sectionID := pageIDTitled(t, server, "Section")
+	require.NotEmpty(t, sectionID, "the parent the child names is created")
+	assert.Equal(t, sectionID, server.Page(childID).ParentID)
+	assert.Empty(t, pageIDTitled(t, server, "News"), "no page under the blog post's old title")
+}
+
+// TestRetitledDirectoryDocument: with a path hierarchy, a directory's README
+// titles the directory, and the documents beside it name that title as their
+// parent. API.md sorts ahead of README.md, so it looks for the new title
+// before the README has retitled its page.
+func TestRetitledDirectoryDocument(t *testing.T) {
+	readme := func(title string) string {
+		return "<!-- Space: DOCS -->\n<!-- Title: " + title + " -->\n\nGuide.\n"
+	}
+	api := "<!-- Space: DOCS -->\n<!-- Title: API -->\n\nAPI.\n"
+
+	for name, hash := range map[string]bool{"plain": false, "generated hash": true} {
+		t.Run(name, func(t *testing.T) {
+			guideTitle := func(title string) string {
+				if hash {
+					return metadata.GeneratedHashTitle(nil, "DOCS", title)
+				}
+				return title
+			}
+			apiTitle := "API"
+			if hash {
+				apiTitle = metadata.GeneratedHashTitle([]string{guideTitle("Guide")}, "DOCS", "API")
+			}
+
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			writeAt(t, dir, "guide/README.md", readme("Guide"))
+			writeAt(t, dir, "guide/API.md", api)
+			config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+			config.ParentsFromPath = true
+			config.ParentsFromPathRoot = dir
+			config.TitleAppendGeneratedHash = hash
+			require.NoError(t, Run(config))
+
+			guideID := pageIDTitled(t, server, guideTitle("Guide"))
+			apiID := pageIDTitled(t, server, apiTitle)
+			require.NotEmpty(t, guideID)
+			require.NotEmpty(t, apiID)
+			require.Equal(t, guideID, server.Page(apiID).ParentID)
+
+			writeAt(t, dir, "guide/README.md", readme("Guide Renamed"))
+			require.NoError(t, Run(config))
+
+			assert.Equal(t, guideID, pageIDTitled(t, server, guideTitle("Guide Renamed")), "renamed in place")
+			assert.Empty(t, pageIDTitled(t, server, guideTitle("Guide")))
+			assert.Equal(t, guideID, server.Page(apiID).ParentID, "API stays under the original page")
+		})
+	}
+}
+
+// TestRunTitlesWarnOnce: reading the run's titles reads every document a second
+// time, and what is wrong with a document's metadata is still said once.
+func TestRunTitlesWarnOnce(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	stranded := "\n<!-- Label: late -->\n"
+	writeFile(t, dir, "parent.md", parentDoc("Parent")+stranded)
+	writeFile(t, dir, "a-child.md", childDoc("Parent"))
+	config := trackingConfig(server, dir+"/*.md")
+	require.NoError(t, Run(config))
+
+	writeFile(t, dir, "parent.md", parentDoc("Parent Renamed")+stranded)
+	writeFile(t, dir, "a-child.md", childDoc("Parent Renamed"))
+
+	var logged bytes.Buffer
+	restore := log.Logger
+	log.Logger = zerolog.New(&logged)
+	defer func() { log.Logger = restore }()
+
+	require.NoError(t, Run(config))
+
+	require.Contains(t, logged.String(), "retitles it", "the run's titles were read")
+	assert.Equal(t, 1, strings.Count(logged.String(), "below the document's opening comments"))
 }
