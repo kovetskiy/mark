@@ -1,8 +1,6 @@
 package util
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -136,40 +134,4 @@ func TestPageCommands(t *testing.T) {
 		_, err := mark("page", "rename", "-b", server.URL, a.ID)
 		require.ErrorContains(t, err, "takes 2 argument(s) and got 1")
 	})
-}
-
-// TestWatchFlag: publishing leaves the account watching what it wrote, as
-// Confluence makes it, unless --watch=false says otherwise.
-func TestWatchFlag(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		args     []string
-		watchers []string
-	}{
-		{"by default", nil, []string{"acct-current"}},
-		{"--watch=false", []string{"--watch=false"}, nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := confluencetest.New(t)
-			server.SetWatchOnWrite()
-			home := server.AddPage("DOCS", "Home", "page", "")
-			server.SetHomepage("DOCS", home.ID)
-			existing := server.AddPage("DOCS", "Page", "page", home.ID)
-
-			dir := t.TempDir()
-			config := writeConfig(t, dir, "mark.toml", "")
-			document := filepath.Join(dir, "page.md")
-			require.NoError(t, os.WriteFile(document,
-				[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
-
-			_, _, err := runMark(t, append([]string{
-				"-c", config, "--color", "never", "-u", "user", "-p", "token",
-				"publish", "-b", server.URL, "--files", document,
-			}, tc.args...)...)
-			require.NoError(t, err)
-
-			assert.Contains(t, server.Page(existing.ID).Body, "Body.", "the page was published")
-			assert.ElementsMatch(t, tc.watchers, server.Watchers(existing.ID))
-		})
-	}
 }

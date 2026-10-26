@@ -204,7 +204,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.BoolFlag{
 			Name:    "watch",
 			Value:   true,
-			Usage:   "let the publishing account watch the pages mark creates or edits, as Confluence makes it; --watch=false stops it watching them, though pages it watched already stay watched.",
+			Usage:   "let the publishing account watch the pages mark creates or edits, as Confluence makes it (default: true, which leaves Confluence's own behaviour alone); --watch=false stops it watching them, though pages it watched already stay watched.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_WATCH"), config.value("watch")),
 		},
 		&cli.StringFlag{
@@ -620,6 +620,29 @@ func checkEmptyFeatures(command *cli.Command) error {
 	return nil
 }
 
+// checkEmptyWatch refuses an empty MARK_WATCH or watch = "", which urfave
+// reads as false: for the one bool flag that defaults to true, that would stop
+// the account watching without anybody asking. The source checked is the one
+// the chain reads first, which is the one urfave used unless the command line
+// set the flag; an empty one is refused then too.
+func checkEmptyWatch(command *cli.Command) error {
+	if command.Bool("watch") {
+		return nil
+	}
+
+	for _, flag := range command.Flags {
+		watch, ok := flag.(*cli.BoolFlag)
+		if !ok || watch.Name != "watch" {
+			continue
+		}
+		if value, source, found := watch.Sources.LookupWithSource(); found && value == "" {
+			return fmt.Errorf("%s is empty: set --watch to true or false, or leave it out for the default (true)", source)
+		}
+	}
+
+	return nil
+}
+
 // emptyFeatures reports an empty --features, MARK_FEATURES or features = [].
 func emptyFeatures(source string) error {
 	return fmt.Errorf(
@@ -669,6 +692,10 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	}
 
 	if err := checkEmptyFeatures(command); err != nil {
+		return context, err
+	}
+
+	if err := checkEmptyWatch(command); err != nil {
 		return context, err
 	}
 

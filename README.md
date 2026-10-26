@@ -188,7 +188,7 @@ OPTIONS:
    --parents-from-path-root string                the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard. [$MARK_PARENTS_FROM_PATH_ROOT]
    --title-append-generated-hash                  appends a short hash generated from the path of the page (space, parents, and title) to the title [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                   don't send notifications while updating Confluence page. [$MARK_MINOR_EDIT]
-   --watch                                        let the publishing account watch the pages mark creates or edits, as Confluence makes it; --watch=false stops it watching them, though pages it watched already stay watched. [$MARK_WATCH]
+   --watch                                        let the publishing account watch the pages mark creates or edits, as Confluence makes it (default: true, which leaves Confluence's own behaviour alone); --watch=false stops it watching them, though pages it watched already stay watched. [$MARK_WATCH]
    --version-message string                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --target-url string, -l string                 edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
