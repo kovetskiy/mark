@@ -33,6 +33,10 @@ type User struct {
 	Email       string `json:"email,omitempty"`
 	PublicName  string `json:"publicName,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
+
+	// Type is "anonymous" for the user a Confluence that took no credentials
+	// answers as.
+	Type string `json:"type,omitempty"`
 }
 
 // isNamed reports whether name is one of the identifiers the user goes by.

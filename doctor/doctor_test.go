@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"bytes"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -166,6 +167,9 @@ func TestLoginFailureHints(t *testing.T) {
 		{"connection refused", "confluence.example.com", "", fmt.Errorf("x: %w", syscall.ECONNREFUSED), "nothing answers"},
 		{"timeout", "confluence.example.com", "", &url.Error{Op: "Get", URL: "x", Err: timeoutError{}}, "did not answer in time"},
 		{"proxy", "confluence.example.com", "", errors.New("proxyconnect tcp: Proxy Authentication Required"), "HTTPS_PROXY"},
+		{"gateway, wrong cloud id", "api.atlassian.com", "jane@example.com", fmt.Errorf("x: %w", confluence.ErrNotFound), "cloud id"},
+		{"expired certificate", "confluence.example.com", "", &url.Error{Op: "Get", URL: "x", Err: x509.CertificateInvalidError{Reason: x509.Expired}}, "expired"},
+		{"no scheme", "", "", errors.New(`Get "example.atlassian.net/wiki/rest/api/user/current": unsupported protocol scheme ""`), "no scheme"},
 		{"something else", "confluence.example.com", "", errors.New("boom"), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -194,4 +198,25 @@ func TestDoctorAccountWithoutIDs(t *testing.T) {
 	out, err := doctor(t, server, "", "DOCS")
 	require.NoError(t, err)
 	assert.Contains(t, out, "[warn] platform: the account has neither an accountId nor a username")
+}
+
+func TestDoctorAnonymousLogin(t *testing.T) {
+	server := newServer(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.HasSuffix(r.URL.Path, "/user/current") {
+			return http.StatusOK, `{"type":"anonymous","displayName":"Anonymous"}`, true
+		}
+		return 0, "", false
+	})
+
+	out, err := doctor(t, server, "", "DOCS")
+	require.Error(t, err)
+	assert.Contains(t, out, "[fail] login: Confluence answered as an anonymous user")
+	assert.NotContains(t, out, "space DOCS", "nothing more can be checked")
+}
+
+func TestDoctorEmptySpaceKey(t *testing.T) {
+	out, err := doctor(t, newServer(t), "", "")
+	require.Error(t, err)
+	assert.Contains(t, out, "[fail] space: an empty space key")
 }
