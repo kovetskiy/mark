@@ -849,20 +849,11 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 	return declared
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy, titles *runTitles) (*confluence.PageInfo, *page.Ordered, error) {
-	source, markdown, err := readSource(file)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Fingerprint the source as read, before metadata is stripped and links are
-	// substituted. Both of those depend on state outside the file -- what is
-	// already published, what other files resolve to -- and a fingerprint that
-	// moves with the remote would not survive the round trip it exists for.
-	sourceHash := sha1Hash(string(source))
-
-	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
-
+// documentMeta reads a document's metadata and settles the parents and title
+// it publishes under, which with a path hierarchy are partly the path's to say.
+// The run's index of titles reads documents through it too, so that the title
+// a child looks for and the title its parent publishes cannot disagree.
+func documentMeta(config Config, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
 	meta, markdown, err := metadata.ExtractMeta(
 		markdown,
 		config.Space,
@@ -874,7 +865,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		// has one; see below.
 		config.TitleAppendGeneratedHash && hierarchy == nil,
 		config.ContentAppearance,
-		frontMatterEnabled,
+		slices.Contains(config.Features, "frontmatter"),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
@@ -918,6 +909,28 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			// and the hash was the very thing meant to tell them apart.
 			metadata.AppendGeneratedHash(meta)
 		}
+	}
+
+	return meta, markdown, nil
+}
+
+func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy, titles *runTitles) (*confluence.PageInfo, *page.Ordered, error) {
+	source, markdown, err := readSource(file)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Fingerprint the source as read, before metadata is stripped and links are
+	// substituted. Both of those depend on state outside the file -- what is
+	// already published, what other files resolve to -- and a fingerprint that
+	// moves with the remote would not survive the round trip it exists for.
+	sourceHash := sha1Hash(string(source))
+
+	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
+
+	meta, markdown, err := documentMeta(config, file, markdown, hierarchy)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	if meta != nil {
