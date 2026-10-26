@@ -18,6 +18,7 @@ import (
 	"github.com/kovetskiy/mark/v16/comments"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/fingerprint"
 	"github.com/kovetskiy/mark/v16/header"
 	"github.com/kovetskiy/mark/v16/includes"
 	"github.com/kovetskiy/mark/v16/manifest"
@@ -919,7 +920,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// substituted. Both of those depend on state outside the file -- what is
 	// already published, what other files resolve to -- and a fingerprint that
 	// moves with the remote would not survive the round trip it exists for.
-	sourceHash := sha1Hash(string(source))
+	sourceHash := fingerprint.SHA1(string(source))
 
 	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
 
@@ -1533,10 +1534,10 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	shouldUpdatePage := true
 
 	if config.ChangesOnly {
-		contentHash := contentFingerprint(html, contentAppearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
+		contentHash := fingerprint.Content(html, contentAppearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
 		log.Debug().Msgf("content hash: %s", contentHash)
 
-		if previous := readContentHash(target.Version.Message); previous != "" {
+		if previous := fingerprint.FromVersionMessage(target.Version.Message); previous != "" {
 			log.Debug().Msgf("previous content hash: %s", previous)
 			if previous == contentHash {
 				if titleChanged {
@@ -1548,7 +1549,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			}
 		}
 
-		finalVersionMessage = formatVersionMessage(config.VersionMessage, contentHash)
+		finalVersionMessage = fingerprint.VersionMessage(config.VersionMessage, contentHash)
 	} else {
 		finalVersionMessage = config.VersionMessage
 	}

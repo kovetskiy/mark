@@ -36,6 +36,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache, page restrictions |
 | `attachment/` | checksum, upload/update, link rewriting |
 | `comments/` | `--preserve-comments`: re-places the page's inline-comment markers in the new body |
+| `fingerprint/` | the `--changes-only` content fingerprint, and the tag that carries it in a page's version message |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |
