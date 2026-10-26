@@ -2,7 +2,6 @@ package mark
 
 import (
 	"strings"
-	"sync"
 
 	"github.com/kovetskiy/mark/v16/page"
 	"github.com/rs/zerolog/log"
@@ -23,19 +22,8 @@ type runTitles struct {
 	files     []string
 	hierarchy *page.Hierarchy
 
-	once      sync.Once
-	documents map[string][]runDocument
-}
-
-// runDocument is a document of the run, with the fingerprint that recognises
-// it under a path it was published from before.
-type runDocument struct {
-	file string
-	hash string
-}
-
-func newRunTitles(config Config, files []string, hierarchy *page.Hierarchy) *runTitles {
-	return &runTitles{config: config, files: files, hierarchy: hierarchy}
+	// documents maps a title's key to the files declaring it; nil until read.
+	documents map[string][]string
 }
 
 func runTitleKey(space, kind, title string) string {
@@ -51,11 +39,10 @@ func runTitleKey(space, kind, title string) string {
 // the file reports the problem properly, and a document missing here only
 // means its title is not recognised as the run's own.
 func (r *runTitles) index() {
-	r.documents = map[string][]runDocument{}
+	r.documents = map[string][]string{}
 
-	var count int
 	for _, file := range r.files {
-		source, markdown, err := readSource(file)
+		_, markdown, err := readSource(file)
 		if err != nil {
 			continue
 		}
@@ -66,25 +53,22 @@ func (r *runTitles) index() {
 		}
 
 		key := runTitleKey(meta.Space, meta.Type, meta.Title)
-		r.documents[key] = append(r.documents[key], runDocument{file: file, hash: sha1Hash(string(source))})
-		count++
+		r.documents[key] = append(r.documents[key], file)
 	}
 
-	log.Debug().Msgf("indexed the titles of %d document(s) in the run", count)
+	log.Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
 }
 
 // declaredBy returns the one document of the run that publishes content of
 // that type under the title, and false when none does or more than one does.
-func (r *runTitles) declaredBy(space, kind, title string) (runDocument, bool) {
-	if r == nil {
-		return runDocument{}, false
+func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
+	if r.documents == nil {
+		r.index()
 	}
-
-	r.once.Do(r.index)
 
 	documents := r.documents[runTitleKey(space, kind, title)]
 	if len(documents) != 1 {
-		return runDocument{}, false
+		return "", false
 	}
 
 	return documents[0], true

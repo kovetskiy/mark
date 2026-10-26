@@ -521,10 +521,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// What the run's own documents call themselves, so that a parent retitled in
 	// this very run can be found by the title its children now name. Nothing
 	// is read until a parent is missing.
-	var titles *runTitles
-	if tracker != nil {
-		titles = newRunTitles(config, files, hierarchy)
-	}
+	titles := &runTitles{config: config, files: files, hierarchy: hierarchy}
 
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
@@ -2056,10 +2053,11 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 		// about to rename. Without this, a child sorting ahead of its retitled
 		// parent creates an empty page under the new title, and the parent
 		// then publishes there instead of renaming the page it tracks.
-		pageID, publisher, ok, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
+		pageID, publisher, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 		}
+		ok := pageID != ""
 		if !ok {
 			pageID, ok, err = tracker.LookupParent(meta.Space, page.ParentPathKey(declared[:i+1]))
 			if err != nil {
@@ -2119,27 +2117,32 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 // the run that publishes the title as a page, and that document, if it has been
 // published before. A document renamed since is found by its content, as
 // resolveRenamedFile finds it when its own turn comes.
-func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, space, title string) (string, string, bool, error) {
-	document, ok := titles.declaredBy(space, "page", title)
+func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, space, title string) (string, string, error) {
+	file, ok := titles.declaredBy(space, "page", title)
 	if !ok {
-		return "", "", false, nil
+		return "", "", nil
 	}
 
-	entry, found, err := tracker.Lookup(space, document.file)
+	entry, found, err := tracker.Lookup(space, file)
 	if err != nil {
-		return "", "", false, err
+		return "", "", err
 	}
 	if !found {
-		_, entry, found, err = tracker.ResolveRenamed(space, document.hash)
+		source, _, err := readSource(file)
+		if err != nil {
+			return "", "", nil //nolint:nilerr // indexed as readable; its own turn reports this
+		}
+
+		_, entry, found, err = tracker.ResolveRenamed(space, sha1Hash(string(source)))
 		if err != nil || !found {
-			return "", "", false, err
+			return "", "", err
 		}
 	}
 	if entry.PageID == "" {
-		return "", "", false, nil
+		return "", "", nil
 	}
 
-	return entry.PageID, document.file, true, nil
+	return entry.PageID, file, nil
 }
 
 // resolveRenamedFile returns the page a document published to under a previous
