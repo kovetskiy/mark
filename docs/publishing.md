@@ -169,19 +169,21 @@ one, and appears in the run's summary rather than against a line of the diff.
 
 Mark tries a request up to four times, waiting longer before each retry and
 for as long as a `Retry-After` header asks, up to 30 seconds. It does this for
-requests Confluence throttles (429), and for reads it answers with a 5xx or
-never answers at all.
+requests Confluence throttles (429), and for reads it answers with a 5xx other
+than 501, or never answers at all.
 
 A write is different: a gateway that gives up waiting (502, 503 or 504), or a
 connection that drops, does not mean Confluence did not carry the write out.
 Mark therefore sends a page create, a page update, or an attachment upload
 again only after it has waited as above and read that the first one did not
-land. A page with the title under the same parent, the version the update
-would have made written by Mark's account, or an attachment with the upload's
-checksum means it did, and Mark goes on from there instead of creating a
-duplicate. The same read settles a write sent again that Confluence refuses
-because the first one landed in the meantime. Any other failure of a write, a
-500 included, fails the file straight away.
+land. A page with the title under the same parent, or the version the update
+would have made, means it did when Mark's account wrote it; so does an
+attachment with the upload's checksum. Mark then goes on from there instead of
+creating a duplicate. A page or version Mark cannot tell is its own, because
+the account or the author could not be read, counts as somebody else's. The
+same read settles a write sent again that Confluence refuses because the first
+one landed in the meantime. Any other failure of a write, a 500 included,
+fails the file straight away.
 
 ## Continuous Integration
 

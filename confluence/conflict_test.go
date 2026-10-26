@@ -37,7 +37,9 @@ func newConflictAPI(t *testing.T, gateway bool) (*API, *confluencetest.Server) {
 // gateway, since a scoped token is not entitled to it.
 func failWhen(server *confluencetest.Server, gateway bool, f confluencetest.FailFunc) {
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if gateway && strings.Contains(r.URL.Path, "/rest/api/") {
+		// The current user is read through v1 on the gateway too, with the
+		// read:confluence-user scope.
+		if gateway && strings.Contains(r.URL.Path, "/rest/api/") && !strings.HasSuffix(r.URL.Path, "/rest/api/user/current") {
 			return http.StatusUnauthorized,
 				`{"code":401,"message":"Unauthorized; scope does not match"}`, true
 		}

@@ -1,10 +1,13 @@
 package confluence
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -43,14 +46,23 @@ func unavailableAnswer(method string, status int) bool {
 }
 
 // unavailableFailure reports whether err, from a request that got no answer,
-// is a write that reached the network. net/http names the method in the
-// url.Error it returns; a request that could not be built names "parse", and
-// a payload that could not be encoded is no url.Error at all.
+// is a write that may have reached Confluence. net/http names the method in
+// the url.Error it returns; a request that could not be built names "parse",
+// and a payload that could not be encoded is no url.Error at all. A name that
+// did not resolve, a refused connection and a certificate that was not
+// trusted all stop a request before it is sent.
 func unavailableFailure(err error) bool {
 	var failed *url.Error
 	if !errors.As(err, &failed) {
 		return false
 	}
+
+	var dns *net.DNSError
+	var certificate *tls.CertificateVerificationError
+	if errors.As(err, &dns) || errors.As(err, &certificate) || errors.Is(err, syscall.ECONNREFUSED) {
+		return false
+	}
+
 	switch failed.Op {
 	case "Post", "Put", "Patch", "Delete":
 		return true
@@ -107,9 +119,7 @@ func retryUnavailable[T any](
 		switch {
 		case landedErr != nil:
 			var zero T
-			return zero, fmt.Errorf(
-				"unable to %s (%w), nor to read whether it landed: %w", what, err, landedErr,
-			)
+			return zero, fmt.Errorf("unable to %s (%w): %w", what, err, landedErr)
 		case ok:
 			return adopt(landedResult, err)
 		case attempt == maxAttempts:

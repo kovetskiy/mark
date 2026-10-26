@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -350,6 +351,9 @@ func TestATimeoutIsUnavailable(t *testing.T) {
 
 	err = newTransportError(nil, "update page", &url.Error{Op: "parse", URL: "%", Err: errors.New("bad")})
 	assert.False(t, isUnavailable(err), "a request that could not be built was never sent")
+
+	err = newTransportError(nil, "update page", &url.Error{Op: "Put", URL: "https://x", Err: &net.DNSError{Err: "no such host"}})
+	assert.False(t, isUnavailable(err), "a name that did not resolve stopped the request before it was sent")
 }
 
 // A single edit by somebody else during the outage makes the version the
@@ -427,4 +431,91 @@ func TestUnavailableWriteWaitsForRetryAfter(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
 	assert.Equal(t, []string{"7"}, waited)
+}
+
+func TestUpdatePageUnavailableThenEditedOnceIsAConflictThroughTheGateway(t *testing.T) {
+	api, server := newUnavailableAPI(t, true, 0, nil)
+	api.KeepConcurrentEdits = true
+	id := server.AddPage("DOCS", "Target", "page", "").ID
+
+	page, err := api.GetPageByID(id)
+	require.NoError(t, err)
+
+	var once atomic.Bool
+	failWhen(server, true, func(r *http.Request) (int, string, bool) {
+		if isContentPut(r, id) && !once.Swap(true) {
+			server.EditPage(id, "<p>by hand</p>")
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+
+	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "", "")
+	require.ErrorIs(t, err, errConflict)
+	assert.Equal(t, "<p>by hand</p>", server.Page(id).Body)
+}
+
+// A version mark cannot tell is its own is not taken for it: mark writes its
+// content once more rather than risk leaving somebody else's in its place.
+func TestUpdatePageWhoseAuthorCannotBeReadIsWrittenAgain(t *testing.T) {
+	var id string
+	api, server := newUnavailableAPI(t, false, 1, func(r *http.Request) bool { return isContentPut(r, id) })
+	id = server.AddPage("DOCS", "Target", "page", "").ID
+
+	page, err := api.GetPageByID(id)
+	require.NoError(t, err)
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if strings.HasSuffix(r.URL.Path, "/user/current") {
+			return http.StatusInternalServerError, `{"message":"broken"}`, true
+		}
+		return 0, "", false
+	})
+
+	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
+	assert.EqualValues(t, 3, server.Page(id).Version)
+}
+
+// The update sent again after a conflict is settled the same way as the first.
+func TestUpdatePageRetriedAfterAConflictThatLandedIsKept(t *testing.T) {
+	var id string
+	var puts atomic.Int32
+	api, server := newUnavailableAPI(t, false, 1, func(r *http.Request) bool {
+		return isContentPut(r, id) && puts.Load() == 2
+	})
+	id = server.AddPage("DOCS", "Target", "page", "").ID
+
+	page, err := api.GetPageByID(id)
+	require.NoError(t, err)
+	server.EditPage(id, "<p>by hand</p>")
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if isContentPut(r, id) {
+			puts.Add(1)
+		}
+		return 0, "", false
+	})
+
+	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
+	assert.EqualValues(t, 3, server.Page(id).Version)
+	assert.EqualValues(t, 3, page.Version.Number)
+	assert.Equal(t, 2, countContentPuts(server, id))
+}
+
+// A page somebody else made with the title in the meantime is not the one
+// the create made, even under the same parent.
+func TestCreatePageDoesNotAdoptAPageSomebodyElseMade(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	server.AddSpace("DOCS")
+	var made atomic.Bool
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if isPost("/rest/api/content/")(r) && !made.Swap(true) {
+			server.EditPage(server.AddPage("DOCS", "Taken", "page", "").ID, "<p>by hand</p>")
+			return http.StatusServiceUnavailable, `{"message":"down"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.CreatePage("DOCS", "page", nil, "Taken", "")
+	require.ErrorContains(t, err, "already exists")
 }

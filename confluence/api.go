@@ -1374,14 +1374,9 @@ func (api *API) CreatePage(
 		return api.createPageV1(space, pageType, parent, title, body)
 	}
 
-	// A blog post has no parent to compare.
-	under := parentID
-	if pageType == "blogpost" {
-		under = ""
-	}
-	landed := createLanded(func() (*PageInfo, error) {
+	landed := api.createLanded(func() (*PageInfo, error) {
 		return api.findPageWithStatus(space, title, pageType, "current")
-	}, under)
+	}, parentID)
 
 	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
 	if err != nil {
@@ -1420,22 +1415,26 @@ func (api *API) CreatePage(
 
 // createLanded reads whether a create Confluence was unavailable for landed.
 // mark creates a page only once it has looked for one with the title and
-// found none, so one find reads now, directly under parentID, is the one the
-// create made. With no parentID any parent will do: where Confluence puts a
-// page created without one is its own choice.
-func createLanded(find func() (*PageInfo, error), parentID string) func() (*PageInfo, bool, error) {
+// found none, so one find reads now, directly under parentID and written by
+// mark's account, is the one the create made. With no parentID any parent
+// will do: where Confluence puts a page created without one is its own
+// choice.
+func (api *API) createLanded(find func() (*PageInfo, error), parentID string) func() (*PageInfo, bool, error) {
 	return func() (*PageInfo, bool, error) {
 		page, err := find()
 		if err != nil || page == nil {
 			return nil, false, err
 		}
-
-		// v2 names the direct parent, a folder included; v1 lists ancestors.
-		above := page.ParentID
-		if above == "" && len(page.Ancestors) > 0 {
-			above = page.Ancestors[len(page.Ancestors)-1].ID
+		if parentID != "" && immediateParent(page) != parentID {
+			return nil, false, nil
 		}
-		if parentID != "" && above != parentID {
+
+		// The page is seconds old, so its current version is the first.
+		_, by, err := api.currentPageVersion(page)
+		if err != nil {
+			return nil, false, err
+		}
+		if !api.writtenByMe(by) {
 			return nil, false, nil
 		}
 
@@ -1559,7 +1558,7 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		return api.updatePageV1(page, newContent, minorEdit, versionMessage, version, properties)
 	}
 
-	err := api.putUnavailable(page, nextPageVersion, put)
+	err := api.putUnavailable(page, page.Version.Number, nextPageVersion, put)
 	if errors.Is(err, errConflict) {
 		nextPageVersion, err = api.retryConflictingUpdate(page, nextPageVersion, err, put)
 	}
@@ -1590,12 +1589,12 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	return nil
 }
 
-// putUnavailable sends an update through retryUnavailable. The page's version
-// says whether an unavailable update landed: at the version the update would
-// have created, and written by mark's account, it did; still at the one mark
-// read, it did not. Any other version is another writer's, which UpdatePage
+// putUnavailable sends an update of a page read at version read through
+// retryUnavailable. The page's version says whether an unavailable update
+// landed: at the version the update would have created, and written by mark's
+// account, it did; still at read, it did not. Any other version is another writer's, which UpdatePage
 // settles as a conflict.
-func (api *API) putUnavailable(page *PageInfo, version int64, put func(version int64) error) error {
+func (api *API) putUnavailable(page *PageInfo, read, version int64, put func(version int64) error) error {
 	send := func() (struct{}, error) {
 		return struct{}{}, put(version)
 	}
@@ -1605,13 +1604,14 @@ func (api *API) putUnavailable(page *PageInfo, version int64, put func(version i
 		switch {
 		case err != nil:
 			return struct{}{}, false, err
-		case current == version && !api.writtenByAnother(by):
+		case current == version && api.writtenByMe(by):
 			return struct{}{}, true, nil
-		case current == page.Version.Number:
+		case current == read:
 			return struct{}{}, false, nil
 		default:
 			return struct{}{}, false, fmt.Errorf(
-				"%w: page %q (%s) is now at version %d", errConflict, page.Title, page.ID, current,
+				"%w: page %q (%s) is now at version %d, which mark did not write",
+				errConflict, page.Title, page.ID, current,
 			)
 		}
 	}
@@ -1669,7 +1669,7 @@ func (api *API) retryConflictingUpdate(
 		page.Title, page.ID, attempted, current+1,
 	)
 
-	if err := put(current + 1); err != nil {
+	if err := api.putUnavailable(page, current, current+1, put); err != nil {
 		if errors.Is(err, errConflict) {
 			return 0, fmt.Errorf(
 				"version %d of page %q (%s) was refused as a "+
@@ -1714,14 +1714,10 @@ func (api *API) currentPageVersion(page *PageInfo) (int64, User, error) {
 	return current.Version.Number, current.Version.By, nil
 }
 
-// writtenByAnother reports whether by, the author of a version, is known to be
-// somebody other than the account mark signs in as. An author or a current
-// user that cannot be read says nothing either way.
-func (api *API) writtenByAnother(by User) bool {
-	if by.AccountID == "" && by.UserKey == "" && by.Username == "" {
-		return false
-	}
-
+// writtenByMe reports whether by, the author of a version, is known to be the
+// account mark signs in as. An author or a current user that cannot be read
+// is not: taking somebody else's write for mark's would drop mark's.
+func (api *API) writtenByMe(by User) bool {
 	me, err := api.GetCurrentUser()
 	if err != nil {
 		return false
@@ -1729,11 +1725,11 @@ func (api *API) writtenByAnother(by User) bool {
 
 	switch {
 	case by.AccountID != "" && me.AccountID != "":
-		return by.AccountID != me.AccountID
+		return by.AccountID == me.AccountID
 	case by.UserKey != "" && me.UserKey != "":
-		return by.UserKey != me.UserKey
+		return by.UserKey == me.UserKey
 	case by.Username != "" && me.Username != "":
-		return by.Username != me.Username
+		return by.Username == me.Username
 	default:
 		return false
 	}
@@ -2720,7 +2716,7 @@ func (api *API) CreatePageWithFolderParent(
 		return api.createPageV2(space, pageType, folderID, "folder", title, body)
 	}
 	// Through v2 as well: v1 does not show a folder among the ancestors.
-	landed := createLanded(func() (*PageInfo, error) {
+	landed := api.createLanded(func() (*PageInfo, error) {
 		return api.findPageV2(space, title, pageType, "current")
 	}, folderID)
 
@@ -3167,8 +3163,16 @@ func (api *API) placedAt(
 	return at == sibling+1, nil
 }
 
+// immediateParent is the id of the content directly above page, or "": the
+// parent v2 named, a folder included, and otherwise the last ancestor.
 func immediateParent(page *PageInfo) string {
-	if page == nil || len(page.Ancestors) == 0 {
+	if page == nil {
+		return ""
+	}
+	if page.ParentID != "" {
+		return page.ParentID
+	}
+	if len(page.Ancestors) == 0 {
 		return ""
 	}
 
@@ -3599,6 +3603,14 @@ func newTransportError(request *gopencils.Resource, operation string, err error)
 			return unavailableError{error: err}
 		}
 		return err
+	}
+
+	// An answer whose body broke off is still the answer.
+	if request.Raw.Request != nil && unavailableAnswer(request.Raw.Request.Method, request.Raw.StatusCode) {
+		return unavailableError{
+			error:      fmt.Errorf("unable to %s: %s answered %s: %w", operation, requestTarget(request), request.Raw.Status, err),
+			retryAfter: request.Raw.Header.Get("Retry-After"),
+		}
 	}
 
 	return fmt.Errorf(
