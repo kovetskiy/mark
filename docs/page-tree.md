@@ -137,6 +137,7 @@ file, no commit. The record lives in Confluence.
 | leading H1 edited | the same |
 | file renamed | content fingerprint, matched against paths that stopped appearing |
 | parent page renamed | the page the declared parent chain resolved to last run, whatever it is called now |
+| parent and child retitled in one run | the run's own document publishing the parent's new title, and the page it published last time, before that document's turn to retitle it |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
 | two files claiming one page | the reverse index, when the second one is recorded |
