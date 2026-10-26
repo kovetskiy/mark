@@ -16,6 +16,12 @@ mixed in the same document to create complex hierarchies.
 > [!NOTE]
 > Folder support is currently only available on Confluence Cloud and is not supported in Confluence Server / Data Center.
 
+`--parents` puts every page of the run under the pages it names, ahead of the
+parents a document declares itself: with `--parents "Engineering/Handbook"`, a
+document whose `Parent` is `Setup` ends up under Engineering > Handbook >
+Setup. The titles are separated by `/`, and `--parents-delimiter` sets another
+separator for titles that contain a slash.
+
 ## Parents from the directory a file is in
 
 `--parents-from-path` puts each page under a page named after every directory

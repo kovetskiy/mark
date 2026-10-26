@@ -157,6 +157,10 @@ map onto these values as `default`, `full-width` and `max`.
 * default: sets the Confluence property value to `"default"`, which is the Confluence UI's **Narrow** layout. Note: `fixed` maps to a different Confluence property value and can cause misaligned page title and body content — use `default` instead for the narrow layout.
 * max: the Confluence UI's **Max** layout, which is wider than `full-width`.
 
+`--content-appearance` takes the same values and sets the width of every page
+that has no `Content-Appearance` header of its own; left unset, that is
+`full-width`.
+
 ```markdown
 <!-- ac:ignore -->
 content that stays out of Confluence
