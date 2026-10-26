@@ -137,7 +137,7 @@ type API struct {
 	// watchedBefore records, by page id, every page mark wrote to and whether
 	// the user watched it before the first of those writes; see
 	// watchBeforeWrite. The writes recorded are a deliberate list, one call
-	// per site: creates, updates, moves by update, labels and attachments.
+	// per site: creates, updates, moves, labels and attachments.
 	// watchErr is the first error reading a watch state.
 	watchedBefore map[string]watchState
 	watchErr      error
@@ -3040,6 +3040,8 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		return true, nil
 	}
 
+	api.watchBeforeWrite(contentID)
+
 	query := map[string]string{
 		"pageId":      contentID,
 		"position":    actionPositions[position],
@@ -3447,6 +3449,9 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 	if missing := api.moveEndpointMissing.Load(); missing != nil {
 		return *missing
 	}
+
+	// A move can make the user a watcher, as any write can.
+	api.watchBeforeWrite(contentID)
 
 	path := fmt.Sprintf("content/%s/move/%s/%s", contentID, position, targetID)
 	var result map[string]any
