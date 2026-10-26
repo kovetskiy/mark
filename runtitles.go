@@ -7,16 +7,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// runTitles records which of the run's own documents declare which title.
-//
-// A parent is named by title, and a document that names a parent which has
-// been retitled in the same run cannot find it: the page still carries the old
-// title, and the document that will rename it may sort after the child. The
-// run's documents know the answer, because the one declaring the missing title
-// is the parent, and the manifest knows which page that document published.
-//
-// Read on the first parent that cannot be found, since a run where every parent
-// is where it says it is never needs it.
+// runTitles records which of the run's own documents declare which title, so a
+// parent retitled in this run can be found before its own turn. Read lazily:
+// most runs never miss a parent.
 type runTitles struct {
 	config    Config
 	files     []string
@@ -27,17 +20,11 @@ type runTitles struct {
 }
 
 func runTitleKey(space, kind, title string) string {
-	// Titles are matched without regard to case everywhere else (FindPage, the
-	// claim on a title), so a child naming "parent renamed" still means
-	// "Parent Renamed". The type is part of it as it is of FindPage: a blog
-	// post of that title is not the page a child names.
+	// Case folds as in FindPage; the type is keyed because a blog post is not a parent.
 	return space + "\x00" + kind + "\x00" + strings.ToLower(title)
 }
 
-// index reads the title, type and space each of the run's files publishes
-// under. Anything that cannot be read or has no title is left out: processing
-// the file reports the problem properly, and a document missing here only
-// means its title is not recognised as the run's own.
+// index leaves out any file that cannot be read; processing it reports why.
 func (r *runTitles) index() {
 	r.documents = map[string][]string{}
 
@@ -62,11 +49,20 @@ func (r *runTitles) index() {
 // declaredBy returns the one document of the run that publishes content of
 // that type under the title, and false when none does or more than one does.
 func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
+	if r == nil {
+		return "", false
+	}
 	if r.documents == nil {
 		r.index()
 	}
 
 	documents := r.documents[runTitleKey(space, kind, title)]
+	if len(documents) > 1 {
+		log.Warn().Msgf(
+			"parent %q is declared by %d documents (%s); not following any of them",
+			title, len(documents), strings.Join(documents, ", "),
+		)
+	}
 	if len(documents) != 1 {
 		return "", false
 	}

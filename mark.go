@@ -518,9 +518,7 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	// What the run's own documents call themselves, so that a parent retitled in
-	// this very run can be found by the title its children now name. Nothing
-	// is read until a parent is missing.
+	// Read only once a parent is missing.
 	titles := &runTitles{config: config, files: files, hierarchy: hierarchy}
 
 	// Pages that asked for a position among their siblings, collected as they
@@ -2048,11 +2046,7 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 			continue
 		}
 
-		// First, the run's own documents: a document that declares this title
-		// is the parent, and the page it published last time is the one it is
-		// about to rename. Without this, a child sorting ahead of its retitled
-		// parent creates an empty page under the new title, and the parent
-		// then publishes there instead of renaming the page it tracks.
+		// A child sorting ahead of its retitled parent must not create the new title first.
 		pageID, publisher, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
