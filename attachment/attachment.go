@@ -48,7 +48,8 @@ func UploadName(reference string) string {
 // name. A reference that cleans down to no name at all, "." or "/", is kept as
 // written.
 func cleanReference(reference string) string {
-	cleaned := path.Clean(reference)
+	// On Windows a backslash separates, as filepath.Join opening the file does.
+	cleaned := path.Clean(filepath.ToSlash(reference))
 	if cleaned == "." || cleaned == "/" {
 		return reference
 	}
@@ -329,7 +330,7 @@ func (f Filenames) Claim(attachment Attachment) (bool, error) {
 	}
 
 	if !same(held, attachment) {
-		return true, fmt.Errorf(
+		return false, fmt.Errorf(
 			"attachments %q and %q would both be uploaded as %q but differ",
 			held.Name, attachment.Name, attachment.Filename,
 		)
