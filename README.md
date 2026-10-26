@@ -159,6 +159,7 @@ GLOBAL OPTIONS:
    --username string, -u string  use specified username to authenticate with Confluence. [$MARK_USERNAME]
    --password string, -p string  use specified token to authenticate with Confluence. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --password-command string     run the specified command and use the first line of its stdout as the token to authenticate with Confluence. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
+   --login                       authenticate by logging in through a browser window, and reuse the session cookie it produces. For instances behind SSO where no password or personal access token can be used. Cannot be combined with --username, --password or --password-command, and needs a browser: not for CI. [$MARK_LOGIN]
    --base-url string, -b string  base URL for Confluence. Alternative to the base-url config file key. [$MARK_BASE_URL]
    --insecure-skip-tls-verify    skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --log-level string            set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
@@ -235,6 +236,7 @@ GLOBAL OPTIONS:
    --username string, -u string  use specified username to authenticate with Confluence. [$MARK_USERNAME]
    --password string, -p string  use specified token to authenticate with Confluence. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --password-command string     run the specified command and use the first line of its stdout as the token to authenticate with Confluence. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
+   --login                       authenticate by logging in through a browser window, and reuse the session cookie it produces. For instances behind SSO where no password or personal access token can be used. Cannot be combined with --username, --password or --password-command, and needs a browser: not for CI. [$MARK_LOGIN]
    --base-url string, -b string  base URL for Confluence. Alternative to the base-url config file key. [$MARK_BASE_URL]
    --insecure-skip-tls-verify    skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --log-level string            set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
@@ -272,6 +274,7 @@ GLOBAL OPTIONS:
    --username string, -u string  use specified username to authenticate with Confluence. [$MARK_USERNAME]
    --password string, -p string  use specified token to authenticate with Confluence. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --password-command string     run the specified command and use the first line of its stdout as the token to authenticate with Confluence. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
+   --login                       authenticate by logging in through a browser window, and reuse the session cookie it produces. For instances behind SSO where no password or personal access token can be used. Cannot be combined with --username, --password or --password-command, and needs a browser: not for CI. [$MARK_LOGIN]
    --base-url string, -b string  base URL for Confluence. Alternative to the base-url config file key. [$MARK_BASE_URL]
    --insecure-skip-tls-verify    skip TLS certificate verification (useful for self-signed certificates) [$MARK_INSECURE_SKIP_TLS_VERIFY]
    --log-level string            set the log level. Possible values: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL. (default: "info") [$MARK_LOG_LEVEL]
@@ -399,6 +402,40 @@ Currently, these are:
 On Unix systems, it returns $XDG_CONFIG_HOME as specified by https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html if non-empty, else $HOME/.config. On Darwin, it returns $HOME/Library/Application Support. On Windows, it returns %AppData%. On Plan 9, it returns $home/lib.
 Where none of these is set, as in a minimal container or a systemd unit, there is
 no default file, and one is read only if `--config` or `MARK_CONFIG` names it.
+
+### Authenticating with a browser session
+
+Where an instance sits behind SSO and no password or personal access token can
+be used, `--login` authenticates by opening a browser:
+
+```shell
+mark publish --login -b https://confluence.example.com -f README.md
+```
+
+The first run opens a browser window at the Confluence URL. Log in as you
+normally would; mark detects the session, caches it, and publishes. Later runs
+reuse the cached session and open nothing. When the session stops working it is
+discarded and the browser opens once more, before any page is touched.
+
+`--login` is a global flag, so `mark export` and the other commands that talk to
+Confluence take it too, and share the same cached session.
+
+The session is cached in `cookies.json` under your user cache directory
+(`~/.cache/mark` on Linux, `~/Library/Caches/mark` on macOS), readable only by
+you. On Windows it is `%LocalAppData%\mark`, where what keeps it private is the
+access control of your user profile rather than a file mode. Delete that file
+to forget the session.
+
+The cache holds the session cookie in plain text, and anyone who can read the
+file can act as you on Confluence for as long as the session lasts. How long
+that is depends on your instance's session settings, not on mark. Deleting the
+file only makes mark forget the session; the server keeps honouring it until
+it expires. Logging out in your usual browser does not end it either: mark logs
+in through a browser profile of its own, so its session is a separate one.
+
+`--login` needs a browser window, so it cannot be used in CI; use `--password`
+with a personal access token there. It cannot be combined with `--username`,
+`--password` or `--password-command`.
 
 ## Issues, Bugs & Contributions
 

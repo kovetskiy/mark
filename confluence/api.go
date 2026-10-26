@@ -85,6 +85,11 @@ type API struct {
 	// the right collection; see collectionOfV2.
 	contentTypesV2 sync.Map
 
+	// cookies is a browser session captured by --login. Its presence is also
+	// what decides whether the XSRF header is needed: Confluence requires it
+	// for cookie-authenticated writes and not for the other two methods.
+	cookies []*http.Cookie
+
 	isCloudFlag bool
 	isCloudErr  error
 	isCloudOnce sync.Once
@@ -494,7 +499,22 @@ func redactHeaders(dump string) string {
 	return strings.Join(lines, "\n")
 }
 
-func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
+// Option configures an API at construction.
+//
+// Variadic rather than more positional parameters: NewAPI has 86 call sites,
+// nearly all of them tests that care about none of this.
+type Option func(*API)
+
+// WithCookies authenticates with a browser session instead of a password or a
+// token. Passing no cookies is a no-op, so a caller can pass the option
+// unconditionally.
+func WithCookies(cookies []*http.Cookie) Option {
+	return func(api *API) {
+		api.cookies = cookies
+	}
+}
+
+func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool, opts ...Option) *API {
 	var auth *gopencils.BasicAuth
 	if username != "" {
 		auth = &gopencils.BasicAuth{
@@ -506,7 +526,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	httpClient := newHTTPClient(insecureSkipVerify)
+	httpClient := NewHTTPClient(insecureSkipVerify)
 
 	// gopencils is given 0 retries: its own retry loop only runs when the very
 	// first Client.Do returns a transport error, so a 429 or 503 -- which come
@@ -544,6 +564,24 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		api.bearerToken = password
 	}
 
+	for _, opt := range opts {
+		opt(api)
+	}
+
+	// Seeded into the jar the client already carries rather than set as a
+	// header, so that Confluence's own Set-Cookie responses -- session
+	// affinity on Server, a rotated token on Cloud -- update the session
+	// as the run proceeds instead of being overwritten by a fixed header.
+	if len(api.cookies) > 0 {
+		if parsed, err := url.Parse(baseURL); err != nil {
+			log.Warn().Err(err).Msg("unable to install session cookies")
+		} else if httpClient.Jar == nil {
+			log.Warn().Msg("no cookie jar; session cookies will not be sent")
+		} else {
+			httpClient.Jar.SetCookies(parsed, api.cookies)
+		}
+	}
+
 	return api
 }
 
@@ -572,6 +610,13 @@ func (api *API) resource(root *gopencils.Resource) *gopencils.Resource {
 	headers := http.Header{}
 	if api.bearerToken != "" {
 		headers.Set("Authorization", "Bearer "+api.bearerToken)
+	}
+
+	// Confluence rejects a cookie-authenticated POST or PUT without this,
+	// as XSRF. It is unnecessary -- and unset -- for basic auth and for a
+	// personal access token, which are not ambient credentials.
+	if len(api.cookies) > 0 {
+		headers.Set("X-Atlassian-Token", "no-check")
 	}
 
 	return &gopencils.Resource{

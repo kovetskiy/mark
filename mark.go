@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,6 +55,9 @@ type Config struct {
 	Password              string
 	PageID                string
 	InsecureSkipTLSVerify bool
+
+	// Cookies is a browser session captured by --login, empty otherwise.
+	Cookies []*http.Cookie
 
 	// File selection
 	Files string
@@ -346,7 +350,13 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := confluence.NewAPI(
+		config.BaseURL,
+		config.Username,
+		config.Password,
+		config.InsecureSkipTLSVerify,
+		confluence.WithCookies(config.Cookies),
+	)
 	// An update refused as a conflict is retried against the page's current
 	// version, which overwrites whatever changed it. --no-overwrite exists to
 	// stop exactly that, so under it the retry goes ahead only when nobody else

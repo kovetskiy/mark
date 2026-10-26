@@ -3,6 +3,7 @@ package mark
 import (
 	"context"
 	"io"
+	"net/http"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/export"
@@ -15,6 +16,9 @@ type ExportConfig struct {
 	Username              string
 	Password              string
 	InsecureSkipTLSVerify bool
+
+	// Cookies is a browser session captured by --login, empty otherwise.
+	Cookies []*http.Cookie
 
 	// PageID names the page to export. Without it, Space and Title do.
 	PageID string
@@ -43,7 +47,8 @@ type ExportConfig struct {
 // publish back to the same page. See the export package for what is converted
 // and what is kept as storage format.
 func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify,
+		confluence.WithCookies(config.Cookies))
 
 	stdout := config.Stdout
 	if stdout == nil {
@@ -57,7 +62,8 @@ func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 // no page the whole of config.Space, into the directory config.Output names.
 // See export.Tree for the layout.
 func ExportTree(ctx context.Context, config ExportConfig, options export.TreeOptions) ([]*export.Result, error) {
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify,
+		confluence.WithCookies(config.Cookies))
 
 	stdout := config.Stdout
 	if stdout == nil {

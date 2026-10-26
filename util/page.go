@@ -206,15 +206,7 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 			return errors.New("confluence base URL should be specified using --base-url, or come with a page URL")
 		}
 
-		creds, err := GetCredentials(
-			ctx,
-			cmd.String("username"),
-			cmd.String("password"),
-			cmd.String("password-command"),
-			"",
-			baseURL,
-			false,
-		)
+		creds, err := resolveCredentials(ctx, cmd, "", baseURL, false)
 		if err != nil {
 			return err
 		}
@@ -222,7 +214,8 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 		logFlags(cmd)
 
 		return run(pageRun{
-			api:  confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify")),
+			api: confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify"),
+				confluence.WithCookies(creds.Cookies)),
 			refs: refs,
 			out:  os.Stdout,
 		}, cmd)
