@@ -1,7 +1,6 @@
 package mark
 
 import (
-	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,18 +41,15 @@ func publishBeside(t *testing.T, files map[string][]byte, header, body string, c
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\n# Doc\n\n"+body)
 
-	var logged bytes.Buffer
-	restore := log.Logger
-	log.Logger = zerolog.New(&logged)
-	defer func() { log.Logger = restore }()
-
 	cfg.BaseURL, cfg.Username, cfg.Password = server.URL, "user", "token"
 	cfg.Files, cfg.Output = file, io.Discard
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	target, err := ProcessFile(file, api, cfg)
+	var target *confluence.PageInfo
+	var err error
+	logged := captureLog(t, func() { target, err = ProcessFile(file, api, cfg) })
 
-	result := published{server: server, logged: logged.String(), err: err}
+	result := published{server: server, logged: logged, err: err}
 	if target != nil {
 		result.id = target.ID
 		result.body = server.Page(target.ID).Body

@@ -296,26 +296,57 @@ func ResolveAttachmentsWithRemotes(
 // both flatten to "a_b_c.txt" -- and one upload would then serve the wrong one
 // under a link that reads as right. That is refused rather than guessed at.
 func splitByFilename(attachments []Attachment) ([]Attachment, []Attachment, error) {
-	first := make(map[string]Attachment, len(attachments))
+	names := make(Filenames, len(attachments))
 	var unique, duplicates []Attachment
 	for _, attachment := range attachments {
-		kept, ok := first[attachment.Filename]
-		if !ok {
-			first[attachment.Filename] = attachment
-			unique = append(unique, attachment)
-			continue
+		taken, err := names.Claim(attachment)
+		if err != nil {
+			return nil, nil, err
 		}
 
-		if kept.Checksum != attachment.Checksum {
-			return nil, nil, fmt.Errorf(
-				"attachments %q and %q would both be uploaded as %q but differ",
-				kept.Name, attachment.Name, attachment.Filename,
-			)
+		if taken {
+			duplicates = append(duplicates, attachment)
+		} else {
+			unique = append(unique, attachment)
 		}
-		duplicates = append(duplicates, attachment)
 	}
 
 	return unique, duplicates, nil
+}
+
+// Filenames holds the attachment each upload name went to first.
+type Filenames map[string]Attachment
+
+// Claim gives attachment its Filename unless another holds it already, and
+// reports whether one did. A different file holding it is an error: one upload
+// would serve both.
+func (f Filenames) Claim(attachment Attachment) (bool, error) {
+	held, taken := f[attachment.Filename]
+	if !taken {
+		f[attachment.Filename] = attachment
+
+		return false, nil
+	}
+
+	if !same(held, attachment) {
+		return true, fmt.Errorf(
+			"attachments %q and %q would both be uploaded as %q but differ",
+			held.Name, attachment.Name, attachment.Filename,
+		)
+	}
+
+	return true, nil
+}
+
+// same reports whether a and b are one file. A checksum a renderer set is
+// taken over the diagram's source, not its bytes, so it decides where both
+// have one.
+func same(a, b Attachment) bool {
+	if a.Checksum != "" && b.Checksum != "" {
+		return a.Checksum == b.Checksum
+	}
+
+	return bytes.Equal(a.FileBytes, b.FileBytes)
 }
 
 func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
@@ -607,7 +638,7 @@ func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error)
 	cleaned := cleanReference(name)
 	attachment := Attachment{
 		Name:      cleaned,
-		Filename:  FlattenFilename(cleaned),
+		Filename:  UploadName(name),
 		FileBytes: fileBytes,
 		Replace:   cleaned,
 	}
@@ -666,11 +697,10 @@ func (r *Resolver) Resolve(target string) string {
 		if link, ok = r.links[name]; !ok {
 			return ""
 		}
-		target = decoded
 	}
 
 	r.used[name] = true
-	log.Debug().Msgf("replacing link: %q -> %q", target, link)
+	log.Debug().Msgf("replacing link: %q -> %q", name, link)
 
 	return link
 }

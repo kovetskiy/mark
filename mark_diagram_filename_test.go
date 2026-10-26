@@ -1,12 +1,9 @@
 package mark
 
 import (
-	"io"
 	"regexp"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,30 +22,18 @@ func TestDiagramTitledWithASlashIsUploadedUnderTheNameThePageUses(t *testing.T) 
 		"Auth/Login": "Auth_Login.svg", "./x": "._x.svg", "Q1/./Q2": "Q1_._Q2.svg",
 	} {
 		t.Run(title, func(t *testing.T) {
-			server := confluencetest.New(t)
-			home := server.AddPage("DOCS", "Home", "page", "")
-			server.SetHomepage("DOCS", home.ID)
-
-			dir := t.TempDir()
-			file := writeFile(t, dir, "doc.md",
-				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n```d2 title "+title+"\na -> b\n```\n")
-
-			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(file, api, Config{
-				BaseURL: server.URL, Username: "user", Password: "token",
-				Files: file, Output: io.Discard,
+			p := publishBeside(t, nil, "", "```d2 title "+title+"\na -> b\n```\n", Config{
 				Features: []string{"d2"}, D2Output: "svg", D2Scale: 1,
 			})
-			require.NoError(t, err)
+			require.NoError(t, p.err)
 
-			body := server.Page(target.ID).Body
-			stored := server.Attachments(target.ID)
+			stored := uploadedNames(p)
 			require.Len(t, stored, 1)
 
-			m := riFilename.FindStringSubmatch(body)
-			require.NotNil(t, m, body)
+			m := riFilename.FindStringSubmatch(p.body)
+			require.NotNil(t, m, p.body)
 			assert.Equal(t, want, m[1])
-			assert.Equal(t, m[1], stored[0].Filename, "the page names the attachment that was uploaded")
+			assert.Equal(t, m[1], stored[0], "the page names the attachment that was uploaded")
 		})
 	}
 }
