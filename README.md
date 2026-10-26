@@ -377,8 +377,9 @@ them, which `--minor-edit` controls, rather than once more for every file.
 
 **NOTE**: Confluence makes whoever creates or edits a page watch it, so the
 account Mark publishes with is notified of every later change to every page it
-touched. `--unwatch` stops it watching the pages it creates, updates or
-attaches files to, parents included, once the run's last write is done. A page
+touched. `--unwatch` stops it watching the pages it creates, updates, moves,
+labels or attaches files to, parents included, once the run's last write is
+done. A page
 the account already watched before Mark first wrote to it in the run stays
 watched, and so does a page an earlier run left watched: Confluence does not say
 why an account watches a page. Where the account can be changed, turning off its

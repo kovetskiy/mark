@@ -519,3 +519,50 @@ func TestCreatePageDoesNotAdoptAPageSomebodyElseMade(t *testing.T) {
 	_, err := api.CreatePage("DOCS", "page", nil, "Taken", "")
 	require.ErrorContains(t, err, "already exists")
 }
+
+func isUnwatch(r *http.Request) bool {
+	return r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/user/watch/content/")
+}
+
+// An unwatch Confluence was unavailable for is sent again, unless it landed:
+// a page left watched now would be taken for the user's own watch next run.
+func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
+	t.Run("refused", func(t *testing.T) {
+		api, server := newUnavailableAPI(t, false, 0, nil)
+		server.SetWatchOnWrite()
+		api.Unwatch = true
+		stored := server.AddPage("DOCS", "Page", "page", "")
+
+		var refused atomic.Int32
+		server.SetFail(func(r *http.Request) (int, string, bool) {
+			if isUnwatch(r) && refused.Add(1) == 1 {
+				return http.StatusServiceUnavailable, `{"message":"try later"}`, true
+			}
+			return 0, "", false
+		})
+
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		api.UnwatchWritten()
+
+		assert.Empty(t, server.Watchers(stored.ID))
+		assert.Equal(t, int32(2), refused.Load(), "sent again after the refusal")
+	})
+
+	t.Run("landed", func(t *testing.T) {
+		api, server := newUnavailableAPI(t, false, 1, isUnwatch)
+		server.SetWatchOnWrite()
+		api.Unwatch = true
+		stored := server.AddPage("DOCS", "Page", "page", "")
+
+		page, err := api.GetPageByID(stored.ID)
+		require.NoError(t, err)
+		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		api.UnwatchWritten()
+
+		assert.Empty(t, server.Watchers(stored.ID))
+		assert.Equal(t, 1, server.CountRequests(http.MethodDelete, "/user/watch/content/"),
+			"an unwatch that landed is not sent again")
+	})
+}

@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -129,7 +128,14 @@ func (api *API) watchBeforeWrite(pageID string) {
 	watching, err := api.IsWatching(pageID, "")
 	if err != nil {
 		// Not knowing, the page is left as it is rather than unwatched.
-		api.watchFailed().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
+		// UnwatchWritten reports it with the rest.
+		log.Debug().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
+		api.watchMutex.Lock()
+		api.watchUnread = append(api.watchUnread, pageID)
+		if api.watchErr == nil {
+			api.watchErr = err
+		}
+		api.watchMutex.Unlock()
 		watching = true
 	}
 
@@ -165,14 +171,26 @@ func (api *API) UnwatchWritten() {
 			pages = append(pages, pageID)
 		}
 	}
-	api.watchedBefore = nil
+	unread, unreadErr := api.watchUnread, api.watchErr
+	total := len(api.watchedBefore)
+	api.watchedBefore, api.watchUnread, api.watchErr = nil, nil, nil
 	api.watchMutex.Unlock()
+
+	// One line for each kind of failure, covering every page: a refusal that
+	// holds for all of them would otherwise read as one page's trouble.
+	if len(unread) > 0 {
+		slices.Sort(unread)
+		log.Warn().Err(unreadErr).Msgf(
+			"unable to read whether %d of %d page(s) mark wrote to were watched before, so they stay watched: %s",
+			len(unread), total, strings.Join(unread, ", "),
+		)
+	}
 
 	slices.Sort(pages)
 	var failed []string
 	var first error
 	for _, pageID := range pages {
-		if err := api.UnwatchPage(pageID, ""); err != nil {
+		if err := api.unwatchWritten(pageID); err != nil {
 			log.Debug().Err(err).Msgf("unable to stop watching page %s", pageID)
 			failed = append(failed, pageID)
 			if first == nil {
@@ -181,8 +199,6 @@ func (api *API) UnwatchWritten() {
 		}
 	}
 
-	// One line for all of them, whatever was said about reading: a refusal
-	// that holds for every page would otherwise read as one page's trouble.
 	if len(failed) > 0 {
 		log.Warn().Err(first).Msgf(
 			"unable to stop watching %d of %d page(s) mark wrote to, so they stay watched: %s",
@@ -191,16 +207,18 @@ func (api *API) UnwatchWritten() {
 	}
 }
 
-// watchFailed is the log event for a failure to read whether a page is
-// watched: a warning the first time in the run, and debug after. The watch
-// endpoints are v1's, which a scoped token without classic scopes cannot reach
-// through the gateway, so the failure would otherwise repeat for every page.
-func (api *API) watchFailed() *zerolog.Event {
-	api.watchMutex.Lock()
-	defer api.watchMutex.Unlock()
-	if api.watchWarned {
-		return log.Debug()
+// unwatchWritten unwatches a page, sending the request again when Confluence
+// was unavailable for it. A page left watched now stays watched: the next run
+// takes the watch for the user's own.
+func (api *API) unwatchWritten(pageID string) error {
+	send := func() (struct{}, error) {
+		return struct{}{}, api.UnwatchPage(pageID, "")
 	}
-	api.watchWarned = true
-	return log.Warn()
+	landed := func() (struct{}, bool, error) {
+		watching, err := api.IsWatching(pageID, "")
+		return struct{}{}, err == nil && !watching, err
+	}
+
+	_, err := retryUnavailable(api, "stop watching page "+pageID, send, landed)
+	return err
 }
