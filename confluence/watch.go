@@ -126,7 +126,8 @@ const (
 // watchBeforeWrite records a page mark is about to write to, and whether the
 // authenticated user watched it before mark first wrote to it in this run, for
 // UnwatchWritten. Only the first write counts: by the second, mark's own write
-// has made them a watcher.
+// has made them a watcher. Once a read is refused the credentials, the rest
+// are recorded unread without asking.
 func (api *API) watchBeforeWrite(pageID string) {
 	if !api.Unwatch {
 		return
@@ -134,8 +135,13 @@ func (api *API) watchBeforeWrite(pageID string) {
 
 	api.watchMutex.Lock()
 	_, known := api.watchedBefore[pageID]
+	refused := api.watchRefused
 	api.watchMutex.Unlock()
 	if known {
+		return
+	}
+	if refused {
+		api.rememberWatch(pageID, wasUnread, nil)
 		return
 	}
 
@@ -168,6 +174,9 @@ func (api *API) rememberWatch(pageID string, state watchState, err error) {
 	if api.watchErr == nil {
 		api.watchErr = err
 	}
+	if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) {
+		api.watchRefused = true
+	}
 }
 
 // UnwatchWritten stops the authenticated user watching each page mark wrote to
@@ -189,7 +198,7 @@ func (api *API) UnwatchWritten(ctx context.Context) {
 	}
 	unreadErr, total := api.watchErr, len(api.watchedBefore)
 	// A library caller can reuse the API for another run.
-	api.watchedBefore, api.watchErr = nil, nil
+	api.watchedBefore, api.watchErr, api.watchRefused = nil, nil, false
 	api.watchMutex.Unlock()
 
 	warnStayWatched("unable to read whether %d of %d page(s) mark wrote to were watched before",
