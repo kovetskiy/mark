@@ -335,8 +335,10 @@ func TestUnwatchAfterLabelWrites(t *testing.T) {
 	require.NoError(t, err)
 	_, err = api.DeletePageLabel(page, "docs")
 	require.NoError(t, err)
+	require.NotEmpty(t, server.Watchers(added.ID), "the label write has to be one that makes a watcher")
+	require.NotEmpty(t, server.Watchers(removed.ID))
 	api.UnwatchWritten()
 
-	assert.Equal(t, 1, server.CountRequests("DELETE", "/user/watch/content/"+added.ID))
-	assert.Equal(t, 1, server.CountRequests("DELETE", "/user/watch/content/"+removed.ID))
+	assert.Empty(t, server.Watchers(added.ID))
+	assert.Empty(t, server.Watchers(removed.ID))
 }
