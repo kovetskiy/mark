@@ -136,3 +136,32 @@ func TestADeclaredFileLinkedUnderAnotherSpelling(t *testing.T) {
 		})
 	}
 }
+
+// TestDifferentFilesUnderOneNameAreRefused covers a declared file and one the
+// document refers to that upload under one name: the second would replace the
+// first on the page, so the run fails before it is uploaded.
+func TestDifferentFilesUnderOneNameAreRefused(t *testing.T) {
+	files := map[string][]byte{
+		"a/b.txt": []byte("declared\n"), "a_b.txt": []byte("linked\n"),
+		"a/b.png": onePixelPNG(), "a_b.png": append(onePixelPNG(), 0),
+	}
+
+	cases := map[string]struct {
+		declared, body string
+		cfg            Config
+	}{
+		"a linked file":        {"a/./b.txt", "[x](a_b.txt)\n", Config{AttachReferenced: true}},
+		"an image":             {"a/b.png", "![x](a_b.png)\n", Config{}},
+		"an image, dry run":    {"a/b.png", "![x](a_b.png)\n", Config{DryRun: true}},
+		"a link, compile only": {"a//b.txt", "[x](a_b.txt)\n", Config{AttachReferenced: true, CompileOnly: true}},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := publishBeside(t, files, "<!-- Attachment: "+tc.declared+" -->\n", tc.body, tc.cfg)
+			require.Error(t, p.err)
+			assert.Contains(t, p.err.Error(), "would both be uploaded as")
+			assert.Zero(t, p.server.CountRequests("POST", "/data"), "the declared file was replaced")
+		})
+	}
+}

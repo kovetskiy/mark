@@ -1132,7 +1132,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 			// The clash a real run refuses, so that this one does not report
 			// success for a page that run will fail on. Declared files are read
 			// only when there is something to clash with them.
-			if len(headerAttachments) > 0 {
+			if len(headerAttachments) > 0 || len(inline) > 0 {
 				var declared []attachment.Attachment
 				if meta != nil {
 					declared, err = attachment.ResolveLocalAttachments(vfs.LocalOS, filepath.Dir(file), meta.Attachments)
@@ -3157,12 +3157,25 @@ func directoryTitleFromPagesFile(directory string) (string, error) {
 }
 
 // withHeaderAttachments adds what the page header references to the document's
-// own. One filename is one attachment on the page, so a header file that shares
-// a name with a different document file would silently replace it.
+// own. One filename is one attachment on the page, so a file that shares a name
+// with a different one -- declared, found while rendering, or the header's --
+// would silently replace it, and is refused instead.
 func withHeaderAttachments(file string, declared, inline, fromHeader []attachment.Attachment) ([]attachment.Attachment, error) {
 	taken := make(map[string]attachment.Attachment, len(declared)+len(inline))
 	for _, a := range slices.Concat(declared, inline) {
-		taken[a.Filename] = a
+		other, clash := taken[a.Filename]
+		if !clash {
+			taken[a.Filename] = a
+
+			continue
+		}
+
+		if !sameAttachment(other, a) {
+			return nil, fmt.Errorf(
+				"attachments %q and %q in %s would both be uploaded as %q but differ",
+				other.Name, a.Name, file, a.Filename,
+			)
+		}
 	}
 
 	for _, a := range fromHeader {
