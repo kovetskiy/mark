@@ -376,6 +376,19 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
+	// Every file would be published over the one page in turn, and only the
+	// last would be left on it.
+	if config.PageID != "" && len(files) > 1 {
+		named := files
+		if len(named) > 3 {
+			named = append(slices.Clone(named[:3]), "...")
+		}
+		return fmt.Errorf(
+			"--target-url names one page, but --files matched %d files (%s): name the one file to publish there",
+			len(files), strings.Join(named, ", "),
+		)
+	}
+
 	// The standard library is a fixed set of templates that does not depend on
 	// the file being processed, so it is built once for the whole run rather
 	// than once per file. Building it cannot reach the network -- the "user"
