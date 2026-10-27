@@ -1,6 +1,6 @@
 // Building the page hierarchy --parents-from-path derives from directories.
 
-package mark
+package page
 
 import (
 	"errors"
@@ -13,30 +13,30 @@ import (
 
 	"github.com/kovetskiy/mark/v16/fingerprint"
 	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/page"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
 
-// newHierarchy lays the run's files out under the root the flags name, or the
-// one the --files pattern implies.
-func newHierarchy(config Config, files []string) (*page.Hierarchy, error) {
-	root := config.ParentsFromPathRoot
+// BuildHierarchy lays the run's files out under root, the
+// --parents-from-path-root the flags name, or when that is empty under the one
+// the --files pattern implies.
+func BuildHierarchy(root, pattern string, files []string, titles TitleResolver) (*Hierarchy, error) {
+	explicitRoot := root
 	if root == "" {
-		root = page.GlobRoot(config.Files)
+		root = GlobRoot(pattern)
 	}
 
-	hierarchy := page.NewHierarchy(root, files, directoryTitleReader(config))
+	hierarchy := NewHierarchy(root, files, titles)
 
 	// A root given by hand that covers none of the files is a mistake, and
 	// quietly deriving no parents at all is the wrong way to find out. One it
 	// covers only partly is said once per file, since the rest of the run
 	// carries on.
 	outside := hierarchy.Outside()
-	if config.ParentsFromPathRoot != "" && len(files) > 0 && len(outside) == len(files) {
+	if explicitRoot != "" && len(files) > 0 && len(outside) == len(files) {
 		return nil, fmt.Errorf(
 			"--parents-from-path-root %q covers none of the files: it has to be a directory the --files pattern lies under",
-			config.ParentsFromPathRoot,
+			explicitRoot,
 		)
 	}
 
@@ -47,7 +47,7 @@ func newHierarchy(config Config, files []string) (*page.Hierarchy, error) {
 	return hierarchy, nil
 }
 
-// hashDirectoryTitles appends the generated hash to the titles of the pages
+// HashDirectoryTitles appends the generated hash to the titles of the pages
 // standing for directories: the parents a document's path derives, outermost
 // first, and the directory title its own document takes, if it is one.
 //
@@ -57,7 +57,7 @@ func newHierarchy(config Config, files []string) (*page.Hierarchy, error) {
 // of its own, so its title is the one its children look for. One that does
 // declare them is still the directory's page, and is titled by its path rather
 // than by where the header moves it, or its children would lose it.
-func hashDirectoryTitles(prefix []string, space string, derived []string, title string) ([]string, string) {
+func HashDirectoryTitles(prefix []string, space string, derived []string, title string) ([]string, string) {
 	var chain []string
 	// ExtractMeta ignores a --parents whose first entry is empty.
 	if len(prefix) > 0 && prefix[0] != "" {
@@ -78,15 +78,18 @@ func hashDirectoryTitles(prefix []string, space string, derived []string, title 
 	return hashed, title
 }
 
-// directoryHash gives a directory entry a fingerprint of its own.
+// DirectoryHash gives a directory entry a fingerprint of its own.
 //
 // A directory has no content to fingerprint, and an entry sharing a hash with a
 // document could be mistaken for that document under a previous name.
-func directoryHash(key string) string {
+func DirectoryHash(key string) string {
 	return fingerprint.SHA1("mark:directory:" + key)
 }
 
-// directoryTitleReader works out what a directory's page should be called.
+// DirectoryTitleReader works out what a directory's page should be called.
+// read gives a document's Markdown as publishing reads it, ignored blocks
+// already taken out, and titleFromH1 and
+// frontmatter are what --title-from-h1 and the frontmatter feature ask for.
 //
 // A directory's own document says so first, in the same order publishing would
 // read it: a Title header or front matter, then a leading heading when
@@ -96,17 +99,17 @@ func directoryHash(key string) string {
 //
 // The filename is deliberately not consulted. It is "README" in every directory
 // that has one, which is a name for a file rather than for a page.
-func directoryTitleReader(config Config) page.TitleResolver {
+func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
 	return func(directory, indexFile string) (string, error) {
 		if indexFile != "" {
-			_, source, err := readSource(indexFile)
+			markdown, err := read(indexFile)
 			if err != nil {
 				return "", err
 			}
 
 			meta, _, err := metadata.ExtractMeta(
-				source, "", config.TitleFromH1, false, indexFile, nil, false, "",
-				slices.Contains(config.Features, "frontmatter"),
+				markdown, "", titleFromH1, false, indexFile, nil, false, "",
+				frontmatter,
 			)
 			if err != nil {
 				return "", fmt.Errorf("unable to read the title of %q: %w", indexFile, err)

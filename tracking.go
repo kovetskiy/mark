@@ -364,7 +364,7 @@ func recordDirectoryPages(
 		}
 
 		if err := tracker.Record(
-			space, key, tail[i].ID, tail[i].Title, directoryHash(key),
+			space, key, tail[i].ID, tail[i].Title, page.DirectoryHash(key),
 		); err != nil {
 			return fmt.Errorf("unable to record directory page for %q: %w", key, err)
 		}
