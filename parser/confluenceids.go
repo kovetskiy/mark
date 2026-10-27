@@ -1,13 +1,12 @@
 package parser
 
 import (
-	"fmt"
 	"regexp"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // reInlineLink matches a link or an image as it is written in the source.
@@ -19,22 +18,23 @@ import (
 // reader sees, so it is the part the id is built from.
 var reInlineLink = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
 
-// ConfluenceIDs implements parser.IDs for Confluence-compatible header anchor IDs,
-// preserving '/', '_', '.', and '-' characters in heading IDs.
-type ConfluenceIDs struct {
-	Values map[string]bool
+// ConfluenceIDGenerator is the parser.IDGenerator goldmark is given for
+// Confluence-compatible header anchor IDs, preserving '/', '_', '.', and '-'
+// characters in heading IDs.
+//
+// It returns the base id only. goldmark's parser.IDs keeps the ids a document
+// has used, the ones an author wrote as {#id} included, and numbers a repeat
+// "-1", "-2" and so on.
+type ConfluenceIDGenerator struct{}
+
+// Generate implements parser.IDGenerator.
+func (ConfluenceIDGenerator) Generate(value []byte, kind ast.NodeKind) []byte {
+	return confluenceID(value, kind)
 }
 
-// NewConfluenceIDs creates a new ConfluenceIDs instance.
-func NewConfluenceIDs() *ConfluenceIDs {
-	return &ConfluenceIDs{
-		Values: make(map[string]bool),
-	}
-}
-func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
-	if s.Values == nil {
-		s.Values = make(map[string]bool)
-	}
+// confluenceID is the base id for value: the characters Confluence keeps in an
+// anchor, before any numbering.
+func confluenceID(value []byte, kind ast.NodeKind) []byte {
 	value = reInlineLink.ReplaceAll(value, []byte("$1"))
 	value = util.TrimLeftSpace(value)
 	value = util.TrimRightSpace(value)
@@ -59,27 +59,9 @@ func (s *ConfluenceIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 	}
 	if len(result) == 0 {
 		if kind == ast.KindHeading {
-			result = []byte("heading")
-		} else {
-			result = []byte("id")
+			return []byte("heading")
 		}
+		return []byte("id")
 	}
-	if _, ok := s.Values[util.BytesToReadOnlyString(result)]; !ok {
-		s.Values[util.BytesToReadOnlyString(result)] = true
-		return result
-	}
-	for i := 1; ; i++ {
-		newResult := fmt.Sprintf("%s-%d", result, i)
-		if _, ok := s.Values[newResult]; !ok {
-			s.Values[newResult] = true
-			return []byte(newResult)
-		}
-	}
-}
-
-func (s *ConfluenceIDs) Put(value []byte) {
-	if s.Values == nil {
-		s.Values = make(map[string]bool)
-	}
-	s.Values[util.BytesToReadOnlyString(value)] = true
+	return result
 }

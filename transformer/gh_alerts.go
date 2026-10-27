@@ -3,9 +3,9 @@ package transformer
 import (
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // GHAlertsTransformer transforms GitHub Alert syntax ([!NOTE], [!TIP], etc.)
@@ -81,9 +81,9 @@ func (t *GHAlertsTransformer) extractAlertType(blockquote *ast.Blockquote, reade
 	middleText := nodes[1].(*ast.Text)
 	rightText := nodes[2].(*ast.Text)
 
-	leftContent := string(leftText.Segment.Value(reader.Source()))
-	middleContent := string(middleText.Segment.Value(reader.Source()))
-	rightContent := string(rightText.Segment.Value(reader.Source()))
+	leftContent := leftText.Value.Str(reader.Source())
+	middleContent := middleText.Value.Str(reader.Source())
+	rightContent := rightText.Value.Str(reader.Source())
 
 	// Check for the exact pattern
 	if leftContent == "[" && rightContent == "]" && strings.HasPrefix(middleContent, "!") {
@@ -103,7 +103,7 @@ func (t *GHAlertsTransformer) extractAlertType(blockquote *ast.Blockquote, reade
 // and adds metadata for rendering
 func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, alertType string) {
 	// Set a custom attribute to identify this as a GitHub Alert
-	blockquote.SetAttribute([]byte("gh-alert-type"), []byte(alertType))
+	SetAttributeText(blockquote, "gh-alert-type", alertType)
 
 	// Find and remove the GitHub Alert syntax from the first paragraph
 	firstChild := blockquote.FirstChild()
@@ -126,12 +126,12 @@ func (t *GHAlertsTransformer) stripAlertMarker(blockquote *ast.Blockquote, parag
 	currentNode := paragraph.FirstChild()
 	for i := 0; i < 3 && currentNode != nil; i++ {
 		next := currentNode.NextSibling()
-		paragraph.RemoveChild(paragraph, currentNode)
+		paragraph.RemoveChild(currentNode)
 		currentNode = next
 	}
 
 	// If the original paragraph is now empty, remove it
 	if paragraph.FirstChild() == nil {
-		blockquote.RemoveChild(blockquote, paragraph)
+		blockquote.RemoveChild(paragraph)
 	}
 }

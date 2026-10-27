@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/yuin/goldmark-emoji/definition"
+	"github.com/yuin/goldmark-emoji/v2/definition"
 )
 
 type inlineOptions struct {

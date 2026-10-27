@@ -4,9 +4,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 type DateNode struct {
@@ -14,10 +14,10 @@ type DateNode struct {
 	Value []byte
 }
 
-func (d *DateNode) Dump(source []byte, level int) {
-	ast.DumpHelper(d, source, level, map[string]string{
+func (d *DateNode) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(d, map[string]any{
 		"Value": string(d.Value),
-	}, nil)
+	})
 }
 
 var KindDate = ast.NewNodeKind("Date")
@@ -27,9 +27,11 @@ func (d *DateNode) Kind() ast.NodeKind {
 }
 
 func NewDateNode(val []byte) *DateNode {
-	return &DateNode{
+	n := &DateNode{
 		Value: val,
 	}
+	n.Init(n)
+	return n
 }
 
 type dateParser struct{}

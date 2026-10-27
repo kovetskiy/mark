@@ -6,11 +6,11 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
-func blockQuoteRenderers() []renderer.NodeRenderer {
-	return []renderer.NodeRenderer{
+func blockQuoteRenderers() []html.Extension {
+	return []html.Extension{
 		crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),

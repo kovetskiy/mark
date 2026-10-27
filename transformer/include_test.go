@@ -7,15 +7,15 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	cmarkdown "github.com/kovetskiy/mark/v16/markdown"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 func TestIncludeTransformer(t *testing.T) {
@@ -28,13 +28,14 @@ func TestIncludeTransformer(t *testing.T) {
 
 	transformer := ctransformer.NewIncludeTransformer("test.md", tempDir, "", template.New("test"))
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(
-				util.Prioritized(transformer, 100),
+				util.Prioritized[parser.ASTTransformer](transformer, 100),
 			),
 		),
-		goldmark.WithRendererOptions(
+		goldmarktest.WithRendererOptions(
+			html.WithExtensions(ctransformer.NewHTMLRenderer()),
 			html.WithUnsafe(),
 		),
 	)
@@ -78,9 +79,9 @@ func TestIncludeTransformerRefusesCodeItCannotMove(t *testing.T) {
 
 	transformer := ctransformer.NewIncludeTransformer("test.md", tempDir, "", template.New("test"))
 
-	gm := goldmark.New(
-		goldmark.WithParserOptions(
-			parser.WithASTTransformers(util.Prioritized(transformer, 100)),
+	gm := goldmarktest.New(
+		goldmarktest.WithParserOptions(
+			parser.WithASTTransformers(util.Prioritized[parser.ASTTransformer](transformer, 100)),
 		),
 	)
 

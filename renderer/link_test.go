@@ -5,13 +5,13 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
-func linkRenderers(t *testing.T) []renderer.NodeRenderer {
+func linkRenderers(t *testing.T) []html.Extension {
 	t.Helper()
 
-	return []renderer.NodeRenderer{
+	return []html.Extension{
 		crenderer.NewConfluenceLinkRenderer(newStdlib(t), nil, "", false),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),

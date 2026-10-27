@@ -4,7 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
+	"github.com/kovetskiy/mark/v16/internal/htmlblock"
+	"github.com/yuin/goldmark/v2/ast"
 )
 
 type BlockQuoteLevelMap map[ast.Node]int
@@ -113,15 +114,14 @@ func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
 		if countParagraphs < 2 && entering {
 			if node.Kind() == ast.KindText {
 				n := node.(*ast.Text)
-				t = legacyClassifier.ClassifyingBlockQuote(string(n.Value(source)))
+				t = legacyClassifier.ClassifyingBlockQuote(n.Value.Str(source))
 				countParagraphs += 1
 			}
 			if node.Kind() == ast.KindHTMLBlock {
 
 				n := node.(*ast.HTMLBlock)
-				for i := 0; i < n.BaseBlock.Lines().Len(); i++ {
-					line := n.BaseBlock.Lines().At(i)
-					t = legacyClassifier.ClassifyingBlockQuote(string(line.Value(source)))
+				for _, line := range htmlblock.Lines(n, source) {
+					t = legacyClassifier.ClassifyingBlockQuote(line.Str(source))
 					if t != AdmonitionNone {
 						break
 					}

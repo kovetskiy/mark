@@ -1,17 +1,14 @@
 package renderer_test
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 // ac:task-id must be unique within a page. The counter was reset on entering
@@ -41,18 +38,7 @@ func TestConfluenceTaskListRendererIDsAreUniquePerDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gm := goldmark.New(
-				goldmark.WithExtensions(extension.TaskList),
-				goldmark.WithRendererOptions(
-					renderer.WithNodeRenderers(
-						util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-					),
-				),
-			)
-
-			var buf bytes.Buffer
-			require.NoError(t, gm.Convert([]byte(tt.input), &buf))
-			got := buf.String()
+			got := render(t, tt.input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
 
 			for _, w := range tt.want {
 				assert.Equal(t, 1, strings.Count(got, w),
@@ -92,18 +78,7 @@ func TestTaskListRendererLeavesOrdinaryListsAlone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gm := goldmark.New(
-				goldmark.WithExtensions(extension.TaskList),
-				goldmark.WithRendererOptions(
-					renderer.WithNodeRenderers(
-						util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-					),
-				),
-			)
-
-			var buf bytes.Buffer
-			require.NoError(t, gm.Convert([]byte(tt.input), &buf))
-			got := buf.String()
+			got := render(t, tt.input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
 
 			assert.NotContains(t, got, "ac:task", "an ordinary list is not a task list")
 			for _, want := range tt.want {
@@ -117,18 +92,7 @@ func TestTaskListRendererLeavesOrdinaryListsAlone(t *testing.T) {
 // loses the difference between a done and an open item is worse than no task
 // list at all.
 func TestTaskListCheckedState(t *testing.T) {
-	gm := goldmark.New(
-		goldmark.WithExtensions(extension.TaskList),
-		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(
-				util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-			),
-		),
-	)
-
-	var buf bytes.Buffer
-	require.NoError(t, gm.Convert([]byte("- [x] done\n- [ ] open\n"), &buf))
-	got := buf.String()
+	got := render(t, "- [x] done\n- [ ] open\n", []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
 
 	assert.Contains(t, got, "<ac:task-status>complete</ac:task-status>")
 	assert.Contains(t, got, "<ac:task-status>incomplete</ac:task-status>")
@@ -140,19 +104,7 @@ func TestTaskListCheckedState(t *testing.T) {
 func renderTaskList(t *testing.T, input string) string {
 	t.Helper()
 
-	gm := goldmark.New(
-		goldmark.WithExtensions(extension.TaskList),
-		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(
-				util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-			),
-		),
-	)
-
-	var buf bytes.Buffer
-	require.NoError(t, gm.Convert([]byte(input), &buf))
-
-	return buf.String()
+	return render(t, input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
 }
 
 // TestMixedListSplitsIntoRuns is what this replaced. Mixing <ac:task> and <li>
