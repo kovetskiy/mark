@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -28,11 +29,11 @@ func hierarchyServer(t *testing.T) *confluencetest.Server {
 func ancestryOf(t *testing.T, api *confluence.API, title string) []string {
 	t.Helper()
 
-	page, err := api.FindPage("DOCS", title, "page")
+	page, err := api.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, page, "page %q should exist", title)
 
-	found, err := api.GetPageByIDExpanded(page.ID, "ancestors")
+	found, err := api.GetPageByIDExpanded(context.Background(), page.ID, "ancestors")
 	require.NoError(t, err)
 
 	var titles []string
@@ -86,7 +87,7 @@ func TestIndexIsItsDirectorysPage(t *testing.T) {
 	assert.Equal(t, []string{"Home"}, ancestryOf(t, api, "Guides"))
 	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
 
-	page, err := api.FindPage("DOCS", "Guides", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 }
@@ -110,7 +111,7 @@ func TestDeclaredTitleWinsForAnIndex(t *testing.T) {
 
 	api := runHierarchy(t, dir, nil)
 
-	page, err := api.FindPage("DOCS", "Handbook", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Handbook", "page")
 	require.NoError(t, err)
 	assert.NotNil(t, page, "the title the document gave itself is kept")
 }
@@ -146,7 +147,7 @@ func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	chapter, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Chapter", "page")
+		FindPage(context.Background(), "DOCS", "Chapter", "page")
 	require.NoError(t, err)
 	require.NotNil(t, chapter)
 
@@ -212,9 +213,9 @@ func TestTitleCollisionIsRefused(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	assert.Equal(t, []string{"Home", "Api"}, ancestryOf(t, api, "Overview"))
 
-	page, err := api.FindPage("DOCS", "Overview", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Overview", "page")
 	require.NoError(t, err)
-	found, err := api.GetPageByIDExpanded(page.ID, "ancestors,body.storage")
+	found, err := api.GetPageByIDExpanded(context.Background(), page.ID, "ancestors,body.storage")
 	require.NoError(t, err)
 	assert.Contains(t, found.Body.Storage.Value, "API overview",
 		"the first document's page must not have been taken over")
@@ -258,11 +259,11 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	guides, err := api.FindPage("DOCS", "Guides", "page")
+	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guides, "mark created a page for the directory")
 
-	setup, err := api.FindPage("DOCS", "Setup", "page")
+	setup, err := api.FindPage(context.Background(), "DOCS", "Setup", "page")
 	require.NoError(t, err)
 	require.NotNil(t, setup)
 
@@ -281,6 +282,7 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 // document has that document's entry for its page already, and two entries
 // claiming one page is what the manifest complains about.
 func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
+	ctx := t.Context()
 	server := hierarchyServer(t)
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/README.md", space+"\nWhat the guides are.\n")
@@ -295,26 +297,27 @@ func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	guides, err := api.FindPage("DOCS", "Guides", "page")
+	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guides)
 
 	store := manifest.NewStore(api)
 
 	// The README owns the page, under its own path.
-	entry, ok, err := store.Lookup("DOCS", filepath.Join(dir, "guides", "README.md"))
+	entry, ok, err := store.Lookup(ctx, "DOCS", filepath.Join(dir, "guides", "README.md"))
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, guides.ID, entry.PageID)
 
 	// The directory itself is not a second claim on it.
-	_, ok, err = store.Lookup("DOCS", filepath.Join(dir, "guides"))
+	_, ok, err = store.Lookup(ctx, "DOCS", filepath.Join(dir, "guides"))
 	require.NoError(t, err)
 	assert.False(t, ok, "the directory must not claim a page its own document owns")
 }
 
 // TestDirectoryPagesAreNotRecordedWithoutTheFlag guards the default.
 func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
+	ctx := t.Context()
 	server := hierarchyServer(t)
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md",
@@ -327,7 +330,7 @@ func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	_, ok, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "guides"))
+	_, ok, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "guides"))
 	require.NoError(t, err)
 	assert.False(t, ok, "a parent mark did not derive from the path is not its to track")
 }
@@ -346,7 +349,7 @@ func TestIndexTitleIsTheDirectoryTitle(t *testing.T) {
 	assert.Equal(t, []string{"Home", "Developer Handbook"}, ancestryOf(t, api, "Setup"),
 		"the children belong to the page their directory's document published")
 
-	empty, err := api.FindPage("DOCS", "Guides", "page")
+	empty, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	assert.Nil(t, empty, "no second page named after the directory")
 }
@@ -362,7 +365,7 @@ func TestIndexH1BecomesTheDirectoryTitle(t *testing.T) {
 
 	assert.Equal(t, []string{"Home", "Developer Handbook"}, ancestryOf(t, api, "Setup"))
 
-	empty, err := api.FindPage("DOCS", "Guides", "page")
+	empty, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	assert.Nil(t, empty)
 }
@@ -405,7 +408,7 @@ func TestIndexWithByteOrderMarkNamesItsDirectory(t *testing.T) {
 
 	assert.Equal(t, []string{"Home", "Custom"}, ancestryOf(t, api, "Setup"))
 
-	named, err := api.FindPage("DOCS", "Guides", "page")
+	named, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	assert.Nil(t, named, "the document's own title is kept, not the directory's")
 }
@@ -422,7 +425,7 @@ func TestIgnoredTitleDoesNotNameItsDirectory(t *testing.T) {
 
 	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
 
-	hidden, err := api.FindPage("DOCS", "Hidden", "page")
+	hidden, err := api.FindPage(context.Background(), "DOCS", "Hidden", "page")
 	require.NoError(t, err)
 	assert.Nil(t, hidden, "an ignored header names nothing")
 }
@@ -456,7 +459,7 @@ func TestFilenameNeverNamesADirectory(t *testing.T) {
 
 	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
 
-	readme, err := api.FindPage("DOCS", "Readme", "page")
+	readme, err := api.FindPage(context.Background(), "DOCS", "Readme", "page")
 	require.NoError(t, err)
 	assert.Nil(t, readme, "no page should be called Readme")
 }
@@ -486,13 +489,13 @@ func TestHashTellsSameTitlesApart(t *testing.T) {
 func serverPages(t *testing.T, api *confluence.API) []*confluence.PageInfo {
 	t.Helper()
 
-	home, err := api.FindHomePage("DOCS")
+	home, err := api.FindHomePage(context.Background(), "DOCS")
 	require.NoError(t, err)
 
 	var all []*confluence.PageInfo
 	var walk func(parentID string)
 	walk = func(parentID string) {
-		children, err := api.GetChildPages(parentID)
+		children, err := api.GetChildPages(context.Background(), parentID)
 		require.NoError(t, err)
 		for i := range children {
 			all = append(all, &children[i])
@@ -561,7 +564,7 @@ func TestRootReadmeIsTitledByTheRoot(t *testing.T) {
 
 	api := runHierarchy(t, dir, nil)
 
-	page, err := api.FindPage("DOCS", metadata.TitleFromName(filepath.Base(dir)), "page")
+	page, err := api.FindPage(context.Background(), "DOCS", metadata.TitleFromName(filepath.Base(dir)), "page")
 	require.NoError(t, err)
 	assert.NotNil(t, page, "the root's document is titled after the root directory")
 }
@@ -627,10 +630,10 @@ func TestHashTellsSameDirectoriesApart(t *testing.T) {
 
 	// Each Guides page holds exactly one Setup.
 	for _, title := range guides {
-		parent, err := api.FindPage("DOCS", title, "page")
+		parent, err := api.FindPage(context.Background(), "DOCS", title, "page")
 		require.NoError(t, err)
 		require.NotNil(t, parent)
-		children, err := api.GetChildPages(parent.ID)
+		children, err := api.GetChildPages(context.Background(), parent.ID)
 		require.NoError(t, err)
 		assert.Len(t, children, 1, "%s holds its own directory's document only", title)
 	}
@@ -682,7 +685,7 @@ func TestStaleParentLookupSucceedsNormally(t *testing.T) {
 
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	published, err := api.FindPage("DOCS", "Child", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 }

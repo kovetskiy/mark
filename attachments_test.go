@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"math"
 	"os"
@@ -152,7 +153,7 @@ func TestMacroAttachmentOnLegacyCompilePath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), onePixelPNG(), 0o600))
 	path := filepath.Join(dir, "doc.md")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	source := widthMacro + "\n![Logo](logo.png)<!-- width=300 -->\n"
@@ -185,7 +186,7 @@ func TestMacroAttachmentThatIsAURLIsNotAFile(t *testing.T) {
 // TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead covers the values a
 // project file of the same name must never be uploaded for.
 func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	for name, value := range map[string]string{
@@ -218,7 +219,7 @@ func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
 // with a plain one: "my%20logo.png" names "my logo.png", and the page has to
 // say so under the name the file is uploaded as.
 func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	tests := map[string]struct {
@@ -300,7 +301,7 @@ func TestMacroAttachmentWithAColonIsUploaded(t *testing.T) {
 		t.Skip("a Windows filename cannot hold a colon")
 	}
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	dir := t.TempDir()

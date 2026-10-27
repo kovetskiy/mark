@@ -19,10 +19,11 @@ import (
 // straight up. The same repository publishes fine without --orphan-under, which
 // made the flag itself look broken.
 func TestInScopeTreatsADeletedPageAsGone(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	inScope, err := InScope(api, "2000", Orphan{
+	inScope, err := InScope(ctx, api, "2000", Orphan{
 		Path: "gone.md", PageID: "9999", Title: "Gone",
 	})
 
@@ -34,6 +35,7 @@ func TestInScopeTreatsADeletedPageAsGone(t *testing.T) {
 // where the page sits, and answering "not in scope" would quietly leave every
 // orphan alone while looking like a clean run.
 func TestInScopeReportsARealFailure(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	page := server.AddPage("DOCS", "Doc", "page", home.ID)
@@ -48,7 +50,7 @@ func TestInScopeReportsARealFailure(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := InScope(api, home.ID, Orphan{
+	_, err := InScope(ctx, api, home.ID, Orphan{
 		Path: "doc.md", PageID: page.ID, Title: "Doc",
 	})
 

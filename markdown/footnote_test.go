@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -16,7 +17,7 @@ import (
 func compileFootnotes(t *testing.T, markdown string, features ...string) string {
 	t.Helper()
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 
 	actual, _, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/test.md", types.MarkConfig{

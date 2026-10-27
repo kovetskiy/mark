@@ -2,13 +2,16 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -31,7 +34,7 @@ func TestTrackedPageIsRetitledNotDuplicated(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Original Title"))
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	before, err := api.FindPage("DOCS", "Original Title", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
@@ -61,7 +64,7 @@ func TestUntrackedTitleChangeStillDuplicates(t *testing.T) {
 	config.Files = file
 	require.NoError(t, Run(config))
 
-	before, err := api.FindPage("DOCS", "Original Title", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
@@ -92,7 +95,7 @@ Body that does not change.
 	config.ChangesOnly = true
 	require.NoError(t, Run(config))
 
-	before, err := api.FindPage("DOCS", "First", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
@@ -114,7 +117,7 @@ func TestTrackedPageDeletedInConfluenceIsRecreated(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	published, err := api.FindPage("DOCS", "Doc", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -147,7 +150,7 @@ func TestTrackingSavesManifestEvenWhenAFileFails(t *testing.T) {
 	config.ContinueOnError = true
 	require.Error(t, Run(config), "the bad file should still fail the run")
 
-	published, err := api.FindPage("DOCS", "Good", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Good", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -175,7 +178,7 @@ func TestTrackedPageLoadFailureDoesNotDuplicate(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	published, err := api.FindPage("DOCS", "Doc", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -433,7 +436,7 @@ func TestRenamedFileIsFollowedNotDuplicated(t *testing.T) {
 	glob := filepath.Join(dir, "*.md")
 	require.NoError(t, Run(filenameTitleConfig(server, glob)))
 
-	original, err := api.FindPage("DOCS", "Old Name", "page")
+	original, err := api.FindPage(context.Background(), "DOCS", "Old Name", "page")
 	require.NoError(t, err)
 	require.NotNil(t, original, "the first run publishes under the filename")
 
@@ -459,7 +462,7 @@ func TestRenamedFileDuplicatesWithoutTracking(t *testing.T) {
 	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
 	require.NoError(t, Run(config))
 
-	original, err := api.FindPage("DOCS", "Old Name", "page")
+	original, err := api.FindPage(context.Background(), "DOCS", "Old Name", "page")
 	require.NoError(t, err)
 	require.NotNil(t, original)
 
@@ -553,7 +556,7 @@ func TestDryRunStillWritesNothingWithTracking(t *testing.T) {
 	// The folder has to hang off the anchor page the headers name, or it is not
 	// resolved at all and nothing is ever recorded -- which would leave this
 	// test asserting nothing.
-	anchor, err := api.FindPage("DOCS", "Parent", "page")
+	anchor, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, anchor)
 	server.AddFolder("DOCS", "Guides", anchor.ID, "page")
@@ -607,7 +610,7 @@ func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
 	writeFile(t, dir, "a/one.md", body)
 	require.NoError(t, Run(multiGlobConfig(server, globA)))
 
-	pageA, err := api.FindPage("DOCS", "One", "page")
+	pageA, err := api.FindPage(context.Background(), "DOCS", "One", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageA)
 
@@ -645,7 +648,7 @@ func TestRenameStillWorksWithinOneGlob(t *testing.T) {
 	writeFile(t, dir, "a/old-name.md", body)
 	require.NoError(t, Run(multiGlobConfig(server, glob)))
 
-	published, err := api.FindPage("DOCS", "Old Name", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Old Name", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -685,7 +688,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(baseURL, "user", "token", false)
-	guide, err := api.FindPage("DOCS", "Guide", "page")
+	guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guide)
 
@@ -703,7 +706,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide Renamed -->\n\nA guide.\n")
 	require.NoError(t, Run(config))
 
-	renamed, err := api.FindPage("DOCS", "Guide Renamed", "page")
+	renamed, err := api.FindPage(context.Background(), "DOCS", "Guide Renamed", "page")
 	require.NoError(t, err)
 	require.NotNil(t, renamed)
 	assert.Equal(t, guide.ID, renamed.ID, "the manifest found the page the first run made")
@@ -736,7 +739,7 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	assert.Contains(t, err.Error(), `"OPS"`)
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	runbook, err := api.FindPage("OPS", "Runbook", "page")
+	runbook, err := api.FindPage(context.Background(), "OPS", "Runbook", "page")
 	require.NoError(t, err)
 	assert.Nil(t, runbook, "refused before anything was published to the second space")
 
@@ -807,14 +810,73 @@ func TestManifestIsSavedWhenAFileFailsHard(t *testing.T) {
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	require.Error(t, Run(config), "the run must still report the failure")
 
-	published, err := api.FindPage("DOCS", "Published", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Published", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published, "the good file published")
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
-	entry, ok, err := store.Lookup("DOCS", filepath.Join(dir, "a-good.md"))
+	entry, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "a-good.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the page that published must still be in the manifest")
+	assert.Equal(t, published.ID, entry.PageID)
+}
+
+// TestManifestSaveOnTheWayOutOutlastsASignal: the save on the way out of a
+// run that failed went out under the run's own context whenever that context
+// was still live, so a signal arriving during the save cut it short with the
+// manifest half-written. It is made under a detached context whatever the
+// state of the run's.
+func TestManifestSaveOnTheWayOutOutlastsASignal(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a-good.md", markdownWithTitle("Published"))
+	writeFile(t, dir, "b-bad.md", "no metadata here at all\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The save's first write stops the run, as a signal would, and is then
+	// refused if the client gives up on it; a save that does not give up is
+	// let through.
+	var once sync.Once
+	signalled := false
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet || !strings.Contains(r.URL.Path, "/propert") {
+			return 0, "", false
+		}
+
+		aborted := false
+		once.Do(func() {
+			signalled = true
+			cancel()
+			select {
+			case <-r.Context().Done():
+				aborted = true
+			case <-time.After(500 * time.Millisecond):
+			}
+		})
+		if aborted {
+			return http.StatusServiceUnavailable, `{"message":"the client gave up"}`, true
+		}
+
+		return 0, "", false
+	})
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	require.Error(t, RunContext(ctx, config), "the run must still report the failure")
+	require.True(t, signalled, "the save on the way out wrote a property")
+
+	server.SetFail(nil)
+
+	published, err := api.FindPage(context.Background(), "DOCS", "Published", "page")
+	require.NoError(t, err)
+	require.NotNil(t, published, "the good file published")
+
+	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	entry, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "a-good.md"))
+	require.NoError(t, err)
+	require.True(t, ok, "the save went on to the end despite the signal")
 	assert.Equal(t, published.ID, entry.PageID)
 }
 
@@ -840,7 +902,7 @@ Text with an <span>unclosed tag.
 	require.Error(t, Run(trackingConfig(server, file)))
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
-	_, ok, err := store.Lookup("DOCS", filepath.Join(dir, "doc.md"))
+	_, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "doc.md"))
 	require.NoError(t, err)
 	assert.False(t, ok,
 		"a page whose body was never uploaded must not be in the manifest")
@@ -856,12 +918,12 @@ func TestRecordedTitleIsTheOneThePageCarries(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Recorded"))
 	require.NoError(t, Run(trackingConfig(server, file)))
 
-	published, err := api.FindPage("DOCS", "Recorded", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Recorded", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
-	entry, ok, err := store.Lookup("DOCS", filepath.Join(dir, "doc.md"))
+	entry, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "doc.md"))
 	require.NoError(t, err)
 	require.True(t, ok)
 
@@ -888,7 +950,7 @@ func TestPreserveCommentsKeepsARetitle(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	original, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Original Title", "page")
+		FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
 	require.NotNil(t, original)
 

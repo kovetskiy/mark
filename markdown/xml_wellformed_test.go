@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/attachment"
@@ -83,7 +84,7 @@ func TestConfluenceMarkupIsNotRewritten(t *testing.T) {
 func compileRawHTMLDoc(t *testing.T, src string, features ...string) string {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{Features: features})
@@ -112,7 +113,7 @@ func TestVoidElementsAreClosedInASplitDetails(t *testing.T) {
 // whole HTML block the moment one line in it names a layout directive, and the
 // replacement reached the page unrepaired for the same reason.
 func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	// One HTML block: it opens with a tag, so it runs to the blank line and
@@ -133,7 +134,7 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 // not be published at all. Through both compile paths, since both carry raw
 // HTML to the page.
 func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	for name, src := range map[string]string{

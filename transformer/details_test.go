@@ -26,6 +26,13 @@ func TestDetailsTransformer(t *testing.T) {
 			expected: "<ac:structured-macro ac:name=\"expand\"><ac:parameter ac:name=\"title\">Summary Title</ac:parameter><ac:rich-text-body><p>Body Content</p></ac:rich-text-body></ac:structured-macro>",
 		},
 		{
+			// The title is interpolated text, so it goes through XMLEscape: a
+			// character XML 1.0 cannot carry is replaced, not sent to Confluence.
+			name:     "summary title escaped as XML",
+			input:    "<details><summary>Fish &amp; chips \x01</summary><p>Body Content</p></details>",
+			expected: "<ac:parameter ac:name=\"title\">Fish &amp; chips \uFFFD</ac:parameter>",
+		},
+		{
 			name:     "details without summary",
 			input:    "<details><p>Body Content</p></details>",
 			expected: "<ac:structured-macro ac:name=\"expand\"><ac:rich-text-body><p>Body Content</p></ac:rich-text-body></ac:structured-macro>",

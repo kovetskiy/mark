@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -15,7 +16,7 @@ import (
 // only the (empty) segment. LayoutTransformer is registered unconditionally, so
 // this affected every document.
 func TestLayoutCommentInInlineCodeIsLiteral(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
@@ -32,7 +33,7 @@ func TestLayoutCommentInInlineCodeIsLiteral(t *testing.T) {
 
 // A real directive outside a code span must still be converted.
 func TestLayoutCommentOutsideCodeSpanStillConverts(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(

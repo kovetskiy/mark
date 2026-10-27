@@ -3,6 +3,7 @@
 package mark
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -22,6 +23,7 @@ import (
 // would have handled in place is worse than no dry run, because it is confidently
 // wrong about the one thing somebody is checking.
 func previewTrackedResolution(
+	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
 	meta *metadata.Meta,
@@ -34,7 +36,7 @@ func previewTrackedResolution(
 
 	// Errors stop the preview as they stop a real run: reporting "would create"
 	// over a lookup that failed would hide the duplicate a real run refuses to make.
-	pg, err := resolveTrackedPage(tracker, api, meta, file)
+	pg, err := resolveTrackedPage(ctx, tracker, api, meta, file)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +50,7 @@ func previewTrackedResolution(
 		return pg, nil
 	}
 
-	pg, err = resolveRenamedFile(tracker, api, meta, file, sourceHash)
+	pg, err = resolveRenamedFile(ctx, tracker, api, meta, file, sourceHash)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +81,7 @@ func previewTrackedResolution(
 // a file that has genuinely never been published and one whose recorded page has
 // since been deleted in Confluence. Neither is a failure worth stopping for.
 func resolveTrackedPage(
+	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
 	meta *metadata.Meta,
@@ -88,7 +91,7 @@ func resolveTrackedPage(
 		return nil, nil
 	}
 
-	entry, ok, err := tracker.Lookup(meta.Space, file)
+	entry, ok, err := tracker.Lookup(ctx, meta.Space, file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read page mapping for %q: %w", file, err)
 	}
@@ -96,7 +99,7 @@ func resolveTrackedPage(
 		return nil, nil
 	}
 
-	pg, err := api.GetPageByID(entry.PageID)
+	pg, err := api.GetPageByID(ctx, entry.PageID)
 	if err != nil {
 		// Only a page that is genuinely gone may fall through to being created
 		// again. Treating every failure that way would mean a network blip
@@ -148,7 +151,7 @@ func resolveTrackedPage(
 // everything downstream compares titles: validation, the decision that a page
 // is misplaced, and the lookup that walks the chain. Repairing the title once,
 // before any of them run, leaves them all agreeing.
-func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *metadata.Meta, titles *runTitles) error {
+func refreshStaleParents(ctx context.Context, tracker *manifest.Store, api *confluence.API, meta *metadata.Meta, titles *runTitles) error {
 	if tracker == nil {
 		return nil
 	}
@@ -163,7 +166,7 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 		// FindPage is memoised, and ancestry resolution is about to ask the
 		// same question, so this costs nothing on the common path where the
 		// parent is exactly where it says it is.
-		existing, err := api.FindPage(meta.Space, title, "page")
+		existing, err := api.FindPage(ctx, meta.Space, title, "page")
 		if err != nil {
 			// A lookup that failed is not a parent that is missing. Reading it
 			// as one leaves the stale title in place, and a stale title is
@@ -179,19 +182,19 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 		}
 
 		// A child sorting ahead of its retitled parent must not create the new title first.
-		pageID, publisher, err := trackedPageOfDeclaredTitle(tracker, titles, meta.Space, title)
+		pageID, publisher, err := trackedPageOfDeclaredTitle(ctx, tracker, titles, meta.Space, title)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 		}
 		ok := pageID != ""
 		if !ok {
-			pageID, ok, err = tracker.LookupParent(meta.Space, page.ParentPathKey(declared[:i+1]))
+			pageID, ok, err = tracker.LookupParent(ctx, meta.Space, page.ParentPathKey(declared[:i+1]))
 			if err != nil {
 				return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 			}
 		}
 		if !ok {
-			pageID, ok, err = tracker.ResolveStaleTitle(meta.Space, title)
+			pageID, ok, err = tracker.ResolveStaleTitle(ctx, meta.Space, title)
 			if err != nil {
 				return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 			}
@@ -200,7 +203,7 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 			}
 		}
 
-		renamed, err := api.GetPageByID(pageID)
+		renamed, err := api.GetPageByID(ctx, pageID)
 		if err != nil {
 			// Only a recorded page that is genuinely gone may be passed over.
 			// Anything else is a failure to read, and carrying on with the old
@@ -243,13 +246,13 @@ func refreshStaleParents(tracker *manifest.Store, api *confluence.API, meta *met
 // the run that publishes the title as a page, and that document, if it has been
 // published before. A document renamed since is found by its content, as
 // resolveRenamedFile finds it when its own turn comes.
-func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, space, title string) (string, string, error) {
+func trackedPageOfDeclaredTitle(ctx context.Context, tracker *manifest.Store, titles *runTitles, space, title string) (string, string, error) {
 	file, ok := titles.declaredBy(space, "page", title)
 	if !ok {
 		return "", "", nil
 	}
 
-	entry, found, err := tracker.Lookup(space, file)
+	entry, found, err := tracker.Lookup(ctx, space, file)
 	if err != nil {
 		return "", "", err
 	}
@@ -259,7 +262,7 @@ func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, spac
 			return "", "", nil //nolint:nilerr // indexed as readable; its own turn reports this
 		}
 
-		_, entry, found, err = tracker.ResolveRenamed(space, fingerprint.SHA1(string(source)))
+		_, entry, found, err = tracker.ResolveRenamed(ctx, space, fingerprint.SHA1(string(source)))
 		if err != nil || !found {
 			return "", "", err
 		}
@@ -283,6 +286,7 @@ func trackedPageOfDeclaredTitle(tracker *manifest.Store, titles *runTitles, spac
 // That is the right way to be wrong here: a duplicate is a nuisance, where
 // rebinding onto the wrong page overwrites a document nobody asked to change.
 func resolveRenamedFile(
+	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
 	meta *metadata.Meta,
@@ -293,7 +297,7 @@ func resolveRenamedFile(
 		return nil, nil
 	}
 
-	previous, entry, ok, err := tracker.ResolveRenamed(meta.Space, sourceHash)
+	previous, entry, ok, err := tracker.ResolveRenamed(ctx, meta.Space, sourceHash)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
 	}
@@ -301,7 +305,7 @@ func resolveRenamedFile(
 		return nil, nil
 	}
 
-	pg, err := api.GetPageByID(entry.PageID)
+	pg, err := api.GetPageByID(ctx, entry.PageID)
 	if err != nil {
 		if !errors.Is(err, confluence.ErrNotFound) {
 			return nil, fmt.Errorf(
@@ -311,7 +315,7 @@ func resolveRenamedFile(
 		// Recorded but gone, so there is nothing to rename. Drop the entry so it
 		// stops being offered, and let the document be published afresh.
 		log.Warn().Msgf("%s was published to page %s, which no longer exists", previous, entry.PageID)
-		return nil, tracker.Forget(meta.Space, previous)
+		return nil, tracker.Forget(ctx, meta.Space, previous)
 	}
 
 	log.Info().Msgf(
@@ -321,7 +325,7 @@ func resolveRenamedFile(
 
 	// The old path is gone. Left in place it would be reported as a deleted
 	// file on every run from here on.
-	if err := tracker.Forget(meta.Space, previous); err != nil {
+	if err := tracker.Forget(ctx, meta.Space, previous); err != nil {
 		return nil, err
 	}
 
@@ -341,6 +345,7 @@ func resolveRenamedFile(
 // code that creates them: a document's ancestors end with exactly the pages its
 // path asked for, and reading them costs nothing extra.
 func recordDirectoryPages(
+	ctx context.Context,
 	tracker *manifest.Store,
 	target *confluence.PageInfo,
 	hierarchy *page.Hierarchy,
@@ -364,6 +369,7 @@ func recordDirectoryPages(
 		}
 
 		if err := tracker.Record(
+			ctx,
 			space, key, tail[i].ID, tail[i].Title, page.DirectoryHash(key),
 		); err != nil {
 			return fmt.Errorf("unable to record directory page for %q: %w", key, err)
@@ -381,18 +387,18 @@ func recordDirectoryPages(
 // its body -- and the manifest is saved however the run ends, so a body that
 // was refused as malformed, or an update that failed, must not leave the
 // mapping claiming both. The fingerprint is what rename detection matches on.
-func (r *publishRun) recordPublished(doc *document, target *confluence.PageInfo) error {
+func (r *publishRun) recordPublished(ctx context.Context, doc *document, target *confluence.PageInfo) error {
 	meta, file := doc.meta, doc.file
 	if r.tracker == nil || meta == nil {
 		return nil
 	}
 
-	if err := r.tracker.Record(meta.Space, file, target.ID, meta.Title, doc.sourceHash); err != nil {
+	if err := r.tracker.Record(ctx, meta.Space, file, target.ID, meta.Title, doc.sourceHash); err != nil {
 		return fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 	}
 
 	if r.hierarchy != nil && !meta.DeclaredParents {
-		if err := recordDirectoryPages(r.tracker, target, r.hierarchy, file, meta.Space); err != nil {
+		if err := recordDirectoryPages(ctx, r.tracker, target, r.hierarchy, file, meta.Space); err != nil {
 			return err
 		}
 	}
@@ -401,7 +407,7 @@ func (r *publishRun) recordPublished(doc *document, target *confluence.PageInfo)
 	// either way: a run that wrote nothing still records what it found, so
 	// that a page nobody touches gets a version on the first run rather than
 	// staying unguarded forever.
-	if err := r.tracker.RecordVersion(meta.Space, file, target.Version.Number); err != nil {
+	if err := r.tracker.RecordVersion(ctx, meta.Space, file, target.Version.Number); err != nil {
 		return fmt.Errorf("unable to record page version for %q: %w", file, err)
 	}
 

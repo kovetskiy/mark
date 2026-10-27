@@ -96,7 +96,7 @@ const expansions = "body.storage,ancestors,version,space"
 // the page -- its space, its ancestry, its title, its labels -- and with the
 // attachments it refers to written beside it.
 func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error) {
-	page, err := findPage(api, cfg)
+	page, err := findPage(ctx, api, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -208,13 +208,13 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	var downloads []pendingDownload
 	var missing map[string]bool
 	if !cfg.NoAttachments {
-		downloads, missing, err = attachmentsToWrite(api, page, doc, attachmentsDir, names, pathOf)
+		downloads, missing, err = attachmentsToWrite(ctx, api, page, doc, attachmentsDir, names, pathOf)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	header, err := headers(api, page, space, doc, missing)
+	header, err := headers(ctx, api, page, space, doc, missing)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 
 // findPage reads the page the configuration names, with everything an export
 // needs of it.
-func findPage(api *confluence.API, cfg Config) (*confluence.PageInfo, error) {
+func findPage(ctx context.Context, api *confluence.API, cfg Config) (*confluence.PageInfo, error) {
 	id := cfg.PageID
 
 	if id == "" {
@@ -277,7 +277,7 @@ func findPage(api *confluence.API, cfg Config) (*confluence.PageInfo, error) {
 		var found *confluence.PageInfo
 		for _, pageType := range []string{"page", "blogpost"} {
 			var err error
-			found, err = api.FindPage(cfg.Space, cfg.Title, pageType)
+			found, err = api.FindPage(ctx, cfg.Space, cfg.Title, pageType)
 			if err != nil {
 				return nil, fmt.Errorf("unable to find page %q in space %s: %w", cfg.Title, cfg.Space, err)
 			}
@@ -292,7 +292,7 @@ func findPage(api *confluence.API, cfg Config) (*confluence.PageInfo, error) {
 		id = found.ID
 	}
 
-	page, err := api.GetPageByIDExpanded(id, expansions)
+	page, err := api.GetPageByIDExpanded(ctx, id, expansions)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read page %s: %w", id, err)
 	}
@@ -303,6 +303,7 @@ func findPage(api *confluence.API, cfg Config) (*confluence.PageInfo, error) {
 // headers writes the metadata headers that publish the document back to the
 // page it came from.
 func headers(
+	ctx context.Context,
 	api *confluence.API,
 	page *confluence.PageInfo,
 	space string,
@@ -328,7 +329,7 @@ func headers(
 			return "", err
 		}
 	} else {
-		parents, folders, err := parents(api, page, space)
+		parents, folders, err := parents(ctx, api, page, space)
 		if err != nil {
 			return "", err
 		}
@@ -348,7 +349,7 @@ func headers(
 		return "", err
 	}
 
-	labels, err := api.GetPageLabels(page, "global")
+	labels, err := api.GetPageLabels(ctx, page, "global")
 	if err != nil {
 		return "", fmt.Errorf("unable to read the labels of page %s: %w", page.ID, err)
 	}
@@ -375,7 +376,7 @@ func headers(
 		}
 	}
 
-	appearance, emoji := appearanceOf(api, page)
+	appearance, emoji := appearanceOf(ctx, api, page)
 	if appearance != "" {
 		if err := add(metadata.ContentAppearance, appearance); err != nil {
 			return "", err
@@ -408,13 +409,13 @@ func headers(
 // folders directly above the page can be said. One higher up is left out, with
 // a warning: the page is found by its parent's title, which still puts it in
 // the folder unless that parent is moved.
-func parents(api *confluence.API, page *confluence.PageInfo, space string) (pages, folders []string, err error) {
-	chain := ancestry(api, page)
+func parents(ctx context.Context, api *confluence.API, page *confluence.PageInfo, space string) (pages, folders []string, err error) {
+	chain := ancestry(ctx, api, page)
 	if len(chain) == 0 {
 		return nil, nil, nil
 	}
 
-	home, err := api.FindHomePage(space)
+	home, err := api.FindHomePage(ctx, space)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to find the home page of space %s: %w", space, err)
 	}
@@ -469,17 +470,17 @@ func pageTitles(chain []confluence.Ancestor) []string {
 // ancestors leave folders out, so where there can be folders, on Cloud, the
 // chain is read from v2 instead; where it cannot be read, a warning says the
 // folders may be missing.
-func ancestry(api *confluence.API, page *confluence.PageInfo) []confluence.Ancestor {
+func ancestry(ctx context.Context, api *confluence.API, page *confluence.PageInfo) []confluence.Ancestor {
 	v1 := make([]confluence.Ancestor, 0, len(page.Ancestors))
 	for _, ancestor := range page.Ancestors {
 		v1 = append(v1, confluence.Ancestor{ID: ancestor.ID, Title: ancestor.Title, Type: "page"})
 	}
 
-	if isCloud, err := api.Cloud(); err == nil && !isCloud {
+	if isCloud, err := api.Cloud(ctx); err == nil && !isCloud {
 		return v1
 	}
 
-	chain, err := api.AncestryV2(page.ID)
+	chain, err := api.AncestryV2(ctx, page.ID)
 	if err != nil {
 		log.Warn().Msgf(
 			"unable to tell whether page %q is in a folder, so its headers name no folder: %s", page.Title, err,
@@ -494,8 +495,8 @@ func ancestry(api *confluence.API, page *confluence.PageInfo) []confluence.Ances
 // which Confluence keeps as content properties. Neither is worth failing the
 // export over: a token that may not read properties exports the page without
 // them, and says so.
-func appearanceOf(api *confluence.API, page *confluence.PageInfo) (appearance, emoji string) {
-	properties, err := api.ContentProperties(page.ID)
+func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (appearance, emoji string) {
+	properties, err := api.ContentProperties(ctx, page.ID)
 	if err != nil {
 		log.Warn().Msgf("unable to read the content appearance and emoji of page %s: %s", page.ID, err)
 		return "", ""
@@ -633,6 +634,7 @@ type pendingDownload struct {
 // it goes to, and says which of them the page does not have, by the path the
 // document refers to them with.
 func attachmentsToWrite(
+	ctx context.Context,
 	api *confluence.API,
 	page *confluence.PageInfo,
 	doc *Document,
@@ -644,7 +646,7 @@ func attachmentsToWrite(
 		return nil, nil, nil
 	}
 
-	remote, err := api.GetAttachments(page.ID)
+	remote, err := api.GetAttachments(ctx, page.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to list the attachments of page %s: %w", page.ID, err)
 	}

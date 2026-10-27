@@ -3,6 +3,7 @@
 package mark
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -23,6 +24,7 @@ import (
 // moving it, say -- which it does whatever the body comparison finds, so any of
 // them makes the page one that would change. They come back as the reason.
 func previewChange(
+	ctx context.Context,
 	body string,
 	existing *confluence.PageInfo,
 	relinked bool,
@@ -96,12 +98,13 @@ func previewChange(
 // A source file that moved is compared against the entry of the path it moved
 // from, for the one run on which its own path has none.
 func hasDrifted(
+	ctx context.Context,
 	api *confluence.API,
 	tracker *manifest.Store,
 	spaceKey, file string,
 	target *confluence.PageInfo,
 ) (string, error) {
-	entry, ok, err := tracker.Lookup(spaceKey, file)
+	entry, ok, err := tracker.Lookup(ctx, spaceKey, file)
 	if err != nil {
 		return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 	}
@@ -112,7 +115,7 @@ func hasDrifted(
 	// alone read that as a page with no baseline, and the very run that moved
 	// the file overwrote an edit --no-overwrite exists to keep.
 	if !ok {
-		entry, ok, err = tracker.LookupMoved(spaceKey, file, target.ID)
+		entry, ok, err = tracker.LookupMoved(ctx, spaceKey, file, target.ID)
 		if err != nil {
 			return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 		}
@@ -139,13 +142,13 @@ func hasDrifted(
 
 // leaveDrifted reports, records and returns true for a page --no-overwrite
 // keeps: one edited in Confluence since mark last published it.
-func (r *publishRun) leaveDrifted(doc *document, dest *destination) (bool, error) {
+func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *destination) (bool, error) {
 	meta, file, target := doc.meta, doc.file, dest.page
 	if !r.config.NoOverwrite || dest.created || r.tracker == nil || meta == nil || target == nil {
 		return false, nil
 	}
 
-	drift, err := hasDrifted(r.api, r.tracker, meta.Space, file, target)
+	drift, err := hasDrifted(ctx, r.api, r.tracker, meta.Space, file, target)
 	if err != nil {
 		return false, err
 	}
@@ -167,7 +170,7 @@ func (r *publishRun) leaveDrifted(doc *document, dest *destination) (bool, error
 	// for an orphan and deleted. The version is deliberately not
 	// updated: until somebody resolves the difference, every run should
 	// say so again.
-	if err := r.tracker.Record(meta.Space, file, target.ID, target.Title, doc.sourceHash); err != nil {
+	if err := r.tracker.Record(ctx, meta.Space, file, target.ID, target.Title, doc.sourceHash); err != nil {
 		return false, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 	}
 
@@ -205,7 +208,7 @@ func (r *publishRun) changeCheck(doc *document, dest *destination, html string) 
 
 // previewSettingChanges is what a real run would change on a previewed page
 // besides its body and attachments, for previewChange's others.
-func (r *publishRun) previewSettingChanges(doc *document, found pagePreview) ([]string, error) {
+func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, found pagePreview) ([]string, error) {
 	meta, previewed := doc.meta, found.page
 	if previewed == nil || meta == nil {
 		return nil, nil
@@ -213,11 +216,11 @@ func (r *publishRun) previewSettingChanges(doc *document, found pagePreview) ([]
 
 	var others []string
 
-	if page.WouldMove(r.api, previewed, found.parent, meta.Parents, found.misplaced) {
+	if page.WouldMove(ctx, r.api, previewed, found.parent, meta.Parents, found.misplaced) {
 		others = append(others, "it would be moved under the parent its headers declare")
 	}
 
-	add, del, err := r.api.LabelChanges(previewed, meta.Labels, r.config.AppendLabels)
+	add, del, err := r.api.LabelChanges(ctx, previewed, meta.Labels, r.config.AppendLabels)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +229,7 @@ func (r *publishRun) previewSettingChanges(doc *document, found pagePreview) ([]
 	}
 
 	if doc.restrictions != nil {
-		plan, err := r.api.PlanRestrictions(previewed, doc.restrictions, r.config.EditLock, false)
+		plan, err := r.api.PlanRestrictions(ctx, previewed, doc.restrictions, r.config.EditLock, false)
 		if err != nil {
 			return nil, err
 		}

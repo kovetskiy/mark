@@ -1,13 +1,13 @@
 package confluence
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
-
-	"github.com/kovetskiy/gopencils"
 )
 
 // The operations a page can be restricted on.
@@ -132,8 +132,8 @@ type ResolvedRestrictions struct {
 // On Cloud a user is named by full name, which has to match exactly one user,
 // or as accountid:<id>; the authenticated user may also be named by its login
 // or email. On Server and Data Center a user is named by username.
-func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestrictions, error) {
-	cloud, err := api.Cloud()
+func (api *API) ResolveRestrictions(ctx context.Context, declared []PageRestriction) (*ResolvedRestrictions, error) {
+	cloud, err := api.Cloud(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 
 	var current *User
 	if slices.ContainsFunc(declared, PageRestriction.restricts) {
-		current, err = api.GetCurrentUser()
+		current, err = api.GetCurrentUser(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve the authenticated user; refusing restrictions that could lock it out: %w", err)
 		}
@@ -168,7 +168,7 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 		for _, name := range restriction.Users {
 			user := name
 			if cloud {
-				user, err = api.accountIDOf("restricted user", name, current)
+				user, err = api.accountIDOf(ctx, "restricted user", name, current)
 				if err != nil {
 					return nil, err
 				}
@@ -187,7 +187,7 @@ func (api *API) ResolveRestrictions(declared []PageRestriction) (*ResolvedRestri
 // The user search matches any full name that contains the one it is given, so
 // it is only a candidate list here: access control cannot take the first of
 // two Jane Does, or a Jane Doe-Smith, for the Jane Doe that was meant.
-func (api *API) accountIDOf(role, name string, current *User) (string, error) {
+func (api *API) accountIDOf(ctx context.Context, role, name string, current *User) (string, error) {
 	if len(name) >= len(accountIDPrefix) && strings.EqualFold(name[:len(accountIDPrefix)], accountIDPrefix) {
 		// The id keeps its own case; only the prefix is matched without it.
 		id := strings.TrimSpace(name[len(accountIDPrefix):])
@@ -201,7 +201,7 @@ func (api *API) accountIDOf(role, name string, current *User) (string, error) {
 		return current.AccountID, nil
 	}
 
-	candidates, err := api.searchUsers(name)
+	candidates, err := api.searchUsers(ctx, name)
 	if err != nil {
 		return "", fmt.Errorf("unable to resolve %s %q: %w", role, name, err)
 	}
@@ -255,11 +255,11 @@ func (p *RestrictionPlan) Changes() bool {
 // the authenticated user is kept among those who may update, so the replacing
 // PUT never lifts the edit lock even for a moment. created says the page has
 // just been made, and so has nothing to read back.
-func (api *API) PlanRestrictions(page *PageInfo, resolved *ResolvedRestrictions, lockUpdates, created bool) (*RestrictionPlan, error) {
+func (api *API) PlanRestrictions(ctx context.Context, page *PageInfo, resolved *ResolvedRestrictions, lockUpdates, created bool) (*RestrictionPlan, error) {
 	current := restrictions{}
 	if !created {
 		var err error
-		current, err = api.getPageRestrictions(page.ID)
+		current, err = api.getPageRestrictions(ctx, page.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -305,24 +305,24 @@ func (api *API) PlanRestrictions(page *PageInfo, resolved *ResolvedRestrictions,
 
 // ApplyInterim puts the plan's interim restrictions on the page, if they are
 // not what it has already. It goes before the content update.
-func (api *API) ApplyInterim(plan *RestrictionPlan) error {
+func (api *API) ApplyInterim(ctx context.Context, plan *RestrictionPlan) error {
 	if plan.current.equal(plan.interim) {
 		return nil
 	}
-	return api.putPageRestrictions(plan.pageID, plan.interim)
+	return api.putPageRestrictions(ctx, plan.pageID, plan.interim)
 }
 
 // ApplyFinal puts the plan's final restrictions on the page, if the interim
 // ones are not them already. It goes after the content update.
-func (api *API) ApplyFinal(plan *RestrictionPlan) error {
+func (api *API) ApplyFinal(ctx context.Context, plan *RestrictionPlan) error {
 	if plan.interim.equal(plan.final) {
 		return nil
 	}
-	return api.putPageRestrictions(plan.pageID, plan.final)
+	return api.putPageRestrictions(ctx, plan.pageID, plan.final)
 }
 
 // getPageRestrictions reads who may read and update the page.
-func (api *API) getPageRestrictions(pageID string) (restrictions, error) {
+func (api *API) getPageRestrictions(ctx context.Context, pageID string) (restrictions, error) {
 	// A list that fills its page, or says it is longer than what came back,
 	// may have been cut short.
 	type subjectList[T any] struct {
@@ -341,27 +341,21 @@ func (api *API) getPageRestrictions(pageID string) (restrictions, error) {
 			}] `json:"group"`
 		} `json:"restrictions"`
 	}
-	var response map[string]operation
 
 	var expand []string
 	for _, op := range restrictedOperations {
 		expand = append(expand, op+".restrictions.user", op+".restrictions.group")
 	}
 
-	request, err := api.v1().
-		Res("content").
-		Id(pageID).
-		Res("restriction").
-		Res("byOperation", &response).
-		Get(map[string]string{"expand": strings.Join(expand, ",")})
+	response, err := get[map[string]operation](
+		ctx, api.v1, []string{"content", pageID, "restriction", "byOperation"},
+		url.Values{"expand": {strings.Join(expand, ",")}},
+	)
 	if err != nil {
-		return nil, newTransportError(request, "read the restrictions of page "+pageID, err)
-	}
-	if err := api.restrictionStatusError(request); err != nil {
-		return nil, err
+		return nil, api.restrictionError(ctx, "read the restrictions of page "+pageID, err)
 	}
 
-	cloud := api.IsCloud()
+	cloud := api.IsCloud(ctx)
 	current := restrictions{}
 	for _, name := range restrictedOperations {
 		op := response[name].Restrictions
@@ -392,8 +386,8 @@ func (api *API) getPageRestrictions(pageID string) (restrictions, error) {
 // putPageRestrictions replaces every read and update restriction on the page
 // with restrictions. Both operations are always sent, so that the request
 // says what each one ends up as.
-func (api *API) putPageRestrictions(pageID string, restrictions restrictions) error {
-	cloud := api.IsCloud()
+func (api *API) putPageRestrictions(ctx context.Context, pageID string, restrictions restrictions) error {
+	cloud := api.IsCloud(ctx)
 
 	payload := make([]map[string]any, 0, len(restrictedOperations))
 	for _, operation := range restrictedOperations {
@@ -418,29 +412,25 @@ func (api *API) putPageRestrictions(pageID string, restrictions restrictions) er
 		})
 	}
 
-	var result any
-	request, err := api.v1().
-		Res("content").
-		Id(pageID).
-		Res("restriction", &result).
-		Put(payload)
-	if err != nil {
-		return newTransportError(request, "set the restrictions of page "+pageID, err)
-	}
+	// Through do rather than send: nothing in the answer is used, and Data
+	// Center may answer with 204 and no body.
+	var answer any
+	_, err := api.v1.do(ctx, nil, http.MethodPut, []string{"content", pageID, "restriction"}, nil, payload, &answer)
 
-	return api.restrictionStatusError(request)
+	return api.restrictionError(ctx, "set the restrictions of page "+pageID, err)
 }
 
-// restrictionStatusError is the error a restriction request's status means,
-// or nil for success. Server and Data Center before 8.8 have no restriction
-// endpoints to speak of, which reads as a missing page or method.
-func (api *API) restrictionStatusError(request *gopencils.Resource) error {
-	status := request.Raw.StatusCode
-	if status == http.StatusOK || status == http.StatusNoContent {
+// restrictionError is the error a restriction request that is part of
+// operation ended with, or nil for none. Server and Data Center before 8.8
+// have no restriction endpoints to speak of, which reads as a missing page or
+// method.
+func (api *API) restrictionError(ctx context.Context, operation string, err error) error {
+	if err == nil {
 		return nil
 	}
-	if !api.IsCloud() && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
+	if status := statusOf(err); (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) && !api.IsCloud(ctx) {
 		return fmt.Errorf("confluence server/datacenter version is too old to support page restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", status)
 	}
-	return newErrorStatusNotOK(request)
+
+	return requestError(operation, err)
 }

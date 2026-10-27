@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -70,7 +71,7 @@ func docsSpace(t *testing.T) (*confluencetest.Server, *confluence.API) {
 func pageIDTitled(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	fresh := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := fresh.FindPage("DOCS", title, "page")
+	page, err := fresh.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if page == nil {
 		return ""
@@ -107,7 +108,7 @@ Body.
 func handMadeParent(t *testing.T, server *confluencetest.Server, title string) *confluencetest.Page {
 	t.Helper()
 	under, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Parent", "page")
+		FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, under)
 	return server.AddPage("DOCS", title, "page", under.ID)
@@ -163,7 +164,7 @@ func previewOf(t *testing.T, config Config, format string) string {
 func mustFind(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	pg, err := api.FindPage("DOCS", title, "page")
+	pg, err := api.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, pg)
 	return pg.ID
@@ -195,7 +196,7 @@ func noOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 
@@ -238,7 +239,7 @@ func publishConfig(url, files string) Config {
 func bodyOfPageTitled(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	fresh := confluence.NewAPI(server.URL, "user", "token", false)
-	found, err := fresh.FindPage("DOCS", title, "page")
+	found, err := fresh.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if found == nil {
 		return ""

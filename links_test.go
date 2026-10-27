@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -248,7 +249,7 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 		}))
 
 		api := confluence.NewAPI(server.URL, "user", "token", false)
-		doc, err := api.FindPage("DOCS", "Doc", "page")
+		doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 		require.NoError(t, err)
 		require.NotNil(t, doc)
 		assert.Contains(t, server.Page(doc.ID).Body, "Body here")
@@ -675,7 +676,7 @@ func TestLinkInsideAnIncludedFragment(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 
@@ -710,17 +711,17 @@ func TestOwnDirectoryWinsOverAnIncludedOne(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	right, err := api.FindPage("DOCS", "Right", "page")
+	right, err := api.FindPage(context.Background(), "DOCS", "Right", "page")
 	require.NoError(t, err)
 	require.NotNil(t, right)
 
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	assert.Contains(t, server.Page(doc.ID).Body, right.ID[:0]+"/x/",
 		"the link should have resolved")
 	// The Wrong page must not exist at all, since nothing links to it and no
 	// file publishes it under that title in this run.
-	wrong, err := api.FindPage("DOCS", "Wrong", "page")
+	wrong, err := api.FindPage(context.Background(), "DOCS", "Wrong", "page")
 	require.NoError(t, err)
 	assert.Nil(t, wrong)
 }
@@ -746,7 +747,7 @@ func TestMacroDefinedAboveTheHeaders(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc, "the headers below the macro must still be read")
 
@@ -784,7 +785,7 @@ func TestLinksResolveOnTheFirstRun(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, a)
 
@@ -810,9 +811,9 @@ func TestSecondPassOnlyRepublishesWhatWaited(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
-	b, err := api.FindPage("DOCS", "B", "page")
+	b, err := api.FindPage(context.Background(), "DOCS", "B", "page")
 	require.NoError(t, err)
 
 	assert.Greater(t, server.Page(a.ID).Version, server.Page(b.ID).Version,
@@ -837,7 +838,7 @@ func TestSecondRunDoesNothingExtra(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	before := server.Page(a.ID).Version
 
@@ -868,7 +869,7 @@ func TestCheckLinksSeesResolvedLinksForPagesThisRunCreates(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, a)
 	assert.Contains(t, server.Page(a.ID).Body, "/x/",
@@ -893,7 +894,7 @@ func TestDryRunDoesNotWaitForPages(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	a, err := api.FindPage("DOCS", "A", "page")
+	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	assert.Nil(t, a, "a dry run publishes nothing")
 }
@@ -922,7 +923,7 @@ func linkedPair(t *testing.T, body string) (string, *confluencetest.Server) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	doc, err := api.FindPage("DOCS", "Doc", "page")
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	return server.Page(doc.ID).Body, server

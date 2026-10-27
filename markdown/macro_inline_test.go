@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestInlineMacroOnBothCompilePaths(t *testing.T) {
 		"legacy":  CompileMarkdownLegacy,
 	} {
 		t.Run(name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			input := []byte(doc)

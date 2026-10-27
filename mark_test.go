@@ -3,6 +3,7 @@ package mark
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -10,11 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -123,7 +127,7 @@ Some **content**.
 	assert.Equal(t, []string{"alpha"}, stored.Labels)
 
 	// The page was created under the declared parent.
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	assert.Equal(t, parent.ID, stored.ParentID)
 }
@@ -256,7 +260,7 @@ Also published.
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
 
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -302,7 +306,7 @@ Body.
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
 
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -342,7 +346,7 @@ Top.
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
 
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -458,8 +462,7 @@ func TestProcessFileReportsMissingPagesAsRunDoes(t *testing.T) {
 
 // TestRunContextStopsBetweenFiles: Run is an exported entry point, so a library
 // caller can be publishing hundreds of documents with no way to ask it to stop.
-// Cancellation is checked between files rather than inside one, since part way
-// through a page is the one place stopping would leave a page half written.
+// A run cancelled before it starts publishes nothing at all.
 func TestRunContextStopsBetweenFiles(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
@@ -515,6 +518,175 @@ func TestRunStillWorksWithoutAContext(t *testing.T) {
 
 	require.NoError(t, Run(publishConfig(server.URL, file)))
 	assert.Equal(t, 1, countPagesTitled(t, server, "Plain Run"))
+}
+
+// TestRunContextStopsARunBlockedOnASlowRequest: cancellation reaches the
+// request in flight. The fake holds the second file's first lookup until the
+// client gives up on it, as a Confluence that has stopped answering would, and
+// cancelling the run's context ends the run there rather than after the
+// two-minute response-header timeout. The page that lookup was for is never
+// created, the one before it stands, and the page manifest is still saved on
+// the way out, under a context of its own: the second run proves it by finding
+// the first page again after its title changed.
+func TestRunContextStopsARunBlockedOnASlowRequest(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First"))
+	writeFile(t, dir, "b.md", markdownWithTitle("Second"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	blocked := make(chan struct{})
+	var once sync.Once
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Query().Get("title") != "Second" {
+			return 0, "", false
+		}
+		once.Do(func() { close(blocked) })
+		select {
+		case <-r.Context().Done():
+		case <-time.After(30 * time.Second):
+		}
+		return http.StatusServiceUnavailable, `{"message":"too late"}`, true
+	})
+
+	go func() {
+		<-blocked
+		cancel()
+	}()
+
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.TrackPages = true
+
+	started := time.Now()
+	err := RunContext(ctx, config)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(started), 10*time.Second, "the blocked request was not cut short")
+
+	server.SetFail(nil)
+	assert.Equal(t, 0, countPagesTitled(t, server, "Second"),
+		"the file being published when the run was cancelled did not finish")
+	first := findPageTitled(t, server, "First")
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First Renamed"))
+	require.NoError(t, RunContext(context.Background(), config))
+
+	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
+		"the manifest saved by the cancelled run found the page it made")
+}
+
+// TestContinueOnErrorDoesNotSwallowACancellation: with --continue-on-error a
+// failed file is logged and the run moves on, but a file that failed because
+// the run was cancelled is not a file failure. Cancelled while the last file
+// publishes, the run reports that it was stopped, not that some files
+// failed.
+func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First"))
+	writeFile(t, dir, "b.md", markdownWithTitle("Second"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	blocked := make(chan struct{})
+	var once sync.Once
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Query().Get("title") != "Second" {
+			return 0, "", false
+		}
+		once.Do(func() { close(blocked) })
+		<-r.Context().Done()
+		return http.StatusServiceUnavailable, `{"message":"too late"}`, true
+	})
+
+	go func() {
+		<-blocked
+		cancel()
+	}()
+
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.ContinueOnError = true
+
+	err := RunContext(ctx, config)
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+// findPageTitled looks a page up with a client of its own, for the reason
+// countPagesTitled gives.
+func findPageTitled(t *testing.T, server *confluencetest.Server, title string) *confluence.PageInfo {
+	t.Helper()
+
+	page, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", title, "page")
+	require.NoError(t, err)
+	require.NotNil(t, page, "no page titled %q", title)
+
+	return page
+}
+
+// TestACancelledExplicitManifestSaveIsNotReportedOnceSaved: under
+// --continue-on-error a run cancelled while its last file publishes still
+// reaches the explicit save at the end. Made under the run's own context, that
+// save would be refused before it was sent and go into the report and the
+// error, while the save on the way out wrote the manifest under a detached
+// context -- so the report would say a manifest that had been saved was not.
+func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First"))
+	writeFile(t, dir, "b.md", markdownWithTitle("Second"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The last file's first lookup cancels the run and is held until the
+	// client gives up on it, so that file fails on the cancellation and the
+	// run goes on to the end, as --continue-on-error has it do.
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Query().Get("title") != "Second" {
+			return 0, "", false
+		}
+		cancel()
+		<-r.Context().Done()
+		return http.StatusServiceUnavailable, `{"message":"too late"}`, true
+	})
+
+	var out bytes.Buffer
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.TrackPages = true
+	config.ContinueOnError = true
+	config.OutputFormat = report.FormatJSON
+	config.Output = &out
+
+	err := RunContext(ctx, config)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "unable to save page manifest")
+
+	var parsed report.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &parsed))
+	for _, line := range parsed.Errors {
+		assert.NotContains(t, line, "unable to save page manifest", out.String())
+	}
+
+	// And it was saved: the next run finds the first page after its title
+	// changed.
+	server.SetFail(nil)
+	first := findPageTitled(t, server, "First")
+
+	writeFile(t, dir, "a.md", markdownWithTitle("First Renamed"))
+	config.ContinueOnError = false
+	config.OutputFormat = ""
+	config.Output = io.Discard
+	require.NoError(t, RunContext(context.Background(), config))
+
+	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
+		"the manifest saved by the cancelled run found the page it made")
 }
 
 // TestTargetURLTakesOneFile: a page id names one page, so a pattern matching

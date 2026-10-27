@@ -2,6 +2,7 @@ package page_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/page"
@@ -22,7 +23,7 @@ func TestTree(t *testing.T) {
 	server.DeletePage(gone.ID)
 
 	var out bytes.Buffer
-	require.NoError(t, page.Tree(api, page.Ref{ID: root.ID}, 0, &out))
+	require.NoError(t, page.Tree(context.Background(), api, page.Ref{ID: root.ID}, 0, &out))
 	assert.Equal(t, `Root (`+root.ID+`)
 ├── A (`+a.ID+`)
 │   └── A1 (`+a1.ID+`)
@@ -32,7 +33,7 @@ func TestTree(t *testing.T) {
 `, out.String())
 
 	out.Reset()
-	require.NoError(t, page.Tree(api, page.Ref{ID: root.ID}, 2, &out))
+	require.NoError(t, page.Tree(context.Background(), api, page.Ref{ID: root.ID}, 2, &out))
 	assert.Equal(t, `Root (`+root.ID+`)
 ├── A (`+a.ID+`)
 ├── B (`+b.ID+`)
@@ -40,7 +41,7 @@ func TestTree(t *testing.T) {
 `, out.String(), "two levels, counting the page itself")
 
 	out.Reset()
-	require.NoError(t, page.Tree(api, page.Ref{ID: folder.ID}, 0, &out))
+	require.NoError(t, page.Tree(context.Background(), api, page.Ref{ID: folder.ID}, 0, &out))
 	assert.Equal(t, "Folder [folder] ("+folder.ID+")\n└── In folder ("+inFolder.ID+")\n", out.String(),
 		"a folder is named by its id")
 }
@@ -53,7 +54,7 @@ func TestTreeDataCenter(t *testing.T) {
 	a := server.AddPage("DOCS", "A", "page", root.ID)
 
 	var out bytes.Buffer
-	require.NoError(t, page.Tree(api, page.Ref{Space: "DOCS", Title: "Root"}, 0, &out))
+	require.NoError(t, page.Tree(context.Background(), api, page.Ref{Space: "DOCS", Title: "Root"}, 0, &out))
 	assert.Equal(t, "Root ("+root.ID+")\n└── A ("+a.ID+")\n", out.String())
 }
 
@@ -70,7 +71,7 @@ func TestCopy(t *testing.T) {
 	target := server.AddPage("DOCS", "Target", "page", root.ID)
 
 	var out bytes.Buffer
-	require.NoError(t, page.Copy(api, page.Ref{ID: source.ID},
+	require.NoError(t, page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 		page.CopyOptions{Parent: page.Ref{ID: target.ID}, Title: "Guide (copy)"}, &out))
 
 	copies := server.ChildOrder(target.ID)
@@ -97,7 +98,7 @@ func TestCopyRecursive(t *testing.T) {
 	elsewhere := server.AddPage("OTHER", "Elsewhere", "page", "")
 
 	t.Run("a title the space has stops it before the first copy", func(t *testing.T) {
-		err := page.Copy(api, page.Ref{ID: source.ID},
+		err := page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 			page.CopyOptions{Parent: page.Ref{ID: root.ID}, Title: "New guide", Recursive: true}, &bytes.Buffer{})
 		require.ErrorContains(t, err, `"First"`)
 		require.ErrorContains(t, err, "--prefix")
@@ -106,7 +107,7 @@ func TestCopyRecursive(t *testing.T) {
 
 	t.Run("a dry run shows the plan", func(t *testing.T) {
 		var out bytes.Buffer
-		require.NoError(t, page.Copy(api, page.Ref{ID: source.ID},
+		require.NoError(t, page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 			page.CopyOptions{Parent: page.Ref{ID: root.ID}, Prefix: "Copy of ", Recursive: true, DryRun: true}, &out))
 		assert.Equal(t, `would copy "Guide" (`+source.ID+`) as "Copy of Guide" under "Root" (`+root.ID+`)
 would copy "First" (`+first.ID+`) as "Copy of First" under the copy of "Guide"
@@ -117,11 +118,11 @@ would copy "Second" (`+server.ChildOrder(source.ID)[1]+`) as "Copy of Second" un
 	})
 
 	t.Run("into another space, under the copy of each parent", func(t *testing.T) {
-		require.NoError(t, page.Copy(api, page.Ref{ID: source.ID},
+		require.NoError(t, page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 			page.CopyOptions{Parent: page.Ref{ID: elsewhere.ID}, Recursive: true}, &bytes.Buffer{}))
 
 		var out bytes.Buffer
-		require.NoError(t, page.Tree(api, page.Ref{ID: elsewhere.ID}, 0, &out))
+		require.NoError(t, page.Tree(context.Background(), api, page.Ref{ID: elsewhere.ID}, 0, &out))
 		lines := bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n"))
 		require.Len(t, lines, 5)
 		assert.Contains(t, string(lines[1]), "└── Guide (")
@@ -131,7 +132,7 @@ would copy "Second" (`+server.ChildOrder(source.ID)[1]+`) as "Copy of Second" un
 	})
 
 	t.Run("not into itself", func(t *testing.T) {
-		err := page.Copy(api, page.Ref{ID: source.ID},
+		err := page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 			page.CopyOptions{Parent: page.Ref{ID: first.ID}, Prefix: "X ", Recursive: true}, &bytes.Buffer{})
 		require.ErrorContains(t, err, "into itself")
 	})
@@ -144,7 +145,7 @@ func TestCopyRefusesAFolderInTheTree(t *testing.T) {
 	source := server.AddPage("DOCS", "Guide", "page", root.ID)
 	server.AddFolder("DOCS", "Folder", source.ID, "page")
 
-	err := page.Copy(api, page.Ref{ID: source.ID},
+	err := page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 		page.CopyOptions{Parent: page.Ref{ID: root.ID}, Prefix: "Copy of ", Recursive: true}, &bytes.Buffer{})
 	require.ErrorContains(t, err, "copies pages only")
 	assert.Len(t, server.ChildOrder(root.ID), 1)
@@ -157,7 +158,7 @@ func TestCopyOnDataCenter(t *testing.T) {
 	root := server.AddPage("DOCS", "Root", "page", "")
 	source := server.AddPage("DOCS", "Guide", "page", root.ID)
 
-	err := page.Copy(api, page.Ref{ID: source.ID},
+	err := page.Copy(context.Background(), api, page.Ref{ID: source.ID},
 		page.CopyOptions{Parent: page.Ref{ID: root.ID}, Title: "Guide 2"}, &bytes.Buffer{})
 	require.ErrorContains(t, err, "no page copy endpoint")
 }

@@ -165,7 +165,7 @@ type pageRun struct {
 	out  io.Writer
 }
 
-type pageRunner func(run pageRun, cmd *cli.Command) error
+type pageRunner func(ctx context.Context, run pageRun, cmd *cli.Command) error
 
 // pageAction checks that a page command was given its args arguments and
 // whatever check asks of its flags, reads every page they name, and works out
@@ -226,7 +226,7 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 
 		logFlags(cmd)
 
-		return run(pageRun{
+		return run(ctx, pageRun{
 			api:  confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify")),
 			refs: refs,
 			out:  os.Stdout,
@@ -282,8 +282,8 @@ func checkPageTree(cmd *cli.Command) error {
 	return nil
 }
 
-func runPageTree(run pageRun, cmd *cli.Command) error {
-	return page.Tree(run.api, run.refs[cmd.Args().First()], cmd.Int("depth"), run.out)
+func runPageTree(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Tree(ctx, run.api, run.refs[cmd.Args().First()], cmd.Int("depth"), run.out)
 }
 
 func checkPageCopy(cmd *cli.Command) error {
@@ -293,8 +293,8 @@ func checkPageCopy(cmd *cli.Command) error {
 	return nil
 }
 
-func runPageCopy(run pageRun, cmd *cli.Command) error {
-	return page.Copy(run.api, run.refs[cmd.Args().First()], page.CopyOptions{
+func runPageCopy(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Copy(ctx, run.api, run.refs[cmd.Args().First()], page.CopyOptions{
 		Parent:    *run.ref(cmd, "parent"),
 		Title:     cmd.String("title"),
 		Prefix:    cmd.String("prefix"),
@@ -303,8 +303,8 @@ func runPageCopy(run pageRun, cmd *cli.Command) error {
 	}, run.out)
 }
 
-func runPageMove(run pageRun, cmd *cli.Command) error {
-	return page.Move(run.api, run.refs[cmd.Args().First()], page.MoveOptions{
+func runPageMove(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Move(ctx, run.api, run.refs[cmd.Args().First()], page.MoveOptions{
 		Parent: run.ref(cmd, "parent"),
 		Before: run.ref(cmd, "before"),
 		After:  run.ref(cmd, "after"),
@@ -312,22 +312,22 @@ func runPageMove(run pageRun, cmd *cli.Command) error {
 	}, run.out)
 }
 
-func runPageRename(run pageRun, cmd *cli.Command) error {
-	return page.Rename(run.api, run.refs[cmd.Args().First()], cmd.Args().Get(1), cmd.Bool("dry-run"), run.out)
+func runPageRename(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Rename(ctx, run.api, run.refs[cmd.Args().First()], cmd.Args().Get(1), cmd.Bool("dry-run"), run.out)
 }
 
-func runPageArchive(run pageRun, cmd *cli.Command) error {
-	return page.Archive(run.api, run.refs[cmd.Args().First()], cmd.Bool("dry-run"), run.out)
+func runPageArchive(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Archive(ctx, run.api, run.refs[cmd.Args().First()], cmd.Bool("dry-run"), run.out)
 }
 
-func runPageDelete(run pageRun, cmd *cli.Command) error {
-	return page.Delete(run.api, run.refs[cmd.Args().First()], cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
+func runPageDelete(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Delete(ctx, run.api, run.refs[cmd.Args().First()], cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
 }
 
-func runPageWatch(run pageRun, cmd *cli.Command) error {
-	return page.Watch(run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), true, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
+func runPageWatch(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Watch(ctx, run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), true, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
 }
 
-func runPageUnwatch(run pageRun, cmd *cli.Command) error {
-	return page.Watch(run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), false, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
+func runPageUnwatch(ctx context.Context, run pageRun, cmd *cli.Command) error {
+	return page.Watch(ctx, run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), false, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
 }

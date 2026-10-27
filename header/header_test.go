@@ -1,6 +1,7 @@
 package header
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,7 @@ func writeHeader(t *testing.T, name, content string) string {
 func newStdlib(t *testing.T) *stdlib.Lib {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	return std

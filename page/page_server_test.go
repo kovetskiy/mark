@@ -19,6 +19,7 @@ import (
 // lookup failed therefore aborted every file in the space, including documents
 // whose Parent headers never needed one.
 func TestResolvePageWithoutAHomePage(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
@@ -34,7 +35,7 @@ func TestResolvePageWithoutAHomePage(t *testing.T) {
 		return 0, "", false
 	})
 
-	parent, _, err := page.ResolvePage(false, api, &metadata.Meta{
+	parent, _, err := page.ResolvePage(ctx, false, api, &metadata.Meta{
 		Space:   "DOCS",
 		Type:    "page",
 		Title:   "Child",
@@ -52,6 +53,7 @@ func TestResolvePageWithoutAHomePage(t *testing.T) {
 // whoever built the slice, so the title of this page ended up in someone
 // else's.
 func TestResolvePageLeavesMetadataSlicesAlone(t *testing.T) {
+	ctx := t.Context()
 	for _, withFolder := range []bool{false, true} {
 		name := "pages"
 		if withFolder {
@@ -80,7 +82,7 @@ func TestResolvePageLeavesMetadataSlicesAlone(t *testing.T) {
 				meta.Folders = folders[:1]
 			}
 
-			_, _, err := page.ResolvePage(false, api, meta, nil)
+			_, _, err := page.ResolvePage(ctx, false, api, meta, nil)
 			require.NoError(t, err)
 
 			assert.Equal(t, []string{"Parent", "untouched"}, parents)

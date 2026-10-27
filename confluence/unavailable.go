@@ -46,13 +46,18 @@ func unavailableAnswer(method string, status int) bool {
 	}
 }
 
-// unavailableFailure reports whether err, from a request that got no answer,
+// unavailableFailure reports whether err, from a request that got no answer
+// and was not given up on by its caller,
 // is a write that may have reached Confluence. net/http names the method in
 // the url.Error it returns; a request that could not be built names "parse",
 // and a payload that could not be encoded is no url.Error at all. A name that
 // did not resolve, a refused connection and a certificate that was not
 // trusted all stop a request before it is sent.
 func unavailableFailure(err error) bool {
+	if IsCancellation(err) {
+		return false
+	}
+
 	var failed *url.Error
 	if !errors.As(err, &failed) {
 		return false
@@ -82,18 +87,9 @@ func unavailableFailure(err error) bool {
 // A write sent again can also fail because the one before it landed after
 // all, still in flight when landed was asked: a create on the title it took,
 // an update on the version it made. landed is asked once more then too.
+//
+// It gives up when ctx is done rather than waiting out the rest of a wait.
 func retryUnavailable[T any](
-	api *API,
-	what string,
-	send func() (T, error),
-	landed func() (T, bool, error),
-) (T, error) {
-	return retryUnavailableContext(context.Background(), api, what, send, landed)
-}
-
-// retryUnavailableContext is retryUnavailable, giving up when ctx is done
-// rather than waiting out the rest of a wait.
-func retryUnavailableContext[T any](
 	ctx context.Context,
 	api *API,
 	what string,
@@ -129,7 +125,7 @@ func retryUnavailableContext[T any](
 		wait(ctx, attempt, unavailable.retryAfter)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			var zero T
-			return zero, fmt.Errorf("unable to %s (%w): %w", what, err, ctxErr)
+			return zero, cancellation(ctx, fmt.Errorf("unable to %s (%w): %w", what, err, ctxErr))
 		}
 
 		landedResult, ok, landedErr := landed()
@@ -157,5 +153,22 @@ func waitUnavailable(ctx context.Context, attempt int, retryAfter string) {
 	select {
 	case <-timer.C:
 	case <-ctx.Done():
+	}
+}
+
+// markUnavailable is err, the error a request with method ended with, marked
+// as an unavailableError when it says a write may or may not have happened:
+// answer is a 502, 503 or 504, or there was no answer at all and the request
+// may have reached Confluence. retryUnavailable acts on the mark.
+func markUnavailable(method string, answer *reply, retryAfter string, err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case answer != nil && unavailableAnswer(method, answer.StatusCode):
+		return unavailableError{error: err, retryAfter: retryAfter}
+	case answer == nil && unavailableFailure(err):
+		return unavailableError{error: err}
+	default:
+		return err
 	}
 }

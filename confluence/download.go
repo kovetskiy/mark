@@ -18,17 +18,17 @@ const maxAttachmentDownload = 1 << 30
 // ContentProperties returns every property stored against a page or blogpost:
 // through v1 where it can, and through v2 on the scoped-token gateway, which
 // refuses v1.
-func (api *API) ContentProperties(contentID string) ([]Property, error) {
+func (api *API) ContentProperties(ctx context.Context, contentID string) ([]Property, error) {
 	if !api.gateway {
-		return api.ListContentProperties(contentID)
+		return api.ListContentProperties(ctx, contentID)
 	}
 
-	collection, err := api.collectionOfV2(contentID)
+	collection, err := api.collectionOfV2(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read properties of content %s: %w", contentID, err)
 	}
 
-	return api.listPropertiesV2(collection, contentID)
+	return api.listPropertiesV2(ctx, collection, contentID)
 }
 
 // AttachmentURL is where the content of an attachment of page pageID is
@@ -120,7 +120,7 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 		return fmt.Errorf("unable to build the download of attachment %q: %w", info.Filename, err)
 	}
 
-	api.authorize(request)
+	api.v1.authorize(request)
 
 	response, err := api.httpClient().Do(request)
 	if err != nil {
@@ -149,24 +149,11 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 	return nil
 }
 
-// authorize puts the run's credentials on a request made outside gopencils,
-// the same way a gopencils request carries them.
-func (api *API) authorize(request *http.Request) {
-	if api.bearerToken != "" {
-		request.Header.Set("Authorization", "Bearer "+api.bearerToken)
-		return
-	}
-
-	if auth := api.rest.Api.BasicAuth; auth != nil {
-		request.SetBasicAuth(auth.Username, auth.Password)
-	}
-}
-
 // httpClient is the client every request of the run goes through, with its
 // retries, timeouts and TLS settings.
 func (api *API) httpClient() *http.Client {
-	if client := api.rest.Api.Client; client != nil {
-		return client
+	if api.v1 != nil && api.v1.http != nil {
+		return api.v1.http
 	}
 
 	return http.DefaultClient

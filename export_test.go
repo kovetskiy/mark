@@ -92,7 +92,7 @@ func exportFixture(t *testing.T) (*confluencetest.Server, string, string) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Installing", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Installing", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -104,7 +104,7 @@ func exportFixture(t *testing.T) (*confluencetest.Server, string, string) {
 func setContentProperty(t *testing.T, api *confluence.API, id, key, value string) {
 	t.Helper()
 
-	properties, err := api.ListContentProperties(id)
+	properties, err := api.ListContentProperties(context.Background(), id)
 	require.NoError(t, err)
 
 	var existing *confluence.Property
@@ -114,7 +114,7 @@ func setContentProperty(t *testing.T, api *confluence.API, id, key, value string
 		}
 	}
 
-	require.NoError(t, api.SetContentProperty(id, key, []byte(value), existing))
+	require.NoError(t, api.SetContentProperty(context.Background(), id, key, []byte(value), existing))
 }
 
 // TestExportRoundTrip exports a page mark published and publishes the export

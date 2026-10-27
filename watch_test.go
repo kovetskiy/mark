@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"testing"
@@ -38,7 +39,7 @@ func TestUnwatchAfterPublish(t *testing.T) {
 			}))
 
 			for _, title := range []string{"New Parent", "Doc"} {
-				page, err := api.FindPage("DOCS", title, "page")
+				page, err := api.FindPage(context.Background(), "DOCS", title, "page")
 				require.NoError(t, err)
 				require.NotNil(t, page, title)
 				assert.Equal(t, tc.want, server.Watchers(page.ID), title)
