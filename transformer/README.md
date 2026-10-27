@@ -96,4 +96,4 @@ The transformer is thoroughly tested with:
 - Backward compatibility with legacy syntax
 - Edge cases and error conditions
 
-See `../markdown/transformer_comparison_test.go` for comprehensive test coverage.
+See `../markdown/gh_alerts_test.go` for comprehensive test coverage.

@@ -23,27 +23,23 @@ func TestMacroDefinedInIncludeKeepsItsTemplateActions(t *testing.T) {
 		"<ac:rich-text-body><p>{{ .Name | xmlesc }}</p></ac:rich-text-body></ac:structured-macro>\" -->\n\n"
 	const use = "# Doc\n\n<!-- box:alpha -->\n"
 
-	for name, compile := range compilers {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			writeFiles(t, dir, map[string]string{"box.md": defs})
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{"box.md": defs})
 
-			std, err := stdlib.New(nil)
-			require.NoError(t, err)
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
 
-			direct, _, err := compile([]byte(defs+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
-			require.NoError(t, err)
+	direct, _, err := CompileMarkdown([]byte(defs+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	require.NoError(t, err)
 
-			std, err = stdlib.New(nil)
-			require.NoError(t, err)
+	std, err = stdlib.New(nil)
+	require.NoError(t, err)
 
-			included, _, err := compile([]byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
-			require.NoError(t, err)
+	included, _, err := CompileMarkdown([]byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	require.NoError(t, err)
 
-			assert.NotContains(t, included, "no value")
-			assert.Contains(t, included, "<p>alpha</p>")
-			assert.Contains(t, included, "Title of alpha")
-			assert.Equal(t, direct, included)
-		})
-	}
+	assert.NotContains(t, included, "no value")
+	assert.Contains(t, included, "<p>alpha</p>")
+	assert.Contains(t, included, "Title of alpha")
+	assert.Equal(t, direct, included)
 }

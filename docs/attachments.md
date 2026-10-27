@@ -152,4 +152,4 @@ An `<img>` wrapped in other HTML is converted where it stands, and the markup ar
 </p>
 ```
 
-An `<img>` inside a `<picture>` is left as written, because Confluence has nothing to turn the `<source>` elements beside it into. This conversion applies to the default compile path only; the legacy renderer leaves every `<img>` as written.
+An `<img>` inside a `<picture>` is left as written, because Confluence has nothing to turn the `<source>` elements beside it into.
