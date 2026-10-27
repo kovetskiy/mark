@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
+	"github.com/kovetskiy/mark/v17/internal/goldmarktest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	stdhtml "html"
 
-	"github.com/kovetskiy/mark/v16/parser"
+	"github.com/kovetskiy/mark/v17/parser"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"

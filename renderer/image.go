@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"

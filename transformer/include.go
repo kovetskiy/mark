@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/kovetskiy/mark/v16/includes"
+	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"

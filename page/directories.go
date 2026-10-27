@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/fingerprint"
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )

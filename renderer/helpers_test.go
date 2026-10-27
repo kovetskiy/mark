@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/internal/goldmarktest"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark/v2/parser"

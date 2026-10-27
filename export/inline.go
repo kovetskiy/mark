@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/kovetskiy/mark/v16/internal/syntax"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 )
 
 type inlineContext struct {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/chrome"
+	"github.com/kovetskiy/mark/v17/chrome"
 )
 
 // browser is the one the package's tests render in, started by the first.

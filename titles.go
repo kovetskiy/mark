@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"unicode/utf16"
 
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/metadata"
 )
 
 // maxTitleLength is the longest title Confluence accepts for a page or a

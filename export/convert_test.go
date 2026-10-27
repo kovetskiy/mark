@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	markdown "github.com/kovetskiy/mark/v16/markdown"
+	markdown "github.com/kovetskiy/mark/v17/markdown"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

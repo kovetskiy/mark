@@ -3,7 +3,7 @@ package parser
 import (
 	"bytes"
 
-	"github.com/kovetskiy/mark/v16/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"

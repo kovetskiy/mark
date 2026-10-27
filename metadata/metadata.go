@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/internal/htmlblock"
-	"github.com/kovetskiy/mark/v16/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/internal/htmlblock"
+	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"

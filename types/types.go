@@ -1,8 +1,8 @@
 package types
 
 import (
-	"github.com/kovetskiy/mark/v16/chrome"
-	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/mermaid"
 )
 
 type MarkConfig struct {

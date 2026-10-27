@@ -11,10 +11,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/internal/mdsource"
-	"github.com/kovetskiy/mark/v16/internal/syntax"
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/rs/zerolog/log"
 )
 

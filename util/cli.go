@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	mark "github.com/kovetskiy/mark/v16"
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/export"
+	mark "github.com/kovetskiy/mark/v17"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/export"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"

@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/chrome"
-	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/mermaid"
 )
 
 // testBrowser and testMermaid are what this package's tests draw diagrams and

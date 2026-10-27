@@ -3,12 +3,12 @@ package mark
 import (
 	"slices"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	cparser "github.com/kovetskiy/mark/v16/parser"
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
-	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v17/attachment"
+	cparser "github.com/kovetskiy/mark/v17/parser"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
+	"github.com/kovetskiy/mark/v17/types"
 	emoji "github.com/yuin/goldmark-emoji/v2"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"

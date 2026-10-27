@@ -3,7 +3,7 @@ package export
 import (
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
