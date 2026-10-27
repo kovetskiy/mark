@@ -141,6 +141,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:    "dry-run",
+			Aliases: []string{"n"},
 			Value:   false,
 			Usage:   "resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), config.value("dry-run")),
@@ -228,6 +229,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "space",
+			Aliases: []string{"s"},
 			Value:   "",
 			Usage:   "use specified space key. If the space key is not specified, it must be set in the page metadata.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), config.value("space")),
@@ -478,18 +480,21 @@ func exportFlags(config *configFile) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "url",
+			Aliases: []string{"l"},
 			Value:   "",
 			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_URL"), config.value("url")),
 		},
 		&cli.StringFlag{
 			Name:    "space",
+			Aliases: []string{"s"},
 			Value:   "",
 			Usage:   "the space key --title looks the page up in.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), config.value("space")),
 		},
 		&cli.StringFlag{
 			Name:    "title",
+			Aliases: []string{"t"},
 			Value:   "",
 			Usage:   "export the page or blog post with this title in --space.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE"), config.value("title")),
@@ -525,12 +530,14 @@ func exportFlags(config *configFile) []cli.Flag {
 		// name is the same flag's there, and a configuration file setting it
 		// for one would read as setting it for all.
 		&cli.BoolFlag{
-			Name:  "recursive",
-			Usage: "export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.",
+			Name:    "recursive",
+			Aliases: []string{"r"},
+			Usage:   "export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.",
 		},
 		&cli.IntFlag{
-			Name:  "depth",
-			Usage: "with --recursive, export this many levels, counting the page itself; 0 is every level.",
+			Name:    "depth",
+			Aliases: []string{"d"},
+			Usage:   "with --recursive, export this many levels, counting the page itself; 0 is every level.",
 		},
 		&cli.BoolFlag{
 			Name: "relative-links",
