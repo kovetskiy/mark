@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/transformer"
 )
 
 // Options configures Convert.

@@ -3,7 +3,7 @@ package mark
 import (
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v17/page"
 	"github.com/rs/zerolog/log"
 )
 

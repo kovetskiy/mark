@@ -3,7 +3,7 @@ package parser_test
 import (
 	"testing"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
+	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"

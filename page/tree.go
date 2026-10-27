@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 )
 
 // Node is a page, folder or other content, and what is beneath it.

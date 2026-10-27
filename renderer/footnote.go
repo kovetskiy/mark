@@ -3,7 +3,7 @@ package renderer
 import (
 	"strconv"
 
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/yuin/goldmark/ast"
 	ext_ast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/renderer"

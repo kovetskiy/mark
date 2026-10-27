@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v17/mermaid"
 
 	"github.com/urfave/cli/v3"
 )

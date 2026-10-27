@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/page"
 )
 
 // PageRef is a page as a URL names it: by id, or by space and title.

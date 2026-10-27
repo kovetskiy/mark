@@ -12,10 +12,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	markmd "github.com/kovetskiy/mark/v16/markdown"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v17/attachment"
+	markmd "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
 )
 
 // Header is a loaded page header template. A nil *Header renders nothing.

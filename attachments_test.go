@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
-	markmd "github.com/kovetskiy/mark/v16/markdown"
-	"github.com/kovetskiy/mark/v16/stdlib"
-	"github.com/kovetskiy/mark/v16/types"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	markmd "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
