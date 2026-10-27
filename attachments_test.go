@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
@@ -146,8 +145,9 @@ func TestMacroAttachmentDecodingToARootedPathIsWarnedAbout(t *testing.T) {
 	assert.Contains(t, logged, "%2Fetc%2Fpasswd")
 }
 
-// TestMacroAttachmentOnLegacyCompilePath keeps both compile paths in step.
-func TestMacroAttachmentOnLegacyCompilePath(t *testing.T) {
+// TestMacroAttachmentIsReturnedByCompile covers a macro's attachment straight
+// from CompileMarkdown, without a publish around it.
+func TestMacroAttachmentIsReturnedByCompile(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "logo.png"), onePixelPNG(), 0o600))
 	path := filepath.Join(dir, "doc.md")
@@ -157,19 +157,12 @@ func TestMacroAttachmentOnLegacyCompilePath(t *testing.T) {
 
 	source := widthMacro + "\n![Logo](logo.png)<!-- width=300 -->\n"
 
-	for name, compile := range map[string]func([]byte, *stdlib.Lib, string, types.MarkConfig) (string, []attachment.Attachment, error){
-		"default": markmd.CompileMarkdown,
-		"legacy":  markmd.CompileMarkdownLegacy,
-	} {
-		t.Run(name, func(t *testing.T) {
-			html, attached, err := compile([]byte(source), std, path, types.MarkConfig{})
-			require.NoError(t, err)
+	html, attached, err := markmd.CompileMarkdown([]byte(source), std, path, types.MarkConfig{})
+	require.NoError(t, err)
 
-			require.Len(t, attached, 1)
-			assert.Equal(t, "logo.png", attached[0].Filename)
-			assert.Contains(t, html, `<ri:attachment ri:filename="logo.png"/>`)
-		})
-	}
+	require.Len(t, attached, 1)
+	assert.Equal(t, "logo.png", attached[0].Filename)
+	assert.Contains(t, html, `<ri:attachment ri:filename="logo.png"/>`)
 }
 
 // TestMacroAttachmentThatIsAURLIsNotAFile covers a template that reuses the

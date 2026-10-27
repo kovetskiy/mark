@@ -18,7 +18,7 @@ import (
 // HTML where it sees '\n'. See also https://sembr.org/ for partial motivation.
 //
 // It also writes out the replacement-content a transformer has left on a Text
-// node in place of the node's own text. Both compile paths use it.
+// node in place of the node's own text.
 type ConfluenceTextRenderer struct {
 	html.Config
 	// softBreak is written verbatim with WriteByte and is only ever '\n' or
@@ -54,10 +54,8 @@ func (r *ConfluenceTextRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegi
 // r.softBreak, and a check for replacement-content before any of it.
 //
 // replacement-content is how DetailsTransformer and LayoutTransformer hand
-// their rewritten markup to the renderer. The legacy compile path used to have
-// a copy of this renderer without the check, and since it runs
-// DetailsTransformer too, every <details> block on that path was published as
-// the empty node the transformer had left in its place.
+// their rewritten markup to the renderer; without the check, a <details> block
+// would be published as the empty node the transformer left in its place.
 func (r *ConfluenceTextRenderer) renderText(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
