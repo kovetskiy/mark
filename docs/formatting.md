@@ -264,8 +264,9 @@ A plugin that declares its macro under a different key is named with
 mark publish --mermaid-output=macro --mermaid-macro-name=my-mermaid
 ```
 
-Surrounding space in the name is ignored, and a name that is only space is
-refused rather than published as a key no plugin knows.
+Surrounding space in the name is ignored. A blank name is refused rather than
+published as a key no plugin knows; any other name is used as written, so a
+typo is published as one.
 
 Nothing is drawn with `macro`, so `--mermaid-engine` and `--mermaid-scale` have
 no effect alongside it (mark warns), and `--mermaid-bundle` is refused. A
