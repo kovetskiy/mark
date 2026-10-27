@@ -41,7 +41,7 @@ func runWithFormat(t *testing.T, format string, files map[string]string) (string
 	}
 
 	var out strings.Builder
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		OutputFormat: format, ContinueOnError: true, Output: &out,
@@ -143,13 +143,13 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: "delete", OutputFormat: "github", Output: &first,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 
 	var second strings.Builder
 	config.Output = &second
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, second.String(), "::warning")
 	assert.Contains(t, second.String(), "gone.md")
@@ -170,7 +170,7 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: onOrphan, OutputFormat: format, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -181,7 +181,7 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 
 	var out strings.Builder
 	config.Output = &out
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	return out.String(), gone.ID
 }
@@ -243,7 +243,7 @@ func reportedPages(t *testing.T, config Config) (map[string][]report.Page, error
 	var out strings.Builder
 	config.OutputFormat = report.FormatJSON
 	config.Output = &out
-	runErr := Run(config)
+	runErr := Run(context.Background(), config)
 
 	var parsed report.Report
 	require.NoError(t, json.Unmarshal([]byte(out.String()), &parsed), "the output must parse as JSON")
@@ -359,7 +359,7 @@ func TestNoOverwriteDoesNotPrintTheURLOfAPageItLeftAlone(t *testing.T) {
 	config.OutputFormat = report.FormatURL
 	config.Output = &out
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Empty(t, strings.TrimSpace(out.String()),
 		"a page this run deliberately did not write is not one of the pages it wrote")
@@ -376,7 +376,7 @@ func TestNoOverwriteStillReportsTheSkip(t *testing.T) {
 	config.OutputFormat = report.FormatJSON
 	config.Output = &out
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	var parsed report.Report
 	require.NoError(t, json.Unmarshal(out.Bytes(), &parsed))
@@ -402,7 +402,7 @@ func TestReportIsWrittenWhenTheRunFails(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:        filepath.Join(dir, "doc.md"),
 		Features:     []string{"mention"},
@@ -435,7 +435,7 @@ func TestUnresolvedLinkNamesTheDocument(t *testing.T) {
 	writeFile(t, dir, "innocent.md", header+"<!-- Title: Innocent -->\n\nNothing wrong here.\n")
 	writeFile(t, dir, "guilty.md", header+"<!-- Title: Guilty -->\n\nSee [it](ac:Nowhere).\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:      filepath.Join(dir, "*.md"),
 		Features:   []string{"mention"},
@@ -466,7 +466,7 @@ func TestReportWriteFailureFailsTheRun(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nFine.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:        filepath.Join(dir, "doc.md"),
 		Features:     []string{"mention"},
@@ -497,7 +497,7 @@ func TestReportWriteFailureDoesNotDisplaceTheRunsOwnError(t *testing.T) {
 	log.Logger = zerolog.New(&logged)
 	defer func() { log.Logger = restore }()
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:        filepath.Join(dir, "doc.md"),
 		Features:     []string{"mention"},
@@ -535,7 +535,7 @@ func runReport(t *testing.T, format string, files map[string]string, adjust func
 		adjust(&config)
 	}
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 
 	return out.String(), err
 }
@@ -646,7 +646,7 @@ func TestReportCarriesAFailedManifestSave(t *testing.T) {
 	for _, format := range []string{report.FormatJSON, report.FormatGitHub} {
 		t.Run(format, func(t *testing.T) {
 			var out bytes.Buffer
-			err := Run(Config{
+			err := Run(context.Background(), Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 				TrackPages: true, OutputFormat: format, Output: &out,
@@ -684,7 +684,7 @@ func TestReportCarriesAFailedSaveBesideAnUnresolvedLink(t *testing.T) {
 	refuseManifestWrites(server)
 
 	var out bytes.Buffer
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		CheckLinks: []string{"confluence"}, TrackPages: true,
@@ -712,7 +712,7 @@ func TestReportCarriesASaveThatFailedOnTheWayOut(t *testing.T) {
 	refuseManifestWrites(server)
 
 	var out bytes.Buffer
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OutputFormat: report.FormatJSON, Output: &out,

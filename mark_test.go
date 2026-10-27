@@ -71,7 +71,7 @@ func TestProcessFileFetchesAttachmentsOnce(t *testing.T) {
 
 	server.ResetRequests()
 
-	target, err := ProcessFile(file, api, config)
+	target, err := ProcessFile(context.Background(), file, api, config)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 
@@ -116,7 +116,7 @@ Some **content**.
 		Output:   io.Discard,
 	}
 
-	target, err := ProcessFile(file, api, config)
+	target, err := ProcessFile(context.Background(), file, api, config)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 
@@ -151,7 +151,7 @@ restrictions:
 # Restricted
 `)
 
-	target, err := ProcessFile(file, api, Config{
+	target, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"frontmatter"}, Output: io.Discard,
 	})
@@ -190,7 +190,7 @@ func TestRootLevelPageIsAdoptedRatherThanRefused(t *testing.T) {
 
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Standalone -->\n\nAdopted body.\n")
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}), "a page at the space root must be publishable")
@@ -217,7 +217,7 @@ func TestHomepageItselfIsStillPublishable(t *testing.T) {
 
 	dir := t.TempDir()
 	file := writeFile(t, dir, "home.md", "<!-- Space: DOCS -->\n<!-- Title: Team Home -->\n\nWelcome!\n")
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -255,7 +255,7 @@ Published body.
 
 Also published.
 `)
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -301,7 +301,7 @@ Body.
 ![hidden](hidden.png)
 <!-- ac:ignore end -->
 `)
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -341,7 +341,7 @@ Top.
 
 <!-- Include: part.md -->
 `)
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -403,12 +403,12 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 			server, api, file, config := processFileFixture(t, "Body.\n")
 			change(&config)
 
-			runErr := Run(config)
+			runErr := Run(context.Background(), config)
 			require.Error(t, runErr)
 
 			server.ResetRequests()
 
-			target, err := ProcessFile(file, api, config)
+			target, err := ProcessFile(context.Background(), file, api, config)
 			require.Error(t, err)
 			assert.Nil(t, target)
 			assert.Equal(t, runErr.Error(), err.Error(), "the same setting is refused in the same words")
@@ -434,7 +434,7 @@ func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
 	_, api, file, config := processFileFixture(t, "Body.\n")
 	config.MermaidEngine = mermaid.EngineMerman
 
-	_, err := ProcessFile(file, api, config)
+	_, err := ProcessFile(context.Background(), file, api, config)
 	require.NoError(t, err)
 
 	// The warning is said by choosing merman and by nothing else, so it is how
@@ -449,10 +449,10 @@ func TestProcessFileReportsMissingPagesAsRunDoes(t *testing.T) {
 	_, api, file, config := processFileFixture(t, "See [it](ac:Nowhere).\n")
 	config.CheckLinks = []string{"confluence"}
 
-	runErr := Run(config)
+	runErr := Run(context.Background(), config)
 	require.Error(t, runErr)
 
-	_, err := ProcessFile(file, api, config)
+	_, err := ProcessFile(context.Background(), file, api, config)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "1 link does not resolve:\n  ")
@@ -460,10 +460,10 @@ func TestProcessFileReportsMissingPagesAsRunDoes(t *testing.T) {
 	assert.Equal(t, runErr.Error(), err.Error())
 }
 
-// TestRunContextStopsBetweenFiles: Run is an exported entry point, so a library
+// TestRunStopsBetweenFiles: Run is an exported entry point, so a library
 // caller can be publishing hundreds of documents with no way to ask it to stop.
 // A run cancelled before it starts publishes nothing at all.
-func TestRunContextStopsBetweenFiles(t *testing.T) {
+func TestRunStopsBetweenFiles(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
 
@@ -473,27 +473,27 @@ func TestRunContextStopsBetweenFiles(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := RunContext(ctx, publishConfig(server.URL, filepath.Join(dir, "*.md")))
+	err := Run(ctx, publishConfig(server.URL, filepath.Join(dir, "*.md")))
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 0, countPagesTitled(t, server, "First"),
 		"a run cancelled before it starts publishes nothing")
 }
 
-// TestRunContextPublishesWhenNotCancelled is the control.
-func TestRunContextPublishesWhenNotCancelled(t *testing.T) {
+// TestRunPublishesWhenNotCancelled is the control.
+func TestRunPublishesWhenNotCancelled(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Published"))
 
-	require.NoError(t, RunContext(context.Background(), publishConfig(server.URL, file)))
+	require.NoError(t, Run(context.Background(), publishConfig(server.URL, file)))
 	assert.Equal(t, 1, countPagesTitled(t, server, "Published"))
 }
 
-// TestProcessFileContextIsCancellable covers the single-file entry point, which
+// TestProcessFileIsCancellable covers the single-file entry point, which
 // a caller loops over itself.
-func TestProcessFileContextIsCancellable(t *testing.T) {
+func TestProcessFileIsCancellable(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
 
@@ -502,25 +502,13 @@ func TestProcessFileContextIsCancellable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ProcessFileContext(ctx, file, api, publishConfig(server.URL, file))
+	_, err := ProcessFile(ctx, file, api, publishConfig(server.URL, file))
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 0, countPagesTitled(t, server, "Not Published"))
 }
 
-// TestRunStillWorksWithoutAContext: the old entry points keep their signatures,
-// since they are what every existing caller uses.
-func TestRunStillWorksWithoutAContext(t *testing.T) {
-	server, _ := docsSpace(t)
-	dir := t.TempDir()
-
-	file := writeFile(t, dir, "doc.md", markdownWithTitle("Plain Run"))
-
-	require.NoError(t, Run(publishConfig(server.URL, file)))
-	assert.Equal(t, 1, countPagesTitled(t, server, "Plain Run"))
-}
-
-// TestRunContextStopsARunBlockedOnASlowRequest: cancellation reaches the
+// TestRunStopsARunBlockedOnASlowRequest: cancellation reaches the
 // request in flight. The fake holds the second file's first lookup until the
 // client gives up on it, as a Confluence that has stopped answering would, and
 // cancelling the run's context ends the run there rather than after the
@@ -528,7 +516,7 @@ func TestRunStillWorksWithoutAContext(t *testing.T) {
 // created, the one before it stands, and the page manifest is still saved on
 // the way out, under a context of its own: the second run proves it by finding
 // the first page again after its title changed.
-func TestRunContextStopsARunBlockedOnASlowRequest(t *testing.T) {
+func TestRunStopsARunBlockedOnASlowRequest(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
 
@@ -561,7 +549,7 @@ func TestRunContextStopsARunBlockedOnASlowRequest(t *testing.T) {
 	config.TrackPages = true
 
 	started := time.Now()
-	err := RunContext(ctx, config)
+	err := Run(ctx, config)
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, time.Since(started), 10*time.Second, "the blocked request was not cut short")
@@ -572,7 +560,7 @@ func TestRunContextStopsARunBlockedOnASlowRequest(t *testing.T) {
 	first := findPageTitled(t, server, "First")
 
 	writeFile(t, dir, "a.md", markdownWithTitle("First Renamed"))
-	require.NoError(t, RunContext(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
 		"the manifest saved by the cancelled run found the page it made")
@@ -612,7 +600,7 @@ func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
 	config.ContinueOnError = true
 
-	err := RunContext(ctx, config)
+	err := Run(ctx, config)
 
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -664,7 +652,7 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 	config.OutputFormat = report.FormatJSON
 	config.Output = &out
 
-	err := RunContext(ctx, config)
+	err := Run(ctx, config)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "unable to save page manifest")
 
@@ -683,7 +671,7 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 	config.ContinueOnError = false
 	config.OutputFormat = ""
 	config.Output = io.Discard
-	require.NoError(t, RunContext(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
 		"the manifest saved by the cancelled run found the page it made")
@@ -702,12 +690,12 @@ func TestTargetURLTakesOneFile(t *testing.T) {
 	config.TrackPages = false
 	config.PageID = target.ID
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.ErrorContains(t, err, "matched 2 files")
 	assert.Equal(t, 0, server.CountRequests(http.MethodPut, "/content/"+target.ID), "nothing is published")
 
 	config.Files = filepath.Join(dir, "a.md")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.Contains(t, server.Page(target.ID).Body, "First.")
 }
 
@@ -747,7 +735,7 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				if err := Run(config); err != nil {
+				if err := Run(context.Background(), config); err != nil {
 					b.Fatal(err)
 				}
 			}

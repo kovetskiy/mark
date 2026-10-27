@@ -1950,7 +1950,7 @@ func (api *API) IsCloud(ctx context.Context) bool {
 // A probe cut short by its context is the exception: it is no answer, so it
 // is reported as such -- IsCancellation recognises the error -- for that call
 // only, and the next call asks again. Remembered, it would leave an API reused
-// after a cancelled ProcessFileContext taking Cloud for Server for good.
+// after a cancelled mark.ProcessFile taking Cloud for Server for good.
 func (api *API) Cloud(ctx context.Context) (bool, error) {
 	api.isCloudMutex.Lock()
 	defer api.isCloudMutex.Unlock()

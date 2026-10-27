@@ -30,7 +30,7 @@ func TestRetitledParentAndChildInOneRun(t *testing.T) {
 	writeFile(t, dir, "parent.md", parentDoc("Parent"))
 	writeFile(t, dir, "a-child.md", childDoc("Parent"))
 	config := trackingConfig(server, dir+"/*.md")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent")
 	childID := pageIDTitled(t, server, "Child")
@@ -39,7 +39,7 @@ func TestRetitledParentAndChildInOneRun(t *testing.T) {
 
 	writeFile(t, dir, "parent.md", parentDoc("Parent Renamed"))
 	writeFile(t, dir, "a-child.md", childDoc("Parent Renamed"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, parentID, pageIDTitled(t, server, "Parent Renamed"), "the tracked page should be renamed in place")
 	assert.Empty(t, pageIDTitled(t, server, "Parent"), "the old title should be gone")
@@ -55,7 +55,7 @@ func TestRetitledParentNamedWithoutRegardToCase(t *testing.T) {
 	writeFile(t, dir, "parent.md", parentDoc("Parent"))
 	writeFile(t, dir, "a-child.md", childDoc("Parent"))
 	config := trackingConfig(server, dir+"/*.md")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent")
 	childID := pageIDTitled(t, server, "Child")
@@ -63,7 +63,7 @@ func TestRetitledParentNamedWithoutRegardToCase(t *testing.T) {
 
 	writeFile(t, dir, "parent.md", parentDoc("Parent Renamed"))
 	writeFile(t, dir, "a-child.md", childDoc("parent renamed"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Parent Renamed", server.Page(parentID).Title)
 	assert.Equal(t, parentID, server.Page(childID).ParentID)
@@ -77,13 +77,13 @@ func TestChildNamingOldParentTitleStillFollowsRename(t *testing.T) {
 	writeFile(t, dir, "parent.md", parentDoc("Parent"))
 	writeFile(t, dir, "a-child.md", childDoc("Parent"))
 	config := trackingConfig(server, dir+"/*.md")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent")
 	require.NotEmpty(t, parentID)
 
 	writeFile(t, dir, "parent.md", parentDoc("Parent Renamed"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Parent Renamed", server.Page(parentID).Title)
 	assert.Empty(t, pageIDTitled(t, server, "Parent"))
@@ -111,7 +111,7 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 			config := trackingConfig(server, dir+"/*.md")
 			config.TitleAppendGeneratedHash = true
 			tweak(&config, dir)
-			require.NoError(t, Run(config))
+			require.NoError(t, Run(context.Background(), config))
 
 			parentID := pageIDTitled(t, server, hashed("Parent"))
 			childID := pageIDTitled(t, server, metadata.GeneratedHashTitle([]string{hashed("Parent")}, "DOCS", "Child"))
@@ -120,7 +120,7 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 
 			writeFile(t, dir, "parent.md", parentDoc("Parent Renamed"))
 			writeFile(t, dir, "a-child.md", childDoc(hashed("Parent Renamed")))
-			require.NoError(t, Run(config))
+			require.NoError(t, Run(context.Background(), config))
 
 			assert.Equal(t, parentID, pageIDTitled(t, server, hashed("Parent Renamed")), "renamed in place")
 			assert.Empty(t, pageIDTitled(t, server, hashed("Parent")))
@@ -141,7 +141,7 @@ func TestRetitledParentByRenamingItsFile(t *testing.T) {
 	writeFile(t, dir, "a-child.md", childDoc("Parent Doc"))
 	config := trackingConfig(server, dir+"/*.md")
 	config.TitleFromFilename = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent Doc")
 	childID := pageIDTitled(t, server, "Child")
@@ -150,7 +150,7 @@ func TestRetitledParentByRenamingItsFile(t *testing.T) {
 
 	require.NoError(t, os.Rename(filepath.Join(dir, "parent-doc.md"), filepath.Join(dir, "renamed-doc.md")))
 	writeFile(t, dir, "a-child.md", childDoc("Renamed Doc"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, parentID, pageIDTitled(t, server, "Renamed Doc"), "renamed in place")
 	assert.Empty(t, pageIDTitled(t, server, "Parent Doc"))
@@ -169,14 +169,14 @@ func TestRetitledBlogPostIsNotAParent(t *testing.T) {
 	writeFile(t, dir, "news.md", post("News"))
 	writeFile(t, dir, "a-child.md", childDoc("Parent"))
 	config := trackingConfig(server, dir+"/*.md")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	childID := pageIDTitled(t, server, "Child")
 	require.NotEmpty(t, childID)
 
 	writeFile(t, dir, "news.md", post("Section"))
 	writeFile(t, dir, "a-child.md", childDoc("Section"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	sectionID := pageIDTitled(t, server, "Section")
 	require.NotEmpty(t, sectionID, "the parent the child names is created")
@@ -215,7 +215,7 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 			config.ParentsFromPath = true
 			config.ParentsFromPathRoot = dir
 			config.TitleAppendGeneratedHash = hash
-			require.NoError(t, Run(config))
+			require.NoError(t, Run(context.Background(), config))
 
 			guideID := pageIDTitled(t, server, guideTitle("Guide"))
 			apiID := pageIDTitled(t, server, apiTitle)
@@ -224,7 +224,7 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 			require.Equal(t, guideID, server.Page(apiID).ParentID)
 
 			writeAt(t, dir, "guide/README.md", readme("Guide Renamed"))
-			require.NoError(t, Run(config))
+			require.NoError(t, Run(context.Background(), config))
 
 			assert.Equal(t, guideID, pageIDTitled(t, server, guideTitle("Guide Renamed")), "renamed in place")
 			assert.Empty(t, pageIDTitled(t, server, guideTitle("Guide")))
@@ -254,9 +254,9 @@ func TestRetitledChainOfThree(t *testing.T) {
 	writeFile(t, dir, "b-parent.md", titled("Parent", "Grand"))
 	writeFile(t, dir, "c-grand.md", titled("Grand"))
 	config := trackingConfig(server, dir+"/*.md")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	write("Grand", "Parent")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	grandID := pageIDTitled(t, server, "Grand")
 	parentID := pageIDTitled(t, server, "Parent")
@@ -264,7 +264,7 @@ func TestRetitledChainOfThree(t *testing.T) {
 	require.NotEmpty(t, leafID)
 
 	write("Grand Renamed", "Parent Renamed")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, grandID, pageIDTitled(t, server, "Grand Renamed"))
 	assert.Equal(t, parentID, pageIDTitled(t, server, "Parent Renamed"))
@@ -287,7 +287,7 @@ func TestRetitledParentWithFrontMatter(t *testing.T) {
 	writeFile(t, dir, "a-child.md", child("Parent"))
 	config := trackingConfig(server, dir+"/*.md")
 	config.Features = append(config.Features, "frontmatter")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent")
 	childID := pageIDTitled(t, server, "Child")
@@ -295,7 +295,7 @@ func TestRetitledParentWithFrontMatter(t *testing.T) {
 
 	writeFile(t, dir, "parent.md", parent("Parent Renamed"))
 	writeFile(t, dir, "a-child.md", child("Parent Renamed"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, parentID, pageIDTitled(t, server, "Parent Renamed"))
 	assert.Equal(t, parentID, server.Page(childID).ParentID)
@@ -315,14 +315,14 @@ func TestMovedDocumentKeepsItsPage(t *testing.T) {
 
 	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
 	config.OnOrphan = "delete"
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	before, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
 	require.NoError(t, os.Rename(filepath.Join(dir, "a", "doc.md"), filepath.Join(dir, "b", "doc.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	page := server.Page(before.ID)
 	require.NotNil(t, page)
@@ -330,7 +330,7 @@ func TestMovedDocumentKeepsItsPage(t *testing.T) {
 
 	// Deleting the moved document afterwards still removes its page.
 	require.NoError(t, os.Remove(filepath.Join(dir, "b", "doc.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.True(t, server.Page(before.ID).Trashed)
 }
 
@@ -347,7 +347,7 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 
 	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
 	config.NoOverwrite = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
 	require.NoError(t, err)
@@ -359,12 +359,12 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
 	require.NoError(t, os.Rename(filepath.Join(dir, "doc.md"), filepath.Join(dir, "sub", "doc.md")))
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(published.ID).Body,
 		"the run that moves the document must not overwrite the edit")
 	assert.Equal(t, edited.Version, server.Page(published.ID).Version)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(published.ID).Body,
 		"nor may the run after it")
 }
@@ -375,7 +375,7 @@ func publishOnce(t *testing.T, server *confluencetest.Server, file string) {
 	t.Helper()
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	_, err := ProcessFile(file, api, Config{
+	_, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL:  server.URL,
 		Username: "user",
 		Password: "token",
@@ -472,14 +472,14 @@ func TestATrackedPageIsMovedWhenItsFirstParentIsTheHomePage(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	published, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
 	writeFile(t, dir, "doc.md", header+"<!-- Parent: New -->\n<!-- Title: Doc Renamed -->\n\nbody\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	after := server.Page(published.ID)
 	require.NotNil(t, after)
@@ -504,7 +504,7 @@ func TestRenamedParentIsFollowedNotRecreated(t *testing.T) {
 	writeFile(t, dir, "a-parent.md", markdownWithTitle("Guide"))
 	writeFile(t, dir, "b-child.md", markdownUnder("Guide", "Child"))
 	glob := filepath.Join(dir, "*.md")
-	require.NoError(t, Run(trackingConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, glob)))
 
 	parentPage, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
@@ -512,7 +512,7 @@ func TestRenamedParentIsFollowedNotRecreated(t *testing.T) {
 
 	// The parent is renamed. The child still declares the old title.
 	writeFile(t, dir, "a-parent.md", markdownWithTitle("Guide Renamed"))
-	require.NoError(t, Run(trackingConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, glob)))
 
 	assert.Equal(t, "Guide Renamed", server.Page(parentPage.ID).Title,
 		"the parent should have been renamed in place")
@@ -534,7 +534,7 @@ func TestUnknownParentTitleIsStillCreated(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "child.md", markdownUnder("Brand New Parent", "Child"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Brand New Parent"),
 		"an unknown parent title is not stale and should still be created")
@@ -553,11 +553,11 @@ func TestRenamedHandMadeParentIsFollowedNotRecreated(t *testing.T) {
 	guide := handMadeParent(t, server, "Guide")
 
 	file := writeFile(t, dir, "child.md", markdownUnder("Guide", "Child"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	// Somebody renames it in the UI. The document still says "Guide".
 	server.RenamePage(guide.ID, "Guide Renamed")
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	assert.Equal(t, 0, countPagesTitled(t, server, "Guide"),
 		"no empty page should have been created under the old title")
@@ -581,10 +581,10 @@ func TestRenamedHandMadeParentDuplicatesWithoutTracking(t *testing.T) {
 
 	config := trackingConfig(server, writeFile(t, dir, "child.md", markdownUnder("Guide", "Child")))
 	config.TrackPages = false
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	server.RenamePage(guide.ID, "Guide Renamed")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Guide"),
 		"without tracking an empty page appears under the old title")
@@ -605,7 +605,7 @@ func TestParentCreatedByMarkIsFollowedAfterRename(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "child.md", markdownUnder("Brand New Parent", "Child"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	created, err := confluence.NewAPI(server.URL, "user", "token", false).
 		FindPage(context.Background(), "DOCS", "Brand New Parent", "page")
@@ -613,7 +613,7 @@ func TestParentCreatedByMarkIsFollowedAfterRename(t *testing.T) {
 	require.NotNil(t, created)
 
 	server.RenamePage(created.ID, "Brand New Parent Renamed")
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	assert.Equal(t, 0, countPagesTitled(t, server, "Brand New Parent"),
 		"the parent mark created should have been followed, not made again")
@@ -634,11 +634,11 @@ func TestRenamedParentChainIsFollowedAtEveryLevel(t *testing.T) {
 	guide := handMadeParent(t, server, "Guide")
 
 	file := writeFile(t, dir, "child.md", markdownUnder("Guide", "Child"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	server.RenamePage(top.ID, "Parent Renamed")
 	server.RenamePage(guide.ID, "Guide Renamed")
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	assert.Equal(t, 0, countPagesTitled(t, server, "Parent"),
 		"the top of the chain should have been followed")
@@ -681,7 +681,7 @@ func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
@@ -689,7 +689,7 @@ func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 
 	// The document now declares a different parent.
 	writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc"))
-	require.NoError(t, Run(config), "a changed parent should move the page, not fail the run")
+	require.NoError(t, Run(context.Background(), config), "a changed parent should move the page, not fail the run")
 
 	assert.Equal(t, other.ID, server.Page(published.ID).ParentID,
 		"the page should now sit under the parent its headers name")
@@ -710,7 +710,7 @@ func TestDeeperNestingThanDeclaredIsLeftAlone(t *testing.T) {
 
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -732,7 +732,7 @@ func TestDryRunDoesNotMoveThePage(t *testing.T) {
 
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc"))
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, DryRun: true, Output: io.Discard,
 	}))
@@ -761,7 +761,7 @@ func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
@@ -769,7 +769,7 @@ func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 
 	// One edit, both changes.
 	writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc Renamed"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	after := server.Page(published.ID)
 	require.NotNil(t, after)
@@ -794,7 +794,7 @@ func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
@@ -804,7 +804,7 @@ func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 	require.NoError(t, api.MoveContentAppend(context.Background(), published.ID, extra.ID))
 
 	writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc Renamed"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, extra.ID, server.Page(published.ID).ParentID,
 		"a tracked page nested deeper than declared must stay where it is")

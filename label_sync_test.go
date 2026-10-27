@@ -33,7 +33,7 @@ func labelFixture(t *testing.T, appendLabels bool, labels string) (*confluencete
 		AppendLabels: appendLabels,
 		Output:       io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -49,7 +49,7 @@ func TestLabelsRemovedByDefault(t *testing.T) {
 	server, id, config := labelFixture(t, false, "<!-- Label: from-mark -->\n")
 
 	server.AddLabel(id, "added-by-hand")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, []string{"from-mark"}, server.Page(id).Labels,
 		"without --append-labels a page carries exactly what its headers name")
@@ -62,7 +62,7 @@ func TestAppendLabelsKeepsLabelsAddedInConfluence(t *testing.T) {
 	server, id, config := labelFixture(t, true, "<!-- Label: from-mark -->\n")
 
 	server.AddLabel(id, "added-by-hand")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.ElementsMatch(t, []string{"from-mark", "added-by-hand"}, server.Page(id).Labels,
 		"a label applied in Confluence must survive a publish")
@@ -76,7 +76,7 @@ func TestAppendLabelsStillAddsNewOnes(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n"+
 			"<!-- Label: first -->\n<!-- Label: second -->\n\nBody.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.ElementsMatch(t, []string{"first", "second"}, server.Page(id).Labels)
 }
@@ -90,7 +90,7 @@ func TestAppendLabelsKeepsARemovedHeadersLabel(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n"+
 			"<!-- Label: first -->\n\nBody.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.ElementsMatch(t, []string{"first", "second"}, server.Page(id).Labels,
 		"appending cannot tell a dropped header from a label somebody added")

@@ -32,7 +32,7 @@ func TestTrackedPageIsRetitledNotDuplicated(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Original Title"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	before, err := api.FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestTrackedPageIsRetitledNotDuplicated(t *testing.T) {
 
 	// The Title header changes; the file does not move.
 	writeFile(t, dir, "doc.md", markdownWithTitle("Renamed Title"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	after := server.Page(before.ID)
 	require.NotNil(t, after)
@@ -62,14 +62,14 @@ func TestUntrackedTitleChangeStillDuplicates(t *testing.T) {
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Original Title"))
 	config.Files = file
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	before, err := api.FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
 	writeFile(t, dir, "doc.md", markdownWithTitle("Renamed Title"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Original Title", server.Page(before.ID).Title,
 		"without tracking the first page is left behind under its old title")
@@ -93,7 +93,7 @@ Body that does not change.
 	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "First"))
 	config := trackingConfig(server, file)
 	config.ChangesOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	before, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ Body that does not change.
 
 	// Only the title changes; the rendered body is byte-identical.
 	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Second"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Second", server.Page(before.ID).Title,
 		"a retitle must not be skipped just because the content hash matched")
@@ -115,7 +115,7 @@ func TestTrackedPageDeletedInConfluenceIsRecreated(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestTrackedPageDeletedInConfluenceIsRecreated(t *testing.T) {
 	// Retitle too, so the title lookup also misses and resolution is forced
 	// through the manifest entry that now dangles.
 	writeFile(t, dir, "doc.md", markdownWithTitle("Doc Renamed"))
-	require.NoError(t, Run(trackingConfig(server, file)),
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)),
 		"a dangling manifest entry must not fail the run")
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Doc Renamed"),
@@ -148,7 +148,7 @@ func TestTrackingSavesManifestEvenWhenAFileFails(t *testing.T) {
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	config.ContinueOnError = true
-	require.Error(t, Run(config), "the bad file should still fail the run")
+	require.Error(t, Run(context.Background(), config), "the bad file should still fail the run")
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Good", "page")
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestTrackingSavesManifestEvenWhenAFileFails(t *testing.T) {
 	// and it should be found again rather than duplicated.
 	writeFile(t, dir, "good.md", markdownWithTitle("Good Renamed"))
 	config.Files = good
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Good Renamed", server.Page(published.ID).Title,
 		"the mapping recorded on the failed run should have been saved")
@@ -176,7 +176,7 @@ func TestTrackedPageLoadFailureDoesNotDuplicate(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
@@ -193,7 +193,7 @@ func TestTrackedPageLoadFailureDoesNotDuplicate(t *testing.T) {
 
 	// Retitle so resolution is forced through the manifest entry.
 	writeFile(t, dir, "doc.md", markdownWithTitle("Doc Renamed"))
-	require.Error(t, Run(trackingConfig(server, file)),
+	require.Error(t, Run(context.Background(), trackingConfig(server, file)),
 		"a page that cannot be loaded must stop the run, not be republished")
 
 	server.SetFail(nil)
@@ -219,7 +219,7 @@ func TestTwoFilesClaimingOnePageIsReported(t *testing.T) {
 	log.Logger = zerolog.New(&logged)
 	defer func() { log.Logger = restore }()
 
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
 	assert.Contains(t, logged.String(), "both publish to page",
 		"two files resolving to one page should be reported")
@@ -242,7 +242,7 @@ func TestPageIDModeSaysTrackingDoesNotApply(t *testing.T) {
 
 	config := trackingConfig(server, file)
 	config.PageID = existing.ID
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, logged.String(), "no effect together with a page id")
 }
@@ -259,7 +259,7 @@ func TestDryRunWritesNothing(t *testing.T) {
 
 	config := trackingConfig(server, file)
 	config.DryRun = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	for _, r := range server.Requests() {
 		assert.Equal(t, http.MethodGet, r.Method,
@@ -279,7 +279,7 @@ func TestFolderPublishWithoutTracking(t *testing.T) {
 	config := trackingConfig(server, file)
 	config.TrackPages = false
 
-	require.NoError(t, Run(config), "publishing into a folder must work with tracking off")
+	require.NoError(t, Run(context.Background(), config), "publishing into a folder must work with tracking off")
 
 	folders := server.Folders()
 	require.Len(t, folders, 1)
@@ -291,7 +291,7 @@ func TestFolderPublishWithTracking(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	folders := server.Folders()
 	require.Len(t, folders, 1, "exactly one folder should exist")
@@ -307,7 +307,7 @@ func TestRenamedFolderIsFollowedNotDuplicated(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	original := server.Folders()
 	require.Len(t, original, 1)
@@ -316,7 +316,7 @@ func TestRenamedFolderIsFollowedNotDuplicated(t *testing.T) {
 	// "Guides".
 	server.RenameFolder(original[0].ID, "Guides Renamed")
 
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	after := server.Folders()
 	assert.Len(t, after, 1,
@@ -335,12 +335,12 @@ func TestRenamedFolderDuplicatesWithoutTracking(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 	config.Files = file
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	original := server.Folders()
 	require.Len(t, original, 1)
 
 	server.RenameFolder(original[0].ID, "Guides Renamed")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Len(t, server.Folders(), 2,
 		"without tracking the renamed folder is not recognised and a second appears")
@@ -359,8 +359,8 @@ func TestFolderRepublishWithoutTrackingUpdatesInPlace(t *testing.T) {
 	config.TrackPages = false
 	config.Files = writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 
-	require.NoError(t, Run(config))
-	require.NoError(t, Run(config), "the second run must update the page it published")
+	require.NoError(t, Run(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config), "the second run must update the page it published")
 
 	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/api/v2/pages"),
 		"the page is created once and updated after that")
@@ -379,7 +379,7 @@ func TestFolderDocumentLeavesHomePageAlone(t *testing.T) {
 
 	// The create that follows fails on the duplicate title; what matters is
 	// that nothing was moved on the way there.
-	_ = Run(config)
+	_ = Run(context.Background(), config)
 
 	assert.Zero(t, server.CountRequests(http.MethodPut, "/move/"),
 		"the home page must stay where it is")
@@ -398,7 +398,7 @@ func TestDryRunDoesNotRecordFolders(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 	config := trackingConfig(server, file)
 	config.DryRun = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	for _, r := range server.Requests() {
 		assert.Equal(t, http.MethodGet, r.Method,
@@ -434,7 +434,7 @@ func TestRenamedFileIsFollowedNotDuplicated(t *testing.T) {
 
 	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
 	glob := filepath.Join(dir, "*.md")
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 
 	original, err := api.FindPage(context.Background(), "DOCS", "Old Name", "page")
 	require.NoError(t, err)
@@ -443,7 +443,7 @@ func TestRenamedFileIsFollowedNotDuplicated(t *testing.T) {
 	// The file is renamed. Its content is untouched.
 	require.NoError(t, os.Rename(
 		filepath.Join(dir, "old-name.md"), filepath.Join(dir, "new-name.md")))
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 
 	assert.Equal(t, "New Name", server.Page(original.ID).Title,
 		"the existing page should have been renamed, not left behind")
@@ -460,7 +460,7 @@ func TestRenamedFileDuplicatesWithoutTracking(t *testing.T) {
 	config.TrackPages = false
 
 	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	original, err := api.FindPage(context.Background(), "DOCS", "Old Name", "page")
 	require.NoError(t, err)
@@ -468,7 +468,7 @@ func TestRenamedFileDuplicatesWithoutTracking(t *testing.T) {
 
 	require.NoError(t, os.Rename(
 		filepath.Join(dir, "old-name.md"), filepath.Join(dir, "new-name.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Old Name", server.Page(original.ID).Title,
 		"without tracking the old page is stranded under its old name")
@@ -485,18 +485,18 @@ func TestRenamedFileStopsBeingReportedAsDeleted(t *testing.T) {
 
 	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
 	glob := filepath.Join(dir, "*.md")
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 
 	require.NoError(t, os.Rename(
 		filepath.Join(dir, "old-name.md"), filepath.Join(dir, "new-name.md")))
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 
 	var logged bytes.Buffer
 	restore := log.Logger
 	log.Logger = zerolog.New(&logged)
 	defer func() { log.Logger = restore }()
 
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 	assert.NotContains(t, logged.String(), "had no matching source file",
 		"the old path should have been dropped when the rename was followed")
 }
@@ -512,13 +512,13 @@ func TestAmbiguousRenameCreatesRatherThanGuesses(t *testing.T) {
 	writeFile(t, dir, "one.md", markdownTitledFromFilename())
 	writeFile(t, dir, "two.md", markdownTitledFromFilename())
 	glob := filepath.Join(dir, "*.md")
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 
 	// Both disappear and one appears with the same content.
 	require.NoError(t, os.Remove(filepath.Join(dir, "one.md")))
 	require.NoError(t, os.Rename(
 		filepath.Join(dir, "two.md"), filepath.Join(dir, "three.md")))
-	require.NoError(t, Run(filenameTitleConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), filenameTitleConfig(server, glob)))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Three"),
 		"an ambiguous match must create rather than rebind")
@@ -534,13 +534,13 @@ func TestDryRunReportsWhatWouldHappen(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Original"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	writeFile(t, dir, "doc.md", markdownWithTitle("Renamed"))
 
 	config := trackingConfig(server, file)
 	config.DryRun = true
-	logged := captureLog(t, func() { require.NoError(t, Run(config)) })
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), config)) })
 
 	assert.Contains(t, logged, "retitled from",
 		"a dry run should say the existing page would be retitled")
@@ -565,7 +565,7 @@ func TestDryRunStillWritesNothingWithTracking(t *testing.T) {
 
 	config := trackingConfig(server, file)
 	config.DryRun = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	for _, r := range server.Requests() {
 		assert.Equal(t, http.MethodGet, r.Method,
@@ -608,7 +608,7 @@ func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
 	body := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nShared body text.\n"
 
 	writeFile(t, dir, "a/one.md", body)
-	require.NoError(t, Run(multiGlobConfig(server, globA)))
+	require.NoError(t, Run(context.Background(), multiGlobConfig(server, globA)))
 
 	pageA, err := api.FindPage(context.Background(), "DOCS", "One", "page")
 	require.NoError(t, err)
@@ -616,7 +616,7 @@ func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
 
 	// A second invocation adds a brand-new file that happens to match.
 	writeFile(t, dir, "b/two.md", body)
-	require.NoError(t, Run(multiGlobConfig(server, globB)))
+	require.NoError(t, Run(context.Background(), multiGlobConfig(server, globB)))
 
 	assert.Equal(t, "One", server.Page(pageA.ID).Title,
 		"the other invocation's page must be left alone")
@@ -625,7 +625,7 @@ func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
 
 	// And the first invocation still owns its document: re-running it must not
 	// republish, which is what would happen if its entry had been taken.
-	require.NoError(t, Run(multiGlobConfig(server, globA)))
+	require.NoError(t, Run(context.Background(), multiGlobConfig(server, globA)))
 	assert.Equal(t, "One", server.Page(pageA.ID).Title)
 	assert.Equal(t, 1, countPagesTitled(t, server, "One"),
 		"no duplicate should have appeared for the first invocation")
@@ -646,7 +646,7 @@ func TestRenameStillWorksWithinOneGlob(t *testing.T) {
 	body := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nBody.\n"
 
 	writeFile(t, dir, "a/old-name.md", body)
-	require.NoError(t, Run(multiGlobConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), multiGlobConfig(server, glob)))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Old Name", "page")
 	require.NoError(t, err)
@@ -654,7 +654,7 @@ func TestRenameStillWorksWithinOneGlob(t *testing.T) {
 
 	require.NoError(t, os.Rename(
 		filepath.Join(dir, "a", "old-name.md"), filepath.Join(dir, "a", "new-name.md")))
-	require.NoError(t, Run(multiGlobConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), multiGlobConfig(server, glob)))
 
 	assert.Equal(t, "New Name", server.Page(published.ID).Title,
 		"a rename within one pattern must still be followed")
@@ -685,7 +685,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, ManifestPage: "Home", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(baseURL, "user", "token", false)
 	guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
@@ -704,7 +704,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 
 	// A retitle: without the manifest this would be a second page.
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide Renamed -->\n\nA guide.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	renamed, err := api.FindPage(context.Background(), "DOCS", "Guide Renamed", "page")
 	require.NoError(t, err)
@@ -729,7 +729,7 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	writeFile(t, dir, "a.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 	writeFile(t, dir, "b.md", "<!-- Space: OPS -->\n<!-- Title: Runbook -->\n\nA runbook.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, ManifestPage: handbook.ID, Output: io.Discard,
@@ -755,7 +755,7 @@ func TestManifestPageRequiresTrackPages(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), ManifestPage: "Home", Output: io.Discard,
 	})
@@ -777,16 +777,16 @@ func TestManifestPrefixRequiresTrackPages(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		ManifestPrefix: "mark.manifest", Output: io.Discard,
 	}
-	require.NoError(t, Run(config), "the default prefix asks for nothing")
+	require.NoError(t, Run(context.Background(), config), "the default prefix asks for nothing")
 
 	config.ManifestPrefix = "team.docs"
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--manifest-prefix requires --track-pages")
 
 	config.TrackPages = true
 	config.ManifestPrefix = "not a key"
-	err = Run(config)
+	err = Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot prefix a property key")
 }
@@ -808,7 +808,7 @@ func TestManifestIsSavedWhenAFileFailsHard(t *testing.T) {
 	writeFile(t, dir, "b-bad.md", "no metadata here at all\n")
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	require.Error(t, Run(config), "the run must still report the failure")
+	require.Error(t, Run(context.Background(), config), "the run must still report the failure")
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Published", "page")
 	require.NoError(t, err)
@@ -864,7 +864,7 @@ func TestManifestSaveOnTheWayOutOutlastsASignal(t *testing.T) {
 	})
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	require.Error(t, RunContext(ctx, config), "the run must still report the failure")
+	require.Error(t, Run(ctx, config), "the run must still report the failure")
 	require.True(t, signalled, "the save on the way out wrote a property")
 
 	server.SetFail(nil)
@@ -899,7 +899,7 @@ func TestNothingIsRecordedForAPageThatWasNotWritten(t *testing.T) {
 Text with an <span>unclosed tag.
 `)
 
-	require.Error(t, Run(trackingConfig(server, file)))
+	require.Error(t, Run(context.Background(), trackingConfig(server, file)))
 
 	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
 	_, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "doc.md"))
@@ -916,7 +916,7 @@ func TestRecordedTitleIsTheOneThePageCarries(t *testing.T) {
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Recorded"))
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Recorded", "page")
 	require.NoError(t, err)
@@ -947,7 +947,7 @@ func TestPreserveCommentsKeepsARetitle(t *testing.T) {
 
 	config := trackingConfig(server, writeFile(t, dir, "doc.md", markdownWithTitle("Original Title")))
 	config.PreserveComments = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	original, err := confluence.NewAPI(server.URL, "user", "token", false).
 		FindPage(context.Background(), "DOCS", "Original Title", "page")
@@ -955,7 +955,7 @@ func TestPreserveCommentsKeepsARetitle(t *testing.T) {
 	require.NotNil(t, original)
 
 	writeFile(t, dir, "doc.md", markdownWithTitle("Renamed Title"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "Renamed Title", server.Page(original.ID).Title,
 		"the page should have been renamed in place")
@@ -972,8 +972,8 @@ func TestPreserveCommentsLeavesAnUnchangedTitleAlone(t *testing.T) {
 	config := trackingConfig(server, writeFile(t, dir, "doc.md", markdownWithTitle("Steady")))
 	config.PreserveComments = true
 
-	require.NoError(t, Run(config))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Steady"))
 }
@@ -986,7 +986,7 @@ func TestGeneratedHashDoesNotStandInForATitle(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nbody\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 		TitleAppendGeneratedHash: true,
