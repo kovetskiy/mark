@@ -43,10 +43,10 @@ func TestFencedCodeBlockLanguage(t *testing.T) {
 	}{
 		{"go", "go"},
 		{"c#", "c#"},
-		{"c++", "c++"},
+		{"c++", "cpp"},
 		{"objective-c", "objective-c"},
 		{"html/xml", "html/xml"},
-		{".NET", ".NET"},
+		{".NET", ".net"},
 		{"", ""},
 	}
 
