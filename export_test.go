@@ -306,9 +306,13 @@ func TestExportOfAPageThatIsNotThere(t *testing.T) {
 	assert.Contains(t, err.Error(), `no page or blog post titled "Nowhere" in space DOCS`)
 }
 
-// TestExportWithoutAttachments writes the document alone.
+// TestExportWithoutAttachments writes the document alone, without asking for
+// the page's attachments: a token that may not read them exports the page.
 func TestExportWithoutAttachments(t *testing.T) {
 	server, id, _ := exportFixture(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusForbidden, `{}`, strings.Contains(r.URL.Path, "/child/attachment")
+	})
 
 	t.Chdir(t.TempDir())
 
@@ -326,6 +330,26 @@ func TestExportWithoutAttachments(t *testing.T) {
 
 	_, err = os.Stat("logo.png")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// TestExportWithoutAttachmentsDeclaresThemAll: without the page's attachments
+// there is no telling which it has, so an attachment storage format refers to
+// is declared as the document refers to it.
+func TestExportWithoutAttachmentsDeclaresThemAll(t *testing.T) {
+	server, id := exportPage(t,
+		`<table><tbody><tr><td colspan="2"><ac:image><ri:attachment ri:filename="kept.png"/></ac:image></td></tr></tbody></table>`)
+
+	var stdout bytes.Buffer
+	logged := captureLog(t, func() {
+		_, err := Export(context.Background(), ExportConfig{
+			BaseURL: server.URL, Username: "user", Password: "token", PageID: id,
+			NoAttachments: true, Stdout: &stdout,
+		})
+		require.NoError(t, err)
+	})
+	assert.Contains(t, stdout.String(), "<!-- Attachment: kept.png -->")
+	assert.NotContains(t, logged, "does not have")
+	assert.Zero(t, server.CountRequests("GET", "/child/attachment"))
 }
 
 // TestExportThroughTheGateway exports through the api.atlassian.com gateway,

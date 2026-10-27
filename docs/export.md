@@ -67,12 +67,14 @@ mean to publish it back: mark names an attachment after its path, so
 `--attachments-dir files` turns `chart.png` into `files_chart.png` on the next
 publish, a new attachment next to the old one. The export fails before writing
 anything if a file it would write is already there, unless `--overwrite` is
-given, and `--no-attachments` writes the document alone. The attachments are
+given, and `--no-attachments` writes the document alone, without asking
+Confluence for the page's attachments. The attachments are
 moved into place only once all of them have downloaded. Two whose names would
 share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
 are told apart by a number, as `a_b-2.png`, and so is one named like the
 document itself. An attachment the page refers to
-but no longer has is reported, and left out of the `Attachment` headers.
+but no longer has is reported, and left out of the `Attachment` headers;
+with `--no-attachments` there is no telling, so every one is declared.
 
 ## Exporting a tree of pages, or a whole space
 
