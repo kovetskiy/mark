@@ -365,3 +365,37 @@ func TestGatewayGetPageByIDWithoutBlogpostScopes(t *testing.T) {
 	_, err := api.GetPageByID("deleted")
 	require.ErrorIs(t, err, confluence.ErrNotFound)
 }
+
+// TestGatewayPageReadSurvivesTheSpaceKey: v2 names a page's space by id, and a
+// token that may read the page but not the space still reads the page, with no
+// key; a caller that knows the space goes on with it. A key read once is not
+// read again.
+func TestGatewayPageReadSurvivesTheSpaceKey(t *testing.T) {
+	t.Run("refused", func(t *testing.T) {
+		server := confluencetest.New(t)
+		page := server.AddPage("DOCS", "Page", "page", "")
+		server.SetFail(func(r *http.Request) (int, string, bool) {
+			return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`,
+				strings.Contains(r.URL.Path, "/rest/api/") || strings.Contains(r.URL.Path, "/api/v2/spaces/")
+		})
+		api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
+
+		read, err := api.GetPageByIDExpanded(page.ID, "body.storage,version,space")
+		require.NoError(t, err)
+		assert.Equal(t, page.ID, read.ID)
+		assert.Empty(t, read.Space.Key)
+	})
+
+	t.Run("read once", func(t *testing.T) {
+		api, server := newGatewayAPI(t)
+		first := server.AddPage("DOCS", "First", "page", "")
+		second := server.AddPage("DOCS", "Second", "page", first.ID)
+
+		for _, id := range []string{first.ID, second.ID} {
+			read, err := api.GetPageByIDExpanded(id, "space")
+			require.NoError(t, err)
+			assert.Equal(t, "DOCS", read.Space.Key)
+		}
+		assert.Equal(t, 1, server.CountRequests("GET", "/api/v2/spaces/"))
+	})
+}
