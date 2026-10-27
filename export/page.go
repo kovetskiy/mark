@@ -203,12 +203,15 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
 	}
 
-	downloads, missing, err := attachmentsToWrite(api, page, doc, attachmentsDir, names, pathOf)
-	if err != nil {
-		return nil, err
-	}
-	if cfg.NoAttachments {
-		downloads = nil
+	// Without the attachments, the page's are not asked for: every one the
+	// document refers to is declared, as it would be were they all there.
+	var downloads []pendingDownload
+	var missing map[string]bool
+	if !cfg.NoAttachments {
+		downloads, missing, err = attachmentsToWrite(api, page, doc, attachmentsDir, names, pathOf)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	header, err := headers(api, page, space, doc, missing)
