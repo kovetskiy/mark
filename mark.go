@@ -525,7 +525,12 @@ func run(ctx context.Context, config Config) (err error) {
 	// title and the pages standing for directories all come from the one list.
 	var hierarchy *page.Hierarchy
 	if config.ParentsFromPath {
-		hierarchy, err = newHierarchy(config, files)
+		directoryTitles := page.DirectoryTitleReader(func(file string) ([]byte, error) {
+			_, markdown, err := readSource(file)
+			return markdown, err
+		}, config.TitleFromH1, slices.Contains(config.Features, "frontmatter"))
+
+		hierarchy, err = page.BuildHierarchy(config.ParentsFromPathRoot, config.Files, files, directoryTitles)
 		if err != nil {
 			return err
 		}
@@ -890,7 +895,7 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 		// for. Hashing only the first left the README childless beside an
 		// empty, unhashed page of the directory's name that took its children.
 		if config.TitleAppendGeneratedHash {
-			derived, title = hashDirectoryTitles(config.Parents, meta.Space, derived, title)
+			derived, title = page.HashDirectoryTitles(config.Parents, meta.Space, derived, title)
 		}
 
 		if !meta.DeclaredParents {
