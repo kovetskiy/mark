@@ -4,10 +4,8 @@ import (
 	"testing"
 
 	cparser "github.com/kovetskiy/mark/v16/parser"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // FuzzAdmonitionParser parses arbitrary input with the admonition parser
@@ -24,11 +22,11 @@ func FuzzAdmonitionParser(f *testing.F) {
 		f.Add(seed)
 	}
 
-	md := goldmark.New(goldmark.WithParserOptions(
+	md := parser.New(
 		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
-	))
+	)
 
 	f.Fuzz(func(t *testing.T, source string) {
-		md.Parser().Parse(text.NewReader([]byte(source)))
+		md.Parse([]byte(source))
 	})
 }

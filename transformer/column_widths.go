@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"github.com/yuin/goldmark/ast"
-	ext_ast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 var columnWidthsDirective = regexp.MustCompile(`(?is)^<!--\s*Column-Widths\s*:(.*?)-->$`)
@@ -66,7 +66,7 @@ func (t *ColumnWidthsTransformer) Transform(doc *ast.Document, reader text.Reade
 		}
 
 		parent := d.block.Parent()
-		parent.RemoveChild(parent, d.block)
+		parent.RemoveChild(d.block)
 
 		widths, err := parseColumnWidths(d.value)
 		if err != nil {
@@ -75,10 +75,10 @@ func (t *ColumnWidthsTransformer) Transform(doc *ast.Document, reader text.Reade
 			continue
 		}
 
-		if len(widths) != len(table.Alignments) {
+		if columns := tableColumns(table); len(widths) != columns {
 			t.warn(
 				"Column-Widths %q lists %d widths but the table has %d columns; publishing the table without column widths",
-				d.value, len(widths), len(table.Alignments),
+				d.value, len(widths), columns,
 			)
 
 			continue
@@ -87,10 +87,19 @@ func (t *ColumnWidthsTransformer) Transform(doc *ast.Document, reader text.Reade
 		// goldmark's table renderer walks every child and only looks at its
 		// own kinds, so a verbatim string ahead of the header comes out right
 		// after <table>. SetCode, not SetRaw: a "raw" string is still escaped.
-		colgroup := ast.NewString(colgroupMarkup(widths))
-		colgroup.SetCode(true)
-		table.InsertBefore(table, table.FirstChild(), colgroup)
+		colgroup := newVerbatim(colgroupMarkup(widths))
+		table.InsertBefore(table.FirstChild(), colgroup)
 	}
+}
+
+// tableColumns counts a table's columns by its header row, which has exactly
+// as many cells as the delimiter row has columns.
+func tableColumns(table *ext_ast.Table) int {
+	if header, ok := table.FirstChild().(*ext_ast.TableHeader); ok {
+		return header.ChildCount()
+	}
+
+	return 0
 }
 
 func (t *ColumnWidthsTransformer) warn(format string, args ...any) {

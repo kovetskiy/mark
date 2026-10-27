@@ -6,21 +6,21 @@ import (
 
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 func footnoteRender(t *testing.T, source string) string {
 	t.Helper()
 
-	return renderExtended(t, source,
-		[]goldmark.Extender{extension.Footnote},
-		[]renderer.NodeRenderer{
+	return render(t, source,
+		[]html.Extension{
 			crenderer.NewConfluenceFootnoteRenderer(newStdlib(t)),
 			crenderer.NewConfluenceParagraphRenderer(),
 			crenderer.NewConfluenceTextRenderer(false),
-		})
+		},
+		parser.WithExtensions(extension.FootnoteParser))
 }
 
 // TestFootnoteBothEndsCarryAnAnchor covers the property the whole feature rests

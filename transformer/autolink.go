@@ -1,9 +1,9 @@
 package transformer
 
 import (
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // AutoLinkTransformer walks the AST and adds data-card-appearance="inline" attributes to bare autolink URLs.
@@ -22,7 +22,7 @@ func (t *AutoLinkTransformer) Transform(doc *ast.Document, reader text.Reader, p
 		}
 
 		if node.Kind() == ast.KindAutoLink {
-			node.SetAttribute([]byte("data-card-appearance"), []byte("inline"))
+			SetAttributeText(node, "data-card-appearance", "inline")
 		}
 
 		return ast.WalkContinue, nil

@@ -3,33 +3,35 @@ package renderer
 import (
 	"fmt"
 
-	"github.com/yuin/goldmark/ast"
-	ext_ast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceTaskListRenderer renders GFM task lists as Confluence ac:task-list elements.
 type ConfluenceTaskListRenderer struct {
-	html.Config
+	htmlOptions
+
 	taskID int
 }
 
-func NewConfluenceTaskListRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceTaskListRenderer{
-		Config: html.NewConfig(),
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+func NewConfluenceTaskListRenderer(opts ...html.Option) html.Extension {
+	r := &ConfluenceTaskListRenderer{}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-func (r *ConfluenceTaskListRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindList, r.renderList)
-	reg.Register(ast.KindListItem, r.renderListItem)
-	reg.Register(ext_ast.KindTaskCheckBox, r.renderTaskCheckBox)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceTaskListRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindList:     nodeRenderer(r.renderList),
+		ast.KindListItem: nodeRenderer(r.renderListItem),
+	})}
 }
 
 // isTaskList returns true only if every top-level list item is a task item.
@@ -37,16 +39,11 @@ func isTaskList(list *ast.List) bool {
 	hasChildren := false
 	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
 		hasChildren = true
-		if !isTaskItem(child) {
+		if !extension.IsTask(child) {
 			return false
 		}
 	}
 	return hasChildren
-}
-
-// isTaskItem reports whether a list item carries a checkbox.
-func isTaskItem(item ast.Node) bool {
-	return getTaskCheckBox(item) != nil
 }
 
 // splitsIntoRuns reports whether a list holds both kinds of item and can be
@@ -68,7 +65,7 @@ func splitsIntoRuns(list *ast.List) bool {
 
 	var tasks, plain bool
 	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
-		if isTaskItem(child) {
+		if extension.IsTask(child) {
 			tasks = true
 		} else {
 			plain = true
@@ -81,7 +78,7 @@ func splitsIntoRuns(list *ast.List) bool {
 // rendersAsTask reports whether an item is published as an ac:task, which is
 // true in a list of nothing but tasks and in the task runs of a split one.
 func rendersAsTask(item ast.Node) bool {
-	if !isTaskItem(item) {
+	if !extension.IsTask(item) {
 		return false
 	}
 
@@ -99,34 +96,32 @@ func rendersAsTask(item ast.Node) bool {
 func opensRun(item ast.Node) bool {
 	previous := item.PreviousSibling()
 
-	return previous == nil || isTaskItem(previous) != isTaskItem(item)
+	return previous == nil || extension.IsTask(previous) != extension.IsTask(item)
 }
 
 func closesRun(item ast.Node) bool {
 	next := item.NextSibling()
 
-	return next == nil || isTaskItem(next) != isTaskItem(item)
+	return next == nil || extension.IsTask(next) != extension.IsTask(item)
 }
 
-// getTaskCheckBox returns the TaskCheckBox node for a ListItem, or nil if not a task item.
-// The structure is: ListItem -> TextBlock -> TaskCheckBox
-func getTaskCheckBox(item ast.Node) *ext_ast.TaskCheckBox {
-	fc := item.FirstChild()
-	if fc == nil {
-		return nil
+// taskMarker is the "[x] " or "[ ] " a task's first block opens with when the
+// task is published as an ordinary list item, so that its completion state is
+// not silently lost. It is empty for every other block, and for a task
+// published as an ac:task, whose status is written by the list item.
+func taskMarker(block ast.Node) string {
+	if !ctransformer.OpensTask(block) || rendersAsTask(block.Parent()) {
+		return ""
 	}
-	gfc := fc.FirstChild()
-	if gfc == nil {
-		return nil
+
+	if status, _ := extension.TaskStatusOf(block.Parent()); status == extension.TaskStatusCompleted {
+		return "[x] "
 	}
-	checkbox, ok := gfc.(*ext_ast.TaskCheckBox)
-	if !ok {
-		return nil
-	}
-	return checkbox
+
+	return "[ ] "
 }
 
-func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.List)
 
 	// A split list has no container of its own: each run opens and closes one,
@@ -136,7 +131,7 @@ func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte,
 	}
 
 	if !isTaskList(n) {
-		return r.goldmarkRenderList(w, source, node, entering)
+		return r.goldmarkRenderList(w, source, node, entering, rc)
 	}
 	if entering {
 		// The counter is deliberately not reset here. It is per document, not per
@@ -150,24 +145,23 @@ func (r *ConfluenceTaskListRenderer) renderList(w util.BufWriter, source []byte,
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	parentList, _ := node.Parent().(*ast.List)
 	if parentList == nil {
-		return r.goldmarkRenderListItem(w, source, node, entering)
+		return r.goldmarkRenderListItem(w, source, node, entering, rc)
 	}
 
 	// In a split list the item carries its run's container.
 	if splitsIntoRuns(parentList) {
-		return r.renderRunItem(w, source, node, entering)
+		return r.renderRunItem(w, source, node, entering, rc)
 	}
 
-	checkbox := getTaskCheckBox(node)
-	if checkbox == nil || !isTaskList(parentList) {
-		return r.goldmarkRenderListItem(w, source, node, entering)
+	if !extension.IsTask(node) || !isTaskList(parentList) {
+		return r.goldmarkRenderListItem(w, source, node, entering, rc)
 	}
 
 	if entering {
-		r.writeTaskOpening(w, checkbox)
+		r.writeTaskOpening(w, node)
 	} else {
 		_, _ = w.WriteString("</ac:task-body>\n</ac:task>\n")
 	}
@@ -177,8 +171,8 @@ func (r *ConfluenceTaskListRenderer) renderListItem(w util.BufWriter, source []b
 // renderRunItem publishes one item of a list that holds both kinds, opening the
 // run's container before the first item of the run and closing it after the
 // last.
-func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	task := isTaskItem(node)
+func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
+	task := extension.IsTask(node)
 
 	if entering && opensRun(node) {
 		if task {
@@ -190,11 +184,11 @@ func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []by
 
 	if task {
 		if entering {
-			r.writeTaskOpening(w, getTaskCheckBox(node))
+			r.writeTaskOpening(w, node)
 		} else {
 			_, _ = w.WriteString("</ac:task-body>\n</ac:task>\n")
 		}
-	} else if _, err := r.goldmarkRenderListItem(w, source, node, entering); err != nil {
+	} else if _, err := r.goldmarkRenderListItem(w, source, node, entering, rc); err != nil {
 		return ast.WalkStop, err
 	}
 
@@ -210,11 +204,11 @@ func (r *ConfluenceTaskListRenderer) renderRunItem(w util.BufWriter, source []by
 }
 
 // writeTaskOpening writes everything an ac:task needs before its body.
-func (r *ConfluenceTaskListRenderer) writeTaskOpening(w util.BufWriter, checkbox *ext_ast.TaskCheckBox) {
+func (r *ConfluenceTaskListRenderer) writeTaskOpening(w util.BufWriter, item ast.Node) {
 	r.taskID++
 
 	status := "incomplete"
-	if checkbox != nil && checkbox.IsChecked {
+	if s, _ := extension.TaskStatusOf(item); s == extension.TaskStatusCompleted {
 		status = "complete"
 	}
 
@@ -225,32 +219,8 @@ func (r *ConfluenceTaskListRenderer) writeTaskOpening(w util.BufWriter, checkbox
 	)
 }
 
-// renderTaskCheckBox skips checkbox rendering when inside an ac:task-list (status
-// is already encoded by renderListItem). For any other list (e.g. mixed lists that
-// fall back to plain <ul>/<ol>), a textual "[x]"/"[ ]" marker is emitted so that
-// completion state is not silently lost.
-func (r *ConfluenceTaskListRenderer) renderTaskCheckBox(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	// Traverse up: TaskCheckBox -> TextBlock -> ListItem
-	if block := node.Parent(); block != nil {
-		if item := block.Parent(); item != nil && rendersAsTask(item) {
-			// Status is encoded by renderListItem; nothing to emit here.
-			return ast.WalkSkipChildren, nil
-		}
-	}
-	// Fallback: emit a textual marker so completion state is preserved.
-	if entering {
-		checkbox := node.(*ext_ast.TaskCheckBox)
-		if checkbox.IsChecked {
-			_, _ = w.WriteString("[x] ")
-		} else {
-			_, _ = w.WriteString("[ ] ")
-		}
-	}
-	return ast.WalkSkipChildren, nil
-}
-
 // goldmarkRenderList is the default list rendering from goldmark.
-func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.List)
 	tag := "ul"
 	if n.IsOrdered() {
@@ -263,7 +233,7 @@ func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source
 			_, _ = fmt.Fprintf(w, " start=\"%d\"", n.Start)
 		}
 		if n.Attributes() != nil {
-			html.RenderAttributes(w, n, html.ListAttributeFilter)
+			html.RenderAttributes(w, source, n, html.ListAttributeFilter, rc)
 		}
 		_, _ = w.WriteString(">\n")
 	} else {
@@ -275,19 +245,22 @@ func (r *ConfluenceTaskListRenderer) goldmarkRenderList(w util.BufWriter, source
 }
 
 // goldmarkRenderListItem is the default list item rendering from goldmark.
-func (r *ConfluenceTaskListRenderer) goldmarkRenderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceTaskListRenderer) goldmarkRenderListItem(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		if node.Attributes() != nil {
 			_, _ = w.WriteString("<li")
-			html.RenderAttributes(w, node, html.ListItemAttributeFilter)
+			html.RenderAttributes(w, source, node, html.ListItemAttributeFilter, rc)
 			_ = w.WriteByte('>')
 		} else {
 			_, _ = w.WriteString("<li>")
 		}
 		fc := node.FirstChild()
 		if fc != nil {
-			if _, ok := fc.(*ast.TextBlock); !ok {
+			if _, ok := fc.(*ctransformer.TextBlock); !ok {
 				_ = w.WriteByte('\n')
+			} else {
+				// A tight block writes nothing of its own to open with.
+				_, _ = w.WriteString(taskMarker(fc))
 			}
 		}
 	} else {

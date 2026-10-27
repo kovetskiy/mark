@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/v2/ast"
 	"golang.org/x/net/html"
 )
 
@@ -223,7 +223,7 @@ func coalesceInlineDetails(node ast.Node, raw []byte, source []byte) ([]byte, []
 	var folded []ast.Node
 	for sib := node.NextSibling(); sib != nil; sib = sib.NextSibling() {
 		switch sib.(type) {
-		case *ast.RawHTML, *ast.Text, *ast.String:
+		case *ast.RawHTML, *ast.Text, *String:
 		default:
 			return raw, nil
 		}
