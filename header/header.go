@@ -156,9 +156,12 @@ func (h *Header) compile(rendered string, cfg types.MarkConfig) (string, []attac
 	cfg = compileConfig(cfg)
 
 	// The configuration is part of the key because Render is handed each
-	// document's. compileConfig has cleared its functions, so this prints only
-	// values.
-	key := fmt.Sprintf("%#v\x00%s", cfg, rendered)
+	// document's. compileConfig has cleared its functions, and the browser and
+	// engine are left out because they draw what the rest decides, so the key
+	// prints only values.
+	keyed := cfg
+	keyed.Browser, keyed.Mermaid = nil, nil
+	key := fmt.Sprintf("%#v\x00%s", keyed, rendered)
 
 	if key != h.lastKey {
 		h.compiles++

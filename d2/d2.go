@@ -96,7 +96,13 @@ func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height
 		nil
 }
 
-func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
+// ProcessD2 draws a diagram as a PNG, rasterised in browser.
+func ProcessD2(browser *chrome.Browser, title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
+	// Before the layout, which can take seconds, rather than after it.
+	if browser == nil {
+		return attachment.Attachment{}, chrome.ErrNoBrowser
+	}
+
 	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
@@ -109,7 +115,7 @@ func ProcessD2(title string, d2Diagram []byte, scale float64) (attachment.Attach
 	log.Debug().Msgf("Rendering: %q", title)
 	// d2 nests the diagram in an outer svg, so the inner one is what to
 	// screenshot: the outer one carries the padding.
-	pngBytes, width, height, err := chrome.PNGFromSVG(out, `document.querySelector("svg > svg")`, scale)
+	pngBytes, width, height, err := browser.PNGFromSVG(out, `document.querySelector("svg > svg")`, scale)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -424,12 +430,3 @@ type bundleLogger struct{}
 func (bundleLogger) Debug(message string) { log.Debug().Msg(message) }
 func (bundleLogger) Info(message string)  { log.Info().Msg(message) }
 func (bundleLogger) Error(message string) { log.Error().Msg(message) }
-
-// Cleanup shuts down the browser this package renders through.
-//
-// It is kept here as well as in chrome/ because the tests in this package and
-// in markdown/ call it by name, and because a caller that only knows it renders
-// diagrams should not have to know which package owns the browser.
-func Cleanup() {
-	chrome.Cleanup()
-}

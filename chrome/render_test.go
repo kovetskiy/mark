@@ -1,7 +1,10 @@
 package chrome
 
 import (
+	"context"
+	"fmt"
 	"math"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,48 +112,128 @@ func TestRasterBoundsRefusalIsRecognisable(t *testing.T) {
 		"the sentinel is for errors.Is, not for the reader")
 }
 
-// TestContextReplacesADeadBrowser: chromedp cancels the very context it handed
+// TestStartReplacesADeadBrowser: chromedp cancels the very context it handed
 // back when it loses its connection to the browser, so once Chrome dies the
-// singleton is a context that is already done. It was handed out anyway, on a
-// nil check alone, and every render for the rest of the run failed with a bare
+// Browser holds a context that is already done. Handed out on a nil check
+// alone, every render for the rest of the run would fail with a bare
 //
 //	context canceled
 //
-// naming neither the browser nor the crash -- and it never came right, because
-// nothing ever started another one.
-func TestContextReplacesADeadBrowser(t *testing.T) {
-	t.Cleanup(Cleanup)
+// naming neither the browser nor the crash -- and it would never come right,
+// because nothing would start another one.
+func TestStartReplacesADeadBrowser(t *testing.T) {
+	browser := NewBrowser()
+	t.Cleanup(browser.Close)
 
-	first, err := Context()
+	first, err := browser.start()
 	require.NoError(t, err)
 	require.NoError(t, first.Err())
 
 	// What losing the browser looks like from in here: the context is
-	// cancelled, and nothing tidies the singleton up, because whatever died did
-	// not go through Cleanup.
-	browserMutex.Lock()
-	browserCancel()
-	browserMutex.Unlock()
+	// cancelled, and nothing tidies the Browser up, because whatever died did
+	// not go through Close.
+	browser.mu.Lock()
+	browser.cancel()
+	browser.mu.Unlock()
 
 	require.Error(t, first.Err(), "the shared context is done")
 
-	second, err := Context()
+	second, err := browser.start()
 	require.NoError(t, err)
 
 	assert.NoError(t, second.Err(), "a live browser rather than the dead one")
 	assert.NotSame(t, first, second)
 }
 
-// TestContextReturnsTheSameLiveBrowser is the other half: a browser that is
+// TestStartReturnsTheSameLiveBrowser is the other half: a browser that is
 // still working is still shared, and is not relaunched per diagram.
-func TestContextReturnsTheSameLiveBrowser(t *testing.T) {
-	t.Cleanup(Cleanup)
+func TestStartReturnsTheSameLiveBrowser(t *testing.T) {
+	browser := NewBrowser()
+	t.Cleanup(browser.Close)
 
-	first, err := Context()
+	first, err := browser.start()
 	require.NoError(t, err)
 
-	second, err := Context()
+	second, err := browser.start()
 	require.NoError(t, err)
 
 	assert.Same(t, first, second)
+}
+
+func TestBrowserStartsOnlyWhenUsed(t *testing.T) {
+	browser := NewBrowser()
+	browser.Close()
+
+	assert.Nil(t, browser.ctx, "closing a browser nothing used starts nothing")
+}
+
+func TestClosedBrowserRefusesToRender(t *testing.T) {
+	browser := NewBrowser()
+	browser.Close()
+
+	_, err := browser.start()
+	assert.Error(t, err)
+}
+
+// TestRenderInterruptedByCloseSaysSo: Close cancels the context a render in
+// flight is using, and the failure that render returns should name Close
+// rather than read as a bare "context canceled".
+func TestRenderInterruptedByCloseSaysSo(t *testing.T) {
+	browser := NewBrowser()
+	ctx, cancel := context.WithCancel(context.Background())
+	browser.ctx, browser.cancel = ctx, cancel
+
+	assert.Equal(t, context.DeadlineExceeded, browser.failed(ctx, context.DeadlineExceeded),
+		"a failure Close had no part in is returned as it is")
+
+	browser.ctx, browser.cancel = ctx, cancel
+	browser.Close()
+
+	err := browser.failed(ctx, context.Canceled)
+	require.ErrorIs(t, err, errClosed)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestNilBrowserSaysSo(t *testing.T) {
+	var browser *Browser
+
+	_, _, _, err := browser.PNGFromSVG([]byte("<svg/>"), "svg", 1)
+	assert.ErrorIs(t, err, ErrNoBrowser)
+
+	browser.Close()
+}
+
+// TestConcurrentRendersEachGetTheirOwnPicture: every render navigates the
+// browser's one tab, so two at once could measure or capture the other's SVG.
+func TestConcurrentRendersEachGetTheirOwnPicture(t *testing.T) {
+	browser := NewBrowser()
+	t.Cleanup(browser.Close)
+
+	const renders = 8
+
+	var wg sync.WaitGroup
+
+	widths := make([]int64, renders)
+	errs := make([]error, renders)
+
+	for i := range renders {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			svg := fmt.Sprintf(
+				`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="10"><rect width="100%%" height="100%%"/></svg>`,
+				20+10*i,
+			)
+			_, widths[i], _, errs[i] = browser.PNGFromSVG([]byte(svg), "document.querySelector('svg')", 1)
+		}()
+	}
+
+	wg.Wait()
+
+	for i := range renders {
+		require.NoError(t, errs[i])
+		assert.Equal(t, int64(20+10*i), widths[i], "render %d", i)
+	}
 }

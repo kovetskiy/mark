@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,7 +92,7 @@ func TestExtractD2Image(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ProcessD2(tt.name, tt.markdown, tt.scale)
+			got, err := ProcessD2(browser, tt.name, tt.markdown, tt.scale)
 			if !tt.wantErr(t, err, fmt.Sprintf("processD2(%v, %v)", tt.name, string(tt.markdown))) {
 				return
 			}
@@ -163,7 +164,7 @@ func TestProcessD2SVGAndPNGAreDifferentAttachments(t *testing.T) {
 	svg, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0, false)
 	require.NoError(t, err)
 
-	png, err := ProcessD2("example", []byte(diagram), 1.0)
+	png, err := ProcessD2(browser, "example", []byte(diagram), 1.0)
 	require.NoError(t, err)
 
 	assert.NotEqual(t, svg.Checksum, png.Checksum)
@@ -344,4 +345,10 @@ func TestProcessD2FlattensASlashInTheTitle(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "Auth_Login.svg", got.Filename)
+}
+
+// A PNG with no browser to draw it in is refused before the layout is done.
+func TestProcessD2WithoutABrowser(t *testing.T) {
+	_, err := ProcessD2(nil, "nothing", []byte("a -> b"), 1)
+	assert.ErrorIs(t, err, chrome.ErrNoBrowser)
 }

@@ -18,49 +18,53 @@ type ParentInfo struct {
 	Type  string // "page" or "folder"
 }
 
-// Process-wide cache of folders created or found during a run, so that files
-// sharing a folder ancestry do not each re-resolve it.
+// FolderCache remembers the folders a run has created or found, so that files
+// sharing a folder ancestry do not each resolve it again.
 //
-// The mutex is not optional even though mark currently syncs files
-// sequentially: the map is package state, so a caller using the library from
-// more than one goroutine -- or any future move to parallel file processing --
-// would otherwise corrupt it, and an unsynchronised map write is a hard
-// runtime throw rather than a subtle wrong answer.
-var (
-	createdFolderCache = map[string]string{}
-	createdFolderMutex sync.RWMutex
-)
+// It is keyed by space, parent and title, with no notion of which Confluence
+// it came from, so one cache serves one run: a second run, against another
+// instance even, would resolve folders to ids the first saw, and a folder
+// renamed or deleted in between would never be looked up again.
+//
+// Safe for concurrent use, because an unsynchronised map write is a hard
+// runtime throw rather than a wrong answer. A nil cache remembers nothing.
+type FolderCache struct {
+	mu  sync.RWMutex
+	ids map[string]string
+}
 
-// ResetFolderCache empties the folder cache.
-//
-// The cache is package-level and keyed only by space, parent and title, with no
-// notion of which Confluence it came from. That is fine within one run and
-// wrong across two: Run is a public entry point, so a process can publish twice
-// -- to different instances, even -- and the second would resolve folders to
-// ids the first saw. It also means a folder renamed or deleted between runs is
-// never looked up again.
-//
-// Run calls this before it starts, so a run never inherits another's answers.
-func ResetFolderCache() {
-	createdFolderMutex.Lock()
-	defer createdFolderMutex.Unlock()
-	clear(createdFolderCache)
+// NewFolderCache returns an empty cache, for one run. The zero value is one
+// too.
+func NewFolderCache() *FolderCache {
+	return &FolderCache{}
 }
 
 func folderCacheKey(space, contextID, title string) string {
 	return space + "\x00" + contextID + "\x00" + title
 }
 
-func cacheFolder(space, contextID, title, id string) {
-	createdFolderMutex.Lock()
-	defer createdFolderMutex.Unlock()
-	createdFolderCache[folderCacheKey(space, contextID, title)] = id
+func (c *FolderCache) store(space, contextID, title, id string) {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.ids == nil {
+		c.ids = map[string]string{}
+	}
+	c.ids[folderCacheKey(space, contextID, title)] = id
 }
 
-func cachedFolderID(space, contextID, title string) (string, bool) {
-	createdFolderMutex.RLock()
-	defer createdFolderMutex.RUnlock()
-	id, ok := createdFolderCache[folderCacheKey(space, contextID, title)]
+func (c *FolderCache) lookup(space, contextID, title string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	id, ok := c.ids[folderCacheKey(space, contextID, title)]
 	return id, ok
 }
 
@@ -189,10 +193,13 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
+//
+// cache holds the folders the run has already resolved; nil resolves every one.
 func EnsureFolderAncestry(
 	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
+	cache *FolderCache,
 	space string,
 	folders []string,
 	anchorPageID *string,
@@ -223,7 +230,7 @@ func EnsureFolderAncestry(
 			underID = *anchorPageID
 		}
 
-		if id, ok := cachedFolderID(space, underID, title); ok {
+		if id, ok := cache.lookup(space, underID, title); ok {
 			folder, err = api.GetFolderByID(ctx, id)
 		} else {
 			folder, err = resolveFolder(ctx, api, dryRun, space, title, underID, anchorPageID)
@@ -280,7 +287,7 @@ func EnsureFolderAncestry(
 			}
 		}
 
-		cacheFolder(space, underID, title, folder.ID)
+		cache.store(space, underID, title, folder.ID)
 		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
@@ -342,7 +349,7 @@ func EnsureFolderAncestry(
 				// hit into a hard failure. A create that failed for a real
 				// reason leaves nothing to find, and the original error is what
 				// gets reported.
-				if id, ok := cachedFolderID(space, underID, title); ok {
+				if id, ok := cache.lookup(space, underID, title); ok {
 					folder, err = api.GetFolderByID(ctx, id)
 				} else {
 					folder, err = resolveFolder(ctx, api, dryRun, space, title, underID, anchorPageID)
@@ -367,7 +374,7 @@ func EnsureFolderAncestry(
 			} else if anchorPageID != nil {
 				underID = *anchorPageID
 			}
-			cacheFolder(space, underID, title, folder.ID)
+			cache.store(space, underID, title, folder.ID)
 
 			if tracker != nil {
 				key := folderPathKey(anchorPageID, folders, firstNew+offset)
@@ -408,6 +415,7 @@ func EnsureMixedAncestry(
 	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
+	cache *FolderCache,
 	tracker AncestryTracker,
 	space string,
 	folders []string,
@@ -451,7 +459,7 @@ func EnsureMixedAncestry(
 		return EnsureAncestry(ctx, dryRun, api, space, pages, tracker)
 	}
 
-	folderParent, err := EnsureFolderAncestry(ctx, dryRun, api, space, folders, anchorPageID, tracker)
+	folderParent, err := EnsureFolderAncestry(ctx, dryRun, api, cache, space, folders, anchorPageID, tracker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder hierarchy: %w", err)
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/d2"
 	"github.com/kovetskiy/mark/v16/internal/syntax"
-	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 
@@ -130,7 +129,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			)
 
 		case "png", "":
-			attachment, err = d2.ProcessD2(title, lval, r.MarkConfig.D2Scale)
+			attachment, err = d2.ProcessD2(r.MarkConfig.Browser, title, lval, r.MarkConfig.D2Scale)
 
 		default:
 			// Run checks this, but CompileMarkdown takes a types.MarkConfig
@@ -200,13 +199,13 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 		switch {
 		case r.MarkConfig.MermaidOutput == "svg" && r.MarkConfig.MermaidBundle:
-			att, err = mermaid.ProcessMermaidWithBundle(title, lval, r.MarkConfig.MermaidScale)
+			att, err = r.MarkConfig.Mermaid.ProcessMermaidWithBundle(title, lval, r.MarkConfig.MermaidScale)
 
 		case r.MarkConfig.MermaidOutput == "svg":
-			att, err = mermaid.ProcessMermaidSVG(title, lval, r.MarkConfig.MermaidScale)
+			att, err = r.MarkConfig.Mermaid.ProcessMermaidSVG(title, lval, r.MarkConfig.MermaidScale)
 
 		case r.MarkConfig.MermaidOutput == "png", r.MarkConfig.MermaidOutput == "":
-			att, err = mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
+			att, err = r.MarkConfig.Mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
 
 		default:
 			// Run checks this, but CompileMarkdown takes a types.MarkConfig

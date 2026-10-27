@@ -280,8 +280,6 @@ func TestValidateAncestryIgnoresCase(t *testing.T) {
 // inside it went with it.
 func TestDryRunDoesNotMoveAFolder(t *testing.T) {
 	ctx := t.Context()
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	anchor := server.AddPage("DOCS", "Anchor", "page", "")
 
@@ -299,7 +297,7 @@ func TestDryRunDoesNotMoveAFolder(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := page.EnsureFolderAncestry(ctx, true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	_, err := page.EnsureFolderAncestry(ctx, true, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &anchor.ID, nil)
 	require.NoError(t, err)
 
 	assert.False(t, moved.Load(), "a dry run must not move anything")
@@ -317,8 +315,6 @@ func TestDryRunDoesNotMoveAFolder(t *testing.T) {
 // going out, and whatever it answers is beside the point here.
 func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
 	ctx := t.Context()
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	anchor := server.AddPage("DOCS", "Anchor", "page", "")
 	server.AddFolder("DOCS", "Manuals", "", "")
@@ -333,7 +329,7 @@ func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, _ = page.EnsureFolderAncestry(ctx, false, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	_, _ = page.EnsureFolderAncestry(ctx, false, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &anchor.ID, nil)
 
 	assert.True(t, moved.Load(), "a real run asks to move the folder")
 }
@@ -343,13 +339,11 @@ func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
 // run finds the folders beneath it rather than standing in for ones a real run
 // would create.
 func TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle(t *testing.T) {
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	anchor := server.AddPage("DOCS", "My Parent", "page", "")
 	folder := server.AddFolder("DOCS", "Manuals", anchor.ID, "page")
 
-	parent, err := page.EnsureMixedAncestry(t.Context(), true, api, nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
+	parent, err := page.EnsureMixedAncestry(t.Context(), true, api, page.NewFolderCache(), nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 
@@ -364,8 +358,6 @@ func TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle(t *testing.T) {
 // the instance answered in another language.
 func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 	ctx := t.Context()
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 
@@ -391,7 +383,7 @@ func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 		return 0, "", false
 	})
 
-	parent, err := page.EnsureFolderAncestry(ctx, false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
+	parent, err := page.EnsureFolderAncestry(ctx, false, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &root.ID, nil)
 	require.NoError(t, err, "a folder that already exists is not a failure")
 	require.NotNil(t, parent)
 	assert.Equal(t, "Manuals", parent.Title)
@@ -404,8 +396,6 @@ func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 // title, so there is nothing to find and the create's own error stands.
 func TestFolderCreateFailureIsStillReported(t *testing.T) {
 	ctx := t.Context()
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 
@@ -417,7 +407,7 @@ func TestFolderCreateFailureIsStillReported(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := page.EnsureFolderAncestry(ctx, false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
+	_, err := page.EnsureFolderAncestry(ctx, false, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &root.ID, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `error creating folder with title "Manuals"`)
 	assert.Contains(t, err.Error(), "403", "the reason the create was refused has to survive")
@@ -432,8 +422,6 @@ func TestFolderCreateFailureIsStillReported(t *testing.T) {
 // was already exactly as declared.
 func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
 	ctx := t.Context()
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	root := server.AddPage("DOCS", "Root", "page", "")
 
@@ -450,7 +438,7 @@ func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
 
 	parent, err := page.EnsureFolderAncestry(
 		ctx,
-		false, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID, nil,
+		false, api, page.NewFolderCache(), "DOCS", []string{"Manuals", "Guides"}, &root.ID, nil,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
@@ -465,8 +453,6 @@ func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
 // find and move.
 func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 	ctx := t.Context()
-	page.ResetFolderCache()
-
 	api, server := newAPI(t)
 	anchor := server.AddPage("DOCS", "Anchor", "page", "")
 	elsewhere := server.AddPage("DOCS", "Elsewhere", "page", "")
@@ -476,7 +462,7 @@ func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 
 	// A dry run, because the fake does not move folders; it reports the move
 	// and hands back the folder it would have moved.
-	parent, err := page.EnsureFolderAncestry(ctx, true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	parent, err := page.EnsureFolderAncestry(ctx, true, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &anchor.ID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, atRoot.ID, parent.ID)

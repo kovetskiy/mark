@@ -66,14 +66,20 @@ const defaultScale = 2.0
 // The name is derived from the formula rather than given by the author: math
 // has no equivalent of a diagram's title, and two identical formulas on a page
 // should be one attachment. display selects the same distinction TeX makes --
-// an inline formula is set compactly, a display one is given room.
-func Process(tex string, display bool, format string, scale float64) (attachment.Attachment, error) {
+// an inline formula is set compactly, a display one is given room. browser
+// rasterises a PNG; an SVG needs none, and browser may then be nil.
+func Process(browser *chrome.Browser, tex string, display bool, format string, scale float64) (attachment.Attachment, error) {
 	switch format {
 	case "":
 		format = FormatPNG
 	case FormatSVG, FormatPNG:
 	default:
 		return attachment.Attachment{}, fmt.Errorf("unknown math format %q, expected %q or %q", format, FormatSVG, FormatPNG)
+	}
+
+	// Before the formula is typeset rather than after.
+	if format == FormatPNG && browser == nil {
+		return attachment.Attachment{}, chrome.ErrNoBrowser
 	}
 
 	// Zero is a caller that never set the scale, and gets the default. Anything
@@ -121,7 +127,7 @@ func Process(tex string, display bool, format string, scale float64) (attachment
 
 	contents := []byte(svg)
 	if format == FormatPNG {
-		contents, err = rasterise(svg, width, height, scale)
+		contents, err = rasterise(browser, svg, width, height, scale)
 		if err != nil {
 			return attachment.Attachment{}, fmt.Errorf("unable to rasterise formula %q: %w", tex, err)
 		}
@@ -192,10 +198,10 @@ func sizeInPixels(svg string) (width, height string, err error) {
 // the formula asked for, with more pixels in it for a display that can use
 // them. A formula is small enough that a 1:1 rasterisation looks ragged beside
 // the text it sits in.
-func rasterise(svg, width, height string, scale float64) ([]byte, error) {
+func rasterise(browser *chrome.Browser, svg, width, height string, scale float64) ([]byte, error) {
 	sized := svgSize.ReplaceAllString(svg, "${1}"+width+"${3}"+height+"${5}")
 
-	png, _, _, err := chrome.PNGFromSVG([]byte(sized), `document.querySelector("svg")`, scale)
+	png, _, _, err := browser.PNGFromSVG([]byte(sized), `document.querySelector("svg")`, scale)
 	if err != nil {
 		return nil, err
 	}

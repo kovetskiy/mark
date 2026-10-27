@@ -337,6 +337,7 @@ func TestCompileMarkdownMath(t *testing.T) {
 				MathFormat:    tt.format,
 				DropFirstH1:   false,
 				StripNewlines: false,
+				Browser:       mark.TestBrowser,
 				Features:      []string{"mkdocsadmonitions", "mention", "math"},
 			}
 
@@ -362,7 +363,7 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 		assert.NoError(t, err)
 
 		actual, attachments, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/math.md",
-			types.MarkConfig{Features: []string{"math"}})
+			types.MarkConfig{Browser: mark.TestBrowser, Features: []string{"math"}})
 		assert.NoError(t, err)
 
 		if !assert.Len(t, attachments, 1) {

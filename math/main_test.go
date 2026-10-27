@@ -7,13 +7,13 @@ import (
 	"github.com/kovetskiy/mark/v16/chrome"
 )
 
-// TestMain shuts down the browser the PNG tests start.
-//
-// Rendering a formula as PNG rasterises it through the same headless Chrome the
-// diagram renderers use, and that browser outlives the test that started it, so
-// it is closed here rather than left orphaned. See the note on d2's TestMain.
+// browser is the one the PNG tests rasterise in, started by the first.
+var browser = chrome.NewBrowser()
+
+// TestMain shuts down the browser the PNG tests start, rather than leaving it
+// orphaned. See the note on d2's TestMain.
 func TestMain(m *testing.M) {
 	code := m.Run()
-	chrome.Cleanup()
+	browser.Close()
 	os.Exit(code)
 }

@@ -22,7 +22,7 @@ func TestDiagramWithoutTitleHasNoCaption(t *testing.T) {
 
 	out, attachments, err := CompileMarkdown(
 		[]byte("```d2\na -> b\n```\n"),
-		std, "test.md", types.MarkConfig{Features: []string{"d2"}, D2Scale: 1.0},
+		std, "test.md", types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 	)
 	require.NoError(t, err)
 
@@ -46,7 +46,7 @@ func TestDiagramWithTitleKeepsCaption(t *testing.T) {
 
 	out, attachments, err := CompileMarkdown(
 		[]byte("```d2 title My Diagram\na -> b\n```\n"),
-		std, "test.md", types.MarkConfig{Features: []string{"d2"}, D2Scale: 1.0},
+		std, "test.md", types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 	)
 	require.NoError(t, err)
 
@@ -65,11 +65,11 @@ func TestDiagramLeavesTheTextAfterItAlone(t *testing.T) {
 	}{
 		"d2": {
 			"```d2\na -> b\n```\n\nNext paragraph here.\n",
-			types.MarkConfig{Features: []string{"d2"}, D2Scale: 1.0},
+			types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 		},
 		"mermaid": {
 			"```mermaid\ngraph LR; A-->B\n```\n\nNext paragraph here.\n",
-			types.MarkConfig{Features: []string{"mermaid"}, MermaidScale: 1.0},
+			types.MarkConfig{Mermaid: testMermaid, Features: []string{"mermaid"}, MermaidScale: 1.0},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

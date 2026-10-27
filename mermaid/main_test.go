@@ -5,11 +5,21 @@ import (
 	"testing"
 )
 
-// TestMain shuts the render engine down after the package's tests; see the
-// note on d2's TestMain for why this is needed. The engine holds a Chrome
-// instance in a package-level singleton that only Cleanup cancels.
+// engine is the chrome engine the package's tests draw with, started by the
+// first of them.
+var engine = func() *Engine {
+	e, err := NewEngine(EngineChrome)
+	if err != nil {
+		panic(err)
+	}
+
+	return e
+}()
+
+// TestMain shuts the engine down after the package's tests; see the note on
+// d2's TestMain for why this is needed.
 func TestMain(m *testing.M) {
 	code := m.Run()
-	Cleanup()
+	engine.Close()
 	os.Exit(code)
 }

@@ -419,19 +419,14 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 	}
 }
 
-// TestProcessFileUsesTheMermaidEngine: the engine is a process-wide choice
-// that Run made and ProcessFile did not, so a library caller asking for merman
-// got whichever engine happened to be current -- chrome, unless something else
-// in the process had run first.
+// TestProcessFileUsesTheMermaidEngine: a library caller asking ProcessFile for
+// merman gets merman, not whichever engine some earlier run chose.
 func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
 	var logged bytes.Buffer
 
 	restore := log.Logger
 	log.Logger = zerolog.New(&logged)
-	t.Cleanup(func() {
-		log.Logger = restore
-		require.NoError(t, mermaid.UseEngine(""))
-	})
+	t.Cleanup(func() { log.Logger = restore })
 
 	_, api, file, config := processFileFixture(t, "Body.\n")
 	config.MermaidEngine = mermaid.EngineMerman
