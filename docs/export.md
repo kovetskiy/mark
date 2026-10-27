@@ -44,7 +44,12 @@ The document starts with the headers that name the page, followed by its body:
 ```
 
 `Parent` headers are the page's ancestry below the space's home page, where mark
-starts when it resolves them. A blog post gets `Type: blogpost` instead.
+starts when it resolves them. A page in a folder on Cloud gets a `Folder`
+header for each folder directly above it, beneath its `Parent` headers, and a
+folder right below the home page gets the home page as its `Parent`. A folder
+higher up, with a page between it and the exported one, is left out with a
+warning: mark's headers put folders beneath parents, not above them. A blog
+post gets `Type: blogpost` instead.
 `Content-Appearance` is left out for a full-width page, which is what mark
 publishes by default, and `Emoji` is there when the page has a title emoji.
 Labels are written in alphabetical order.
@@ -120,9 +125,8 @@ off by default.
 
 The whole tree is read, and every document's path checked, before anything is
 written: a document already there stops the export unless `--overwrite` is
-given, and so does a folder anywhere in the tree, since a page's `Parent`
-headers leave folders out and the pages inside one would be published back
-outside it. Content that is not a page, such as a whiteboard, is skipped with a
+given, and so does a folder anywhere in the tree, since the export does not
+list a folder's pages. Content that is not a page, such as a whiteboard, is skipped with a
 warning. `--attachments-dir` does not apply, and the Markdown cannot go to
 standard output.
 
@@ -185,8 +189,9 @@ same:
   width).
 * Inline comment markers are left out: the comments belong to Confluence, and
   `--preserve-comments` puts them back on publish. So are XML comments.
-* A page in a folder, or not below its space's home page, is published below the
-  home page.
+* A page not below its space's home page is published below the home page, and
+  one below a folder with a page between them is published below that page
+  without naming the folder.
 * Inline content that stands without a paragraph around it, next to other
   content, comes back inside one, and a paragraph in a table cell comes back as
   the cell's text.

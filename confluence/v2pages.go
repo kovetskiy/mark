@@ -375,6 +375,53 @@ func (api *API) ParentOfV2(id string) (string, string, error) {
 	return content.ParentID, content.ParentType, nil
 }
 
+// Ancestor is a page or folder above another, as AncestryV2 lists it. Type is
+// "page" or "folder".
+type Ancestor struct {
+	ID, Title, Type string
+}
+
+// AncestryV2 is the chain of pages and folders above a page or blogpost, root
+// first, read from v2 a level at a time. Unlike v1's ancestors it keeps the
+// folders. Cloud only: Server and Data Center serve no v2.
+func (api *API) AncestryV2(id string) ([]Ancestor, error) {
+	content, pageType, err := api.lookupContentV2(id, false)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read the parent of %s: %w", id, err)
+	}
+	api.contentTypesV2.Store(id, pageType)
+
+	var chain []Ancestor
+	parentID, parentType := content.ParentID, content.ParentType
+	for parentID != "" && len(chain) < maxAncestorDepth {
+		switch parentType {
+		case "folder":
+			folder, err := api.GetFolderByID(parentID)
+			if err != nil {
+				return nil, fmt.Errorf("unable to read folder %s above %s: %w", parentID, id, err)
+			}
+			if folder == nil {
+				return nil, fmt.Errorf("folder %s above %s is not there", parentID, id)
+			}
+			chain = append(chain, Ancestor{ID: folder.ID, Title: folder.Title, Type: "folder"})
+			parentID, parentType = folder.ParentID, folder.ParentType
+		case "", "page":
+			parent, err := api.readContentV2("pages", parentID, false)
+			if err != nil {
+				return nil, fmt.Errorf("unable to read page %s above %s: %w", parentID, id, err)
+			}
+			chain = append(chain, Ancestor{ID: parent.ID, Title: parent.Title, Type: "page"})
+			parentID, parentType = parent.ParentID, parent.ParentType
+		default:
+			return nil, fmt.Errorf("%s %s above %s is neither a page nor a folder", parentType, parentID, id)
+		}
+	}
+
+	slices.Reverse(chain)
+
+	return chain, nil
+}
+
 // spaceKeyV2 is the key of the space with this v2 id.
 func (api *API) spaceKeyV2(spaceID string) (string, error) {
 	var result struct {
