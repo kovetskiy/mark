@@ -48,6 +48,16 @@ func (w *inlineWriter) write(s string) {
 	w.afterBreak = false
 }
 
+// writeLink writes a link, escaping a "!" just before it, which would make it
+// an image.
+func (w *inlineWriter) writeLink(link string) {
+	if s := w.b.String(); strings.HasSuffix(s, "!") && !strings.HasSuffix(s, `\!`) {
+		w.b.Reset()
+		w.b.WriteString(s[:len(s)-1] + `\!`)
+	}
+	w.write(link)
+}
+
 func (w *inlineWriter) lastRune() rune {
 	s := w.b.String()
 	if s == "" {
@@ -307,7 +317,21 @@ func (w *inlineWriter) link(n *node) {
 	title := n.attr("title")
 	text := n.textContent()
 
-	if title == "" && len(n.elements()) == 0 && !strings.ContainsAny(href, " <>\n") {
+	dest := destination(href)
+	var path, pageTitle string
+	var exported bool
+	if w.c.opts.PageURLPath != nil {
+		path, pageTitle, exported = w.c.opts.PageURLPath(href)
+	}
+	if exported {
+		dest = destination(pathDestination(path))
+		// A link showing its own address would go on showing the old URL; it
+		// shows the page's title instead.
+		if strings.TrimSuffix(text, "/") == strings.TrimSuffix(href, "/") && len(n.elements()) == 0 && pageTitle != "" {
+			w.writeLink("[" + escapeInline(pageTitle, inlineOptions{table: w.ctx.table}) + "](" + dest + linkTitle(title) + ")")
+			return
+		}
+	} else if title == "" && len(n.elements()) == 0 && !strings.ContainsAny(href, " <>\n") {
 		if (strings.HasPrefix(href, "https://") || strings.HasPrefix(href, "http://")) && text == href {
 			w.write("<" + href + ">")
 			return
@@ -321,7 +345,7 @@ func (w *inlineWriter) link(n *node) {
 	sub := w.c.inline(w.ctx)
 	sub.nodes(n.children)
 
-	w.write("[" + strings.TrimSpace(sub.b.String()) + "](" + destination(href) + linkTitle(title) + ")")
+	w.writeLink("[" + strings.TrimSpace(sub.b.String()) + "](" + dest + linkTitle(title) + ")")
 }
 
 // destination writes a link destination: as it is where it can be, and in
@@ -439,7 +463,7 @@ func (w *inlineWriter) literalLinkText(n *node, fallback string) (string, bool) 
 
 func (w *inlineWriter) acLink(n *node) {
 	if text, ok := w.acLinkMarkdown(n); ok {
-		w.write(text)
+		w.writeLink(text)
 		return
 	}
 

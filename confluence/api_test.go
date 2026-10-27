@@ -230,7 +230,7 @@ func TestIsCloudHost(t *testing.T) {
 		"deep.nested.atlassian.net", // more than one label deep
 	}
 	for _, host := range cloud {
-		assert.True(t, isCloudHost(host), "%q should be recognised as Cloud", host)
+		assert.True(t, IsCloudHost(host), "%q should be recognised as Cloud", host)
 	}
 
 	notCloud := []string{
@@ -243,7 +243,7 @@ func TestIsCloudHost(t *testing.T) {
 		"",
 	}
 	for _, host := range notCloud {
-		assert.False(t, isCloudHost(host), "%q should not be recognised as Cloud", host)
+		assert.False(t, IsCloudHost(host), "%q should not be recognised as Cloud", host)
 	}
 }
 

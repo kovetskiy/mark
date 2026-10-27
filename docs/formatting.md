@@ -238,25 +238,24 @@ well and then draws differently. The version is in `mermaid/merman-version.txt`,
 which mark embeds and which the Dockerfile and CI both read, so it is written
 down once.
 
-The published Docker image carries merman on `amd64`, which is where it
-publishes a Linux build; an `arm64` image draws with Chrome.
+The published Docker image carries merman on `amd64` and `arm64`.
 
 ## Render Mermaid Diagrams via the Confluence Macro
 
-With `--mermaid-output=macro` and the `mermaid` feature, code blocks marked as
-"mermaid" are published as the Confluence macro named "mermaid-macro" instead of
-being drawn by mark. The source stays verbatim inside the macro, so the diagram
-is drawn by Confluence itself.
+With `--mermaid-output=macro`, code blocks marked as "mermaid" are published as
+the Confluence macro named "mermaid-macro" instead of being drawn by mark. The
+source stays verbatim inside the macro, so the diagram is drawn by Confluence
+itself.
 
 ```mermaid
 flowchart TD
 A[Start] --> B[End]
 ```
 
-This requires a Mermaid plugin to be installed in your Confluence instance --
-we use `org.anvard.atlassian.mermaid-plugin` (Mermaid Diagrams for Confluence);
-other plugins may use a different macro key, which `--mermaid-macro-name` names.
-The `mermaid` feature must also be enabled.
+This requires a Mermaid plugin to be installed in your Confluence instance -- we
+use `org.anvard.atlassian.mermaid-plugin` (Mermaid Diagrams for Confluence). The
+`mermaid` feature is on by default; a `--features` list that omits it keeps the
+fence a plain code block.
 
 A plugin that declares its macro under a different key is named with
 `--mermaid-macro-name`:

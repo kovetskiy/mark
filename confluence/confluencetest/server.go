@@ -49,6 +49,10 @@ type Page struct {
 	UpdateRestrictedTo []string
 	ReadRestrictedTo   []string
 	RestrictedGroups   map[string][]string
+
+	// handVersion is the version EditPage made last, which somebody other
+	// than the current user wrote.
+	handVersion int64
 }
 
 // Status is what v1 reports for the page and, more to the point, what it
@@ -143,6 +147,10 @@ type Server struct {
 	// username -- of everyone watching it.
 	watchers map[string]map[string]bool
 
+	// watchOnWrite makes whoever writes to a page watch it; see
+	// SetWatchOnWrite.
+	watchOnWrite bool
+
 	// dataCenter makes the fake answer as Server or Data Center; see
 	// SetDataCenter.
 	dataCenter bool
@@ -155,6 +163,13 @@ type Server struct {
 
 	// failHeaders are added to every response a FailFunc handles.
 	failHeaders http.Header
+
+	// denied holds, for each space key, the operations the current user may
+	// not do there, as "operation targetType"; see Deny.
+	denied map[string]map[string]bool
+
+	// hideOperations leaves operations out of a space; see HideOperations.
+	hideOperations bool
 
 	// SiteBase is echoed as `_links.base` on content create/search responses
 	// when set. Empty omits the field so tests can still exercise the client's
@@ -172,6 +187,7 @@ func New(t *testing.T) *Server {
 		spaces:   map[string]*Space{},
 		comments: map[string][]InlineComment{},
 		watchers: map[string]map[string]bool{},
+		denied:   map[string]map[string]bool{},
 		nextID:   1000,
 		currentUser: User{
 			AccountID: "acct-current",
@@ -437,10 +453,7 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 	}
 
 	query := r.URL.Query()
-	user := s.currentUser.AccountID
-	if s.dataCenter {
-		user = s.currentUser.Username
-	}
+	user := s.currentWatcher()
 	switch {
 	case query.Get("accountId") != "" && !s.dataCenter:
 		user = query.Get("accountId")
@@ -458,10 +471,7 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 		if !checkXSRF(w, r) {
 			return
 		}
-		if s.watchers[pageID] == nil {
-			s.watchers[pageID] = map[string]bool{}
-		}
-		s.watchers[pageID][user] = true
+		s.addWatcher(pageID, user)
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
 		if !checkXSRF(w, r) {
@@ -472,6 +482,41 @@ func (s *Server) watch(w http.ResponseWriter, r *http.Request, pageID string) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// SetWatchOnWrite makes the fake do what Confluence does by default: whoever
+// creates, updates, moves or labels a page, or uploads a file to it, starts
+// watching it.
+func (s *Server) SetWatchOnWrite() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.watchOnWrite = true
+}
+
+// wroteTo makes the current user watch a page they wrote to, under
+// SetWatchOnWrite. The caller holds s.mu.
+func (s *Server) wroteTo(pageID string) {
+	if !s.watchOnWrite {
+		return
+	}
+	s.addWatcher(pageID, s.currentWatcher())
+}
+
+// currentWatcher is how the watchers record the current user: by accountId on
+// Cloud, by username on Server and Data Center. The caller holds s.mu.
+func (s *Server) currentWatcher() string {
+	if s.dataCenter {
+		return s.currentUser.Username
+	}
+	return s.currentUser.AccountID
+}
+
+// addWatcher makes user watch a page. The caller holds s.mu.
+func (s *Server) addWatcher(pageID, user string) {
+	if s.watchers[pageID] == nil {
+		s.watchers[pageID] = map[string]bool{}
+	}
+	s.watchers[pageID][user] = true
 }
 
 // SetDataCenter makes the fake answer as Confluence Server or Data Center: the
@@ -576,7 +621,37 @@ func (s *Server) EditPage(id, body string) {
 		p.Body = body
 		p.Version++
 		p.Message = "edited by hand"
+		p.handVersion = p.Version
 	}
+}
+
+// WritePage stands in for a write by the current user that a test lets land
+// on the side, such as an update still in flight when its answer was lost.
+func (s *Server) WritePage(id, body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p, ok := s.pages[id]; ok {
+		p.Body = body
+		p.Version++
+	}
+}
+
+// versionBy is who wrote a page's current version: somebody else for one
+// EditPage made, and the current user for any other.
+func (s *Server) versionBy(p *Page) map[string]any {
+	u := s.currentUser
+	if p.handVersion == p.Version {
+		u = User{AccountID: "acct-by-hand", UserKey: "key-by-hand", Username: "by-hand"}
+	}
+
+	by := map[string]any{}
+	for key, value := range map[string]string{"accountId": u.AccountID, "userKey": u.UserKey, "username": u.Username} {
+		if value != "" {
+			by[key] = value
+		}
+	}
+	return by
 }
 
 // Attachments returns the attachments stored for a page.
@@ -674,6 +749,7 @@ func (s *Server) pageJSON(p *Page, expand map[string]bool) map[string]any {
 		out["version"] = map[string]any{
 			"number":  p.Version,
 			"message": p.Message,
+			"by":      s.versionBy(p),
 		}
 	} else {
 		expandable["version"] = ""
@@ -956,6 +1032,7 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 				results = append(results, map[string]any{
 					"id":         sp.ID,
 					"key":        sp.Key,
+					"name":       sp.Key,
 					"homepageId": sp.HomepageID,
 				})
 			}
@@ -1046,6 +1123,10 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 				s.spaceV2ByID(w, spaceID)
 				return
 			}
+			if sub == "operations" && r.Method == http.MethodGet {
+				s.spaceOperationsV2(w, spaceID)
+				return
+			}
 		}
 		http.NotFound(w, r)
 	}
@@ -1063,6 +1144,25 @@ func (s *Server) spaceV2ByID(w http.ResponseWriter, spaceID string) {
 				"key":        sp.Key,
 				"homepageId": sp.HomepageID,
 			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with id " + spaceID})
+}
+
+// spaceOperationsV2 serves GET /spaces/{id}/operations.
+func (s *Server) spaceOperationsV2(w http.ResponseWriter, spaceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, sp := range s.spaces {
+		if sp.ID == spaceID {
+			out := map[string]any{}
+			if !s.hideOperations {
+				out["operations"] = s.operationsJSON(sp.Key)
+			}
+			writeJSON(w, http.StatusOK, out)
 			return
 		}
 	}
@@ -1310,6 +1410,7 @@ func (s *Server) moveContent(w http.ResponseWriter, r *http.Request, contentID, 
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "unknown position " + position})
 		return
 	}
+	s.wroteTo(p.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID})
 }
@@ -1369,6 +1470,7 @@ func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
 		refuse("unknown position " + query.Get("position"))
 		return
 	}
+	s.wroteTo(p.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"page": map[string]any{"id": p.ID, "title": p.Title},
@@ -1707,6 +1809,7 @@ func (s *Server) createContent(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pages[p.ID] = p
 	s.placeChild(p.ParentID, p.ID, "")
+	s.wroteTo(p.ID)
 	writeJSON(w, http.StatusOK, s.pageJSON(p, fullExpansion))
 }
 
@@ -1786,6 +1889,7 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		}
 		p.Version = payload.Version.Number
 		p.Message = payload.Version.Message
+		s.wroteTo(p.ID)
 		p.Body = payload.Body.Storage.Value
 		if payload.Title != "" {
 			p.Title = payload.Title
@@ -1818,6 +1922,51 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 	}
 }
 
+// spaceOperations are what the current user may do in every space, until
+// Deny takes one away.
+var spaceOperations = [][2]string{
+	{"read", "space"},
+	{"create", "page"},
+	{"create", "blogpost"},
+	{"create", "attachment"},
+	{"create", "comment"},
+	{"delete", "page"},
+	{"archive", "page"},
+	{"restrict_content", "space"},
+	{"administer", "space"},
+}
+
+// Deny takes an operation on a target type away from the current user in a
+// space: Deny("DOCS", "create", "page").
+func (s *Server) Deny(spaceKey, operation, targetType string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.denied[spaceKey] == nil {
+		s.denied[spaceKey] = map[string]bool{}
+	}
+	s.denied[spaceKey][operation+" "+targetType] = true
+}
+
+// HideOperations makes a space answer without operations, as a Confluence
+// that does not report them does.
+func (s *Server) HideOperations() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hideOperations = true
+}
+
+// operationsJSON is what the current user may do in a space. The caller
+// holds s.mu.
+func (s *Server) operationsJSON(spaceKey string) []map[string]any {
+	out := []map[string]any{}
+	for _, op := range spaceOperations {
+		if !s.denied[spaceKey][op[0]+" "+op[1]] {
+			out = append(out, map[string]any{"operation": op[0], "targetType": op[1]})
+		}
+	}
+	return out
+}
+
 func (s *Server) getSpace(w http.ResponseWriter, r *http.Request, key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1838,6 +1987,9 @@ func (s *Server) getSpace(w http.ResponseWriter, r *http.Request, key string) {
 	// The homepage is there only when expanded, and then with only what
 	// homepage.<property> asks of it.
 	expand := expansions(r)
+	if expand["operations"] && !s.hideOperations {
+		out["operations"] = s.operationsJSON(sp.Key)
+	}
 	if sp.HomepageID != "" && expand["homepage"] {
 		if hp, ok := s.pages[sp.HomepageID]; ok {
 			out["homepage"] = s.pageJSON(hp, nestedExpansions(expand, "homepage"))
@@ -1902,6 +2054,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 			ID: s.newID(), PageID: pageID, Filename: filename, Comment: comment, MinorEdit: minorEdit, Data: data,
 		}
 		s.attachments = append(s.attachments, a)
+		s.wroteTo(pageID)
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"_links": map[string]any{"context": "/wiki"},
@@ -1949,6 +2102,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 		found.Comment = comment
 		found.MinorEdit = minorEdit
 		found.Data = data
+		s.wroteTo(pageID)
 	}
 	s.mu.Unlock()
 
@@ -2388,6 +2542,7 @@ func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {
 				p.Labels = append(p.Labels, l.Name)
 			}
 		}
+		s.wroteTo(pageID)
 
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
@@ -2398,6 +2553,7 @@ func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {
 			}
 		}
 		p.Labels = kept
+		s.wroteTo(pageID)
 	}
 
 	labels := append([]string(nil), p.Labels...)
@@ -2616,8 +2772,9 @@ func (s *Server) contentJSONV2(p *Page, withBody bool) map[string]any {
 		"parentId":   p.ParentID,
 		"parentType": parentType,
 		"version": map[string]any{
-			"number":  p.Version,
-			"message": p.Message,
+			"number":   p.Version,
+			"message":  p.Message,
+			"authorId": s.versionBy(p)["accountId"],
 		},
 		"_links": s.pageLinks(p),
 	}
@@ -2807,6 +2964,7 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 		}
 		p.Version = payload.Version.Number
 		p.Message = payload.Version.Message
+		s.wroteTo(p.ID)
 		p.Body = payload.Body.Value
 		if payload.Title != "" {
 			p.Title = payload.Title
@@ -2876,6 +3034,7 @@ func (s *Server) createPageV2(w http.ResponseWriter, r *http.Request, pageType s
 	}
 	s.pages[p.ID] = p
 	s.placeChild(p.ParentID, p.ID, "")
+	s.wroteTo(p.ID)
 	// The version has to come back. Without it the caller computes the version
 	// it is superseding from zero, and its first update is rejected as stale.
 	writeJSON(w, http.StatusOK, s.contentJSONV2(p, false))

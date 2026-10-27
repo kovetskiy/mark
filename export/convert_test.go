@@ -201,13 +201,18 @@ func TestParsePageURL(t *testing.T) {
 		// included.
 		{"https://example.com/confluence/plugins/viewsource/viewpagesrc.action?pageId=77",
 			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},
+		// A short link carries the page id, encoded: see page.GenerateTinyLink.
+		{"https://example.atlassian.net/wiki/x/AfIFKgE",
+			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "5000000001"}},
+		{"https://confluence.example.com/x/D4AB/",
+			PageRef{BaseURL: "https://confluence.example.com", PageID: "98319"}},
 	} {
 		got, err := ParsePageURL(test.url)
 		require.NoError(t, err, test.url)
 		assert.Equal(t, test.want, got, test.url)
 	}
 
-	for _, bad := range []string{"not a url", "/wiki/spaces/DOCS/pages/1", "https://example.atlassian.net/wiki/x/AbCd", "https://example.com/"} {
+	for _, bad := range []string{"not a url", "/wiki/spaces/DOCS/pages/1", "https://example.atlassian.net/wiki/x/A", "https://example.atlassian.net/wiki/x/a.b", "https://example.com/"} {
 		_, err := ParsePageURL(bad)
 		assert.Error(t, err, bad)
 	}
@@ -467,4 +472,58 @@ func TestConvertEscapesThroughStdlib(t *testing.T) {
 	assert.Contains(t, md, `data-x="&#34;a&#34;&#10;b"`)
 	assert.Contains(t, md, "data-y=\"c\ufffd\"")
 	assert.Equal(t, "<![CDATA[a]]><![CDATA[]]]]><![CDATA[>b]]>", cdata("a]]>b"))
+}
+
+// A URL pasted into a page is rewritten only when it opens a page of the
+// instance being exported to be read, and says nothing a relative link would
+// drop.
+func TestPageOnInstance(t *testing.T) {
+	const base = "https://example.atlassian.net/wiki"
+
+	for _, test := range []struct {
+		name, href, base string
+		want             PageRef
+	}{
+		{"page", base + "/spaces/DOCS/pages/123/Title", base, PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+		{"viewpage.action", base + "/pages/viewpage.action?pageId=123", base, PageRef{BaseURL: base, PageID: "123"}},
+		{"short link", base + "/x/ew", base, PageRef{BaseURL: base, PageID: "123"}},
+		{"host in another case", "https://Example.atlassian.net/wiki/display/DOCS/Title", base,
+			PageRef{BaseURL: "https://Example.atlassian.net/wiki", Space: "DOCS", Title: "Title"}},
+		{"base without /wiki", base + "/spaces/DOCS/pages/123/Title", "https://example.atlassian.net",
+			PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+		{"default port", "https://example.atlassian.net:443/wiki/x/ew", base,
+			PageRef{BaseURL: "https://example.atlassian.net:443/wiki", PageID: "123"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := pageOnInstance(test.href, test.base)
+			require.True(t, ok)
+			assert.Equal(t, test.want, got)
+		})
+	}
+
+	for _, test := range []struct{ name, href string }{
+		{"focused comment", base + "/spaces/DOCS/pages/123/Title?focusedCommentId=9"},
+		{"old version", base + "/pages/viewpage.action?pageId=123&pageVersion=2"},
+		{"anchor", base + "/spaces/DOCS/pages/123/Title#Section"},
+		{"another host", "https://other.atlassian.net/wiki/spaces/DOCS/pages/123/Title"},
+		{"another context path", "https://example.atlassian.net/confluence/spaces/DOCS/pages/123/Title"},
+		{"dated blog post", base + "/display/DOCS/2024/01/31/Post"},
+		{"editpage.action", base + "/pages/editpage.action?pageId=123"},
+		{"short link too long", base + "/x/AQAAAAAAAAAB"},
+		{"pageId beside a path that names another page", base + "/spaces/DOCS/pages/123/Title?pageId=456"},
+		{"pageId on a short link", base + "/x/ew?pageId=999"},
+		{"context path in another case", "https://example.atlassian.net/WIKI/x/ew"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, ok := pageOnInstance(test.href, base)
+			assert.False(t, ok)
+		})
+	}
+}
+
+// A "!" just before a link would make it an image.
+func TestConvertEscapesABangBeforeALink(t *testing.T) {
+	doc, err := Convert(`<p>Wow!<a href="https://example.com/">site</a></p>`, Options{})
+	require.NoError(t, err)
+	assert.Equal(t, "Wow\\![site](https://example.com/)\n", doc.Markdown)
 }

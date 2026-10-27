@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,10 @@ type User struct {
 	Email       string `json:"email,omitempty"`
 	PublicName  string `json:"publicName,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
+
+	// Type is "anonymous" for the user a Confluence that took no credentials
+	// answers as.
+	Type string `json:"type,omitempty"`
 }
 
 // isNamed reports whether name is one of the identifiers the user goes by.
@@ -126,9 +131,28 @@ type API struct {
 	// between its check and the update is where one could land.
 	KeepConcurrentEdits bool
 
+	// Unwatch makes the writes record the pages they touch, for UnwatchWritten
+	// to unwatch once the last write is done. --watch=false sets it.
+	Unwatch bool
+
+	// watchedBefore records, by page id, every page mark wrote to and whether
+	// the user watched it before the first of those writes; see
+	// watchBeforeWrite. The writes recorded are a deliberate list, one call
+	// per site: creates, updates, moves, labels and attachments.
+	// watchErr is the first error reading a watch state, and watchRefused
+	// whether it was a refusal of the credentials, which holds for every page.
+	watchedBefore map[string]watchState
+	watchErr      error
+	watchRefused  bool
+	watchMutex    sync.Mutex
+
 	// conflictRetryDelay is how long UpdatePage waits after a conflict before
 	// reading the page again; see retryConflictingUpdate. Tests set it to zero.
 	conflictRetryDelay time.Duration
+
+	// unavailableWait waits before reading whether a write Confluence was
+	// unavailable for landed; see retryUnavailable. Tests make it instant.
+	unavailableWait func(ctx context.Context, attempt int, retryAfter string)
 
 	// moveSettleDelay is how long moveByAction waits between reads of a tree
 	// that movepage.action said it changed but does not show it yet.
@@ -384,7 +408,7 @@ type FolderInfo struct {
 	} `json:"_links,omitempty"`
 }
 type form struct {
-	buffer io.Reader
+	buffer *bytes.Buffer
 	writer *multipart.Writer
 }
 
@@ -510,6 +534,7 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 
 		conflictRetryDelay: time.Second,
 		moveSettleDelay:    250 * time.Millisecond,
+		unavailableWait:    waitUnavailable,
 	}
 
 	// A Personal Access Token arrives as the password with no username. It is
@@ -976,6 +1001,11 @@ func (api *API) pageHoldingTitle(space, title, pageType string) *PageInfo {
 // decision for a person, and mark has already shown it cannot see the whole
 // picture here.
 func (api *API) explainCreateFailure(space, title, pageType string, err error) error {
+	// Only a refusal can be a title some other page holds.
+	if isUnavailable(err) {
+		return err
+	}
+
 	blocker := api.pageHoldingTitle(space, title, pageType)
 	if blocker == nil {
 		return err
@@ -995,12 +1025,45 @@ func (api *API) CreateAttachment(
 	comment string,
 	reader io.Reader,
 ) (AttachmentInfo, error) {
-	var info AttachmentInfo
-
 	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
+
+	api.watchBeforeWrite(pageID)
+
+	return retryUnavailable(
+		api, fmt.Sprintf("attach %q to page %s", name, pageID),
+		func() (AttachmentInfo, error) { return api.createAttachment(pageID, name, form) },
+		api.attachmentLanded(pageID, "", name, comment),
+	)
+}
+
+// attachmentLanded reads whether an upload Confluence was unavailable for
+// landed: the page has the attachment, under attachID when that is given, and
+// it carries the comment the upload did. The comment holds the checksum, so
+// it is the upload's own.
+func (api *API) attachmentLanded(pageID, attachID, name, comment string) func() (AttachmentInfo, bool, error) {
+	return func() (AttachmentInfo, bool, error) {
+		attachments, err := api.GetAttachments(pageID)
+		if err != nil {
+			return AttachmentInfo{}, false, err
+		}
+
+		for _, attachment := range attachments {
+			if (attachID == "" || attachment.ID == attachID) &&
+				attachment.Filename == name &&
+				attachment.Metadata.Comment == comment {
+				return attachment, true, nil
+			}
+		}
+
+		return AttachmentInfo{}, false, nil
+	}
+}
+
+func (api *API) createAttachment(pageID, name string, form *form) (AttachmentInfo, error) {
+	var info AttachmentInfo
 
 	var result struct {
 		Links struct {
@@ -1013,7 +1076,7 @@ func (api *API) CreateAttachment(
 		"content/"+pageID+"/child/attachment", &result,
 	)
 
-	resource.Payload = form.buffer
+	resource.Payload = bytes.NewReader(form.buffer.Bytes())
 	// The multipart Content-Type has to be the only one on the request. It used
 	// to be set on a hand-made replacement header map because the map reached
 	// here carrying every header of every earlier response; resource() now
@@ -1058,12 +1121,22 @@ func (api *API) UpdateAttachment(
 	comment string,
 	reader io.Reader,
 ) (AttachmentInfo, error) {
-	var info AttachmentInfo
-
 	form, err := getAttachmentPayload(name, comment, reader)
 	if err != nil {
 		return AttachmentInfo{}, err
 	}
+
+	api.watchBeforeWrite(pageID)
+
+	return retryUnavailable(
+		api, fmt.Sprintf("upload a new version of attachment %q of page %s", name, pageID),
+		func() (AttachmentInfo, error) { return api.updateAttachment(pageID, attachID, name, form) },
+		api.attachmentLanded(pageID, attachID, name, comment),
+	)
+}
+
+func (api *API) updateAttachment(pageID, attachID, name string, form *form) (AttachmentInfo, error) {
+	var info AttachmentInfo
 
 	var extendedResponse struct {
 		Links struct {
@@ -1078,7 +1151,7 @@ func (api *API) UpdateAttachment(
 		"content/"+pageID+"/child/attachment/"+attachID+"/data", &result,
 	)
 
-	resource.Payload = form.buffer
+	resource.Payload = bytes.NewReader(form.buffer.Bytes())
 	// The multipart Content-Type has to be the only one on the request. It used
 	// to be set on a hand-made replacement header map because the map reached
 	// here carrying every header of every earlier response; resource() now
@@ -1309,19 +1382,23 @@ func (api *API) CreatePage(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	var (
-		page *PageInfo
-		err  error
-	)
-	if api.gateway {
-		parentID := ""
-		if parent != nil {
-			parentID = parent.ID
-		}
-		page, err = api.createPageV2(space, pageType, parentID, "", title, body)
-	} else {
-		page, err = api.createPageV1(space, pageType, parent, title, body)
+	parentID := ""
+	if parent != nil {
+		parentID = parent.ID
 	}
+
+	create := func() (*PageInfo, error) {
+		if api.gateway {
+			return api.createPageV2(space, pageType, parentID, "", title, body)
+		}
+		return api.createPageV1(space, pageType, parent, title, body)
+	}
+
+	landed := api.createLanded(func() (*PageInfo, error) {
+		return api.findPageWithStatus(space, title, pageType, "current")
+	}, parentID)
+
+	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
 	if err != nil {
 		return nil, err
 	}
@@ -1356,9 +1433,43 @@ func (api *API) CreatePage(
 	return page, nil
 }
 
+// createLanded reads whether a create Confluence was unavailable for landed.
+// mark creates a page only once it has looked for one with the title and
+// found none, so one find reads now, directly under parentID and written by
+// mark's account, is the one the create made. With no parentID any parent
+// will do: where Confluence puts a page created without one is its own
+// choice.
+func (api *API) createLanded(find func() (*PageInfo, error), parentID string) func() (*PageInfo, bool, error) {
+	return func() (*PageInfo, bool, error) {
+		page, err := find()
+		if err != nil || page == nil {
+			return nil, false, err
+		}
+		if parentID != "" && immediateParent(page) != parentID {
+			return nil, false, nil
+		}
+
+		// The page is seconds old, so its current version is the first.
+		_, by, err := api.currentPageVersion(page)
+		if err != nil {
+			return nil, false, err
+		}
+		if !api.writtenByMe(by) {
+			return nil, false, nil
+		}
+
+		return page, true, nil
+	}
+}
+
 // rememberCreatedPage puts a page just created into the page cache, so the
 // lookups later in the run find it without asking.
 func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInfo) {
+	if api.Unwatch {
+		// Nobody watched a page before it was created.
+		api.rememberWatch(page.ID, wasUnwatched, nil)
+	}
+
 	cacheTitle := title
 	if page.Title != "" {
 		cacheTitle = page.Title
@@ -1472,7 +1583,9 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 		return api.updatePageV1(page, newContent, minorEdit, versionMessage, version, properties)
 	}
 
-	err := put(nextPageVersion)
+	api.watchBeforeWrite(page.ID)
+
+	err := api.putUnavailable(page, page.Version.Number, nextPageVersion, put)
 	if errors.Is(err, errConflict) {
 		nextPageVersion, err = api.retryConflictingUpdate(page, nextPageVersion, err, put)
 	}
@@ -1503,6 +1616,37 @@ func (api *API) UpdatePage(page *PageInfo, newContent string, minorEdit bool, ve
 	return nil
 }
 
+// putUnavailable sends an update of a page read at version read through
+// retryUnavailable. The page's version says whether an unavailable update
+// landed: at the version the update would have created, and written by mark's
+// account, it did; still at read, it did not. Any other version is another writer's, which UpdatePage
+// settles as a conflict.
+func (api *API) putUnavailable(page *PageInfo, read, version int64, put func(version int64) error) error {
+	send := func() (struct{}, error) {
+		return struct{}{}, put(version)
+	}
+
+	landed := func() (struct{}, bool, error) {
+		current, by, err := api.currentPageVersion(page)
+		switch {
+		case err != nil:
+			return struct{}{}, false, err
+		case current == version && api.writtenByMe(by):
+			return struct{}{}, true, nil
+		case current == read:
+			return struct{}{}, false, nil
+		default:
+			return struct{}{}, false, fmt.Errorf(
+				"%w: page %q (%s) is now at version %d, which mark did not write",
+				errConflict, page.Title, page.ID, current,
+			)
+		}
+	}
+
+	_, err := retryUnavailable(api, fmt.Sprintf("update page %q (%s)", page.Title, page.ID), send, landed)
+	return err
+}
+
 // retryConflictingUpdate recovers from an update Confluence refused with 409.
 //
 // UpdatePage sends the version after the one the page had when it was read,
@@ -1530,7 +1674,7 @@ func (api *API) retryConflictingUpdate(
 		time.Sleep(api.conflictRetryDelay)
 	}
 
-	current, err := api.currentPageVersion(page)
+	current, _, err := api.currentPageVersion(page)
 	if err != nil {
 		return 0, fmt.Errorf(
 			"update of page %q (%s) conflicted (%w), and its current version could not be read to retry: %w",
@@ -1552,7 +1696,7 @@ func (api *API) retryConflictingUpdate(
 		page.Title, page.ID, attempted, current+1,
 	)
 
-	if err := put(current + 1); err != nil {
+	if err := api.putUnavailable(page, current, current+1, put); err != nil {
 		if errors.Is(err, errConflict) {
 			return 0, fmt.Errorf(
 				"version %d of page %q (%s) was refused as a "+
@@ -1568,22 +1712,54 @@ func (api *API) retryConflictingUpdate(
 	return current + 1, nil
 }
 
-// currentPageVersion reads the version a page has right now, bypassing the
-// cache, with the cheapest request that returns it.
-func (api *API) currentPageVersion(page *PageInfo) (int64, error) {
+// currentPageVersion reads the version a page has right now, and who wrote
+// it, bypassing the cache, with the cheapest request that returns them.
+func (api *API) currentPageVersion(page *PageInfo) (int64, User, error) {
 	if api.gateway {
 		content, err := api.readContentV2(v2Collection(page.Type), page.ID, false)
 		if err != nil {
-			return 0, err
+			return 0, User{}, err
 		}
-		return content.Version.Number, nil
+		return content.Version.Number, User{AccountID: content.Version.AuthorID}, nil
 	}
 
-	current, err := api.GetPageByIDExpanded(page.ID, "version")
-	if err != nil {
-		return 0, err
+	var current struct {
+		Version struct {
+			Number int64 `json:"number"`
+			By     User  `json:"by"`
+		} `json:"version"`
 	}
-	return current.Version.Number, nil
+
+	request, err := api.v1().Res("content/"+page.ID, &current).Get(map[string]string{"expand": "version"})
+	if err != nil {
+		return 0, User{}, newTransportError(request, "read page "+page.ID, err)
+	}
+	if request.Raw.StatusCode != http.StatusOK {
+		return 0, User{}, newErrorStatusNotOK(request)
+	}
+
+	return current.Version.Number, current.Version.By, nil
+}
+
+// writtenByMe reports whether by, the author of a version, is known to be the
+// account mark signs in as. An author or a current user that cannot be read
+// is not: taking somebody else's write for mark's would drop mark's.
+func (api *API) writtenByMe(by User) bool {
+	me, err := api.GetCurrentUser()
+	if err != nil {
+		return false
+	}
+
+	switch {
+	case by.AccountID != "" && me.AccountID != "":
+		return by.AccountID == me.AccountID
+	case by.UserKey != "" && me.UserKey != "":
+		return by.UserKey == me.UserKey
+	case by.Username != "" && me.Username != "":
+		return by.Username == me.Username
+	default:
+		return false
+	}
 }
 
 // updatePageV1 is the request behind UpdatePage. properties travel inside it,
@@ -1671,6 +1847,7 @@ func (api *API) forgetMissesForTitle(title, pageType string) {
 }
 
 func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, error) {
+	api.watchBeforeWrite(page.ID)
 
 	labels := []map[string]any{}
 	for _, label := range newLabels {
@@ -1700,6 +1877,7 @@ func (api *API) AddPageLabels(page *PageInfo, newLabels []string) (*LabelInfo, e
 }
 
 func (api *API) DeletePageLabel(page *PageInfo, label string) (*LabelInfo, error) {
+	api.watchBeforeWrite(page.ID)
 
 	request, err := api.v1().Res(
 		"content/"+page.ID+"/label", &LabelInfo{},
@@ -1913,7 +2091,7 @@ func (api *API) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
-// isCloudHost reports whether a host is a known Confluence Cloud host, without
+// IsCloudHost reports whether a host is a known Confluence Cloud host, without
 // issuing a request.
 //
 // Matching is on a dot boundary rather than a bare suffix: strings.HasSuffix on
@@ -1924,7 +2102,7 @@ func (api *API) GetCurrentUser() (*User, error) {
 // (https://api.atlassian.com/ex/confluence/<cloudId>/wiki). It always fronts
 // Cloud, and matching it here means the common scoped-token setup answers from
 // the fast path instead of paying for a probe.
-func isCloudHost(host string) bool {
+func IsCloudHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 
 	if host == "api.atlassian.com" {
@@ -1963,7 +2141,7 @@ func (api *API) IsCloud() bool {
 // arriving mid-request wait for the answer.
 func (api *API) Cloud() (bool, error) {
 	api.isCloudOnce.Do(func() {
-		if api.gateway || isCloudHost(api.rest.Api.BaseUrl.Hostname()) {
+		if api.gateway || IsCloudHost(api.rest.Api.BaseUrl.Hostname()) {
 			api.isCloudFlag = true
 			return
 		}
@@ -2563,7 +2741,15 @@ func (api *API) CreatePageWithFolderParent(
 	title string,
 	body string,
 ) (*PageInfo, error) {
-	page, err := api.createPageV2(space, pageType, folderID, "folder", title, body)
+	create := func() (*PageInfo, error) {
+		return api.createPageV2(space, pageType, folderID, "folder", title, body)
+	}
+	// Through v2 as well: v1 does not show a folder among the ancestors.
+	landed := api.createLanded(func() (*PageInfo, error) {
+		return api.findPageV2(space, title, pageType, "current")
+	}, folderID)
+
+	page, err := retryUnavailable(api, fmt.Sprintf("create page %q in space %s", title, space), create, landed)
 	if err != nil {
 		return nil, err
 	}
@@ -2857,6 +3043,8 @@ func (api *API) moveByAction(contentID, position, targetID string) (bool, error)
 		return true, nil
 	}
 
+	api.watchBeforeWrite(contentID)
+
 	query := map[string]string{
 		"pageId":      contentID,
 		"position":    actionPositions[position],
@@ -3006,8 +3194,16 @@ func (api *API) placedAt(
 	return at == sibling+1, nil
 }
 
+// immediateParent is the id of the content directly above page, or "": the
+// parent v2 named, a folder included, and otherwise the last ancestor.
 func immediateParent(page *PageInfo) string {
-	if page == nil || len(page.Ancestors) == 0 {
+	if page == nil {
+		return ""
+	}
+	if page.ParentID != "" {
+		return page.ParentID
+	}
+	if len(page.Ancestors) == 0 {
 		return ""
 	}
 
@@ -3075,6 +3271,9 @@ func (api *API) reparentContent(contentID, parentID string) error {
 	if err != nil || placed {
 		return err
 	}
+
+	// The move is a version, which makes the user a watcher.
+	api.watchBeforeWrite(page.ID)
 
 	err = api.reparentContentV1(page, parentID, page.Version.Number+1)
 	if errors.Is(err, errConflict) {
@@ -3254,6 +3453,9 @@ func (api *API) moveContent(contentID, position, targetID string) error {
 		return *missing
 	}
 
+	// A move can make the user a watcher, as any write can.
+	api.watchBeforeWrite(contentID)
+
 	path := fmt.Sprintf("content/%s/move/%s/%s", contentID, position, targetID)
 	var result map[string]any
 	request, err := api.v1().Res(path, &result).Put(map[string]interface{}{})
@@ -3311,6 +3513,15 @@ func (api *API) describeContent(contentID string) string {
 // state rather than a failure -- from every other way a request can go wrong.
 var ErrNotFound = errors.New("404 (Not Found)")
 
+// ErrUnauthorized reports that Confluence answered 401: it did not accept the
+// credentials, or the kind of credential, it was given.
+var ErrUnauthorized = errors.New("401 (Unauthorized)")
+
+// ErrForbidden reports that something answered 403: the credentials were
+// accepted but not for this, or a single sign-on proxy or firewall in front of
+// Confluence turned the request away.
+var ErrForbidden = errors.New("403 (Forbidden)")
+
 // errConflict reports that Confluence answered 409: for a page update, that
 // the version sent is not the one after the page's current version.
 var errConflict = errors.New("409 (Conflict)")
@@ -3339,8 +3550,8 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 
 	if request.Raw.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf(
-			"the Confluence API returned unexpected status: 401 (Unauthorized) for %s",
-			target,
+			"the Confluence API returned unexpected status: %w for %s",
+			ErrUnauthorized, target,
 		)
 	}
 
@@ -3364,6 +3575,15 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		truncated = " (truncated)"
 	}
 
+	if request.Raw.StatusCode == http.StatusForbidden {
+		// The body is kept: it is where Confluence, or whatever refused in its
+		// place, says why.
+		return fmt.Errorf(
+			"the Confluence API returned unexpected status: %w for %s, output: %q%s",
+			ErrForbidden, target, output, truncated,
+		)
+	}
+
 	if request.Raw.StatusCode == http.StatusConflict {
 		// Wrapped for UpdatePage, which recovers from a conflict on its own
 		// write. The body is kept: Confluence says there which kind it was.
@@ -3373,11 +3593,16 @@ func newErrorStatusNotOK(request *gopencils.Resource) error {
 		)
 	}
 
-	return fmt.Errorf(
+	err := fmt.Errorf(
 		"the Confluence API returned unexpected status: %v for %s, "+
 			"output: %q%s",
 		request.Raw.Status, target, output, truncated,
 	)
+	if request.Raw.Request != nil && unavailableAnswer(request.Raw.Request.Method, request.Raw.StatusCode) {
+		return unavailableError{error: err, retryAfter: request.Raw.Header.Get("Retry-After")}
+	}
+
+	return err
 }
 
 // maxErrorBody caps how much of a failed response's body newErrorStatusNotOK
@@ -3408,7 +3633,21 @@ func newTransportError(request *gopencils.Resource, operation string, err error)
 	// No response at all means the request never completed, and there is
 	// nothing to add beyond what it was trying to do.
 	if request == nil || request.Raw == nil {
-		return fmt.Errorf("unable to %s: %w", operation, err)
+		err = fmt.Errorf("unable to %s: %w", operation, err)
+		// No request carries a context a caller can cancel, so even a
+		// deadline here is net/http's own timeout waiting for an answer.
+		if unavailableFailure(err) {
+			return unavailableError{error: err}
+		}
+		return err
+	}
+
+	// An answer whose body broke off is still the answer.
+	if request.Raw.Request != nil && unavailableAnswer(request.Raw.Request.Method, request.Raw.StatusCode) {
+		return unavailableError{
+			error:      fmt.Errorf("unable to %s: %s answered %s: %w", operation, requestTarget(request), request.Raw.Status, err),
+			retryAfter: request.Raw.Header.Get("Retry-After"),
+		}
 	}
 
 	return fmt.Errorf(

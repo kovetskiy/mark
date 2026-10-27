@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -307,4 +308,31 @@ func TestEncodeTinyLinkIDLargeIDs(t *testing.T) {
 
 	// Verify the result is a valid URL-safe base64-like string
 	assert.Regexp(t, `^[A-Za-z0-9_-]+$`, result)
+}
+
+func TestDecodeTinyLinkID(t *testing.T) {
+	for _, id := range []uint64{1, 255, 256, 65535, 98319, 98320, 5000000001, 1<<63 + 5} {
+		code := encodeTinyLinkID(id)
+		got, err := DecodeTinyLinkID(code)
+		require.NoError(t, err, code)
+		assert.Equal(t, strconv.FormatUint(id, 10), got, code)
+
+		// Confluence strips trailing "A"s from the codes it hands out.
+		stripped := strings.TrimRight(code, "A")
+		if stripped == "" {
+			continue
+		}
+		got, err = DecodeTinyLinkID(stripped)
+		require.NoError(t, err, stripped)
+		assert.Equal(t, strconv.FormatUint(id, 10), got, stripped)
+	}
+
+	for _, bad := range []string{"", "A", "AAAA", "a.b", "a/b", "a+b", "AQAAAAAAAAAB"} {
+		_, err := DecodeTinyLinkID(bad)
+		assert.Error(t, err, bad)
+	}
+
+	_, err := DecodeTinyLinkID("A")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"A" is not`, "the error quotes the code as it was given")
 }

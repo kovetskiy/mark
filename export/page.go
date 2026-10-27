@@ -45,10 +45,36 @@ type Config struct {
 	// Stdout is where the Markdown goes when Output names no file.
 	Stdout io.Writer
 
-	// Documents maps the title of a page in the space, folded to lower case,
-	// to the file it is exported to. A link to one of them is written as a
-	// relative link to that file. Nil writes every page link as ac:Title.
-	Documents map[string]string
+	// Documents are the other pages exported with this one. A link to one of
+	// them, or a URL of one pasted into the body, is written as a relative link
+	// to its file. Nil writes every page link as ac:Title.
+	Documents *Documents
+}
+
+// PageFile is a page exported with others, and the file it goes to.
+type PageFile struct {
+	ID, Title, Output string
+}
+
+// Documents finds the pages of an export by title, as a page link names one,
+// or by id, as most URLs do.
+type Documents struct {
+	byTitle map[string]PageFile
+	byID    map[string]PageFile
+}
+
+// NewDocuments indexes the pages of an export, all of one space.
+func NewDocuments(documents []PageFile) *Documents {
+	index := &Documents{
+		byTitle: make(map[string]PageFile, len(documents)),
+		byID:    make(map[string]PageFile, len(documents)),
+	}
+	for _, d := range documents {
+		// Titles are unique in a space without regard to case.
+		index.byTitle[strings.ToLower(d.Title)] = d
+		index.byID[d.ID] = d
+	}
+	return index
 }
 
 // Result is what Page wrote.
@@ -111,21 +137,63 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	}
 
 	var pagePath func(string) (string, bool)
+	var pageURLPath func(string) (string, string, bool)
 	if cfg.Documents != nil {
-		pagePath = func(title string) (string, bool) {
-			target, ok := cfg.Documents[strings.ToLower(title)]
-			if !ok {
-				return "", false
-			}
-			rel, err := filepath.Rel(outputDir, target)
+		relativePath := func(d PageFile) (string, bool) {
+			rel, err := filepath.Rel(outputDir, d.Output)
 			if err != nil {
 				return "", false
 			}
 			return filepath.ToSlash(rel), true
 		}
+
+		pagePath = func(title string) (string, bool) {
+			d, ok := cfg.Documents.byTitle[strings.ToLower(title)]
+			if !ok {
+				return "", false
+			}
+			return relativePath(d)
+		}
+
+		// Confluence's idea of its own address and the one mark was given can
+		// differ, behind a proxy or on a custom domain; a URL may be on either.
+		instances := []string{api.BaseURL}
+		if strings.HasPrefix(page.Links.Base, "http") {
+			instances = append(instances, page.Links.Base)
+		}
+		pageURLPath = func(href string) (string, string, bool) {
+			var ref PageRef
+			ok := false
+			for _, instance := range instances {
+				if ref, ok = pageOnInstance(href, instance); ok {
+					break
+				}
+			}
+			if !ok {
+				return "", "", false
+			}
+
+			var d PageFile
+			switch {
+			case ref.PageID != "":
+				d, ok = cfg.Documents.byID[ref.PageID]
+			case strings.EqualFold(ref.Space, space):
+				d, ok = cfg.Documents.byTitle[strings.ToLower(ref.Title)]
+			default:
+				ok = false
+			}
+			if !ok {
+				return "", "", false
+			}
+
+			path, ok := relativePath(d)
+			return path, d.Title, ok
+		}
 	}
 
-	doc, err := Convert(page.Body.Storage.Value, Options{Space: space, AttachmentPath: pathOf, PagePath: pagePath})
+	doc, err := Convert(page.Body.Storage.Value, Options{
+		Space: space, AttachmentPath: pathOf, PagePath: pagePath, PageURLPath: pageURLPath,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
 	}

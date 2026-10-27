@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	mark "github.com/kovetskiy/mark/v16"
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/types"
 
@@ -202,6 +201,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Value:   false,
 			Usage:   "don't send notifications while updating Confluence page.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MINOR_EDIT"), config.value("minor-edit")),
+		},
+		&cli.BoolFlag{
+			Name:    "watch",
+			Value:   true,
+			Usage:   "let the publishing account watch the pages mark creates or edits, as Confluence makes it (default: true, which leaves Confluence's own behaviour alone); --watch=false stops it watching them, though pages it watched already stay watched.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_WATCH"), config.value("watch")),
 		},
 		&cli.StringFlag{
 			Name:    "version-message",
@@ -481,7 +486,7 @@ func exportFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "url",
 			Value:   "",
-			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set.",
+			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_URL"), config.value("url")),
 		},
 		&cli.StringFlag{
@@ -536,9 +541,9 @@ func exportFlags(config *configFile) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name: "relative-links",
-			Usage: "with --recursive, write a link between two exported pages as a relative link between their files, " +
-				"which a repository host can follow, rather than as ac:Title. Published back, such a link becomes a " +
-				"link to the page's address rather than Confluence's own page link.",
+			Usage: "with --recursive, write a link between two exported pages, or a URL of one pasted into a page, as a " +
+				"relative link between their files, which a repository host can follow, rather than as ac:Title or the URL. " +
+				"Published back, such a link becomes a link to the page's address rather than Confluence's own page link.",
 		},
 	}
 }
@@ -622,6 +627,29 @@ func checkEmptyFeatures(command *cli.Command) error {
 	return nil
 }
 
+// checkEmptyWatch refuses an empty MARK_WATCH or watch = "", which urfave
+// reads as false: for the one bool flag that defaults to true, that would stop
+// the account watching without anybody asking. The source checked is the one
+// the chain reads first, which is the one urfave used unless the command line
+// set the flag; an empty one is refused then too.
+func checkEmptyWatch(command *cli.Command) error {
+	if command.Bool("watch") {
+		return nil
+	}
+
+	for _, flag := range command.Flags {
+		watch, ok := flag.(*cli.BoolFlag)
+		if !ok || watch.Name != "watch" {
+			continue
+		}
+		if value, source, found := watch.Sources.LookupWithSource(); found && value == "" {
+			return fmt.Errorf("%s is empty: set --watch to true or false, or leave it out for the default (true)", source)
+		}
+	}
+
+	return nil
+}
+
 // emptyFeatures reports an empty --features, MARK_FEATURES or features = [].
 func emptyFeatures(source string) error {
 	return fmt.Errorf(
@@ -671,6 +699,10 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	}
 
 	if err := checkEmptyFeatures(command); err != nil {
+		return context, err
+	}
+
+	if err := checkEmptyWatch(command); err != nil {
 		return context, err
 	}
 
@@ -743,11 +775,11 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	//
 	// The same for mermaid and math. Zero is refused on the command line even
 	// though a library Config reads it as the default: a flag nobody set never
-	// reaches here, so a zero is one somebody typed, and it is no scale. The
-	// macro output draws nothing, so a mermaid scale beside it is not one.
+	// reaches here, so a zero is one somebody typed, and it is no scale.
 	mermaidOutput := command.String("mermaid-output")
+	draws := types.MermaidDraws(mermaidOutput)
 	for _, name := range []string{"d2-scale", "mermaid-scale", "math-scale"} {
-		if name == "mermaid-scale" && mermaidOutput == "macro" {
+		if name == "mermaid-scale" && !draws {
 			continue
 		}
 		if scale := command.Float(name); command.IsSet(name) &&
@@ -765,22 +797,17 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	if command.IsSet("mermaid-output") && mermaidOutput == "" {
 		return context, errors.New("--mermaid-output must not be empty")
 	}
-	if err := mark.ValidateMermaidOutput(mermaidOutput); err != nil {
+	if err := types.ValidateMermaidOutput(mermaidOutput); err != nil {
 		return context, err
 	}
 
-	// A bundle that goes nowhere is worth saying out loud rather than dropping:
-	// it was asked for on purpose, and it silently does not happen. Asked of its
-	// value rather than of IsSet, because false is exactly what a bundle nobody
-	// asked for looks like.
-	if err := mark.ValidateMermaidBundle(mermaidOutput, command.Bool("mermaid-bundle")); err != nil {
+	// A bundle that goes nowhere is worth saying out loud rather than dropping.
+	if err := types.ValidateMermaidBundle(mermaidOutput, command.Bool("mermaid-bundle")); err != nil {
 		return context, fmt.Errorf("--mermaid-bundle needs --mermaid-output=svg: %w", err)
 	}
 
-	// With the macro output nothing is drawn, so an engine's value is not one:
-	// the setting is unused, and a name mark does not know is not an error. It
-	// is warned about where the run is configured.
-	if mermaidOutput != "macro" {
+	// With the macro output nothing is drawn, so an engine's value is unused.
+	if draws {
 		mermaidEngine := command.String("mermaid-engine")
 		if mermaidEngine != "" || command.IsSet("mermaid-engine") {
 			switch mermaidEngine {
@@ -795,12 +822,9 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		}
 	}
 
-	// A macro name is only refused when it is empty and the macro output would
-	// use it. Beside an image output the name has no effect, which is warned
-	// about where the run is configured rather than refused: it may come from
-	// the configuration file or the environment.
-	if mermaidOutput == "macro" && command.IsSet("mermaid-macro-name") && command.String("mermaid-macro-name") == "" {
-		return context, errors.New("--mermaid-macro-name must not be empty")
+	// A blank name is refused only where the macro output would use it.
+	if !draws && command.IsSet("mermaid-macro-name") && strings.TrimSpace(command.String("mermaid-macro-name")) == "" {
+		return context, errors.New("--mermaid-macro-name must not be blank")
 	}
 
 	mathFormat := strings.TrimSpace(command.String("math-format"))

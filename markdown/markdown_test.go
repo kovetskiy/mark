@@ -54,6 +54,9 @@ func TestCompileMarkdown(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
+		if filename == "testdata/mermaid-macro.md" {
+			continue // its own test pins the macro, the drop-h1 and the feature-off output
+		}
 		fmt.Printf("Testing: %v\n", filename)
 		lib, err := stdlib.New(nil)
 		if err != nil {
@@ -102,13 +105,16 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
+		if filename == "testdata/mermaid-macro.md" {
+			continue // its own test pins the macro, the drop-h1 and the feature-off output
+		}
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)
 		}
 		var variant string
 		switch filename {
-		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/mermaid-macro.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
+		case "testdata/quotes.md", "testdata/header.md", "testdata/admonitions.md", "testdata/plantuml.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/heading-anchor-links.md", "testdata/heading-anchor-custom-ids.md":
 			variant = "-droph1"
 		default:
 			variant = ""
@@ -157,6 +163,9 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
+		if filename == "testdata/mermaid-macro.md" {
+			continue // its own test pins the macro, the drop-h1 and the feature-off output
+		}
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)
@@ -225,10 +234,9 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
 }
 
-// TestCompileMarkdownMermaidMacroGolden pins the macro rendering against a
-// fixture, as the other renderers have one. testdata/mermaid-macro.md is also
-// picked up by the feature-off tests above, which pin the fence staying a plain
-// code block; this pins what reaches the page with the feature and macro on.
+// TestCompileMarkdownMermaidMacroGolden pins the macro rendering against the
+// fixture, as the other renderers have one: drawn by Confluence, with --drop-h1,
+// and with the feature off, where the fence stays a plain code block.
 func TestCompileMarkdownMermaidMacroGolden(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "..")
@@ -237,25 +245,41 @@ func TestCompileMarkdownMermaidMacroGolden(t *testing.T) {
 		panic(err)
 	}
 
-	test := assert.New(t)
-
 	lib, err := stdlib.New(nil)
 	if err != nil {
 		panic(err)
 	}
 
-	markdown, htmlname, html := loadData(t, "testdata/mermaid-macro.md", "-macro")
-
-	cfg := types.MarkConfig{
-		MermaidScale:  1.0,
-		D2Scale:       1.0,
-		Features:      []string{"mermaid"},
-		MermaidOutput: "macro",
+	tests := []struct {
+		name        string
+		variant     string
+		features    []string
+		dropFirstH1 bool
+	}{
+		{"the macro", "", []string{"mermaid"}, false},
+		{"with drop-h1", "-droph1", []string{"mermaid"}, true},
+		{"without the feature", "-nofeature", []string{"mkdocsadmonitions", "mention"}, false},
 	}
 
-	actual, _, err := mark.CompileMarkdown(markdown, lib, "testdata/mermaid-macro.md", cfg)
-	test.NoError(err)
-	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "testdata/mermaid-macro.md vs "+htmlname)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			test := assert.New(t)
+
+			markdown, htmlname, html := loadData(t, "testdata/mermaid-macro.md", tt.variant)
+
+			cfg := types.MarkConfig{
+				MermaidScale:  1.0,
+				D2Scale:       1.0,
+				DropFirstH1:   tt.dropFirstH1,
+				Features:      tt.features,
+				MermaidOutput: "macro",
+			}
+
+			actual, _, err := mark.CompileMarkdown(markdown, lib, "testdata/mermaid-macro.md", cfg)
+			test.NoError(err)
+			test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "testdata/mermaid-macro.md vs "+htmlname)
+		})
+	}
 }
 
 func TestCompileMarkdownInlineLinkCard(t *testing.T) {

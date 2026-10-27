@@ -49,7 +49,8 @@ The reference is split by topic under [`docs/`](docs/):
   anchors.
 * [Includes, macros and templates](docs/templates.md), with the built-in
   templates and examples.
-* [Publishing](docs/publishing.md): page headers, run reports, continuous
+* [Publishing](docs/publishing.md): publishing to a page by its URL, page
+  headers, run reports, what happens when Confluence is unavailable, continuous
   integration, preserving inline comments, and leaving hand-edited pages alone.
 * [Exporting a page](docs/export.md), or a tree of them, from Confluence back to
   Markdown.
@@ -102,6 +103,31 @@ mark publish -u user -p token -b https://example.atlassian.net/wiki -f "docs/**/
 and the experimental `mark export` writes a Confluence page out as markdown
 that publishes back to it; see [Exporting a page](docs/export.md#exporting-a-page).
 
+`mark doctor` checks a setup without changing anything. It logs in with the
+global options, says which platform answered, and checks that each space it is
+given exists and lets the account create pages and upload attachments. A login
+that Confluence answers as the anonymous user fails, since a proxy that drops
+the credentials looks like a working login otherwise, and so does an empty
+space key, as an unset `$SPACE` gives. A space without a home page is only a
+warning: a page with no `Parent` header is then published at the top of the
+space. When a check fails, it says what to change:
+
+```text
+$ mark doctor -b https://example.atlassian.net/wiki -u jane@example.com -p "$TOKEN" DOCS
+[ok] login: logged in as Jane Doe (jane@example.com, 5b10ac8d82e05b22cc7d4ef5)
+[ok] platform: Confluence Cloud
+[ok] space DOCS: "Documentation" is readable
+[ok] space DOCS: home page "Documentation Home" (98306)
+[ok] space DOCS: can create pages, upload attachments, create blog posts (Type: blogpost)
+[warn] space DOCS: cannot delete pages (--on-orphan delete), archive pages (--on-orphan archive), restrict pages (--edit-lock, Restriction headers)
+       a space administrator grants these under the space's permissions
+```
+
+It exits with an error when any check fails, and without one when there are
+only warnings, so it can also run as the first step of a pipeline. With no
+space given it checks `--space`, from the command line, `MARK_SPACE` or the
+configuration file.
+
 The global options -- the configuration file, how to reach and authenticate
 against Confluence, and logging -- belong to every command, and can be given
 before or after its name: `mark -c ci.toml publish -f doc.md` and
@@ -125,6 +151,7 @@ COMMANDS:
    publish  publish markdown files to Confluence
    export   export a Confluence page, or a tree of them, to markdown (experimental)
    page     list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
+   doctor   check that mark can reach Confluence, log in, and publish to a space
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
@@ -166,6 +193,7 @@ OPTIONS:
    --parents-from-path-root string                the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard. [$MARK_PARENTS_FROM_PATH_ROOT]
    --title-append-generated-hash                  appends a short hash generated from the path of the page (space, parents, and title) to the title [$MARK_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                   don't send notifications while updating Confluence page. [$MARK_MINOR_EDIT]
+   --watch                                        let the publishing account watch the pages mark creates or edits, as Confluence makes it (default: true, which leaves Confluence's own behaviour alone); --watch=false stops it watching them, though pages it watched already stay watched. [$MARK_WATCH]
    --version-message string                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --target-url string, -l string                 edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
@@ -228,7 +256,7 @@ DESCRIPTION:
 
 OPTIONS:
    --page-id string            export the page or blog post with this id. [$MARK_PAGE_ID]
-   --url string                export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center. Also gives the base URL when --base-url is not set. [$MARK_URL]
+   --url string                export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set. [$MARK_URL]
    --space string              the space key --title looks the page up in. [$MARK_SPACE]
    --title string              export the page or blog post with this title in --space. [$MARK_TITLE]
    --output string, -o string  write the Markdown to this file rather than to standard output ("-"). [$MARK_OUTPUT]
@@ -237,7 +265,7 @@ OPTIONS:
    --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
    --recursive                 export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
    --depth int                 with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)
-   --relative-links            with --recursive, write a link between two exported pages as a relative link between their files, which a repository host can follow, rather than as ac:Title. Published back, such a link becomes a link to the page's address rather than Confluence's own page link.
+   --relative-links            with --recursive, write a link between two exported pages, or a URL of one pasted into a page, as a relative link between their files, which a repository host can follow, rather than as ac:Title or the URL. Published back, such a link becomes a link to the page's address rather than Confluence's own page link.
    --help, -h                  show help
 
 GLOBAL OPTIONS:
@@ -342,7 +370,7 @@ pages with the v2 API, which needs:
 | `read:folder:confluence`, `write:folder:confluence`, `read:hierarchical-content:confluence` | `Folder` headers: reading and creating folders, and finding one among its parent's direct children |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
-`--on-orphan`, page restrictions, mentions, moving a page among its siblings and
+`--on-orphan`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and
 finding a folder left at the space root have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
 classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 `read:confluence-user`) alongside the granular ones.
@@ -352,6 +380,17 @@ classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 **NOTE**: Attachments are always uploaded as minor edits, whether or not
 `--minor-edit` is set. Watchers are notified about the page update that carries
 them, which `--minor-edit` controls, rather than once more for every file.
+
+**NOTE**: Confluence makes whoever creates or edits a page watch it, so the
+account Mark publishes with is notified of every later change to every page it
+touched. `--watch=false` stops it watching the pages it creates, updates,
+moves, labels or attaches files to, parents included, once the run's last write
+is done. A page the account already watched before Mark first wrote to it in the
+run stays watched, and so does a page an earlier run left watched: Confluence
+does not say why an account watches a page. Where the account can be changed,
+turning off its own preference to watch what it creates or edits does the same
+with no requests, and `mark page unwatch --recursive` stops it watching pages it
+already does.
 
 **NOTE**: See [Preserving Inline Comments](docs/publishing.md#preserving-inline-comments) for a detailed description of the `--preserve-comments` flag.
 

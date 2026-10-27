@@ -56,7 +56,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			// diagram title (```d2 title My "x" Diagram) otherwise closed the
 			// attribute early and produced malformed XML.
 			"convertAttachment": func(data string) string {
-				return XMLEscape(attachment.FlattenFilename(data))
+				return XMLEscape(attachment.UploadName(data))
 			},
 			// Takes any so that a template may pipe a parameter with a
 			// non-string default through it. A bool or a number reaching

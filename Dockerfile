@@ -23,21 +23,26 @@ RUN apt-get update \
 # code then refuses. Copied after the apt step above, which clears /tmp.
 COPY --from=builder /go/src/github.com/kovetskiy/mark/mermaid/merman-version.txt /etc/merman-version
 
-# The optional native mermaid renderer, selected with --mermaid-engine=merman.
-# amd64 only, which is where merman publishes a Linux build. An arm64 image goes
-# without it and draws with Chrome, which is the default anyway -- and mark says
-# so plainly if merman is asked for and is not there.
+# The optional native mermaid renderer, selected with --mermaid-engine=merman,
+# for the two architectures the image is built for. Any other goes without it
+# and draws with Chrome, which is the default anyway -- and mark says so plainly
+# if merman is asked for and is not there.
 RUN set -eux; \
-    if [ "${TARGETARCH}" = "amd64" ]; then \
+    case "${TARGETARCH}" in \
+        amd64) arch=x86_64 ;; \
+        arm64) arch=aarch64 ;; \
+        *) arch= ;; \
+    esac; \
+    if [ -n "${arch}" ]; then \
         MERMAN_VERSION="$(cat /etc/merman-version)"; \
         base="https://github.com/Latias94/merman/releases/download/v${MERMAN_VERSION}"; \
-        archive="merman-cli-x86_64-unknown-linux-gnu.tar.xz"; \
+        archive="merman-cli-${arch}-unknown-linux-gnu.tar.xz"; \
         cd /tmp; \
         curl -fsSL -o "${archive}" "${base}/${archive}"; \
         curl -fsSL -o "${archive}.sha256" "${base}/${archive}.sha256"; \
         sha256sum -c "${archive}.sha256"; \
         tar -xJf "${archive}"; \
-        install -m 0755 merman-cli-x86_64-unknown-linux-gnu/merman-cli /usr/local/bin/merman-cli; \
+        install -m 0755 "merman-cli-${arch}-unknown-linux-gnu/merman-cli" /usr/local/bin/merman-cli; \
         merman-cli --version; \
         rm -rf /tmp/merman-cli-*; \
     fi

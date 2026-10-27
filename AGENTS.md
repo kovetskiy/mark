@@ -30,11 +30,13 @@ tests, which take minutes. There is currently no `-short` skip.
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
 | `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
-| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline) |
+| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go`, `links.go`, `titles.go`, `runtitles.go` and `export.go` |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
-| `page/` | ancestry/folder resolution, relative-link rewriting, relocation |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache, page restrictions |
+| `page/` | ancestry/folder resolution, relative-link rewriting, relocation, and the `--parents-from-path` hierarchy with its directory titles |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`), page cache, page restrictions, label sync |
 | `attachment/` | checksum, upload/update, link rewriting |
+| `comments/` | `--preserve-comments`: re-places the page's inline-comment markers in the new body |
+| `fingerprint/` | the `--changes-only` content fingerprint, and the tag that carries it in a page's version message |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |
@@ -42,6 +44,11 @@ tests, which take minutes. There is currently no `-short` skip.
 | `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file |
+| `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
+| `manifest/` | the `--track-pages` record of which page each source file publishes to, kept in Confluence |
+| `header/` | the `--page-header` template placed at the top of every published page |
+| `report/` | what a run did, for `--output-format` and the run's summary |
+| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 
@@ -53,7 +60,7 @@ restrictions → sync labels.
 
 The command line is a root command carrying the global flags (config file,
 connection and credentials, logging) and one command per job: `publish`,
-`export`, and `page`, whose subcommands (`util/page.go`, `page/operations.go`,
+`export`, `doctor`, and `page`, whose subcommands (`util/page.go`, `page/operations.go`,
 `page/tree.go`) act on pages in Confluence and never on the `--track-pages`
 record.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
@@ -86,7 +93,8 @@ an attribute break the entire upload, not just one element.
 - `xmlesc` — any interpolated text or attribute value.
 - `cdata` — any text placed inside `<![CDATA[...]]>`; it splits an embedded `]]>` across
   two CDATA sections, which is the only legal way to escape it.
-- `convertAttachment` — values destined for `ri:filename`; slash-flattens *and* escapes.
+- `convertAttachment` — values destined for `ri:filename`; cleans the path (`./x` is `x`),
+  slash-flattens *and* escapes.
 
 All three also replace the characters XML 1.0 has no spelling for — most C0 controls,
 U+FFFE/U+FFFF, bytes that are not UTF-8 — with U+FFFD; Go code that builds markup itself

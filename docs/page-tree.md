@@ -16,6 +16,12 @@ mixed in the same document to create complex hierarchies.
 > [!NOTE]
 > Folder support is currently only available on Confluence Cloud and is not supported in Confluence Server / Data Center.
 
+`--parents` puts every page of the run under the pages it names, ahead of the
+parents a document declares itself: with `--parents "Engineering/Handbook"`, a
+document whose `Parent` is `Setup` ends up under Engineering > Handbook >
+Setup. The titles are separated by `/`, and `--parents-delimiter` sets another
+separator for titles that contain a slash.
+
 ## Parents from the directory a file is in
 
 `--parents-from-path` puts each page under a page named after every directory
@@ -137,6 +143,7 @@ file, no commit. The record lives in Confluence.
 | leading H1 edited | the same |
 | file renamed | content fingerprint, matched against paths that stopped appearing |
 | parent page renamed | the page the declared parent chain resolved to last run, whatever it is called now |
+| parent and child retitled in one run | the run's own document publishing the parent's new title, and the page it published last time, before that document's turn to retitle it |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
 | two files claiming one page | the reverse index, when the second one is recorded |
@@ -345,8 +352,8 @@ mark page delete <page> [--recursive]
 mark page watch   <page> [--user <name>]... [--recursive]  # or unwatch
 ```
 
-A `<page>` is an id, a URL as the browser shows it, or a title together with
-`--space`. A URL also gives the base URL when `--base-url` is not set. A title
+A `<page>` is an id, a URL as the browser shows it or a short `/x/...` link,
+or a title together with `--space`. A URL also gives the base URL when `--base-url` is not set. A title
 made only of digits is read as an id, so name such a page by its URL.
 
 Every command takes `--dry-run`, which says what it would do and changes

@@ -10,6 +10,7 @@ import (
 
 	mark "github.com/kovetskiy/mark/v16"
 	"github.com/kovetskiy/mark/v16/export"
+	"github.com/kovetskiy/mark/v16/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
@@ -79,7 +80,7 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 				"metadata headers that publish it back to the same page, and download the attachments it shows or links to.",
 			Flags:  exportFlags(config),
 			Action: line.runExport,
-		}, line.pageCommand()},
+		}, line.pageCommand(), line.doctorCommand()},
 	}
 
 	return root
@@ -290,6 +291,10 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	// Only a false somebody gave: a command built without the flag reads as
+	// false, and keeps watching.
+	unwatch := cmd.IsSet("watch") && !cmd.Bool("watch")
+
 	logFlags(cmd)
 
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
@@ -318,6 +323,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		ContentAppearance:        cmd.String("content-appearance"),
 
 		MinorEdit:          cmd.Bool("minor-edit"),
+		Unwatch:            unwatch,
 		VersionMessage:     cmd.String("version-message"),
 		EditLock:           cmd.Bool("edit-lock"),
 		ChangesOnly:        cmd.Bool("changes-only"),
@@ -355,11 +361,8 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		Output: os.Stdout,
 	}
 
-	// A setting that only means something in one mermaid output has no effect in
-	// another. Said once here rather than refused: the value may come from the
-	// configuration file or the environment, where the operator cannot unset it
-	// for a single run.
-	if config.MermaidOutput == "macro" {
+	// Warned about, not refused: the value may come from the config file or the environment.
+	if !types.MermaidDraws(config.MermaidOutput) {
 		if cmd.IsSet("mermaid-engine") {
 			log.Warn().Msg("--mermaid-engine has no effect with --mermaid-output=macro: the macro does not draw the diagram")
 		}

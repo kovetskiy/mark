@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -239,6 +241,16 @@ func TestMermaidMacroNameFlagValidation(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", ""}))
 	})
 
+	// A name that is only space is as unusable as an empty one: written into
+	// ac:name it publishes "Unknown macro", and the run still exits 0.
+	t.Run("a blank name is refused", func(t *testing.T) {
+		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", "  "}))
+	})
+
+	t.Run("a padded name is accepted", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "macro", "--mermaid-macro-name", " mermaid-diagrams "}))
+	})
+
 	// The name is unused beside an image output, where an emptied one is the
 	// same "has no effect" case as a name that is set: warned about, not refused.
 	t.Run("an empty name beside an image output asks for nothing", func(t *testing.T) {
@@ -358,4 +370,117 @@ func TestRunPublishStopsWhenCancelled(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// watchedAfterPublish publishes a page to a Confluence that makes its writers
+// watch what they write, and is who watches it afterwards.
+func watchedAfterPublish(
+	t *testing.T, config string, publish func(server, config, document string) error,
+) ([]string, error) {
+	t.Helper()
+
+	server := confluencetest.New(t)
+	server.SetWatchOnWrite()
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	existing := server.AddPage("DOCS", "Page", "page", home.ID)
+
+	dir := t.TempDir()
+	path := writeConfig(t, dir, "mark.toml", config)
+	document := filepath.Join(dir, "page.md")
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
+
+	if err := publish(server.URL, path, document); err != nil {
+		return nil, err
+	}
+	assert.Contains(t, server.Page(existing.ID).Body, "Body.", "the page was published")
+
+	return server.Watchers(existing.ID), nil
+}
+
+// TestWatchFlag: publishing leaves the account watching what it wrote, as
+// Confluence makes it, unless --watch is false wherever it is given.
+func TestWatchFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		env      map[string]string
+		config   string
+		args     []string
+		bare     bool
+		watchers []string
+	}{
+		{name: "by default", watchers: []string{"acct-current"}},
+		{name: "--watch=false", args: []string{"--watch=false"}},
+		{name: "--watch=false without publish", args: []string{"--watch=false"}, bare: true},
+		{name: "MARK_WATCH=false", env: map[string]string{"MARK_WATCH": "false"}},
+		{name: "watch = false", config: "watch = false\n"},
+		{name: "--watch over watch = false", config: "watch = false\n", args: []string{"--watch"},
+			watchers: []string{"acct-current"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+
+			watchers, err := watchedAfterPublish(t, tc.config, func(server, config, document string) error {
+				args := []string{"-c", config, "--color", "never", "-u", "user", "-p", "token"}
+				if !tc.bare {
+					args = append(args, "publish")
+				}
+				args = append(args, "-b", server, "--files", document)
+				_, _, err := runMark(t, append(args, tc.args...)...)
+				return err
+			})
+			require.NoError(t, err)
+			assert.ElementsMatch(t, tc.watchers, watchers)
+		})
+	}
+}
+
+// An empty MARK_WATCH or watch = "" reads as false, which for a flag that is
+// on by default would stop watching without anybody asking.
+func TestWatchRefusesAnEmptyValue(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		env    bool
+		config string
+		want   string
+	}{
+		{name: "MARK_WATCH", env: true, want: `environment variable "MARK_WATCH" is empty`},
+		{name: "configuration file", config: "watch = \"\"\n", want: `at key "watch" is empty`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env {
+				t.Setenv("MARK_WATCH", "")
+			}
+
+			_, err := watchedAfterPublish(t, tc.config, func(server, config, document string) error {
+				_, _, err := runMark(t, "-c", config, "--color", "never", "-u", "user", "-p", "token",
+					"publish", "-b", server, "--files", document)
+				return err
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// A program that built mark's single command with flags of its own, and no
+// "watch" among them, leaves watches alone.
+func TestWatchWithoutTheFlag(t *testing.T) {
+	file := &configFile{path: new(string), settled: true}
+	flags := slices.DeleteFunc(append(globalFlags(file), publishFlags(file)...),
+		func(flag cli.Flag) bool { return flag.Names()[0] == "watch" })
+
+	watchers, err := watchedAfterPublish(t, "", func(server, config, document string) error {
+		cmd := &cli.Command{Name: "mark", Flags: flags, Action: RunMark}
+		_, _, err := captureOutput(t, func() error {
+			return cmd.Run(context.Background(), []string{"mark", "-c", config, "--color", "never",
+				"-u", "user", "-p", "token", "-b", server, "--files", document})
+		})
+		return err
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acct-current"}, watchers)
 }

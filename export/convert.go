@@ -36,6 +36,12 @@ type Options struct {
 	// is written as a relative link to that document rather than as
 	// [text](ac:Title). Nil writes every one as ac:.
 	PagePath func(title string) (string, bool)
+
+	// PageURLPath maps a URL that points at a page -- pasted into the body
+	// rather than inserted as a page link -- to the path of the document that
+	// page is exported to, as PagePath does for a title, and to the page's
+	// title. Nil leaves every URL as it is.
+	PageURLPath func(href string) (path, title string, ok bool)
 }
 
 // Document is a converted page body.

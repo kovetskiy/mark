@@ -1,13 +1,13 @@
 package export
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/page"
 )
 
 // PageRef is a page as a URL names it: by id, or by space and title.
@@ -29,12 +29,26 @@ var (
 	// /display/KEY/Title and /display/KEY/2024/01/31/Title
 	displayPath = regexp.MustCompile(`^/display/([^/]+)/(?:[0-9]{4}/[0-9]{2}/[0-9]{2}/)?([^/]+)/?$`)
 	// /x/AbCd
-	tinyPath = regexp.MustCompile(`^/x/[^/]+/?$`)
+	tinyPath = regexp.MustCompile(`^/x/([^/]+)/?$`)
+
+	// viewPath is the address of a page as a reader opens it: the forms above,
+	// less a dated /display/ path, which names a blog post by its title, and
+	// with /pages/viewpage.action the only one of the *.action forms that carry
+	// a pageId. editpage.action, viewinfo.action and the like lead somewhere
+	// else than the page itself.
+	viewPath = regexp.MustCompile(`^/(?:` +
+		`spaces/[^/]+/pages/[0-9]+(?:/[^/]*)?|` +
+		`spaces/[^/]+/blog/(?:[0-9]{4}/[0-9]{2}/[0-9]{2}/)?[0-9]+(?:/[^/]*)?|` +
+		`pages/viewpage\.action|` +
+		`display/[^/]+/[^/]+|` +
+		`x/[^/]+` +
+		`)$`)
 )
 
 // ParsePageURL reads the page a Confluence URL points at: the address a
 // browser shows for a page on Cloud or on Server and Data Center. The base URL
-// is read as --target-url reads it.
+// is read as --target-url reads it. A short link (/x/...) names the page by
+// its id, encoded, and is read without asking Confluence.
 func ParsePageURL(raw string) (PageRef, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -80,12 +94,79 @@ func ParsePageURL(raw string) (PageRef, error) {
 		return ref, err
 	}
 
-	if tinyPath.MatchString(path) {
-		return PageRef{}, errors.New(
-			"a short link (/x/...) does not say which page it is without asking Confluence; " +
-				"open it and use the address it leads to, or --page-id",
-		)
+	if m := tinyPath.FindStringSubmatch(path); m != nil {
+		id, err := page.DecodeTinyLinkID(m[1])
+		if err != nil {
+			return PageRef{}, fmt.Errorf("unable to read the short link %q: %w", raw, err)
+		}
+		ref.PageID = id
+		return ref, nil
 	}
 
 	return PageRef{}, fmt.Errorf("%q is not the URL of a Confluence page mark recognises", raw)
+}
+
+// pageOnInstance reads the page a URL pasted into a page points at, when it
+// is a page of the instance at base and the URL opens it to be read. A URL
+// carrying a fragment is left alone: it names a place on the page by
+// Confluence's anchor, which mark's own heading anchors need not match. So is
+// one with a query, other than viewpage.action's pageId: a focused comment or
+// an old version of the page would be lost.
+func pageOnInstance(href, base string) (PageRef, bool) {
+	parsed, err := url.Parse(href)
+	if err != nil || parsed.Fragment != "" || !onlyPageID(parsed) {
+		return PageRef{}, false
+	}
+
+	ref, err := ParsePageURL(href)
+	if err != nil || !sameInstance(ref.BaseURL, base) {
+		return PageRef{}, false
+	}
+
+	contextPath := strings.TrimPrefix(ref.BaseURL, parsed.Scheme+"://"+parsed.Host)
+	path := strings.TrimPrefix(strings.TrimSuffix(parsed.EscapedPath(), "/"), contextPath)
+	if !viewPath.MatchString(path) {
+		return PageRef{}, false
+	}
+
+	return ref, true
+}
+
+// onlyPageID reports whether a URL has no query, or is viewpage.action naming
+// the page and nothing else. A pageId on any other form would name another
+// page than its path does, and win.
+func onlyPageID(u *url.URL) bool {
+	query := u.Query()
+	if len(query) == 0 {
+		return true
+	}
+	return strings.HasSuffix(u.Path, "/pages/viewpage.action") && len(query) == 1 && len(query["pageId"]) == 1
+}
+
+// sameInstance reports whether a page URL's base is the instance at base. A
+// base given without the path Confluence is served under, such as
+// https://example.atlassian.net for /wiki, matches it on any path of the host.
+// A host is matched without regard to case or a default port; a path, as a
+// servlet container does, exactly.
+func sameInstance(pageBase, base string) bool {
+	pageURL, err := url.Parse(strings.TrimSuffix(pageBase, "/"))
+	if err != nil {
+		return false
+	}
+	instance, err := url.Parse(strings.TrimSuffix(base, "/"))
+	if err != nil || !strings.EqualFold(pageURL.Hostname(), instance.Hostname()) ||
+		portOf(pageURL) != portOf(instance) {
+		return false
+	}
+	return instance.Path == "" || pageURL.Path == instance.Path
+}
+
+func portOf(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return "80"
+	}
+	return "443"
 }

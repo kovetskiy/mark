@@ -1,5 +1,21 @@
 # Publishing
 
+## Publishing to a page by its URL
+
+`--target-url` publishes to the page a browser shows at that URL, whatever the
+document's headers say. It takes `.../pages/viewpage.action?pageId=ID` or
+`.../spaces/KEY/pages/ID/Title`, and the instance comes from it too, context
+path included, unless `--base-url` names it:
+
+```bash
+mark publish --target-url "https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Setup" --files setup.md
+```
+
+The page is found by its id, so the document needs no `Space` or `Title`
+header. Any headers it has are ignored, with a warning, and so is
+`--track-pages`, whose record is kept per space and per file. Name one file:
+every file of the run would be published to the same page.
+
 ## A header on every page
 
 `--page-header` names a template that mark places at the top of every page it
@@ -164,6 +180,26 @@ one, and appears in the run's summary rather than against a line of the diff.
 ```yaml
 - run: mark publish --output-format github --files "docs/**/*.md"
 ```
+
+## When Confluence is busy or unavailable
+
+Mark tries a request up to four times, waiting longer before each retry and
+for as long as a `Retry-After` header asks, up to 30 seconds. It does this for
+requests Confluence throttles (429), and for reads it answers with a 5xx other
+than 501, or never answers at all.
+
+A write is different: a gateway that gives up waiting (502, 503 or 504), or a
+connection that drops, does not mean Confluence did not carry the write out.
+Mark therefore sends a page create, a page update, or an attachment upload
+again only after it has waited as above and read that the first one did not
+land. A page with the title under the same parent, or the version the update
+would have made, means it did when Mark's account wrote it; so does an
+attachment with the upload's checksum. Mark then goes on from there instead of
+creating a duplicate. A page or version Mark cannot tell is its own, because
+the account or the author could not be read, counts as somebody else's. The
+same read settles a write sent again that Confluence refuses because the first
+one landed in the meantime. Any other failure of a write, a 500 included,
+fails the file straight away.
 
 ## Continuous Integration
 
