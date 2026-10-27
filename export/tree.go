@@ -44,9 +44,8 @@ type TreeOptions struct {
 // publish it back where it was, whichever directory it is in.
 //
 // The tree is read and every document's path checked before anything is
-// written. A folder in it is refused: a page's Parent headers are read from
-// ancestors that leave folders out, so the pages inside one would be
-// published back outside it.
+// written. A folder in it is refused, since the export does not list a
+// folder's pages.
 func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOptions) ([]*Result, error) {
 	if cfg.Output == "" || cfg.Output == "-" {
 		return nil, errors.New("a recursive export writes a directory: name it with --output")
@@ -244,8 +243,7 @@ func children(api *confluence.API, page confluence.Child) ([]confluence.Child, e
 			pages = append(pages, child)
 		case "folder":
 			return nil, fmt.Errorf(
-				"folder %q (%s) is beneath %q (%s), and a recursive export does not reach into folders: "+
-					"the pages inside one would be published back outside it",
+				"folder %q (%s) is beneath %q (%s), and a recursive export does not reach into folders",
 				child.Title, child.ID, page.Title, page.ID,
 			)
 		default:
