@@ -24,7 +24,6 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 	opts := []html.Option{html.WithUnsafe(), html.WithHardWraps()}
 
 	constructors := map[string]renderer.NodeRenderer{
-		"blockquote":        crenderer.NewConfluenceBlockQuoteRenderer(opts...),
 		"codeblock":         crenderer.NewConfluenceCodeBlockRenderer(lib, opts...),
 		"definitionlist":    crenderer.NewConfluenceDefinitionListRenderer(opts...),
 		"fencedcodeblock":   crenderer.NewConfluenceFencedCodeBlockRenderer(lib, &collectingAttacher{}, types.MarkConfig{}, "", opts...),
@@ -54,8 +53,6 @@ func htmlConfig(t *testing.T, nodeRenderer renderer.NodeRenderer) html.Config {
 	t.Helper()
 
 	switch r := nodeRenderer.(type) {
-	case *crenderer.ConfluenceBlockQuoteRenderer:
-		return r.Config
 	case *crenderer.ConfluenceCodeBlockRenderer:
 		return r.Config
 	case *crenderer.ConfluenceDefinitionListRenderer:

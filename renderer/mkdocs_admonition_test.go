@@ -133,7 +133,7 @@ func TestAdmonitionAttributesThatAreNotText(t *testing.T) {
 // panicked with a slice bounds error: see the comment on the Advance(0) in
 // parser/admonition.go.
 func TestAdmonitionInsideABlockquote(t *testing.T) {
-	renderers := append(admonitionRenderers(), crenderer.NewConfluenceBlockQuoteRenderer())
+	renderers := append(admonitionRenderers(), crenderer.NewConfluenceGHAlertsBlockQuoteRenderer())
 	actual := render(t, "> !!! note \"In a quote\"\n>     body\n", renderers, admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 
@@ -145,7 +145,7 @@ func TestAdmonitionInsideABlockquote(t *testing.T) {
 // TestAdmonitionClosedInsideAQuoteWithATab covers a closing run behind a tab in
 // a blockquote. The line after it was published inside the macro.
 func TestAdmonitionClosedInsideAQuoteWithATab(t *testing.T) {
-	renderers := append(admonitionRenderers(), crenderer.NewConfluenceBlockQuoteRenderer())
+	renderers := append(admonitionRenderers(), crenderer.NewConfluenceGHAlertsBlockQuoteRenderer())
 	actual := render(t, ">\t!!! note \"q\"\n>\t    b\n>\t!!!\n>\tafter\n", renderers, admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 

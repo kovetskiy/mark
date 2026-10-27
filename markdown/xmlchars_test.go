@@ -40,38 +40,32 @@ func TestControlCharactersDoNotBreakThePage(t *testing.T) {
 		{"raw HTML", "<div>\x1b[1mbold</div>\n"},
 		{"invalid UTF-8", "a\xed\xa0\x80b\n"},
 	} {
-		for name, compile := range compilers {
-			t.Run(name+" "+tc.name, func(t *testing.T) {
-				std, err := stdlib.New(nil)
-				require.NoError(t, err)
+		t.Run(tc.name, func(t *testing.T) {
+			std, err := stdlib.New(nil)
+			require.NoError(t, err)
 
-				out, _, err := compile([]byte(tc.markdown), std, "test.md", types.MarkConfig{})
-				require.NoError(t, err)
+			out, _, err := CompileMarkdown([]byte(tc.markdown), std, "test.md", types.MarkConfig{})
+			require.NoError(t, err)
 
-				require.NoError(t, CheckWellFormed(out), out)
-				assert.Contains(t, out, "�", "the character is replaced rather than dropped")
-			})
-		}
+			require.NoError(t, CheckWellFormed(out), out)
+			assert.Contains(t, out, "�", "the character is replaced rather than dropped")
+		})
 	}
 }
 
 // A reference inside CDATA or a comment is text, not a character, and is
 // legal as it stands; a code sample showing "&#1;" keeps it.
 func TestControlCharacterReferencesAreLeftInCDATAAndComments(t *testing.T) {
-	for name, compile := range compilers {
-		t.Run(name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
-			require.NoError(t, err)
+	std, err := stdlib.New(nil)
+	require.NoError(t, err)
 
-			out, _, err := compile([]byte("```\necho '&#1;'\n```\n\n<!-- &#27; -->\n"), std, "test.md", types.MarkConfig{})
-			require.NoError(t, err)
+	out, _, err := CompileMarkdown([]byte("```\necho '&#1;'\n```\n\n<!-- &#27; -->\n"), std, "test.md", types.MarkConfig{})
+	require.NoError(t, err)
 
-			require.NoError(t, CheckWellFormed(out), out)
-			assert.Contains(t, out, "echo '&#1;'")
-			assert.Contains(t, out, "<!-- &#27; -->")
-			assert.NotContains(t, out, "�")
-		})
-	}
+	require.NoError(t, CheckWellFormed(out), out)
+	assert.Contains(t, out, "echo '&#1;'")
+	assert.Contains(t, out, "<!-- &#27; -->")
+	assert.NotContains(t, out, "�")
 }
 
 func TestSanitizeXMLChars(t *testing.T) {

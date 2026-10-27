@@ -3,7 +3,6 @@ package mark
 import (
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 	"github.com/stretchr/testify/require"
@@ -44,7 +43,7 @@ func TestVoidElementsWithNoTransformerAreClosed(t *testing.T) {
 // themselves rejected the page. The comment is invisible either way, so the
 // hyphens are collapsed rather than the note being thrown away -- dropping the
 // node outright would also take the `<!-- Info -->` marker that classifies a
-// legacy blockquote, which the blockquote renderer reads at render time.
+// blockquote, which the blockquote renderer reads at render time.
 func TestCommentWithDoubleHyphenIsRepaired(t *testing.T) {
 	out := compileRawHTMLDoc(t, "<!-- TODO -- revisit this later -->\n\ntext\n")
 
@@ -62,7 +61,7 @@ func TestInlineCommentWithDoubleHyphenIsRepaired(t *testing.T) {
 
 // The marker that turns a blockquote into an info macro is an HTML comment the
 // renderer reads out of the AST, so repairing comments must leave it in place.
-func TestLegacyBlockQuoteMarkerSurvives(t *testing.T) {
+func TestBlockQuoteCommentMarkerSurvives(t *testing.T) {
 	out := compileRawHTMLDoc(t, "> <!-- Info -->\n> Test\n")
 
 	assert.Contains(t, out, `<ac:structured-macro ac:name="info">`)
@@ -118,7 +117,7 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 	// One HTML block: it opens with a tag, so it runs to the blank line and
 	// takes the directive and the <br> together. That is what makes the layout
 	// transformer replace the node the repair would otherwise have walked.
-	out, _, err := CompileMarkdownWithTransformer([]byte(
+	out, _, err := CompileMarkdown([]byte(
 		"<div>\n<!-- ac:layout-cell -->\na<br>b\n<!-- ac:layout-cell end -->\n</div>\n",
 	), std, "test.md", types.MarkConfig{})
 	require.NoError(t, err)
@@ -130,8 +129,7 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 
 // TestRawHTMLValidOnlyAsHTMLIsRepaired: a bare "&" and an unquoted attribute
 // are ordinary HTML, and each made the page not well-formed XML, so it could
-// not be published at all. Through both compile paths, since both carry raw
-// HTML to the page.
+// not be published at all.
 func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
 	std, err := stdlib.New(nil)
 	require.NoError(t, err)
@@ -143,14 +141,9 @@ func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
 		"attribute with no value": "<table><tr><td nowrap>x</td></tr></table>\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			for compiler, compile := range map[string]func([]byte, *stdlib.Lib, string, types.MarkConfig) (string, []attachment.Attachment, error){
-				"default": CompileMarkdown,
-				"legacy":  CompileMarkdownLegacy,
-			} {
-				out, _, err := compile([]byte(src), std, "test.md", types.MarkConfig{})
-				require.NoError(t, err, compiler)
-				assert.NoError(t, CheckWellFormed(out), "%s: %s", compiler, out)
-			}
+			out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
+			require.NoError(t, err)
+			assert.NoError(t, CheckWellFormed(out), out)
 		})
 	}
 }
