@@ -252,8 +252,8 @@ flowchart TD
 A[Start] --> B[End]
 ```
 
-This requires a Mermaid plugin to be installed in your Confluence instance -- we
-use `org.anvard.atlassian.mermaid-plugin` (Mermaid Diagrams for Confluence). The
+This requires a Mermaid plugin to be installed in your Confluence instance, such
+as `org.anvard.atlassian.mermaid-plugin` (Mermaid Diagrams for Confluence). The
 `mermaid` feature is on by default; a `--features` list that omits it keeps the
 fence a plain code block.
 
@@ -264,10 +264,16 @@ A plugin that declares its macro under a different key is named with
 mark publish --mermaid-output=macro --mermaid-macro-name=my-mermaid
 ```
 
+Surrounding space in the name is ignored, and a name that is only space is
+refused rather than published as a key no plugin knows.
+
 Nothing is drawn with `macro`, so `--mermaid-engine` and `--mermaid-scale` have
 no effect alongside it (mark warns), and `--mermaid-bundle` is refused. A
 `title` in the fence's info string is not used either: the macro carries no
 caption.
+
+`mark export` keeps the macro as storage format: a page published this way
+exports as the macro itself, not as a `mermaid` fence.
 
 ## Render D2 Diagram
 
@@ -313,7 +319,7 @@ Because the file carries what it points at, what it may point at is limited:
 ## Render PlantUML Diagrams
 
 Optionally you can enable [PlantUML](https://plantuml.com/) diagram rendering via `--features="plantuml"`.
-Unlike Mermaid and D2, which mark renders locally by default, code blocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml). (Mermaid can go the same way with `--mermaid-output=macro`.)
+Unlike Mermaid and D2, which mark renders locally by default, code blocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml). Mermaid can go the same way with `--mermaid-output=macro`.
 This requires the PlantUML for Confluence macro to be installed in your Confluence instance.
 
 ```plantuml

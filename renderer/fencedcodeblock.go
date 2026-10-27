@@ -290,7 +290,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
-		if r.MarkConfig.MermaidOutput == "macro" {
+		if !types.MermaidDraws(r.MarkConfig.MermaidOutput) {
 			name := types.MermaidMacroNameOrDefault(r.MarkConfig.MermaidMacroName)
 			if err := r.renderPlainTextMacro(writer, name, lval); err != nil {
 				return ast.WalkStop, err

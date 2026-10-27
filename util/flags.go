@@ -282,7 +282,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "mermaid-macro-name",
 			Value:   types.MermaidMacroDefaultName,
-			Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where a name is used verbatim.",
+			Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where it names the macro: surrounding space is ignored, and a blank name is refused.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_MACRO_NAME"), config.value("mermaid-macro-name")),
 		},
 		&cli.StringFlag{
@@ -798,7 +798,7 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		return context, errors.New("--mermaid-output must not be empty")
 	}
 	if err := types.ValidateMermaidOutput(mermaidOutput); err != nil {
-		return context, err
+		return context, fmt.Errorf("--mermaid-output: %w", err)
 	}
 
 	// A bundle that goes nowhere is worth saying out loud rather than dropping.

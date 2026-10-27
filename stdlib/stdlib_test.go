@@ -34,7 +34,7 @@ func TestNewParsesAllTemplates(t *testing.T) {
 	}
 }
 
-// TestPlantumlTemplateMatchesPlainTextMacro: ac:plantuml is kept for include
+// TestPlantumlTemplateMatchesPlainTextMacro: ac:plantuml is kept for macro
 // templates that call it by name, so its body has to stay the same as
 // ac:plain-text-macro with the plantuml name -- otherwise the two drift.
 func TestPlantumlTemplateMatchesPlainTextMacro(t *testing.T) {

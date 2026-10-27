@@ -38,6 +38,18 @@ func runWithArgs(args []string) error {
 	return cmd.Run(context.Background(), args)
 }
 
+// writeMermaidDoc is a document with one mermaid fence, publishable with
+// --compile-only.
+func writeMermaidDoc(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "page.md")
+	require.NoError(t, os.WriteFile(path,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n```mermaid\nflowchart TD\nA --> B\n```\n"), 0o600))
+
+	return path
+}
+
 func TestCheckMutuallyExclusiveTitleFlags(t *testing.T) {
 	t.Run("neither flag set", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd"})
@@ -264,19 +276,162 @@ func TestMermaidMacroNameFlagValidation(t *testing.T) {
 
 // TestMermaidMacroOutputNeedsNoDrawingFlags: --mermaid-output=macro on its own
 // goes from the CLI through Config into prepare(), which must accept a run that
-// asked only for the macro without also naming an engine or a scale. It runs
-// the command line rather than the package's Flags: urfave/cli remembers that a
-// flag was set from one run to the next, and a second run would read them.
+// asked only for the macro without also naming an engine or a scale. The values
+// are the ones a configuration file carries for the image outputs. It runs the
+// command line rather than the package's Flags: urfave/cli remembers that a flag
+// was set from one run to the next, and a second run would read them.
 func TestMermaidMacroOutputNeedsNoDrawingFlags(t *testing.T) {
 	config := writeConfig(t, t.TempDir(), "mark.toml", "")
 
-	doc := filepath.Join(t.TempDir(), "page.md")
-	if err := os.WriteFile(doc, []byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	stdout, _, err := runMark(t,
+		"--config", config,
+		"--compile-only",
+		"--mermaid-output", "macro",
+		"--mermaid-engine", "bogus",
+		"--mermaid-scale", "-1",
+		"--files", writeMermaidDoc(t),
+	)
+	require.NoError(t, err)
+	assert.Contains(t, stdout, `ac:name="mermaid-macro"`, "the diagram is published as the macro")
+	assert.Contains(t, stdout, "flowchart TD")
+}
 
-	_, _, err := runMark(t, "--config", config, "--compile-only", "--mermaid-output", "macro", "--files", doc)
-	assert.NoError(t, err)
+// TestMermaidMacroNameReachesTheOutput: the name the flag carries is trimmed
+// and reaches ac:name.
+func TestMermaidMacroNameReachesTheOutput(t *testing.T) {
+	config := writeConfig(t, t.TempDir(), "mark.toml", "")
+
+	stdout, _, err := runMark(t,
+		"--config", config,
+		"--compile-only",
+		"--mermaid-output", "macro",
+		"--mermaid-macro-name", " my-macro ",
+		"--files", writeMermaidDoc(t),
+	)
+	require.NoError(t, err)
+	assert.Contains(t, stdout, `ac:name="my-macro"`)
+}
+
+// TestMermaidMacroFromTheConfigFile: the output and the name resolve from the
+// TOML file, not only from flags.
+func TestMermaidMacroFromTheConfigFile(t *testing.T) {
+	config := writeConfig(t, t.TempDir(), "mark.toml",
+		"mermaid-output = \"macro\"\nmermaid-macro-name = \"cfg-macro\"\n")
+
+	stdout, _, err := runMark(t,
+		"--config", config,
+		"--compile-only",
+		"--files", writeMermaidDoc(t),
+	)
+	require.NoError(t, err)
+	assert.Contains(t, stdout, `ac:name="cfg-macro"`)
+}
+
+// TestMermaidMacroFromTheEnvironment: the same two settings resolve from the
+// environment.
+func TestMermaidMacroFromTheEnvironment(t *testing.T) {
+	t.Setenv("MARK_MERMAID_OUTPUT", "macro")
+	t.Setenv("MARK_MERMAID_MACRO_NAME", "env-macro")
+
+	config := writeConfig(t, t.TempDir(), "mark.toml", "")
+
+	stdout, _, err := runMark(t,
+		"--config", config,
+		"--compile-only",
+		"--files", writeMermaidDoc(t),
+	)
+	require.NoError(t, err)
+	assert.Contains(t, stdout, `ac:name="env-macro"`)
+}
+
+// TestMermaidMacroBlankNameIsRefusedFromEverySource: an emptied name is a
+// mistake in a flag, the config file and the environment alike, and a macro run
+// says so instead of publishing "Unknown macro".
+func TestMermaidMacroBlankNameIsRefusedFromEverySource(t *testing.T) {
+	t.Run("the flag", func(t *testing.T) {
+		config := writeConfig(t, t.TempDir(), "mark.toml", "")
+
+		_, _, err := runMark(t,
+			"--config", config,
+			"--compile-only",
+			"--mermaid-output", "macro",
+			"--mermaid-macro-name", " ",
+			"--files", writeMermaidDoc(t),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blank")
+	})
+
+	t.Run("the config file", func(t *testing.T) {
+		config := writeConfig(t, t.TempDir(), "mark.toml", "mermaid-macro-name = \"\"\n")
+
+		_, _, err := runMark(t,
+			"--config", config,
+			"--compile-only",
+			"--mermaid-output", "macro",
+			"--files", writeMermaidDoc(t),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blank")
+	})
+
+	t.Run("the environment", func(t *testing.T) {
+		t.Setenv("MARK_MERMAID_MACRO_NAME", "")
+
+		config := writeConfig(t, t.TempDir(), "mark.toml", "")
+
+		_, _, err := runMark(t,
+			"--config", config,
+			"--compile-only",
+			"--mermaid-output", "macro",
+			"--files", writeMermaidDoc(t),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blank")
+	})
+}
+
+// TestMermaidMacroWarnsAboutWhatItDoesNotUse: with the macro output the drawing
+// settings have no effect, and without the mermaid feature the fence stays a
+// code block; both are said out loud.
+func TestMermaidMacroWarnsAboutWhatItDoesNotUse(t *testing.T) {
+	config := writeConfig(t, t.TempDir(), "mark.toml", "")
+
+	t.Run("an engine", func(t *testing.T) {
+		_, stderr, err := runMark(t,
+			"--config", config,
+			"--compile-only",
+			"--mermaid-output", "macro",
+			"--mermaid-engine", "chrome",
+			"--files", writeMermaidDoc(t),
+		)
+		require.NoError(t, err)
+		assert.Contains(t, stderr, "--mermaid-engine has no effect")
+	})
+
+	t.Run("a scale", func(t *testing.T) {
+		_, stderr, err := runMark(t,
+			"--config", config,
+			"--compile-only",
+			"--mermaid-output", "macro",
+			"--mermaid-scale", "2",
+			"--files", writeMermaidDoc(t),
+		)
+		require.NoError(t, err)
+		assert.Contains(t, stderr, "--mermaid-scale has no effect")
+	})
+
+	t.Run("the feature", func(t *testing.T) {
+		_, stderr, err := runMark(t,
+			"--config", config,
+			"--compile-only",
+			"--mermaid-output", "macro",
+			"--features", "mention",
+			"--files", writeMermaidDoc(t),
+		)
+		require.NoError(t, err)
+		assert.Contains(t, stderr, "needs the mermaid feature")
+	})
 }
 
 // TestD2OutputFlagValidation covers the format a d2 diagram is published as.

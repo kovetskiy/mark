@@ -531,7 +531,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 			`</ac:structured-macro>`,
 		),
 
-		// Kept for include templates that call it by name; the renderer goes
+		// Kept for macro templates that call it by name; the renderer goes
 		// through ac:plain-text-macro.
 		`ac:plantuml`: text(
 			`<ac:structured-macro ac:name="plantuml">`,

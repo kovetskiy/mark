@@ -86,12 +86,15 @@ type Config struct {
 	Unwatch bool
 
 	// Rendering
-	DropH1           bool
-	StripLinebreaks  bool
-	MermaidEngine    string
-	MermaidScale     float64
-	MermaidOutput    string
-	MermaidBundle    bool
+	DropH1          bool
+	StripLinebreaks bool
+	MermaidEngine   string
+	MermaidScale    float64
+	MermaidOutput   string
+	MermaidBundle   bool
+	// MermaidMacroName is the ac:name a diagram is published under with
+	// MermaidOutput "macro"; empty is the default, and a name that is only
+	// space is refused.
 	MermaidMacroName string
 	D2Output         string
 	D2Scale          float64

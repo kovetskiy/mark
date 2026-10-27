@@ -31,8 +31,10 @@ func TestValidateMermaidBundle(t *testing.T) {
 	assert.NoError(t, ValidateMermaidBundle("svg", true))
 	assert.NoError(t, ValidateMermaidBundle("png", false))
 	assert.NoError(t, ValidateMermaidBundle("macro", false))
-	assert.Error(t, ValidateMermaidBundle("png", true))
-	assert.Error(t, ValidateMermaidBundle("macro", true))
+
+	assert.EqualError(t, ValidateMermaidBundle("", true), "a PNG has nowhere to keep the diagram's source")
+	assert.EqualError(t, ValidateMermaidBundle("png", true), "a PNG has nowhere to keep the diagram's source")
+	assert.EqualError(t, ValidateMermaidBundle("macro", true), "the macro publishes the diagram's source itself")
 }
 
 func TestMermaidMacroNameOrDefault(t *testing.T) {

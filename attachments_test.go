@@ -870,7 +870,10 @@ func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	err := Run(config)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "mermaid output")
+	assert.Contains(t, err.Error(), "jpeg")
+	assert.Contains(t, err.Error(), `"png"`)
+	assert.Contains(t, err.Error(), `"svg"`)
+	assert.Contains(t, err.Error(), `"macro"`)
 }
 
 // TestMermaidBundleNeedsAnSVGToGoIn is the same for the pair of them: a bundle
@@ -901,6 +904,7 @@ func TestMermaidMacroIgnoresDrawingSettings(t *testing.T) {
 	config.MermaidOutput = "macro"
 	config.MermaidEngine = "bogus"
 	config.MermaidScale = -1
+	config.Features = []string{"mermaid"}
 
 	require.NoError(t, Run(config))
 }
@@ -915,6 +919,47 @@ func TestMermaidMacroBlankNameIsRefused(t *testing.T) {
 	err := Run(config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "blank")
+}
+
+// TestMermaidMacroNameIsPublished: the name reaches ac:name trimmed, and an
+// unset name publishes under the default -- the one thing the empty-name rules
+// leave for a library caller.
+func TestMermaidMacroNameIsPublished(t *testing.T) {
+	tests := map[string]string{
+		"":             "mermaid-macro",
+		"  my-macro  ": "my-macro",
+	}
+
+	for name, want := range tests {
+		t.Run(want, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+
+			dir := t.TempDir()
+			file := writeFile(t, dir, "doc.md",
+				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n```mermaid\nflowchart TD\nA --> B\n```\n")
+
+			api := confluence.NewAPI(server.URL, "user", "token", false)
+
+			target, err := ProcessFile(file, api, Config{
+				BaseURL:          server.URL,
+				Username:         "user",
+				Password:         "token",
+				Files:            file,
+				MermaidOutput:    "macro",
+				MermaidMacroName: name,
+				Features:         []string{"mermaid"},
+				Output:           io.Discard,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, target)
+
+			body := server.Page(target.ID).Body
+			assert.Contains(t, body, `ac:name="`+want+`"`)
+			assert.NotContains(t, body, "<ac:image", "the macro output attaches no image")
+		})
+	}
 }
 
 // TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:

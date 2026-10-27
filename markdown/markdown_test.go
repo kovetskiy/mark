@@ -19,6 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// fixtureWithItsOwnTest is the one fixture the generic runners would compile
+// with the feature off; its own golden test drives the macro, drop-h1 and
+// feature-off outputs.
+const fixtureWithItsOwnTest = "testdata/mermaid-macro.md"
+
 func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
 	t.Helper()
 	basename := filepath.Base(filename)
@@ -54,7 +59,7 @@ func TestCompileMarkdown(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
-		if filename == "testdata/mermaid-macro.md" {
+		if filename == fixtureWithItsOwnTest {
 			continue // its own test pins the macro, the drop-h1 and the feature-off output
 		}
 		fmt.Printf("Testing: %v\n", filename)
@@ -105,7 +110,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
-		if filename == "testdata/mermaid-macro.md" {
+		if filename == fixtureWithItsOwnTest {
 			continue // its own test pins the macro, the drop-h1 and the feature-off output
 		}
 		lib, err := stdlib.New(nil)
@@ -163,7 +168,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
-		if filename == "testdata/mermaid-macro.md" {
+		if filename == fixtureWithItsOwnTest {
 			continue // its own test pins the macro, the drop-h1 and the feature-off output
 		}
 		lib, err := stdlib.New(nil)
