@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/yuin/goldmark-emoji/definition"
 )
 
 type inlineOptions struct {
@@ -21,7 +23,8 @@ var entityPattern = regexp.MustCompile(`^&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[
 // rather than as markup.
 //
 // It escapes what would otherwise start something -- emphasis, a code span, a
-// link, an HTML tag or an entity, strikethrough, a mention, an autolink -- and
+// link, an HTML tag or an entity, strikethrough, a mention, an autolink, and
+// with their features a formula, an emoji or a date -- and
 // leaves alone what cannot, so that "snake_case" stays readable. What only
 // matters at the start of a line is escapeLineStarts' job.
 func escapeInline(text string, opts inlineOptions) string {
@@ -60,15 +63,24 @@ func escapeInline(text string, opts inlineOptions) string {
 			}
 
 		case '@':
-			// "@{name}" is a mention, and "user@example.com" an address the
-			// autolinker would make a link of.
-			if next == '{' || (isAlnum(prev) && isAlnum(next)) {
+			// "@{name}" is a mention, "user@example.com" an address the
+			// autolinker would make a link of, and "@date(...)" a date.
+			if next == '{' || (isAlnum(prev) && isAlnum(next)) || isDate(runes[i:]) {
 				b.WriteRune('\\')
 			}
 
 		case ':':
-			// "https://example.com" in plain text would be linked.
-			if next == '/' && i+2 < len(runes) && runes[i+2] == '/' && unicode.IsLetter(prev) {
+			// "https://example.com" in plain text would be linked, and
+			// ":smile:" would be an emoji.
+			if (next == '/' && i+2 < len(runes) && runes[i+2] == '/' && unicode.IsLetter(prev)) ||
+				isEmoji(runes[i:]) {
+				b.WriteRune('\\')
+			}
+
+		case '$':
+			// The math feature opens a formula at a "$" followed by anything
+			// but a space: another "$", or the formula itself.
+			if next != ' ' && next != '\t' && next != '\n' {
 				b.WriteRune('\\')
 			}
 
@@ -88,6 +100,40 @@ func escapeInline(text string, opts inlineOptions) string {
 	}
 
 	return b.String()
+}
+
+// dateMacro is what the date feature's parser takes for a date.
+var dateMacro = regexp.MustCompile(`^@date\(([^)]+)\)`)
+
+// isDate reports whether text starts with what the date feature publishes as
+// a date: "@date(" and a value that is more than spaces and quotes.
+func isDate(text []rune) bool {
+	if len(text) < len("@date()") || string(text[:len("@date(")]) != "@date(" {
+		return false
+	}
+	m := dateMacro.FindStringSubmatch(string(text))
+	return m != nil && strings.Trim(strings.TrimSpace(m[1]), `"'`) != ""
+}
+
+var emojis = definition.Github()
+
+// isEmoji reports whether text starts with what the emoji feature publishes
+// as an emoji: a shortcode it knows, between colons.
+func isEmoji(text []rune) bool {
+	end := 1
+	for end < len(text) && isShortcodeRune(text[end]) {
+		end++
+	}
+	if end == 1 || end >= len(text) || text[end] != ':' {
+		return false
+	}
+	_, ok := emojis.Get(string(text[1:end]))
+	return ok
+}
+
+// isShortcodeRune is the emoji parser's test for a character of a shortcode.
+func isShortcodeRune(r rune) bool {
+	return r < unicode.MaxASCII && (isAlnum(r) || r == '_' || r == '-' || r == '+')
 }
 
 func isAlnum(r rune) bool {
