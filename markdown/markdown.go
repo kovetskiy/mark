@@ -53,13 +53,13 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 	p := parser.New(append(
 		[]parser.Option{
 			parser.WithExtensions(
-				extension.FootnoteParser,
-				extension.DefinitionListParser,
-				extension.TableParser,
+				extension.NewFootnoteParser(),
+				extension.NewDefinitionListParser(),
+				extension.NewTableParser(),
 				ext,
-				extension.LinkifyParser,
-				extension.StrikethroughParser,
-				extension.TaskListItemParser,
+				extension.NewLinkifyParser(),
+				extension.NewStrikethroughParser(),
+				extension.NewTaskListItemParser(),
 			),
 			parser.WithInlineParsers(cparser.LinkifyInEmphasis()),
 		},
@@ -79,7 +79,7 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 			extension.NewTableHTMLRenderer(
 				extension.WithTableCellAlignMethod(extension.TableCellAlignStyle),
 			),
-			extension.StrikethroughHTMLRenderer,
+			extension.NewStrikethroughHTMLRenderer(),
 			// Last, so that its renderers are the ones that stay registered.
 			// goldmark's own definition list, task list and footnote
 			// renderers are left out: these replace every node kind they

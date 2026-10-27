@@ -38,7 +38,7 @@ func TestConfluenceTaskListRendererIDsAreUniquePerDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := render(t, tt.input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
+			got := render(t, tt.input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.NewTaskListItemParser()))
 
 			for _, w := range tt.want {
 				assert.Equal(t, 1, strings.Count(got, w),
@@ -78,7 +78,7 @@ func TestTaskListRendererLeavesOrdinaryListsAlone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := render(t, tt.input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
+			got := render(t, tt.input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.NewTaskListItemParser()))
 
 			assert.NotContains(t, got, "ac:task", "an ordinary list is not a task list")
 			for _, want := range tt.want {
@@ -92,7 +92,7 @@ func TestTaskListRendererLeavesOrdinaryListsAlone(t *testing.T) {
 // loses the difference between a done and an open item is worse than no task
 // list at all.
 func TestTaskListCheckedState(t *testing.T) {
-	got := render(t, "- [x] done\n- [ ] open\n", []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
+	got := render(t, "- [x] done\n- [ ] open\n", []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.NewTaskListItemParser()))
 
 	assert.Contains(t, got, "<ac:task-status>complete</ac:task-status>")
 	assert.Contains(t, got, "<ac:task-status>incomplete</ac:task-status>")
@@ -104,7 +104,7 @@ func TestTaskListCheckedState(t *testing.T) {
 func renderTaskList(t *testing.T, input string) string {
 	t.Helper()
 
-	return render(t, input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.TaskListItemParser))
+	return render(t, input, []html.Extension{crenderer.NewConfluenceTaskListRenderer()}, parser.WithExtensions(extension.NewTaskListItemParser()))
 }
 
 // TestMixedListSplitsIntoRuns is what this replaced. Mixing <ac:task> and <li>

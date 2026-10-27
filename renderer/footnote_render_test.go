@@ -20,7 +20,7 @@ func footnoteRender(t *testing.T, source string) string {
 			crenderer.NewConfluenceParagraphRenderer(),
 			crenderer.NewConfluenceTextRenderer(false),
 		},
-		parser.WithExtensions(extension.FootnoteParser))
+		parser.WithExtensions(extension.NewFootnoteParser()))
 }
 
 // TestFootnoteBothEndsCarryAnAnchor covers the property the whole feature rests

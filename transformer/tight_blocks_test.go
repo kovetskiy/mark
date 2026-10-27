@@ -16,7 +16,7 @@ import (
 // nested, the ones beside each other included, and nothing else.
 func TestTightBlockTransformer(t *testing.T) {
 	p := parser.New(
-		parser.WithExtensions(extension.DefinitionListParser),
+		parser.WithExtensions(extension.NewDefinitionListParser()),
 		parser.WithASTTransformers(
 			util.Prioritized[parser.ASTTransformer](NewTightBlockTransformer(), 0),
 		),
