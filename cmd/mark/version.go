@@ -1,30 +1,48 @@
 package main
 
 import (
-	"fmt"
 	"runtime/debug"
+	"strings"
 )
 
-// buildVersion is what "mark --version" says: the version and commit the
-// build was given with -ldflags, as the Makefile and the release builds give
-// them. A "go install ...@v17.0.0" build is given neither, so the module
-// version and the VCS revision Go records stand in for whichever the flags
-// left at their defaults. "(devel)" is no version, and keeps "dev".
+// buildVersion is what "mark --version" says. The version and commit given
+// with -ldflags win; Go's build info stands in for whichever the flags left
+// unset, so a go install or plain go build still names its release. A
+// pseudo-version already ends in the commit, so the commit is not repeated.
 func buildVersion(version, commit string, info *debug.BuildInfo) string {
-	if info != nil {
-		if version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			version = info.Main.Version
-		}
-		if commit == "none" {
-			for _, setting := range info.Settings {
-				if setting.Key == "vcs.revision" && setting.Value != "" {
-					commit = setting.Value
-				}
-			}
+	if info == nil {
+		return version + "@" + commit
+	}
+
+	var revision string
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			revision = setting.Value
 		}
 	}
 
-	return fmt.Sprintf("%s@%s", version, commit)
+	module, modified := strings.CutSuffix(info.Main.Version, "+dirty")
+	fromInfo := false
+	if version == "dev" && module != "" && module != "(devel)" {
+		version = module
+		fromInfo = true
+	}
+	if commit == "none" && revision != "" {
+		commit = revision
+		fromInfo = true
+	}
+
+	dirty := ""
+	if fromInfo && modified {
+		dirty = "+dirty"
+	}
+
+	// A pseudo-version ends in the commit's first 12 characters.
+	if len(commit) >= 12 && strings.HasSuffix(version, "-"+commit[:12]) {
+		return version + dirty
+	}
+
+	return version + "@" + commit + dirty
 }
 
 // readBuildInfo is debug.ReadBuildInfo, as buildVersion takes it.
