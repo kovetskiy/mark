@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"regexp"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // NewConfluenceTagParser returns an inline parser that parses <ac:* /> and <ri:* /> tags to ensure that Confluence specific tags are parsed
@@ -64,7 +64,10 @@ var closeDecl = []byte(">")
 
 func (s *confluenceTagParser) parseUntil(block text.Reader, closer []byte, _ parser.Context) ast.Node {
 	savedLine, savedSegment := block.Position()
-	node := ast.NewRawHTML()
+	// Raw markup, so bound to the identity decoder: an entity in it is the
+	// author's and goes out as written.
+	var value text.ValueBuilder
+	value.Decoder(text.IdentityDecoder)
 	for {
 		line, segment := block.PeekLine()
 		if line == nil {
@@ -72,11 +75,11 @@ func (s *confluenceTagParser) parseUntil(block text.Reader, closer []byte, _ par
 		}
 		index := bytes.Index(line, closer)
 		if index > -1 {
-			node.Segments.Append(segment.WithStop(segment.Start + index + len(closer)))
+			value.AddSegment(segment.WithStop(segment.Start + index + len(closer)))
 			block.Advance(index + len(closer))
-			return node
+			return ast.NewRawHTML(value.BuildMultiLine())
 		}
-		node.Segments.Append(segment)
+		value.AddSegment(segment)
 		block.AdvanceLine()
 	}
 	block.SetPosition(savedLine, savedSegment)
@@ -86,7 +89,8 @@ func (s *confluenceTagParser) parseUntil(block text.Reader, closer []byte, _ par
 func (s *confluenceTagParser) parseMultiLineRegexp(reg *regexp.Regexp, block text.Reader, _ parser.Context) ast.Node {
 	sline, ssegment := block.Position()
 	if block.Match(reg) {
-		node := ast.NewRawHTML()
+		var value text.ValueBuilder
+		value.Decoder(text.IdentityDecoder)
 		eline, esegment := block.Position()
 		block.SetPosition(sline, ssegment)
 		for {
@@ -104,7 +108,7 @@ func (s *confluenceTagParser) parseMultiLineRegexp(reg *regexp.Regexp, block tex
 				end = esegment.Start
 			}
 
-			node.Segments.Append(text.NewSegment(start, end))
+			value.AddIndex(text.NewIndex(start, end))
 			if l == eline {
 				block.Advance(end - start)
 				break
@@ -112,7 +116,7 @@ func (s *confluenceTagParser) parseMultiLineRegexp(reg *regexp.Regexp, block tex
 				block.AdvanceLine()
 			}
 		}
-		return node
+		return ast.NewRawHTML(value.BuildMultiLine())
 	}
 	return nil
 }
