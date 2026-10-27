@@ -17,7 +17,7 @@ import (
 func renderDefinitionList(t *testing.T, input string) string {
 	t.Helper()
 
-	return render(t, input, []html.Extension{crenderer.NewConfluenceDefinitionListRenderer()}, parser.WithExtensions(extension.DefinitionListParser))
+	return render(t, input, []html.Extension{crenderer.NewConfluenceDefinitionListRenderer()}, parser.WithExtensions(extension.NewDefinitionListParser()))
 }
 
 // TestDefinitionListIsATable: storage format has no <dl>, <dt> or <dd>, so a

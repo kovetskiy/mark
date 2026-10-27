@@ -17,7 +17,7 @@ import (
 func TestAutoLinkTransformer(t *testing.T) {
 	gm := goldmarktest.New(
 		goldmarktest.WithExtensions(
-			extension.GFMParser, extension.GFMHTMLRenderer,
+			extension.NewGFMParser(), extension.NewGFMHTMLRenderer(),
 		),
 		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(

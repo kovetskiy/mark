@@ -149,7 +149,11 @@ func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
 		return valueBytes(t.Value, source)
 	case *ast.CodeSpan:
 		// A span's text is its value; it has no Text children to collect.
-		return valueBytes(t.Value, source)
+		// Bytes is the span's source, padding included; Value is its text.
+		if valueBytes(t.Value, source) == nil {
+			return nil
+		}
+		return []byte(t.Value.Value(source))
 	case *String:
 		return slices.Clip(t.Value)
 	default:

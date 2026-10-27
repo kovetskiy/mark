@@ -1137,8 +1137,9 @@ func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 						buf.WriteString(c.Value.Str(markdown))
 					case *ast.CodeSpan:
 						// A code span's text is on the span itself, not
-						// in Text children.
-						buf.WriteString(c.Value.Str(markdown))
+						// in Text children. Str is its source, padding
+						// included; Value is its text.
+						buf.WriteString(c.Value.Value(markdown))
 						return ast.WalkSkipChildren, nil
 					}
 					return ast.WalkContinue, nil
