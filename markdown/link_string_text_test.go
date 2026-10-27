@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -13,7 +14,7 @@ import (
 // String node holding its alt text, and a link's text includes it: for a bare
 // ac: link that text names the page, and it is the link body.
 func TestLinkTextIncludesStringNodes(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -44,7 +45,7 @@ func TestLinkTextIncludesStringNodes(t *testing.T) {
 // span's own newlines kept as written, where its value turns them into
 // spaces.
 func TestLinkTextKeepsV1LineBreaks(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	link := func(title, body string) string {

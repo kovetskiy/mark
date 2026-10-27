@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +31,7 @@ func compileFile(t *testing.T, path string) (string, error) {
 	source, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := mark.CompileMarkdown(source, lib, path, types.MarkConfig{})

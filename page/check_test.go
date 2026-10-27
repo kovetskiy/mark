@@ -1,10 +1,12 @@
 package page
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,7 +63,7 @@ func TestLinkCheckerAsksOnce(t *testing.T) {
 
 	checker := NewLinkChecker(LinkChecks{External: true})
 	for range 5 {
-		assert.NoError(t, checker.CheckExternal(server.URL+"/page"))
+		assert.NoError(t, checker.CheckExternal(context.Background(), server.URL+"/page"))
 	}
 
 	assert.Equal(t, int64(1), atomic.LoadInt64(&requests))
@@ -79,7 +81,7 @@ func TestLinkCheckerFallsBackToGet(t *testing.T) {
 	}))
 	defer server.Close()
 
-	assert.NoError(t, NewLinkChecker(LinkChecks{External: true}).CheckExternal(server.URL+"/page"))
+	assert.NoError(t, NewLinkChecker(LinkChecks{External: true}).CheckExternal(context.Background(), server.URL+"/page"))
 }
 
 func TestLinkCheckerReportsFailures(t *testing.T) {
@@ -88,12 +90,12 @@ func TestLinkCheckerReportsFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewLinkChecker(LinkChecks{External: true}).CheckExternal(server.URL + "/gone")
+	err := NewLinkChecker(LinkChecks{External: true}).CheckExternal(context.Background(), server.URL+"/gone")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 
 	// Nothing listening at all.
-	err = NewLinkChecker(LinkChecks{External: true}).CheckExternal("http://127.0.0.1:1/nope")
+	err = NewLinkChecker(LinkChecks{External: true}).CheckExternal(context.Background(), "http://127.0.0.1:1/nope")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unreachable")
 }
@@ -109,9 +111,116 @@ func TestLinkCheckerOffAsksNothing(t *testing.T) {
 	// Asking for internal or Confluence checks must not put mark on the
 	// network; that is the point of the set being a set.
 	for _, checks := range []LinkChecks{{}, {Internal: true}, {Confluence: true}, {Internal: true, Confluence: true}} {
-		assert.NoError(t, NewLinkChecker(checks).CheckExternal(server.URL))
+		assert.NoError(t, NewLinkChecker(checks).CheckExternal(context.Background(), server.URL))
 	}
-	assert.Nil(t, (*LinkChecker)(nil).CheckExternal(server.URL))
+	assert.Nil(t, (*LinkChecker)(nil).CheckExternal(context.Background(), server.URL))
 
 	assert.Zero(t, atomic.LoadInt64(&requests))
+}
+
+// TestCheckExternalStopsWithTheRun: a link check carries the run's context,
+// so a stopped run does not first wait out every external link left on the
+// page, HEAD and then GET, each up to the client's timeout. Nor is a check
+// that ended with the run remembered as the link's answer.
+func TestCheckExternalStopsWithTheRun(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+
+	checker := NewLinkChecker(LinkChecks{External: true})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	err := checker.CheckExternal(ctx, server.URL+"/slow")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(started), 5*time.Second)
+
+	checker.mu.Lock()
+	_, remembered := checker.seen[server.URL+"/slow"]
+	checker.mu.Unlock()
+	assert.False(t, remembered, "a check the run gave up on is not the link's answer")
+}
+
+// answerThenCancel answers every request 200 and then cancels the run, which
+// is a check that completed just as the run was stopped.
+type answerThenCancel struct{ cancel context.CancelFunc }
+
+func (a answerThenCancel) RoundTrip(r *http.Request) (*http.Response, error) {
+	a.cancel()
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body:       http.NoBody,
+		Request:    r,
+	}, nil
+}
+
+// TestCheckExternalKeepsAnAnswerThatCameAsTheRunStopped: a check that got its
+// answer has it, and is remembered, however soon after it the run stopped.
+func TestCheckExternalKeepsAnAnswerThatCameAsTheRunStopped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	checker := NewLinkChecker(LinkChecks{External: true})
+	checker.Client = &http.Client{Transport: answerThenCancel{cancel: cancel}}
+
+	require.NoError(t, checker.CheckExternal(ctx, "https://example.test/page"))
+
+	checker.mu.Lock()
+	answer, remembered := checker.seen["https://example.test/page"]
+	checker.mu.Unlock()
+	assert.True(t, remembered)
+	assert.NoError(t, answer)
+}
+
+// answerGetThenCancel refuses a HEAD with 405 and answers the GET after it
+// with status, cancelling the run as it does.
+type answerGetThenCancel struct {
+	cancel context.CancelFunc
+	status int
+}
+
+func (a answerGetThenCancel) RoundTrip(r *http.Request) (*http.Response, error) {
+	status := http.StatusMethodNotAllowed
+	if r.Method == http.MethodGet {
+		a.cancel()
+		status = a.status
+	}
+
+	return &http.Response{
+		StatusCode: status,
+		Status:     http.StatusText(status),
+		Body:       http.NoBody,
+		Request:    r,
+	}, nil
+}
+
+// TestCheckExternalKeepsAFailureThatCameAsTheRunStopped: a link that answered
+// 404 answered, and that is the check's result even when the run stopped
+// before it was read -- not the run's cancellation in its place.
+func TestCheckExternalKeepsAFailureThatCameAsTheRunStopped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	checker := NewLinkChecker(LinkChecks{External: true})
+	checker.Client = &http.Client{Transport: answerGetThenCancel{cancel: cancel, status: http.StatusNotFound}}
+
+	err := checker.CheckExternal(ctx, "https://example.test/gone")
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "Not Found")
+
+	checker.mu.Lock()
+	_, remembered := checker.seen["https://example.test/gone"]
+	checker.mu.Unlock()
+	assert.True(t, remembered)
 }

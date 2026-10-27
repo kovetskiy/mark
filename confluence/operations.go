@@ -1,8 +1,9 @@
 package confluence
 
 import (
+	"context"
 	"errors"
-	"net/http"
+	"net/url"
 )
 
 // Operation is something Confluence lets the authenticated user do: "create"
@@ -19,22 +20,19 @@ var ErrNoOperations = errors.New("this Confluence does not say what the account 
 // SpaceOperations returns a space's name, where the API gives it, and what the
 // authenticated user may do in it. A space that is not there, or that the user
 // cannot see, is ErrNotFound: Confluence answers both the same way.
-func (api *API) SpaceOperations(key string) (string, []Operation, error) {
+func (api *API) SpaceOperations(ctx context.Context, key string) (string, []Operation, error) {
 	if api.gateway {
-		return api.spaceOperationsV2(key)
+		return api.spaceOperationsV2(ctx, key)
 	}
 
-	var space struct {
+	type spaceOperations struct {
 		Name       string       `json:"name"`
 		Operations *[]Operation `json:"operations"`
 	}
 
-	request, err := api.v1().Res("space/"+key, &space).Get(map[string]string{"expand": "operations"})
+	space, err := get[spaceOperations](ctx, api.v1, []string{"space", key}, url.Values{"expand": {"operations"}})
 	if err != nil {
-		return "", nil, newTransportError(request, "read space "+key, err)
-	}
-	if request.Raw.StatusCode != http.StatusOK {
-		return "", nil, newErrorStatusNotOK(request)
+		return "", nil, requestError("read space "+key, err)
 	}
 	if space.Operations == nil {
 		return space.Name, nil, ErrNoOperations
@@ -45,22 +43,19 @@ func (api *API) SpaceOperations(key string) (string, []Operation, error) {
 
 // spaceOperationsV2 is SpaceOperations through v2, which names no space: the
 // operations endpoint returns them alone, so the name is left empty.
-func (api *API) spaceOperationsV2(key string) (string, []Operation, error) {
-	id, err := api.GetSpaceID(key)
+func (api *API) spaceOperationsV2(ctx context.Context, key string) (string, []Operation, error) {
+	id, err := api.GetSpaceID(ctx, key)
 	if err != nil {
 		return "", nil, err
 	}
 
-	var permitted struct {
+	type spaceOperations struct {
 		Operations *[]Operation `json:"operations"`
 	}
 
-	request, err := api.v2().Res("spaces/"+id+"/operations", &permitted).Get()
+	permitted, err := get[spaceOperations](ctx, api.v2, []string{"spaces", id, "operations"}, nil)
 	if err != nil {
-		return "", nil, newTransportError(request, "read what may be done in space "+key, err)
-	}
-	if request.Raw.StatusCode != http.StatusOK {
-		return "", nil, newErrorStatusNotOK(request)
+		return "", nil, requestError("read what may be done in space "+key, err)
 	}
 	if permitted.Operations == nil {
 		return "", nil, ErrNoOperations

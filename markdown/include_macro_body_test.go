@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -26,13 +27,13 @@ func TestMacroDefinedInIncludeKeepsItsTemplateActions(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"box.md": defs})
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	direct, _, err := CompileMarkdown([]byte(defs+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
 	require.NoError(t, err)
 
-	std, err = stdlib.New(nil)
+	std, err = stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	included, _, err := CompileMarkdown([]byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})

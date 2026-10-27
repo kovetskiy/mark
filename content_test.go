@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -157,7 +158,7 @@ func writeWithBOM(t *testing.T, dir, name, content string) string {
 func storedBody(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
 	found, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", title, "page")
+		FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if found == nil {
 		return ""

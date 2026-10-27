@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -94,12 +95,12 @@ func hasAncestorTitled(pg *confluence.PageInfo, title string) bool {
 // The one parentless page that is certainly not the document's is the space
 // home page, and that is still passed over, as is any page when the home page
 // cannot be looked up to tell.
-func offAnchor(api *confluence.API, space string, pg *confluence.PageInfo, parents []string) bool {
+func offAnchor(ctx context.Context, api *confluence.API, space string, pg *confluence.PageInfo, parents []string) bool {
 	if len(pg.Ancestors) > 0 {
 		return !pageUnderParents(pg, parents)
 	}
 
-	homepage, err := api.FindHomePage(space)
+	homepage, err := api.FindHomePage(ctx, space)
 	if err != nil || homepage == nil {
 		return true
 	}
@@ -134,6 +135,7 @@ const dryRunFolderID = "dry-run-folder-id"
 // is then the deepest one that exists; a page cannot sit under a parent that
 // does not exist yet, so it would be moved once a real run has created it.
 func WouldMove(
+	ctx context.Context,
 	api *confluence.API,
 	pg, parent *confluence.PageInfo,
 	parents []string,
@@ -149,7 +151,7 @@ func WouldMove(
 		}
 
 		// Not knowing means a move, as it does for EnsurePageUnderFolderParent.
-		current, _, err := currentParentID(api, pg, parent.ID)
+		current, _, err := currentParentID(ctx, api, pg, parent.ID)
 		if err != nil || current == "" {
 			current = ImmediateParentID(pg)
 		}
@@ -178,12 +180,13 @@ func WouldMove(
 // page, its parent is asked of v2, which names folders. That is a read in place
 // of the move and the re-read that follows it, and only for a page v1 read.
 func EnsurePageUnderFolderParent(
+	ctx context.Context,
 	api *confluence.API,
 	pg *confluence.PageInfo,
 	folderID string,
 ) error {
 	if pg != nil && folderID != "" {
-		parentID, parentType, err := currentParentID(api, pg, folderID)
+		parentID, parentType, err := currentParentID(ctx, api, pg, folderID)
 		if err != nil {
 			// Not knowing costs a move that may not have been needed, which is
 			// what happened every time before this was asked at all.
@@ -193,7 +196,7 @@ func EnsurePageUnderFolderParent(
 		}
 	}
 
-	return EnsurePageUnderParent(api, pg, folderID)
+	return EnsurePageUnderParent(ctx, api, pg, folderID)
 }
 
 // currentParentID returns the id and type of pg's direct parent as far as
@@ -202,6 +205,7 @@ func EnsurePageUnderFolderParent(
 // folderID, v2 is asked, and its answer or error returned; otherwise it is
 // pg's own ParentID and ParentType.
 func currentParentID(
+	ctx context.Context,
 	api *confluence.API,
 	pg *confluence.PageInfo,
 	folderID string,
@@ -210,13 +214,14 @@ func currentParentID(
 		return pg.ParentID, pg.ParentType, nil
 	}
 
-	return api.ParentOfV2(pg.ID)
+	return api.ParentOfV2(ctx, pg.ID)
 }
 
 // EnsurePageUnderParent moves an existing page under parentID when its direct
 // parent differs. The parent may be a page or a folder; Confluence moves
 // content the same way either way.
 func EnsurePageUnderParent(
+	ctx context.Context,
 	api *confluence.API,
 	pg *confluence.PageInfo,
 	parentID string,
@@ -238,11 +243,11 @@ func EnsurePageUnderParent(
 		parentID,
 	)
 
-	if err := api.MoveContentAppend(pg.ID, parentID); err != nil {
+	if err := api.MoveContentAppend(ctx, pg.ID, parentID); err != nil {
 		return fmt.Errorf("move page %q under new parent: %w", pg.Title, err)
 	}
 
-	refreshed, err := api.GetPageByID(pg.ID)
+	refreshed, err := api.GetPageByID(ctx, pg.ID)
 	if err != nil {
 		return fmt.Errorf("refresh page %q after move: %w", pg.Title, err)
 	}

@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -123,7 +124,7 @@ func NewLinkResolver(
 // The text is the words between the brackets, which an ac: link with nothing
 // after the colon uses as the page title -- the [Some Page](ac:) form. It is
 // wanted for that alone; nothing else looks at it.
-func (r *LinkResolver) Resolve(target, text string) (string, error) {
+func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string, error) {
 	if r == nil || r.API == nil || target == "" {
 		return "", nil
 	}
@@ -131,7 +132,13 @@ func (r *LinkResolver) Resolve(target, text string) (string, error) {
 	// A link somewhere else entirely. It is left as written either way; asked
 	// whether it answers only when external links are being checked.
 	if strings.Contains(target, "://") {
-		if err := r.Checker.CheckExternal(target); err != nil {
+		if err := r.Checker.CheckExternal(ctx, target); err != nil {
+			// The run was stopped, which is not something wrong with the
+			// link: the file stops here, as at its next request.
+			if ctx.Err() != nil {
+				return "", err
+			}
+
 			r.note("%s: %s", target, err)
 		}
 
@@ -155,6 +162,7 @@ func (r *LinkResolver) Resolve(target, text string) (string, error) {
 	filename, hash, _ := strings.Cut(target, "#")
 
 	resolved, why, err := resolveLink(
+		ctx,
 		r.API, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.SpaceForLinks, r.TitleFromH1, r.TitleFromFilename,
@@ -252,6 +260,7 @@ type unresolved struct {
 // the time an unresolvable link is left as written, which is what mark has
 // always done.
 func resolveLink(
+	ctx context.Context,
 	api *confluence.API,
 	bases []string,
 	link markdownLink,
@@ -318,7 +327,7 @@ func resolveLink(
 			return "", &unresolved{reason: "it has no title, so it is never published"}, nil
 		}
 
-		result, err = getConfluenceLink(api, linkMeta.Space, linkMeta.Title)
+		result, err = getConfluenceLink(ctx, api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
 			return "", nil, fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", filepath, linkMeta.Space, linkMeta.Title, err)
 		}
@@ -410,18 +419,19 @@ func findLinkTarget(bases []string, name string) (string, *unresolved) {
 // Tiny links use the format {baseURL}/x/{encodedPageID} and are immune to
 // Cloud-specific URL variations like /ex/confluence/<cloudId>/wiki/...
 func getConfluenceLink(
+	ctx context.Context,
 	api *confluence.API,
 	space, title string,
 ) (string, error) {
 	// Try to find as a page first
-	page, err := api.FindPage(space, title, "page")
+	page, err := api.FindPage(ctx, space, title, "page")
 	if err != nil {
 		return "", fmt.Errorf("api: find page %q in space %q: %w", title, space, err)
 	}
 
 	// If not found as a page, try to find as a blog post
 	if page == nil {
-		page, err = api.FindPage(space, title, "blogpost")
+		page, err = api.FindPage(ctx, space, title, "blogpost")
 		if err != nil {
 			return "", fmt.Errorf("api: find blogpost %q in space %q: %w", title, space, err)
 		}

@@ -2,6 +2,7 @@ package page_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/page"
@@ -18,7 +19,7 @@ func TestMoveUnderParent(t *testing.T) {
 	child := server.AddPage("DOCS", "B child", "page", b.ID)
 
 	var out bytes.Buffer
-	require.NoError(t, page.Move(api, page.Ref{ID: b.ID}, page.MoveOptions{Parent: &page.Ref{ID: a.ID}}, &out))
+	require.NoError(t, page.Move(context.Background(), api, page.Ref{ID: b.ID}, page.MoveOptions{Parent: &page.Ref{ID: a.ID}}, &out))
 
 	assert.Equal(t, a.ID, server.Page(b.ID).ParentID)
 	assert.Equal(t, b.ID, server.Page(child.ID).ParentID, "the page's children go with it")
@@ -32,7 +33,7 @@ func TestMoveByTitle(t *testing.T) {
 	a := server.AddPage("DOCS", "A", "page", root.ID)
 	b := server.AddPage("DOCS", "B", "page", root.ID)
 
-	err := page.Move(api, page.Ref{Space: "DOCS", Title: "B"},
+	err := page.Move(context.Background(), api, page.Ref{Space: "DOCS", Title: "B"},
 		page.MoveOptions{Parent: &page.Ref{Space: "DOCS", Title: "A"}}, &bytes.Buffer{})
 	require.NoError(t, err)
 
@@ -48,7 +49,7 @@ func TestMoveRefusesItsOwnSubtree(t *testing.T) {
 		server.AddPage("DOCS", "A child", "page", a.ID).ID)
 
 	for _, parent := range []string{a.ID, grandchild.ID} {
-		err := page.Move(api, page.Ref{ID: a.ID}, page.MoveOptions{Parent: &page.Ref{ID: parent}}, &bytes.Buffer{})
+		err := page.Move(context.Background(), api, page.Ref{ID: a.ID}, page.MoveOptions{Parent: &page.Ref{ID: parent}}, &bytes.Buffer{})
 		require.ErrorContains(t, err, "beneath itself")
 	}
 	assert.Equal(t, root.ID, server.Page(a.ID).ParentID)
@@ -61,7 +62,7 @@ func TestMoveRefusesAnotherSpace(t *testing.T) {
 	a := server.AddPage("DOCS", "A", "page", server.AddPage("DOCS", "Root", "page", "").ID)
 	elsewhere := server.AddPage("OTHER", "Elsewhere", "page", "")
 
-	err := page.Move(api, page.Ref{ID: a.ID}, page.MoveOptions{Parent: &page.Ref{ID: elsewhere.ID}}, &bytes.Buffer{})
+	err := page.Move(context.Background(), api, page.Ref{ID: a.ID}, page.MoveOptions{Parent: &page.Ref{ID: elsewhere.ID}}, &bytes.Buffer{})
 	require.ErrorContains(t, err, "only within their space")
 }
 
@@ -73,10 +74,10 @@ func TestMoveBesideSibling(t *testing.T) {
 	y := server.AddPage("DOCS", "Y", "page", root.ID)
 	z := server.AddPage("DOCS", "Z", "page", root.ID)
 
-	require.NoError(t, page.Move(api, page.Ref{ID: z.ID}, page.MoveOptions{Before: &page.Ref{ID: x.ID}}, &bytes.Buffer{}))
+	require.NoError(t, page.Move(context.Background(), api, page.Ref{ID: z.ID}, page.MoveOptions{Before: &page.Ref{ID: x.ID}}, &bytes.Buffer{}))
 	assert.Equal(t, []string{z.ID, x.ID, y.ID}, server.ChildOrder(root.ID))
 
-	require.NoError(t, page.Move(api, page.Ref{ID: z.ID}, page.MoveOptions{After: &page.Ref{ID: y.ID}}, &bytes.Buffer{}))
+	require.NoError(t, page.Move(context.Background(), api, page.Ref{ID: z.ID}, page.MoveOptions{After: &page.Ref{ID: y.ID}}, &bytes.Buffer{}))
 	assert.Equal(t, []string{x.ID, y.ID, z.ID}, server.ChildOrder(root.ID))
 }
 
@@ -88,7 +89,7 @@ func TestMoveBesideChecksTheParent(t *testing.T) {
 	y := server.AddPage("DOCS", "Y", "page", root.ID)
 	other := server.AddPage("DOCS", "Other", "page", root.ID)
 
-	err := page.Move(api, page.Ref{ID: y.ID},
+	err := page.Move(context.Background(), api, page.Ref{ID: y.ID},
 		page.MoveOptions{Parent: &page.Ref{ID: other.ID}, Before: &page.Ref{ID: x.ID}}, &bytes.Buffer{})
 	require.ErrorContains(t, err, "is not a child of")
 }
@@ -102,12 +103,12 @@ func TestMoveDryRunAndNoOp(t *testing.T) {
 	server.ResetRequests()
 
 	var out bytes.Buffer
-	require.NoError(t, page.Move(api, page.Ref{ID: b.ID},
+	require.NoError(t, page.Move(context.Background(), api, page.Ref{ID: b.ID},
 		page.MoveOptions{Parent: &page.Ref{ID: a.ID}, DryRun: true}, &out))
 	assert.Contains(t, out.String(), "would move")
 
 	out.Reset()
-	require.NoError(t, page.Move(api, page.Ref{ID: b.ID}, page.MoveOptions{Parent: &page.Ref{ID: root.ID}}, &out))
+	require.NoError(t, page.Move(context.Background(), api, page.Ref{ID: b.ID}, page.MoveOptions{Parent: &page.Ref{ID: root.ID}}, &out))
 	assert.Contains(t, out.String(), "already under")
 
 	assert.Equal(t, root.ID, server.Page(b.ID).ParentID)
@@ -123,7 +124,7 @@ func TestRename(t *testing.T) {
 	before := server.Page(a.ID).Version
 
 	var out bytes.Buffer
-	require.NoError(t, page.Rename(api, page.Ref{Space: "DOCS", Title: "Old"}, " New ", false, &out))
+	require.NoError(t, page.Rename(context.Background(), api, page.Ref{Space: "DOCS", Title: "Old"}, " New ", false, &out))
 
 	renamed := server.Page(a.ID)
 	assert.Equal(t, "New", renamed.Title)
@@ -141,11 +142,11 @@ func TestRenameRefusesATakenTitle(t *testing.T) {
 	a := server.AddPage("DOCS", "A", "page", root.ID)
 	server.AddPage("DOCS", "B", "page", root.ID)
 
-	err := page.Rename(api, page.Ref{ID: a.ID}, "B", false, &bytes.Buffer{})
+	err := page.Rename(context.Background(), api, page.Ref{ID: a.ID}, "B", false, &bytes.Buffer{})
 	require.ErrorContains(t, err, "already has a page titled")
 	assert.Equal(t, "A", server.Page(a.ID).Title)
 
-	require.ErrorContains(t, page.Rename(api, page.Ref{ID: a.ID}, "  ", false, &bytes.Buffer{}), "needs a title")
+	require.ErrorContains(t, page.Rename(context.Background(), api, page.Ref{ID: a.ID}, "  ", false, &bytes.Buffer{}), "needs a title")
 }
 
 func TestRenameDryRun(t *testing.T) {
@@ -154,7 +155,7 @@ func TestRenameDryRun(t *testing.T) {
 	a := server.AddPage("DOCS", "A", "page", server.AddPage("DOCS", "Root", "page", "").ID)
 
 	var out bytes.Buffer
-	require.NoError(t, page.Rename(api, page.Ref{ID: a.ID}, "B", true, &out))
+	require.NoError(t, page.Rename(context.Background(), api, page.Ref{ID: a.ID}, "B", true, &out))
 	assert.Contains(t, out.String(), "would rename")
 	assert.Equal(t, "A", server.Page(a.ID).Title)
 }
@@ -165,7 +166,7 @@ func TestDelete(t *testing.T) {
 	root := server.AddPage("DOCS", "Root", "page", "")
 	leaf := server.AddPage("DOCS", "Leaf", "page", root.ID)
 
-	require.NoError(t, page.Delete(api, page.Ref{ID: leaf.ID}, false, false, &bytes.Buffer{}))
+	require.NoError(t, page.Delete(context.Background(), api, page.Ref{ID: leaf.ID}, false, false, &bytes.Buffer{}))
 	assert.True(t, server.Page(leaf.ID).Trashed)
 }
 
@@ -178,12 +179,12 @@ func TestDeleteRecursive(t *testing.T) {
 	grandchild := server.AddPage("DOCS", "Grandchild", "page", child.ID)
 	sibling := server.AddPage("DOCS", "Sibling", "page", top.ID)
 
-	err := page.Delete(api, page.Ref{ID: top.ID}, false, false, &bytes.Buffer{})
+	err := page.Delete(context.Background(), api, page.Ref{ID: top.ID}, false, false, &bytes.Buffer{})
 	require.ErrorContains(t, err, "pass --recursive")
 	assert.False(t, server.Page(top.ID).Trashed)
 
 	var out bytes.Buffer
-	require.NoError(t, page.Delete(api, page.Ref{ID: top.ID}, true, true, &out))
+	require.NoError(t, page.Delete(context.Background(), api, page.Ref{ID: top.ID}, true, true, &out))
 	assert.Equal(t, `would trash "Grandchild" (`+grandchild.ID+`)
 would trash "Child" (`+child.ID+`)
 would trash "Sibling" (`+sibling.ID+`)
@@ -191,7 +192,7 @@ would trash "Top" (`+top.ID+`)
 `, out.String(), "deepest first")
 	assert.False(t, server.Page(top.ID).Trashed, "a dry run trashes nothing")
 
-	require.NoError(t, page.Delete(api, page.Ref{ID: top.ID}, true, false, &bytes.Buffer{}))
+	require.NoError(t, page.Delete(context.Background(), api, page.Ref{ID: top.ID}, true, false, &bytes.Buffer{}))
 	for _, id := range []string{top.ID, child.ID, grandchild.ID, sibling.ID} {
 		assert.True(t, server.Page(id).Trashed, id)
 	}
@@ -206,9 +207,9 @@ func TestDeleteRefusesTheHomepageAndFolders(t *testing.T) {
 	holder := server.AddPage("DOCS", "Holder", "page", root.ID)
 	server.AddFolder("DOCS", "Folder", holder.ID, "page")
 
-	require.ErrorContains(t, page.Delete(api, page.Ref{ID: root.ID}, true, false, &bytes.Buffer{}), "homepage")
-	require.ErrorContains(t, page.Delete(api, page.Ref{ID: holder.ID}, true, false, &bytes.Buffer{}), "folder")
-	require.ErrorContains(t, page.Archive(api, page.Ref{ID: root.ID}, false, &bytes.Buffer{}), "homepage")
+	require.ErrorContains(t, page.Delete(context.Background(), api, page.Ref{ID: root.ID}, true, false, &bytes.Buffer{}), "homepage")
+	require.ErrorContains(t, page.Delete(context.Background(), api, page.Ref{ID: holder.ID}, true, false, &bytes.Buffer{}), "folder")
+	require.ErrorContains(t, page.Archive(context.Background(), api, page.Ref{ID: root.ID}, false, &bytes.Buffer{}), "homepage")
 	assert.False(t, server.Page(root.ID).Trashed)
 	assert.False(t, server.Page(holder.ID).Trashed)
 }
@@ -220,14 +221,14 @@ func TestArchive(t *testing.T) {
 	parent := server.AddPage("DOCS", "Parent", "page", root.ID)
 	leaf := server.AddPage("DOCS", "Leaf", "page", parent.ID)
 
-	require.ErrorContains(t, page.Archive(api, page.Ref{ID: parent.ID}, false, &bytes.Buffer{}), "child page")
+	require.ErrorContains(t, page.Archive(context.Background(), api, page.Ref{ID: parent.ID}, false, &bytes.Buffer{}), "child page")
 
 	var out bytes.Buffer
-	require.NoError(t, page.Archive(api, page.Ref{ID: leaf.ID}, true, &out))
+	require.NoError(t, page.Archive(context.Background(), api, page.Ref{ID: leaf.ID}, true, &out))
 	assert.Contains(t, out.String(), "would archive")
 	assert.False(t, server.Page(leaf.ID).Archived)
 
-	require.NoError(t, page.Archive(api, page.Ref{ID: leaf.ID}, false, &bytes.Buffer{}))
+	require.NoError(t, page.Archive(context.Background(), api, page.Ref{ID: leaf.ID}, false, &bytes.Buffer{}))
 	assert.True(t, server.Page(leaf.ID).Archived)
 }
 
@@ -237,19 +238,19 @@ func TestWatch(t *testing.T) {
 	p := server.AddPage("DOCS", "Page", "page", "")
 
 	var out bytes.Buffer
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, true, &out))
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: p.ID}, nil, true, false, true, &out))
 	assert.Equal(t, `would watch "Page" (`+p.ID+`) for you`+"\n", out.String())
 	assert.Empty(t, server.Watchers(p.ID))
 
 	out.Reset()
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, false, &out))
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, true, false, false, &out))
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: p.ID}, nil, true, false, false, &out))
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: p.ID}, nil, true, false, false, &out))
 	assert.Equal(t, `watched "Page" (`+p.ID+`) for you`+"\n"+
 		`you are already watching "Page" (`+p.ID+`)`+"\n", out.String())
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(p.ID))
 
 	out.Reset()
-	require.NoError(t, page.Watch(api, page.Ref{ID: p.ID}, nil, false, false, false, &out))
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: p.ID}, nil, false, false, false, &out))
 	assert.Equal(t, `unwatched "Page" (`+p.ID+`) for you`+"\n", out.String())
 	assert.Empty(t, server.Watchers(p.ID))
 }
@@ -261,10 +262,10 @@ func TestWatchRecursive(t *testing.T) {
 	top := server.AddPage("DOCS", "Top", "page", root.ID)
 	child := server.AddPage("DOCS", "Child", "page", top.ID)
 	grandchild := server.AddPage("DOCS", "Grandchild", "page", child.ID)
-	require.NoError(t, api.WatchPage(child.ID, ""))
+	require.NoError(t, api.WatchPage(context.Background(), child.ID, ""))
 
 	var out bytes.Buffer
-	require.NoError(t, page.Watch(api, page.Ref{ID: top.ID}, nil, true, true, false, &out))
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: top.ID}, nil, true, true, false, &out))
 	assert.Equal(t, `watched "Top" (`+top.ID+`) for you
 you are already watching "Child" (`+child.ID+`)
 watched "Grandchild" (`+grandchild.ID+`) for you
@@ -274,7 +275,7 @@ watched "Grandchild" (`+grandchild.ID+`) for you
 	}
 	assert.Empty(t, server.Watchers(root.ID))
 
-	require.NoError(t, page.Watch(api, page.Ref{ID: top.ID}, nil, false, true, false, &bytes.Buffer{}))
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: top.ID}, nil, false, true, false, &bytes.Buffer{}))
 	for _, id := range []string{top.ID, child.ID, grandchild.ID} {
 		assert.Empty(t, server.Watchers(id), id)
 	}
@@ -287,10 +288,10 @@ func TestWatchRecursiveRefusesAFolderBeforeWatchingAnything(t *testing.T) {
 	child := server.AddPage("DOCS", "Child", "page", top.ID)
 	server.AddFolder("DOCS", "Folder", child.ID, "page")
 
-	err := page.Watch(api, page.Ref{ID: top.ID}, nil, true, true, false, &bytes.Buffer{})
+	err := page.Watch(context.Background(), api, page.Ref{ID: top.ID}, nil, true, true, false, &bytes.Buffer{})
 	require.ErrorContains(t, err, "does not reach into folders")
 	assert.Empty(t, server.Watchers(top.ID), "nothing is watched when the tree cannot be")
 
-	require.NoError(t, page.Watch(api, page.Ref{ID: top.ID}, nil, true, false, false, &bytes.Buffer{}),
+	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: top.ID}, nil, true, false, false, &bytes.Buffer{}),
 		"without --recursive the folder is no concern")
 }

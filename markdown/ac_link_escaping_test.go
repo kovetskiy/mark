@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"encoding/xml"
 	"testing"
 
@@ -52,7 +53,7 @@ func TestACLinkEscaping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", types.MarkConfig{})
@@ -66,7 +67,7 @@ func TestACLinkEscaping(t *testing.T) {
 
 // An ordinary title must be unaffected by the escaping.
 func TestACLinkPlainTitleUnchanged(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("[t](ac:MyPage)\n"), std, "test.md", types.MarkConfig{})

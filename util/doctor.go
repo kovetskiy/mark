@@ -64,5 +64,5 @@ func (line *commandLine) runDoctor(ctx context.Context, cmd *cli.Command) error 
 	logFlags(cmd)
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify"))
-	return doctor.Run(api, creds.BaseURL, creds.Username, spaces, cmd.Root().Writer)
+	return doctor.Run(ctx, api, creds.BaseURL, creds.Username, spaces, cmd.Root().Writer)
 }

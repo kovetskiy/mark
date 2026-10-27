@@ -3,6 +3,7 @@
 package mark
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -84,6 +85,7 @@ func declaredAttachments(file string, meta *metadata.Meta) ([]attachment.Attachm
 }
 
 func previewAttachmentLinks(
+	ctx context.Context,
 	api *confluence.API,
 	target *confluence.PageInfo,
 	local []attachment.Attachment,
@@ -99,7 +101,7 @@ func previewAttachmentLinks(
 		return nil, nil
 	}
 
-	remotes, err := api.GetAttachments(target.ID)
+	remotes, err := api.GetAttachments(ctx, target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}

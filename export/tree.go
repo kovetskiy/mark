@@ -57,9 +57,9 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 	var plan []planned
 	var err error
 	if cfg.PageID == "" && cfg.Title == "" {
-		plan, err = planSpace(api, cfg.Space, cfg.Output, options.Depth)
+		plan, err = planSpace(ctx, api, cfg.Space, cfg.Output, options.Depth)
 	} else {
-		plan, err = planPage(api, cfg, options.Depth)
+		plan, err = planPage(ctx, api, cfg, options.Depth)
 	}
 	if err != nil {
 		return nil, err
@@ -115,8 +115,8 @@ type branch struct {
 	depth int
 }
 
-func planPage(api *confluence.API, cfg Config, depth int) ([]planned, error) {
-	root, err := findPage(api, cfg)
+func planPage(ctx context.Context, api *confluence.API, cfg Config, depth int) ([]planned, error) {
+	root, err := findPage(ctx, api, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -125,23 +125,23 @@ func planPage(api *confluence.API, cfg Config, depth int) ([]planned, error) {
 	}
 
 	var plan []planned
-	err = planTree(api, confluence.Child{ID: root.ID, Type: "page", Title: root.Title}, cfg.Output, depth, &plan)
+	err = planTree(ctx, api, confluence.Child{ID: root.ID, Type: "page", Title: root.Title}, cfg.Output, depth, &plan)
 	return plan, err
 }
 
 // planSpace plans the whole of a space: the home page as the tree's own
 // page, and every other top-level page beside the home page's children.
-func planSpace(api *confluence.API, space, dir string, depth int) ([]planned, error) {
+func planSpace(ctx context.Context, api *confluence.API, space, dir string, depth int) ([]planned, error) {
 	if space == "" {
 		return nil, errors.New("a recursive export needs a page, or a space to export the whole of")
 	}
 
-	roots, err := api.RootPages(space)
+	roots, err := api.RootPages(ctx, space)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the top-level pages of space %s: %w", space, err)
 	}
 
-	home, err := api.FindHomePage(space)
+	home, err := api.FindHomePage(ctx, space)
 	switch {
 	case errors.Is(err, confluence.ErrNoHomePage):
 		home = nil
@@ -156,7 +156,7 @@ func planSpace(api *confluence.API, space, dir string, depth int) ([]planned, er
 	if home != nil {
 		plan = append(plan, planned{id: home.ID, title: home.Title, output: filepath.Join(dir, TreeDocument)})
 		if depth != 1 {
-			children, err := children(api, confluence.Child{ID: home.ID, Type: "page", Title: home.Title})
+			children, err := children(ctx, api, confluence.Child{ID: home.ID, Type: "page", Title: home.Title})
 			if err != nil {
 				return nil, err
 			}
@@ -179,7 +179,7 @@ func planSpace(api *confluence.API, space, dir string, depth int) ([]planned, er
 		branches = append(branches, branch{Child: root, depth: depth})
 	}
 
-	if err := planBranches(api, branches, dir, &plan); err != nil {
+	if err := planBranches(ctx, api, branches, dir, &plan); err != nil {
 		return nil, err
 	}
 
@@ -189,13 +189,13 @@ func planSpace(api *confluence.API, space, dir string, depth int) ([]planned, er
 // planTree adds the page and, while depth allows, what is beneath it, to
 // plan: the page's document in dir, each child's in a directory of its own
 // inside dir.
-func planTree(api *confluence.API, page confluence.Child, dir string, depth int, plan *[]planned) error {
+func planTree(ctx context.Context, api *confluence.API, page confluence.Child, dir string, depth int, plan *[]planned) error {
 	*plan = append(*plan, planned{id: page.ID, title: page.Title, output: filepath.Join(dir, TreeDocument)})
 	if depth == 1 {
 		return nil
 	}
 
-	children, err := children(api, page)
+	children, err := children(ctx, api, page)
 	if err != nil {
 		return err
 	}
@@ -205,13 +205,13 @@ func planTree(api *confluence.API, page confluence.Child, dir string, depth int,
 		branches[i] = branch{Child: child, depth: below(depth)}
 	}
 
-	return planBranches(api, branches, dir, plan)
+	return planBranches(ctx, api, branches, dir, plan)
 }
 
 // planBranches plans each branch in a directory of its own inside dir,
 // named after its title, or after its title and id where another branch's
 // title names the same directory.
-func planBranches(api *confluence.API, branches []branch, dir string, plan *[]planned) error {
+func planBranches(ctx context.Context, api *confluence.API, branches []branch, dir string, plan *[]planned) error {
 	taken := map[string]bool{}
 	for _, b := range branches {
 		name := slug(b.Title)
@@ -220,7 +220,7 @@ func planBranches(api *confluence.API, branches []branch, dir string, plan *[]pl
 		}
 		taken[name] = true
 
-		if err := planTree(api, b.Child, filepath.Join(dir, name), b.depth, plan); err != nil {
+		if err := planTree(ctx, api, b.Child, filepath.Join(dir, name), b.depth, plan); err != nil {
 			return err
 		}
 	}
@@ -230,8 +230,8 @@ func planBranches(api *confluence.API, branches []branch, dir string, plan *[]pl
 
 // children lists the pages beneath page, refusing a folder and skipping
 // anything else that is not a page.
-func children(api *confluence.API, page confluence.Child) ([]confluence.Child, error) {
-	listed, err := api.Children(page.ID, "page")
+func children(ctx context.Context, api *confluence.API, page confluence.Child) ([]confluence.Child, error) {
+	listed, err := api.Children(ctx, page.ID, "page")
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the children of %q (%s): %w", page.Title, page.ID, err)
 	}

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -31,7 +32,7 @@ func TestMacroRichTextBodyClosesOutsideBlockContent(t *testing.T) {
 			src := "<!-- Macro: :m:\n     Template: " + tt.template + "\n" + tt.params +
 				"\n     Body: \"- one\\n- two\"\n-->\n\n:m:\n"
 
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
@@ -53,7 +54,7 @@ func TestColumnBodyKeepsItsMarkup(t *testing.T) {
 	src := "<!-- Macro: :m:\n     Template: ac:column\n     Width: 50%\n" +
 		"     Body: '<ac:emoticon ac:name=\"tick\"/> **done**'\n-->\n\n:m:\n"
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})

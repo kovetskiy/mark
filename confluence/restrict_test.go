@@ -1,7 +1,9 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -23,7 +25,7 @@ func newCloudRestrictAPI(t *testing.T) (*confluence.API, *confluencetest.Server,
 		Email:     "me@example.com",
 		FullName:  "Mark Bot",
 	})
-	require.True(t, api.IsCloud(), "the fixture has to look like Cloud for this to mean anything")
+	require.True(t, api.IsCloud(context.Background()), "the fixture has to look like Cloud for this to mean anything")
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -33,7 +35,7 @@ func newCloudRestrictAPI(t *testing.T) (*confluence.API, *confluencetest.Server,
 func TestRestrictPageUpdatesUnknownUserFails(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 
-	err := api.RestrictPageUpdates(page, "Nobody Here")
+	err := api.RestrictPageUpdates(context.Background(), page, "Nobody Here")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"Nobody Here"`, "the user that could not be resolved has to be named")
 	assert.Contains(t, err.Error(), page.ID)
@@ -49,7 +51,7 @@ func TestRestrictPageUpdatesUnknownUserFails(t *testing.T) {
 func TestRestrictPageUpdatesCurrentUserByEmail(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 
-	require.NoError(t, api.RestrictPageUpdates(page, "ME@example.com"))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "ME@example.com"))
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
@@ -68,7 +70,7 @@ func newCloudRestrictAPIWithoutCurrentUser(t *testing.T) (*confluence.API, *conf
 		return 0, "", false
 	})
 	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
-	require.True(t, api.IsCloud())
+	require.True(t, api.IsCloud(context.Background()))
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -78,7 +80,7 @@ func TestRestrictPageUpdatesNamedUser(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
 	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
 
-	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "Alice Example"))
 	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
@@ -96,7 +98,7 @@ func newCloudLoginAPI(t *testing.T, login, email string) (*confluence.API, *conf
 		Email:     email,
 		FullName:  "Mark Bot",
 	})
-	require.True(t, api.IsCloud(), "the fixture has to look like Cloud for this to mean anything")
+	require.True(t, api.IsCloud(context.Background()), "the fixture has to look like Cloud for this to mean anything")
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -113,7 +115,7 @@ func TestRestrictPageUpdatesOwnLoginWithoutVisibleEmail(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			api, server, page := newCloudLoginAPI(t, "login@example.com", email)
 
-			require.NoError(t, api.RestrictPageUpdates(page, "Login@Example.com"))
+			require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "Login@Example.com"))
 			assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 		})
 	}
@@ -125,7 +127,7 @@ func TestRestrictPageUpdatesOwnLoginWithoutVisibleEmail(t *testing.T) {
 func TestRestrictPageUpdatesOtherNameStillRefused(t *testing.T) {
 	api, server, page := newCloudLoginAPI(t, "login@example.com", "")
 
-	err := api.RestrictPageUpdates(page, "someone-else@example.com")
+	err := api.RestrictPageUpdates(context.Background(), page, "someone-else@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
 	assert.Empty(t, server.Page(page.ID).UpdateRestrictedTo)
@@ -138,10 +140,10 @@ func TestRestrictPageUpdatesOtherNameStillRefused(t *testing.T) {
 func TestRestrictPageUpdatesTokenWithoutUsername(t *testing.T) {
 	api, server, page := newCloudLoginAPI(t, "", "")
 
-	require.NoError(t, api.RestrictPageUpdates(page, ""))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 
-	err := api.RestrictPageUpdates(page, "someone-else@example.com")
+	err := api.RestrictPageUpdates(context.Background(), page, "someone-else@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to restrict the page to anyone else")
 }
@@ -150,6 +152,30 @@ func TestRestrictPageUpdatesNamedUserWhenCurrentUnavailable(t *testing.T) {
 	api, server, page := newCloudRestrictAPIWithoutCurrentUser(t)
 	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
 
-	require.NoError(t, api.RestrictPageUpdates(page, "Alice Example"))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, "Alice Example"))
 	assert.Equal(t, []string{"acct-alice"}, server.Page(page.ID).UpdateRestrictedTo)
+}
+
+// TestRestrictPageUpdatesTakesNoContent: Server and Data Center answer the
+// restriction with 204 and no body. The restriction is in place by then, and
+// reading the empty answer as a failure failed every page under --edit-lock.
+func TestRestrictPageUpdatesTakesNoContent(t *testing.T) {
+	restricted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rest/api/user/current":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"username":"user","userKey":"key-1"}`))
+		case "/rest/api/content/1/restriction":
+			restricted = r.Method == http.MethodPost
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), &confluence.PageInfo{ID: "1"}, "user"))
+	assert.True(t, restricted)
 }

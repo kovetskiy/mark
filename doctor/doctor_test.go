@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -33,7 +34,7 @@ func doctor(t *testing.T, server *confluencetest.Server, base string, spaces ...
 	}
 	var out bytes.Buffer
 	api := confluence.NewAPI(base, "user", "token", false)
-	err := Run(api, base, "user", spaces, &out)
+	err := Run(context.Background(), api, base, "user", spaces, &out)
 	return out.String(), err
 }
 

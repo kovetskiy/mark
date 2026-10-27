@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,7 @@ const jiraMacro = "<!-- Macro: MYJIRA-\\d+\n" +
 func compile(t *testing.T, path string, markdown string) string {
 	t.Helper()
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := mark.CompileMarkdown(

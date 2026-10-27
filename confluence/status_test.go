@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,7 +15,7 @@ func TestFindPageCarriesStatus(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Live", "page", "")
 
-	page, err := api.FindPage("DOCS", "Live", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Live", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "current", page.Status)
@@ -26,9 +27,9 @@ func TestFindPageCarriesStatus(t *testing.T) {
 func TestFindPageDoesNotSeeAnArchivedPage(t *testing.T) {
 	api, server := newAPI(t)
 	page := server.AddPage("DOCS", "Retired", "page", "")
-	require.NoError(t, api.ArchivePage(page.ID))
+	require.NoError(t, api.ArchivePage(context.Background(), page.ID))
 
-	found, err := api.FindPage("DOCS", "Retired", "page")
+	found, err := api.FindPage(context.Background(), "DOCS", "Retired", "page")
 	require.NoError(t, err)
 	assert.Nil(t, found, "an archived page is not current content")
 }
@@ -47,9 +48,9 @@ func TestFindPageDoesNotSeeAnArchivedPage(t *testing.T) {
 func TestCreatePageNamesTheArchivedPageHoldingTheTitle(t *testing.T) {
 	api, server := newAPI(t)
 	page := server.AddPage("DOCS", "Retired", "page", "")
-	require.NoError(t, api.ArchivePage(page.ID))
+	require.NoError(t, api.ArchivePage(context.Background(), page.ID))
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Retired", "<p/>")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Retired", "<p/>")
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "archived")
@@ -63,9 +64,9 @@ func TestCreatePageNamesTheArchivedPageHoldingTheTitle(t *testing.T) {
 func TestCreatePageNamesATrashedPageHoldingTheTitle(t *testing.T) {
 	api, server := newAPI(t)
 	page := server.AddPage("DOCS", "Deleted", "page", "")
-	require.NoError(t, api.DeletePage(page.ID))
+	require.NoError(t, api.DeletePage(context.Background(), page.ID))
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Deleted", "<p/>")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Deleted", "<p/>")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "trashed")
 	assert.Contains(t, err.Error(), page.ID)
@@ -79,7 +80,7 @@ func TestCreatePageLeavesUnrelatedFailuresAlone(t *testing.T) {
 	server.AddSpace("DOCS")
 	server.AddPage("DOCS", "Taken", "page", "")
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Taken", "<p/>")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Taken", "<p/>")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "archived")
 	assert.NotContains(t, err.Error(), "trashed")

@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -71,6 +72,7 @@ func cachedFolderID(space, contextID, title string) (string, bool) {
 // whether this run writes anything. A run that promises to write nothing was
 // reparenting a folder, and every page inside it with it.
 func resolveFolder(
+	ctx context.Context,
 	api *confluence.API,
 	dryRun bool,
 	space, title, underID string,
@@ -82,13 +84,13 @@ func resolveFolder(
 	var err error
 	switch {
 	case underID == "":
-		folder, err = api.FindRootFolder(space, title)
+		folder, err = api.FindRootFolder(ctx, space, title)
 	case underAnchor:
-		folder, err = api.FindChildFolder(underID, "page", title)
+		folder, err = api.FindChildFolder(ctx, underID, "page", title)
 	default:
 		// Anything else beneath which a folder is looked for is a folder
 		// this resolution has already walked through.
-		folder, err = api.FindChildFolder(underID, "folder", title)
+		folder, err = api.FindChildFolder(ctx, underID, "folder", title)
 	}
 	if err != nil || folder != nil {
 		return folder, err
@@ -96,7 +98,7 @@ func resolveFolder(
 
 	// Top-level wiki folder may exist at space root from an earlier sync; move it under MARK_PARENTS.
 	if underAnchor {
-		folder, err = api.FindRootFolder(space, title)
+		folder, err = api.FindRootFolder(ctx, space, title)
 		if err != nil || folder == nil {
 			return folder, err
 		}
@@ -112,10 +114,10 @@ func resolveFolder(
 				return folder, nil
 			}
 
-			if err := api.MoveContentAppend(folder.ID, *anchorPageID); err != nil {
+			if err := api.MoveContentAppend(ctx, folder.ID, *anchorPageID); err != nil {
 				return nil, fmt.Errorf("move folder %q under MARK_PARENTS page: %w", title, err)
 			}
-			return api.GetFolderByID(folder.ID)
+			return api.GetFolderByID(ctx, folder.ID)
 		}
 	}
 
@@ -135,8 +137,8 @@ func resolveFolder(
 // nothing about where the mapping is kept. A nil tracker disables the whole
 // mechanism, which is what every caller that does not opt in passes.
 type FolderTracker interface {
-	RecordFolder(space, folderPath, folderID string) error
-	LookupFolder(space, folderPath string) (string, bool, error)
+	RecordFolder(ctx context.Context, space, folderPath, folderID string) error
+	LookupFolder(ctx context.Context, space, folderPath string) (string, bool, error)
 }
 
 // ParentTracker remembers which Confluence page a declared parent chain
@@ -152,8 +154,8 @@ type FolderTracker interface {
 // An interface for the reason FolderTracker is one, and a nil tracker disables
 // it just the same.
 type ParentTracker interface {
-	RecordParent(space, parentPath, pageID string) error
-	LookupParent(space, parentPath string) (string, bool, error)
+	RecordParent(ctx context.Context, space, parentPath, pageID string) error
+	LookupParent(ctx context.Context, space, parentPath string) (string, bool, error)
 }
 
 // AncestryTracker is everything the resolver can remember about where a
@@ -188,6 +190,7 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
 func EnsureFolderAncestry(
+	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
 	space string,
@@ -200,7 +203,7 @@ func EnsureFolderAncestry(
 	}
 
 	// Get space ID for folder API calls
-	spaceID, err := api.GetSpaceID(space)
+	spaceID, err := api.GetSpaceID(ctx, space)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get space ID for %q: %w", space, err)
 	}
@@ -221,9 +224,9 @@ func EnsureFolderAncestry(
 		}
 
 		if id, ok := cachedFolderID(space, underID, title); ok {
-			folder, err = api.GetFolderByID(id)
+			folder, err = api.GetFolderByID(ctx, id)
 		} else {
-			folder, err = resolveFolder(api, dryRun, space, title, underID, anchorPageID)
+			folder, err = resolveFolder(ctx, api, dryRun, space, title, underID, anchorPageID)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
@@ -235,12 +238,12 @@ func EnsureFolderAncestry(
 			// for this position is still the right one and creating another
 			// would split the hierarchy in two.
 			key := folderPathKey(anchorPageID, folders, i)
-			id, ok, lookupErr := tracker.LookupFolder(space, key)
+			id, ok, lookupErr := tracker.LookupFolder(ctx, space, key)
 			if lookupErr != nil {
 				return nil, fmt.Errorf("unable to check whether folder %q was renamed: %w", title, lookupErr)
 			}
 			if ok {
-				folder, err = api.GetFolderByID(id)
+				folder, err = api.GetFolderByID(ctx, id)
 				if err != nil {
 					// Not "gone": GetFolderByID answers a 404 with (nil, nil),
 					// so an error here is a 401, a 403 or a 5xx that outlived
@@ -272,7 +275,7 @@ func EnsureFolderAncestry(
 		}
 
 		if tracker != nil {
-			if err := tracker.RecordFolder(space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
+			if err := tracker.RecordFolder(ctx, space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -316,10 +319,10 @@ func EnsureFolderAncestry(
 						title,
 					)
 				}
-				folder, err = api.CreateFolder(spaceID, title, anchorPageID, "page")
+				folder, err = api.CreateFolder(ctx, spaceID, title, anchorPageID, "page")
 			} else {
 				pid := parent.ID
-				folder, err = api.CreateFolder(spaceID, title, &pid, "folder")
+				folder, err = api.CreateFolder(ctx, spaceID, title, &pid, "folder")
 			}
 			if err != nil {
 				createErr := err
@@ -340,9 +343,9 @@ func EnsureFolderAncestry(
 				// reason leaves nothing to find, and the original error is what
 				// gets reported.
 				if id, ok := cachedFolderID(space, underID, title); ok {
-					folder, err = api.GetFolderByID(id)
+					folder, err = api.GetFolderByID(ctx, id)
 				} else {
-					folder, err = resolveFolder(api, dryRun, space, title, underID, anchorPageID)
+					folder, err = resolveFolder(ctx, api, dryRun, space, title, underID, anchorPageID)
 				}
 				if err != nil || folder == nil {
 					return nil, fmt.Errorf(
@@ -368,7 +371,7 @@ func EnsureFolderAncestry(
 
 			if tracker != nil {
 				key := folderPathKey(anchorPageID, folders, firstNew+offset)
-				if err := tracker.RecordFolder(space, key, folder.ID); err != nil {
+				if err := tracker.RecordFolder(ctx, space, key, folder.ID); err != nil {
 					return nil, err
 				}
 			}
@@ -402,6 +405,7 @@ func EnsureFolderAncestry(
 // EnsureMixedAncestry creates folders under the MARK_PARENTS anchor page, then returns a folder-parent
 // marker so leaf pages are created inside the deepest folder.
 func EnsureMixedAncestry(
+	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
 	tracker AncestryTracker,
@@ -412,7 +416,7 @@ func EnsureMixedAncestry(
 	var anchorPageID *string
 
 	if len(pages) > 0 {
-		anchor, err := EnsureAncestry(dryRun, api, space, pages, tracker)
+		anchor, err := EnsureAncestry(ctx, dryRun, api, space, pages, tracker)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve MARK_PARENTS page ancestry: %w", err)
 		}
@@ -444,10 +448,10 @@ func EnsureMixedAncestry(
 		if len(pages) == 0 {
 			return nil, nil
 		}
-		return EnsureAncestry(dryRun, api, space, pages, tracker)
+		return EnsureAncestry(ctx, dryRun, api, space, pages, tracker)
 	}
 
-	folderParent, err := EnsureFolderAncestry(dryRun, api, space, folders, anchorPageID, tracker)
+	folderParent, err := EnsureFolderAncestry(ctx, dryRun, api, space, folders, anchorPageID, tracker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder hierarchy: %w", err)
 	}
@@ -467,6 +471,7 @@ func EnsureMixedAncestry(
 }
 
 func EnsureAncestry(
+	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
 	space string,
@@ -478,7 +483,7 @@ func EnsureAncestry(
 	rest := ancestry
 
 	for i, title := range ancestry {
-		page, err := api.FindPage(space, title, "page")
+		page, err := api.FindPage(ctx, space, title, "page")
 		if err != nil {
 			return nil, fmt.Errorf("error during finding parent page with title %q: %w", title, err)
 		}
@@ -490,7 +495,7 @@ func EnsureAncestry(
 		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
 
 		if tracker != nil {
-			if err := tracker.RecordParent(space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
+			if err := tracker.RecordParent(ctx, space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -502,7 +507,7 @@ func EnsureAncestry(
 	if parent != nil {
 		rest = rest[1:]
 	} else {
-		page, err := api.FindRootPage(space)
+		page, err := api.FindRootPage(ctx, space)
 		if err != nil {
 			return nil, fmt.Errorf("can't find root page for space %q: %w", space, err)
 		}
@@ -525,14 +530,14 @@ func EnsureAncestry(
 		// within ancestry is what makes a recorded key match on the next run.
 		firstNew := len(ancestry) - len(rest)
 		for offset, title := range rest {
-			page, err := api.CreatePage(space, "page", parent, title, ``)
+			page, err := api.CreatePage(ctx, space, "page", parent, title, ``)
 			if err != nil {
 				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
 			}
 
 			if tracker != nil {
 				key := ParentPathKey(ancestry[:firstNew+offset+1])
-				if err := tracker.RecordParent(space, key, page.ID); err != nil {
+				if err := tracker.RecordParent(ctx, space, key, page.ID); err != nil {
 					return nil, err
 				}
 			}
@@ -563,11 +568,12 @@ func EnsureAncestry(
 var ErrAncestryMismatch = errors.New("page is not under the declared parents")
 
 func ValidateAncestry(
+	ctx context.Context,
 	api *confluence.API,
 	space string,
 	ancestry []string,
 ) (*confluence.PageInfo, error) {
-	page, err := api.FindPage(space, ancestry[len(ancestry)-1], "page")
+	page, err := api.FindPage(ctx, space, ancestry[len(ancestry)-1], "page")
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +588,7 @@ func ValidateAncestry(
 		// page must not fail every document in it. Without one to compare
 		// against, a parentless page is treated as the misplacement below --
 		// which is recoverable, where refusing outright was not.
-		homepage, err := api.FindHomePage(space)
+		homepage, err := api.FindHomePage(ctx, space)
 		if err != nil {
 			log.Debug().Err(err).Msgf(
 				"no home page for space %q; cannot tell whether %q is it",

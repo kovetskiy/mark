@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/kovetskiy/gopencils"
 )
 
 // Property is a key/value pair Confluence stores against a space or a page.
@@ -71,17 +70,17 @@ var ErrPropertyUnseen = errors.New("property already exists but was not listed")
 // caller holding several related properties would otherwise pay a request per
 // key. A space with none is not an error: the first run of anything that stores
 // state this way finds nothing, and that is the normal case.
-func (api *API) ListSpaceProperties(spaceID string) ([]Property, error) {
-	return api.listPropertiesV2("spaces", spaceID)
+func (api *API) ListSpaceProperties(ctx context.Context, spaceID string) ([]Property, error) {
+	return api.listPropertiesV2(ctx, "spaces", spaceID)
 }
 
 // listPropertiesV2 returns every property stored against one v2 object -- a
 // space or, on the scoped-token path, a page. A 404 means none are set.
-func (api *API) listPropertiesV2(collection, ownerID string) ([]Property, error) {
+func (api *API) listPropertiesV2(ctx context.Context, collection, ownerID string) ([]Property, error) {
 	return listV2[Property](
-		api,
-		collection+"/"+ownerID+"/properties",
-		map[string]string{"limit": strconv.Itoa(propertyPageSize)},
+		ctx, api,
+		[]string{collection, ownerID, "properties"},
+		url.Values{"limit": {strconv.Itoa(propertyPageSize)}},
 		fmt.Sprintf("read properties of %s %s", strings.TrimSuffix(collection, "s"), ownerID),
 	)
 }
@@ -108,44 +107,35 @@ func nextCursor(next string) string {
 }
 
 // SetSpaceProperty writes value to a space property, creating it if absent.
-func (api *API) SetSpaceProperty(spaceID, key string, value []byte, existing *Property) error {
-	return api.setPropertyV2("spaces", spaceID, key, value, existing)
+func (api *API) SetSpaceProperty(ctx context.Context, spaceID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2(ctx, "spaces", spaceID, key, value, existing)
 }
 
 // setPropertyV2 writes value to a property of one v2 object, creating it if
 // absent. existing is the property as listed, or nil.
-func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, existing *Property) error {
+func (api *API) setPropertyV2(ctx context.Context, collection, ownerID, key string, value []byte, existing *Property) error {
 	payload := map[string]any{
 		"key":   key,
 		"value": json.RawMessage(value),
 	}
 
-	var (
-		result  Property
-		request *gopencils.Resource
-		err     error
-	)
-
 	owner := strings.TrimSuffix(collection, "s") + " " + ownerID
-	object := api.v2().Res(collection).Res(ownerID)
 
-	if existing == nil {
-		// The result pointer goes on the collection resource itself: routing it
-		// through a further Res("") would append a trailing slash, which this
-		// API is not reliably forgiving about.
-		request, err = object.Res("properties", &result).Post(payload)
-	} else {
+	// Posted to the collection itself, with no trailing slash, which this API
+	// is not reliably forgiving about.
+	method, path := http.MethodPost, []string{collection, ownerID, "properties"}
+	if existing != nil {
 		// v2 addresses an update by property id.
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = object.Res("properties").Res(existing.ID, &result).Put(payload)
-	}
-	if err != nil {
-		return newTransportError(
-			request, fmt.Sprintf("write property %q of %s", key, owner), err,
-		)
+		method, path = http.MethodPut, append(path, existing.ID)
 	}
 
-	return propertyWriteResult(request, key, owner, existing == nil)
+	_, err := send[Property](ctx, api.v2, method, path, payload)
+
+	return propertyWriteResult(
+		requestError(fmt.Sprintf("write property %q of %s", key, owner), err),
+		key, owner, existing == nil,
+	)
 }
 
 // ListPageProperties returns every property stored against a page, through the
@@ -154,14 +144,14 @@ func (api *API) setPropertyV2(collection, ownerID, key string, value []byte, exi
 // The same properties ListContentProperties reads through v1, reached the way
 // a scoped API token can: v2 checks the page scopes such a token is minted
 // with, where v1 refuses it. Cloud only, like the rest of v2.
-func (api *API) ListPageProperties(pageID string) ([]Property, error) {
-	return api.listPropertiesV2("pages", pageID)
+func (api *API) ListPageProperties(ctx context.Context, pageID string) ([]Property, error) {
+	return api.listPropertiesV2(ctx, "pages", pageID)
 }
 
 // SetPageProperty writes value to a page property through the v2 API, creating
 // it if absent. See ListPageProperties for when this is the API to use.
-func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Property) error {
-	return api.setPropertyV2("pages", pageID, key, value, existing)
+func (api *API) SetPageProperty(ctx context.Context, pageID, key string, value []byte, existing *Property) error {
+	return api.setPropertyV2(ctx, "pages", pageID, key, value, existing)
 }
 
 // ListContentProperties returns every property stored against a page.
@@ -169,81 +159,22 @@ func (api *API) SetPageProperty(pageID, key string, value []byte, existing *Prop
 // Unlike space properties this is a v1 endpoint, present on Server and Data
 // Center as well as Cloud, which is what makes it usable as the storage of last
 // resort on a non-Cloud instance.
-func (api *API) ListContentProperties(contentID string) ([]Property, error) {
-	var all []Property
-	start := 0
-
-	for {
-		var result struct {
-			Results []Property `json:"results"`
-			Links   struct {
-				Next string `json:"next"`
-			} `json:"_links"`
-		}
-
-		request, err := api.v1().
-			Res("content").
-			Res(contentID).
-			Res("property", &result).
-			Get(map[string]string{
-				"limit": strconv.Itoa(propertyPageSize),
-				"start": strconv.Itoa(start),
-			})
-		if err != nil {
-			return nil, newTransportError(request, "read properties of content "+contentID, err)
-		}
-
-		// Only the first page may read 404 as "none set"; one partway through
-		// is a failure, and swallowing it would discard the pages already read.
-		if request.Raw.StatusCode == http.StatusNotFound && start == 0 {
-			return nil, nil
-		}
-
-		if request.Raw.StatusCode != http.StatusOK {
-			return nil, newErrorStatusNotOK(request)
-		}
-
-		all = append(all, result.Results...)
-
-		// Two ways a listing says it is finished, and a deployment may use
-		// either. Confluence caps limit at its max-results setting and answers
-		// a capped request with a short page *and* a next link, so a short page
-		// alone does not mean the end -- that is how the tail of a listing was
-		// being thrown away, silently, on exactly the instances configured to
-		// hand out less than they were asked for. Other deployments omit the
-		// link entirely and only ever go short.
-		//
-		// So: keep going while either says there is more, and stop on an empty
-		// page whatever they say, which is what keeps a server that does
-		// neither from being asked for the same offset forever.
-		if len(result.Results) == 0 ||
-			(result.Links.Next == "" && len(result.Results) < propertyPageSize) {
-			break
-		}
-		start += len(result.Results)
-	}
-
-	return all, nil
+func (api *API) ListContentProperties(ctx context.Context, contentID string) ([]Property, error) {
+	return listV1[Property](
+		ctx, api, []string{"content", contentID, "property"},
+		nil, propertyPageSize, "read properties of content "+contentID, true, nil,
+	)
 }
 
 // SetContentProperty writes value to a page property, creating it if absent.
-func (api *API) SetContentProperty(contentID, key string, value []byte, existing *Property) error {
+func (api *API) SetContentProperty(ctx context.Context, contentID, key string, value []byte, existing *Property) error {
 	payload := map[string]any{
 		"key":   key,
 		"value": json.RawMessage(value),
 	}
 
-	var (
-		result  Property
-		request *gopencils.Resource
-		err     error
-	)
-
-	content := api.v1().Res("content").Res(contentID)
-
-	if existing == nil {
-		request, err = content.Res("property", &result).Post(payload)
-	} else {
+	method, path := http.MethodPost, []string{"content", contentID, "property"}
+	if existing != nil {
 		// v1 addresses an update by key in the path, but still wants the
 		// property id in the body, and the version being moved to rather than
 		// the one being replaced. Atlassian documents both as required; omitting
@@ -251,43 +182,39 @@ func (api *API) SetContentProperty(contentID, key string, value []byte, existing
 		// instance will not.
 		payload["id"] = existing.ID
 		payload["version"] = map[string]any{"number": existing.Version.Number + 1}
-		request, err = content.Res("property").Res(key, &result).Put(payload)
-	}
-	if err != nil {
-		return newTransportError(
-			request, fmt.Sprintf("write property %q of content %s", key, contentID), err,
-		)
+		method, path = http.MethodPut, append(path, key)
 	}
 
-	return propertyWriteResult(request, key, "content "+contentID, existing == nil)
+	_, err := send[Property](ctx, api.v1, method, path, payload)
+	return propertyWriteResult(
+		requestError(fmt.Sprintf("write property %q of content %s", key, contentID), err),
+		key, "content "+contentID, existing == nil,
+	)
 }
 
-// propertyWriteResult turns a property write response into an error, singling
-// out the version conflict so a caller can react to losing a race and nothing
-// else.
+// propertyWriteResult turns the error a property write ended with into the one
+// it returns, singling out the version conflict so a caller can react to
+// losing a race and nothing else.
 //
 // creating says whether the caller believed the key was absent, which is what
 // tells the two ways a 409 arrives apart. Losing a race to another writer is
 // ordinary and survivable. Colliding with a key that was there the whole time
 // is neither: it means the listing this run worked from was incomplete, so
 // whatever that property held has already been treated as missing.
-func propertyWriteResult(request *gopencils.Resource, key, subject string, creating bool) error {
-	switch request.Raw.StatusCode {
-	case http.StatusOK, http.StatusCreated:
-		return nil
-	case http.StatusConflict:
-		if creating {
-			return fmt.Errorf(
-				"property %q of %s already exists but was not in the listing this run read, "+
-					"so anything it held has been treated as absent: %w",
-				key, subject, ErrPropertyUnseen,
-			)
-		}
-		return fmt.Errorf(
-			"property %q of %s was modified concurrently: %w",
-			key, subject, ErrPropertyConflict,
-		)
-	default:
-		return newErrorStatusNotOK(request)
+func propertyWriteResult(err error, key, subject string, creating bool) error {
+	if !errors.Is(err, ErrConflict) {
+		return err
 	}
+
+	if creating {
+		return fmt.Errorf(
+			"property %q of %s already exists but was not in the listing this run read, "+
+				"so anything it held has been treated as absent: %w",
+			key, subject, ErrPropertyUnseen,
+		)
+	}
+	return fmt.Errorf(
+		"property %q of %s was modified concurrently: %w",
+		key, subject, ErrPropertyConflict,
+	)
 }

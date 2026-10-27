@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"testing"
 
 	mark "github.com/kovetskiy/mark/v16/markdown"
@@ -68,7 +69,7 @@ func TestGHAlertsBecomeMacros(t *testing.T) {
 		},
 	}
 
-	stdlib, err := stdlib.New(nil)
+	stdlib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Failed to create stdlib: %v", err)
 	}

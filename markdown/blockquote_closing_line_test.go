@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -14,7 +15,7 @@ import (
 // closes the block -- "Warn -->" -- does not classify the quote, on either
 // path.
 func TestBlockQuoteTypeIgnoresAClosingLine(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	const warning = `<ac:structured-macro ac:name="warning">`

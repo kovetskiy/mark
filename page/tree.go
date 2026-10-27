@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,13 +17,13 @@ type Node struct {
 }
 
 // ReadTree reads what is beneath root, depth levels down; 0 is no limit.
-func ReadTree(api *confluence.API, root confluence.Child, depth int) (*Node, error) {
+func ReadTree(ctx context.Context, api *confluence.API, root confluence.Child, depth int) (*Node, error) {
 	node := &Node{Child: root}
 	if depth == 1 || (root.Type != "page" && root.Type != "folder") {
 		return node, nil
 	}
 
-	children, err := api.Children(root.ID, root.Type)
+	children, err := api.Children(ctx, root.ID, root.Type)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the children of %q (%s): %w", root.Title, root.ID, err)
 	}
@@ -32,7 +33,7 @@ func ReadTree(api *confluence.API, root confluence.Child, depth int) (*Node, err
 		if depth > 0 {
 			next = depth - 1
 		}
-		sub, err := ReadTree(api, child, next)
+		sub, err := ReadTree(ctx, api, child, next)
 		if err != nil {
 			return nil, err
 		}
@@ -44,13 +45,13 @@ func ReadTree(api *confluence.API, root confluence.Child, depth int) (*Node, err
 
 // Tree prints the page, or folder, a Ref names and what is beneath it, depth
 // levels deep counting the page itself; 0 is no limit.
-func Tree(api *confluence.API, ref Ref, depth int, out io.Writer) error {
-	root, err := resolveChild(api, ref)
+func Tree(ctx context.Context, api *confluence.API, ref Ref, depth int, out io.Writer) error {
+	root, err := resolveChild(ctx, api, ref)
 	if err != nil {
 		return err
 	}
 
-	tree, err := ReadTree(api, root, depth)
+	tree, err := ReadTree(ctx, api, root, depth)
 	if err != nil {
 		return err
 	}
@@ -82,8 +83,8 @@ func label(child confluence.Child) string {
 }
 
 // resolveChild reads the page a Ref names, or the folder its id names.
-func resolveChild(api *confluence.API, ref Ref) (confluence.Child, error) {
-	page, err := Resolve(api, ref)
+func resolveChild(ctx context.Context, api *confluence.API, ref Ref) (confluence.Child, error) {
+	page, err := Resolve(ctx, api, ref)
 	if err == nil {
 		return confluence.Child{ID: page.ID, Type: page.Type, Title: page.Title}, nil
 	}
@@ -91,7 +92,7 @@ func resolveChild(api *confluence.API, ref Ref) (confluence.Child, error) {
 		return confluence.Child{}, err
 	}
 
-	folder, folderErr := api.GetFolderByID(ref.ID)
+	folder, folderErr := api.GetFolderByID(ctx, ref.ID)
 	if folderErr != nil {
 		return confluence.Child{}, err
 	}
@@ -117,8 +118,8 @@ type CopyOptions struct {
 // The whole tree is read, and every title the copies would take checked,
 // before anything is copied: a title already taken stops the run before the
 // first copy rather than halfway.
-func Copy(api *confluence.API, ref Ref, options CopyOptions, out io.Writer) error {
-	source, err := Resolve(api, ref)
+func Copy(ctx context.Context, api *confluence.API, ref Ref, options CopyOptions, out io.Writer) error {
+	source, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
@@ -126,7 +127,7 @@ func Copy(api *confluence.API, ref Ref, options CopyOptions, out io.Writer) erro
 		return fmt.Errorf("%s is a blog post, and blog posts have no place in the page tree", describe(source))
 	}
 
-	parent, err := Resolve(api, options.Parent)
+	parent, err := Resolve(ctx, api, options.Parent)
 	if err != nil {
 		return err
 	}
@@ -142,7 +143,7 @@ func Copy(api *confluence.API, ref Ref, options CopyOptions, out io.Writer) erro
 		}
 	}
 
-	tree, err := ReadTree(api, confluence.Child{ID: source.ID, Type: source.Type, Title: source.Title}, depth)
+	tree, err := ReadTree(ctx, api, confluence.Child{ID: source.ID, Type: source.Type, Title: source.Title}, depth)
 	if err != nil {
 		return err
 	}
@@ -151,7 +152,7 @@ func Copy(api *confluence.API, ref Ref, options CopyOptions, out io.Writer) erro
 	if err := planTitles(tree, options, titles, true); err != nil {
 		return err
 	}
-	if err := checkTitles(api, parent.Space.Key, titles); err != nil {
+	if err := checkTitles(ctx, api, parent.Space.Key, titles); err != nil {
 		return err
 	}
 
@@ -161,7 +162,7 @@ func Copy(api *confluence.API, ref Ref, options CopyOptions, out io.Writer) erro
 	}
 
 	copied := 0
-	return copyNode(api, tree, parent.ID, describe(parent), titles, &copied, out)
+	return copyNode(ctx, api, tree, parent.ID, describe(parent), titles, &copied, out)
 }
 
 // planTitles works out the title of each copy.
@@ -186,7 +187,7 @@ func planTitles(node *Node, options CopyOptions, titles map[*Node]string, top bo
 
 // checkTitles refuses titles that a page in space already has, or that two
 // copies would share.
-func checkTitles(api *confluence.API, space string, titles map[*Node]string) error {
+func checkTitles(ctx context.Context, api *confluence.API, space string, titles map[*Node]string) error {
 	var taken []string
 	seen := map[string]bool{}
 
@@ -198,7 +199,7 @@ func checkTitles(api *confluence.API, space string, titles map[*Node]string) err
 		}
 		seen[key] = true
 
-		existing, err := api.FindPage(space, title, "page")
+		existing, err := api.FindPage(ctx, space, title, "page")
 		if err != nil {
 			return fmt.Errorf("unable to look for a page titled %q in space %s: %w", title, space, err)
 		}
@@ -223,6 +224,7 @@ func printCopy(out io.Writer, node *Node, titles map[*Node]string, under string)
 }
 
 func copyNode(
+	ctx context.Context,
 	api *confluence.API,
 	node *Node,
 	parentID, under string,
@@ -230,7 +232,7 @@ func copyNode(
 	copied *int,
 	out io.Writer,
 ) error {
-	made, err := api.CopyPage(node.ID, parentID, titles[node])
+	made, err := api.CopyPage(ctx, node.ID, parentID, titles[node])
 	if err != nil {
 		return fmt.Errorf("unable to copy %q (%s) under %s, after copying %d page(s): %w",
 			node.Title, node.ID, under, *copied, err)
@@ -239,7 +241,7 @@ func copyNode(
 	fmt.Fprintf(out, "copied %q (%s) as %s under %s\n", node.Title, node.ID, describe(made), under)
 
 	for _, child := range node.Children {
-		if err := copyNode(api, child, made.ID, describe(made), titles, copied, out); err != nil {
+		if err := copyNode(ctx, api, child, made.ID, describe(made), titles, copied, out); err != nil {
 			return err
 		}
 	}

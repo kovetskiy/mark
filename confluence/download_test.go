@@ -69,7 +69,7 @@ func TestDownloadAttachment(t *testing.T) {
 	server.AddAttachmentData(page.ID, "a b#1.png", []byte("content"))
 
 	api := NewAPI(server.URL, "user", "token", false)
-	attachments, err := api.GetAttachments(page.ID)
+	attachments, err := api.GetAttachments(context.Background(), page.ID)
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
 

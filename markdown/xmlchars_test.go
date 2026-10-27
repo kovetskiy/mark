@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -41,7 +42,7 @@ func TestControlCharactersDoNotBreakThePage(t *testing.T) {
 		{"invalid UTF-8", "a\xed\xa0\x80b\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown([]byte(tc.markdown), std, "test.md", types.MarkConfig{})
@@ -56,7 +57,7 @@ func TestControlCharactersDoNotBreakThePage(t *testing.T) {
 // A reference inside CDATA or a comment is text, not a character, and is
 // legal as it stands; a code sample showing "&#1;" keeps it.
 func TestControlCharacterReferencesAreLeftInCDATAAndComments(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("```\necho '&#1;'\n```\n\n<!-- &#27; -->\n"), std, "test.md", types.MarkConfig{})

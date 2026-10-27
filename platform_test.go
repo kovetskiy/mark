@@ -1,10 +1,12 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -95,7 +97,7 @@ func TestPublishThroughTheGateway(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(baseURL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Guide", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -106,4 +108,43 @@ func TestPublishThroughTheGateway(t *testing.T) {
 	// run's update is the third version.
 	assert.Equal(t, int64(3), stored.Version, "the second run updates the page it made")
 	assert.Equal(t, home.ID, stored.ParentID, "a republish must not move the page")
+}
+
+// TestCancellingTheCloudProbeIsNotAFolderRefusal: on a host that does not name
+// itself Cloud, a file with folders asks the server which platform it is. A
+// cancellation that cuts that question short is not "not Cloud": failing the
+// file saying folders need Cloud would be wrong, and not an error errors.Is
+// recognises as the cancellation ProcessFileContext promises.
+func TestCancellingTheCloudProbeIsNotAFolderRefusal(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+
+	file := writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Folder: Manuals -->\n<!-- Title: Doc -->\n\nBody.\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The probe is held until the client gives up on it, and the run is
+	// cancelled once it has arrived.
+	blocked := make(chan struct{})
+	var once sync.Once
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if !strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/rest/api/user/current") {
+			return 0, "", false
+		}
+		once.Do(func() { close(blocked) })
+		<-r.Context().Done()
+		return http.StatusServiceUnavailable, `{"message":"too late"}`, true
+	})
+
+	go func() {
+		<-blocked
+		cancel()
+	}()
+
+	_, err := ProcessFileContext(ctx, file, api, publishConfig(server.URL, file))
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.NotContains(t, err.Error(), "only available on Confluence Cloud")
 }
