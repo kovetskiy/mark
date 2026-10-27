@@ -37,8 +37,9 @@ func (line *commandLine) pageCommand() *cli.Command {
 				ArgsUsage: "<page>",
 				Flags: append(pageFlags(line.config),
 					&cli.IntFlag{
-						Name:  "depth",
-						Usage: "list this many levels, counting the page itself; 0 is every level.",
+						Name:    "depth",
+						Aliases: []string{"d"},
+						Usage:   "list this many levels, counting the page itself; 0 is every level.",
 					},
 				),
 				Action: line.pageAction(1, checkPageTree, runPageTree),
@@ -48,7 +49,7 @@ func (line *commandLine) pageCommand() *cli.Command {
 				Usage:     "move a page, and the pages beneath it, under another page or folder, or beside a sibling",
 				ArgsUsage: "<page>",
 				Flags: append(pageFlags(line.config),
-					&cli.StringFlag{Name: "parent", Usage: "the page, or folder id, to move the page under."},
+					&cli.StringFlag{Name: "parent", Aliases: []string{"P"}, Usage: "the page, or folder id, to move the page under."},
 					&cli.StringFlag{Name: "before", Usage: "place the page directly before this sibling, under the sibling's parent."},
 					&cli.StringFlag{Name: "after", Usage: "place the page directly after this sibling, under the sibling's parent."},
 				),
@@ -59,10 +60,10 @@ func (line *commandLine) pageCommand() *cli.Command {
 				Usage:     "copy a page under another, with its attachments, labels and content properties but not its restrictions (Confluence Cloud)",
 				ArgsUsage: "<page>",
 				Flags: append(pageFlags(line.config),
-					&cli.StringFlag{Name: "parent", Usage: "the page to copy it under."},
-					&cli.StringFlag{Name: "title", Usage: "the title of the copy. Defaults to --prefix and the page's own title."},
+					&cli.StringFlag{Name: "parent", Aliases: []string{"P"}, Usage: "the page to copy it under."},
+					&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Usage: "the title of the copy. Defaults to --prefix and the page's own title."},
 					&cli.StringFlag{Name: "prefix", Usage: "put this before the title of every copy --title does not name, such as \"Copy of \". A copy cannot take a title its space already has."},
-					&cli.BoolFlag{Name: "recursive", Usage: "copy every page beneath it too, each under the copy of its parent."},
+					&cli.BoolFlag{Name: "recursive", Aliases: []string{"r"}, Usage: "copy every page beneath it too, each under the copy of its parent."},
 				),
 				Action: line.pageAction(1, checkPageCopy, runPageCopy),
 			},
@@ -88,8 +89,9 @@ func (line *commandLine) pageCommand() *cli.Command {
 				// --recursive: it is typed for the one run that means it.
 				Flags: append(pageFlags(line.config),
 					&cli.BoolFlag{
-						Name:  "recursive",
-						Usage: "trash the pages beneath it too. Without it, a page with children is refused.",
+						Name:    "recursive",
+						Aliases: []string{"r"},
+						Usage:   "trash the pages beneath it too. Without it, a page with children is refused.",
 					},
 				),
 				Action: line.pageAction(1, nil, runPageDelete),
@@ -127,8 +129,9 @@ func watcherFlag(verb string) cli.Flag {
 // like delete's.
 func recursiveWatchFlag(verb string) cli.Flag {
 	return &cli.BoolFlag{
-		Name:  "recursive",
-		Usage: verb + " every page beneath it too. A page with a folder beneath it is refused, since the folder's pages are out of reach.",
+		Name:    "recursive",
+		Aliases: []string{"r"},
+		Usage:   verb + " every page beneath it too. A page with a folder beneath it is refused, since the folder's pages are out of reach.",
 	}
 }
 
@@ -139,12 +142,14 @@ func pageFlags(config *configFile) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    "space",
+			Aliases: []string{"s"},
 			Value:   "",
 			Usage:   "the space key a page named by its title is looked up in.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), config.value("space")),
 		},
 		&cli.BoolFlag{
 			Name:    "dry-run",
+			Aliases: []string{"n"},
 			Value:   false,
 			Usage:   "say what would be done, and change nothing.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), config.value("dry-run")),
