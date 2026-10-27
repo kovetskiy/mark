@@ -372,3 +372,38 @@ func recordDirectoryPages(
 
 	return nil
 }
+
+// recordPublished records in the manifest the page a document was published
+// to, and the version --no-overwrite compares against on the next run.
+//
+// Recorded after the write, not before it. The mapping asserts what is on the
+// page -- the title it carries and a fingerprint of the source that produced
+// its body -- and the manifest is saved however the run ends, so a body that
+// was refused as malformed, or an update that failed, must not leave the
+// mapping claiming both. The fingerprint is what rename detection matches on.
+func (r *publishRun) recordPublished(doc *document, target *confluence.PageInfo) error {
+	meta, file := doc.meta, doc.file
+	if r.tracker == nil || meta == nil {
+		return nil
+	}
+
+	if err := r.tracker.Record(meta.Space, file, target.ID, meta.Title, doc.sourceHash); err != nil {
+		return fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+	}
+
+	if r.hierarchy != nil && !meta.DeclaredParents {
+		if err := recordDirectoryPages(r.tracker, target, r.hierarchy, file, meta.Space); err != nil {
+			return err
+		}
+	}
+
+	// UpdatePage advances the version it was given, so this reads the same
+	// either way: a run that wrote nothing still records what it found, so
+	// that a page nobody touches gets a version on the first run rather than
+	// staying unguarded forever.
+	if err := r.tracker.RecordVersion(meta.Space, file, target.Version.Number); err != nil {
+		return fmt.Errorf("unable to record page version for %q: %w", file, err)
+	}
+
+	return nil
+}
