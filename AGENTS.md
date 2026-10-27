@@ -163,7 +163,7 @@ rendering in `docs/formatting.md`).
 
 **9. Everything is sequential today, and one thing still relies on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits
-behind an `RWMutex` (`page/concurrency_test.go` races it on purpose), and
+behind an `RWMutex` (`TestFolderCacheConcurrentAccess` in `page/ancestry_test.go` races it on purpose), and
 `confluence.API`'s Cloud probe goes through a `sync.Once`, so the field the old wording
 named no longer exists. What is genuinely single-threaded is `page.LinkChecker`:
 `MissingPages` reads `len(c.pending)` before taking the mutex and then reads the map

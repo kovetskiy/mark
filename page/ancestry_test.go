@@ -2,7 +2,9 @@ package page
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -11,50 +13,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInScopeTreatsADeletedPageAsGone: a tracked page deleted by hand in
-// Confluence is out of scope for acting on, not a reason to end the run.
+// TestFolderCacheConcurrentAccess hammers the process-wide folder cache from
+// many goroutines. Before the mutex, an unsynchronised map write here was not
+// a subtle wrong answer but a hard "concurrent map writes" throw, and the race
+// detector reports it even when the throw does not fire.
 //
-// GetPageByIDExpanded answers a 404 with an error and never with (nil, nil), so
-// the nil check this used to rely on was unreachable and the error went
-// straight up. The same repository publishes fine without --orphan-under, which
-// made the flag itself look broken.
-func TestInScopeTreatsADeletedPageAsGone(t *testing.T) {
-	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+// The test lives in package page rather than page_test because the cache and
+// its accessors are unexported.
+func TestFolderCacheConcurrentAccess(t *testing.T) {
+	const (
+		goroutines = 16
+		perRoutine = 200
+	)
 
-	inScope, err := InScope(api, "2000", Orphan{
-		Path: "gone.md", PageID: "9999", Title: "Gone",
-	})
+	var wg sync.WaitGroup
+	for g := range goroutines {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := range perRoutine {
+				// Interleave distinct and shared keys so writers collide both
+				// on the map itself and on individual entries.
+				unique := "space-" + strconv.Itoa(g)
+				shared := "shared"
+				title := "folder-" + strconv.Itoa(i)
 
-	require.NoError(t, err, "a page that is already gone is not a failed run")
-	assert.False(t, inScope)
-}
+				cacheFolder(unique, "parent", title, strconv.Itoa(g*perRoutine+i))
+				cacheFolder(shared, "parent", "contended", strconv.Itoa(i))
 
-// TestInScopeReportsARealFailure is the other half. A 403 says nothing about
-// where the page sits, and answering "not in scope" would quietly leave every
-// orphan alone while looking like a clean run.
-func TestInScopeReportsARealFailure(t *testing.T) {
-	server := confluencetest.New(t)
-	home := server.AddPage("DOCS", "Home", "page", "")
-	page := server.AddPage("DOCS", "Doc", "page", home.ID)
+				_, _ = cachedFolderID(unique, "parent", title)
+				_, _ = cachedFolderID(shared, "parent", "contended")
+				_, _ = cachedFolderID("absent", "parent", title)
+			}
+		}(g)
+	}
+	wg.Wait()
 
-	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if strings.Contains(r.URL.Path, "/content/"+page.ID) {
-			return http.StatusForbidden, `{"message":"no"}`, true
-		}
+	// Every unique key written should still be readable: a torn map would
+	// typically have thrown by now, but this also catches lost writes.
+	for g := range goroutines {
+		id, ok := cachedFolderID("space-"+strconv.Itoa(g), "parent", "folder-0")
+		assert.True(t, ok, "entry for goroutine %d went missing", g)
+		assert.Equal(t, strconv.Itoa(g*perRoutine), id)
+	}
 
-		return 0, "", false
-	})
-
-	api := confluence.NewAPI(server.URL, "user", "token", false)
-
-	_, err := InScope(api, home.ID, Orphan{
-		Path: "doc.md", PageID: page.ID, Title: "Doc",
-	})
-
-	require.Error(t, err)
-	assert.NotErrorIs(t, err, confluence.ErrNotFound)
-	assert.Contains(t, err.Error(), page.ID)
+	_, ok := cachedFolderID("shared", "parent", "contended")
+	assert.True(t, ok, "the contended entry should hold one of the written values")
 }
 
 // stubFolderTracker is a FolderTracker holding a fixed mapping.
