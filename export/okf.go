@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 	"go.yaml.in/yaml/v3"
 )
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

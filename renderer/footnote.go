@@ -3,8 +3,8 @@ package renderer
 import (
 	"strconv"
 
-	"github.com/kovetskiy/mark/v16/stdlib"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/stdlib"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/yuin/goldmark/v2/ast"
 	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/renderer"

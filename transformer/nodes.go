@@ -3,7 +3,7 @@ package transformer
 import (
 	"sync"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
+	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/yuin/goldmark/v2/ast"
 	extast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"

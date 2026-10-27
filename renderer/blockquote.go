@@ -3,8 +3,8 @@ package renderer
 import (
 	"regexp"
 
-	"github.com/kovetskiy/mark/v16/internal/htmlblock"
-	"github.com/kovetskiy/mark/v16/internal/syntax"
+	"github.com/kovetskiy/mark/v17/internal/htmlblock"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
 )
 

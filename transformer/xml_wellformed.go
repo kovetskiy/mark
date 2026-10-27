@@ -5,7 +5,7 @@ import (
 	"encoding/xml"
 	stdhtml "html"
 
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v17/stdlib"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"

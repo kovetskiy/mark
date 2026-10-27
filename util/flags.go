@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/export"
-	"github.com/kovetskiy/mark/v16/mermaid"
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v17/export"
+	"github.com/kovetskiy/mark/v17/mermaid"
+	"github.com/kovetskiy/mark/v17/metadata"
 
 	"github.com/urfave/cli/v3"
 )

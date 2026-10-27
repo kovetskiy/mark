@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )

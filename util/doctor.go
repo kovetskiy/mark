@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/doctor"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/doctor"
 	"github.com/urfave/cli/v3"
 )
 

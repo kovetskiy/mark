@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v17/internal/goldmarktest"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
+	"github.com/kovetskiy/mark/v17/transformer"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"

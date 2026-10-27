@@ -67,8 +67,12 @@ brew install mark
 ### Go Install
 
 ```bash
-go install github.com/kovetskiy/mark/v16/cmd/mark@latest
+go install github.com/kovetskiy/mark/v17/cmd/mark@latest
 ```
+
+This installs the newest v17 release, so it needs a v17 tag. Until v17.0.0 is
+tagged, `@latest` builds the newest commit on the default branch instead of a
+release; install from the Releases page or Homebrew to get a release.
 
 ### Releases
 

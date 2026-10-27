@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"

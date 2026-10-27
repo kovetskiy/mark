@@ -1,6 +1,6 @@
 package metadata
 
-import "github.com/kovetskiy/mark/v16/internal/mdsource"
+import "github.com/kovetskiy/mark/v17/internal/mdsource"
 
 // NormalizeSource gives a document "\n" line endings and drops a byte-order
 // mark, as every reader of a document in mark does before parsing it.
