@@ -351,6 +351,29 @@ func TestExportThroughTheGateway(t *testing.T) {
 	assert.NotEmpty(t, logo)
 }
 
+// TestExportThroughTheGatewayWithoutTheSpace: a token that may read the page
+// but not its space exports it into the space it is told.
+func TestExportThroughTheGatewayWithoutTheSpace(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`,
+			strings.Contains(r.URL.Path, "/api/v2/spaces/")
+	})
+
+	config := ExportConfig{
+		BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token",
+		PageID: id, NoAttachments: true, Stdout: io.Discard,
+	}
+	_, err := Export(context.Background(), config)
+	require.ErrorContains(t, err, "unable to tell which space")
+
+	var stdout bytes.Buffer
+	config.Space, config.Stdout = "DOCS", &stdout
+	_, err = Export(context.Background(), config)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "<!-- Space: DOCS -->\n")
+}
+
 // TestExportOfAPageInAFolder: v1's ancestors leave folders out, so the folders
 // above a page are read from v2 and written as Folder headers, which publish the
 // page back into the folder it was in.

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // This file is the v2 form of the page calls that mark otherwise makes against
@@ -349,12 +351,15 @@ func (api *API) getPageByIDV2(pageID, expand string) (*PageInfo, error) {
 	}
 
 	// v2 names the space by id; the key, which is what v1 expands and what a
-	// document names, costs a read of the space.
+	// document names, costs a read of the space. A token that may read the
+	// page but not the space still gets the page, with no key: a caller that
+	// knows the space can go on, and one that does not says so.
 	if strings.Contains(expand, "space") && content.SpaceID != "" {
-		page.Space.Key, err = api.spaceKeyV2(content.SpaceID)
+		key, err := api.spaceKeyV2(content.SpaceID)
 		if err != nil {
-			return nil, err
+			log.Warn().Msgf("unable to read the key of space %s, which page %s is in: %s", content.SpaceID, pageID, err)
 		}
+		page.Space.Key = key
 	}
 
 	return page, nil
@@ -422,8 +427,12 @@ func (api *API) AncestryV2(id string) ([]Ancestor, error) {
 	return chain, nil
 }
 
-// spaceKeyV2 is the key of the space with this v2 id.
+// spaceKeyV2 is the key of the space with this v2 id, read once a run.
 func (api *API) spaceKeyV2(spaceID string) (string, error) {
+	if key, ok := api.spaceKeysV2.Load(spaceID); ok {
+		return key.(string), nil
+	}
+
 	var result struct {
 		Key string `json:"key"`
 	}
@@ -435,6 +444,10 @@ func (api *API) spaceKeyV2(spaceID string) (string, error) {
 
 	if request.Raw.StatusCode != http.StatusOK {
 		return "", newErrorStatusNotOK(request)
+	}
+
+	if result.Key != "" {
+		api.spaceKeysV2.Store(spaceID, result.Key)
 	}
 
 	return result.Key, nil
