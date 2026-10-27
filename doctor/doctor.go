@@ -14,7 +14,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 )
 
 // Status is how a check came out.

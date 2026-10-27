@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v17/stdlib"
 )
 
 // node is one piece of a page's storage format: an element, or the text inside

@@ -3,7 +3,7 @@ package parser_test
 import (
 	"testing"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
+	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/ast"
 )

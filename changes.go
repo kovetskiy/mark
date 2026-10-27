@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/fingerprint"
-	"github.com/kovetskiy/mark/v16/manifest"
-	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/page"
-	"github.com/kovetskiy/mark/v16/report"
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/manifest"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/page"
+	"github.com/kovetskiy/mark/v17/report"
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/rs/zerolog/log"
 )
 

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -379,15 +379,20 @@ func TestWatchRefusesAnEmptyValue(t *testing.T) {
 	}
 }
 
-// A program that built mark's single command with flags of its own, and no
-// "watch" among them, leaves watches alone.
+// A program that built a command of its own on RunPublish, and no "watch"
+// among its flags, leaves watches alone.
 func TestWatchWithoutTheFlag(t *testing.T) {
 	file := &configFile{path: new(string), settled: true}
 	flags := slices.DeleteFunc(append(globalFlags(file), publishFlags(file)...),
 		func(flag cli.Flag) bool { return flag.Names()[0] == "watch" })
 
 	watchers, err := watchedAfterPublish(t, "", func(server, config, document string) error {
-		cmd := &cli.Command{Name: "mark", Flags: flags, Action: RunMark}
+		cmd := &cli.Command{Name: "mark", Flags: flags, Action: func(ctx context.Context, cmd *cli.Command) error {
+			if err := SetUpLogging(cmd); err != nil {
+				return err
+			}
+			return RunPublish(ctx, cmd)
+		}}
 		_, _, err := captureOutput(t, func() error {
 			return cmd.Run(context.Background(), []string{"mark", "-c", config, "--color", "never",
 				"-u", "user", "-p", "token", "-b", server, "--files", document})

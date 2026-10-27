@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/vfs"
+	"github.com/kovetskiy/mark/v17/vfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

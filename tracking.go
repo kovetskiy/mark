@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/fingerprint"
-	"github.com/kovetskiy/mark/v16/manifest"
-	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/manifest"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/page"
 	"github.com/rs/zerolog/log"
 )
 

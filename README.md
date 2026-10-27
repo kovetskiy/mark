@@ -67,8 +67,13 @@ brew install mark
 ### Go Install
 
 ```bash
-go install github.com/kovetskiy/mark/v16/cmd/mark@latest
+go install github.com/kovetskiy/mark/v17/cmd/mark@latest
 ```
+
+`@latest` is the newest v17 release, so this needs v17 to be tagged. Until it
+is, there is no v17 release to install: the command fails, or builds whatever
+the default branch holds. Install a release from the Releases page or Homebrew
+until then.
 
 ### Releases
 
@@ -142,7 +147,7 @@ USAGE:
    mark [global options] [command [command options]]
 
 VERSION:
-   v16.x.x
+   vX.Y.Z
 
 DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark

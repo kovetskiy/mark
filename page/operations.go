@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v17/confluence"
 )
 
 // Ref names a page for the page commands: by ID, or by Title within Space.

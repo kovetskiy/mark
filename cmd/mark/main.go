@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/kovetskiy/mark/v16/util"
+	"github.com/kovetskiy/mark/v17/util"
 	"github.com/rs/zerolog/log"
 )
 
@@ -36,7 +35,7 @@ func main() {
 		log.Warn().Msgf("%s: stopping after the current file; send it again to stop now", context.Cause(ctx))
 	}()
 
-	if err := util.Run(ctx, fmt.Sprintf("%s@%s", version, commit), os.Args); err != nil {
+	if err := util.Run(ctx, buildVersion(version, commit, readBuildInfo()), os.Args); err != nil {
 		// "context canceled" says nothing about who cancelled it.
 		if errors.Is(err, context.Canceled) {
 			err = context.Cause(ctx)

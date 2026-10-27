@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
-	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/page"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

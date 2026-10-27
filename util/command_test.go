@@ -435,6 +435,10 @@ func TestHelp(t *testing.T) {
 	})
 }
 
+// readmeVersion is what the README's help blocks show for the version: the
+// same for every release, so a release leaves them as they are.
+const readmeVersion = "vX.Y.Z"
+
 var updateREADME = flag.Bool("update-readme", false, "rewrite README.md's help blocks from the binary")
 
 // TestREADMEUsageMatchesHelp keeps the help the README shows in step with what
@@ -467,7 +471,7 @@ func TestREADMEUsageMatchesHelp(t *testing.T) {
 		found := pattern.FindString(updated)
 		require.NotEmpty(t, found, "README.md has no help block for %q", block.heading)
 
-		want := "```text\n" + shown(helpOutput(t, "v16.x.x", block.args...)) + "```\n"
+		want := "```text\n" + shown(helpOutput(t, readmeVersion, block.args...)) + "```\n"
 		if *updateREADME {
 			updated = strings.Replace(updated, found, want, 1)
 			continue
@@ -541,48 +545,6 @@ func TestTheConfigDumpNamesEachFlagOnce(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logged, " help: "), logged)
 	assert.Equal(t, 1, strings.Count(logged, " username: "), logged)
 	assert.Equal(t, 1, strings.Count(logged, " files: "), logged)
-}
-
-// TestFlagsStillMakeACommand: mark's command line before there were commands,
-// as a program built on this package put it together, keeps working.
-func TestFlagsStillMakeACommand(t *testing.T) {
-	_, document := publishable(t)
-	config := writeConfig(t, t.TempDir(), "mark.toml",
-		"username = \"cfguser\"\nfiles = \""+filepath.ToSlash(document)+"\"\n")
-
-	legacy := func(action cli.ActionFunc) *cli.Command {
-		return &cli.Command{Name: "mark", Flags: Flags, Before: CheckFlags, Action: action}
-	}
-
-	t.Run("the file is read, global flags and all", func(t *testing.T) {
-		var username, files string
-		err := legacy(func(_ context.Context, cmd *cli.Command) error {
-			username, files = cmd.String("username"), cmd.String("files")
-			return nil
-		}).Run(context.Background(), []string{"mark", "--config", config})
-		require.NoError(t, err)
-		assert.Equal(t, "cfguser", username)
-		assert.Equal(t, filepath.ToSlash(document), files)
-	})
-
-	t.Run("a file that does not parse is reported", func(t *testing.T) {
-		broken := writeConfig(t, t.TempDir(), "broken.toml", "x = [")
-		err := legacy(RunMark).Run(context.Background(), []string{"mark", "--config", broken})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unable to parse configuration file")
-	})
-
-	// Flags are one set of flags, and urfave/cli remembers that a flag was set
-	// from its source from one run to the next, so only the first run takes
-	// --files from the file. One run a process is what they were for.
-	t.Run("it publishes", func(t *testing.T) {
-		out, _, err := captureOutput(t, func() error {
-			return legacy(RunMark).Run(context.Background(),
-				[]string{"mark", "--config", config, "--color", "never", "--compile-only", "-f", document})
-		})
-		require.NoError(t, err)
-		assert.Contains(t, out, "<p>Body.</p>")
-	})
 }
 
 // TestTheConfigFileIsReadOnce: every flag looks its setting up in the file,
@@ -665,5 +627,5 @@ func TestShortFlagsMeanOneThing(t *testing.T) {
 			walk(path+" "+sub.Name, sub)
 		}
 	}
-	walk("mark", newCommand("v16.x.x"))
+	walk("mark", newCommand(readmeVersion))
 }

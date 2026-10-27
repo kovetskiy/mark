@@ -1,7 +1,7 @@
 package mark
 
 import (
-	"github.com/kovetskiy/mark/v16/stdlib"
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/rs/zerolog/log"
 )
 

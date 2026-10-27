@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/renderer"
+	"github.com/kovetskiy/mark/v17/renderer"
 )
 
 // blockContext is where a run of blocks is written.

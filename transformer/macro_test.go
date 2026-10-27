@@ -5,9 +5,9 @@ import (
 	"testing"
 	"text/template"
 
-	cmarkdown "github.com/kovetskiy/mark/v16/markdown"
-	ctransformer "github.com/kovetskiy/mark/v16/transformer"
-	"github.com/kovetskiy/mark/v16/types"
+	cmarkdown "github.com/kovetskiy/mark/v17/markdown"
+	ctransformer "github.com/kovetskiy/mark/v17/transformer"
+	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark"

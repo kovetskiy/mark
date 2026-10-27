@@ -17,7 +17,7 @@ golangci-lint run ./...    # config in .golangci.yml; CI runs this
 markdownlint-cli2          # config in .markdownlint-cli2.jsonc; CI runs this on *.md
 ```
 
-Go 1.27. The module path is `github.com/kovetskiy/mark/v16` — the major version is part
+Go 1.27. The module path is `github.com/kovetskiy/mark/v17` — the major version is part
 of the path, so a major bump means rewriting every internal import.
 
 `d2`, `mermaid`, `math` and `chrome` tests launch headless Chrome and take a few seconds
@@ -69,9 +69,8 @@ source (`util/config.go`), parsed once a run. The root also carries hidden
 copies of publish's flags, for the deprecated `mark <publish flags>` its action
 still runs. The root's flags are resolved as it is parsed, before
 `mark publish --config X` names X, so their file and environment sources are
-held until a command's action settles them (`configFile.hold`). `util.Flags`,
-`util.CheckFlags` and `util.RunMark` remain for programs that built mark's
-single command themselves. `util/command_test.go` fails when the help blocks in
+held until a command's action settles them (`configFile.hold`).
+`util/command_test.go` fails when the help blocks in
 `README.md` drift from the binary;
 `go test ./util -run TestREADMEUsageMatchesHelp -args -update-readme` rewrites
 them.
@@ -185,8 +184,8 @@ both unconditionally. There is no `-update` flag; golden files are written by ha
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
 `util/` 89%, `page/` 52%, `attachment/` 53%, `parser/` 36%, `chrome/` 54%, and the root
-package 87%. `cmd/mark/` and `vfs/` are at 0% on purpose: a thin `main` and a 19-line
-`os.Open` wrapper. `chrome/` has tests of its own for the raster bounds and the shared
+package 87%. `vfs/` is at 0% on purpose: a 19-line `os.Open` wrapper. `cmd/mark/` is a
+thin `main`, tested only for how it names its version. `chrome/` has tests of its own for the raster bounds and the shared
 browser, and is otherwise exercised through its callers: `PNGFromSVG` by `d2/` and
 `math/`, and the allocator options and `CheckRasterBounds` by `mermaid/`.
 
