@@ -33,25 +33,51 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Config holds all configuration options for running Mark.
+// Config holds all configuration options for running Mark, grouped by what
+// they are about.
 type Config struct {
-	// Connection settings
+	// Files is the glob naming the documents to publish.
+	Files string
+
+	Connection ConnectionConfig
+	Mode       ModeConfig
+	Page       PageConfig
+	Update     UpdateConfig
+	Links      LinkConfig
+	Tracking   TrackingConfig
+	Rendering  RenderingConfig
+	Report     ReportConfig
+}
+
+// ConnectionConfig is where Confluence is and who to be there.
+type ConnectionConfig struct {
 	BaseURL               string
 	Username              string
 	Password              string
-	PageID                string
 	InsecureSkipTLSVerify bool
+}
 
-	// File selection
-	Files string
-
-	// Behaviour
+// ModeConfig is how far a run goes and what it does about a failure.
+type ModeConfig struct {
 	CompileOnly     bool
 	DryRun          bool
 	ContinueOnError bool
 	CI              bool
+}
 
-	// Page content
+// readOnly reports whether this run may leave Confluence untouched. A compile
+// prints the body it would have sent and stops; a dry run reports what it would
+// have done. Neither publishes anything, so neither may delete, archive or
+// reorder either -- a guard that asks only about --dry-run is one --compile-only
+// walks straight past.
+func (m ModeConfig) readOnly() bool {
+	return m.DryRun || m.CompileOnly
+}
+
+// PageConfig is which page a document publishes to: the one PageID names, or
+// the one its space, parents and title find.
+type PageConfig struct {
+	PageID                   string
 	Space                    string
 	Parents                  []string
 	TitleFromH1              bool
@@ -60,32 +86,46 @@ type Config struct {
 	ParentsFromPath          bool
 	ParentsFromPathRoot      string
 	ContentAppearance        string
+}
 
-	// Page updates
-	MinorEdit          bool
-	VersionMessage     string
-	EditLock           bool
-	ChangesOnly        bool
-	PreserveComments   bool
-	TrackPages         bool
-	ManifestPage       string
-	ManifestPrefix     string
-	NoOverwrite        bool
-	CheckLinks         []string
-	CheckLinksWarnOnly bool
-	AppendLabels       bool
-	GlobalProperties   string
-	OnOrphan           string // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
-	OutputFormat       string
-	OrphanUnder        string
+// UpdateConfig is how a page is written once it is found.
+type UpdateConfig struct {
+	MinorEdit        bool
+	VersionMessage   string
+	EditLock         bool
+	ChangesOnly      bool
+	PreserveComments bool
+	NoOverwrite      bool
+	AppendLabels     bool
+	GlobalProperties string
 
 	// Unwatch is read by Run, which unwatches as the run ends. ProcessFile
 	// leaves it to the caller: set the API's Unwatch, and call its
 	// UnwatchWritten after the last file, with a context that is not done yet,
 	// or nothing is unwatched.
 	Unwatch bool
+}
 
-	// Rendering
+// LinkConfig is which links are checked, and whether one that does not
+// resolve fails the run.
+type LinkConfig struct {
+	CheckLinks         []string
+	CheckLinksWarnOnly bool
+}
+
+// TrackingConfig is the page manifest --track-pages keeps, and what is done
+// about the pages it lists that a run no longer publishes.
+type TrackingConfig struct {
+	TrackPages     bool
+	ManifestPage   string
+	ManifestPrefix string
+	OnOrphan       string // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
+	OrphanUnder    string
+}
+
+// RenderingConfig is how a document becomes storage format: diagrams,
+// formulas, features, images and the page header.
+type RenderingConfig struct {
 	DropH1           bool
 	StripLinebreaks  bool
 	MermaidEngine    string
@@ -104,6 +144,11 @@ type Config struct {
 	// PageHeader is a template placed at the top of every page: Markdown
 	// when it has a Markdown extension, storage format otherwise.
 	PageHeader string
+}
+
+// ReportConfig is what a run says about itself, and where.
+type ReportConfig struct {
+	OutputFormat string
 
 	// Output is the writer used for result output (e.g. published page URLs,
 	// compiled HTML). If nil, output is discarded; the CLI sets this to
@@ -113,20 +158,11 @@ type Config struct {
 
 // output returns the configured writer, falling back to io.Discard so that
 // library callers that do not set Output receive no implicit stdout writes.
-func (c Config) output() io.Writer {
-	if c.Output != nil {
-		return c.Output
+func (r ReportConfig) output() io.Writer {
+	if r.Output != nil {
+		return r.Output
 	}
 	return io.Discard
-}
-
-// readOnly reports whether this run may leave Confluence untouched. A compile
-// prints the body it would have sent and stops; a dry run reports what it would
-// have done. Neither publishes anything, so neither may delete, archive or
-// reorder either -- a guard that asks only about --dry-run is one --compile-only
-// walks straight past.
-func (c Config) readOnly() bool {
-	return c.DryRun || c.CompileOnly
 }
 
 // isPositiveScale reports whether scale is a number a diagram can be multiplied
@@ -196,7 +232,7 @@ func (r *resources) close() {
 // publishing one file is held to the same settings, and told the same thing
 // about them, as a run is.
 func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
-	engine, err := mermaid.NewEngine(c.MermaidEngine)
+	engine, err := mermaid.NewEngine(c.Rendering.MermaidEngine)
 	if err != nil {
 		return page.LinkChecks{}, nil, err
 	}
@@ -207,17 +243,17 @@ func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
 	// format publishes a PNG without a word -- taking a bundle asked for
 	// alongside it down with it. An empty value is not that: it is a caller
 	// that never set the field, and it means the PNG mark has always published.
-	switch c.MermaidOutput {
+	switch c.Rendering.MermaidOutput {
 	case "", "png", "svg":
 		// ok
 	default:
 		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			c.MermaidOutput,
+			c.Rendering.MermaidOutput,
 		)
 	}
 
-	if c.MermaidBundle && c.MermaidOutput != "svg" {
+	if c.Rendering.MermaidBundle && c.Rendering.MermaidOutput != "svg" {
 		return page.LinkChecks{}, nil, errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
 				"there is nowhere in a PNG to keep the diagram's source",
@@ -226,7 +262,7 @@ func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
 
 	// A page with no Content-Appearance of its own takes this one, and one
 	// that does not parse would fail every such page in turn.
-	if _, err := metadata.ParseContentAppearance(c.ContentAppearance); err != nil {
+	if _, err := metadata.ParseContentAppearance(c.Page.ContentAppearance); err != nil {
 		return page.LinkChecks{}, nil, fmt.Errorf("invalid ContentAppearance: %w", err)
 	}
 
@@ -234,13 +270,13 @@ func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
 	// the renderer's PNG branch, publishing one without a word about the SVG
 	// that was asked for. An empty value is a caller that never set the field,
 	// and means the PNG mark has always published.
-	switch c.D2Output {
+	switch c.Rendering.D2Output {
 	case "", "png", "svg":
 		// ok
 	default:
 		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
-			c.D2Output,
+			c.Rendering.D2Output,
 		)
 	}
 
@@ -252,10 +288,10 @@ func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
 	// would pass a check written that way, and an infinite scale passes one
 	// outright. Either reaches Chrome as a screenshot scale it cannot use, or
 	// multiplies an SVG's size into something that is not a number of pixels.
-	if slices.Contains(c.Features, "d2") && !isPositiveScale(c.D2Scale) {
+	if slices.Contains(c.Rendering.Features, "d2") && !isPositiveScale(c.Rendering.D2Scale) {
 		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
-			c.D2Scale,
+			c.Rendering.D2Scale,
 		)
 	}
 
@@ -266,28 +302,28 @@ func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
 	// that is not wrong. What neither has ever been able to draw is a negative,
 	// NaN or infinite scale, and those are refused here rather than part way
 	// through a run, when the first diagram reaches the browser.
-	if slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
+	if slices.Contains(c.Rendering.Features, "mermaid") && !isScaleOrDefault(c.Rendering.MermaidScale) {
 		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
-			c.MermaidScale,
+			c.Rendering.MermaidScale,
 		)
 	}
 
-	if slices.Contains(c.Features, "math") && !isScaleOrDefault(c.MathScale) {
+	if slices.Contains(c.Rendering.Features, "math") && !isScaleOrDefault(c.Rendering.MathScale) {
 		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
-			c.MathScale,
+			c.Rendering.MathScale,
 		)
 	}
 
-	if c.CheckLinksWarnOnly && len(c.CheckLinks) == 0 {
+	if c.Links.CheckLinksWarnOnly && len(c.Links.CheckLinks) == 0 {
 		return page.LinkChecks{}, nil, fmt.Errorf(
 			"--check-links-warn-only requires --check-links: " +
 				"on its own no links are checked, so the silence means nothing",
 		)
 	}
 
-	checks, err := page.ParseLinkChecks(c.CheckLinks)
+	checks, err := page.ParseLinkChecks(c.Links.CheckLinks)
 	if err != nil {
 		return page.LinkChecks{}, nil, err
 	}
@@ -321,12 +357,12 @@ func run(ctx context.Context, config Config) (err error) {
 	// The rest is about the run as a whole -- the report written at the end of
 	// it and the manifest kept across runs -- so ProcessFile, which has
 	// neither, does not ask.
-	outputFormat, err := report.ParseFormat(config.OutputFormat)
+	outputFormat, err := report.ParseFormat(config.Report.OutputFormat)
 	if err != nil {
 		return err
 	}
 
-	onOrphan, err := report.ParseOnOrphan(config.OnOrphan)
+	onOrphan, err := report.ParseOnOrphan(config.Tracking.OnOrphan)
 	if err != nil {
 		return err
 	}
@@ -334,7 +370,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// Removing a page needs to know mark put it there, and only the manifest
 	// knows that. Without it the flag could only guess from titles, which is
 	// not a guess worth making about deletion.
-	if onOrphan != report.OnOrphanReport && !config.TrackPages {
+	if onOrphan != report.OnOrphanReport && !config.Tracking.TrackPages {
 		return fmt.Errorf(
 			"--on-orphan %s requires --track-pages: "+
 				"only the page manifest knows which pages mark published",
@@ -342,33 +378,33 @@ func run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	if config.NoOverwrite && !config.TrackPages {
+	if config.Update.NoOverwrite && !config.Tracking.TrackPages {
 		return fmt.Errorf("--no-overwrite requires --track-pages: " +
 			"the version mark last published is remembered in the page manifest")
 	}
 
-	if config.ManifestPage != "" && !config.TrackPages {
+	if config.Tracking.ManifestPage != "" && !config.Tracking.TrackPages {
 		return fmt.Errorf("--manifest-page requires --track-pages: " +
 			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
-	if config.ManifestPrefix != "" && config.ManifestPrefix != manifest.PropertyKeyPrefix {
-		if !config.TrackPages {
+	if config.Tracking.ManifestPrefix != "" && config.Tracking.ManifestPrefix != manifest.PropertyKeyPrefix {
+		if !config.Tracking.TrackPages {
 			return fmt.Errorf("--manifest-prefix requires --track-pages: " +
 				"it names the page manifest's properties, and nothing else keeps one")
 		}
-		if err := manifest.ValidatePropertyKeyPrefix(config.ManifestPrefix); err != nil {
+		if err := manifest.ValidatePropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
 			return fmt.Errorf("--manifest-prefix: %w", err)
 		}
 	}
 
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := confluence.NewAPI(config.Connection.BaseURL, config.Connection.Username, config.Connection.Password, config.Connection.InsecureSkipTLSVerify)
 	// An update refused as a conflict is retried against the page's current
 	// version, which overwrites whatever changed it. --no-overwrite exists to
 	// stop exactly that, so under it the retry goes ahead only when nobody else
 	// has written to the page.
-	api.KeepConcurrentEdits = config.NoOverwrite
-	api.Unwatch = config.Unwatch
+	api.KeepConcurrentEdits = config.Update.NoOverwrite
+	api.Unwatch = config.Update.Unwatch
 	// Deferred, so that a run that fails partway still unwatches what it wrote.
 	// An interrupted run does not: it warns which pages stay watched.
 	defer api.UnwatchWritten(ctx)
@@ -380,7 +416,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 	if len(files) == 0 {
 		msg := "no files matched"
-		if config.CI {
+		if config.Mode.CI {
 			log.Warn().Msg(msg)
 		} else {
 			return errors.New(msg)
@@ -389,7 +425,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 	// Every file would be published over the one page in turn, and only the
 	// last would be left on it.
-	if config.PageID != "" && len(files) > 1 {
+	if config.Page.PageID != "" && len(files) > 1 {
 		named := files
 		if len(named) > 3 {
 			named = append(slices.Clone(named[:3]), "...")
@@ -412,12 +448,12 @@ func run(ctx context.Context, config Config) (err error) {
 
 	// Read once and before anything is published: a file that cannot be parsed
 	// should not be discovered halfway through a repository.
-	globalProperties, err := page.LoadGlobalProperties(config.GlobalProperties)
+	globalProperties, err := page.LoadGlobalProperties(config.Update.GlobalProperties)
 	if err != nil {
 		return err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig(res))
+	pageHeader, err := header.Load(config.Rendering.PageHeader, std, config.Rendering.markConfig(res))
 	if err != nil {
 		return err
 	}
@@ -454,7 +490,7 @@ func run(ctx context.Context, config Config) (err error) {
 			results.AddError(err.Error())
 		}
 
-		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
+		if writeErr := results.Write(config.Report.output(), outputFormat); writeErr != nil {
 			if err == nil {
 				err = fmt.Errorf("unable to write the run report: %w", writeErr)
 
@@ -469,21 +505,21 @@ func run(ctx context.Context, config Config) (err error) {
 	// page is found, which is not something to switch on under anyone without
 	// their say-so.
 	var tracker *manifest.Store
-	if config.TrackPages {
+	if config.Tracking.TrackPages {
 		// A run that publishes nothing resolves exactly as a real one does --
 		// otherwise its preview is fiction -- and resolving records what it
 		// finds. The store it gets cannot write, which is a guard that holds
 		// however it is used.
-		if config.readOnly() {
+		if config.Mode.readOnly() {
 			tracker = manifest.NewReadOnlyStore(api)
 		} else {
 			tracker = manifest.NewStore(api)
 		}
-		tracker.SetManifestPage(config.ManifestPage)
-		if err := tracker.SetPropertyKeyPrefix(config.ManifestPrefix); err != nil {
+		tracker.SetManifestPage(config.Tracking.ManifestPage)
+		if err := tracker.SetPropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
 			return fmt.Errorf("--manifest-prefix: %w", err)
 		}
-		if config.PageID != "" {
+		if config.Page.PageID != "" {
 			// The mapping is keyed on a source path within a space, and neither
 			// is known when publishing straight to a page id. Better said once
 			// than discovered later as a manifest with holes in it.
@@ -553,7 +589,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// Not on a dry run or a compile: nothing is published, so nothing a link is
 	// waiting for will come to exist, and the wait is worth reporting instead.
 	var deferrals *page.Deferrals
-	if !config.DryRun && !config.CompileOnly {
+	if !config.Mode.DryRun && !config.Mode.CompileOnly {
 		deferrals = page.NewDeferrals()
 	}
 
@@ -561,13 +597,13 @@ func run(ctx context.Context, config Config) (err error) {
 	// from the run's own files, so that every document's parents, a directory's
 	// title and the pages standing for directories all come from the one list.
 	var hierarchy *page.Hierarchy
-	if config.ParentsFromPath {
+	if config.Page.ParentsFromPath {
 		directoryTitles := page.DirectoryTitleReader(func(file string) ([]byte, error) {
 			_, markdown, err := readSource(file)
 			return markdown, err
-		}, config.TitleFromH1, slices.Contains(config.Features, "frontmatter"))
+		}, config.Page.TitleFromH1, slices.Contains(config.Rendering.Features, "frontmatter"))
 
-		hierarchy, err = page.BuildHierarchy(config.ParentsFromPathRoot, config.Files, files, directoryTitles)
+		hierarchy, err = page.BuildHierarchy(config.Page.ParentsFromPathRoot, config.Files, files, directoryTitles)
 		if err != nil {
 			return err
 		}
@@ -648,7 +684,7 @@ func run(ctx context.Context, config Config) (err error) {
 			// not one this run put there, so it is not named among the URLs of
 			// the pages it did.
 			if outputFormat == report.FormatURL && status != report.StatusSkipped {
-				if _, err := fmt.Fprintln(config.output(), url); err != nil {
+				if _, err := fmt.Fprintln(config.Report.output(), url); err != nil {
 					return err
 				}
 			}
@@ -715,7 +751,7 @@ func run(ctx context.Context, config Config) (err error) {
 		// Not attempted when a file failed: the pages that did not publish are
 		// missing from the sequence, and ordering the rest against each other
 		// would arrange them as though the absent ones were gone for good.
-		if err := page.OrderChildren(ctx, api, config.readOnly(), ordered); err != nil {
+		if err := page.OrderChildren(ctx, api, config.Mode.readOnly(), ordered); err != nil {
 			return fmt.Errorf("unable to order pages: %w", err)
 		}
 	}
@@ -747,7 +783,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// After the manifest is written: an unresolved link says nothing about
 	// whether the pages that did publish are recorded correctly, and throwing
 	// the mapping away over it would be a far worse outcome than the link.
-	if !config.CheckLinksWarnOnly {
+	if !config.Links.CheckLinksWarnOnly {
 		if err := unresolvedLinks(missingPages); err != nil {
 			return err
 		}
@@ -778,7 +814,7 @@ func run(ctx context.Context, config Config) (err error) {
 // A file that failed because the run was cancelled is not a file failure to
 // step past: the run stops, so that it reports the cancellation.
 func stepPast(ctx context.Context, config Config, file string, err error) bool {
-	if !config.ContinueOnError || ctx.Err() != nil {
+	if !config.Mode.ContinueOnError || ctx.Err() != nil {
 		return false
 	}
 
@@ -819,12 +855,12 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
-	globalProperties, err := page.LoadGlobalProperties(config.GlobalProperties)
+	globalProperties, err := page.LoadGlobalProperties(config.Update.GlobalProperties)
 	if err != nil {
 		return nil, err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig(res))
+	pageHeader, err := header.Load(config.Rendering.PageHeader, std, config.Rendering.markConfig(res))
 	if err != nil {
 		return nil, err
 	}
@@ -859,7 +895,7 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 		log.Warn().Msg(item)
 	}
 
-	if !config.CheckLinksWarnOnly {
+	if !config.Links.CheckLinksWarnOnly {
 		return target, unresolvedLinks(missing)
 	}
 
@@ -880,7 +916,7 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 // failed request cannot send a Cloud tenant down Server's paths for the rest
 // of the run. A compile-only run never contacts Confluence.
 func settlePlatform(ctx context.Context, api *confluence.API, config Config) error {
-	if config.CompileOnly {
+	if config.Mode.CompileOnly {
 		return nil
 	}
 
@@ -937,16 +973,16 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 func documentMeta(config Config, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
 	meta, markdown, err := metadata.ExtractMeta(
 		markdown,
-		config.Space,
-		config.TitleFromH1,
-		config.TitleFromFilename,
+		config.Page.Space,
+		config.Page.TitleFromH1,
+		config.Page.TitleFromFilename,
 		file,
-		config.Parents,
+		config.Page.Parents,
 		// Deferred until the path has had its say about the parents, when it
 		// has one; see below.
-		config.TitleAppendGeneratedHash && hierarchy == nil,
-		config.ContentAppearance,
-		slices.Contains(config.Features, "frontmatter"),
+		config.Page.TitleAppendGeneratedHash && hierarchy == nil,
+		config.Page.ContentAppearance,
+		slices.Contains(config.Rendering.Features, "frontmatter"),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
@@ -974,8 +1010,8 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 		// title it publishes, the documents beneath it in the parent they look
 		// for. Hashing only the first left the README childless beside an
 		// empty, unhashed page of the directory's name that took its children.
-		if config.TitleAppendGeneratedHash {
-			derived, title = page.HashDirectoryTitles(config.Parents, meta.Space, derived, title)
+		if config.Page.TitleAppendGeneratedHash {
+			derived, title = page.HashDirectoryTitles(config.Page.Parents, meta.Space, derived, title)
 		}
 
 		if !meta.DeclaredParents {
@@ -984,7 +1020,7 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 
 		if title != "" {
 			meta.Title = title
-		} else if config.TitleAppendGeneratedHash {
+		} else if config.Page.TitleAppendGeneratedHash {
 			// Only now, with the parents final: hashed before they were, two
 			// documents of one title in different directories hashed the same,
 			// and the hash was the very thing meant to tell them apart.
@@ -1077,7 +1113,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 		return nil, nil, err
 	}
 
-	if r.config.CompileOnly || r.config.DryRun {
+	if r.config.Mode.CompileOnly || r.config.Mode.DryRun {
 		return nil, nil, r.preview(ctx, doc)
 	}
 
@@ -1109,7 +1145,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 	// Only fetch the old body and inline comments when we know the page will
 	// actually be updated. This avoids unnecessary API round-trips for no-op
 	// runs (e.g. when --changes-only determines the content is unchanged).
-	if shouldUpdatePage && r.config.PreserveComments && !dest.created {
+	if shouldUpdatePage && r.config.Update.PreserveComments && !dest.created {
 		html, err = r.preserveComments(ctx, doc, dest, html)
 		if err != nil {
 			return nil, nil, err
@@ -1183,7 +1219,7 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 		}
 	}
 
-	if r.config.PageID != "" && meta != nil {
+	if r.config.Page.PageID != "" && meta != nil {
 		log.Warn().Msg(
 			`specified file contains metadata, ` +
 				`but it will be ignored due specified command line URL`,
@@ -1227,7 +1263,7 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 func (r *publishRun) validate(doc *document) error {
 	meta := doc.meta
 
-	if r.config.PageID == "" && meta == nil {
+	if r.config.Page.PageID == "" && meta == nil {
 		return fmt.Errorf(
 			"specified file doesn't contain metadata and URL is not specified " +
 				"via command line or names no page: neither a pageId parameter nor a " +
@@ -1263,18 +1299,18 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 	// A fragment's links are written from where the fragment lives, so the
 	// directory of everything this document includes is worth looking in too.
 	// One level: a fragment that itself includes another is not followed here.
-	searchDirs := includeSearchDirs(filepath.Dir(file), config.IncludePath, doc.markdown)
+	searchDirs := includeSearchDirs(filepath.Dir(file), config.Rendering.IncludePath, doc.markdown)
 
 	resolver := page.NewLinkResolver(
 		r.api,
 		doc.meta,
 		filepath.Dir(file),
-		config.Space,
-		config.TitleFromH1,
-		config.TitleFromFilename,
-		config.Parents,
-		config.TitleAppendGeneratedHash,
-		slices.Contains(config.Features, "frontmatter"),
+		config.Page.Space,
+		config.Page.TitleFromH1,
+		config.Page.TitleFromFilename,
+		config.Page.Parents,
+		config.Page.TitleAppendGeneratedHash,
+		slices.Contains(config.Rendering.Features, "frontmatter"),
 		r.checker,
 		searchDirs,
 	)
@@ -1297,7 +1333,7 @@ func linksUnder(ctx context.Context, resolver *page.LinkResolver) func(target, t
 // nobody, or to more than one person, fails here rather than after a real run
 // has created an empty, unrestricted page.
 func (r *publishRun) resolveRestrictions(ctx context.Context, doc *document) error {
-	if doc.meta == nil || doc.meta.Restrictions == nil || r.config.CompileOnly {
+	if doc.meta == nil || doc.meta.Restrictions == nil || r.config.Mode.CompileOnly {
 		return nil
 	}
 
@@ -1317,8 +1353,8 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 	meta, file := doc.meta, doc.file
 
 	if meta == nil {
-		if r.config.PageID != "" {
-			pg, err := r.api.GetPageByID(ctx, r.config.PageID)
+		if r.config.Page.PageID != "" {
+			pg, err := r.api.GetPageByID(ctx, r.config.Page.PageID)
 			if err != nil {
 				return found, fmt.Errorf("unable to resolve page by ID: %w", err)
 			}
@@ -1379,7 +1415,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	config, meta, file := r.config, doc.meta, doc.file
 
 	var found pagePreview
-	if config.DryRun {
+	if config.Mode.DryRun {
 		var err error
 		found, err = r.previewLocation(ctx, doc)
 		if err != nil {
@@ -1388,16 +1424,16 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	}
 	previewed := found.page
 
-	cfg, err := config.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
+	cfg, err := config.Rendering.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
 	if err != nil {
 		return err
 	}
 
 	// Only a dry run asked to tell changed pages from unchanged ones.
-	compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
+	compare := config.Mode.DryRun && !config.Mode.CompileOnly && config.Update.ChangesOnly
 
 	status, reason := "", ""
-	if compare && config.NoOverwrite && previewed != nil && r.tracker != nil && meta != nil {
+	if compare && config.Update.NoOverwrite && previewed != nil && r.tracker != nil && meta != nil {
 		// Ahead of compiling, as on a real run: a page edited in Confluence
 		// is left alone whatever the source says, and whatever it would fail on.
 		drift, err := hasDrifted(ctx, r.api, r.tracker, meta.Space, file, previewed)
@@ -1424,7 +1460,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	if compare {
 		// A json or github report goes to the same stream, for a CI step to
 		// parse; HTML written ahead of it would make it unparseable.
-		format, err := report.ParseFormat(config.OutputFormat)
+		format, err := report.ParseFormat(config.Report.OutputFormat)
 		if err != nil {
 			return err
 		}
@@ -1432,7 +1468,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	}
 
 	if printHTML {
-		if _, err := fmt.Fprintln(config.output(), html); err != nil {
+		if _, err := fmt.Fprintln(config.Report.output(), html); err != nil {
 			return err
 		}
 	}
@@ -1454,7 +1490,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	// check links should report them on the credential-free invocation
 	// --compile-only exists for, and the one a pull request gate is most
 	// likely to use.
-	if err := reportBrokenLinks(doc.resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
+	if err := reportBrokenLinks(doc.resolver.Broken(), file, config.Links.CheckLinksWarnOnly); err != nil {
 		return err
 	}
 
@@ -1517,7 +1553,7 @@ func (r *publishRun) previewBody(
 		previewedTitle = previewed.Title
 	}
 
-	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, previewedTitle, r.config.Space, cfg)
+	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, previewedTitle, r.config.Page.Space, cfg)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -1579,12 +1615,12 @@ func (r *publishRun) resolveDestination(ctx context.Context, doc *document) (*de
 			return nil, err
 		}
 	} else {
-		pg, err := r.api.GetPageByID(ctx, r.config.PageID)
+		pg, err := r.api.GetPageByID(ctx, r.config.Page.PageID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to retrieve page by id: %w", err)
 		}
 		if pg == nil {
-			return nil, fmt.Errorf("page with id %q not found", r.config.PageID)
+			return nil, fmt.Errorf("page with id %q not found", r.config.Page.PageID)
 		}
 		dest = &destination{page: pg}
 	}
@@ -1694,7 +1730,7 @@ func (r *publishRun) tightenRestrictions(ctx context.Context, doc *document, des
 		return nil, nil
 	}
 
-	plan, err := r.api.PlanRestrictions(ctx, dest.page, doc.restrictions, r.config.EditLock, dest.created)
+	plan, err := r.api.PlanRestrictions(ctx, dest.page, doc.restrictions, r.config.Update.EditLock, dest.created)
 	if err != nil {
 		return nil, err
 	}
@@ -1726,7 +1762,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		return "", nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	cfg, err := r.config.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
+	cfg, err := r.config.Rendering.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
 	if err != nil {
 		return "", nil, err
 	}
@@ -1738,7 +1774,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		targetTitle = target.Title
 	}
 
-	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, targetTitle, r.config.Space, cfg)
+	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, targetTitle, r.config.Page.Space, cfg)
 	if err != nil {
 		return "", nil, err
 	}
@@ -1785,7 +1821,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 	// them means the run was told to warn rather than fail, since otherwise
 	// reportBrokenLinks has already ended it.
 	brokenLinks := doc.resolver.Broken()
-	if err := reportBrokenLinks(brokenLinks, file, r.config.CheckLinksWarnOnly); err != nil {
+	if err := reportBrokenLinks(brokenLinks, file, r.config.Links.CheckLinksWarnOnly); err != nil {
 		return "", nil, err
 	}
 
@@ -1862,7 +1898,7 @@ func (r *publishRun) writePage(ctx context.Context, doc *document, target *confl
 		ctx,
 		target,
 		html,
-		r.config.MinorEdit,
+		r.config.Update.MinorEdit,
 		versionMessage,
 		contentAppearance,
 		emoji,
@@ -1881,7 +1917,7 @@ func (r *publishRun) applySettings(ctx context.Context, doc *document, dest *des
 	meta, target := doc.meta, dest.page
 
 	if meta != nil {
-		if err := r.api.UpdateLabels(ctx, target, meta.Labels, r.config.AppendLabels); err != nil {
+		if err := r.api.UpdateLabels(ctx, target, meta.Labels, r.config.Update.AppendLabels); err != nil {
 			return nil, err
 		}
 	}
@@ -1911,13 +1947,13 @@ func (r *publishRun) applySettings(ctx context.Context, doc *document, dest *des
 		}
 	}
 
-	if r.config.EditLock {
+	if r.config.Update.EditLock {
 		log.Info().Msgf(
 			`edit locked on page %q by user %q to prevent manual edits`,
 			target.Title,
-			r.config.Username,
+			r.config.Connection.Username,
 		)
-		if err := r.api.RestrictPageUpdates(ctx, target, r.config.Username); err != nil {
+		if err := r.api.RestrictPageUpdates(ctx, target, r.config.Connection.Username); err != nil {
 			return nil, fmt.Errorf("unable to restrict page updates: %w", err)
 		}
 	}
@@ -2036,7 +2072,7 @@ func renderHeader(
 
 // documentConfig is the compile configuration for one document: the run's,
 // with what its metadata and link resolution add.
-func (c Config) documentConfig(res *resources, meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
+func (c RenderingConfig) documentConfig(res *resources, meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
 	if c.DropH1 {
 		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
@@ -2057,7 +2093,7 @@ func (c Config) documentConfig(res *resources, meta *metadata.Meta, resolveLink 
 // markConfig is the compile configuration the run's flags give every
 // document, drawing in the run's browsers; the per-document fields are left
 // for the caller to fill in.
-func (c Config) markConfig(res *resources) types.MarkConfig {
+func (c RenderingConfig) markConfig(res *resources) types.MarkConfig {
 	// An invalid value is reported by documentConfig, which every page passes.
 	imageAlign, _ := getImageAlign(c.ImageAlign, nil)
 

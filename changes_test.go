@@ -26,9 +26,21 @@ func dryRunDocBody(body string) string {
 // changesOnlyConfig publishes file to server under --changes-only.
 func changesOnlyConfig(server *confluencetest.Server, file string) Config {
 	return Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: &bytes.Buffer{},
-		ChangesOnly: true,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: &bytes.Buffer{},
+		},
+		Update: UpdateConfig{
+			ChangesOnly: true,
+		},
 	}
 }
 
@@ -106,7 +118,7 @@ func TestDryRunChangesOnlyRetitleCountsAsChange(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "First"))
 
 	config := trackingConfig(server, file)
-	config.ChangesOnly = true
+	config.Update.ChangesOnly = true
 	require.NoError(t, Run(context.Background(), config))
 
 	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Second"))
@@ -121,7 +133,7 @@ func TestDryRunAloneStillPrintsEveryPage(t *testing.T) {
 	config := changesOnlyConfig(server, file)
 	require.NoError(t, Run(context.Background(), config))
 
-	config.ChangesOnly = false
+	config.Update.ChangesOnly = false
 	assert.Contains(t, previewOf(t, config, ""), "stable body")
 }
 
@@ -187,7 +199,7 @@ func TestDryRunChangesOnlyNoOverwriteReportsAnEditedPageSkipped(t *testing.T) {
 	server, id, config := noOverwriteFixture(t)
 	server.EditPage(id, "<p>Written by a person.</p>")
 
-	config.ChangesOnly = true
+	config.Update.ChangesOnly = true
 	out := previewOf(t, config, "json")
 
 	assert.Contains(t, out, `"status": "skipped"`)
@@ -204,7 +216,7 @@ func TestDryRunChangesOnlySkippedPageIsNotCompiled(t *testing.T) {
 	writeFile(t, filepath.Dir(config.Files), "doc.md",
 		dryRunDocBody("<!-- Attachment: missing.png -->\n\nFrom mark."))
 
-	config.ChangesOnly = true
+	config.Update.ChangesOnly = true
 	out := previewOf(t, config, "json")
 
 	assert.Contains(t, out, `"status": "skipped"`)
@@ -234,7 +246,7 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "First"))
 
 	config := trackingConfig(server, file)
-	config.ChangesOnly = true
+	config.Update.ChangesOnly = true
 	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
@@ -249,9 +261,9 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 
 	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Second"))
 	var out bytes.Buffer
-	config.DryRun = true
-	config.OutputFormat = "json"
-	config.Output = &out
+	config.Mode.DryRun = true
+	config.Report.OutputFormat = "json"
+	config.Report.Output = &out
 
 	err = Run(context.Background(), config)
 	require.Error(t, err)
@@ -293,9 +305,9 @@ func TestDryRunChangesOnlyReportsAMove(t *testing.T) {
 	assert.NotEqual(t, other.ID, server.Page(id).ParentID, "a dry run must not move the page")
 
 	// And the real run does move it, which is what the report promised.
-	config.DryRun = false
-	config.OutputFormat = ""
-	config.Output = &bytes.Buffer{}
+	config.Mode.DryRun = false
+	config.Report.OutputFormat = ""
+	config.Report.Output = &bytes.Buffer{}
 	require.NoError(t, Run(context.Background(), config))
 	assert.Equal(t, other.ID, server.Page(id).ParentID)
 }
@@ -376,9 +388,22 @@ func TestDryRunChangesOnlyReportsTheURL(t *testing.T) {
 
 	var first bytes.Buffer
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: &first,
-		ChangesOnly: true, OutputFormat: "json",
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output:       &first,
+			OutputFormat: "json",
+		},
+		Update: UpdateConfig{
+			ChangesOnly: true,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 	published := decodeReport(t, first.Bytes())
@@ -430,9 +455,9 @@ func TestDryRunChangesOnlyFailsOnAttachmentsSharingAName(t *testing.T) {
 			writeFile(t, dir, "doc.md", dryRunDocBody(
 				"<!-- Attachment: a/b_c.txt -->\n<!-- Attachment: a_b/c.txt -->\n\nplain"))
 
-			config.DryRun = true
-			config.OutputFormat = "json"
-			config.Output = &bytes.Buffer{}
+			config.Mode.DryRun = true
+			config.Report.OutputFormat = "json"
+			config.Report.Output = &bytes.Buffer{}
 			err := Run(context.Background(), config)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "would both be uploaded")
@@ -464,8 +489,8 @@ func TestLabelLookupIsSkippedWhenLabelsCannotChange(t *testing.T) {
 		file := writeFile(t, t.TempDir(), "doc.md", dryRunDocBody("same"))
 
 		config := changesOnlyConfig(server, file)
-		config.ChangesOnly = dryRun
-		config.AppendLabels = appendLabels
+		config.Update.ChangesOnly = dryRun
+		config.Update.AppendLabels = appendLabels
 		require.NoError(t, Run(context.Background(), config))
 
 		before := len(server.Requests())
@@ -520,9 +545,9 @@ func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T
 	assert.Len(t, nonGET(server), before, "a dry run must not write")
 
 	// And the real run does move it, which is what the report promised.
-	config.DryRun = false
-	config.OutputFormat = ""
-	config.Output = &bytes.Buffer{}
+	config.Mode.DryRun = false
+	config.Report.OutputFormat = ""
+	config.Report.Output = &bytes.Buffer{}
 	require.NoError(t, Run(context.Background(), config))
 	assert.NotEqual(t, oldFolder, server.Page(id).ParentID, "the real run should have moved the page")
 }
@@ -538,7 +563,7 @@ func TestDryRunChangesOnlyFollowsARenamedParent(t *testing.T) {
 	file := writeFile(t, dir, "child.md", markdownUnder("Guide", "Child"))
 
 	config := trackingConfig(server, file)
-	config.ChangesOnly = true
+	config.Update.ChangesOnly = true
 	require.NoError(t, Run(context.Background(), config))
 
 	server.RenamePage(guide.ID, "Guide Renamed")
@@ -552,9 +577,9 @@ func TestDryRunChangesOnlyFollowsARenamedParent(t *testing.T) {
 
 	// The real run agrees: it leaves the page where it is and does not write
 	// it. It may still save the manifest, which is not the page.
-	config.DryRun = false
-	config.OutputFormat = ""
-	config.Output = &bytes.Buffer{}
+	config.Mode.DryRun = false
+	config.Report.OutputFormat = ""
+	config.Report.Output = &bytes.Buffer{}
 	require.NoError(t, Run(context.Background(), config))
 	assert.Equal(t, guide.ID, server.Page(id).ParentID)
 	for _, w := range nonGET(server)[before:] {
@@ -584,9 +609,21 @@ func TestChangesOnlySeesPagePropertyHeaders(t *testing.T) {
 			file := writeFile(t, dir, "doc.md", header+"\nbody\n")
 
 			config := Config{
-				BaseURL: server.URL, Username: "user", Password: "token",
-				Files: file, Features: []string{"mention"}, Output: io.Discard,
-				ChangesOnly: true,
+				Files: file,
+				Connection: ConnectionConfig{
+					BaseURL:  server.URL,
+					Username: "user",
+					Password: "token",
+				},
+				Rendering: RenderingConfig{
+					Features: []string{"mention"},
+				},
+				Report: ReportConfig{
+					Output: io.Discard,
+				},
+				Update: UpdateConfig{
+					ChangesOnly: true,
+				},
 			}
 			api := confluence.NewAPI(server.URL, "user", "token", false)
 
@@ -687,8 +724,18 @@ func TestNoOverwriteRequiresTrackPages(t *testing.T) {
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "*.md"), NoOverwrite: true, Output: io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Update: UpdateConfig{
+			NoOverwrite: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 
 	require.Error(t, err)
@@ -795,11 +842,21 @@ func dataCenterMoveFixtureWith(
 	writeMovingDoc(t, dir, "Parent", "From mark.")
 
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files:      filepath.Join(dir, "*.md"),
-		Features:   []string{"mention"},
-		TrackPages: true,
-		Output:     io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	configure(&config)
 
@@ -828,7 +885,7 @@ func writeMovingDoc(t *testing.T, dir, parent, body string) {
 // page keeps its old baseline -- reported again on every run after.
 func TestNoOverwriteDoesNotMistakeAMoveForAnEdit(t *testing.T) {
 	server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
-		c.NoOverwrite = true
+		c.Update.NoOverwrite = true
 	})
 	dir := filepath.Dir(config.Files)
 
@@ -856,8 +913,8 @@ func TestNoOverwriteAfterAChangesOnlyMove(t *testing.T) {
 		name := map[bool]string{false: "changes-only", true: "changes-only and no-overwrite"}[noOverwrite]
 		t.Run(name, func(t *testing.T) {
 			server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
-				c.ChangesOnly = true
-				c.NoOverwrite = noOverwrite
+				c.Update.ChangesOnly = true
+				c.Update.NoOverwrite = noOverwrite
 			})
 			dir := filepath.Dir(config.Files)
 
@@ -866,8 +923,8 @@ func TestNoOverwriteAfterAChangesOnlyMove(t *testing.T) {
 			assert.NotEqual(t, report.StatusSkipped, moved.Status, moved.Reason)
 			require.Equal(t, other, server.Page(id).ParentID)
 
-			config.ChangesOnly = false
-			config.NoOverwrite = true
+			config.Update.ChangesOnly = false
+			config.Update.NoOverwrite = true
 			writeMovingDoc(t, dir, "Other", "After the move.")
 			after := runReported(t, config)
 
@@ -883,7 +940,7 @@ func TestNoOverwriteAfterAChangesOnlyMove(t *testing.T) {
 // move is still an edit, and is still reported on every run.
 func TestNoOverwriteStillSeesAnEditMadeBeforeAMove(t *testing.T) {
 	server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
-		c.NoOverwrite = true
+		c.Update.NoOverwrite = true
 	})
 	dir := filepath.Dir(config.Files)
 
@@ -909,7 +966,7 @@ func TestNoOverwriteStillSeesAnEditMadeBeforeAMove(t *testing.T) {
 // an update, and the publish that follows is not taken for a conflict.
 func TestNoOverwriteAfterAMoveByAction(t *testing.T) {
 	server, id, other, config := dataCenterMoveFixtureWith(t, true, func(c *Config) {
-		c.NoOverwrite = true
+		c.Update.NoOverwrite = true
 	})
 	dir := filepath.Dir(config.Files)
 

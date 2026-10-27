@@ -49,9 +49,22 @@ func runHierarchy(t *testing.T, dir string, extra func(*Config)) *confluence.API
 
 	server := hierarchyServer(t)
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	if extra != nil {
 		extra(&config)
@@ -121,7 +134,7 @@ func TestParentsFlagStillPrefixes(t *testing.T) {
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.Parents = []string{"Docs Root"} })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.Parents = []string{"Docs Root"} })
 
 	assert.Equal(t, []string{"Home", "Docs Root", "Guides"}, ancestryOf(t, api, "Setup"))
 }
@@ -130,7 +143,7 @@ func TestParentsFlagStillPrefixes(t *testing.T) {
 // appending onto the flag's own slice, so every document's meta.Parents shared
 // its backing array -- the very array, for a document declaring no Parent of
 // its own. Following a renamed parent writes the new title into meta.Parents,
-// which wrote it into Config.Parents: the caller's value changed under it, and
+// which wrote it into Config.Page.Parents: the caller's value changed under it, and
 // every later document in the run started from a chain it had not declared.
 func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 	server := hierarchyServer(t)
@@ -143,7 +156,7 @@ func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 	parents := append(make([]string, 0, 4), "Root", "Section", "Chapter")
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	config.Parents = parents
+	config.Page.Parents = parents
 	require.NoError(t, Run(context.Background(), config))
 
 	chapter, err := confluence.NewAPI(server.URL, "user", "token", false).
@@ -169,7 +182,7 @@ func TestWithoutTheFlagNothingChanges(t *testing.T) {
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.ParentsFromPath = false })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.ParentsFromPath = false })
 
 	assert.Equal(t, []string{"Home"}, ancestryOf(t, api, "Setup"),
 		"without the flag the path says nothing")
@@ -180,7 +193,7 @@ func TestRootIsTakenFromThePattern(t *testing.T) {
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.ParentsFromPathRoot = "" })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.ParentsFromPathRoot = "" })
 
 	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
 }
@@ -199,9 +212,22 @@ func TestTitleCollisionIsRefused(t *testing.T) {
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: Overview -->\n\nSDK overview.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 
 	require.Error(t, err)
@@ -234,9 +260,22 @@ func TestSameTitleInDifferentSpacesIsFine(t *testing.T) {
 		"<!-- Space: OTHER -->\n<!-- Title: Overview -->\n\nTwo.\n")
 
 	assert.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 }
 
@@ -251,10 +290,26 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
 
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir,
-		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+			OnOrphan:   "delete",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 
@@ -289,10 +344,25 @@ func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir,
-		TrackPages: true, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 
@@ -324,9 +394,21 @@ func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 		space+"<!-- Title: Setup -->\n<!-- Parent: Guides -->\n\nSetup.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		TrackPages: true, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
@@ -361,7 +443,7 @@ func TestIndexH1BecomesTheDirectoryTitle(t *testing.T) {
 	writeAt(t, dir, "guides/README.md", space+"\n# Developer Handbook\n\nIntro.\n")
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.TitleFromH1 = true })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.TitleFromH1 = true })
 
 	assert.Equal(t, []string{"Home", "Developer Handbook"}, ancestryOf(t, api, "Setup"))
 
@@ -440,9 +522,22 @@ func TestUnreadablePagesFileIsAnError(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), ".pages")
@@ -455,7 +550,7 @@ func TestFilenameNeverNamesADirectory(t *testing.T) {
 	writeAt(t, dir, "guides/README.md", space+"\nIntro.\n")
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.TitleFromFilename = true })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.TitleFromFilename = true })
 
 	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
 
@@ -473,7 +568,7 @@ func TestHashTellsSameTitlesApart(t *testing.T) {
 	writeAt(t, dir, "api/overview.md", space+"<!-- Title: Overview -->\n\nAPI.\n")
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: Overview -->\n\nSDK.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.TitleAppendGeneratedHash = true })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.TitleAppendGeneratedHash = true })
 
 	var titles []string
 	for _, p := range serverPages(t, api) {
@@ -516,9 +611,22 @@ func TestTitleCollisionIgnoresCase(t *testing.T) {
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: overview -->\n\nTwo.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: dir,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already publishes")
@@ -532,10 +640,22 @@ func TestRootCoveringNothingIsRefused(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
-		ParentsFromPath: true, ParentsFromPathRoot: filepath.Join(dir, "elsewhere"),
-		Output: io.Discard,
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Page: PageConfig{
+			ParentsFromPath:     true,
+			ParentsFromPathRoot: filepath.Join(dir, "elsewhere"),
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "covers none of the files")
@@ -592,7 +712,7 @@ func TestHashedIndexIsItsDirectorysPage(t *testing.T) {
 	writeAt(t, dir, "guides/README.md", space+"\nWhat the guides are.\n")
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.TitleAppendGeneratedHash = true })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.TitleAppendGeneratedHash = true })
 
 	guides := titlesWithPrefix(t, api, "Guides")
 	require.Len(t, guides, 1, "one page for the directory, not the README and an empty one")
@@ -614,7 +734,7 @@ func TestHashTellsSameDirectoriesApart(t *testing.T) {
 	writeAt(t, dir, "api/guides/setup.md", space+"<!-- Title: Setup -->\n\nAPI.\n")
 	writeAt(t, dir, "sdk/guides/setup.md", space+"<!-- Title: Setup -->\n\nSDK.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.TitleAppendGeneratedHash = true })
+	api := runHierarchy(t, dir, func(c *Config) { c.Page.TitleAppendGeneratedHash = true })
 
 	guides := titlesWithPrefix(t, api, "Guides - ")
 	require.Len(t, guides, 2, "each directory has a page of its own, hashed apart")

@@ -58,8 +58,8 @@ func TestCompileOnlyDoesNotAskForThePlatform(t *testing.T) {
 	writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	config.TrackPages = false
-	config.CompileOnly = true
+	config.Tracking.TrackPages = false
+	config.Mode.CompileOnly = true
 	require.NoError(t, Run(context.Background(), config))
 	assert.Zero(t, server.CountRequests("GET", "/rest/api/user/current"))
 }
@@ -86,9 +86,18 @@ func TestPublishThroughTheGateway(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	config := Config{
-		BaseURL: baseURL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
-		Output: io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  baseURL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 

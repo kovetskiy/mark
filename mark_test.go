@@ -61,12 +61,18 @@ func TestProcessFileFetchesAttachmentsOnce(t *testing.T) {
 `)
 
 	config := Config{
-		BaseURL:  server.URL,
-		Username: "user",
-		Password: "token",
-		Files:    file,
-		Features: []string{"mention"},
-		Output:   io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 
 	server.ResetRequests()
@@ -108,12 +114,18 @@ Some **content**.
 `)
 
 	config := Config{
-		BaseURL:  server.URL,
-		Username: "user",
-		Password: "token",
-		Files:    file,
-		Features: []string{"mention"},
-		Output:   io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 
 	target, err := ProcessFile(context.Background(), file, api, config)
@@ -152,8 +164,18 @@ restrictions:
 `)
 
 	target, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"frontmatter"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"frontmatter"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, server.CountRequests("PUT", "/restriction"))
@@ -191,8 +213,18 @@ func TestRootLevelPageIsAdoptedRatherThanRefused(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Standalone -->\n\nAdopted body.\n")
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}), "a page at the space root must be publishable")
 
 	after := server.Page(orphan.ID)
@@ -218,8 +250,18 @@ func TestHomepageItselfIsStillPublishable(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "home.md", "<!-- Space: DOCS -->\n<!-- Title: Team Home -->\n\nWelcome!\n")
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	after := server.Page(home.ID)
@@ -256,8 +298,18 @@ Published body.
 Also published.
 `)
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -302,8 +354,18 @@ Body.
 <!-- ac:ignore end -->
 `)
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -342,8 +404,18 @@ Top.
 <!-- Include: part.md -->
 `)
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -369,12 +441,18 @@ func processFileFixture(t *testing.T, body string) (*confluencetest.Server, *con
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n"+body)
 
 	config := Config{
-		BaseURL:  server.URL,
-		Username: "user",
-		Password: "token",
-		Files:    filepath.Join(dir, "doc.md"),
-		Features: []string{"mention"},
-		Output:   io.Discard,
+		Files: filepath.Join(dir, "doc.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 
 	return server, confluence.NewAPI(server.URL, "user", "token", false), file, config
@@ -386,18 +464,18 @@ func processFileFixture(t *testing.T, body string) (*confluencetest.Server, *con
 // alongside one was dropped with it.
 func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 	cases := map[string]func(*Config){
-		"an unknown mermaid engine": func(c *Config) { c.MermaidEngine = "graphviz" },
-		"an unknown mermaid output": func(c *Config) { c.MermaidOutput = "jpeg" },
-		"a bundle inside a png":     func(c *Config) { c.MermaidBundle = true },
-		"an unknown d2 output":      func(c *Config) { c.D2Output = "jpeg" },
-		"an unknown appearance":     func(c *Config) { c.ContentAppearance = "wide" },
-		"a fixed appearance":        func(c *Config) { c.ContentAppearance = "fixed" },
+		"an unknown mermaid engine": func(c *Config) { c.Rendering.MermaidEngine = "graphviz" },
+		"an unknown mermaid output": func(c *Config) { c.Rendering.MermaidOutput = "jpeg" },
+		"a bundle inside a png":     func(c *Config) { c.Rendering.MermaidBundle = true },
+		"an unknown d2 output":      func(c *Config) { c.Rendering.D2Output = "jpeg" },
+		"an unknown appearance":     func(c *Config) { c.Page.ContentAppearance = "wide" },
+		"a fixed appearance":        func(c *Config) { c.Page.ContentAppearance = "fixed" },
 		"a d2 scale of nothing": func(c *Config) {
-			c.Features = []string{"d2"}
-			c.D2Scale = math.NaN()
+			c.Rendering.Features = []string{"d2"}
+			c.Rendering.D2Scale = math.NaN()
 		},
-		"warn-only with nothing checked": func(c *Config) { c.CheckLinksWarnOnly = true },
-		"an unknown link check":          func(c *Config) { c.CheckLinks = []string{"everything"} },
+		"warn-only with nothing checked": func(c *Config) { c.Links.CheckLinksWarnOnly = true },
+		"an unknown link check":          func(c *Config) { c.Links.CheckLinks = []string{"everything"} },
 	}
 
 	for name, change := range cases {
@@ -429,7 +507,7 @@ func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
 	t.Cleanup(func() { log.Logger = restore })
 
 	_, api, file, config := processFileFixture(t, "Body.\n")
-	config.MermaidEngine = mermaid.EngineMerman
+	config.Rendering.MermaidEngine = mermaid.EngineMerman
 
 	_, err := ProcessFile(context.Background(), file, api, config)
 	require.NoError(t, err)
@@ -444,7 +522,7 @@ func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
 // with nothing in front of it.
 func TestProcessFileReportsMissingPagesAsRunDoes(t *testing.T) {
 	_, api, file, config := processFileFixture(t, "See [it](ac:Nowhere).\n")
-	config.CheckLinks = []string{"confluence"}
+	config.Links.CheckLinks = []string{"confluence"}
 
 	runErr := Run(context.Background(), config)
 	require.Error(t, runErr)
@@ -543,7 +621,7 @@ func TestRunStopsARunBlockedOnASlowRequest(t *testing.T) {
 	}()
 
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
-	config.TrackPages = true
+	config.Tracking.TrackPages = true
 
 	started := time.Now()
 	err := Run(ctx, config)
@@ -595,7 +673,7 @@ func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
 	}()
 
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
-	config.ContinueOnError = true
+	config.Mode.ContinueOnError = true
 
 	err := Run(ctx, config)
 
@@ -644,10 +722,10 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 
 	var out bytes.Buffer
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
-	config.TrackPages = true
-	config.ContinueOnError = true
-	config.OutputFormat = report.FormatJSON
-	config.Output = &out
+	config.Tracking.TrackPages = true
+	config.Mode.ContinueOnError = true
+	config.Report.OutputFormat = report.FormatJSON
+	config.Report.Output = &out
 
 	err := Run(ctx, config)
 	require.Error(t, err)
@@ -665,9 +743,9 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 	first := findPageTitled(t, server, "First")
 
 	writeFile(t, dir, "a.md", markdownWithTitle("First Renamed"))
-	config.ContinueOnError = false
-	config.OutputFormat = ""
-	config.Output = io.Discard
+	config.Mode.ContinueOnError = false
+	config.Report.OutputFormat = ""
+	config.Report.Output = io.Discard
 	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
@@ -684,8 +762,8 @@ func TestTargetURLTakesOneFile(t *testing.T) {
 	writeFile(t, dir, "b.md", "# B\n\nSecond.\n")
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	config.TrackPages = false
-	config.PageID = target.ID
+	config.Tracking.TrackPages = false
+	config.Page.PageID = target.ID
 
 	err := Run(context.Background(), config)
 	require.ErrorContains(t, err, "matched 2 files")
@@ -723,11 +801,19 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 			}
 
 			config := Config{
-				BaseURL:     "http://127.0.0.1:1",
-				Files:       filepath.Join(dir, "*.md"),
-				CompileOnly: true,
-				Features:    []string{"mention"},
-				Output:      io.Discard,
+				Files: filepath.Join(dir, "*.md"),
+				Connection: ConnectionConfig{
+					BaseURL: "http://127.0.0.1:1",
+				},
+				Mode: ModeConfig{
+					CompileOnly: true,
+				},
+				Rendering: RenderingConfig{
+					Features: []string{"mention"},
+				},
+				Report: ReportConfig{
+					Output: io.Discard,
+				},
 			}
 
 			b.ReportAllocs()

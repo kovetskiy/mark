@@ -50,7 +50,7 @@ func previewChange(
 		return "", "", err
 	}
 
-	hash := fingerprint.Content(wrapped, appearance, defaultAppearance(config.ContentAppearance), emoji)
+	hash := fingerprint.Content(wrapped, appearance, defaultAppearance(config.Page.ContentAppearance), emoji)
 	retitled := meta != nil && existing.Title != title
 	reason := strings.Join(others, "; ")
 
@@ -144,7 +144,7 @@ func hasDrifted(
 // keeps: one edited in Confluence since mark last published it.
 func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *destination) (bool, error) {
 	meta, file, target := doc.meta, doc.file, dest.page
-	if !r.config.NoOverwrite || dest.created || r.tracker == nil || meta == nil || target == nil {
+	if !r.config.Update.NoOverwrite || dest.created || r.tracker == nil || meta == nil || target == nil {
 		return false, nil
 	}
 
@@ -180,14 +180,14 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 // changeCheck returns the version message to publish html under and, under
 // --changes-only, whether the page needs writing at all.
 func (r *publishRun) changeCheck(doc *document, dest *destination, html string) (string, bool) {
-	if !r.config.ChangesOnly {
-		return r.config.VersionMessage, true
+	if !r.config.Update.ChangesOnly {
+		return r.config.Update.VersionMessage, true
 	}
 
 	target := dest.page
 	contentAppearance, emoji := appearanceOf(doc.meta)
 
-	contentHash := fingerprint.Content(html, contentAppearance, defaultAppearance(r.config.ContentAppearance), emoji)
+	contentHash := fingerprint.Content(html, contentAppearance, defaultAppearance(r.config.Page.ContentAppearance), emoji)
 	log.Debug().Msgf("content hash: %s", contentHash)
 
 	shouldUpdatePage := true
@@ -203,7 +203,7 @@ func (r *publishRun) changeCheck(doc *document, dest *destination, html string) 
 		}
 	}
 
-	return fingerprint.VersionMessage(r.config.VersionMessage, contentHash), shouldUpdatePage
+	return fingerprint.VersionMessage(r.config.Update.VersionMessage, contentHash), shouldUpdatePage
 }
 
 // previewSettingChanges is what a real run would change on a previewed page
@@ -220,7 +220,7 @@ func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, f
 		others = append(others, "it would be moved under the parent its headers declare")
 	}
 
-	add, del, err := r.api.LabelChanges(ctx, previewed, meta.Labels, r.config.AppendLabels)
+	add, del, err := r.api.LabelChanges(ctx, previewed, meta.Labels, r.config.Update.AppendLabels)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, f
 	}
 
 	if doc.restrictions != nil {
-		plan, err := r.api.PlanRestrictions(ctx, previewed, doc.restrictions, r.config.EditLock, false)
+		plan, err := r.api.PlanRestrictions(ctx, previewed, doc.restrictions, r.config.Update.EditLock, false)
 		if err != nil {
 			return nil, err
 		}
