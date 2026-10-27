@@ -2,6 +2,7 @@ package mermaid
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,9 +16,9 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// useEngine sets the engine for one test and puts it back afterwards, since it
-// is chosen once for a whole run.
-func useEngine(t *testing.T, kind string) string {
+// useEngine creates an engine of kind for one test, closed when it ends, and
+// returns it with what creating it logged.
+func useEngine(t *testing.T, kind string) (*Engine, string) {
 	t.Helper()
 
 	var logged bytes.Buffer
@@ -25,54 +26,105 @@ func useEngine(t *testing.T, kind string) string {
 	restore := log.Logger
 	log.Logger = zerolog.New(&logged)
 
-	previous := mermaidKind
-	t.Cleanup(func() {
-		log.Logger = restore
-		require.NoError(t, UseEngine(previous))
-	})
+	engine, err := NewEngine(kind)
+	log.Logger = restore
+	require.NoError(t, err)
 
-	require.NoError(t, UseEngine(kind))
+	t.Cleanup(engine.Close)
 
-	return logged.String()
+	return engine, logged.String()
 }
 
-// TestUseEngineRefusesWhatItCannotDraw covers a name that is neither engine.
+// TestNewEngineRefusesWhatItCannotDraw covers a name that is neither engine.
 // Falling back to chrome would publish diagrams drawn by something other than
 // what was asked for, and say nothing about it.
-func TestUseEngineRefusesWhatItCannotDraw(t *testing.T) {
-	err := UseEngine("graphviz")
+func TestNewEngineRefusesWhatItCannotDraw(t *testing.T) {
+	_, err := NewEngine("graphviz")
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "graphviz")
 	assert.Contains(t, err.Error(), EngineChrome)
 	assert.Contains(t, err.Error(), EngineMerman)
-
-	assert.Equal(t, EngineChrome, mermaidKind, "a refused name must not change what is in use")
 }
 
-// TestUseEngineDefaultsToChrome covers the empty value, which is what a caller
+// TestNewEngineDefaultsToChrome covers the empty value, which is what a caller
 // that never heard of the setting passes -- and what mark has always done.
-func TestUseEngineDefaultsToChrome(t *testing.T) {
-	useEngine(t, "")
+func TestNewEngineDefaultsToChrome(t *testing.T) {
+	engine, _ := useEngine(t, "")
 
-	assert.Equal(t, EngineChrome, mermaidKind)
+	assert.Equal(t, EngineChrome, engine.kind)
 }
 
-// TestUseEngineSaysMermanIsExperimental covers the warning, which is the only
+// TestNewEngineSaysMermanIsExperimental covers the warning, which is the only
 // sign that diagrams are being drawn by something other than mermaid.js.
-func TestUseEngineSaysMermanIsExperimental(t *testing.T) {
-	logged := useEngine(t, EngineMerman)
+func TestNewEngineSaysMermanIsExperimental(t *testing.T) {
+	engine, logged := useEngine(t, EngineMerman)
 
 	assert.Contains(t, logged, "experimental")
-	assert.Equal(t, EngineMerman, mermaidKind)
+	assert.Equal(t, EngineMerman, engine.kind)
 }
 
 // TestChoosingChromeSaysNothing is its boundary: the default is not worth a
 // warning on every run.
 func TestChoosingChromeSaysNothing(t *testing.T) {
-	logged := useEngine(t, EngineChrome)
+	_, logged := useEngine(t, EngineChrome)
 
 	assert.Empty(t, logged)
+}
+
+// TestEngineStartsOnlyWhenUsed: a run that draws no diagram launches nothing.
+func TestEngineStartsOnlyWhenUsed(t *testing.T) {
+	engine, _ := useEngine(t, EngineChrome)
+
+	assert.Nil(t, engine.renderer)
+}
+
+// TestNilEngineSaysSo covers a caller that turned diagrams on without giving
+// the renderer an engine to draw them with.
+func TestNilEngineSaysSo(t *testing.T) {
+	var engine *Engine
+
+	_, err := engine.ProcessMermaidLocally("d", []byte("graph TD;\n A-->B;"), 1.0)
+	assert.ErrorIs(t, err, ErrNoEngine)
+
+	engine.Close()
+}
+
+// closingRenderer is a renderer whose engine is closed while it draws, as a
+// Publisher closed from another goroutine would.
+type closingRenderer struct {
+	mermaid.Renderer
+	engine  *Engine
+	renders int
+}
+
+func (r *closingRenderer) RenderContext(context.Context, string, ...mermaid.RenderOption) (string, error) {
+	r.renders++
+	r.engine.Close()
+
+	return "", mermaid.ErrEngineClosed
+}
+
+func (r *closingRenderer) Cancel() {}
+
+// TestCloseDuringARenderIsNotACrash: the render Close cancels is reported as
+// the engine closing, not logged and retried as though the browser had died.
+func TestCloseDuringARenderIsNotACrash(t *testing.T) {
+	engine, _ := useEngine(t, EngineChrome)
+	renderer := &closingRenderer{engine: engine}
+	engine.renderer = renderer
+
+	var logged bytes.Buffer
+
+	restore := log.Logger
+	log.Logger = zerolog.New(&logged)
+	t.Cleanup(func() { log.Logger = restore })
+
+	_, err := engine.ProcessMermaidSVG("d", []byte("graph TD;\n A-->B;"), 1.0)
+
+	require.ErrorIs(t, err, errClosed)
+	assert.Equal(t, 1, renderer.renders)
+	assert.NotContains(t, logged.String(), "died", "a closed engine did not crash")
 }
 
 // TestMermanReportsWhatIsMissingByName covers the machine without merman on it,
@@ -83,9 +135,9 @@ func TestMermanReportsWhatIsMissingByName(t *testing.T) {
 		t.Skip("merman is installed here, so there is nothing missing to report")
 	}
 
-	useEngine(t, EngineMerman)
+	engine, _ := useEngine(t, EngineMerman)
 
-	_, err := ProcessMermaidLocally("d", []byte("graph TD;\n A-->B;"), 1.0)
+	_, err := engine.ProcessMermaidLocally("d", []byte("graph TD;\n A-->B;"), 1.0)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--mermaid-engine")
@@ -139,20 +191,20 @@ func TestBothEnginesDrawTheSameDiagram(t *testing.T) {
 
 	for _, kind := range []string{EngineChrome, EngineMerman} {
 		t.Run(kind, func(t *testing.T) {
-			useEngine(t, kind)
+			engine, _ := useEngine(t, kind)
 
-			png, err := ProcessMermaidLocally("both", diagram, 1.0)
+			png, err := engine.ProcessMermaidLocally("both", diagram, 1.0)
 			require.NoError(t, err)
 
 			assert.NotEmpty(t, png.FileBytes)
 			assert.Equal(t, "both.png", png.Filename)
 			assertPixelSize(t, png.Width, png.Height)
 
-			again, err := ProcessMermaidLocally("both", diagram, 1.0)
+			again, err := engine.ProcessMermaidLocally("both", diagram, 1.0)
 			require.NoError(t, err)
 			assert.Equal(t, png.Checksum, again.Checksum, "the same diagram is the same attachment")
 
-			svg, err := ProcessMermaidSVG("both", diagram, 1.0)
+			svg, err := engine.ProcessMermaidSVG("both", diagram, 1.0)
 			require.NoError(t, err)
 
 			assert.True(t, hasSVGRoot(string(svg.FileBytes)))

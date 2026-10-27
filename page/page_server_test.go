@@ -35,7 +35,7 @@ func TestResolvePageWithoutAHomePage(t *testing.T) {
 		return 0, "", false
 	})
 
-	parent, _, err := page.ResolvePage(ctx, false, api, &metadata.Meta{
+	parent, _, err := page.ResolvePage(ctx, false, api, nil, &metadata.Meta{
 		Space:   "DOCS",
 		Type:    "page",
 		Title:   "Child",
@@ -82,7 +82,7 @@ func TestResolvePageLeavesMetadataSlicesAlone(t *testing.T) {
 				meta.Folders = folders[:1]
 			}
 
-			_, _, err := page.ResolvePage(ctx, false, api, meta, nil)
+			_, _, err := page.ResolvePage(ctx, false, api, nil, meta, nil)
 			require.NoError(t, err)
 
 			assert.Equal(t, []string{"Parent", "untouched"}, parents)

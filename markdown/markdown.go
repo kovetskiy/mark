@@ -385,6 +385,11 @@ func expandIncludes(
 	return nil, nil, fmt.Errorf("include expansion did not settle after %d passes over %q", maxIncludePasses, path)
 }
 
+// CompileMarkdown compiles a document to Confluence storage format, and
+// returns the attachments its diagrams and formulas were drawn as.
+// cfg.Browser and cfg.Mermaid are supplied, and closed, by whoever creates
+// cfg: a zero-value cfg compiles a document with no pictures, but fails at the
+// first mermaid diagram, or d2 diagram or formula published as PNG.
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {

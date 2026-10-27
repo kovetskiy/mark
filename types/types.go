@@ -1,6 +1,18 @@
 package types
 
+import (
+	"github.com/kovetskiy/mark/v16/chrome"
+	"github.com/kovetskiy/mark/v16/mermaid"
+)
+
 type MarkConfig struct {
+	// Browser rasterises d2 diagrams and math formulas published as PNG, and
+	// Mermaid draws mermaid diagrams. Both start on first use and belong to
+	// whoever created them, who closes them; nil fails the first picture that
+	// needs one.
+	Browser *chrome.Browser
+	Mermaid *mermaid.Engine
+
 	MermaidScale float64
 	// MermaidOutput is the image a diagram is published as, "png" or "svg".
 	// MermaidScale multiplies the pixels of a PNG one and the size the page

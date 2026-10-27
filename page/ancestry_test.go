@@ -14,18 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFolderCacheConcurrentAccess hammers the process-wide folder cache from
-// many goroutines. Before the mutex, an unsynchronised map write here was not
-// a subtle wrong answer but a hard "concurrent map writes" throw, and the race
-// detector reports it even when the throw does not fire.
+// TestFolderCacheConcurrentAccess hammers one folder cache from many
+// goroutines. An unsynchronised map write here is not a subtle wrong answer
+// but a hard "concurrent map writes" throw, and the race detector reports it
+// even when the throw does not fire.
 //
-// The test lives in package page rather than page_test because the cache and
-// its accessors are unexported.
+// The test lives in package page rather than page_test because the cache's
+// accessors are unexported.
 func TestFolderCacheConcurrentAccess(t *testing.T) {
 	const (
 		goroutines = 16
 		perRoutine = 200
 	)
+
+	cache := NewFolderCache()
 
 	var wg sync.WaitGroup
 	for g := range goroutines {
@@ -39,12 +41,12 @@ func TestFolderCacheConcurrentAccess(t *testing.T) {
 				shared := "shared"
 				title := "folder-" + strconv.Itoa(i)
 
-				cacheFolder(unique, "parent", title, strconv.Itoa(g*perRoutine+i))
-				cacheFolder(shared, "parent", "contended", strconv.Itoa(i))
+				cache.store(unique, "parent", title, strconv.Itoa(g*perRoutine+i))
+				cache.store(shared, "parent", "contended", strconv.Itoa(i))
 
-				_, _ = cachedFolderID(unique, "parent", title)
-				_, _ = cachedFolderID(shared, "parent", "contended")
-				_, _ = cachedFolderID("absent", "parent", title)
+				_, _ = cache.lookup(unique, "parent", title)
+				_, _ = cache.lookup(shared, "parent", "contended")
+				_, _ = cache.lookup("absent", "parent", title)
 			}
 		}(g)
 	}
@@ -53,13 +55,32 @@ func TestFolderCacheConcurrentAccess(t *testing.T) {
 	// Every unique key written should still be readable: a torn map would
 	// typically have thrown by now, but this also catches lost writes.
 	for g := range goroutines {
-		id, ok := cachedFolderID("space-"+strconv.Itoa(g), "parent", "folder-0")
+		id, ok := cache.lookup("space-"+strconv.Itoa(g), "parent", "folder-0")
 		assert.True(t, ok, "entry for goroutine %d went missing", g)
 		assert.Equal(t, strconv.Itoa(g*perRoutine), id)
 	}
 
-	_, ok := cachedFolderID("shared", "parent", "contended")
+	_, ok := cache.lookup("shared", "parent", "contended")
 	assert.True(t, ok, "the contended entry should hold one of the written values")
+}
+
+func TestNilFolderCacheRemembersNothing(t *testing.T) {
+	var cache *FolderCache
+
+	cache.store("space", "parent", "title", "1")
+
+	_, ok := cache.lookup("space", "parent", "title")
+	assert.False(t, ok)
+}
+
+func TestFolderCachesAreSeparate(t *testing.T) {
+	first, second := NewFolderCache(), &FolderCache{}
+
+	first.store("space", "parent", "title", "1")
+	second.store("space", "parent", "title", "2")
+
+	id, _ := first.lookup("space", "parent", "title")
+	assert.Equal(t, "1", id, "a second run's cache does not touch the first's")
 }
 
 // stubFolderTracker is a FolderTracker holding a fixed mapping.
@@ -116,7 +137,7 @@ func TestFolderAncestryReportsAFailedRead(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := EnsureFolderAncestry(ctx, false, api, "DOCS", folders, &anchorID, tracker)
+	_, err := EnsureFolderAncestry(ctx, false, api, NewFolderCache(), "DOCS", folders, &anchorID, tracker)
 
 	require.Error(t, err, "a folder that could not be read is not a folder that is gone")
 	assert.Contains(t, err.Error(), "Manuals-failed-read")
@@ -145,7 +166,7 @@ func TestFolderAncestryRecreatesAFolderThatIsReallyGone(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	parent, err := EnsureFolderAncestry(ctx, false, api, "DOCS", folders, &anchorID, tracker)
+	parent, err := EnsureFolderAncestry(ctx, false, api, NewFolderCache(), "DOCS", folders, &anchorID, tracker)
 
 	require.NoError(t, err)
 	require.NotNil(t, parent)

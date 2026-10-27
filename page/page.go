@@ -16,10 +16,11 @@ func ResolvePage(
 	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
+	folders *FolderCache,
 	meta *metadata.Meta,
 	tracker AncestryTracker,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
-	parent, page, _, err := resolvePage(ctx, dryRun, api, meta, tracker)
+	parent, page, _, err := resolvePage(ctx, dryRun, api, folders, meta, tracker)
 
 	return parent, page, err
 }
@@ -31,16 +32,18 @@ func ResolvePage(
 func PreviewPage(
 	ctx context.Context,
 	api *confluence.API,
+	folders *FolderCache,
 	meta *metadata.Meta,
 	tracker AncestryTracker,
 ) (parent, page *confluence.PageInfo, misplaced bool, err error) {
-	return resolvePage(ctx, true, api, meta, tracker)
+	return resolvePage(ctx, true, api, folders, meta, tracker)
 }
 
 func resolvePage(
 	ctx context.Context,
 	dryRun bool,
 	api *confluence.API,
+	folders *FolderCache,
 	meta *metadata.Meta,
 	tracker AncestryTracker,
 ) (*confluence.PageInfo, *confluence.PageInfo, bool, error) {
@@ -144,6 +147,7 @@ func resolvePage(
 			ctx,
 			dryRun,
 			api,
+			folders,
 			tracker,
 			meta.Space,
 			meta.Folders,

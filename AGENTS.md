@@ -41,14 +41,14 @@ tests, which take minutes. There is currently no `-short` skip.
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |
 | `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
-| `chrome/` | the one headless browser, its options, and SVG → PNG for `d2/` and `math/` |
+| `chrome/` | `Browser`, a run's headless browser, its options, and SVG → PNG for `d2/` and `math/` |
 | `renderer/` | goldmark node renderers → storage format |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file, or with `--format okf` an Open Knowledge Format concept, and a tree a bundle (`okf.go`) |
 | `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
 | `manifest/` | the `--track-pages` record of which page each source file publishes to, kept in Confluence |
 | `header/` | the `--page-header` template placed at the top of every published page |
 | `report/` | what a run did, for `--output-format` and the run's summary, and the `--on-orphan` actions |
-| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers |
+| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers, and the `chrome.Browser` and `mermaid.Engine` diagrams are drawn in, which its creator supplies and closes: a zero value draws no diagrams |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
@@ -183,9 +183,13 @@ and name it in `defaultFeatures`, add it to the `Usage` string of the `features`
 `docs/formatting.md`).
 
 **8. Everything is sequential today, and one thing still relies on that.**
-The folder cache in `page/ancestry.go` sits behind an `RWMutex`
-(`TestFolderCacheConcurrentAccess` in `page/ancestry_test.go` races it on purpose),
-`confluence.API`'s Cloud probe runs under a mutex held for the whole probe, and the API
+State a run builds up is a value the run creates, passes down and closes, never a
+package global. `page.FolderCache` is created per run and handed to the ancestry
+functions: it is keyed with no notion of which Confluence it came from, so it must not
+outlive the run. It sits behind an `RWMutex` (`TestFolderCacheConcurrentAccess` in
+`page/ancestry_test.go` races it on purpose). `chrome.Browser` and `mermaid.Engine`
+travel in `types.MarkConfig`, start on the first picture that needs them, and are closed
+by whoever created them. `confluence.API`'s Cloud probe runs under a mutex held for the whole probe, and the API
 holds no context: every
 `confluence.API` method that makes a request takes `ctx context.Context` first, and so
 does everything above it that makes one later (`manifest.Store`,

@@ -128,7 +128,7 @@ func TestMathPNGFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	actual, attachments, err := mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
-		types.MarkConfig{Features: []string{"math"}, MathScale: 2})
+		types.MarkConfig{Browser: mark.TestBrowser, Features: []string{"math"}, MathScale: 2})
 	require.NoError(t, err)
 	assertWellFormed(t, actual)
 

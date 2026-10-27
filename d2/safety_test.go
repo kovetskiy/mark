@@ -88,7 +88,7 @@ func TestUnsafeLinksAreRefused(t *testing.T) {
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrUnsafeDiagram)
 
-			_, err = ProcessD2("probe", diagram, 1.0)
+			_, err = ProcessD2(browser, "probe", diagram, 1.0)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrUnsafeDiagram)
 		})
@@ -136,7 +136,7 @@ func publishable(t *testing.T, diagram []byte) [][]byte {
 
 	var drawings [][]byte
 
-	if png, err := ProcessD2("png", diagram, 1.0); err == nil {
+	if png, err := ProcessD2(browser, "png", diagram, 1.0); err == nil {
 		drawings = append(drawings, png.FileBytes)
 	}
 

@@ -36,34 +36,60 @@ const maxRasterSide = 16384
 // real diagram and far below what it takes to end the browser.
 const maxRasterPixels = 64 << 20
 
-var (
-	browserCtx    context.Context
-	browserCancel context.CancelFunc
-	browserMutex  sync.Mutex
-)
+// ErrNoBrowser is what rendering asks of a nil *Browser: the caller drew a
+// picture without giving it a browser to draw in.
+var ErrNoBrowser = errors.New("no browser to render with")
 
-// Context returns the browser every caller shares, starting it on first use.
+// errClosed is what a Browser answers once it has been closed.
+var errClosed = errors.New("the browser has been closed")
+
+// Browser is the headless Chrome a run renders pictures in, started by the
+// first one that needs it.
 //
 // One browser per run rather than one per image: Chrome takes seconds to start
 // and a document with a dozen diagrams or formulas would otherwise spend most
-// of its time launching it.
-func Context() (context.Context, error) {
-	browserMutex.Lock()
-	defer browserMutex.Unlock()
+// of its time launching it. Lazily, so that a run with nothing to draw never
+// launches it at all.
+//
+// Whoever creates one closes it. It is safe for concurrent use: renders share
+// the browser's one tab, so they take turns in it.
+type Browser struct {
+	// render is held from navigating to capturing, so that no render sees the
+	// page another one loaded. It is taken before mu, never while holding it.
+	render sync.Mutex
+	mu     sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	closed bool
+}
 
-	if browserCtx != nil {
-		if browserCtx.Err() == nil {
-			return browserCtx, nil
+// NewBrowser returns a Browser that has not started yet.
+func NewBrowser() *Browser {
+	return &Browser{}
+}
+
+// start returns the browser's context, starting it on first use. It is not
+// exported because every render navigates the one tab: only PNGFromSVG, holding
+// b.render, may use it.
+func (b *Browser) start() (context.Context, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return nil, errClosed
+	}
+
+	if b.ctx != nil {
+		if b.ctx.Err() == nil {
+			return b.ctx, nil
 		}
 
 		// chromedp cancels this exact context when it loses the connection to
-		// the browser, so a context that is done means Chrome has died. It was
-		// handed out regardless, on a nil check alone, and every render after
-		// that failed with a bare "context canceled" -- which names neither the
-		// browser nor the crash, and never came right, because nothing started
-		// another one. Discarded and replaced instead, which is what the
-		// mermaid engine has always done for itself.
-		discard()
+		// the browser, so a context that is done means Chrome has died. Handed
+		// out again, every render after it would fail with a bare "context
+		// canceled" that names neither the browser nor the crash, so it is
+		// replaced instead, as the mermaid engine does for itself.
+		b.discard()
 	}
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:], AllocatorOptions()...)
@@ -97,31 +123,57 @@ func Context() (context.Context, error) {
 		)
 	}
 
-	browserCtx = ctx
-	browserCancel = func() {
+	b.ctx = ctx
+	b.cancel = func() {
 		cancel()
 		allocCancel()
 	}
 
-	return browserCtx, nil
+	return b.ctx, nil
 }
 
-// discard shuts the current browser down. The caller holds browserMutex.
-func discard() {
-	if browserCancel != nil {
-		browserCancel()
-		browserCtx = nil
-		browserCancel = nil
+// discard shuts the current browser down, leaving the next render to start
+// another. The caller holds b.mu.
+func (b *Browser) discard() {
+	if b.cancel != nil {
+		b.cancel()
+		b.ctx = nil
+		b.cancel = nil
 	}
 }
 
-// Cleanup shuts the browser down. A run that never rendered anything has none
-// to shut down, and calling this twice is harmless.
-func Cleanup() {
-	browserMutex.Lock()
-	defer browserMutex.Unlock()
+// failed discards the browser ctx belongs to, unless another render has
+// already replaced it, and returns the render's err. A render Close
+// interrupted is said to be Close's doing, rather than a bare "context
+// canceled".
+func (b *Browser) failed(ctx context.Context, err error) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	discard()
+	if b.ctx == ctx {
+		b.discard()
+	}
+
+	if b.closed {
+		return fmt.Errorf("%w: %w", errClosed, err)
+	}
+
+	return err
+}
+
+// Close shuts the browser down for good. A Browser that never rendered
+// anything has nothing to shut down, and closing twice, or closing nil, is
+// harmless.
+func (b *Browser) Close() {
+	if b == nil {
+		return
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.discard()
+	b.closed = true
 }
 
 // PNGFromSVG rasterises an SVG by loading it in the browser and screenshotting
@@ -134,8 +186,15 @@ func Cleanup() {
 //
 // selector differs by producer -- d2 nests its diagram in an outer svg, MathJax
 // does not -- so it is the caller's to give.
-func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, height int64, err error) {
-	ctx, err := Context()
+func (b *Browser) PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, height int64, err error) {
+	if b == nil {
+		return nil, 0, 0, ErrNoBrowser
+	}
+
+	b.render.Lock()
+	defer b.render.Unlock()
+
+	ctx, err := b.start()
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -160,9 +219,7 @@ func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, 
 		// A browser that failed a run is not trusted for the next one: the
 		// usual cause is that it died, and every later render would fail the
 		// same way until something restarted it.
-		Cleanup()
-
-		return nil, 0, 0, err
+		return nil, 0, 0, b.failed(ctx, err)
 	}
 
 	// Not a browser fault, so the browser is kept: the next diagram in the
@@ -173,9 +230,7 @@ func PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, 
 
 	result, err := chromedp.Run(runCtx, chromedp.ScreenshotScale(chromedp.JSPath(selector), scale))
 	if err != nil {
-		Cleanup()
-
-		return nil, 0, 0, err
+		return nil, 0, 0, b.failed(ctx, err)
 	}
 
 	return result, model.Width, model.Height, nil

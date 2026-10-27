@@ -23,8 +23,8 @@ func main() {
 	// the backoff before retrying any request, is cut short -- a write already
 	// sent is given a short grace to answer first -- and the current file
 	// stops there; the run then saves its page manifest, writes its report and
-	// shuts down. Killed outright, it would never reach Cleanup, and the
-	// headless Chrome drawing its diagrams would be left running along with
+	// shuts down. Killed outright, it would never close the headless Chrome
+	// drawing its diagrams, which would be left running along with
 	// its temporary profile directory.
 	//
 	// Nothing else cancels ctx, so it is done only once a signal has arrived.

@@ -32,7 +32,7 @@ func TestAttachmentFilenameAttributeIsEscaped(t *testing.T) {
 
 			out, _, err := CompileMarkdown(
 				[]byte("```d2 title "+tt.title+"\na -> b\n```\n"),
-				std, "test.md", types.MarkConfig{Features: []string{"d2"}, D2Scale: 1.0},
+				std, "test.md", types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 			)
 			require.NoError(t, err)
 

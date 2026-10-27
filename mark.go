@@ -15,9 +15,9 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/chrome"
 	"github.com/kovetskiy/mark/v16/comments"
 	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/d2"
 	"github.com/kovetskiy/mark/v16/fingerprint"
 	"github.com/kovetskiy/mark/v16/header"
 	"github.com/kovetskiy/mark/v16/includes"
@@ -164,28 +164,41 @@ func isScaleOrDefault(scale float64) bool {
 // manifest's save is made under a context of its own, detached from ctx, since
 // a save that inherited the cancellation would be refused before it was sent
 // and the mapping for every page already published would be lost with it.
+//
+// The browsers diagrams and formulas are drawn in belong to the run: started
+// by the first picture that needs one, and shut down before this returns.
 func Run(ctx context.Context, config Config) (err error) {
-	// The browser is shared for the life of the process and is started lazily
-	// by the first diagram or formula. A library caller has no other way to
-	// know it exists, so a run that started one shuts it down -- the CLI
-	// included, which relies on this rather than calling Cleanup itself.
-	defer Cleanup()
-
 	return run(ctx, config)
 }
 
+// resources are what one run starts and shuts down again: the browser and
+// mermaid engine its pictures are drawn in, each launched by the first picture
+// that needs it, and the folders it has resolved, which are only true of the
+// one Confluence the run publishes to.
+type resources struct {
+	browser *chrome.Browser
+	mermaid *mermaid.Engine
+	folders *page.FolderCache
+}
+
+func newResources(engine *mermaid.Engine) *resources {
+	return &resources{browser: chrome.NewBrowser(), mermaid: engine, folders: page.NewFolderCache()}
+}
+
+func (r *resources) close() {
+	r.browser.Close()
+	r.mermaid.Close()
+}
+
 // prepare checks the settings that decide how a document is rendered and what
-// is done about its links, and sets up the mermaid engine they name. Run and
-// ProcessFile both start here, so that a library caller publishing one file is
-// held to the same settings, and told the same thing about them, as a run is:
-// before this was shared, ProcessFile checked none of it, drew diagrams with
-// whatever engine happened to be current rather than the one asked for, and
-// published a PNG for a MermaidOutput it did not recognise.
-func (c Config) prepare() (page.LinkChecks, error) {
-	// The engine is chosen before anything is published, because it is built
-	// lazily and shared: a diagram already drawn is not drawn again to match.
-	if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
-		return page.LinkChecks{}, err
+// is done about its links, and returns the mermaid engine they name, not yet
+// started. Run and ProcessFile both start here, so that a library caller
+// publishing one file is held to the same settings, and told the same thing
+// about them, as a run is.
+func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
+	engine, err := mermaid.NewEngine(c.MermaidEngine)
+	if err != nil {
+		return page.LinkChecks{}, nil, err
 	}
 
 	// Checked here as well as in the CLI, because Config is a public API and a
@@ -198,14 +211,14 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	case "", "png", "svg":
 		// ok
 	default:
-		return page.LinkChecks{}, fmt.Errorf(
+		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
 			c.MermaidOutput,
 		)
 	}
 
 	if c.MermaidBundle && c.MermaidOutput != "svg" {
-		return page.LinkChecks{}, errors.New(
+		return page.LinkChecks{}, nil, errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
 				"there is nowhere in a PNG to keep the diagram's source",
 		)
@@ -214,7 +227,7 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// A page with no Content-Appearance of its own takes this one, and one
 	// that does not parse would fail every such page in turn.
 	if _, err := metadata.ParseContentAppearance(c.ContentAppearance); err != nil {
-		return page.LinkChecks{}, fmt.Errorf("invalid ContentAppearance: %w", err)
+		return page.LinkChecks{}, nil, fmt.Errorf("invalid ContentAppearance: %w", err)
 	}
 
 	// The same for d2, and for the same reason: an unrecognised format falls to
@@ -225,7 +238,7 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	case "", "png", "svg":
 		// ok
 	default:
-		return page.LinkChecks{}, fmt.Errorf(
+		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
 			c.D2Output,
 		)
@@ -240,7 +253,7 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// outright. Either reaches Chrome as a screenshot scale it cannot use, or
 	// multiplies an SVG's size into something that is not a number of pixels.
 	if slices.Contains(c.Features, "d2") && !isPositiveScale(c.D2Scale) {
-		return page.LinkChecks{}, fmt.Errorf(
+		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
 			c.D2Scale,
 		)
@@ -254,27 +267,32 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// NaN or infinite scale, and those are refused here rather than part way
 	// through a run, when the first diagram reaches the browser.
 	if slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
-		return page.LinkChecks{}, fmt.Errorf(
+		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
 			c.MermaidScale,
 		)
 	}
 
 	if slices.Contains(c.Features, "math") && !isScaleOrDefault(c.MathScale) {
-		return page.LinkChecks{}, fmt.Errorf(
+		return page.LinkChecks{}, nil, fmt.Errorf(
 			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
 			c.MathScale,
 		)
 	}
 
 	if c.CheckLinksWarnOnly && len(c.CheckLinks) == 0 {
-		return page.LinkChecks{}, fmt.Errorf(
+		return page.LinkChecks{}, nil, fmt.Errorf(
 			"--check-links-warn-only requires --check-links: " +
 				"on its own no links are checked, so the silence means nothing",
 		)
 	}
 
-	return page.ParseLinkChecks(c.CheckLinks)
+	checks, err := page.ParseLinkChecks(c.CheckLinks)
+	if err != nil {
+		return page.LinkChecks{}, nil, err
+	}
+
+	return checks, engine, nil
 }
 
 // The error result is named so the deferred report write below can see, and
@@ -292,10 +310,13 @@ func run(ctx context.Context, config Config) (err error) {
 	// combination that merely does nothing, and that nobody would read anything
 	// into, is a warning.
 
-	linkChecks, err := config.prepare()
+	linkChecks, engine, err := config.prepare()
 	if err != nil {
 		return err
 	}
+
+	res := newResources(engine)
+	defer res.close()
 
 	// The rest is about the run as a whole -- the report written at the end of
 	// it and the manifest kept across runs -- so ProcessFile, which has
@@ -352,11 +373,6 @@ func run(ctx context.Context, config Config) (err error) {
 	// An interrupted run does not: it warns which pages stay watched.
 	defer api.UnwatchWritten(ctx)
 
-	// Folder resolutions are cached in a package-level map that outlives this
-	// call, so a second run in the same process -- against another instance,
-	// even -- would otherwise start with the first run's answers.
-	page.ResetFolderCache()
-
 	files, err := doublestar.FilepathGlob(config.Files)
 	if err != nil {
 		return err
@@ -401,7 +417,7 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig(res))
 	if err != nil {
 		return err
 	}
@@ -560,6 +576,7 @@ func run(ctx context.Context, config Config) (err error) {
 	pub := &publishRun{
 		api:              api,
 		config:           config,
+		res:              res,
 		std:              std,
 		pageHeader:       pageHeader,
 		tracker:          tracker,
@@ -782,18 +799,20 @@ func stepPast(ctx context.Context, config Config, file string, err error) bool {
 // behind. A caller looping over files gets the same effect as Run by stopping
 // when one fails with it.
 //
-// Unlike Run this does not shut the shared browser down, since a caller
-// publishing several files would pay to start it again for each. Call Cleanup
-// when the last one is done.
+// Like Run, it shuts down the browsers it started before returning, so a
+// caller publishing several files is better served by Run.
 func ProcessFile(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	linkChecks, err := config.prepare()
+	linkChecks, engine, err := config.prepare()
 	if err != nil {
 		return nil, err
 	}
+
+	res := newResources(engine)
+	defer res.close()
 
 	std, err := stdlib.New(ctx, api)
 	if err != nil {
@@ -805,7 +824,7 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 		return nil, err
 	}
 
-	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig())
+	pageHeader, err := header.Load(config.PageHeader, std, config.markConfig(res))
 	if err != nil {
 		return nil, err
 	}
@@ -819,6 +838,7 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 	pub := &publishRun{
 		api:              api,
 		config:           config,
+		res:              res,
 		std:              std,
 		pageHeader:       pageHeader,
 		checker:          checker,
@@ -982,6 +1002,7 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 type publishRun struct {
 	api              *confluence.API
 	config           Config
+	res              *resources
 	std              *stdlib.Lib
 	pageHeader       *header.Header
 	tracker          *manifest.Store
@@ -1315,7 +1336,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, err
 	}
 
-	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, meta, r.ancestryTracker)
+	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, r.res.folders, meta, r.ancestryTracker)
 	if err != nil {
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
@@ -1367,7 +1388,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	}
 	previewed := found.page
 
-	cfg, err := config.documentConfig(meta, linksUnder(ctx, doc.resolver))
+	cfg, err := config.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
 	if err != nil {
 		return err
 	}
@@ -1594,7 +1615,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 		return nil, err
 	}
 
-	parent, pg, err := page.ResolvePage(ctx, false, api, meta, r.ancestryTracker)
+	parent, pg, err := page.ResolvePage(ctx, false, api, r.res.folders, meta, r.ancestryTracker)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 	}
@@ -1705,7 +1726,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		return "", nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	cfg, err := r.config.documentConfig(meta, linksUnder(ctx, doc.resolver))
+	cfg, err := r.config.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
 	if err != nil {
 		return "", nil, err
 	}
@@ -1947,12 +1968,6 @@ func getImageAlign(align string, meta *metadata.Meta) (string, error) {
 	return "", nil
 }
 
-// Cleanup closes any shared resources (such as headless Chrome sessions).
-func Cleanup() {
-	d2.Cleanup()
-	mermaid.Cleanup()
-}
-
 // includeSearchDirs reports the directories of the files a document includes.
 //
 // Only the directories: what is wanted is somewhere to look for a link written
@@ -2021,7 +2036,7 @@ func renderHeader(
 
 // documentConfig is the compile configuration for one document: the run's,
 // with what its metadata and link resolution add.
-func (c Config) documentConfig(meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
+func (c Config) documentConfig(res *resources, meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
 	if c.DropH1 {
 		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
@@ -2031,7 +2046,7 @@ func (c Config) documentConfig(meta *metadata.Meta, resolveLink func(target, tex
 		return types.MarkConfig{}, fmt.Errorf("unable to determine image-align: %w", err)
 	}
 
-	cfg := c.markConfig()
+	cfg := c.markConfig(res)
 	cfg.DropFirstH1 = c.DropH1
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = resolveLink
@@ -2040,12 +2055,15 @@ func (c Config) documentConfig(meta *metadata.Meta, resolveLink func(target, tex
 }
 
 // markConfig is the compile configuration the run's flags give every
-// document; the per-document fields are left for the caller to fill in.
-func (c Config) markConfig() types.MarkConfig {
+// document, drawing in the run's browsers; the per-document fields are left
+// for the caller to fill in.
+func (c Config) markConfig(res *resources) types.MarkConfig {
 	// An invalid value is reported by documentConfig, which every page passes.
 	imageAlign, _ := getImageAlign(c.ImageAlign, nil)
 
 	return types.MarkConfig{
+		Browser:          res.browser,
+		Mermaid:          res.mermaid,
 		ImageAlign:       imageAlign,
 		MermaidScale:     c.MermaidScale,
 		MermaidOutput:    c.MermaidOutput,
