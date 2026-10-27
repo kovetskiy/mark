@@ -101,7 +101,7 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 
 	for name, tweak := range map[string]func(*Config, string){
 		"flat":      func(*Config, string) {},
-		"hierarchy": func(c *Config, dir string) { c.ParentsFromPath = true; c.ParentsFromPathRoot = dir },
+		"hierarchy": func(c *Config, dir string) { c.Page.ParentsFromPath = true; c.Page.ParentsFromPathRoot = dir },
 	} {
 		t.Run(name, func(t *testing.T) {
 			server, _ := docsSpace(t)
@@ -109,7 +109,7 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 			writeFile(t, dir, "parent.md", parentDoc("Parent"))
 			writeFile(t, dir, "a-child.md", childDoc(hashed("Parent")))
 			config := trackingConfig(server, dir+"/*.md")
-			config.TitleAppendGeneratedHash = true
+			config.Page.TitleAppendGeneratedHash = true
 			tweak(&config, dir)
 			require.NoError(t, Run(context.Background(), config))
 
@@ -140,7 +140,7 @@ func TestRetitledParentByRenamingItsFile(t *testing.T) {
 	writeFile(t, dir, "parent-doc.md", parent)
 	writeFile(t, dir, "a-child.md", childDoc("Parent Doc"))
 	config := trackingConfig(server, dir+"/*.md")
-	config.TitleFromFilename = true
+	config.Page.TitleFromFilename = true
 	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent Doc")
@@ -212,9 +212,9 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 			writeAt(t, dir, "guide/README.md", readme("Guide"))
 			writeAt(t, dir, "guide/API.md", api)
 			config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
-			config.ParentsFromPath = true
-			config.ParentsFromPathRoot = dir
-			config.TitleAppendGeneratedHash = hash
+			config.Page.ParentsFromPath = true
+			config.Page.ParentsFromPathRoot = dir
+			config.Page.TitleAppendGeneratedHash = hash
 			require.NoError(t, Run(context.Background(), config))
 
 			guideID := pageIDTitled(t, server, guideTitle("Guide"))
@@ -286,7 +286,7 @@ func TestRetitledParentWithFrontMatter(t *testing.T) {
 	writeFile(t, dir, "parent.md", parent("Parent"))
 	writeFile(t, dir, "a-child.md", child("Parent"))
 	config := trackingConfig(server, dir+"/*.md")
-	config.Features = append(config.Features, "frontmatter")
+	config.Rendering.Features = append(config.Rendering.Features, "frontmatter")
 	require.NoError(t, Run(context.Background(), config))
 
 	parentID := pageIDTitled(t, server, "Parent")
@@ -314,7 +314,7 @@ func TestMovedDocumentKeepsItsPage(t *testing.T) {
 	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
 
 	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
-	config.OnOrphan = "delete"
+	config.Tracking.OnOrphan = "delete"
 	require.NoError(t, Run(context.Background(), config))
 
 	before, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
@@ -346,7 +346,7 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 	writeFile(t, dir, "doc.md", markdownWithTitle("Moved"))
 
 	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
-	config.NoOverwrite = true
+	config.Update.NoOverwrite = true
 	require.NoError(t, Run(context.Background(), config))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
@@ -376,11 +376,15 @@ func publishOnce(t *testing.T, server *confluencetest.Server, file string) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	_, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL:  server.URL,
-		Username: "user",
-		Password: "token",
-		Files:    file,
-		Output:   io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 }
@@ -469,8 +473,21 @@ func TestATrackedPageIsMovedWhenItsFirstParentIsTheHomePage(t *testing.T) {
 	header := "<!-- Space: DOCS -->\n<!-- Parent: Home -->\n"
 	file := writeFile(t, dir, "doc.md", header+"<!-- Parent: Old -->\n<!-- Title: Doc -->\n\nbody\n")
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 
@@ -580,7 +597,7 @@ func TestRenamedHandMadeParentDuplicatesWithoutTracking(t *testing.T) {
 	guide := handMadeParent(t, server, "Guide")
 
 	config := trackingConfig(server, writeFile(t, dir, "child.md", markdownUnder("Guide", "Child")))
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 	require.NoError(t, Run(context.Background(), config))
 
 	server.RenamePage(guide.ID, "Guide Renamed")
@@ -678,8 +695,18 @@ func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 
@@ -711,8 +738,18 @@ func TestDeeperNestingThanDeclaredIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	assert.Equal(t, extra.ID, server.Page(deep.ID).ParentID,
@@ -733,8 +770,21 @@ func TestDryRunDoesNotMoveThePage(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc"))
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, DryRun: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Mode: ModeConfig{
+			DryRun: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	assert.Equal(t, parent.ID, server.Page(existing.ID).ParentID,
@@ -758,8 +808,21 @@ func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 
@@ -791,8 +854,21 @@ func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, TrackPages: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 

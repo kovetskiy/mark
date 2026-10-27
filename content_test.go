@@ -93,7 +93,7 @@ An <span>unclosed tag.
 `)
 
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
-	config.ContinueOnError = true
+	config.Mode.ContinueOnError = true
 
 	err := Run(context.Background(), config)
 	require.Error(t, err)
@@ -117,8 +117,16 @@ Text with an <span>unclosed tag.
 `)
 
 	err := Run(context.Background(), Config{
-		Files: file, CompileOnly: true,
-		Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Mode: ModeConfig{
+			CompileOnly: true,
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 
 	require.Error(t, err)
@@ -140,8 +148,16 @@ A & B, "quoted", 3 < 4, and a table:
 `)
 
 	require.NoError(t, Run(context.Background(), Config{
-		Files: file, CompileOnly: true,
-		Features: []string{"mention"}, Output: io.Discard,
+		Files: file,
+		Mode: ModeConfig{
+			CompileOnly: true,
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 }
 
@@ -179,8 +195,18 @@ func TestByteOrderMarkDoesNotHideMetadata(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: With BOM -->\n\nBody text.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: path, Features: []string{"mention"}, Output: io.Discard,
+		Files: path,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "With BOM"))
@@ -200,8 +226,18 @@ func TestByteOrderMarkDoesNotHideFrontMatter(t *testing.T) {
 		"---\nspace: DOCS\ntitle: BOM Front Matter\nparents: [ Parent ]\n---\n\nBody text.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: path, Features: []string{"mention", "frontmatter"}, Output: io.Discard,
+		Files: path,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention", "frontmatter"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "BOM Front Matter"))
@@ -222,8 +258,17 @@ func TestLinkToDocumentWithByteOrderMark(t *testing.T) {
 	doc := writeFile(t, dir, "doc.md", header+"<!-- Title: Doc -->\n\nSee [other](other.md).\n")
 
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Features: []string{"mention"}, Output: io.Discard,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	config.Files = other
 	require.NoError(t, Run(context.Background(), config))

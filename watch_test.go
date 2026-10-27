@@ -31,11 +31,21 @@ func TestUnwatchAfterPublish(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Parent: New Parent -->\n<!-- Title: Doc -->\n\nBody.\n")
 
 			require.NoError(t, Run(context.Background(), Config{
-				BaseURL: server.URL, Username: "user", Password: "token",
-				Files:    filepath.Join(dir, "doc.md"),
-				Features: []string{"mention"},
-				Unwatch:  tc.unwatch,
-				Output:   io.Discard,
+				Files: filepath.Join(dir, "doc.md"),
+				Connection: ConnectionConfig{
+					BaseURL:  server.URL,
+					Username: "user",
+					Password: "token",
+				},
+				Rendering: RenderingConfig{
+					Features: []string{"mention"},
+				},
+				Update: UpdateConfig{
+					Unwatch: tc.unwatch,
+				},
+				Report: ReportConfig{
+					Output: io.Discard,
+				},
 			}))
 
 			for _, title := range []string{"New Parent", "Doc"} {

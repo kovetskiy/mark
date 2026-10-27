@@ -58,7 +58,7 @@ func TestUntrackedTitleChangeStillDuplicates(t *testing.T) {
 	dir := t.TempDir()
 
 	config := trackingConfig(server, "")
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Original Title"))
 	config.Files = file
@@ -92,7 +92,7 @@ Body that does not change.
 `
 	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "First"))
 	config := trackingConfig(server, file)
-	config.ChangesOnly = true
+	config.Update.ChangesOnly = true
 	require.NoError(t, Run(context.Background(), config))
 
 	before, err := api.FindPage(context.Background(), "DOCS", "First", "page")
@@ -147,7 +147,7 @@ func TestTrackingSavesManifestEvenWhenAFileFails(t *testing.T) {
 	writeFile(t, dir, "bad.md", "# Orphan\n\nNo metadata at all.\n")
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	config.ContinueOnError = true
+	config.Mode.ContinueOnError = true
 	require.Error(t, Run(context.Background(), config), "the bad file should still fail the run")
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Good", "page")
@@ -241,7 +241,7 @@ func TestPageIDModeSaysTrackingDoesNotApply(t *testing.T) {
 	defer func() { log.Logger = restore }()
 
 	config := trackingConfig(server, file)
-	config.PageID = existing.ID
+	config.Page.PageID = existing.ID
 	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, logged.String(), "no effect together with a page id")
@@ -258,7 +258,7 @@ func TestDryRunWritesNothing(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 
 	config := trackingConfig(server, file)
-	config.DryRun = true
+	config.Mode.DryRun = true
 	require.NoError(t, Run(context.Background(), config))
 
 	for _, r := range server.Requests() {
@@ -277,7 +277,7 @@ func TestFolderPublishWithoutTracking(t *testing.T) {
 
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 	config := trackingConfig(server, file)
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 
 	require.NoError(t, Run(context.Background(), config), "publishing into a folder must work with tracking off")
 
@@ -331,7 +331,7 @@ func TestRenamedFolderDuplicatesWithoutTracking(t *testing.T) {
 	dir := t.TempDir()
 
 	config := trackingConfig(server, "")
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 	config.Files = file
 
@@ -356,7 +356,7 @@ func TestFolderRepublishWithoutTrackingUpdatesInPlace(t *testing.T) {
 	dir := t.TempDir()
 
 	config := trackingConfig(server, "")
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 	config.Files = writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 
 	require.NoError(t, Run(context.Background(), config))
@@ -374,7 +374,7 @@ func TestFolderDocumentLeavesHomePageAlone(t *testing.T) {
 	dir := t.TempDir()
 
 	config := trackingConfig(server, "")
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 	config.Files = writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Home"))
 
 	// The create that follows fails on the duplicate title; what matters is
@@ -397,7 +397,7 @@ func TestDryRunDoesNotRecordFolders(t *testing.T) {
 
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 	config := trackingConfig(server, file)
-	config.DryRun = true
+	config.Mode.DryRun = true
 	require.NoError(t, Run(context.Background(), config))
 
 	for _, r := range server.Requests() {
@@ -419,7 +419,7 @@ Body that does not change when the file moves.
 
 func filenameTitleConfig(server *confluencetest.Server, files string) Config {
 	config := trackingConfig(server, files)
-	config.TitleFromFilename = true
+	config.Page.TitleFromFilename = true
 	return config
 }
 
@@ -457,7 +457,7 @@ func TestRenamedFileDuplicatesWithoutTracking(t *testing.T) {
 	dir := t.TempDir()
 
 	config := filenameTitleConfig(server, filepath.Join(dir, "*.md"))
-	config.TrackPages = false
+	config.Tracking.TrackPages = false
 
 	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
 	require.NoError(t, Run(context.Background(), config))
@@ -539,7 +539,7 @@ func TestDryRunReportsWhatWouldHappen(t *testing.T) {
 	writeFile(t, dir, "doc.md", markdownWithTitle("Renamed"))
 
 	config := trackingConfig(server, file)
-	config.DryRun = true
+	config.Mode.DryRun = true
 	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), config)) })
 
 	assert.Contains(t, logged, "retitled from",
@@ -564,7 +564,7 @@ func TestDryRunStillWritesNothingWithTracking(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
 
 	config := trackingConfig(server, file)
-	config.DryRun = true
+	config.Mode.DryRun = true
 	require.NoError(t, Run(context.Background(), config))
 
 	for _, r := range server.Requests() {
@@ -577,9 +577,24 @@ func TestDryRunStillWritesNothingWithTracking(t *testing.T) {
 // folders into a single space, which is a common way to run it.
 func multiGlobConfig(server *confluencetest.Server, glob string) Config {
 	return Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: glob, Features: []string{"mention"},
-		TrackPages: true, TitleFromFilename: true, Output: io.Discard,
+		Files: glob,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Page: PageConfig{
+			TitleFromFilename: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 }
 
@@ -681,9 +696,22 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	config := Config{
-		BaseURL: baseURL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
-		TrackPages: true, ManifestPage: "Home", Output: io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  baseURL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages:   true,
+			ManifestPage: "Home",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config))
 
@@ -730,9 +758,22 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	writeFile(t, dir, "b.md", "<!-- Space: OPS -->\n<!-- Title: Runbook -->\n\nA runbook.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
-		TrackPages: true, ManifestPage: handbook.ID, Output: io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages:   true,
+			ManifestPage: handbook.ID,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err, "a run spanning two spaces on one manifest page fails")
 	assert.Contains(t, err.Error(), "--manifest-page")
@@ -756,8 +797,18 @@ func TestManifestPageRequiresTrackPages(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "*.md"), ManifestPage: "Home", Output: io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Tracking: TrackingConfig{
+			ManifestPage: "Home",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--manifest-page requires --track-pages")
@@ -773,19 +824,31 @@ func TestManifestPrefixRequiresTrackPages(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
-		ManifestPrefix: "mark.manifest", Output: io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			ManifestPrefix: "mark.manifest",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 	require.NoError(t, Run(context.Background(), config), "the default prefix asks for nothing")
 
-	config.ManifestPrefix = "team.docs"
+	config.Tracking.ManifestPrefix = "team.docs"
 	err := Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--manifest-prefix requires --track-pages")
 
-	config.TrackPages = true
-	config.ManifestPrefix = "not a key"
+	config.Tracking.TrackPages = true
+	config.Tracking.ManifestPrefix = "not a key"
 	err = Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot prefix a property key")
@@ -946,7 +1009,7 @@ func TestPreserveCommentsKeepsARetitle(t *testing.T) {
 	dir := t.TempDir()
 
 	config := trackingConfig(server, writeFile(t, dir, "doc.md", markdownWithTitle("Original Title")))
-	config.PreserveComments = true
+	config.Update.PreserveComments = true
 	require.NoError(t, Run(context.Background(), config))
 
 	original, err := confluence.NewAPI(server.URL, "user", "token", false).
@@ -970,7 +1033,7 @@ func TestPreserveCommentsLeavesAnUnchangedTitleAlone(t *testing.T) {
 	dir := t.TempDir()
 
 	config := trackingConfig(server, writeFile(t, dir, "doc.md", markdownWithTitle("Steady")))
-	config.PreserveComments = true
+	config.Update.PreserveComments = true
 
 	require.NoError(t, Run(context.Background(), config))
 	require.NoError(t, Run(context.Background(), config))
@@ -987,9 +1050,21 @@ func TestGeneratedHashDoesNotStandInForATitle(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nbody\n")
 
 	err := Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Features: []string{"mention"}, Output: io.Discard,
-		TitleAppendGeneratedHash: true,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
+		Page: PageConfig{
+			TitleAppendGeneratedHash: true,
+		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "page title is not set")

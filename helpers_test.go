@@ -40,13 +40,21 @@ Some content.
 // trackingConfig is a publish configured to remember page identity.
 func trackingConfig(server *confluencetest.Server, files string) Config {
 	return Config{
-		BaseURL:    server.URL,
-		Username:   "user",
-		Password:   "token",
-		Files:      files,
-		Features:   []string{"mention"},
-		TrackPages: true,
-		Output:     io.Discard,
+		Files: files,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 }
 
@@ -153,9 +161,9 @@ func writeAt(t *testing.T, dir, name, content string) {
 func previewOf(t *testing.T, config Config, format string) string {
 	t.Helper()
 	var out bytes.Buffer
-	config.DryRun = true
-	config.OutputFormat = format
-	config.Output = &out
+	config.Mode.DryRun = true
+	config.Report.OutputFormat = format
+	config.Report.Output = &out
 	require.NoError(t, Run(context.Background(), config))
 	return out.String()
 }
@@ -185,12 +193,24 @@ func noOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nFrom mark.\n")
 
 	config := Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files:       filepath.Join(dir, "*.md"),
-		Features:    []string{"mention"},
-		TrackPages:  true,
-		NoOverwrite: true,
-		Output:      io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+		Update: UpdateConfig{
+			NoOverwrite: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 
 	require.NoError(t, Run(context.Background(), config))
@@ -209,8 +229,8 @@ func runReported(t *testing.T, config Config) report.Page {
 	t.Helper()
 
 	var out bytes.Buffer
-	config.OutputFormat = report.FormatJSON
-	config.Output = &out
+	config.Report.OutputFormat = report.FormatJSON
+	config.Report.Output = &out
 
 	require.NoError(t, Run(context.Background(), config))
 
@@ -225,12 +245,18 @@ func runReported(t *testing.T, config Config) report.Page {
 // reaches Confluence rather than about what mark remembers.
 func publishConfig(url, files string) Config {
 	return Config{
-		BaseURL:  url,
-		Username: "user",
-		Password: "token",
-		Files:    files,
-		Features: []string{"mention"},
-		Output:   io.Discard,
+		Files: files,
+		Connection: ConnectionConfig{
+			BaseURL:  url,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			Features: []string{"mention"},
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 }
 

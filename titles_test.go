@@ -29,7 +29,7 @@ func TestTitleLengthLimit(t *testing.T) {
 				file := writeFile(t, t.TempDir(), "doc.md", markdownWithTitle(test.title))
 
 				config := trackingConfig(server, file)
-				config.DryRun = dryRun
+				config.Mode.DryRun = dryRun
 				err := Run(context.Background(), config)
 				require.Error(t, err, "dry run: %v", dryRun)
 				assert.Contains(t, err.Error(), "page title")

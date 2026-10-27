@@ -52,7 +52,7 @@ func handleOrphans(
 			continue
 		}
 
-		scopeID, err := page.ResolveScope(ctx, api, space, config.OrphanUnder)
+		scopeID, err := page.ResolveScope(ctx, api, space, config.Tracking.OrphanUnder)
 		if err != nil {
 			return err
 		}
@@ -110,13 +110,13 @@ func handleOrphans(
 				continue
 			}
 
-			handled, err = page.HandleOrphans(ctx, api, action, candidates, config.readOnly())
+			handled, err = page.HandleOrphans(ctx, api, action, candidates, config.Mode.readOnly())
 			if err != nil {
 				return err
 			}
 		}
 
-		if config.readOnly() {
+		if config.Mode.readOnly() {
 			continue
 		}
 

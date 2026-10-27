@@ -116,8 +116,15 @@ func TestMacroAttachmentOutsideProjectFails(t *testing.T) {
 	t.Chdir(dir)
 
 	_, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err)
 	assert.Zero(t, server.CountRequests("POST", "/child/attachment"))
@@ -317,7 +324,7 @@ func attachFixture(t *testing.T, body string, attachReferenced bool) (*confluenc
 	t.Helper()
 
 	p := publishBeside(t, map[string][]byte{"files/report.pdf": []byte("a report\n")}, "", body,
-		Config{AttachReferenced: attachReferenced})
+		Config{Rendering: RenderingConfig{AttachReferenced: attachReferenced}})
 	require.NoError(t, p.err)
 
 	return p.server, p.id, p.body
@@ -375,8 +382,15 @@ func TestAnImageEmbeddedTwiceIsAttachedOnce(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	target, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 
@@ -428,8 +442,18 @@ func TestALinkToAnotherDocumentIsNotAnAttachment(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	target, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, AttachReferenced: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			AttachReferenced: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 
@@ -455,8 +479,15 @@ func TestAnImageIsAttachedWithoutTheFlag(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	target, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 
@@ -488,8 +519,18 @@ func TestLinkedFileOutsideTheProjectIsRefused(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	_, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, AttachReferenced: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			AttachReferenced: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "outside the project")
@@ -532,8 +573,18 @@ func TestAFilenameWithBracketsIsNotAPattern(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	target, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, AttachReferenced: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			AttachReferenced: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 
@@ -565,8 +616,18 @@ func TestALinkedFileWithAColonIsAttached(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	target, err := ProcessFile(context.Background(), file, api, Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: file, AttachReferenced: true, Output: io.Discard,
+		Files: file,
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Rendering: RenderingConfig{
+			AttachReferenced: true,
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	})
 	require.NoError(t, err)
 
@@ -604,8 +665,8 @@ func publishBeside(t *testing.T, files map[string][]byte, header, body string, c
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\n# Doc\n\n"+body)
 
-	cfg.BaseURL, cfg.Username, cfg.Password = server.URL, "user", "token"
-	cfg.Files, cfg.Output = file, io.Discard
+	cfg.Connection.BaseURL, cfg.Connection.Username, cfg.Connection.Password = server.URL, "user", "token"
+	cfg.Files, cfg.Report.Output = file, io.Discard
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	var target *confluence.PageInfo
@@ -661,7 +722,7 @@ func TestEverySpellingOfAFileIsOneAttachment(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			p := publishBeside(t, spellingFiles(), "", tc.body, Config{AttachReferenced: true})
+			p := publishBeside(t, spellingFiles(), "", tc.body, Config{Rendering: RenderingConfig{AttachReferenced: true}})
 			require.NoError(t, p.err)
 
 			assert.Equal(t, []string{tc.name}, uploadedNames(p))
@@ -707,10 +768,10 @@ func TestDifferentFilesUnderOneNameAreRefused(t *testing.T) {
 		declared, body string
 		cfg            Config
 	}{
-		"a linked file":        {"a/./b.txt", "[x](a_b.txt)\n", Config{AttachReferenced: true}},
+		"a linked file":        {"a/./b.txt", "[x](a_b.txt)\n", Config{Rendering: RenderingConfig{AttachReferenced: true}}},
 		"an image":             {"a/b.png", "![x](a_b.png)\n", Config{}},
-		"an image, dry run":    {"a/b.png", "![x](a_b.png)\n", Config{DryRun: true}},
-		"a link, compile only": {"a//b.txt", "[x](a_b.txt)\n", Config{AttachReferenced: true, CompileOnly: true}},
+		"an image, dry run":    {"a/b.png", "![x](a_b.png)\n", Config{Mode: ModeConfig{DryRun: true}}},
+		"a link, compile only": {"a//b.txt", "[x](a_b.txt)\n", Config{Rendering: RenderingConfig{AttachReferenced: true}, Mode: ModeConfig{CompileOnly: true}}},
 	}
 
 	for name, tc := range cases {
@@ -778,7 +839,7 @@ func TestLiteralPercentNameWinsOverDecoded(t *testing.T) {
 func TestReferencedFileWithEscapedName(t *testing.T) {
 	p := publishBeside(t,
 		map[string][]byte{"q#1.pdf": []byte("report\n")},
-		"", "See [the report](q%231.pdf).\n", Config{AttachReferenced: true},
+		"", "See [the report](q%231.pdf).\n", Config{Rendering: RenderingConfig{AttachReferenced: true}},
 	)
 	require.NoError(t, p.err)
 
@@ -816,7 +877,11 @@ func TestDiagramTitledWithASlashIsUploadedUnderTheNameThePageUses(t *testing.T) 
 	} {
 		t.Run(title, func(t *testing.T) {
 			p := publishBeside(t, nil, "", "```d2 title "+title+"\na -> b\n```\n", Config{
-				Features: []string{"d2"}, D2Output: "svg", D2Scale: 1,
+				Rendering: RenderingConfig{
+					Features: []string{"d2"},
+					D2Output: "svg",
+					D2Scale:  1,
+				},
 			})
 			require.NoError(t, p.err)
 
@@ -845,11 +910,15 @@ func mermaidFixture(t *testing.T) Config {
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
 	return Config{
-		BaseURL:  server.URL,
-		Username: "user",
-		Password: "token",
-		Files:    filepath.Join(dir, "*.md"),
-		Output:   io.Discard,
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Report: ReportConfig{
+			Output: io.Discard,
+		},
 	}
 }
 
@@ -860,7 +929,7 @@ func mermaidFixture(t *testing.T) Config {
 // a word about the SVG that was asked for.
 func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	config := mermaidFixture(t)
-	config.MermaidOutput = "jpeg"
+	config.Rendering.MermaidOutput = "jpeg"
 
 	err := Run(context.Background(), config)
 	require.Error(t, err)
@@ -873,7 +942,7 @@ func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 // that cannot happen, and silently getting the PNG is the worst reading of it.
 func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 	config := mermaidFixture(t)
-	config.MermaidBundle = true
+	config.Rendering.MermaidBundle = true
 
 	err := Run(context.Background(), config)
 	require.Error(t, err)
@@ -894,7 +963,7 @@ func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
 // branch without a word.
 func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	config := mermaidFixture(t)
-	config.D2Output = "jpeg"
+	config.Rendering.D2Output = "jpeg"
 
 	err := Run(context.Background(), config)
 	require.Error(t, err)
@@ -906,7 +975,7 @@ func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 // the field leaves it zero, and has always got a PNG.
 func TestD2DefaultsPublishAsBefore(t *testing.T) {
 	config := mermaidFixture(t)
-	config.D2Output = ""
+	config.Rendering.D2Output = ""
 
 	require.NoError(t, Run(context.Background(), config))
 }
@@ -918,8 +987,8 @@ func TestD2DefaultsPublishAsBefore(t *testing.T) {
 func TestD2ScaleRejectsWhatIsNotAScale(t *testing.T) {
 	for _, scale := range []float64{0, -1, math.NaN(), math.Inf(1)} {
 		config := mermaidFixture(t)
-		config.Features = []string{"d2"}
-		config.D2Scale = scale
+		config.Rendering.Features = []string{"d2"}
+		config.Rendering.D2Scale = scale
 
 		err := Run(context.Background(), config)
 		require.Error(t, err, "a scale of %v is not one", scale)
@@ -934,16 +1003,16 @@ func TestD2ScaleRejectsWhatIsNotAScale(t *testing.T) {
 func TestMermaidAndMathScaleRejectWhatIsNotAScale(t *testing.T) {
 	for _, scale := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
 		config := mermaidFixture(t)
-		config.Features = []string{"mermaid"}
-		config.MermaidScale = scale
+		config.Rendering.Features = []string{"mermaid"}
+		config.Rendering.MermaidScale = scale
 
 		err := Run(context.Background(), config)
 		require.Error(t, err, "a mermaid scale of %v is not one", scale)
 		assert.Contains(t, err.Error(), "MermaidScale")
 
 		config = mermaidFixture(t)
-		config.Features = []string{"math"}
-		config.MathScale = scale
+		config.Rendering.Features = []string{"math"}
+		config.Rendering.MathScale = scale
 
 		err = Run(context.Background(), config)
 		require.Error(t, err, "a math scale of %v is not one", scale)
@@ -956,7 +1025,7 @@ func TestMermaidAndMathScaleRejectWhatIsNotAScale(t *testing.T) {
 // of the field, and math has always drawn a zero scale at its default.
 func TestMermaidAndMathScaleZeroIsTheDefault(t *testing.T) {
 	config := mermaidFixture(t)
-	config.Features = []string{"mermaid", "math"}
+	config.Rendering.Features = []string{"mermaid", "math"}
 
 	require.NoError(t, Run(context.Background(), config))
 }
@@ -965,9 +1034,9 @@ func TestMermaidAndMathScaleZeroIsTheDefault(t *testing.T) {
 // feature carries both fields past every path that reads them.
 func TestMermaidAndMathScaleAreOnlyCheckedWhereTheyAreDrawn(t *testing.T) {
 	config := mermaidFixture(t)
-	config.Features = []string{"mention"}
-	config.MermaidScale = -1
-	config.MathScale = math.NaN()
+	config.Rendering.Features = []string{"mention"}
+	config.Rendering.MermaidScale = -1
+	config.Rendering.MathScale = math.NaN()
 
 	require.NoError(t, Run(context.Background(), config))
 }
@@ -977,7 +1046,7 @@ func TestMermaidAndMathScaleAreOnlyCheckedWhereTheyAreDrawn(t *testing.T) {
 // zero value of a caller who never heard of it is not an error.
 func TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn(t *testing.T) {
 	config := mermaidFixture(t)
-	config.D2Scale = 0
+	config.Rendering.D2Scale = 0
 
 	require.NoError(t, Run(context.Background(), config))
 }
