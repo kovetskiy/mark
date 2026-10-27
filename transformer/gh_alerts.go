@@ -37,7 +37,7 @@ func (t *GHAlertsTransformer) Transform(doc *ast.Document, reader text.Reader, p
 		}
 
 		// Transform the blockquote into a GitHub Alert node
-		t.transformBlockquote(blockquote, alertType)
+		t.transformBlockquote(blockquote, alertType, reader.Source())
 
 		return ast.WalkContinue, nil
 	})
@@ -45,63 +45,56 @@ func (t *GHAlertsTransformer) Transform(doc *ast.Document, reader text.Reader, p
 
 // extractAlertType checks if the blockquote starts with GitHub Alert syntax and returns the alert type
 func (t *GHAlertsTransformer) extractAlertType(blockquote *ast.Blockquote, reader text.Reader) string {
-	// Look for the first paragraph in the blockquote
-	firstChild := blockquote.FirstChild()
-	if firstChild == nil || firstChild.Kind() != ast.KindParagraph {
+	paragraph, ok := blockquote.FirstChild().(*ast.Paragraph)
+	if !ok {
 		return ""
 	}
 
-	paragraph := firstChild.(*ast.Paragraph)
+	marker, _ := alertMarker(paragraph, reader.Source())
 
-	// Check if the paragraph starts with the GitHub Alert pattern [!TYPE]
-	firstText := paragraph.FirstChild()
-	if firstText == nil || firstText.Kind() != ast.KindText {
-		return ""
-	}
-
-	// Look for the pattern: [!ALERTTYPE]
-	// We need to check for three consecutive text nodes: "[", "!ALERTTYPE", "]"
-	// This is the intended behavior for GitHub Alerts which should be at the very start.
-	// Note: We follow GitHub's strict syntax here and don't allow whitespace between
+	// We follow GitHub's strict syntax here and don't allow whitespace between
 	// brackets and exclamation mark (e.g., [! NOTE] is not recognized).
-	currentNode := firstText
-	var nodes []ast.Node
-
-	// Collect up to 3 text nodes
-	for i := 0; i < 3 && currentNode != nil && currentNode.Kind() == ast.KindText; i++ {
-		nodes = append(nodes, currentNode)
-		currentNode = currentNode.NextSibling()
-	}
-
-	if len(nodes) < 3 {
+	if !strings.HasPrefix(marker, "[!") || !strings.HasSuffix(marker, "]") {
 		return ""
 	}
 
-	leftText := nodes[0].(*ast.Text)
-	middleText := nodes[1].(*ast.Text)
-	rightText := nodes[2].(*ast.Text)
-
-	leftContent := leftText.Value.Str(reader.Source())
-	middleContent := middleText.Value.Str(reader.Source())
-	rightContent := rightText.Value.Str(reader.Source())
-
-	// Check for the exact pattern
-	if leftContent == "[" && rightContent == "]" && strings.HasPrefix(middleContent, "!") {
-		alertType := strings.ToLower(strings.TrimPrefix(middleContent, "!"))
-
-		// Validate it's a recognized GitHub Alert type
-		switch alertType {
-		case "note", "tip", "important", "warning", "caution":
-			return alertType
-		}
+	alertType := strings.ToLower(marker[len("[!") : len(marker)-len("]")])
+	switch alertType {
+	case "note", "tip", "important", "warning", "caution":
+		return alertType
 	}
 
 	return ""
 }
 
+// alertMarker returns the text of the leading Text nodes of paragraph up to
+// the end of its first line, and how many nodes that is, or "" if anything but
+// text comes first. How goldmark splits "[!NOTE]" into Text nodes is its own
+// business, and differs between releases, so the nodes are read as one string.
+func alertMarker(paragraph *ast.Paragraph, source []byte) (string, int) {
+	var marker strings.Builder
+
+	count := 0
+	for node := paragraph.FirstChild(); node != nil; node = node.NextSibling() {
+		textNode, ok := node.(*ast.Text)
+		if !ok {
+			return "", 0
+		}
+
+		marker.WriteString(textNode.Value.Str(source))
+		count++
+
+		if textNode.SoftLineBreak() || textNode.HardLineBreak() {
+			break
+		}
+	}
+
+	return marker.String(), count
+}
+
 // transformBlockquote modifies the blockquote to remove the GitHub Alert syntax
 // and adds metadata for rendering
-func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, alertType string) {
+func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, alertType string, source []byte) {
 	// Set a custom attribute to identify this as a GitHub Alert
 	SetAttributeText(blockquote, "gh-alert-type", alertType)
 
@@ -109,7 +102,7 @@ func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, al
 	firstChild := blockquote.FirstChild()
 	if firstChild != nil && firstChild.Kind() == ast.KindParagraph {
 		paragraph := firstChild.(*ast.Paragraph)
-		t.stripAlertMarker(blockquote, paragraph)
+		t.stripAlertMarker(blockquote, paragraph, source)
 	}
 }
 
@@ -121,10 +114,11 @@ func (t *GHAlertsTransformer) transformBlockquote(blockquote *ast.Blockquote, al
 // renderer passes it as the macro's title parameter instead, which is what
 // Confluence styles as a header -- so nothing has to be synthesised into the
 // body at all.
-func (t *GHAlertsTransformer) stripAlertMarker(blockquote *ast.Blockquote, paragraph *ast.Paragraph) {
-	// Remove the first three nodes ([ !TYPE ]) from the original paragraph
+func (t *GHAlertsTransformer) stripAlertMarker(blockquote *ast.Blockquote, paragraph *ast.Paragraph, source []byte) {
+	_, count := alertMarker(paragraph, source)
+
 	currentNode := paragraph.FirstChild()
-	for i := 0; i < 3 && currentNode != nil; i++ {
+	for i := 0; i < count && currentNode != nil; i++ {
 		next := currentNode.NextSibling()
 		paragraph.RemoveChild(currentNode)
 		currentNode = next
