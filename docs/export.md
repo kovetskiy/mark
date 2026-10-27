@@ -70,7 +70,8 @@ anything if a file it would write is already there, unless `--overwrite` is
 given, and `--no-attachments` writes the document alone. The attachments are
 moved into place only once all of them have downloaded. Two whose names would
 share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
-are told apart by a number, as `a_b-2.png`. An attachment the page refers to
+are told apart by a number, as `a_b-2.png`, and so is one named like the
+document itself. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers.
 
 ## Exporting a tree of pages, or a whole space

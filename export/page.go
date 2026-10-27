@@ -125,6 +125,11 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	}
 
 	names := newLocalNames()
+	// An attachment named like the document would be written over it, or it
+	// over the attachment; on macOS and Windows, also when only case differs.
+	if output != "" && sameDir(outputDir, attachmentsDir) {
+		names.reserve(filepath.Base(output))
+	}
 	// Worked out only for a page that has attachments: on Windows there is no
 	// relative path to another drive.
 	var relative *string
@@ -558,6 +563,18 @@ func referTo(base, target string) string {
 	return relative
 }
 
+// sameDir reports whether two paths name one directory, without regard to
+// case: a name reserved in a directory that only differs in case costs a
+// number, where missing one costs a file.
+func sameDir(a, b string) bool {
+	absoluteA, errA := filepath.Abs(a)
+	absoluteB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return true
+	}
+	return strings.EqualFold(absoluteA, absoluteB)
+}
+
 // localName is the name an attachment is written under: its own, unless that
 // would reach into another directory.
 func localName(filename string) string {
@@ -579,6 +596,11 @@ type localNames struct {
 
 func newLocalNames() *localNames {
 	return &localNames{byName: map[string]string{}, taken: map[string]bool{}}
+}
+
+// reserve keeps a name from every attachment.
+func (l *localNames) reserve(name string) {
+	l.taken[strings.ToLower(name)] = true
 }
 
 func (l *localNames) of(filename string) string {

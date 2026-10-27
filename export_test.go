@@ -492,6 +492,35 @@ func TestExportGivesEveryAttachmentAFile(t *testing.T) {
 	}
 }
 
+// TestExportKeepsAttachmentsOffTheDocument: an attachment named like the
+// document, or like it but for case, which is one file on macOS and Windows,
+// gets a name of its own rather than replacing the document under --overwrite.
+func TestExportKeepsAttachmentsOffTheDocument(t *testing.T) {
+	server, id := exportPage(t, `<p><ac:link><ri:attachment ri:filename="page.md"/></ac:link>`+
+		`<ac:link><ri:attachment ri:filename="Page.md"/></ac:link></p>`)
+	server.AddAttachmentData(id, "page.md", []byte("lower"))
+	server.AddAttachmentData(id, "Page.md", []byte("upper"))
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "page.md")
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out, Overwrite: true,
+	})
+	require.NoError(t, err)
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(exported), "<!-- Title: Page -->")
+	assert.Contains(t, string(exported), "(page-2.md)")
+	assert.Contains(t, string(exported), "(Page-3.md)")
+
+	for file, content := range map[string]string{"page-2.md": "lower", "Page-3.md": "upper"} {
+		data, err := os.ReadFile(filepath.Join(dir, file))
+		require.NoError(t, err, file)
+		assert.Equal(t, content, string(data), file)
+	}
+}
+
 // TestAFailedDownloadWritesNothing: the attachments are moved into place only
 // once every one of them is downloaded, so a retry is not refused for the
 // files a failed export left behind.
