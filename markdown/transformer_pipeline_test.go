@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +31,7 @@ inline: "<!-- Include: meta_header.md\nname: ${1} -->" -->
 
 This is the main body text.`)
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	cfg := types.MarkConfig{
@@ -91,7 +92,7 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 	// Main document: Includes inc1.md
 	markdownInput := []byte("<!-- Include: inc1.md -->\n\nRoot document body.")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	cfg := types.MarkConfig{
@@ -134,7 +135,7 @@ func TestCircularIncludeLoopError(t *testing.T) {
 
 	markdownInput := []byte("<!-- Include: a.md -->")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	cfg := types.MarkConfig{

@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -68,12 +69,12 @@ func TestGetUserByNameDoesNotCacheTransientFailures(t *testing.T) {
 				return strings.HasPrefix(r.URL.Path, "/rest/api/search")
 			})
 
-			_, err := api.GetUserByName("Jane Doe")
+			_, err := api.GetUserByName(context.Background(), "Jane Doe")
 			require.Error(t, err, "the outage is reported")
 
 			failing.Store(false)
 
-			user, err := api.GetUserByName("Jane Doe")
+			user, err := api.GetUserByName(context.Background(), "Jane Doe")
 			require.NoError(t, err, "the next mention must not inherit the failure")
 			assert.Equal(t, "acct-1", user.AccountID)
 		})
@@ -92,14 +93,14 @@ func TestGetUserByNameDoesNotCacheMissingSearchEndpoint(t *testing.T) {
 		return strings.HasPrefix(r.URL.Path, "/rest/api/search")
 	})
 
-	_, err := api.GetUserByName("Jane Doe")
+	_, err := api.GetUserByName(context.Background(), "Jane Doe")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "search endpoint is not served")
 	assert.NotContains(t, err.Error(), "is not found")
 
 	failing.Store(false)
 
-	user, err := api.GetUserByName("Jane Doe")
+	user, err := api.GetUserByName(context.Background(), "Jane Doe")
 	require.NoError(t, err, "a missing endpoint must not be remembered as a missing user")
 	assert.Equal(t, "acct-1", user.AccountID)
 }
@@ -112,7 +113,7 @@ func TestGetSpaceIDNotFoundIsCached(t *testing.T) {
 	server.SetFail(scopedTokenV1Gone(http.StatusNotFound))
 
 	for range 5 {
-		_, err := api.GetSpaceID("NOPE")
+		_, err := api.GetSpaceID(context.Background(), "NOPE")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, confluence.ErrNotFound)
 	}
@@ -139,7 +140,7 @@ func TestGetSpaceIDReportsV1ReasonOnServer(t *testing.T) {
 	server.AddSpace("DOCS")
 	server.SetFail(serverWithoutV2(http.StatusUnauthorized))
 
-	_, err := api.GetSpaceID("DOCS")
+	_, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
 	assert.NotErrorIs(t, err, confluence.ErrNotFound,
@@ -163,13 +164,13 @@ func TestGetSpaceIDServerOutageIsNotCached(t *testing.T) {
 		return strings.HasPrefix(r.URL.Path, "/rest/api/space/")
 	})
 
-	_, err := api.GetSpaceID("DOCS")
+	_, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 
 	failing.Store(false)
 
-	id, err := api.GetSpaceID("DOCS")
+	id, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.NoError(t, err, "the next file must not inherit the outage")
 	assert.Equal(t, space.ID, id)
 }

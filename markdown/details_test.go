@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 		},
 	}
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -77,7 +78,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 }
 
 func TestDetailsWithFencedCodeBlock(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -93,7 +94,7 @@ func TestDetailsWithFencedCodeBlock(t *testing.T) {
 // tag literally. `<details>` inside backticks is content, not markup; the
 // transformer used to consume it and silently emit an empty <code></code>.
 func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -119,7 +120,7 @@ func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 // literal </details> that Confluence rejects with
 // "Error parsing xhtml: Unexpected close tag </details>".
 func TestDetailsWithBlankLines(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -163,7 +164,7 @@ func TestDetailsWithBlankLines(t *testing.T) {
 // Markdown semantics: the body stays a separate AST node, so inline markup in
 // it must still be converted rather than passed through literally.
 func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -180,7 +181,7 @@ func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
 // whole page otherwise -- and a closing tag with nothing open must not be
 // turned into a macro end.
 func TestDetailsMalformedStaysBalanced(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -213,7 +214,7 @@ func TestDetailsMalformedStaysBalanced(t *testing.T) {
 // TestDetailsInFencedCodeBlockIsLiteral ensures a documented example inside a
 // fenced code block is never converted into a macro.
 func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	cfg := types.MarkConfig{}
 
@@ -234,7 +235,7 @@ func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
 // A code sample is the one thing that must reach the page as written, and this
 // rewrote it and then failed the publish for it.
 func TestCDATAInsideDetailsSurvivesUnaltered(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	sample := "<![CDATA[if a > b then <br> done]]>"
@@ -256,7 +257,7 @@ func TestCDATAInsideDetailsSurvivesUnaltered(t *testing.T) {
 // TestCDATAWithoutAngleBracketStillWorks is the case that happened to survive
 // before, kept so the fix is not mistaken for the whole of the behaviour.
 func TestCDATAWithoutAngleBracketStillWorks(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	sample := "<![CDATA[plain sample]]>"

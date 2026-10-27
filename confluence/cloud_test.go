@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"context"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -53,17 +54,17 @@ func TestCloudKeepsItsFirstAnswer(t *testing.T) {
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	cloud, err := api.Cloud()
+	cloud, err := api.Cloud(context.Background())
 	assert.False(t, cloud)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unable to identify the Confluence platform")
 
 	refuse.Store(false)
 
-	cloud, err = api.Cloud()
+	cloud, err = api.Cloud(context.Background())
 	assert.False(t, cloud)
 	require.Error(t, err)
-	assert.False(t, api.IsCloud())
+	assert.False(t, api.IsCloud(context.Background()))
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/user/current"))
 }
 
@@ -79,7 +80,7 @@ func TestCloudTakesAUserWithNoPlatformForServer(t *testing.T) {
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	cloud, err := api.Cloud()
+	cloud, err := api.Cloud(context.Background())
 	require.NoError(t, err)
 	assert.False(t, cloud)
 }
@@ -99,19 +100,33 @@ func TestGetCurrentUserIsAskedOnce(t *testing.T) {
 	})
 	api := NewAPI(server.URL, "user", "token", false)
 
-	_, err := api.GetCurrentUser()
+	_, err := api.GetCurrentUser(context.Background())
 	require.Error(t, err)
 
 	refuse.Store(false)
 	before := server.CountRequests("GET", "/rest/api/user/current")
 
-	first, err := api.GetCurrentUser()
+	first, err := api.GetCurrentUser(context.Background())
 	require.NoError(t, err)
-	second, err := api.GetCurrentUser()
+	second, err := api.GetCurrentUser(context.Background())
 	require.NoError(t, err)
 
 	assert.Equal(t, before+1, server.CountRequests("GET", "/rest/api/user/current"),
 		"a failure is asked again, a success is reused")
 	assert.Equal(t, first, second)
 	assert.NotSame(t, first, second, "each caller gets its own copy")
+}
+
+// TestAnAPIWithoutAClientErrs: an API that NewAPI did not build has no client
+// to send a request with, and says so instead of dereferencing nil, whether
+// asked for the current user directly or through the platform probe.
+func TestAnAPIWithoutAClientErrs(t *testing.T) {
+	api := &API{}
+
+	_, err := api.GetCurrentUser(context.Background())
+	require.ErrorIs(t, err, errNoClient)
+
+	cloud, err := api.Cloud(context.Background())
+	require.ErrorIs(t, err, errNoClient)
+	assert.False(t, cloud)
 }

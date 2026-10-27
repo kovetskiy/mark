@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -44,7 +45,7 @@ func TestDetailsInlineContextsLiftSummaryToTitle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", types.MarkConfig{
@@ -64,7 +65,7 @@ func TestDetailsInlineContextsLiftSummaryToTitle(t *testing.T) {
 // A <details> with no summary must still produce a macro (without a title) and
 // must not swallow the surrounding inline content while looking for one.
 func TestDetailsInlineWithoutSummary(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(

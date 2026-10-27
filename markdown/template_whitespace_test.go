@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func compileWithTemplate(t *testing.T, name, template, document string) string {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(template), 0o600))
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := mark.CompileMarkdown([]byte(document), lib, "testdata/x.md",
@@ -73,7 +74,7 @@ func TestParameterHoldingAStringIsUntouched(t *testing.T) {
 // be read as Markdown blocks; a body ending in a list would otherwise swallow
 // the closing tags.
 func TestBodyWhitespaceIsPreserved(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := mark.CompileMarkdown([]byte(
@@ -90,7 +91,7 @@ func TestBodyWhitespaceIsPreserved(t *testing.T) {
 // TestBuiltinTemplateStillMatches: the built-in was already tight, being joined
 // with nothing between its lines, and must stay that way.
 func TestBuiltinTemplateStillMatches(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := mark.CompileMarkdown(

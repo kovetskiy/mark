@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -42,7 +43,7 @@ func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 
@@ -125,7 +126,7 @@ func TestOnOrphanDryRunActsOnNothing(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 
@@ -168,7 +169,7 @@ func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 
@@ -208,7 +209,7 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	one, err := api.FindPage("DOCS", "One", "page")
+	one, err := api.FindPage(context.Background(), "DOCS", "One", "page")
 	require.NoError(t, err)
 	require.NotNil(t, one)
 
@@ -248,10 +249,10 @@ func TestOrphanUnderLimitsScope(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	in, err := api.FindPage("DOCS", "In", "page")
+	in, err := api.FindPage(context.Background(), "DOCS", "In", "page")
 	require.NoError(t, err)
 	require.NotNil(t, in)
-	out, err := api.FindPage("DOCS", "Out", "page")
+	out, err := api.FindPage(context.Background(), "DOCS", "Out", "page")
 	require.NoError(t, err)
 	require.NotNil(t, out)
 
@@ -269,6 +270,7 @@ func TestOrphanUnderLimitsScope(t *testing.T) {
 // forgetting dropped everything -- so a page deliberately put out of scope was
 // announced and then lost track of anyway.
 func TestOrphanUnderScopesReportingToo(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
@@ -292,7 +294,7 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	out, err := api.FindPage("DOCS", "Out", "page")
+	out, err := api.FindPage(context.Background(), "DOCS", "Out", "page")
 	require.NoError(t, err)
 	require.NotNil(t, out)
 
@@ -303,11 +305,11 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 
 	store := manifest.NewStore(api)
 
-	_, inKnown, err := store.Lookup("DOCS", filepath.Join(dir, "in.md"))
+	_, inKnown, err := store.Lookup(ctx, "DOCS", filepath.Join(dir, "in.md"))
 	require.NoError(t, err)
 	assert.False(t, inKnown, "an in-scope orphan is reported once and forgotten")
 
-	_, outKnown, err := store.Lookup("DOCS", filepath.Join(dir, "out.md"))
+	_, outKnown, err := store.Lookup(ctx, "DOCS", filepath.Join(dir, "out.md"))
 	require.NoError(t, err)
 	assert.True(t, outKnown,
 		"a page put out of scope must still be remembered, not quietly dropped")
@@ -316,6 +318,7 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 // TestOrphanUnderWithoutScopeIsUnchanged: with no scope every tracked page is
 // mark's business, which is what it has always been.
 func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
+	ctx := t.Context()
 	server := confluencetest.New(t)
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
@@ -336,7 +339,7 @@ func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	_, known, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "gone.md"))
+	_, known, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "gone.md"))
 	require.NoError(t, err)
 	assert.False(t, known, "reported once and then forgotten, as before")
 }
@@ -369,7 +372,7 @@ func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 
@@ -407,7 +410,7 @@ func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 
@@ -462,7 +465,7 @@ func TestOrphanScopeIsCheckedOnce(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	gone, err := api.FindPage("DOCS", "Gone", "page")
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
 
@@ -511,10 +514,10 @@ func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
 	b := writeFile(t, dir, "b.md", markdownWithTitle("B"))
 	config := publishTracked(t, server, dir)
 
-	pageA, err := api.FindPage("DOCS", "A", "page")
+	pageA, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageA)
-	pageB, err := api.FindPage("DOCS", "B", "page")
+	pageB, err := api.FindPage(context.Background(), "DOCS", "B", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageB)
 
@@ -555,10 +558,10 @@ func TestDryRunStillReportsRealOrphans(t *testing.T) {
 	b := writeFile(t, dir, "b.md", markdownWithTitle("B"))
 	config := publishTracked(t, server, dir)
 
-	pageA, err := api.FindPage("DOCS", "A", "page")
+	pageA, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageA)
-	pageB, err := api.FindPage("DOCS", "B", "page")
+	pageB, err := api.FindPage(context.Background(), "DOCS", "B", "page")
 	require.NoError(t, err)
 	require.NotNil(t, pageB)
 
@@ -601,7 +604,7 @@ func TestTrackingReportsOrphansWithoutDeleting(t *testing.T) {
 	writeFile(t, dir, "drop.md", markdownWithTitle("Drop"))
 	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	dropped, err := api.FindPage("DOCS", "Drop", "page")
+	dropped, err := api.FindPage(context.Background(), "DOCS", "Drop", "page")
 	require.NoError(t, err)
 	require.NotNil(t, dropped)
 

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 func compileMath(t *testing.T, src string) string {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{

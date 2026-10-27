@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -59,12 +60,12 @@ func MergeProperties(global, document map[string]any) map[string]any {
 // Only what changed is written. A property holds a version that Confluence
 // increments on every write, so rewriting an unchanged value would fill its
 // history as surely as republishing an unchanged page fills the page's.
-func ApplyProperties(api *confluence.API, pageID string, properties map[string]any) error {
+func ApplyProperties(ctx context.Context, api *confluence.API, pageID string, properties map[string]any) error {
 	if len(properties) == 0 {
 		return nil
 	}
 
-	existing, err := api.ListContentProperties(pageID)
+	existing, err := api.ListContentProperties(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("unable to read properties of page %s: %w", pageID, err)
 	}
@@ -94,7 +95,7 @@ func ApplyProperties(api *confluence.API, pageID string, properties map[string]a
 		}
 
 		log.Info().Msgf("setting property %q of page %s", key, pageID)
-		if err := api.SetContentProperty(pageID, key, value, current[key]); err != nil {
+		if err := api.SetContentProperty(ctx, pageID, key, value, current[key]); err != nil {
 			return err
 		}
 	}

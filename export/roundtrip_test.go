@@ -1,6 +1,7 @@
 package export
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,7 +92,7 @@ func compile(t *testing.T, md, path string) string {
 func compileWith(t *testing.T, md, path string, features ...string) string {
 	t.Helper()
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := markdown.CompileMarkdown([]byte(md), lib, path, types.MarkConfig{

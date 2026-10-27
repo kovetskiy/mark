@@ -54,6 +54,7 @@
 package manifest
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -533,14 +534,14 @@ func (state *spaceState) buildIndexes() {
 // when it looks like one and something is there, by title in the space
 // otherwise. A page that cannot be found is an error rather than a fallback,
 // since the alternative is a manifest quietly kept somewhere else.
-func (s *Store) resolveManifestPage(spaceKey string) (string, error) {
+func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (string, error) {
 	if isNumeric(s.manifestPage) {
-		if found, err := s.api.GetPageByID(s.manifestPage); err == nil && found != nil {
+		if found, err := s.api.GetPageByID(ctx, s.manifestPage); err == nil && found != nil {
 			return found.ID, nil
 		}
 	}
 
-	found, err := s.api.FindPage(spaceKey, s.manifestPage, "page")
+	found, err := s.api.FindPage(ctx, spaceKey, s.manifestPage, "page")
 	if err != nil {
 		return "", fmt.Errorf("unable to find the manifest page %q in space %q: %w", s.manifestPage, spaceKey, err)
 	}
@@ -594,34 +595,35 @@ func isNumeric(s string) bool {
 
 // list fetches every property from whichever backend holds this space's
 // manifest. One request covers all shards.
-func (state *spaceState) list(api *confluence.API) ([]confluence.Property, error) {
+func (state *spaceState) list(ctx context.Context, api *confluence.API) ([]confluence.Property, error) {
 	switch state.backend {
 	case spaceProperties:
-		return api.ListSpaceProperties(state.spaceID)
+		return api.ListSpaceProperties(ctx, state.spaceID)
 	case pageProperties:
-		return api.ListPageProperties(state.contentID)
+		return api.ListPageProperties(ctx, state.contentID)
 	default:
-		return api.ListContentProperties(state.contentID)
+		return api.ListContentProperties(ctx, state.contentID)
 	}
 }
 
 // write stores one shard in whichever backend holds this space's manifest.
-func (state *spaceState) write(api *confluence.API, index int, value []byte) error {
-	return state.writeProperty(api, PropertyKeyFor(state.prefix, index), value, state.shards[index].property)
+func (state *spaceState) write(ctx context.Context, api *confluence.API, index int, value []byte) error {
+	return state.writeProperty(ctx, api, PropertyKeyFor(state.prefix, index), value, state.shards[index].property)
 }
 
 // writeProperty stores one property in whichever backend holds this space's
 // manifest.
 func (state *spaceState) writeProperty(
+	ctx context.Context,
 	api *confluence.API, key string, value []byte, existing *confluence.Property,
 ) error {
 	switch state.backend {
 	case spaceProperties:
-		return api.SetSpaceProperty(state.spaceID, key, value, existing)
+		return api.SetSpaceProperty(ctx, state.spaceID, key, value, existing)
 	case pageProperties:
-		return api.SetPageProperty(state.contentID, key, value, existing)
+		return api.SetPageProperty(ctx, state.contentID, key, value, existing)
 	default:
-		return api.SetContentProperty(state.contentID, key, value, existing)
+		return api.SetContentProperty(ctx, state.contentID, key, value, existing)
 	}
 }
 
@@ -633,13 +635,14 @@ func (state *spaceState) writeProperty(
 // mergeable from here, and losing the mapping is not worth failing a publish
 // that has already succeeded.
 func (state *spaceState) writeMapping(
+	ctx context.Context,
 	api *confluence.API,
 	spaceKey, key string,
 	value []byte,
 	existing *confluence.Property,
 	what string,
 ) (bool, error) {
-	if err := state.writeProperty(api, key, value, existing); err != nil {
+	if err := state.writeProperty(ctx, api, key, value, existing); err != nil {
 		if errors.Is(err, confluence.ErrPropertyUnseen) {
 			log.Warn().Err(err).Msgf(
 				"%s for space %q was not saved", what, spaceKey,
@@ -659,7 +662,7 @@ func (state *spaceState) writeMapping(
 }
 
 // load returns the state for a space, reading it from Confluence on first use.
-func (s *Store) load(spaceKey string) (*spaceState, error) {
+func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) {
 	if state, ok := s.spaces[spaceKey]; ok {
 		return state, nil
 	}
@@ -680,12 +683,12 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 	var err error
 	switch {
 	case s.manifestPage != "":
-		state.contentID, err = s.resolveManifestPage(spaceKey)
+		state.contentID, err = s.resolveManifestPage(ctx, spaceKey)
 		if err != nil {
 			return nil, err
 		}
 		state.backend = contentProperties
-		if s.api.IsCloud() {
+		if s.api.IsCloud(ctx) {
 			state.backend = pageProperties
 		}
 
@@ -693,23 +696,23 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 			return nil, err
 		}
 
-	case s.api.IsCloud():
+	case s.api.IsCloud(ctx):
 		state.backend = spaceProperties
-		state.spaceID, err = s.api.GetSpaceID(spaceKey)
+		state.spaceID, err = s.api.GetSpaceID(ctx, spaceKey)
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve space %q: %w", spaceKey, err)
 		}
 
 	default:
 		state.backend = contentProperties
-		homepage, err := s.api.FindHomePage(spaceKey)
+		homepage, err := s.api.FindHomePage(ctx, spaceKey)
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve home page of space %q: %w", spaceKey, err)
 		}
 		state.contentID = homepage.ID
 	}
 
-	properties, err := state.list(s.api)
+	properties, err := state.list(ctx, s.api)
 	if err != nil {
 		return nil, err
 	}
@@ -785,13 +788,13 @@ func (s *Store) load(spaceKey string) (*spaceState, error) {
 //
 // Calling it marks the path as seen, so a path that is looked up but turns out
 // to have no entry still counts as present for the purposes of Orphans.
-func (s *Store) Lookup(spaceKey, path string) (Entry, bool, error) {
+func (s *Store) Lookup(ctx context.Context, spaceKey, path string) (Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	path = Key(path)
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return Entry{}, false, err
 	}
@@ -803,13 +806,13 @@ func (s *Store) Lookup(spaceKey, path string) (Entry, bool, error) {
 
 // Record notes which page a source path published to, under which title and
 // with what source fingerprint.
-func (s *Store) Record(spaceKey, path, pageID, title, hash string) error {
+func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	path = Key(path)
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return err
 	}
@@ -941,11 +944,11 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 // Unlike Lookup it does not mark anything as seen: the path it answers for is
 // marked by its own Lookup, and the one it reads from is, by definition, not
 // part of this run.
-func (s *Store) LookupMoved(spaceKey, path, pageID string) (Entry, bool, error) {
+func (s *Store) LookupMoved(ctx context.Context, spaceKey, path, pageID string) (Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return Entry{}, false, err
 	}
@@ -978,7 +981,7 @@ func (s *Store) LookupMoved(spaceKey, path, pageID string) (Entry, bool, error) 
 //
 // Deliberately unforgiving beyond that. A match must be unique, and the page
 // must not already be claimed by another document this run.
-func (s *Store) ResolveRenamed(spaceKey, hash string) (string, Entry, bool, error) {
+func (s *Store) ResolveRenamed(ctx context.Context, spaceKey, hash string) (string, Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -986,7 +989,7 @@ func (s *Store) ResolveRenamed(spaceKey, hash string) (string, Entry, bool, erro
 		return "", Entry{}, false, nil
 	}
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return "", Entry{}, false, err
 	}
@@ -1023,13 +1026,13 @@ func (s *Store) ResolveRenamed(spaceKey, hash string) (string, Entry, bool, erro
 
 // Forget drops a recorded path, used when a document has been followed to its
 // new name and the old entry would otherwise linger as a deleted file forever.
-func (s *Store) Forget(spaceKey, path string) error {
+func (s *Store) Forget(ctx context.Context, spaceKey, path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	path = Key(path)
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return err
 	}
@@ -1060,7 +1063,7 @@ func (s *Store) Forget(spaceKey, path string) error {
 // has been recorded during it. A document is resolved against the state its
 // author was looking at, which is also the only state in which the old title
 // still exists.
-func (s *Store) ResolveStaleTitle(spaceKey, title string) (string, bool, error) {
+func (s *Store) ResolveStaleTitle(ctx context.Context, spaceKey, title string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1072,7 +1075,7 @@ func (s *Store) ResolveStaleTitle(spaceKey, title string) (string, bool, error) 
 	// that cannot be read is not the same as a title that was never published,
 	// and treating it as such would create a duplicate page because the network
 	// hiccuped -- the exact confusion this package exists to avoid.
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return "", false, err
 	}
@@ -1089,13 +1092,13 @@ func (s *Store) ResolveStaleTitle(spaceKey, title string) (string, bool, error) 
 // for having been edited in Confluence is still recorded as seen, but keeps the
 // version mark last wrote, so that every run reports the difference again. It
 // only updates an existing entry, so it has to follow Record, not replace it.
-func (s *Store) RecordVersion(spaceKey, path string, version int64) error {
+func (s *Store) RecordVersion(ctx context.Context, spaceKey, path string, version int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	path = Key(path)
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return err
 	}
@@ -1116,11 +1119,11 @@ func (s *Store) RecordVersion(spaceKey, path string, version int64) error {
 // RecordFolder notes which Confluence folder a declared folder path resolved
 // to. The path is the chain of titles from the document's headers, joined so
 // that the same chain under a different ancestor is a different key.
-func (s *Store) RecordFolder(spaceKey, folderPath, folderID string) error {
+func (s *Store) RecordFolder(ctx context.Context, spaceKey, folderPath, folderID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return err
 	}
@@ -1135,11 +1138,11 @@ func (s *Store) RecordFolder(spaceKey, folderPath, folderID string) error {
 }
 
 // LookupFolder returns the folder a declared folder path resolved to last time.
-func (s *Store) LookupFolder(spaceKey, folderPath string) (string, bool, error) {
+func (s *Store) LookupFolder(ctx context.Context, spaceKey, folderPath string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return "", false, err
 	}
@@ -1151,11 +1154,11 @@ func (s *Store) LookupFolder(spaceKey, folderPath string) (string, bool, error) 
 // RecordParent notes which Confluence page a declared parent chain resolved to.
 // The path is the chain of titles from the document's headers, joined so that
 // the same title at a different depth is a different key.
-func (s *Store) RecordParent(spaceKey, parentPath, pageID string) error {
+func (s *Store) RecordParent(ctx context.Context, spaceKey, parentPath, pageID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return err
 	}
@@ -1175,11 +1178,11 @@ func (s *Store) RecordParent(spaceKey, parentPath, pageID string) error {
 // the new title recorded alongside it. The old key still names the same page,
 // and a document that has not been updated to the new title is exactly the one
 // this exists for.
-func (s *Store) LookupParent(spaceKey, parentPath string) (string, bool, error) {
+func (s *Store) LookupParent(ctx context.Context, spaceKey, parentPath string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.load(spaceKey)
+	state, err := s.load(ctx, spaceKey)
 	if err != nil {
 		return "", false, err
 	}
@@ -1322,7 +1325,7 @@ func (s *Store) sortedSpaces() []string {
 //
 // A space that gained no new mapping is not written at all, so a repeat run over
 // unchanged files leaves the property -- and its version number -- alone.
-func (s *Store) Save() error {
+func (s *Store) Save(ctx context.Context) error {
 	if s.readOnly {
 		return nil
 	}
@@ -1343,6 +1346,7 @@ func (s *Store) Save() error {
 			}
 
 			written, err := state.writeMapping(
+				ctx,
 				s.api, spaceKey, FolderPropertyKeyFor(s.prefix), value, state.folderProperty, "folder mapping",
 			)
 			if err != nil {
@@ -1361,6 +1365,7 @@ func (s *Store) Save() error {
 			}
 
 			written, err := state.writeMapping(
+				ctx,
 				s.api, spaceKey, ParentPropertyKeyFor(s.prefix), value, state.parentProperty, "parent mapping",
 			)
 			if err != nil {
@@ -1393,7 +1398,7 @@ func (s *Store) Save() error {
 				)
 			}
 
-			if err := state.write(s.api, i, value); err != nil {
+			if err := state.write(ctx, s.api, i, value); err != nil {
 				if errors.Is(err, confluence.ErrPropertyUnseen) {
 					// Said differently from a plain conflict, and still not
 					// fatal: the other shards describe pages this one says

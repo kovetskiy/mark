@@ -1,6 +1,7 @@
 package mark_test
 
 import (
+	"context"
 	"testing"
 
 	mark "github.com/kovetskiy/mark/v16/markdown"
@@ -21,7 +22,7 @@ type footnoteV1Case struct {
 func assertFootnotesAsV1(t *testing.T, cases []footnoteV1Case) {
 	t.Helper()
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 
 	featureSets := []struct {

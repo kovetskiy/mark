@@ -13,6 +13,7 @@ import (
 // order and all have to move are the case that matters: each is placed
 // against the next, so none of them is ever anchored to a page that stays.
 func TestOrderChildrenReachesEveryPermutation(t *testing.T) {
+	ctx := t.Context()
 	names := []string{"A", "B", "C", "D"}
 
 	for _, perm := range permutations(names) {
@@ -34,7 +35,7 @@ func TestOrderChildrenReachesEveryPermutation(t *testing.T) {
 				want = append(want, ids[name])
 			}
 
-			if err := page.OrderChildren(api, false, wanted); err != nil {
+			if err := page.OrderChildren(ctx, api, false, wanted); err != nil {
 				t.Fatalf("OrderChildren: %v", err)
 			}
 

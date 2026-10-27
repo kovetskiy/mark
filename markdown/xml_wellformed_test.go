@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -96,7 +97,7 @@ func TestVoidElementsAreClosedInASplitDetails(t *testing.T) {
 // whole HTML block the moment one line in it names a layout directive, and the
 // replacement reached the page unrepaired for the same reason.
 func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	// One HTML block: it opens with a tag, so it runs to the blank line and
@@ -116,7 +117,7 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 // are ordinary HTML, and each made the page not well-formed XML, so it could
 // not be published at all.
 func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	for name, src := range map[string]string{

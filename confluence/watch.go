@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -13,22 +14,19 @@ import (
 
 // IsWatching reports whether user watches a page. An empty user is the
 // authenticated one; see watcher for how a name is read.
-func (api *API) IsWatching(pageID, user string) (bool, error) {
-	query, err := api.watcher(user)
+func (api *API) IsWatching(ctx context.Context, pageID, user string) (bool, error) {
+	query, err := api.watcher(ctx, user)
 	if err != nil {
 		return false, err
 	}
 
-	var result struct {
+	type watching struct {
 		Watching bool `json:"watching"`
 	}
 
-	request, err := api.v1().Res("user/watch/content/"+pageID, &result).Get(query)
+	result, err := get[watching](ctx, api.v1, []string{"user", "watch", "content", pageID}, query)
 	if err != nil {
-		return false, newTransportError(request, "read who watches "+pageID, err)
-	}
-	if request.Raw.StatusCode != http.StatusOK {
-		return false, newErrorStatusNotOK(request)
+		return false, requestError("read who watches "+pageID, err)
 	}
 
 	return result.Watching, nil
@@ -36,41 +34,31 @@ func (api *API) IsWatching(pageID, user string) (bool, error) {
 
 // WatchPage makes user watch a page, so that Confluence notifies them of its
 // changes. Anyone but the authenticated user takes space administration.
-func (api *API) WatchPage(pageID, user string) error {
-	return api.changeWatch(http.MethodPost, pageID, user)
+func (api *API) WatchPage(ctx context.Context, pageID, user string) error {
+	return api.changeWatch(ctx, http.MethodPost, pageID, user)
 }
 
 // UnwatchPage stops user watching a page.
-func (api *API) UnwatchPage(pageID, user string) error {
-	return api.changeWatch(http.MethodDelete, pageID, user)
+func (api *API) UnwatchPage(ctx context.Context, pageID, user string) error {
+	return api.changeWatch(ctx, http.MethodDelete, pageID, user)
 }
 
-func (api *API) changeWatch(method, pageID, user string) error {
-	query, err := api.watcher(user)
+func (api *API) changeWatch(ctx context.Context, method, pageID, user string) error {
+	query, err := api.watcher(ctx, user)
 	if err != nil {
 		return err
 	}
 
-	resource := api.v1().Res("user/watch/content/"+pageID, &struct{}{})
-	resource.SetQuery(query)
 	// Server and Data Center refuse both without it, as a cross-site request.
-	resource.SetHeader("X-Atlassian-Token", "no-check")
+	header := http.Header{"X-Atlassian-Token": {"no-check"}}
 
-	send := resource.Post
-	if method == http.MethodDelete {
-		send = resource.Delete
-	}
-	request, err := send()
+	// Through do rather than send: the answer is a 204 with nothing in it.
+	_, err = api.v1.do(ctx, header, method, []string{"user", "watch", "content", pageID}, query, nil, &struct{}{})
 	if err != nil {
-		return newTransportError(request, fmt.Sprintf("change who watches %s", pageID), err)
+		return requestError(fmt.Sprintf("change who watches %s", pageID), err)
 	}
 
-	switch request.Raw.StatusCode {
-	case http.StatusNoContent, http.StatusOK:
-		return nil
-	default:
-		return newErrorStatusNotOK(request)
-	}
+	return nil
 }
 
 // watcher is the query naming user to the watch endpoints, or nil for the
@@ -78,17 +66,17 @@ func (api *API) changeWatch(method, pageID, user string) error {
 // needs no administration. Cloud takes an accountId, so a name has to match
 // one user exactly, as for restrictions; Server and Data Center take the
 // username as it is.
-func (api *API) watcher(user string) (map[string]string, error) {
+func (api *API) watcher(ctx context.Context, user string) (url.Values, error) {
 	if user == "" {
 		return nil, nil
 	}
 
-	cloud, err := api.Cloud()
+	cloud, err := api.Cloud(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	current, err := api.GetCurrentUser()
+	current, err := api.GetCurrentUser(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve the authenticated user to tell watcher %q apart from it: %w", user, err)
 	}
@@ -97,10 +85,10 @@ func (api *API) watcher(user string) (map[string]string, error) {
 		if current.isNamed(user) {
 			return nil, nil
 		}
-		return map[string]string{"username": user}, nil
+		return url.Values{"username": {user}}, nil
 	}
 
-	id, err := api.accountIDOf("watcher", user, current)
+	id, err := api.accountIDOf(ctx, "watcher", user, current)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +96,7 @@ func (api *API) watcher(user string) (map[string]string, error) {
 		return nil, nil
 	}
 
-	return map[string]string{"accountId": id}, nil
+	return url.Values{"accountId": {id}}, nil
 }
 
 // watchState is whether the authenticated user watched a page before mark
@@ -128,7 +116,7 @@ const (
 // UnwatchWritten. Only the first write counts: by the second, mark's own write
 // has made them a watcher. Once a read is refused the credentials, the rest
 // are recorded unread without asking.
-func (api *API) watchBeforeWrite(pageID string) {
+func (api *API) watchBeforeWrite(ctx context.Context, pageID string) {
 	if !api.Unwatch {
 		return
 	}
@@ -146,8 +134,11 @@ func (api *API) watchBeforeWrite(pageID string) {
 	}
 
 	state := wasUnwatched
-	watching, err := api.IsWatching(pageID, "")
+	watching, err := api.IsWatching(ctx, pageID, "")
 	switch {
+	case IsCancellation(err):
+		// No answer, and no write follows it under a stopped run.
+		return
 	case err != nil:
 		log.Debug().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
 		state = wasUnread
@@ -254,12 +245,12 @@ func warnStayWatched(format string, pages []string, total int, err error) {
 // one landed is not asked: it is sent again either way.
 func (api *API) unwatchWritten(ctx context.Context, pageID string) error {
 	send := func() (struct{}, error) {
-		return struct{}{}, api.UnwatchPage(pageID, "")
+		return struct{}{}, api.UnwatchPage(ctx, pageID, "")
 	}
 	resend := func() (struct{}, bool, error) {
 		return struct{}{}, false, nil
 	}
 
-	_, err := retryUnavailableContext(ctx, api, "stop watching page "+pageID, send, resend)
+	_, err := retryUnavailable(ctx, api, "stop watching page "+pageID, send, resend)
 	return err
 }

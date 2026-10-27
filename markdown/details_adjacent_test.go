@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ import (
 // What makes it worth a test of its own is that the result is well-formed, so
 // nothing downstream objects: the page publishes, wrong, in silence.
 func TestAdjacentDetailsDoNotNest(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	// Distinctive words, because a letter of their own would match inside the
@@ -56,7 +57,7 @@ func TestAdjacentDetailsDoNotNest(t *testing.T) {
 // TestAdjacentDetailsOnOneLineStillPublishBoth is the same shape without the
 // blank lines, where the fragments are whole rather than split.
 func TestAdjacentDetailsOnOneLineStillPublishBoth(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	document := "<details><summary>a</summary>\nb\n</details>\n" +

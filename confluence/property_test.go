@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func TestListContentPropertiesReadsEveryPage(t *testing.T) {
 		server.SetSpaceProperty(page.ID, fmt.Sprintf("key-%03d", i), []byte(`"v"`))
 	}
 
-	properties, err := api.ListContentProperties(page.ID)
+	properties, err := api.ListContentProperties(context.Background(), page.ID)
 	require.NoError(t, err)
 	assert.Len(t, properties, total, "every page of the collection has to be read")
 
@@ -55,7 +56,7 @@ func TestListSpacePropertiesFollowsTheCursor(t *testing.T) {
 		server.SetSpaceProperty(space.ID, fmt.Sprintf("key-%03d", i), []byte(`"v"`))
 	}
 
-	properties, err := api.ListSpaceProperties(space.ID)
+	properties, err := api.ListSpaceProperties(context.Background(), space.ID)
 	require.NoError(t, err)
 	assert.Len(t, properties, total)
 
@@ -72,11 +73,11 @@ func TestListPropertiesOnAnEmptyOwnerIsNotAnError(t *testing.T) {
 	space := server.AddSpace("DOCS")
 	page := server.AddPage("DOCS", "Home", "page", "")
 
-	spaceProperties, err := api.ListSpaceProperties(space.ID)
+	spaceProperties, err := api.ListSpaceProperties(context.Background(), space.ID)
 	require.NoError(t, err)
 	assert.Empty(t, spaceProperties)
 
-	contentProperties, err := api.ListContentProperties(page.ID)
+	contentProperties, err := api.ListContentProperties(context.Background(), page.ID)
 	require.NoError(t, err)
 	assert.Empty(t, contentProperties)
 }
@@ -97,13 +98,13 @@ func TestCreatingAPropertyThatAlreadyExistsIsLoud(t *testing.T) {
 	server.SetSpaceProperty(page.ID, "mark:manifest:0", []byte(`{"v":1}`))
 
 	// existing == nil is the caller saying "the listing showed no such key".
-	err := api.SetSpaceProperty(space.ID, "mark:manifest:0", []byte(`{"v":2}`), nil)
+	err := api.SetSpaceProperty(context.Background(), space.ID, "mark:manifest:0", []byte(`{"v":2}`), nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, confluence.ErrPropertyUnseen)
 	assert.NotErrorIs(t, err, confluence.ErrPropertyConflict,
 		"a caller that treats this as a lost race carries on losing the data")
 
-	err = api.SetContentProperty(page.ID, "mark:manifest:0", []byte(`{"v":2}`), nil)
+	err = api.SetContentProperty(context.Background(), page.ID, "mark:manifest:0", []byte(`{"v":2}`), nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, confluence.ErrPropertyUnseen)
 }
@@ -122,7 +123,7 @@ func TestStalePropertyUpdateStaysAConflict(t *testing.T) {
 	stale := &confluence.Property{ID: stored.ID, Key: stored.Key}
 	stale.Version.Number = stored.Version
 
-	err := api.SetSpaceProperty(space.ID, "mark:manifest:0", []byte(`{"v":3}`), stale)
+	err := api.SetSpaceProperty(context.Background(), space.ID, "mark:manifest:0", []byte(`{"v":3}`), stale)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, confluence.ErrPropertyConflict)
 	assert.NotErrorIs(t, err, confluence.ErrPropertyUnseen)
@@ -155,7 +156,7 @@ func TestListingContinuesPastAShortPageWithANextLink(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	properties, err := api.ListContentProperties("1")
+	properties, err := api.ListContentProperties(context.Background(), "1")
 	require.NoError(t, err)
 
 	assert.Len(t, properties, 2, "the second page has to be read")
@@ -178,7 +179,7 @@ func TestListingStopsWithoutANextLink(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	properties, err := api.ListContentProperties("1")
+	properties, err := api.ListContentProperties(context.Background(), "1")
 	require.NoError(t, err)
 
 	assert.Len(t, properties, 1)

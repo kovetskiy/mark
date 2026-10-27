@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -208,7 +209,7 @@ const widthMacroForTest = `<!-- Macro: \!\[.*\]\((.+)\)\<\!\-\- width=(.*) \-\-\
 func compileWidthMacro(t *testing.T, dir, value string) (string, []attachment.Attachment, string) {
 	t.Helper()
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	var logged bytes.Buffer

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestInlineMacro(t *testing.T) {
 		"<p>{{ \\\"${1}\\\" | xmlesc }}</p></ac:rich-text-body></ac:structured-macro>\" -->\n\n" +
 		"SAY(helm uses {{ .Values.x }} & more)\n"
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	input := []byte(doc)

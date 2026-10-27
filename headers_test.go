@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -253,7 +254,7 @@ func propertiesFixture(t *testing.T, doc string, config func(*Config)) (*conflue
 	require.NoError(t, Run(cfg))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -506,7 +507,7 @@ func TestSynchronizedFalseHeaderSkipsTheFile(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Draft", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
 }
@@ -526,7 +527,7 @@ func TestSynchronizedFalseFrontMatterSkipsTheFile(t *testing.T) {
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Draft", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
 }
@@ -553,7 +554,7 @@ func TestSynchronizedTrueAndAbsentBothPublish(t *testing.T) {
 			}))
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			page, err := api.FindPage("DOCS", "Doc", "page")
+			page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 			require.NoError(t, err)
 			assert.NotNil(t, page)
 		})
@@ -586,7 +587,7 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 	require.NoError(t, Run(config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	published, err := api.FindPage("DOCS", "Draft", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -598,7 +599,7 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 	// a duplicate the next time it publishes.
 	require.NotNil(t, server.Page(published.ID))
 
-	entry, ok, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "draft.md"))
+	entry, ok, err := manifest.NewStore(api).Lookup(context.Background(), "DOCS", filepath.Join(dir, "draft.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the page mapping must survive a document opting out")
 	assert.Equal(t, published.ID, entry.PageID)
@@ -691,7 +692,7 @@ Some content.
 
 	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 
@@ -728,7 +729,7 @@ Some content.
 
 	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 

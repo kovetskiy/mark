@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -316,7 +317,7 @@ func TestMovedDocumentKeepsItsPage(t *testing.T) {
 	config.OnOrphan = "delete"
 	require.NoError(t, Run(config))
 
-	before, err := api.FindPage("DOCS", "Moved", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 
@@ -348,7 +349,7 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 	config.NoOverwrite = true
 	require.NoError(t, Run(config))
 
-	published, err := api.FindPage("DOCS", "Moved", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -473,7 +474,7 @@ func TestATrackedPageIsMovedWhenItsFirstParentIsTheHomePage(t *testing.T) {
 	}
 	require.NoError(t, Run(config))
 
-	published, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage("DOCS", "Doc", "page")
+	published, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -505,7 +506,7 @@ func TestRenamedParentIsFollowedNotRecreated(t *testing.T) {
 	glob := filepath.Join(dir, "*.md")
 	require.NoError(t, Run(trackingConfig(server, glob)))
 
-	parentPage, err := api.FindPage("DOCS", "Guide", "page")
+	parentPage, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parentPage)
 
@@ -519,7 +520,7 @@ func TestRenamedParentIsFollowedNotRecreated(t *testing.T) {
 		"no empty page should have been created under the old title")
 
 	child, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Child", "page")
+		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
 	assert.Equal(t, parentPage.ID, server.Page(child.ID).ParentID,
@@ -562,7 +563,7 @@ func TestRenamedHandMadeParentIsFollowedNotRecreated(t *testing.T) {
 		"no empty page should have been created under the old title")
 
 	child, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Child", "page")
+		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
 	assert.Equal(t, guide.ID, server.Page(child.ID).ParentID,
@@ -589,7 +590,7 @@ func TestRenamedHandMadeParentDuplicatesWithoutTracking(t *testing.T) {
 		"without tracking an empty page appears under the old title")
 
 	child, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Child", "page")
+		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
 	assert.NotEqual(t, guide.ID, server.Page(child.ID).ParentID,
@@ -607,7 +608,7 @@ func TestParentCreatedByMarkIsFollowedAfterRename(t *testing.T) {
 	require.NoError(t, Run(trackingConfig(server, file)))
 
 	created, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Brand New Parent", "page")
+		FindPage(context.Background(), "DOCS", "Brand New Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, created)
 
@@ -628,7 +629,7 @@ func TestRenamedParentChainIsFollowedAtEveryLevel(t *testing.T) {
 	dir := t.TempDir()
 
 	top, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Parent", "page")
+		FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	guide := handMadeParent(t, server, "Guide")
 
@@ -645,7 +646,7 @@ func TestRenamedParentChainIsFollowedAtEveryLevel(t *testing.T) {
 		"and so should the level below it, whose key is unaffected by the rewrite above")
 
 	child, err := confluence.NewAPI(server.URL, "user", "token", false).
-		FindPage("DOCS", "Child", "page")
+		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
 	assert.Equal(t, guide.ID, server.Page(child.ID).ParentID,
@@ -682,7 +683,7 @@ func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 	}
 	require.NoError(t, Run(config))
 
-	published, err := api.FindPage("DOCS", "Doc", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -762,7 +763,7 @@ func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 	}
 	require.NoError(t, Run(config))
 
-	published, err := api.FindPage("DOCS", "Doc", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -795,12 +796,12 @@ func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 	}
 	require.NoError(t, Run(config))
 
-	published, err := api.FindPage("DOCS", "Doc", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
 	// Somebody nests it one level deeper, which the headers do not contradict.
-	require.NoError(t, api.MoveContentAppend(published.ID, extra.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), published.ID, extra.ID))
 
 	writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc Renamed"))
 	require.NoError(t, Run(config))

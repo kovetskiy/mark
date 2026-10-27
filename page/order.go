@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -30,7 +31,7 @@ type Ordered struct {
 // that reissued every move each time would fill page histories with churn and
 // make the feature unusable in CI. A run that changes nothing performs no
 // writes at all.
-func OrderChildren(api *confluence.API, dryRun bool, pages []Ordered) error {
+func OrderChildren(ctx context.Context, api *confluence.API, dryRun bool, pages []Ordered) error {
 	byParent := map[string][]Ordered{}
 	for _, p := range pages {
 		if p.ParentID == "" {
@@ -55,7 +56,7 @@ func OrderChildren(api *confluence.API, dryRun bool, pages []Ordered) error {
 	sort.Strings(parents)
 
 	for _, parent := range parents {
-		if err := orderUnder(api, dryRun, parent, byParent[parent]); err != nil {
+		if err := orderUnder(ctx, api, dryRun, parent, byParent[parent]); err != nil {
 			return err
 		}
 	}
@@ -63,7 +64,7 @@ func OrderChildren(api *confluence.API, dryRun bool, pages []Ordered) error {
 	return nil
 }
 
-func orderUnder(api *confluence.API, dryRun bool, parentID string, wanted []Ordered) error {
+func orderUnder(ctx context.Context, api *confluence.API, dryRun bool, parentID string, wanted []Ordered) error {
 	if len(wanted) < 2 {
 		// A single page has nothing to be ordered against, and moving it would
 		// only disturb whatever it currently sits beside.
@@ -79,7 +80,7 @@ func orderUnder(api *confluence.API, dryRun bool, parentID string, wanted []Orde
 		return wanted[i].Title < wanted[j].Title
 	})
 
-	children, err := api.GetChildPages(parentID)
+	children, err := api.GetChildPages(ctx, parentID)
 	if err != nil {
 		return err
 	}
@@ -148,9 +149,9 @@ func orderUnder(api *confluence.API, dryRun bool, parentID string, wanted []Orde
 
 		var err error
 		if before {
-			err = api.MoveContentBefore(wanted[i].PageID, neighbour.PageID)
+			err = api.MoveContentBefore(ctx, wanted[i].PageID, neighbour.PageID)
 		} else {
-			err = api.MoveContentAfter(wanted[i].PageID, neighbour.PageID)
+			err = api.MoveContentAfter(ctx, wanted[i].PageID, neighbour.PageID)
 		}
 		if err != nil {
 			return fmt.Errorf("unable to order page %q: %w", wanted[i].Title, err)

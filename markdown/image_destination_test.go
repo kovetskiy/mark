@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,7 +47,7 @@ func TestLocalImageDestinationIsDecoded(t *testing.T) {
 		t.Run(tc.markdown, func(t *testing.T) {
 			doc := imageDocument(t, "my file.png", "my_file.png")
 
-			std, err := stdlib.New(nil)
+			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
 			out, attachments, err := CompileMarkdown([]byte(tc.markdown), std, doc, types.MarkConfig{})
@@ -66,7 +67,7 @@ func TestLocalImageDestinationIsDecoded(t *testing.T) {
 func TestLocalImageWithALiteralPercentIsStillFound(t *testing.T) {
 	doc := imageDocument(t, "100%25.png")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("![a](100%25.png)\n"), std, doc, types.MarkConfig{})
@@ -77,7 +78,7 @@ func TestLocalImageWithALiteralPercentIsStillFound(t *testing.T) {
 
 // A remote URL is left as it is: percent-encoding is part of what it says.
 func TestRemoteImageDestinationKeepsItsEncoding(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("![a](https://example.com/my%20file.png)\n"), std, "test.md", types.MarkConfig{})
@@ -90,7 +91,7 @@ func TestRemoteImageDestinationKeepsItsEncoding(t *testing.T) {
 // were escaped as written, so the backslashes stayed and an entity reference
 // was escaped a second time.
 func TestImageTitleAndAltAreUnescapedOnce(t *testing.T) {
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
@@ -127,7 +128,7 @@ func TestDeclaredAttachmentMatchesADecodedImageDestination(t *testing.T) {
 		return ""
 	}
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("![a](my%20file.png)\n"), std, "test.md",

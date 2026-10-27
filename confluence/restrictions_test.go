@@ -1,6 +1,7 @@
 package confluence_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,14 +21,14 @@ func restrict(
 ) (*confluence.RestrictionPlan, *confluencetest.Page) {
 	t.Helper()
 
-	resolved, err := api.ResolveRestrictions(declared)
+	resolved, err := api.ResolveRestrictions(context.Background(), declared)
 	require.NoError(t, err)
-	plan, err := api.PlanRestrictions(page, resolved, lockUpdates, false)
+	plan, err := api.PlanRestrictions(context.Background(), page, resolved, lockUpdates, false)
 	require.NoError(t, err)
 
-	require.NoError(t, api.ApplyInterim(plan))
+	require.NoError(t, api.ApplyInterim(context.Background(), plan))
 	interim := server.Page(page.ID)
-	require.NoError(t, api.ApplyFinal(plan))
+	require.NoError(t, api.ApplyFinal(context.Background(), plan))
 
 	return plan, interim
 }
@@ -48,7 +49,7 @@ func TestRestrictionsRefuseWithoutTheCurrentUser(t *testing.T) {
 	api, server, _ := newCloudRestrictAPIWithoutCurrentUser(t)
 	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
 
-	_, err := api.ResolveRestrictions([]confluence.PageRestriction{{Operation: "read", Users: []string{"Alice Example"}}})
+	_, err := api.ResolveRestrictions(context.Background(), []confluence.PageRestriction{{Operation: "read", Users: []string{"Alice Example"}}})
 	require.ErrorContains(t, err, "could lock it out")
 	assert.Zero(t, server.CountRequests(http.MethodPut, "/restriction"))
 }
@@ -105,7 +106,7 @@ func TestRestrictionsMatchANameExactly(t *testing.T) {
 	server.AddUser(confluencetest.User{AccountID: "acct-jane", FullName: "Jane Doe"})
 
 	resolve := func(name string) error {
-		_, err := api.ResolveRestrictions([]confluence.PageRestriction{{Operation: "read", Users: []string{name}}})
+		_, err := api.ResolveRestrictions(context.Background(), []confluence.PageRestriction{{Operation: "read", Users: []string{name}}})
 		return err
 	}
 
@@ -182,7 +183,7 @@ func TestRestrictionsUnchangedSendNothing(t *testing.T) {
 // for an update the document lifts.
 func TestRestrictionsKeepTheEditLock(t *testing.T) {
 	api, server, page := newCloudRestrictAPI(t)
-	require.NoError(t, api.RestrictPageUpdates(page, ""))
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
 
 	_, interim := restrict(t, api, server, page, true,
 		confluence.PageRestriction{Operation: "update"},
@@ -204,9 +205,9 @@ func TestRestrictionsRefuseAPartialList(t *testing.T) {
 		return 0, "", false
 	})
 
-	resolved, err := api.ResolveRestrictions([]confluence.PageRestriction{{Operation: "read", Groups: []string{"hr"}}})
+	resolved, err := api.ResolveRestrictions(context.Background(), []confluence.PageRestriction{{Operation: "read", Groups: []string{"hr"}}})
 	require.NoError(t, err)
-	_, err = api.PlanRestrictions(page, resolved, false, false)
+	_, err = api.PlanRestrictions(context.Background(), page, resolved, false, false)
 	require.ErrorContains(t, err, "more read restrictions than one request returns")
 	assert.Zero(t, server.CountRequests(http.MethodPut, "/restriction"))
 }

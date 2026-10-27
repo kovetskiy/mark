@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestIncludedDefinesStayWithTheirFragment(t *testing.T) {
 		"b/frag.md": `{{ define "hdr" }}header-b{{ end }}{{ template "hdr" }}` + "\n",
 	})
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	doc := []byte("<!-- Include: frag.md -->\n")
@@ -62,7 +63,7 @@ func TestIncludedDefinesServeTheRestOfThePage(t *testing.T) {
 
 	doc := []byte("<!-- Include: macros.md -->\n\n# Doc\n\nsee BOX-hello\n\n<!-- Include: later.md\ntext: sibling -->\n")
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(doc, lib, filepath.Join(dir, "doc.md"), types.MarkConfig{})
@@ -81,7 +82,7 @@ func TestIncludedDefineDoesNotReplaceStdlib(t *testing.T) {
 		"a/frag.md": `{{ define "ac:box" }}HIJACKED{{ end }}{{ template "ac:box" }}` + "\n",
 	})
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("<!-- Include: frag.md -->\n"), lib, filepath.Join(dir, "a/one.md"), types.MarkConfig{})
@@ -103,7 +104,7 @@ func TestIncludedDefineReachesNestedInclude(t *testing.T) {
 		"inner.md": `[{{ template "hdr" }}]` + "\n",
 	})
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("<!-- Include: outer.md -->\n"), lib, filepath.Join(dir, "page.md"), types.MarkConfig{})
@@ -119,7 +120,7 @@ func TestInlineMacroDefineDoesNotReplaceStdlib(t *testing.T) {
 		"     inline: '{{ define \"ac:box\" }}HIJACKED{{ end }}{{ template \"ac:box\" }}' -->\n\n" +
 		"BOX\n"
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(macroPage), lib, filepath.Join(t.TempDir(), "a.md"), types.MarkConfig{})

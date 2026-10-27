@@ -2,6 +2,7 @@ package confluence_test
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,10 +18,10 @@ import (
 func TestAttachmentUploadAnswers(t *testing.T) {
 	upload := map[string]func(*confluence.API) (confluence.AttachmentInfo, error){
 		"create": func(api *confluence.API) (confluence.AttachmentInfo, error) {
-			return api.CreateAttachment("123", "diagram.png", "c", bytes.NewReader([]byte("v1")))
+			return api.CreateAttachment(context.Background(), "123", "diagram.png", "c", bytes.NewReader([]byte("v1")))
 		},
 		"update": func(api *confluence.API) (confluence.AttachmentInfo, error) {
-			return api.UpdateAttachment("123", "att456", "diagram.png", "c", bytes.NewReader([]byte("v2")))
+			return api.UpdateAttachment(context.Background(), "123", "att456", "diagram.png", "c", bytes.NewReader([]byte("v2")))
 		},
 	}
 
