@@ -1191,7 +1191,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 						others = append(others, "it would be moved under the parent its headers declare")
 					}
 
-					add, del, err := labelChanges(api, previewed, meta.Labels, config.AppendLabels)
+					add, del, err := api.LabelChanges(previewed, meta.Labels, config.AppendLabels)
 					if err != nil {
 						return nil, nil, err
 					}
@@ -1647,7 +1647,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	}
 
 	if meta != nil {
-		if err := updateLabels(api, target, labels, config.AppendLabels); err != nil {
+		if err := api.UpdateLabels(target, labels, config.AppendLabels); err != nil {
 			return nil, nil, err
 		}
 	}
