@@ -6,11 +6,9 @@ import (
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // formulas parses source and returns every formula found, in order, as
@@ -18,11 +16,11 @@ import (
 func formulas(t *testing.T, source string) []string {
 	t.Helper()
 
-	md := goldmark.New(goldmark.WithParserOptions(
+	md := parser.New(
 		parser.WithInlineParsers(util.Prioritized(cparser.NewMathParser(), 99)),
-	))
+	)
 
-	doc := md.Parser().Parse(text.NewReader([]byte(source)))
+	doc := md.Parse([]byte(source))
 
 	var found []string
 	require.NoError(t, ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {

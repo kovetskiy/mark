@@ -1,11 +1,11 @@
 package renderer
 
 import (
-	"github.com/yuin/goldmark/ast"
-	ext_ast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // ConfluenceDefinitionListRenderer publishes a definition list as a two-column
@@ -22,7 +22,7 @@ import (
 // this shape, and it is what the elements mean: the term is a heading for its
 // row, the definition is the row's content.
 type ConfluenceDefinitionListRenderer struct {
-	html.Config
+	htmlOptions
 
 	// open holds one frame per definition list currently being written, and
 	// only the innermost is ever written to.
@@ -45,23 +45,24 @@ type listRow struct {
 	inCell bool
 }
 
-func NewConfluenceDefinitionListRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceDefinitionListRenderer{
-		Config: html.NewConfig(),
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+func NewConfluenceDefinitionListRenderer(opts ...html.Option) html.Extension {
+	r := &ConfluenceDefinitionListRenderer{}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-func (r *ConfluenceDefinitionListRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ext_ast.KindDefinitionList, r.renderList)
-	reg.Register(ext_ast.KindDefinitionTerm, r.renderTerm)
-	reg.Register(ext_ast.KindDefinitionDescription, r.renderDescription)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceDefinitionListRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ext_ast.KindDefinitionList:        nodeRenderer(r.renderList),
+		ext_ast.KindDefinitionTerm:        nodeRenderer(r.renderTerm),
+		ext_ast.KindDefinitionDescription: nodeRenderer(r.renderDescription),
+	})}
 }
 
-func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDefinitionListRenderer) renderList(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		r.open = append(r.open, listRow{})
 
@@ -88,7 +89,7 @@ func (r *ConfluenceDefinitionListRenderer) current() *listRow {
 	return &r.open[len(r.open)-1]
 }
 
-func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if entering {
 		// A term begins a row, so whatever row is open ends here.
 		r.closeRow(w)
@@ -106,7 +107,7 @@ func (r *ConfluenceDefinitionListRenderer) renderTerm(w util.BufWriter, source [
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceDefinitionListRenderer) renderDescription(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceDefinitionListRenderer) renderDescription(w util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}

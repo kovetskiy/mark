@@ -7,9 +7,9 @@ import (
 
 	"github.com/kovetskiy/mark/v16/stdlib"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 	"golang.org/x/net/html"
 )
 
@@ -60,7 +60,7 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 			// the time this one walks the tree those bytes are no longer in a
 			// node this switch would otherwise recognise. They are still the
 			// author's markup and still have to be well-formed.
-			if _, ok := node.Attribute(replacementContent); ok {
+			if _, ok := node.Attribute(ReplacementContentAttribute); ok {
 				nodes = append(nodes, node)
 			}
 		}
@@ -73,14 +73,9 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 	for _, node := range nodes {
 		// Repaired in place: the bytes are held on the attribute rather than in
 		// the source, and the node is already what the renderer expects.
-		if existing, ok := node.Attribute(replacementContent); ok {
-			raw, ok := existing.([]byte)
-			if !ok {
-				continue
-			}
-
-			if fixed, changed := wellFormedHTML(raw); changed {
-				node.SetAttribute(replacementContent, fixed)
+		if existing, ok := node.Attribute(ReplacementContentAttribute); ok {
+			if fixed, changed := wellFormedHTML([]byte(existing.Str(source))); changed {
+				SetAttributeText(node, ReplacementContentAttribute, string(fixed))
 			}
 
 			continue
@@ -96,24 +91,16 @@ func (t *XMLWellFormedTransformer) Transform(doc *ast.Document, reader text.Read
 			continue
 		}
 
-		// SetCode, because the replacement is storage format already: a plain
-		// or "raw" string goes through Writer.RawWrite, which would escape the
-		// very markup being repaired.
-		replacement := ast.NewString(fixed)
-		replacement.SetCode(true)
-
-		parent.InsertBefore(parent, node, replacement)
-		parent.RemoveChild(parent, node)
+		// Verbatim, because the replacement is storage format already: written
+		// as text it would be escaped, the very markup being repaired with it.
+		parent.InsertBefore(node, newVerbatim(fixed))
+		parent.RemoveChild(node)
 	}
 }
 
 var (
 	cdataOpen  = []byte("<![CDATA[")
 	cdataClose = []byte("]]>")
-
-	// replacementContent is the attribute an earlier transformer leaves its
-	// rewritten markup on. See renderer/text.go, which writes it out as-is.
-	replacementContent = []byte("replacement-content")
 )
 
 // wellFormedHTML returns raw with void elements closed and comment bodies made

@@ -336,3 +336,13 @@ func TestDecodeTinyLinkID(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"A" is not`, "the error quotes the code as it was given")
 }
+
+// TestHeadingAnchorReadsTheAttributeBlock: the ids another document's headings
+// are matched against are the ones its page gets, attribute blocks included,
+// so a link to api.md#custom finds "## Other {#custom}".
+func TestHeadingAnchorReadsTheAttributeBlock(t *testing.T) {
+	document := []byte("## Other {#custom}\n\n## GET /users/{id}\n")
+
+	assert.Equal(t, "custom", headingAnchor(document, "custom"))
+	assert.Equal(t, "GET-/users/id", headingAnchor(document, "get-users-id"))
+}

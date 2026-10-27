@@ -5,36 +5,38 @@ import (
 
 	"github.com/kovetskiy/mark/v16/stdlib"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/renderer"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 type ConfluenceCodeBlockRenderer struct {
-	html.Config
+	htmlOptions
+
 	Stdlib *stdlib.Lib
 }
 
 // NewConfluenceCodeBlockRenderer creates a renderer for indented code blocks.
-func NewConfluenceCodeBlockRenderer(stdlib *stdlib.Lib, opts ...html.Option) renderer.NodeRenderer {
+func NewConfluenceCodeBlockRenderer(stdlib *stdlib.Lib, opts ...html.Option) html.Extension {
 	r := &ConfluenceCodeBlockRenderer{
-		Config: html.NewConfig(),
 		Stdlib: stdlib,
 	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
+	r.htmlOptions = newHTMLOptions(opts)
 	return r
 }
 
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceCodeBlockRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindCodeBlock, r.renderCodeBlock)
+// RendererOptions implements html.Extension.
+func (r *ConfluenceCodeBlockRenderer) RendererOptions(cfg *html.Config) []html.Option {
+	r.configure(cfg)
+
+	return []html.Option{html.WithNodeRenderers(map[ast.NodeKind]html.NodeRenderer{
+		ast.KindCodeBlock: nodeRenderer(r.renderCodeBlock),
+	})}
 }
 
 // renderCodeBlock renders a CodeBlock
-func (r *ConfluenceCodeBlockRenderer) renderCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *ConfluenceCodeBlockRenderer) renderCodeBlock(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
@@ -45,13 +47,7 @@ func (r *ConfluenceCodeBlockRenderer) renderCodeBlock(writer util.BufWriter, sou
 	lang := ""
 	title := ""
 
-	var lval []byte
-
-	lines := node.Lines().Len()
-	for i := 0; i < lines; i++ {
-		line := node.Lines().At(i)
-		lval = append(lval, line.Value(source)...)
-	}
+	lval := node.(*ast.CodeBlock).Value.Bytes(source)
 	err := r.Stdlib.Templates.ExecuteTemplate(
 		writer,
 		"ac:code",

@@ -5,9 +5,9 @@ import (
 	"html"
 	"regexp"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 // manualAnchor matches an anchor written by hand: an <a> carrying a name or an
@@ -58,7 +58,7 @@ func (t *ManualAnchorTransformer) Transform(doc *ast.Document, reader text.Reade
 			return ast.WalkContinue, nil
 		}
 
-		tag := bytes.TrimSpace(rawHTMLBytes(raw, source))
+		tag := bytes.TrimSpace(HTMLBytes(raw, source))
 
 		if groups := manualAnchor.FindSubmatch(tag); groups != nil {
 			name := firstNonEmpty(groups[1:])
@@ -85,16 +85,13 @@ func (t *ManualAnchorTransformer) Transform(doc *ast.Document, reader text.Reade
 		}
 
 		if item.value == nil {
-			parent.RemoveChild(parent, item.node)
+			parent.RemoveChild(item.node)
 
 			continue
 		}
 
-		macro := ast.NewString(item.value)
-		macro.SetCode(true)
-
-		parent.InsertBefore(parent, item.node, macro)
-		parent.RemoveChild(parent, item.node)
+		parent.InsertBefore(item.node, newVerbatim(item.value))
+		parent.RemoveChild(item.node)
 	}
 }
 
@@ -107,7 +104,7 @@ func closesAManualAnchor(node ast.Node, source []byte) bool {
 			continue
 		}
 
-		tag := bytes.TrimSpace(rawHTMLBytes(raw, source))
+		tag := bytes.TrimSpace(HTMLBytes(raw, source))
 		if manualAnchorClose.Match(tag) {
 			return false
 		}
@@ -130,18 +127,6 @@ func anchorMacro(name string) []byte {
 			html.EscapeString(name) +
 			`</ac:parameter></ac:structured-macro>`,
 	)
-}
-
-// rawHTMLBytes joins the segments of a raw HTML node.
-func rawHTMLBytes(node *ast.RawHTML, source []byte) []byte {
-	var buf bytes.Buffer
-
-	for i := 0; i < node.Segments.Len(); i++ {
-		segment := node.Segments.At(i)
-		buf.Write(segment.Value(source))
-	}
-
-	return buf.Bytes()
 }
 
 // firstNonEmpty returns the first group that matched, since the pattern offers

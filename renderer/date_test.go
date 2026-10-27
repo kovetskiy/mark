@@ -1,16 +1,14 @@
 package renderer_test
 
 import (
-	"bytes"
 	"testing"
 
 	cparser "github.com/kovetskiy/mark/v16/parser"
 	crenderer "github.com/kovetskiy/mark/v16/renderer"
 	"github.com/stretchr/testify/assert"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 func TestConfluenceDateRenderer(t *testing.T) {
@@ -48,23 +46,13 @@ func TestConfluenceDateRenderer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gm := goldmark.New(
-				goldmark.WithParserOptions(
-					parser.WithInlineParsers(
-						util.Prioritized(cparser.NewDateParser(), 99),
-					),
-				),
-				goldmark.WithRendererOptions(
-					renderer.WithNodeRenderers(
-						util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
-					),
+			got := render(t, tt.input,
+				[]html.Extension{crenderer.NewConfluenceDateRenderer()},
+				parser.WithInlineParsers(
+					util.Prioritized(cparser.NewDateParser(), 99),
 				),
 			)
-
-			var buf bytes.Buffer
-			err := gm.Convert([]byte(tt.input), &buf)
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, buf.String())
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }

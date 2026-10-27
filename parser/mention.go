@@ -3,9 +3,9 @@ package parser
 import (
 	"bytes"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 type Mention struct {
@@ -13,10 +13,10 @@ type Mention struct {
 	Name []byte
 }
 
-func (m *Mention) Dump(source []byte, level int) {
-	ast.DumpHelper(m, source, level, map[string]string{
+func (m *Mention) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(m, map[string]any{
 		"Name": string(m.Name),
-	}, nil)
+	})
 }
 
 var KindMention = ast.NewNodeKind("Mention")
@@ -26,9 +26,11 @@ func (m *Mention) Kind() ast.NodeKind {
 }
 
 func NewMention(name []byte) *Mention {
-	return &Mention{
+	m := &Mention{
 		Name: name,
 	}
+	m.Init(m)
+	return m
 }
 
 type mentionParser struct {

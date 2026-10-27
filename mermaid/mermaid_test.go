@@ -252,6 +252,11 @@ func TestSVGChecksumsDifferByBundle(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, plain.Checksum, bundled.Checksum)
+
+	// Pinned: the checksum names the attachment already on the page, so a
+	// change here re-uploads every published diagram.
+	assert.Equal(t, "cd2b2f687d017d6e44abe3222a27b03cfc0483166d1e8ed7cfb099add1d14be4", plain.Checksum)
+	assert.Equal(t, "40d8ae24f05331a400b4baf73c216710b7b242e832af91c308e62b3035541cbf", bundled.Checksum)
 }
 
 // TestExtractSVGDimensions covers the sizes an SVG can state, and the one it
