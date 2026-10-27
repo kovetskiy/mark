@@ -194,8 +194,7 @@ func (c Config) prepare() (page.LinkChecks, error) {
 			return page.LinkChecks{}, err
 		}
 	} else {
-		// Nothing is drawn, so the engine and scale are ignored; only the macro
-		// name is used.
+		// Nothing is drawn, so the engine and scale are ignored; only the macro name is used.
 		if c.MermaidMacroName != "" && strings.TrimSpace(c.MermaidMacroName) == "" {
 			return page.LinkChecks{}, errors.New(
 				"MermaidMacroName must not be blank: it names the macro to publish as",

@@ -921,6 +921,14 @@ func TestMermaidMacroBlankNameIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "blank")
 }
 
+// TestMarkConfigNormalisesTheMacroName: markConfig is where the published
+// configuration gets the default name and loses surrounding space, so the
+// renderer never has to.
+func TestMarkConfigNormalisesTheMacroName(t *testing.T) {
+	assert.Equal(t, "mermaid-macro", (Config{}).markConfig().MermaidMacroName)
+	assert.Equal(t, "my-macro", (Config{MermaidMacroName: "  my-macro  "}).markConfig().MermaidMacroName)
+}
+
 // TestMermaidMacroNameIsPublished: the name reaches ac:name trimmed, and an
 // unset name publishes under the default -- the one thing the empty-name rules
 // leave for a library caller.

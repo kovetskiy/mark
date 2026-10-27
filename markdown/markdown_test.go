@@ -241,7 +241,8 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 
 // TestCompileMarkdownMermaidMacroGolden pins the macro rendering against the
 // fixture, as the other renderers have one: drawn by Confluence, with --drop-h1,
-// and with the feature off, where the fence stays a plain code block.
+// and with the feature off -- with and without --drop-h1 -- where the fence
+// stays a plain code block.
 func TestCompileMarkdownMermaidMacroGolden(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "..")
@@ -264,6 +265,7 @@ func TestCompileMarkdownMermaidMacroGolden(t *testing.T) {
 		{"the macro", "", []string{"mermaid"}, false},
 		{"with drop-h1", "-droph1", []string{"mermaid"}, true},
 		{"without the feature", "-nofeature", []string{"mkdocsadmonitions", "mention"}, false},
+		{"without the feature and drop-h1", "-nofeature-droph1", []string{"mkdocsadmonitions", "mention"}, true},
 	}
 
 	for _, tt := range tests {

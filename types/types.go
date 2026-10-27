@@ -16,7 +16,8 @@ type MarkConfig struct {
 	MermaidBundle bool
 	// MermaidMacroName is the ac:name of the Confluence macro a diagram is
 	// published as with MermaidOutput "macro". Blank means
-	// MermaidMacroDefaultName, and surrounding space is ignored.
+	// MermaidMacroDefaultName, filled in by CompileMarkdown, and surrounding
+	// space is ignored.
 	MermaidMacroName string
 	// D2Output is the image a diagram is published as, "png" or "svg".
 	// D2Scale multiplies the pixels of a PNG one and the size the page

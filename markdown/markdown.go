@@ -508,6 +508,9 @@ func expandIncludes(
 }
 
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+	// Blank is the default name, and surrounding space is not part of it.
+	cfg.MermaidMacroName = types.MermaidMacroNameOrDefault(cfg.MermaidMacroName)
+
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
 		return "", nil, err
@@ -549,6 +552,9 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 // CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
 // This function is preserved for backward compatibility and testing purposes
 func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+	// Blank is the default name, and surrounding space is not part of it.
+	cfg.MermaidMacroName = types.MermaidMacroNameOrDefault(cfg.MermaidMacroName)
+
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
 		return "", nil, err
