@@ -144,12 +144,7 @@ func isScaleOrDefault(scale float64) bool {
 }
 
 // Run processes all files matching Config.Files and publishes them to
-// Confluence, and is RunContext with a context that is never cancelled.
-func Run(config Config) error {
-	return RunContext(context.Background(), config)
-}
-
-// RunContext is Run, stoppable.
+// Confluence.
 //
 // Every Confluence request the run makes carries ctx, so cancelling it cuts
 // short a read in flight and the backoff before retrying any request, and the
@@ -169,7 +164,7 @@ func Run(config Config) error {
 // manifest's save is made under a context of its own, detached from ctx, since
 // a save that inherited the cancellation would be refused before it was sent
 // and the mapping for every page already published would be lost with it.
-func RunContext(ctx context.Context, config Config) (err error) {
+func Run(ctx context.Context, config Config) (err error) {
 	// The browser is shared for the life of the process and is started lazily
 	// by the first diagram or formula. A library caller has no other way to
 	// know it exists, so a run that started one shuts it down -- the CLI
@@ -775,32 +770,20 @@ func stepPast(ctx context.Context, config Config, file string, err error) bool {
 // Callers processing several files should prefer Run, which builds the standard
 // library once instead of once per file.
 //
-// Its requests carry context.Background; ProcessFileContext is the one that
-// can be stopped.
-func ProcessFile(file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
-	return processOneFile(context.Background(), file, api, config)
-}
-
-// ProcessFileContext is ProcessFile, stoppable.
-//
 // Every Confluence request made for the file carries ctx, so cancelling it
 // stops the file at its next request, or during the one in flight, with an
-// error errors.Is recognises as ctx.Err(); see RunContext for what that can
-// leave behind. A caller looping over files gets the same effect as RunContext
-// by stopping when one fails with it.
+// error errors.Is recognises as ctx.Err(); see Run for what that can leave
+// behind. A caller looping over files gets the same effect as Run by stopping
+// when one fails with it.
 //
-// Unlike RunContext this does not shut the shared browser down, since a caller
+// Unlike Run this does not shut the shared browser down, since a caller
 // publishing several files would pay to start it again for each. Call Cleanup
 // when the last one is done.
-func ProcessFileContext(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+func ProcessFile(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	return processOneFile(ctx, file, api, config)
-}
-
-func processOneFile(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
 	linkChecks, err := config.prepare()
 	if err != nil {
 		return nil, err

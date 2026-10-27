@@ -156,7 +156,7 @@ func previewOf(t *testing.T, config Config, format string) string {
 	config.DryRun = true
 	config.OutputFormat = format
 	config.Output = &out
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	return out.String()
 }
 
@@ -193,7 +193,7 @@ func noOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
 		Output:      io.Discard,
 	}
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -212,7 +212,7 @@ func runReported(t *testing.T, config Config) report.Page {
 	config.OutputFormat = report.FormatJSON
 	config.Output = &out
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	var parsed report.Report
 	require.NoError(t, json.Unmarshal(out.Bytes(), &parsed))

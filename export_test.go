@@ -85,7 +85,7 @@ func exportFixture(t *testing.T) (*confluencetest.Server, string, string) {
 	writeFile(t, dir, "report.pdf", "%PDF-1.4 report")
 	file := writeFile(t, dir, "installing.md", exportDocument)
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, AttachReferenced: true, Features: []string{"mention"},
 		Output: io.Discard,
@@ -177,7 +177,7 @@ func TestExportRoundTrip(t *testing.T) {
 
 	// Published back, the page is what it was.
 	server.EditPage(id, "<p>edited in Confluence</p>")
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: out, AttachReferenced: true, Features: []string{"mention"},
 		Output: io.Discard,
@@ -247,7 +247,7 @@ func TestExportPageFromConfluence(t *testing.T) {
 
 	// Published back, the attachment kept as storage format is uploaded under
 	// the name the storage format now gives it.
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: out, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -434,7 +434,7 @@ func TestExportOfAPageInAFolder(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, string(exported), "<!-- Space: DOCS -->\n"+test.headers+"<!-- Title: Inside -->\n")
 
-			require.NoError(t, Run(Config{
+			require.NoError(t, Run(context.Background(), Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files: out, Output: io.Discard,
 			}))
@@ -502,7 +502,7 @@ func TestExportDeclaresOnlyAttachmentsThePageHas(t *testing.T) {
 	assert.Contains(t, string(exported), "<!-- Attachment: kept.png -->")
 	assert.NotContains(t, string(exported), "<!-- Attachment: gone.png -->")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: out, Output: io.Discard,
 	}), "the export publishes")
@@ -733,7 +733,7 @@ func TestExportTreeRoundTrip(t *testing.T) {
 		server.EditPage(p.ID, "<p>edited in Confluence</p>")
 	}
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(out, "**", "*.md"), AttachReferenced: true, Features: []string{"mention"},
 		Output: io.Discard,
@@ -784,7 +784,7 @@ func TestExportTreeRelativeLinks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(deep), "Back to [Guide](../../index.md) or [C](../../c-"+pages["C"].ID+"/index.md).")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(out, "**", "*.md"), Features: []string{"mention"},
 		Output: io.Discard,
@@ -843,7 +843,7 @@ func TestExportTreeRelativeLinksFromURLs(t *testing.T) {
 		"[blog]("+server.URL+"/display/DOCS/2024/01/31/Deep+dive) "+
 		"[Deep dive](c/deep-dive/index.md)")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(out, "**", "*.md"), Features: []string{"mention"},
 		Output: io.Discard,

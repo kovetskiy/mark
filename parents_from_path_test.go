@@ -56,7 +56,7 @@ func runHierarchy(t *testing.T, dir string, extra func(*Config)) *confluence.API
 	if extra != nil {
 		extra(&config)
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	return confluence.NewAPI(server.URL, "user", "token", false)
 }
@@ -144,7 +144,7 @@ func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	config.Parents = parents
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	chapter, err := confluence.NewAPI(server.URL, "user", "token", false).
 		FindPage(context.Background(), "DOCS", "Chapter", "page")
@@ -152,7 +152,7 @@ func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 	require.NotNil(t, chapter)
 
 	server.RenamePage(chapter.ID, "Chapter Renamed")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, []string{"Root", "Section", "Chapter"}, parents,
 		"the caller's --parents must come back as it was given")
@@ -198,7 +198,7 @@ func TestTitleCollisionIsRefused(t *testing.T) {
 	writeAt(t, dir, "api/overview.md", space+"<!-- Title: Overview -->\n\nAPI overview.\n")
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: Overview -->\n\nSDK overview.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
@@ -233,7 +233,7 @@ func TestSameTitleInDifferentSpacesIsFine(t *testing.T) {
 	writeAt(t, dir, "sdk/overview.md",
 		"<!-- Space: OTHER -->\n<!-- Title: Overview -->\n\nTwo.\n")
 
-	assert.NoError(t, Run(Config{
+	assert.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
@@ -256,7 +256,7 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 		ParentsFromPath: true, ParentsFromPathRoot: dir,
 		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
@@ -269,11 +269,11 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 
 	// The whole directory goes.
 	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	// Setup goes first, then Guides, which is only removable once empty.
 	assert.True(t, server.Page(setup.ID).Trashed, "the document's page is an orphan")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.True(t, server.Page(guides.ID).Trashed,
 		"the page standing for the directory is an orphan too")
 }
@@ -294,7 +294,7 @@ func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
 		ParentsFromPath: true, ParentsFromPathRoot: dir,
 		TrackPages: true, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
@@ -323,7 +323,7 @@ func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md",
 		space+"<!-- Title: Setup -->\n<!-- Parent: Guides -->\n\nSetup.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		TrackPages: true, Output: io.Discard,
@@ -439,7 +439,7 @@ func TestUnreadablePagesFileIsAnError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "guides", ".pages"), 0o755))
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
@@ -515,7 +515,7 @@ func TestTitleCollisionIgnoresCase(t *testing.T) {
 	writeAt(t, dir, "api/overview.md", space+"<!-- Title: Overview -->\n\nOne.\n")
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: overview -->\n\nTwo.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		ParentsFromPath: true, ParentsFromPathRoot: dir, Output: io.Discard,
@@ -531,7 +531,7 @@ func TestRootCoveringNothingIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "**", "*.md"), Features: []string{"mention"},
 		ParentsFromPath: true, ParentsFromPathRoot: filepath.Join(dir, "elsewhere"),
@@ -671,7 +671,7 @@ func TestStaleParentLookupFailureStopsTheRun(t *testing.T) {
 
 	failOnceLookingUp(server, "Parent")
 
-	err := Run(trackingConfig(server, file))
+	err := Run(context.Background(), trackingConfig(server, file))
 	require.Error(t, err, "a parent that could not be read is not a parent that is fine")
 	assert.Contains(t, err.Error(), `unable to look up parent "Parent"`)
 }
@@ -683,7 +683,7 @@ func TestStaleParentLookupSucceedsNormally(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Child"))
 
-	require.NoError(t, Run(trackingConfig(server, file)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)

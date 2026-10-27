@@ -40,7 +40,7 @@ func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server
 		TrackPages: true, OnOrphan: onOrphan, OrphanUnder: under,
 		Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -48,7 +48,7 @@ func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server
 	require.NotNil(t, gone)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	return server, gone.ID, dir
 }
@@ -89,7 +89,7 @@ func TestOnOrphanRequiresTrackPages(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), OnOrphan: "delete", Output: io.Discard,
 	})
@@ -98,7 +98,7 @@ func TestOnOrphanRequiresTrackPages(t *testing.T) {
 }
 
 func TestOnOrphanRejectsAnUnknownAction(t *testing.T) {
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: "http://127.0.0.1:1", Username: "user", Password: "token",
 		Files: "none", OnOrphan: "incinerate", TrackPages: true, Output: io.Discard,
 	})
@@ -123,7 +123,7 @@ func TestOnOrphanDryRunActsOnNothing(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -132,7 +132,7 @@ func TestOnOrphanDryRunActsOnNothing(t *testing.T) {
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 	config.DryRun = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.False(t, server.Page(gone.ID).Trashed, "a dry run must remove nothing")
 }
@@ -166,7 +166,7 @@ func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -177,7 +177,7 @@ func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
 	server.AddPage("DOCS", "Written by hand", "page", gone.ID)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	return server, gone.ID
 }
@@ -206,7 +206,7 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	one, err := api.FindPage(context.Background(), "DOCS", "One", "page")
@@ -218,7 +218,7 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "two.md")))
 
 	config.CI = true // so that no files matched is not itself an error
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.False(t, server.Page(one.ID).Trashed,
 		"a run that published nothing must remove nothing")
@@ -246,7 +246,7 @@ func TestOrphanUnderLimitsScope(t *testing.T) {
 		TrackPages: true, OnOrphan: "delete", OrphanUnder: "Inside",
 		Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	in, err := api.FindPage(context.Background(), "DOCS", "In", "page")
@@ -259,7 +259,7 @@ func TestOrphanUnderLimitsScope(t *testing.T) {
 	// Both source files go; only the one under "Inside" is in scope.
 	require.NoError(t, os.Remove(filepath.Join(dir, "in.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "out.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.True(t, server.Page(in.ID).Trashed, "the page below Inside is in scope")
 	assert.False(t, server.Page(out.ID).Trashed, "the page below Outside is not")
@@ -291,7 +291,7 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 		TrackPages: true, OnOrphan: "report", OrphanUnder: "Inside",
 		Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	out, err := api.FindPage(context.Background(), "DOCS", "Out", "page")
@@ -301,7 +301,7 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 	// Both documents go. Only the one under "Inside" is mark's business.
 	require.NoError(t, os.Remove(filepath.Join(dir, "in.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "out.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	store := manifest.NewStore(api)
 
@@ -334,9 +334,9 @@ func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	_, known, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "gone.md"))
@@ -369,7 +369,7 @@ func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -381,7 +381,7 @@ func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 
 	config.CompileOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.False(t, server.Page(gone.ID).Trashed, "a compile must remove nothing")
 }
@@ -407,7 +407,7 @@ func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, OnOrphan: "delete", Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -419,7 +419,7 @@ func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
 	server.AddFolder("DOCS", "Nested", folder.ID, "folder")
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	page := server.Page(gone.ID)
 	require.NotNil(t, page)
@@ -462,7 +462,7 @@ func TestOrphanScopeIsCheckedOnce(t *testing.T) {
 		TrackPages: true, OnOrphan: "delete", OrphanUnder: "Inside",
 		Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
@@ -471,7 +471,7 @@ func TestOrphanScopeIsCheckedOnce(t *testing.T) {
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 	server.ResetRequests()
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.True(t, server.Page(gone.ID).Trashed, "the orphan is still acted on")
 	assert.Equal(t, 1, getsFor(server, gone.ID),
@@ -496,7 +496,7 @@ func publishTracked(t *testing.T, server *confluencetest.Server, dir string) Con
 	t.Helper()
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	config.OnOrphan = "delete"
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	return config
 }
 
@@ -525,7 +525,7 @@ func TestDryRunDoesNotReportPublishedPagesAsOrphans(t *testing.T) {
 
 	dry := config
 	dry.DryRun = true
-	logged := captureLog(t, func() { require.NoError(t, Run(dry)) })
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), dry)) })
 
 	// The capture works, at the level the orphan report is written at: without
 	// this, a quieter logger would make the assertions below pass vacuously.
@@ -570,7 +570,7 @@ func TestDryRunStillReportsRealOrphans(t *testing.T) {
 
 	dry := config
 	dry.DryRun = true
-	logged := captureLog(t, func() { require.NoError(t, Run(dry)) })
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), dry)) })
 
 	assert.Contains(t, logged, "processing "+inLog(a))
 	assert.Contains(t, logged, "1 tracked page(s) had no matching source file in this run: "+filepath.ToSlash(b),
@@ -602,14 +602,14 @@ func TestTrackingReportsOrphansWithoutDeleting(t *testing.T) {
 
 	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
 	writeFile(t, dir, "drop.md", markdownWithTitle("Drop"))
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
 	dropped, err := api.FindPage(context.Background(), "DOCS", "Drop", "page")
 	require.NoError(t, err)
 	require.NotNil(t, dropped)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "drop.md")))
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
 	assert.NotNil(t, server.Page(dropped.ID),
 		"the page of a deleted file must survive: phase 1 reports, it does not prune")
@@ -624,7 +624,7 @@ func TestTrackingSuppressesOrphanReportOnFailedRuns(t *testing.T) {
 
 	writeFile(t, dir, "a.md", markdownWithTitle("A"))
 	writeFile(t, dir, "b.md", markdownWithTitle("B"))
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
 	// b.md now fails to process rather than disappearing.
 	writeFile(t, dir, "b.md", "# Broken\n\nNo metadata.\n")
@@ -636,7 +636,7 @@ func TestTrackingSuppressesOrphanReportOnFailedRuns(t *testing.T) {
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	config.ContinueOnError = true
-	require.Error(t, Run(config))
+	require.Error(t, Run(context.Background(), config))
 
 	assert.NotContains(t, logged.String(), "had no matching source file",
 		"a run with errors must not report unpublished pages as missing")
@@ -655,8 +655,8 @@ func TestOrphansAreScopedToTheGlob(t *testing.T) {
 	writeFile(t, dir, "notes/b.md", markdownWithTitle("B"))
 
 	// Publish each subtree with its own glob.
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "guides", "*.md"))))
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "notes", "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "guides", "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "notes", "*.md"))))
 
 	var logged bytes.Buffer
 	restore := log.Logger
@@ -664,7 +664,7 @@ func TestOrphansAreScopedToTheGlob(t *testing.T) {
 	defer func() { log.Logger = restore }()
 
 	// Re-run only the guides. notes/b.md is untouched and still present.
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "guides", "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "guides", "*.md"))))
 
 	assert.NotContains(t, logged.String(), "had no matching source file",
 		"a run scoped to one directory must not report another's files as missing")
@@ -680,15 +680,15 @@ func TestDeletedFileIsReportedOnceThenForgotten(t *testing.T) {
 	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
 	writeFile(t, dir, "drop.md", markdownWithTitle("Drop"))
 	glob := filepath.Join(dir, "*.md")
-	require.NoError(t, Run(trackingConfig(server, glob)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, glob)))
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "drop.md")))
 
-	first := captureLog(t, func() { require.NoError(t, Run(trackingConfig(server, glob))) })
+	first := captureLog(t, func() { require.NoError(t, Run(context.Background(), trackingConfig(server, glob))) })
 	assert.Contains(t, first, "had no matching source file",
 		"the deletion should be reported the first time it is noticed")
 
-	second := captureLog(t, func() { require.NoError(t, Run(trackingConfig(server, glob))) })
+	second := captureLog(t, func() { require.NoError(t, Run(context.Background(), trackingConfig(server, glob))) })
 	assert.NotContains(t, second, "had no matching source file",
 		"and not on every run thereafter")
 }
