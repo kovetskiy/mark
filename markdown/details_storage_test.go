@@ -52,14 +52,12 @@ func TestDetailsKeepsStorageFormatBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for name, compile := range compilers {
-				out, _, err := compile([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
-				require.NoError(t, err, name)
+			out, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
+			require.NoError(t, err)
 
-				assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`, name)
-				assert.Contains(t, out, tt.want, name)
-				assert.NoError(t, CheckWellFormed(out), name)
-			}
+			assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`)
+			assert.Contains(t, out, tt.want)
+			assert.NoError(t, CheckWellFormed(out))
 		})
 	}
 }
@@ -97,11 +95,9 @@ func TestDetailsBodyWithHTMLOnlyMarkupIsRepaired(t *testing.T) {
 		`<p>AT&T <a href="?a=1&b=2">x</a> &NotEqualTilde;</p><table><tr><td colspan=2>x</td></tr></table>` +
 		"\n</details>\n"
 
-	for name, compile := range compilers {
-		out, _, err := compile([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
-		require.NoError(t, err, name)
-		require.NoError(t, CheckWellFormed(out), name)
-	}
+	out, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+	require.NoError(t, err)
+	require.NoError(t, CheckWellFormed(out))
 }
 
 // TestDetailsClosesOmittedEndTags covers the end tags HTML lets an author leave
@@ -145,14 +141,12 @@ func TestDetailsClosesOmittedEndTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for name, compile := range compilers {
-				out, _, err := compile([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
-				require.NoError(t, err, name)
+			out, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
+			require.NoError(t, err)
 
-				assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`, name)
-				assert.Contains(t, out, tt.want, name)
-				assert.NoError(t, CheckWellFormed(out), name)
-			}
+			assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`)
+			assert.Contains(t, out, tt.want)
+			assert.NoError(t, CheckWellFormed(out))
 		})
 	}
 }

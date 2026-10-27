@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGHAlertsTransformerVsLegacyRenderer(t *testing.T) {
+func TestGHAlertsBecomeMacros(t *testing.T) {
 	testCases := []struct {
 		name        string
 		markdown    string
@@ -53,11 +53,11 @@ func TestGHAlertsTransformerVsLegacyRenderer(t *testing.T) {
 			description: "GitHub Alert [!IMPORTANT] syntax should be converted to Confluence info macro",
 		},
 		{
-			name:        "Legacy blockquote with info",
-			markdown:    "> info: This is legacy info syntax.",
+			name:        "Blockquote with info marker",
+			markdown:    "> info: This is info marker syntax.",
 			expectMacro: true,
 			expectClean: false,
-			description: "Legacy info: syntax should be converted to Confluence info macro",
+			description: "info: syntax should be converted to Confluence info macro",
 		},
 		{
 			name:        "Regular blockquote",
@@ -83,47 +83,19 @@ func TestGHAlertsTransformerVsLegacyRenderer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Testing: %s", tc.description)
 
-			// Test with GitHub Alerts transformer (primary approach)
-			transformerResult, transformerAttachments, err := mark.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", cfg)
+			result, attachments, err := mark.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", cfg)
 			assert.NoError(t, err)
 
-			// Test with legacy renderer
-			legacyResult, legacyAttachments, err := mark.CompileMarkdownLegacy([]byte(tc.markdown), stdlib, "/test", cfg)
-			assert.NoError(t, err)
+			assert.NotEmpty(t, result)
+			assert.Empty(t, attachments, "Should have no attachments")
 
-			// Basic checks
-			assert.NotEmpty(t, transformerResult, "Transformer result should not be empty")
-			assert.NotEmpty(t, legacyResult, "Legacy result should not be empty")
-			assert.Empty(t, transformerAttachments, "Should have no attachments")
-			assert.Empty(t, legacyAttachments, "Should have no attachments")
-
-			// Check for Confluence macro presence
 			if tc.expectMacro {
-				assert.Contains(t, transformerResult, "structured-macro", "Transformer should produce Confluence macro")
-				// Legacy renderer should NOT handle GitHub Alert syntax - it should treat as plain blockquote
-				if tc.expectClean {
-					// This is a GitHub Alert case - legacy should produce blockquote, transformer should produce macro
-					assert.Contains(t, legacyResult, "<blockquote>", "Legacy renderer should treat GitHub Alerts as regular blockquotes")
-				} else {
-					// This is a legacy syntax case (like "info:") - both should produce macro
-					assert.Contains(t, legacyResult, "structured-macro", "Legacy renderer should produce Confluence macro for legacy syntax")
-				}
+				assert.Contains(t, result, "structured-macro", "Should produce a Confluence macro")
 			} else {
-				assert.Contains(t, transformerResult, "<blockquote>", "Regular blockquote should use HTML blockquote")
-				assert.Contains(t, legacyResult, "<blockquote>", "Regular blockquote should use HTML blockquote")
-			} // Check for GitHub Alert syntax cleanup (only for transformer with GitHub Alert syntax)
+				assert.Contains(t, result, "<blockquote>", "Regular blockquote should use HTML blockquote")
+			}
 			if tc.expectClean {
-				// Transformer should clean up the [!TYPE] syntax
-				assert.NotContains(t, transformerResult, "[!", "Transformer should remove GitHub Alert syntax markers")
-
-				// Legacy renderer might not clean it up (depending on implementation)
-				// We'll just log what it produces for comparison
-				t.Logf("Transformer result: %s", transformerResult)
-				t.Logf("Legacy result: %s", legacyResult)
-			} else {
-				// For non-GitHub Alert cases, both should behave similarly
-				t.Logf("Transformer result: %s", transformerResult)
-				t.Logf("Legacy result: %s", legacyResult)
+				assert.NotContains(t, result, "[!", "Should remove GitHub Alert syntax markers")
 			}
 		})
 	}
@@ -157,9 +129,9 @@ func TestBasicTransformerFunctionality(t *testing.T) {
 	t.Logf("Transformer result: %s", result)
 }
 
-// TestCompatibilityWithExistingFeatures tests that the transformer approach is fully compatible
-// with existing non-blockquote functionality from the original markdown tests
-func TestCompatibilityWithExistingFeatures(t *testing.T) {
+// TestCompileMarkdownCommonFeatures compiles common non-blockquote Markdown
+// with a few flag combinations.
+func TestCompileMarkdownCommonFeatures(t *testing.T) {
 	testCases := []struct {
 		name        string
 		markdown    string
@@ -176,7 +148,7 @@ func TestCompatibilityWithExistingFeatures(t *testing.T) {
 				StripNewlines: false,
 				DropFirstH1:   false,
 			},
-			description: "Basic header rendering should be identical",
+			description: "Basic headers",
 		},
 		{
 			name: "Headers with DropFirstH1",
@@ -188,7 +160,7 @@ func TestCompatibilityWithExistingFeatures(t *testing.T) {
 				StripNewlines: false,
 				DropFirstH1:   true,
 			},
-			description: "Header rendering with DropFirstH1 should be identical",
+			description: "Headers with DropFirstH1",
 		},
 		{
 			name:     "Code Blocks",
@@ -198,7 +170,7 @@ func TestCompatibilityWithExistingFeatures(t *testing.T) {
 				StripNewlines: false,
 				DropFirstH1:   false,
 			},
-			description: "Code block rendering should be identical",
+			description: "Inline code and a fenced code block",
 		},
 		{
 			name: "Links and Images",
@@ -210,7 +182,7 @@ func TestCompatibilityWithExistingFeatures(t *testing.T) {
 				StripNewlines: false,
 				DropFirstH1:   false,
 			},
-			description: "Links and images should be rendered identically",
+			description: "Links and images",
 		},
 		{
 			name: "Tables",
@@ -222,7 +194,7 @@ func TestCompatibilityWithExistingFeatures(t *testing.T) {
 				StripNewlines: false,
 				DropFirstH1:   false,
 			},
-			description: "Table rendering should be identical",
+			description: "A table",
 		},
 		{
 			name: "Mixed Content",
@@ -243,7 +215,7 @@ Some **bold** and *italic* text.
 				StripNewlines: false,
 				DropFirstH1:   false,
 			},
-			description: "Mixed content should be rendered identically",
+			description: "Mixed content",
 		},
 		{
 			name: "Strip Newlines",
@@ -258,55 +230,20 @@ Line 3`,
 				StripNewlines: true,
 				DropFirstH1:   false,
 			},
-			description: "StripNewlines functionality should work identically",
+			description: "StripNewlines",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Logf("Testing: %s", tc.description)
-
 			stdlib, err := stdlib.New(nil)
 			if err != nil {
 				t.Fatalf("Failed to create stdlib: %v", err)
 			}
 
-			// Test with GitHub Alerts transformer (primary approach)
-			transformerResult, transformerAttachments, err := mark.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", tc.config)
-			assert.NoError(t, err)
-
-			// Test with legacy renderer (original approach)
-			legacyResult, legacyAttachments, err := mark.CompileMarkdownLegacy([]byte(tc.markdown), stdlib, "/test", tc.config)
-			assert.NoError(t, err)
-
-			// Basic checks
-			assert.NotEmpty(t, transformerResult, "Transformer result should not be empty")
-			assert.NotEmpty(t, legacyResult, "Legacy result should not be empty")
-			assert.Equal(t, len(transformerAttachments), len(legacyAttachments), "Attachment counts should match")
-
-			// The key compatibility test: results should be identical for non-blockquote content
-			if transformerResult != legacyResult {
-				t.Errorf("COMPATIBILITY ISSUE: Results differ for %s\n"+
-					"Transformer result:\n%s\n\n"+
-					"Legacy result:\n%s\n\n"+
-					"Diff (transformer vs legacy):",
-					tc.name, transformerResult, legacyResult)
-
-				// Log the differences for debugging
-				t.Logf("Transformer length: %d", len(transformerResult))
-				t.Logf("Legacy length: %d", len(legacyResult))
-
-				// Character-by-character comparison for debugging
-				for i := 0; i < len(transformerResult) && i < len(legacyResult); i++ {
-					if transformerResult[i] != legacyResult[i] {
-						t.Logf("First difference at position %d: transformer='%c'(%d) vs legacy='%c'(%d)",
-							i, transformerResult[i], transformerResult[i], legacyResult[i], legacyResult[i])
-						break
-					}
-				}
-			} else {
-				t.Logf("✅ Perfect compatibility for %s", tc.name)
-			}
+			result, _, err := mark.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", tc.config)
+			assert.NoError(t, err, tc.description)
+			assert.NotEmpty(t, result, tc.description)
 		})
 	}
 }

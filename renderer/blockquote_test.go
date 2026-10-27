@@ -9,9 +9,9 @@ import (
 	"github.com/yuin/goldmark/renderer"
 )
 
-func legacyBlockQuoteRenderers() []renderer.NodeRenderer {
+func blockQuoteRenderers() []renderer.NodeRenderer {
 	return []renderer.NodeRenderer{
-		crenderer.NewConfluenceBlockQuoteRenderer(),
+		crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),
 		crenderer.NewConfluenceTextRenderer(false),
 	}
@@ -40,7 +40,7 @@ func TestBlockQuoteClassification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := render(t, tt.input, legacyBlockQuoteRenderers())
+			actual := render(t, tt.input, blockQuoteRenderers())
 			assertWellFormed(t, actual)
 
 			assert.Contains(t, actual, tt.want)
@@ -55,7 +55,7 @@ func TestBlockQuoteClassification(t *testing.T) {
 // four types: it has to stay a blockquote rather than become a macro of some
 // default kind.
 func TestBlockQuoteUnclassifiedStaysAQuote(t *testing.T) {
-	actual := render(t, "> An ordinary quotation.\n", legacyBlockQuoteRenderers())
+	actual := render(t, "> An ordinary quotation.\n", blockQuoteRenderers())
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, "<blockquote>")
@@ -83,7 +83,7 @@ func TestBlockQuoteMarkerMustOpenTheLine(t *testing.T) {
 
 	for _, tt := range prose {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := render(t, tt.input, legacyBlockQuoteRenderers())
+			actual := render(t, tt.input, blockQuoteRenderers())
 			assertWellFormed(t, actual)
 
 			assert.Contains(t, actual, "<blockquote>",
@@ -112,7 +112,7 @@ func TestBlockQuoteMarkerFormsStillClassify(t *testing.T) {
 
 	for _, tt := range forms {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := render(t, tt.input, legacyBlockQuoteRenderers())
+			actual := render(t, tt.input, blockQuoteRenderers())
 			assertWellFormed(t, actual)
 
 			assert.Contains(t, actual, tt.want)
@@ -124,7 +124,7 @@ func TestBlockQuoteMarkerFormsStillClassify(t *testing.T) {
 // classification. A quote whose second paragraph says "warning" must not be
 // reclassified by it -- the type belongs to the opening line.
 func TestBlockQuoteTypeComesFromTheFirstParagraphOnly(t *testing.T) {
-	actual := render(t, "> Info: the first line.\n>\n> A warning in the second.\n", legacyBlockQuoteRenderers())
+	actual := render(t, "> Info: the first line.\n>\n> A warning in the second.\n", blockQuoteRenderers())
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `ac:name="info"`)
@@ -136,7 +136,7 @@ func TestBlockQuoteTypeComesFromTheFirstParagraphOnly(t *testing.T) {
 // rich-text body is not something the editor accepts, and the level map is what
 // keeps that from happening.
 func TestBlockQuoteNestedStaysAQuote(t *testing.T) {
-	actual := render(t, "> Note: the outer one.\n>\n> > The inner one.\n", legacyBlockQuoteRenderers())
+	actual := render(t, "> Note: the outer one.\n>\n> > The inner one.\n", blockQuoteRenderers())
 	assertWellFormed(t, actual)
 
 	assert.Equal(t, 1, strings.Count(actual, "<ac:structured-macro"),

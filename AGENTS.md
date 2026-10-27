@@ -99,9 +99,8 @@ an attribute break the entire upload, not just one element.
 All three also replace the characters XML 1.0 has no spelling for — most C0 controls,
 U+FFFE/U+FFFF, bytes that are not UTF-8 — with U+FFFD; Go code that builds markup itself
 calls the same `stdlib.XMLEscape` and `stdlib.CDATA`. Text goldmark writes itself, and raw
-HTML, never passes through them, so `CompileMarkdown` and `CompileMarkdownLegacy` finish
-with one pass over the whole body that does the same, numeric references such as `&#27;`
-included.
+HTML, never passes through them, so `CompileMarkdown` finishes with one pass over the
+whole body that does the same, numeric references such as `&#27;` included.
 
 Titles, filenames, and `ri:content-title` have each caused a malformed-XML bug in the
 past. If you add a template that interpolates user-controlled text, pipe it through one
@@ -137,11 +136,7 @@ error return, so `transformer.PipelineTransformer` accumulates errors internally
 that fails silently without recording into the pipeline will produce a wrong page and a
 zero exit code.
 
-**6. Two compile paths must both keep working.** `CompileMarkdown` (default, GH alerts +
-pipeline transformer) and `CompileMarkdownLegacy` (the original renderer set). They are
-compared against each other in `markdown/transformer_comparison_test.go`.
-
-**7. Attachment checksums are content-addressed, but rendered ones are source-addressed.**
+**6. Attachment checksums are content-addressed, but rendered ones are source-addressed.**
 Checksums live in the remote attachment's comment behind the `AttachmentChecksumPrefix`
 (`mark:checksum:` followed by a space).
 Mermaid attachments and d2 PNGs set `Checksum` from the *diagram source* (plus the scale
@@ -155,13 +150,12 @@ deterministic.
 `ResolveAttachments` skips checksum computation when `Checksum` is already set — preserve
 that.
 
-**8. `--features` replaces the defaults, it does not add to them.** Defaults are
-`mermaid,mention`, and `none` switches every optional feature off. When adding a feature: register it in `markdown/markdown.go` (both
-extensions if applicable), add it to the `Usage` string of the `features` flag in
+**7. `--features` replaces the defaults, it does not add to them.** Defaults are
+`mermaid,mention`, and `none` switches every optional feature off. When adding a feature: register it in `markdown/markdown.go`, add it to the `Usage` string of the `features` flag in
 `util/flags.go`, and document it under `docs/` (diagrams and other
 rendering in `docs/formatting.md`).
 
-**9. Everything is sequential today, and one thing still relies on that.**
+**8. Everything is sequential today, and one thing still relies on that.**
 The two that used to be named here are done: the folder cache in `page/ancestry.go` sits
 behind an `RWMutex` (`TestFolderCacheConcurrentAccess` in `page/ancestry_test.go` races it on purpose), and
 `confluence.API`'s Cloud probe goes through a `sync.Once`, so the field the old wording

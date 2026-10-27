@@ -1,37 +1,11 @@
 package renderer
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
 )
-
-type ConfluenceBlockQuoteRenderer struct {
-	html.Config
-	LevelMap BlockQuoteLevelMap
-}
-
-// NewConfluenceBlockQuoteRenderer creates a new instance of the ConfluenceBlockQuoteRenderer.
-func NewConfluenceBlockQuoteRenderer(opts ...html.Option) renderer.NodeRenderer {
-	r := &ConfluenceBlockQuoteRenderer{
-		Config:   html.NewConfig(),
-		LevelMap: nil,
-	}
-	for _, opt := range opts {
-		opt.SetHTMLOption(&r.Config)
-	}
-	return r
-}
-
-// RegisterFuncs implements NodeRenderer.RegisterFuncs .
-func (r *ConfluenceBlockQuoteRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
-	reg.Register(ast.KindBlockquote, r.renderBlockQuote)
-}
 
 type BlockQuoteLevelMap map[ast.Node]int
 
@@ -99,9 +73,8 @@ func markerOf(literal string) string {
 	return found
 }
 
-// ClassifyingBlockQuote compares a string against a set of patterns and returns its AdmonitionType
-// Note: GitHub Alerts ([!NOTE], [!TIP], etc.) are now handled by the superior transformer approach
-// in the GitHub Alerts extension, not by this legacy blockquote renderer
+// ClassifyingBlockQuote compares a string against a set of patterns and returns its AdmonitionType.
+// GitHub Alerts ([!NOTE], [!TIP], etc.) are handled by the GitHub Alerts transformer instead.
 func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) AdmonitionType {
 
 	marker := markerOf(literal)
@@ -186,42 +159,4 @@ func GenerateBlockQuoteLevel(someNode ast.Node) BlockQuoteLevelMap {
 		return ast.WalkContinue, nil
 	})
 	return blockQuoteLevelMap
-}
-
-// renderBlockQuote will render a BlockQuote
-func (r *ConfluenceBlockQuoteRenderer) renderBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	// Initialize BlockQuote level map
-	if r.LevelMap == nil {
-		r.LevelMap = GenerateBlockQuoteLevel(node)
-	}
-
-	quoteType := ParseBlockQuoteType(node, source)
-	quoteLevel := r.LevelMap.Level(node)
-
-	if quoteLevel == 0 && entering && quoteType != AdmonitionNone {
-		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", quoteType)
-		if _, err := writer.Write([]byte(prefix)); err != nil {
-			return ast.WalkStop, err
-		}
-		return ast.WalkContinue, nil
-	}
-	if quoteLevel == 0 && !entering && quoteType != AdmonitionNone {
-		suffix := "</ac:rich-text-body></ac:structured-macro>\n"
-		if _, err := writer.Write([]byte(suffix)); err != nil {
-			return ast.WalkStop, err
-		}
-		return ast.WalkContinue, nil
-	}
-	if entering {
-		if node.Attributes() != nil {
-			_, _ = writer.WriteString("<blockquote")
-			html.RenderAttributes(writer, node, html.BlockquoteAttributeFilter)
-			_ = writer.WriteByte('>')
-		} else {
-			_, _ = writer.WriteString("<blockquote>\n")
-		}
-	} else {
-		_, _ = writer.WriteString("</blockquote>\n")
-	}
-	return ast.WalkContinue, nil
 }

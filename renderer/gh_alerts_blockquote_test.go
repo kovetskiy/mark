@@ -61,10 +61,9 @@ func TestGHAlertMacroMapping(t *testing.T) {
 	}
 }
 
-// TestGHAlertRendererFallsBackToLegacySyntax covers the reason this renderer
-// replaces the legacy one rather than sitting beside it: with GitHub Alerts on,
-// it is the only thing registered for blockquotes, so it still has to handle
-// the "> Note:" syntax that predates them.
+// TestGHAlertRendererFallsBackToLegacySyntax covers the "> Note:" syntax that
+// predates GitHub Alerts: this is the only renderer registered for
+// blockquotes, so it has to handle that syntax too.
 func TestGHAlertRendererFallsBackToLegacySyntax(t *testing.T) {
 	actual := render(t, "> Warn: the old syntax.\n", ghAlertRenderers(), ghAlertParserOptions()...)
 	assertWellFormed(t, actual)

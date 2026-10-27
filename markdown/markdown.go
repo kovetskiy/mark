@@ -30,141 +30,8 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// ConfluenceLegacyExtension is the original goldmark extension without GitHub Alerts support
-// This extension is preserved for backward compatibility and testing purposes
-type ConfluenceLegacyExtension struct {
-	html.Config
-	Stdlib      *stdlib.Lib
-	Path        string
-	MarkConfig  types.MarkConfig
-	Attachments []attachment.Attachment
-}
-
-// NewConfluenceLegacyExtension creates a new instance of the ConfluenceLegacyExtension.
-func NewConfluenceLegacyExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceLegacyExtension {
-	return &ConfluenceLegacyExtension{
-		Config:      html.NewConfig(),
-		Stdlib:      stdlib,
-		Path:        path,
-		MarkConfig:  cfg,
-		Attachments: []attachment.Attachment{},
-	}
-}
-
-func (c *ConfluenceLegacyExtension) Attach(a attachment.Attachment) {
-	c.Attachments = append(c.Attachments, a)
-}
-
-func (c *ConfluenceLegacyExtension) Extend(m goldmark.Markdown) {
-
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 100),
-		util.Prioritized(crenderer.NewConfluenceBlockQuoteRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib), 100),
-		util.Prioritized(crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path), 100),
-		util.Prioritized(crenderer.NewConfluenceHTMLBlockRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
-		util.Prioritized(crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1), 100),
-		util.Prioritized(crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign), 100),
-		util.Prioritized(crenderer.NewConfluenceParagraphRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced), 100),
-		util.Prioritized(crenderer.NewConfluenceTaskListRenderer(), 100),
-		util.Prioritized(crenderer.NewConfluenceDefinitionListRenderer(), 100),
-	))
-
-	// <details> reaches here only because the document wrote the tag, and the
-	// storage format has no way to carry it, so leaving it alone publishes
-	// markup Confluence discards or rejects. There is nothing to opt into.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewDetailsTransformer(), 110),
-		util.Prioritized(ctransformer.NewColumnWidthsTransformer(c.Path), 100),
-	))
-
-	if slices.Contains(c.MarkConfig.Features, "emoji") {
-		m.Parser().AddOptions(parser.WithInlineParsers(
-			// The priority goldmark-emoji's own extension gives this parser.
-			// Nothing else in the set triggers on ':'.
-			util.Prioritized(emoji.NewParser(), 999),
-		))
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			// Only the parser is taken from goldmark-emoji, so the renderer it
-			// registers at 200 is not in play; 100 is what the rest of this
-			// file uses.
-			util.Prioritized(crenderer.NewConfluenceEmojiRenderer(c.Stdlib), 100),
-		))
-	}
-
-	// goldmark's footnote extension is always on, so `[^1]` is always parsed.
-	// The only question is what renders it, and the alternative is the HTML
-	// that extension emits -- ids and fragment links, neither of which survives
-	// a Confluence page.
-	m.Renderer().AddOptions(renderer.WithNodeRenderers(
-		// Below the 500 goldmark's own footnote extension registers at.
-		// Node renderers are registered from the highest priority number
-		// down, and each registration overwrites the last, so the *smaller*
-		// number is the one that ends up rendering the node.
-		util.Prioritized(crenderer.NewConfluenceFootnoteRenderer(c.Stdlib), 100),
-	))
-
-	if slices.Contains(c.MarkConfig.Features, "mkdocsadmonitions") {
-		m.Parser().AddOptions(
-			parser.WithBlockParsers(
-				util.Prioritized(cparser.NewAdmonitionParser(), 100),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMkDocsAdmonitionRenderer(), 100),
-		))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "date") {
-		m.Parser().AddOptions(
-			parser.WithInlineParsers(
-				util.Prioritized(cparser.NewDateParser(), 99),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceDateRenderer(), 100),
-		))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "mention") {
-		m.Parser().AddOptions(
-			parser.WithInlineParsers(
-				util.Prioritized(cparser.NewMentionParser(), 99),
-			),
-		)
-
-		m.Renderer().AddOptions(renderer.WithNodeRenderers(
-			util.Prioritized(crenderer.NewConfluenceMentionRenderer(c.Stdlib), 100),
-		))
-	}
-
-	if slices.Contains(c.MarkConfig.Features, "inline-link-card") {
-		m.Parser().AddOptions(parser.WithASTTransformers(
-			util.Prioritized(ctransformer.NewAutoLinkTransformer(), 110),
-		))
-	}
-
-	// Close the void elements and repair the comments an author may have
-	// written by hand, which Markdown allows and storage format does not.
-	// After everything at 110 that owns raw HTML of its own, so that this only
-	// sees what those transformers left behind.
-	m.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(ctransformer.NewXMLWellFormedTransformer(), 120),
-	))
-
-	m.Parser().AddOptions(parser.WithInlineParsers(
-		// Must be registered with a higher priority than goldmark's linkParser to make sure goldmark doesn't parse
-		// the <ac:*/> tags.
-		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
-	))
-}
-
-// compileMarkdownWithExtension is a shared helper to eliminate code duplication
-// between different compilation approaches
+// compileMarkdownWithExtension builds the goldmark converter around ext and
+// renders markdown with it.
 func compileMarkdownWithExtension(markdown []byte, ext goldmark.Extender, logMessage string) (string, error) {
 	log.Trace().Msgf(logMessage, string(markdown))
 
@@ -479,7 +346,7 @@ func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]atta
 }
 
 // expandIncludes runs include expansion over the document until it settles,
-// which is what both compile paths need before goldmark ever sees the bytes.
+// which has to happen before goldmark ever sees the bytes.
 func expandIncludes(
 	path string,
 	includePath string,
@@ -546,42 +413,8 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }
 
-// CompileMarkdownLegacy compiles markdown using the legacy approach without GitHub Alerts transformer
-// This function is preserved for backward compatibility and testing purposes
-func CompileMarkdownLegacy(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	tmpl, err := pageTemplates(stdlib)
-	if err != nil {
-		return "", nil, err
-	}
-
-	// The template set the expansion built is not carried forward: the legacy
-	// extension runs no include or macro transformer to hand it to.
-	_, markdown, macroFiles, err := expandDirectives(path, cfg, markdown, tmpl)
-	if err != nil {
-		return "", nil, err
-	}
-
-	macroAttachments, err := attachMacroFiles(path, cfg, macroFiles)
-	if err != nil {
-		return "", nil, err
-	}
-
-	confluenceExtension := NewConfluenceLegacyExtension(stdlib, path, cfg)
-	htmlOutput, err := compileMarkdownWithExtension(markdown, confluenceExtension, "rendering markdown with legacy renderer:\n%s")
-	if err != nil {
-		return "", nil, err
-	}
-
-	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
-	warnIllegalXMLChars(path, markdown, replaced)
-
-	return htmlOutput, append(macroAttachments, confluenceExtension.Attachments...), nil
-}
-
-// ConfluenceExtension is a goldmark extension for GitHub Alerts with Transformer approach
-// This extension provides superior GitHub Alert processing by transforming [!NOTE], [!TIP], etc.
-// into proper Confluence macros while maintaining full compatibility with existing functionality.
-// This is now the primary/default extension.
+// ConfluenceExtension is the goldmark extension that renders Markdown as
+// Confluence storage format, GitHub Alerts ([!NOTE], [!TIP], etc.) included.
 type ConfluenceExtension struct {
 	html.Config
 	Stdlib          *stdlib.Lib
@@ -656,7 +489,7 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	))
 
 	// Add GitHub Alerts specific renderers with higher priority to override defaults
-	// These renderers handle both GitHub Alerts and legacy blockquote syntax
+	// These renderers handle both GitHub Alerts and the "> Info:" blockquote syntax
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(
 		util.Prioritized(crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(), 200),
 		util.Prioritized(crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines), 200),
@@ -818,12 +651,4 @@ func (c *ConfluenceExtension) Extend(m goldmark.Markdown) {
 	m.Parser().AddOptions(parser.WithInlineParsers(
 		util.Prioritized(cparser.NewConfluenceTagParser(), 199),
 	))
-}
-
-// CompileMarkdownWithTransformer compiles markdown using the transformer approach for GitHub Alerts
-// This function provides enhanced GitHub Alert processing while maintaining full compatibility
-// with existing markdown functionality. It transforms [!NOTE], [!TIP], etc. into proper titles.
-// This is an alias for CompileMarkdown for backward compatibility.
-func CompileMarkdownWithTransformer(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
-	return CompileMarkdown(markdown, stdlib, path, cfg)
 }
