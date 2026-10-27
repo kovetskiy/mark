@@ -536,8 +536,21 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	// Read only once a parent is missing.
-	titles := &runTitles{config: config, files: files, hierarchy: hierarchy}
+	pub := &publishRun{
+		api:              api,
+		config:           config,
+		std:              std,
+		pageHeader:       pageHeader,
+		tracker:          tracker,
+		ancestryTracker:  ancestryTracker,
+		checker:          checker,
+		globalProperties: globalProperties,
+		deferrals:        deferrals,
+		results:          results,
+		hierarchy:        hierarchy,
+		// Read only once a parent is missing.
+		titles: &runTitles{config: config, files: files, hierarchy: hierarchy},
+	}
 
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
@@ -552,7 +565,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := processFile(file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, deferrals, results, hierarchy, titles)
+		target, placement, err := pub.processFile(file)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -613,6 +626,11 @@ func run(ctx context.Context, config Config) (err error) {
 			len(waiting),
 		)
 
+		// Nil deferrals: this is the last look, so a link that still does
+		// not resolve is reported rather than waited on again.
+		lastLook := *pub
+		lastLook.deferrals = nil
+
 		for _, file := range waiting {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -620,11 +638,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 			log.Info().Msgf("processing %s again", file)
 
-			// Nil deferrals: this is the last look, so a link that still does
-			// not resolve is reported rather than waited on again.
-			if _, _, err := processFile(
-				file, api, config, std, pageHeader, tracker, ancestryTracker, checker, globalProperties, nil, results, hierarchy, titles,
-			); err != nil {
+			if _, _, err := lastLook.processFile(file); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
 				results.AddPage(report.Page{
@@ -765,7 +779,16 @@ func processOneFile(file string, api *confluence.API, config Config) (*confluenc
 
 	checker := page.NewLinkChecker(linkChecks)
 
-	target, _, err := processFile(file, api, config, std, pageHeader, nil, nil, checker, globalProperties, nil, nil, nil, nil)
+	pub := &publishRun{
+		api:              api,
+		config:           config,
+		std:              std,
+		pageHeader:       pageHeader,
+		checker:          checker,
+		globalProperties: globalProperties,
+	}
+
+	target, _, err := pub.processFile(file)
 	if err != nil {
 		return target, err
 	}
@@ -915,10 +938,170 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 	return meta, markdown, nil
 }
 
-func processFile(file string, api *confluence.API, config Config, std *stdlib.Lib, pageHeader *header.Header, tracker *manifest.Store, ancestryTracker page.AncestryTracker, checker *page.LinkChecker, globalProperties map[string]any, deferrals *page.Deferrals, results *report.Report, hierarchy *page.Hierarchy, titles *runTitles) (*confluence.PageInfo, *page.Ordered, error) {
-	source, markdown, err := readSource(file)
+// publishRun is what every document of a run shares: the connection, the
+// settings, and the state built once and threaded through each file. A single
+// ProcessFile leaves the run-wide parts nil, and each of them is nil-safe or
+// checked where it is used.
+type publishRun struct {
+	api              *confluence.API
+	config           Config
+	std              *stdlib.Lib
+	pageHeader       *header.Header
+	tracker          *manifest.Store
+	ancestryTracker  page.AncestryTracker
+	checker          *page.LinkChecker
+	globalProperties map[string]any
+	deferrals        *page.Deferrals
+	results          *report.Report
+	hierarchy        *page.Hierarchy
+	titles           *runTitles
+}
+
+// document is one source file as read for publishing.
+type document struct {
+	file string
+	// sourceHash fingerprints the source as read; see readDocument.
+	sourceHash string
+	// meta is nil when publishing straight to a page id.
+	meta     *metadata.Meta
+	markdown []byte
+	resolver *page.LinkResolver
+	// restrictions are the document's declared restrictions, resolved to
+	// users and groups; nil when it declares none.
+	restrictions *confluence.ResolvedRestrictions
+}
+
+// destination is the page a document publishes to.
+type destination struct {
+	page    *confluence.PageInfo
+	created bool
+	// What this document's headers placed the page under, kept because a
+	// folder parent is not visible anywhere else: it is not a page, so it
+	// never appears among the page's ancestors.
+	parent *confluence.PageInfo
+	// A page whose title changed has to be written even when its content did
+	// not, or --changes-only would leave it under the old title forever.
+	titleChanged bool
+}
+
+// pagePreview is what a dry run found where the page would be.
+type pagePreview struct {
+	// page is nil when the page would be created; it is what --changes-only
+	// compares against.
+	page *confluence.PageInfo
+	// Where a real run would put that page, and whether it failed the
+	// ancestry check: what page.WouldMove needs to tell whether it would be
+	// moved.
+	parent    *confluence.PageInfo
+	misplaced bool
+}
+
+func (r *publishRun) processFile(file string) (*confluence.PageInfo, *page.Ordered, error) {
+	doc, err := r.readDocument(file)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Before anything is asked of Confluence: a document that has opted out
+	// should cost nothing, not a page lookup and an attachment upload it will
+	// not use.
+	if skipped, err := r.leaveUnsynchronized(doc); skipped || err != nil {
+		return nil, nil, err
+	}
+
+	if err := r.validate(doc); err != nil {
+		return nil, nil, err
+	}
+
+	doc.resolver = r.linkResolver(doc)
+
+	if err := r.resolveRestrictions(doc); err != nil {
+		return nil, nil, err
+	}
+
+	if r.config.CompileOnly || r.config.DryRun {
+		return nil, nil, r.preview(doc)
+	}
+
+	dest, err := r.resolveDestination(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Checked here, before anything is written: there is no point uploading
+	// attachments for a page that is about to be left alone.
+	if skipped, err := r.leaveDrifted(doc, dest); err != nil {
+		return nil, nil, err
+	} else if skipped {
+		return dest.page, nil, nil
+	}
+
+	restrictionPlan, err := r.tightenRestrictions(doc, dest)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	html, brokenLinks, err := r.compile(doc, dest.page)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	versionMessage, shouldUpdatePage := r.changeCheck(doc, dest, html)
+
+	// Only fetch the old body and inline comments when we know the page will
+	// actually be updated. This avoids unnecessary API round-trips for no-op
+	// runs (e.g. when --changes-only determines the content is unchanged).
+	if shouldUpdatePage && r.config.PreserveComments && !dest.created {
+		html, err = r.preserveComments(doc, dest, html)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if shouldUpdatePage {
+		if err := r.writePage(doc, dest.page, html, versionMessage); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if restrictionPlan != nil {
+		if err := r.api.ApplyFinal(restrictionPlan); err != nil {
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+		}
+	}
+
+	if err := r.recordPublished(doc, dest.page); err != nil {
+		return nil, nil, err
+	}
+
+	placement, err := r.applySettings(doc, dest)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Recorded last, once everything asked of the page has been done, so that
+	// a page whose update, labels or properties failed is not reported as
+	// published.
+	status := report.StatusPublished
+	if !shouldUpdatePage && (restrictionPlan == nil || !restrictionPlan.Changes()) {
+		status = report.StatusUnchanged
+	}
+	target := dest.page
+	r.results.AddPage(report.Page{
+		File: doc.file, Status: status,
+		Space: spaceOf(doc.meta), Title: target.Title,
+		PageID: target.ID, URL: r.api.BaseURL + target.Links.Full,
+		Warnings: brokenLinks,
+	})
+
+	return target, placement, nil
+}
+
+// readDocument reads a file and settles the metadata it publishes under.
+func (r *publishRun) readDocument(file string) (*document, error) {
+	source, markdown, err := readSource(file)
+	if err != nil {
+		return nil, err
 	}
 
 	// Fingerprint the source as read, before metadata is stripped and links are
@@ -927,16 +1110,14 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// moves with the remote would not survive the round trip it exists for.
 	sourceHash := fingerprint.SHA1(string(source))
 
-	frontMatterEnabled := slices.Contains(config.Features, "frontmatter")
-
-	meta, markdown, err := documentMeta(config, file, markdown, hierarchy)
+	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if meta != nil {
-		if previous, taken := hierarchy.Claim(meta.Space, meta.Title, file); taken {
-			return nil, nil, fmt.Errorf(
+		if previous, taken := r.hierarchy.Claim(meta.Space, meta.Title, file); taken {
+			return nil, fmt.Errorf(
 				"%s already publishes %q in space %q, and a space holds one page of a title: "+
 					"rename one of them, or use --title-append-generated-hash",
 				previous, meta.Title, meta.Space,
@@ -944,7 +1125,7 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		}
 	}
 
-	if config.PageID != "" && meta != nil {
+	if r.config.PageID != "" && meta != nil {
 		log.Warn().Msg(
 			`specified file contains metadata, ` +
 				`but it will be ignored due specified command line URL`,
@@ -952,501 +1133,535 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		meta = nil
 	}
 
-	// Before anything is asked of Confluence: a document that has opted out
-	// should cost nothing, not a page lookup and an attachment upload it will
-	// not use.
-	if !meta.Publish() {
-		log.Info().Msgf("%s is not synchronized; leaving it alone", file)
-		results.AddPage(report.Page{
-			File: file, Status: report.StatusSkipped,
-			Reason: "the document is not synchronized",
-			Space:  spaceOf(meta), Title: titleOf(meta),
-		})
+	return &document{file: file, sourceHash: sourceHash, meta: meta, markdown: markdown}, nil
+}
 
-		// Looked up purely to mark the path as seen. A page somebody stopped
-		// synchronising is one they chose to keep, and a run that did not
-		// account for the file would read it as gone: the page is reported as
-		// having no source file and its mapping is dropped, so synchronising it
-		// again later would no longer know which page was already its own.
-		if tracker != nil && meta != nil && meta.Space != "" {
-			if _, _, err := tracker.Lookup(meta.Space, file); err != nil {
-				return nil, nil, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
-			}
-		}
-
-		return nil, nil, nil
+// leaveUnsynchronized reports, and returns true for, a document that has
+// opted out of being published.
+func (r *publishRun) leaveUnsynchronized(doc *document) (bool, error) {
+	meta, file := doc.meta, doc.file
+	if meta.Publish() {
+		return false, nil
 	}
 
-	if config.PageID == "" && meta == nil {
-		return nil, nil, fmt.Errorf(
+	log.Info().Msgf("%s is not synchronized; leaving it alone", file)
+	r.results.AddPage(report.Page{
+		File: file, Status: report.StatusSkipped,
+		Reason: "the document is not synchronized",
+		Space:  spaceOf(meta), Title: titleOf(meta),
+	})
+
+	// Looked up purely to mark the path as seen. A page somebody stopped
+	// synchronising is one they chose to keep, and a run that did not
+	// account for the file would read it as gone: the page is reported as
+	// having no source file and its mapping is dropped, so synchronising it
+	// again later would no longer know which page was already its own.
+	if r.tracker != nil && meta != nil && meta.Space != "" {
+		if _, _, err := r.tracker.Lookup(meta.Space, file); err != nil {
+			return true, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+		}
+	}
+
+	return true, nil
+}
+
+// validate refuses a document that names no page to publish to.
+func (r *publishRun) validate(doc *document) error {
+	meta := doc.meta
+
+	if r.config.PageID == "" && meta == nil {
+		return fmt.Errorf(
 			"specified file doesn't contain metadata and URL is not specified " +
 				"via command line or names no page: neither a pageId parameter nor a " +
 				"/spaces/KEY/pages/ID path",
 		)
 	}
 
-	if meta != nil {
-		if meta.Space == "" {
-			return nil, nil, fmt.Errorf(
-				"space is not set ('Space' header is not set and '--space' option is not set)",
-			)
-		}
-		if meta.Title == "" {
-			return nil, nil, fmt.Errorf(
-				"page title is not set: use the 'Title' header, " +
-					"or the --title-from-h1 / --title-from-filename flags",
-			)
-		}
-		if err := checkTitleLengths(meta); err != nil {
-			return nil, nil, err
-		}
+	if meta == nil {
+		return nil
 	}
 
-	// Links are rewritten while the document is being rendered, by walking the
-	// parsed tree. Doing it here, over the text, meant a fenced block showing
-	// Markdown syntax had its example links turned into Confluence URLs.
+	if meta.Space == "" {
+		return fmt.Errorf(
+			"space is not set ('Space' header is not set and '--space' option is not set)",
+		)
+	}
+	if meta.Title == "" {
+		return fmt.Errorf(
+			"page title is not set: use the 'Title' header, " +
+				"or the --title-from-h1 / --title-from-filename flags",
+		)
+	}
+
+	return checkTitleLengths(meta)
+}
+
+// linkResolver builds the resolver the document's links are rewritten
+// through while it is rendered, by walking the parsed tree, so that a fenced
+// block showing Markdown syntax keeps its example links as written.
+func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
+	config, file := r.config, doc.file
+
 	// A fragment's links are written from where the fragment lives, so the
 	// directory of everything this document includes is worth looking in too.
 	// One level: a fragment that itself includes another is not followed here.
-	searchDirs := includeSearchDirs(filepath.Dir(file), config.IncludePath, markdown)
+	searchDirs := includeSearchDirs(filepath.Dir(file), config.IncludePath, doc.markdown)
 
 	resolver := page.NewLinkResolver(
-		api,
-		meta,
+		r.api,
+		doc.meta,
 		filepath.Dir(file),
 		config.Space,
 		config.TitleFromH1,
 		config.TitleFromFilename,
 		config.Parents,
 		config.TitleAppendGeneratedHash,
-		frontMatterEnabled,
-		checker,
+		slices.Contains(config.Features, "frontmatter"),
+		r.checker,
 		searchDirs,
 	)
 	resolver.SourceFile = file
-	resolver.Deferrals = deferrals
+	resolver.Deferrals = r.deferrals
 
-	resolveLink := resolver.Resolve
+	return resolver
+}
 
-	// What a dry run found where the page would be, for --changes-only to compare
-	// against. Nil means the page would be created.
-	var previewed *confluence.PageInfo
-	// Where a real run would put that page, and whether it failed the ancestry
-	// check: what page.WouldMove needs to tell whether it would be moved.
-	var previewParent *confluence.PageInfo
-	var previewMisplaced bool
-
-	// Resolved before anything is written, and by a dry run too, so that a
-	// user that resolves to nobody, or to more than one person, fails here
-	// rather than after a real run has created an empty, unrestricted page.
-	var restrictions *confluence.ResolvedRestrictions
-	if meta != nil && meta.Restrictions != nil && !config.CompileOnly {
-		resolved, err := api.ResolveRestrictions(declaredRestrictions(meta.Restrictions))
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to resolve the restrictions of %q: %w", file, err)
-		}
-		restrictions = resolved
+// resolveRestrictions resolves the document's declared restrictions before
+// anything is written, and on a dry run too, so that a user that resolves to
+// nobody, or to more than one person, fails here rather than after a real run
+// has created an empty, unrestricted page.
+func (r *publishRun) resolveRestrictions(doc *document) error {
+	if doc.meta == nil || doc.meta.Restrictions == nil || r.config.CompileOnly {
+		return nil
 	}
 
+	resolved, err := r.api.ResolveRestrictions(declaredRestrictions(doc.meta.Restrictions))
+	if err != nil {
+		return fmt.Errorf("unable to resolve the restrictions of %q: %w", doc.file, err)
+	}
+	doc.restrictions = resolved
+
+	return nil
+}
+
+// previewLocation finds, without changing anything, the page a dry run's
+// document would publish to.
+func (r *publishRun) previewLocation(doc *document) (pagePreview, error) {
+	var found pagePreview
+	meta, file := doc.meta, doc.file
+
+	if meta == nil {
+		if r.config.PageID != "" {
+			pg, err := r.api.GetPageByID(r.config.PageID)
+			if err != nil {
+				return found, fmt.Errorf("unable to resolve page by ID: %w", err)
+			}
+			found.page = pg
+		}
+
+		return found, nil
+	}
+
+	// As a real run does before resolving, or a parent renamed in
+	// Confluence is looked for under its old title and the page is
+	// reported moved on every preview while the real run leaves it be.
+	// It only reads, and a dry run's manifest store saves nothing.
+	if err := refreshStaleParents(r.tracker, r.api, meta, r.titles); err != nil {
+		return found, err
+	}
+
+	parent, pg, misplaced, err := page.PreviewPage(r.api, meta, r.ancestryTracker)
+	if err != nil {
+		return found, fmt.Errorf("unable to resolve page location: %w", err)
+	}
+
+	if pg == nil {
+		// The title found nothing, which is where a real run consults
+		// the manifest. Saying so is the whole point of a dry run:
+		// otherwise it reports a new page for every rename and retitle
+		// the run would actually have handled in place.
+		found.page, err = previewTrackedResolution(r.tracker, r.api, meta, file, doc.sourceHash)
+		if err != nil {
+			return found, err
+		}
+		// Not found by title, so ResolvePage's own move does not apply.
+		found.parent = parent
+
+		return found, nil
+	}
+
+	found.page = pg
+	found.parent, found.misplaced = parent, misplaced
+
+	if r.tracker != nil {
+		// Found by title. A real run records the path once it has
+		// published, and that is what keeps the path from being read
+		// as an orphan. A dry run returns before then, so it records
+		// here; its store never saves.
+		if err := r.tracker.Record(meta.Space, file, pg.ID, meta.Title, doc.sourceHash); err != nil {
+			return found, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+		}
+	}
+
+	return found, nil
+}
+
+// preview is the whole of a compile-only or dry run for one document: it
+// compiles the page, checks it as a real run would, and prints it or, under
+// --changes-only, says whether the page would change.
+func (r *publishRun) preview(doc *document) error {
+	config, meta, file := r.config, doc.meta, doc.file
+
+	var found pagePreview
 	if config.DryRun {
+		var err error
+		found, err = r.previewLocation(doc)
+		if err != nil {
+			return err
+		}
+	}
+	previewed := found.page
+
+	cfg, err := config.documentConfig(meta, doc.resolver.Resolve)
+	if err != nil {
+		return err
+	}
+
+	// Only a dry run asked to tell changed pages from unchanged ones.
+	compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
+
+	status, reason := "", ""
+	if compare && config.NoOverwrite && previewed != nil && r.tracker != nil && meta != nil {
+		// Ahead of compiling, as on a real run: a page edited in Confluence
+		// is left alone whatever the source says, and whatever it would fail on.
+		drift, err := hasDrifted(r.api, r.tracker, meta.Space, file, previewed)
+		if err != nil {
+			return err
+		}
+
+		if drift != "" {
+			status, reason = report.StatusSkipped, drift
+			log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
+		}
+	}
+
+	// A page the drift check above leaves alone is not compiled at all.
+	var html string
+	if status == "" {
+		html, status, reason, err = r.previewBody(doc, found, cfg, compare)
+		if err != nil {
+			return err
+		}
+	}
+
+	printHTML := status != report.StatusUnchanged && status != report.StatusSkipped
+	if compare {
+		// A json or github report goes to the same stream, for a CI step to
+		// parse; HTML written ahead of it would make it unparseable.
+		format, err := report.ParseFormat(config.OutputFormat)
+		if err != nil {
+			return err
+		}
+		printHTML = printHTML && format == report.FormatURL
+	}
+
+	if printHTML {
+		if _, err := fmt.Fprintln(config.output(), html); err != nil {
+			return err
+		}
+	}
+
+	// Checked here as well as before an upload. Validating documents in CI
+	// without Confluence credentials is the whole of what --compile-only is
+	// for, and a body Confluence would reject outright should fail there,
+	// not at publish time in front of the person who can least act on it.
+	//
+	// The layout wrap and the comment merge are missing from this output,
+	// and neither introduces the errors this catches.
+	if status != report.StatusSkipped {
+		if err := markmd.CheckWellFormed(html); err != nil {
+			return err
+		}
+	}
+
+	// Said here too, and for the same reason the check above is: a run told to
+	// check links should report them on the credential-free invocation
+	// --compile-only exists for, and the one a pull request gate is most
+	// likely to use.
+	if err := reportBrokenLinks(doc.resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
+		return err
+	}
+
+	if status != "" {
+		var target confluence.PageInfo
+		var url string
+		if previewed != nil {
+			target = *previewed
+			// Built as a real run builds it, so CI can link the page.
+			url = r.api.BaseURL + target.Links.Full
+		}
+		title := target.Title
 		if meta != nil {
-			// As a real run does before resolving, or a parent renamed in
-			// Confluence is looked for under its old title and the page is
-			// reported moved on every preview while the real run leaves it be.
-			// It only reads, and a dry run's manifest store saves nothing.
-			if err := refreshStaleParents(tracker, api, meta, titles); err != nil {
-				return nil, nil, err
-			}
+			title = meta.Title
+		}
+		r.results.AddPage(report.Page{
+			File: file, Status: status, Reason: reason,
+			Space: spaceOf(meta), Title: title,
+			PageID: target.ID, URL: url,
+			Warnings: doc.resolver.Broken(),
+		})
+	}
 
-			if parent, pg, misplaced, err := page.PreviewPage(api, meta, ancestryTracker); err != nil {
-				return nil, nil, fmt.Errorf("unable to resolve page location: %w", err)
-			} else if pg == nil {
-				// The title found nothing, which is where a real run consults
-				// the manifest. Saying so is the whole point of a dry run:
-				// otherwise it reports a new page for every rename and retitle
-				// the run would actually have handled in place.
-				previewed, err = previewTrackedResolution(tracker, api, meta, file, sourceHash)
-				if err != nil {
-					return nil, nil, err
-				}
-				// Not found by title, so ResolvePage's own move does not apply.
-				previewParent = parent
-			} else {
-				previewed = pg
-				previewParent, previewMisplaced = parent, misplaced
+	return nil
+}
 
-				if tracker != nil {
-					// Found by title. A real run records the path once it has
-					// published, and that is what keeps the path from being read
-					// as an orphan. A dry run returns before then, so it records
-					// here; its store never saves.
-					if err := tracker.Record(meta.Space, file, pg.ID, meta.Title, sourceHash); err != nil {
-						return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
-					}
-				}
-			}
-		} else if config.PageID != "" {
-			pg, err := api.GetPageByID(config.PageID)
-			if err != nil {
-				return nil, nil, fmt.Errorf("unable to resolve page by ID: %w", err)
-			}
-			previewed = pg
+// previewBody compiles a previewed page and, when compare is set, says
+// whether a real run would change it.
+func (r *publishRun) previewBody(
+	doc *document, found pagePreview, cfg types.MarkConfig, compare bool,
+) (html, status, reason string, err error) {
+	meta, file, previewed := doc.meta, doc.file, found.page
+
+	// Read once, for the preview and for the clash check below.
+	var declared []attachment.Attachment
+	var attachments *attachmentPreview
+	if compare {
+		declared, err = declaredAttachments(file, meta)
+		if err != nil {
+			return "", "", "", err
+		}
+
+		attachments, err = previewAttachmentLinks(r.api, previewed, declared)
+		if err != nil {
+			return "", "", "", err
+		}
+		if attachments != nil {
+			cfg.ResolveAttachment = attachments.links.Resolve
 		}
 	}
 
-	if config.CompileOnly || config.DryRun {
-		cfg, err := config.documentConfig(meta, resolveLink)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Only a dry run asked to tell changed pages from unchanged ones.
-		compare := config.DryRun && !config.CompileOnly && config.ChangesOnly
-
-		status, reason := "", ""
-		if compare && config.NoOverwrite && previewed != nil && tracker != nil && meta != nil {
-			// Ahead of compiling, as on a real run: a page edited in Confluence
-			// is left alone whatever the source says, and whatever it would fail on.
-			drift, err := hasDrifted(api, tracker, meta.Space, file, previewed)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			if drift != "" {
-				status, reason = report.StatusSkipped, drift
-				log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
-			}
-		}
-
-		// A page the drift check above leaves alone is not compiled at all.
-		var html string
-		if status == "" {
-			// Read once, for the preview and for the clash check below.
-			var declared []attachment.Attachment
-			var attachments *attachmentPreview
-			if compare {
-				var err error
-				declared, err = declaredAttachments(file, meta)
-				if err != nil {
-					return nil, nil, err
-				}
-
-				attachments, err = previewAttachmentLinks(api, previewed, declared)
-				if err != nil {
-					return nil, nil, err
-				}
-				if attachments != nil {
-					cfg.ResolveAttachment = attachments.links.Resolve
-				}
-			}
-
-			var inline []attachment.Attachment
-			html, inline, err = markmd.CompileMarkdown(markdown, std, file, cfg)
-			if err != nil {
-				return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
-			}
-
-			var previewedTitle string
-			if previewed != nil {
-				previewedTitle = previewed.Title
-			}
-
-			headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, previewedTitle, config.Space, cfg)
-			if err != nil {
-				return nil, nil, err
-			}
-			html = headerHTML + html
-
-			// The clash a real run refuses, so that this one does not report
-			// success for a page that run will fail on. Declared files are read
-			// only when there is something to clash with them.
-			if len(headerAttachments) > 0 || len(inline) > 0 {
-				if !compare {
-					declared, err = declaredAttachments(file, meta)
-					if err != nil {
-						return nil, nil, err
-					}
-				}
-
-				if _, err := withHeaderAttachments(file, declared, inline, headerAttachments); err != nil {
-					return nil, nil, err
-				}
-			}
-
-			if compare {
-				var relinked bool
-				html, relinked = attachments.settle(html)
-
-				var others []string
-				uploads, err := attachments.uploads(inline)
-				if err != nil {
-					return nil, nil, err
-				}
-				if uploads {
-					others = append(others, "an attachment would be uploaded")
-				}
-
-				if previewed != nil && meta != nil {
-					if page.WouldMove(api, previewed, previewParent, meta.Parents, previewMisplaced) {
-						others = append(others, "it would be moved under the parent its headers declare")
-					}
-
-					add, del, err := api.LabelChanges(previewed, meta.Labels, config.AppendLabels)
-					if err != nil {
-						return nil, nil, err
-					}
-					if len(add) > 0 || len(del) > 0 {
-						others = append(others, "its labels would change")
-					}
-
-					if restrictions != nil {
-						plan, err := api.PlanRestrictions(previewed, restrictions, config.EditLock, false)
-						if err != nil {
-							return nil, nil, err
-						}
-						if plan.Changes() {
-							others = append(others, "its restrictions would change")
-						}
-					}
-				}
-
-				status, reason, err = previewChange(html, previewed, relinked, others, file, config, meta, std)
-				if err != nil {
-					return nil, nil, err
-				}
-			}
-		}
-
-		printHTML := status != report.StatusUnchanged && status != report.StatusSkipped
-		if compare {
-			// A json or github report goes to the same stream, for a CI step to
-			// parse; HTML written ahead of it would make it unparseable.
-			format, err := report.ParseFormat(config.OutputFormat)
-			if err != nil {
-				return nil, nil, err
-			}
-			printHTML = printHTML && format == report.FormatURL
-		}
-
-		if printHTML {
-			if _, err := fmt.Fprintln(config.output(), html); err != nil {
-				return nil, nil, err
-			}
-		}
-
-		// Checked here as well as before an upload. Validating documents in CI
-		// without Confluence credentials is the whole of what --compile-only is
-		// for, and a body that Confluence would reject outright passed that
-		// check silently -- so the failure was found at publish time by the
-		// person who could least act on it.
-		//
-		// The layout wrap and the comment merge are missing from this output,
-		// and neither introduces the errors this catches.
-		if status != report.StatusSkipped {
-			if err := markmd.CheckWellFormed(html); err != nil {
-				return nil, nil, err
-			}
-		}
-
-		// Said here too, and for the same reason the check above is. The links
-		// were resolved while the document was walked either way; this branch
-		// simply returned without ever reading what that found, so a run told
-		// to check them reported nothing and exited 0 -- on precisely the
-		// credential-free invocation --compile-only exists for, and the one a
-		// pull request gate is most likely to use.
-		if err := reportBrokenLinks(resolver.Broken(), file, config.CheckLinksWarnOnly); err != nil {
-			return nil, nil, err
-		}
-
-		if status != "" {
-			var target confluence.PageInfo
-			var url string
-			if previewed != nil {
-				target = *previewed
-				// Built as a real run builds it, so CI can link the page.
-				url = api.BaseURL + target.Links.Full
-			}
-			title := target.Title
-			if meta != nil {
-				title = meta.Title
-			}
-			results.AddPage(report.Page{
-				File: file, Status: status, Reason: reason,
-				Space: spaceOf(meta), Title: title,
-				PageID: target.ID, URL: url,
-				Warnings: resolver.Broken(),
-			})
-		}
-
-		return nil, nil, nil
+	html, inline, err := markmd.CompileMarkdown(doc.markdown, r.std, file, cfg)
+	if err != nil {
+		return "", "", "", fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
-	var target *confluence.PageInfo
-	var pageCreated bool
+	var previewedTitle string
+	if previewed != nil {
+		previewedTitle = previewed.Title
+	}
 
-	// What this document's headers placed the page under, kept beyond the
-	// resolution block because a folder parent is not visible anywhere else: it
-	// is not a page, so it never appears among the page's ancestors.
-	var resolvedParent *confluence.PageInfo
-	// A page whose title changed has to be written even when its content did
-	// not, or --changes-only would leave it under the old title forever.
-	var titleChanged bool
+	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, previewedTitle, r.config.Space, cfg)
+	if err != nil {
+		return "", "", "", err
+	}
+	html = headerHTML + html
 
-	if meta != nil {
-		// Parents are named by title, so a parent that has itself been renamed
-		// leaves this document pointing at a name nothing carries any more.
-		// Do this before resolution, so ancestry is walked against titles that
-		// exist rather than creating an empty page under the old one.
-		if err := refreshStaleParents(tracker, api, meta, titles); err != nil {
-			return nil, nil, err
+	// The clash a real run refuses, so that this one does not report
+	// success for a page that run will fail on. Declared files are read
+	// only when there is something to clash with them.
+	if len(headerAttachments) > 0 || len(inline) > 0 {
+		if !compare {
+			declared, err = declaredAttachments(file, meta)
+			if err != nil {
+				return "", "", "", err
+			}
 		}
 
-		parent, pg, err := page.ResolvePage(false, api, meta, ancestryTracker)
+		if _, err := withHeaderAttachments(file, declared, inline, headerAttachments); err != nil {
+			return "", "", "", err
+		}
+	}
+
+	if !compare {
+		return html, "", "", nil
+	}
+
+	var relinked bool
+	html, relinked = attachments.settle(html)
+
+	var others []string
+	uploads, err := attachments.uploads(inline)
+	if err != nil {
+		return "", "", "", err
+	}
+	if uploads {
+		others = append(others, "an attachment would be uploaded")
+	}
+
+	settings, err := r.previewSettingChanges(doc, found)
+	if err != nil {
+		return "", "", "", err
+	}
+	others = append(others, settings...)
+
+	status, reason, err = previewChange(html, previewed, relinked, others, file, r.config, meta, r.std)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	return html, status, reason, nil
+}
+
+// resolveDestination finds or creates the page a document publishes to.
+func (r *publishRun) resolveDestination(doc *document) (*destination, error) {
+	var dest *destination
+	if doc.meta != nil {
+		var err error
+		dest, err = r.resolveDocumentPage(doc)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
+			return nil, err
 		}
-		resolvedParent = parent
-
-		// The title lookup found nothing, which is how both "this page is new"
-		// and "this page was renamed" look. Ask the manifest which of the two
-		// this is before creating a second page beside the first.
-		if pg == nil {
-			pg, err = resolveTrackedPage(tracker, api, meta, file)
-			if err != nil {
-				return nil, nil, err
-			}
-			if pg == nil {
-				// Not published under this path before. It may have been
-				// published under another: a renamed file is a new key holding
-				// an old document.
-				pg, err = resolveRenamedFile(tracker, api, meta, file, sourceHash)
-				if err != nil {
-					return nil, nil, err
-				}
-			}
-			if pg != nil && pg.Title != meta.Title {
-				pg.Title = meta.Title
-				titleChanged = true
-			}
-		}
-
-		if pg == nil {
-			if parent != nil && parent.Type == "folder-parent" {
-				pg, err = api.CreatePageWithFolderParent(meta.Space, meta.Type, parent.ID, meta.Title, ``)
-			} else {
-				pg, err = api.CreatePage(meta.Space, meta.Type, parent, meta.Title, ``)
-			}
-			if err != nil {
-				return nil, nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
-			}
-			pageCreated = true
-		} else if parent != nil && parent.Type == "folder-parent" {
-			if err := page.EnsurePageUnderFolderParent(api, pg, parent.ID); err != nil {
-				return nil, nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
-			}
-		} else if parent != nil && !page.UnderDeclaredParents(pg, meta.Parents) {
-			// A page resolved through the manifest rather than by title never
-			// passed the ancestry check, because that check starts from a title
-			// lookup that just missed. So an edit changing the title and the
-			// parent together would retitle the page and leave it where it was.
-			if err := page.EnsurePageUnderParent(api, pg, parent.ID); err != nil {
-				return nil, nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
-			}
-		}
-
-		// Relocating refreshes the page from Confluence, which still carries the
-		// old title -- the retitle above is staged and not published until the
-		// update below. Without this it is overwritten by the move and the page
-		// keeps its old name, silently and only when both changed at once.
-		if titleChanged && pg != nil {
-			pg.Title = meta.Title
-		}
-
-		target = pg
 	} else {
-		pg, err := api.GetPageByID(config.PageID)
+		pg, err := r.api.GetPageByID(r.config.PageID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to retrieve page by id: %w", err)
+			return nil, fmt.Errorf("unable to retrieve page by id: %w", err)
 		}
 		if pg == nil {
-			return nil, nil, fmt.Errorf("page with id %q not found", config.PageID)
+			return nil, fmt.Errorf("page with id %q not found", r.config.PageID)
 		}
-		target = pg
+		dest = &destination{page: pg}
 	}
 
-	if target != nil && target.Type == "" {
-		if meta != nil && meta.Type != "" {
-			target.Type = meta.Type
+	if target := dest.page; target != nil && target.Type == "" {
+		if doc.meta != nil && doc.meta.Type != "" {
+			target.Type = doc.meta.Type
 		} else {
 			target.Type = "page"
 		}
 	}
 
-	// Checked here, before anything is written: attachments are uploaded a few
-	// lines below, and there is no point sending them for a page that is about
-	// to be left alone.
-	if config.NoOverwrite && !pageCreated && tracker != nil && meta != nil && target != nil {
-		drift, err := hasDrifted(api, tracker, meta.Space, file, target)
+	return dest, nil
+}
+
+// resolveDocumentPage finds the page a document's metadata names, following
+// renames the manifest knows of, and creates or relocates it under the
+// parents the document declares.
+func (r *publishRun) resolveDocumentPage(doc *document) (*destination, error) {
+	api, meta, file := r.api, doc.meta, doc.file
+	dest := &destination{}
+
+	// Parents are named by title, so a parent that has itself been renamed
+	// leaves this document pointing at a name nothing carries any more.
+	// Do this before resolution, so ancestry is walked against titles that
+	// exist rather than creating an empty page under the old one.
+	if err := refreshStaleParents(r.tracker, api, meta, r.titles); err != nil {
+		return nil, err
+	}
+
+	parent, pg, err := page.ResolvePage(false, api, meta, r.ancestryTracker)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
+	}
+	dest.parent = parent
+
+	// The title lookup found nothing, which is how both "this page is new"
+	// and "this page was renamed" look. Ask the manifest which of the two
+	// this is before creating a second page beside the first.
+	if pg == nil {
+		pg, err = resolveTrackedPage(r.tracker, api, meta, file)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-
-		if drift != "" {
-			log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
-
-			results.AddPage(report.Page{
-				File: file, Status: report.StatusSkipped,
-				Reason: drift,
-				Space:  spaceOf(meta), Title: target.Title,
-				PageID: target.ID, URL: api.BaseURL + target.Links.Full,
-			})
-
-			// Recorded, so the page still counts as seen and is not mistaken
-			// for an orphan and deleted. The version is deliberately not
-			// updated: until somebody resolves the difference, every run should
-			// say so again.
-			if err := tracker.Record(meta.Space, file, target.ID, target.Title, sourceHash); err != nil {
-				return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+		if pg == nil {
+			// Not published under this path before. It may have been
+			// published under another: a renamed file is a new key holding
+			// an old document.
+			pg, err = resolveRenamedFile(r.tracker, api, meta, file, doc.sourceHash)
+			if err != nil {
+				return nil, err
 			}
-
-			return target, nil, nil
+		}
+		if pg != nil && pg.Title != meta.Title {
+			pg.Title = meta.Title
+			dest.titleChanged = true
 		}
 	}
 
-	// Restrictions tighten before attachments and content are written and
-	// loosen after, so that new content is never shown to anyone it is to be
-	// kept from, and old content stays restricted until it has been replaced.
-	// A run that fails in between leaves the page no more open than either.
-	var restrictionPlan *confluence.RestrictionPlan
-	if restrictions != nil {
-		plan, err := api.PlanRestrictions(target, restrictions, config.EditLock, pageCreated)
+	if pg == nil {
+		if parent != nil && parent.Type == "folder-parent" {
+			pg, err = api.CreatePageWithFolderParent(meta.Space, meta.Type, parent.ID, meta.Title, ``)
+		} else {
+			pg, err = api.CreatePage(meta.Space, meta.Type, parent, meta.Title, ``)
+		}
 		if err != nil {
-			return nil, nil, err
+			return nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
 		}
-		if err := api.ApplyInterim(plan); err != nil {
-			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+		dest.created = true
+	} else if parent != nil && parent.Type == "folder-parent" {
+		if err := page.EnsurePageUnderFolderParent(api, pg, parent.ID); err != nil {
+			return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
 		}
-		restrictionPlan = plan
+	} else if parent != nil && !page.UnderDeclaredParents(pg, meta.Parents) {
+		// A page resolved through the manifest rather than by title never
+		// passed the ancestry check, because that check starts from a title
+		// lookup that just missed. So an edit changing the title and the
+		// parent together would retitle the page and leave it where it was.
+		if err := page.EnsurePageUnderParent(api, pg, parent.ID); err != nil {
+			return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
+		}
 	}
+
+	// Relocating refreshes the page from Confluence, which still carries the
+	// old title -- the retitle above is staged and not published until the
+	// update. Without this it is overwritten by the move and the page keeps
+	// its old name, silently and only when both changed at once.
+	if dest.titleChanged && pg != nil {
+		pg.Title = meta.Title
+	}
+
+	dest.page = pg
+
+	return dest, nil
+}
+
+// tightenRestrictions applies the interim half of the document's
+// restrictions and returns the plan whose final half is applied once the
+// page is written.
+//
+// Restrictions tighten before attachments and content are written and
+// loosen after, so that new content is never shown to anyone it is to be
+// kept from, and old content stays restricted until it has been replaced.
+// A run that fails in between leaves the page no more open than either.
+func (r *publishRun) tightenRestrictions(doc *document, dest *destination) (*confluence.RestrictionPlan, error) {
+	if doc.restrictions == nil {
+		return nil, nil
+	}
+
+	plan, err := r.api.PlanRestrictions(dest.page, doc.restrictions, r.config.EditLock, dest.created)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.api.ApplyInterim(plan); err != nil {
+		return nil, fmt.Errorf("unable to set page restrictions: %w", err)
+	}
+
+	return plan, nil
+}
+
+// compile uploads the document's attachments, compiles it, and returns the
+// body to send, wrapped in its layout, with the broken links the run was told
+// to warn about rather than fail on.
+func (r *publishRun) compile(doc *document, target *confluence.PageInfo) (string, []string, error) {
+	api, meta, file := r.api, doc.meta, doc.file
 
 	// Collect attachments declared via <!-- Attachment: --> directives.
-	var declaredAttachments []string
+	var declared []string
 	if meta != nil {
-		declaredAttachments = meta.Attachments
+		declared = meta.Attachments
 	}
 
 	localAttachments, err := attachment.ResolveLocalAttachments(
 		vfs.LocalOS,
 		filepath.Dir(file),
-		declaredAttachments,
+		declared,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to locate attachments: %w", err)
+		return "", nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	cfg, err := config.documentConfig(meta, resolveLink)
+	cfg, err := r.config.documentConfig(meta, doc.resolver.Resolve)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, err
 	}
 
 	// With --page-id the file's metadata is discarded, so the page itself and
@@ -1456,55 +1671,54 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 		targetTitle = target.Title
 	}
 
-	headerHTML, headerAttachments, err := renderHeader(pageHeader, file, meta, targetTitle, config.Space, cfg)
+	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, targetTitle, r.config.Space, cfg)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, err
 	}
 
 	// The header's own files are known now, so a clash with a declared one is
 	// refused before anything is uploaded. One with a file the document only
 	// references can be seen once it is compiled, which needs these uploaded.
 	if _, err := withHeaderAttachments(file, localAttachments, nil, headerAttachments); err != nil {
-		return nil, nil, err
+		return "", nil, err
 	}
 
 	// The page's remote attachment list is fetched once and threaded through
-	// both resolve passes. Attachments are resolved twice per page -- declared
-	// attachments here, then diagrams discovered while rendering -- and each
-	// pass previously issued its own paginated fetch of the same list.
+	// both resolve passes: declared attachments here, then diagrams discovered
+	// while rendering.
 	remoteAttachments, err := api.GetAttachments(target.ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+		return "", nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}
 
 	attaches, remoteAttachments, err := attachment.ResolveAttachmentsWithRemotes(
 		api, target, localAttachments, remoteAttachments,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
+		return "", nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
 	attachmentLinks := attachment.NewResolver(attaches)
 
 	cfg.ResolveAttachment = attachmentLinks.Resolve
 
-	html, inlineAttachments, err := markmd.CompileMarkdown(markdown, std, file, cfg)
+	html, inlineAttachments, err := markmd.CompileMarkdown(doc.markdown, r.std, file, cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to compile markdown: %w", err)
+		return "", nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
 	html = headerHTML + html
 	inlineAttachments, err = withHeaderAttachments(file, attaches, inlineAttachments, headerAttachments)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, err
 	}
 
 	// Kept for the report as well as the log. Reaching this line with any of
 	// them means the run was told to warn rather than fail, since otherwise
 	// reportBrokenLinks has already ended it.
-	brokenLinks := resolver.Broken()
-	if err := reportBrokenLinks(brokenLinks, file, config.CheckLinksWarnOnly); err != nil {
-		return nil, nil, err
+	brokenLinks := doc.resolver.Broken()
+	if err := reportBrokenLinks(brokenLinks, file, r.config.CheckLinksWarnOnly); err != nil {
+		return "", nil, err
 	}
 
 	// Only knowable once the document has been walked.
@@ -1515,140 +1729,90 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	if _, _, err = attachment.ResolveAttachmentsWithRemotes(
 		api, target, inlineAttachments, remoteAttachments,
 	); err != nil {
-		return nil, nil, fmt.Errorf("unable to create/update attachments: %w", err)
+		return "", nil, fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
 	var layout, sidebar string
-	var labels []string
-	var contentAppearance, emoji string
-
 	if meta != nil {
 		layout = meta.Layout
 		sidebar = meta.Sidebar
-		labels = meta.Labels
-		contentAppearance = meta.ContentAppearance
-		emoji = meta.Emoji
 	}
 
-	html, err = wrapLayout(std, layout, sidebar, html)
+	html, err = wrapLayout(r.std, layout, sidebar, html)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, err
 	}
 
-	var finalVersionMessage string
-	shouldUpdatePage := true
+	return html, brokenLinks, nil
+}
 
-	if config.ChangesOnly {
-		contentHash := fingerprint.Content(html, contentAppearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
-		log.Debug().Msgf("content hash: %s", contentHash)
+// preserveComments merges the inline comments on the published page into the
+// body about to replace it, refreshing dest.page from Confluence on the way.
+func (r *publishRun) preserveComments(doc *document, dest *destination, html string) (string, error) {
+	pg, err := r.api.GetPageByIDExpanded(dest.page.ID, "ancestors,version,body.storage")
+	if err != nil {
+		return "", fmt.Errorf("unable to retrieve page body for comments: %w", err)
+	}
+	dest.page = pg
 
-		if previous := fingerprint.FromVersionMessage(target.Version.Message); previous != "" {
-			log.Debug().Msgf("previous content hash: %s", previous)
-			if previous == contentHash {
-				if titleChanged {
-					log.Info().Msgf("page %q is unchanged but is being retitled", target.Title)
-				} else {
-					log.Info().Msgf("page %q is already up to date", target.Title)
-					shouldUpdatePage = false
-				}
-			}
-		}
-
-		finalVersionMessage = fingerprint.VersionMessage(config.VersionMessage, contentHash)
-	} else {
-		finalVersionMessage = config.VersionMessage
+	// The refetch carries the title Confluence holds now, which is the old
+	// one whenever this run is renaming the page: the new title is staged
+	// on the object that was just replaced and is not published until the
+	// update. Without this the rename is dropped silently, and the manifest
+	// goes on to record a title the page does not carry -- which then
+	// misresolves every parent that names it.
+	if dest.titleChanged && doc.meta != nil {
+		pg.Title = doc.meta.Title
 	}
 
-	// Only fetch the old body and inline comments when we know the page will
-	// actually be updated. This avoids unnecessary API round-trips for no-op
-	// runs (e.g. when --changes-only determines the content is unchanged).
-	if shouldUpdatePage && config.PreserveComments && !pageCreated {
-		pg, err := api.GetPageByIDExpanded(target.ID, "ancestors,version,body.storage")
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to retrieve page body for comments: %w", err)
-		}
-		target = pg
-
-		// The refetch carries the title Confluence holds now, which is the old
-		// one whenever this run is renaming the page: the new title is staged
-		// on the object that was just replaced and is not published until the
-		// update below. Without this the rename is dropped silently, and the
-		// manifest goes on to record a title the page does not carry -- which
-		// then misresolves every parent that names it.
-		if titleChanged && meta != nil {
-			target.Title = meta.Title
-		}
-
-		inlineComments, err := api.GetInlineComments(target.ID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to retrieve inline comments: %w", err)
-		}
-
-		html, err = comments.Merge(html, target.Body.Storage.Value, inlineComments)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to merge inline comments: %w", err)
-		}
+	inlineComments, err := r.api.GetInlineComments(pg.ID)
+	if err != nil {
+		return "", fmt.Errorf("unable to retrieve inline comments: %w", err)
 	}
 
-	if shouldUpdatePage {
-		// Checked here rather than anywhere earlier because this is the body
-		// that is actually sent: after the layout wrap, and after any inline
-		// comments have been merged back into it.
-		if err := markmd.CheckWellFormed(html); err != nil {
-			return nil, nil, err
-		}
-
-		err = api.UpdatePage(
-			target,
-			html,
-			config.MinorEdit,
-			finalVersionMessage,
-			contentAppearance,
-			emoji,
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to update page: %w", err)
-		}
+	html, err = comments.Merge(html, pg.Body.Storage.Value, inlineComments)
+	if err != nil {
+		return "", fmt.Errorf("unable to merge inline comments: %w", err)
 	}
 
-	if restrictionPlan != nil {
-		if err := api.ApplyFinal(restrictionPlan); err != nil {
-			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
-		}
+	return html, nil
+}
+
+// writePage sends the page's new body.
+func (r *publishRun) writePage(doc *document, target *confluence.PageInfo, html, versionMessage string) error {
+	// Checked here rather than anywhere earlier because this is the body
+	// that is actually sent: after the layout wrap, and after any inline
+	// comments have been merged back into it.
+	if err := markmd.CheckWellFormed(html); err != nil {
+		return err
 	}
 
-	// Recorded after the write, not before it. The mapping asserts what is on
-	// the page -- the title it carries and a fingerprint of the source that
-	// produced its body -- and the manifest is now saved however the run ends,
-	// so recording first meant a body that was refused as malformed, or an
-	// update that failed, still left the mapping claiming both. The fingerprint
-	// is what rename detection matches on, so the next run would then read a
-	// document it had never published as unchanged.
-	if tracker != nil && meta != nil {
-		if err := tracker.Record(meta.Space, file, target.ID, meta.Title, sourceHash); err != nil {
-			return nil, nil, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
-		}
+	contentAppearance, emoji := appearanceOf(doc.meta)
 
-		if hierarchy != nil && !meta.DeclaredParents {
-			if err := recordDirectoryPages(tracker, target, hierarchy, file, meta.Space); err != nil {
-				return nil, nil, err
-			}
-		}
+	if err := r.api.UpdatePage(
+		target,
+		html,
+		r.config.MinorEdit,
+		versionMessage,
+		contentAppearance,
+		emoji,
+	); err != nil {
+		return fmt.Errorf("unable to update page: %w", err)
 	}
 
-	// What --no-overwrite compares against on the next run. UpdatePage advances
-	// the version it was given, so this reads the same either way: a run that
-	// wrote nothing still records what it found, so that a page nobody touches
-	// gets a version on the first run rather than staying unguarded forever.
-	if tracker != nil && meta != nil {
-		if err := tracker.RecordVersion(meta.Space, file, target.Version.Number); err != nil {
-			return nil, nil, fmt.Errorf("unable to record page version for %q: %w", file, err)
-		}
-	}
+	return nil
+}
+
+// applySettings syncs what the document asks of its page besides the body --
+// labels, properties and the edit lock -- and returns where the page asked to
+// sit among its siblings, applied once the whole run is known, since a
+// position only means something next to the others.
+func (r *publishRun) applySettings(doc *document, dest *destination) (*page.Ordered, error) {
+	meta, target := doc.meta, dest.page
 
 	if meta != nil {
-		if err := api.UpdateLabels(target, labels, config.AppendLabels); err != nil {
-			return nil, nil, err
+		if err := r.api.UpdateLabels(target, meta.Labels, r.config.AppendLabels); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1660,52 +1824,34 @@ func processFile(file string, api *confluence.API, config Config, std *stdlib.Li
 	// No dry-run branch here: a dry run returns long before this, when the
 	// compiled page would have been printed or, under --changes-only, compared.
 	if err := page.ApplyProperties(
-		api, target.ID,
-		page.MergeProperties(globalProperties, documentProperties),
+		r.api, target.ID,
+		page.MergeProperties(r.globalProperties, documentProperties),
 	); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Where this page asked to sit among its siblings. Applied once the whole
-	// run is known, since a position only means something next to the others.
 	var placement *page.Ordered
 	if meta != nil && meta.Order != nil {
 		placement = &page.Ordered{
 			PageID:   target.ID,
-			ParentID: page.ParentIDFor(target, resolvedParent),
+			ParentID: page.ParentIDFor(target, dest.parent),
 			Title:    target.Title,
 			Order:    *meta.Order,
 		}
 	}
 
-	if config.EditLock {
+	if r.config.EditLock {
 		log.Info().Msgf(
 			`edit locked on page %q by user %q to prevent manual edits`,
 			target.Title,
-			config.Username,
+			r.config.Username,
 		)
-		if err := api.RestrictPageUpdates(target, config.Username); err != nil {
-			return nil, nil, fmt.Errorf("unable to restrict page updates: %w", err)
+		if err := r.api.RestrictPageUpdates(target, r.config.Username); err != nil {
+			return nil, fmt.Errorf("unable to restrict page updates: %w", err)
 		}
 	}
 
-	// Recorded last, once everything asked of the page has been done. It used
-	// to be recorded before the body was even checked for being well-formed,
-	// so a page whose update, labels or properties then failed was reported
-	// as published -- and in the second pass, where nothing recorded the
-	// failure over it, that is what the report went on saying.
-	status := report.StatusPublished
-	if !shouldUpdatePage && (restrictionPlan == nil || !restrictionPlan.Changes()) {
-		status = report.StatusUnchanged
-	}
-	results.AddPage(report.Page{
-		File: file, Status: status,
-		Space: spaceOf(meta), Title: target.Title,
-		PageID: target.ID, URL: api.BaseURL + target.Links.Full,
-		Warnings: brokenLinks,
-	})
-
-	return target, placement, nil
+	return placement, nil
 }
 
 // wrapLayout puts the compiled body inside the page's layout, which is what is
@@ -1803,6 +1949,16 @@ func titleOf(meta *metadata.Meta) string {
 	}
 
 	return meta.Title
+}
+
+// appearanceOf is the content appearance and emoji the document's metadata
+// asks of its page.
+func appearanceOf(meta *metadata.Meta) (string, string) {
+	if meta == nil {
+		return "", ""
+	}
+
+	return meta.ContentAppearance, meta.Emoji
 }
 
 // renderHeader renders the page header for one document, naming it by its
