@@ -44,7 +44,7 @@ func checkLinksRunWith(t *testing.T, modes []string, warnOnly bool, body string,
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+body)
 
-	return Run(Config{
+	return Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:              filepath.Join(dir, "doc.md"),
 		Features:           []string{"mention"},
@@ -240,7 +240,7 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 			"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+
 				"Body here. [a](./missing.md)\n")
 
-		require.NoError(t, Run(Config{
+		require.NoError(t, Run(context.Background(), Config{
 			BaseURL: server.URL, Username: "user", Password: "token",
 			Files:      filepath.Join(dir, "doc.md"),
 			Features:   []string{"mention"},
@@ -266,7 +266,7 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 // so somebody who set it and saw no warnings would conclude their links were
 // fine. That reading is what makes this a refusal rather than a warning.
 func TestCheckLinksWarnOnlyRequiresCheckLinks(t *testing.T) {
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: "http://127.0.0.1:1", Username: "user", Password: "token",
 		Files: "none", CheckLinksWarnOnly: true, Output: io.Discard,
 	})
@@ -293,7 +293,7 @@ func TestCheckLinksWarnOnlyIsAnnotated(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:              filepath.Join(dir, "doc.md"),
 		CheckLinks:         []string{"internal"},
@@ -322,7 +322,7 @@ func TestCheckLinksFailureIsAnnotatedAsAnError(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:        filepath.Join(dir, "doc.md"),
 		CheckLinks:   []string{"internal"},
@@ -348,7 +348,7 @@ func TestCheckLinksUnderCompileOnly(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: "https://confluence.example.invalid", Username: "user", Password: "token",
 		Files:       filepath.Join(dir, "doc.md"),
 		CompileOnly: true,
@@ -371,7 +371,7 @@ func TestCheckLinksUnderDryRunReportsToo(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files:      filepath.Join(dir, "doc.md"),
 		DryRun:     true,
@@ -390,7 +390,7 @@ func TestCompileOnlyWithoutCheckLinksIsSilent(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: "https://confluence.example.invalid", Username: "user", Password: "token",
 		Files:       filepath.Join(dir, "doc.md"),
 		CompileOnly: true,
@@ -405,7 +405,7 @@ func TestCompileOnlyWarnOnlyDoesNotFail(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: "https://confluence.example.invalid", Username: "user", Password: "token",
 		Files:              filepath.Join(dir, "doc.md"),
 		CompileOnly:        true,
@@ -443,7 +443,7 @@ Text.
 See [the setup](./a-other.md#setup-guide).
 `)
 
-	require.NoError(t, Run(publishConfig(server.URL, dir+"/*.md")))
+	require.NoError(t, Run(context.Background(), publishConfig(server.URL, dir+"/*.md")))
 
 	body := bodyOfPageTitled(t, server, "Main")
 
@@ -466,7 +466,7 @@ func TestCrossFileLinkWithoutAnAnchorIsUnchanged(t *testing.T) {
 See [the page](./a-other.md).
 `)
 
-	require.NoError(t, Run(publishConfig(server.URL, dir+"/*.md")))
+	require.NoError(t, Run(context.Background(), publishConfig(server.URL, dir+"/*.md")))
 
 	body := bodyOfPageTitled(t, server, "Main")
 
@@ -494,7 +494,7 @@ func TestCrossFileAnchorThatNamesNoHeadingIsLeftAlone(t *testing.T) {
 See [nothing there](./a-other.md#no-such-heading).
 `)
 
-	require.NoError(t, Run(publishConfig(server.URL, dir+"/*.md")))
+	require.NoError(t, Run(context.Background(), publishConfig(server.URL, dir+"/*.md")))
 
 	body := bodyOfPageTitled(t, server, "Main")
 
@@ -534,7 +534,7 @@ func TestRelativeLinkDestinationIsDecoded(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee "+link+".\n")
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(file, api, Config{
+			target, err := ProcessFile(context.Background(), file, api, Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files: file, Output: io.Discard,
 			})
@@ -572,7 +572,7 @@ func TestEscapedLinkFindsItsDeclaredAttachment(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\nSee "+link+".\n")
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(file, api, Config{
+			target, err := ProcessFile(context.Background(), file, api, Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files: file, Output: io.Discard,
 			})
@@ -607,7 +607,7 @@ func TestEscapedLinkedFileIsAttached(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee "+link+".\n")
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(file, api, Config{
+			target, err := ProcessFile(context.Background(), file, api, Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files: file, AttachReferenced: true, Output: io.Discard,
 			})
@@ -641,7 +641,7 @@ func TestConfluenceLinkToAPagePublishedLaterInTheRun(t *testing.T) {
 	writeFile(t, dir, "b-doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: B -->\n\nB.\n")
 
-	assert.NoError(t, Run(Config{
+	assert.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		CheckLinks: []string{"confluence"}, Output: io.Discard,
@@ -672,8 +672,8 @@ func TestLinkInsideAnIncludedFragment(t *testing.T) {
 		CheckLinks: []string{"internal"}, Output: io.Discard,
 	}
 	// Twice, so the target exists by the time the link is resolved.
-	require.NoError(t, Run(config))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -707,8 +707,8 @@ func TestOwnDirectoryWinsOverAnIncludedOne(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	right, err := api.FindPage(context.Background(), "DOCS", "Right", "page")
@@ -741,7 +741,7 @@ func TestMacroDefinedAboveTheHeaders(t *testing.T) {
 			"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+
 			"See MYJIRA-123.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -778,7 +778,7 @@ func TestLinksResolveOnTheFirstRun(t *testing.T) {
 	writeFile(t, dir, "a-doc.md", header+"<!-- Title: A -->\n\nSee [B](./b-doc.md).\n")
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		Output: io.Discard,
@@ -804,7 +804,7 @@ func TestSecondPassOnlyRepublishesWhatWaited(t *testing.T) {
 	writeFile(t, dir, "a-doc.md", header+"<!-- Title: A -->\n\nSee [B](./b-doc.md).\n")
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB, linking nowhere.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		Output: io.Discard,
@@ -835,14 +835,14 @@ func TestSecondRunDoesNothingExtra(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	before := server.Page(a.ID).Version
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, before+1, server.Page(a.ID).Version,
 		"a run with nothing waiting should publish each document once")
@@ -862,7 +862,7 @@ func TestCheckLinksSeesResolvedLinksForPagesThisRunCreates(t *testing.T) {
 	writeFile(t, dir, "a-doc.md", header+"<!-- Title: A -->\n\nSee [B](./b-doc.md).\n")
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		CheckLinks: []string{"internal"}, Output: io.Discard,
@@ -887,7 +887,7 @@ func TestDryRunDoesNotWaitForPages(t *testing.T) {
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB.\n")
 
 	var out strings.Builder
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		DryRun: true, Output: &out,
@@ -919,8 +919,8 @@ func linkedPair(t *testing.T, body string) (string, *confluencetest.Server) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}
 	// Twice, so the target exists by the time the link is resolved.
-	require.NoError(t, Run(config))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -1005,7 +1005,7 @@ func TestAttachmentLinkInsideCodeBlockIsLeftAlone(t *testing.T) {
 		Files: file, Features: []string{"mention"}, Output: io.Discard,
 	}
 
-	target, err := ProcessFile(file, api, config)
+	target, err := ProcessFile(context.Background(), file, api, config)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 

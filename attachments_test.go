@@ -115,7 +115,7 @@ func TestMacroAttachmentOutsideProjectFails(t *testing.T) {
 
 	t.Chdir(dir)
 
-	_, err := ProcessFile(file, api, Config{
+	_, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Output: io.Discard,
 	})
@@ -380,7 +380,7 @@ func TestAnImageEmbeddedTwiceIsAttachedOnce(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(file, api, Config{
+	target, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Output: io.Discard,
 	})
@@ -433,7 +433,7 @@ func TestALinkToAnotherDocumentIsNotAnAttachment(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(file, api, Config{
+	target, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, AttachReferenced: true, Output: io.Discard,
 	})
@@ -460,7 +460,7 @@ func TestAnImageIsAttachedWithoutTheFlag(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(file, api, Config{
+	target, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, Output: io.Discard,
 	})
@@ -493,7 +493,7 @@ func TestLinkedFileOutsideTheProjectIsRefused(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := ProcessFile(file, api, Config{
+	_, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, AttachReferenced: true, Output: io.Discard,
 	})
@@ -537,7 +537,7 @@ func TestAFilenameWithBracketsIsNotAPattern(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(file, api, Config{
+	target, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, AttachReferenced: true, Output: io.Discard,
 	})
@@ -570,7 +570,7 @@ func TestALinkedFileWithAColonIsAttached(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(file, api, Config{
+	target, err := ProcessFile(context.Background(), file, api, Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: file, AttachReferenced: true, Output: io.Discard,
 	})
@@ -616,7 +616,7 @@ func publishBeside(t *testing.T, files map[string][]byte, header, body string, c
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	var target *confluence.PageInfo
 	var err error
-	logged := captureLog(t, func() { target, err = ProcessFile(file, api, cfg) })
+	logged := captureLog(t, func() { target, err = ProcessFile(context.Background(), file, api, cfg) })
 
 	result := published{server: server, logged: logged, err: err}
 	if target != nil {
@@ -868,7 +868,7 @@ func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	config := mermaidFixture(t)
 	config.MermaidOutput = "jpeg"
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "MermaidOutput")
@@ -881,7 +881,7 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 	config := mermaidFixture(t)
 	config.MermaidBundle = true
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "MermaidBundle")
@@ -891,7 +891,7 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 // value is accepted rather than checked against the two names: a caller that
 // never heard of these fields leaves them zero, and has always got a PNG.
 func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
-	require.NoError(t, Run(mermaidFixture(t)))
+	require.NoError(t, Run(context.Background(), mermaidFixture(t)))
 }
 
 // TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:
@@ -902,7 +902,7 @@ func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	config := mermaidFixture(t)
 	config.D2Output = "jpeg"
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "D2Output")
@@ -914,7 +914,7 @@ func TestD2DefaultsPublishAsBefore(t *testing.T) {
 	config := mermaidFixture(t)
 	config.D2Output = ""
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 }
 
 // TestD2ScaleRejectsWhatIsNotAScale covers the public API for the same numbers.
@@ -927,7 +927,7 @@ func TestD2ScaleRejectsWhatIsNotAScale(t *testing.T) {
 		config.Features = []string{"d2"}
 		config.D2Scale = scale
 
-		err := Run(config)
+		err := Run(context.Background(), config)
 		require.Error(t, err, "a scale of %v is not one", scale)
 		assert.Contains(t, err.Error(), "D2Scale")
 	}
@@ -943,7 +943,7 @@ func TestMermaidAndMathScaleRejectWhatIsNotAScale(t *testing.T) {
 		config.Features = []string{"mermaid"}
 		config.MermaidScale = scale
 
-		err := Run(config)
+		err := Run(context.Background(), config)
 		require.Error(t, err, "a mermaid scale of %v is not one", scale)
 		assert.Contains(t, err.Error(), "MermaidScale")
 
@@ -951,7 +951,7 @@ func TestMermaidAndMathScaleRejectWhatIsNotAScale(t *testing.T) {
 		config.Features = []string{"math"}
 		config.MathScale = scale
 
-		err = Run(config)
+		err = Run(context.Background(), config)
 		require.Error(t, err, "a math scale of %v is not one", scale)
 		assert.Contains(t, err.Error(), "MathScale")
 	}
@@ -964,7 +964,7 @@ func TestMermaidAndMathScaleZeroIsTheDefault(t *testing.T) {
 	config := mermaidFixture(t)
 	config.Features = []string{"mermaid", "math"}
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 }
 
 // TestMermaidAndMathScaleAreOnlyCheckedWhereTheyAreDrawn: a run with neither
@@ -975,7 +975,7 @@ func TestMermaidAndMathScaleAreOnlyCheckedWhereTheyAreDrawn(t *testing.T) {
 	config.MermaidScale = -1
 	config.MathScale = math.NaN()
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 }
 
 // TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn is the boundary: a run that
@@ -985,5 +985,5 @@ func TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn(t *testing.T) {
 	config := mermaidFixture(t)
 	config.D2Scale = 0
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 }

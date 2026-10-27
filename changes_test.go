@@ -37,7 +37,7 @@ func TestDryRunChangesOnlyReportsPerPage(t *testing.T) {
 		server, _ := docsSpace(t)
 		file := writeFile(t, t.TempDir(), "doc.md", dryRunDocBody("stable body"))
 		config := changesOnlyConfig(server, file)
-		require.NoError(t, Run(config))
+		require.NoError(t, Run(context.Background(), config))
 		return server, file, config
 	}
 	edit := func(t *testing.T, file string) {
@@ -107,7 +107,7 @@ func TestDryRunChangesOnlyRetitleCountsAsChange(t *testing.T) {
 
 	config := trackingConfig(server, file)
 	config.ChangesOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Second"))
 	out := previewOf(t, config, "json")
@@ -119,7 +119,7 @@ func TestDryRunAloneStillPrintsEveryPage(t *testing.T) {
 	server, _ := docsSpace(t)
 	file := writeFile(t, t.TempDir(), "doc.md", dryRunDocBody("stable body"))
 	config := changesOnlyConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	config.ChangesOnly = false
 	assert.Contains(t, previewOf(t, config, ""), "stable body")
@@ -139,7 +139,7 @@ func TestDryRunChangesOnlyKnowsAboutAttachmentLinks(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", dryRunDocBody("<!-- Attachment: logo.png -->\n\n[the logo](logo.png)\n\n![logo](logo.png)"))
 
 	config := changesOnlyConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	out := previewOf(t, config, "github")
 
@@ -160,7 +160,7 @@ func TestDryRunChangesOnlyChangedAttachment(t *testing.T) {
 		file := writeFile(t, dir, "doc.md", dryRunDocBody(body))
 
 		config := changesOnlyConfig(server, file)
-		require.NoError(t, Run(config))
+		require.NoError(t, Run(context.Background(), config))
 
 		require.NoError(t, os.WriteFile(logo, []byte("two"), 0o600))
 		out := previewOf(t, config, "github")
@@ -218,7 +218,7 @@ func TestDryRunChangesOnlyLiteralPlaceholderTextIsNotAChange(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", dryRunDocBody("see /mark-dry-run-pending/ in the docs"))
 
 	config := changesOnlyConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	out := previewOf(t, config, "github")
 
@@ -235,7 +235,7 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 
 	config := trackingConfig(server, file)
 	config.ChangesOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	first, err := api.FindPage(context.Background(), "DOCS", "First", "page")
@@ -253,7 +253,7 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 	config.OutputFormat = "json"
 	config.Output = &out
 
-	err = Run(config)
+	err = Run(context.Background(), config)
 	require.Error(t, err)
 	assert.NotContains(t, out.String(), "would-create")
 }
@@ -279,7 +279,7 @@ func TestDryRunChangesOnlyReportsAMove(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Parent"))
 
 	config := changesOnlyConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	id := mustFind(t, server, "Doc")
 
 	writeFile(t, dir, "doc.md", fmt.Sprintf(body, "Other"))
@@ -296,7 +296,7 @@ func TestDryRunChangesOnlyReportsAMove(t *testing.T) {
 	config.DryRun = false
 	config.OutputFormat = ""
 	config.Output = &bytes.Buffer{}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.Equal(t, other.ID, server.Page(id).ParentID)
 }
 
@@ -310,7 +310,7 @@ func TestDryRunChangesOnlyReportsAMoveUnderAParentToBeCreated(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", dryRunDocBody("same"))
 
 	config := changesOnlyConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Parent: Missing -->\n<!-- Title: Doc -->\n\nsame\n")
@@ -334,7 +334,7 @@ func TestDryRunChangesOnlyReportsChangedLabels(t *testing.T) {
 		file := writeFile(t, dir, "doc.md", fmt.Sprintf(body, "<!-- Label: kept -->\n"))
 
 		config := changesOnlyConfig(server, file)
-		require.NoError(t, Run(config))
+		require.NoError(t, Run(context.Background(), config))
 		id := mustFind(t, server, "Doc")
 		edit(server, id, dir)
 		before := len(nonGET(server))
@@ -380,7 +380,7 @@ func TestDryRunChangesOnlyReportsTheURL(t *testing.T) {
 		Files: file, Features: []string{"mention"}, Output: &first,
 		ChangesOnly: true, OutputFormat: "json",
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	published := decodeReport(t, first.Bytes())
 	require.Len(t, published.Pages, 1)
 	require.NotEmpty(t, published.Pages[0].URL)
@@ -420,7 +420,7 @@ func TestDryRunChangesOnlyFailsOnAttachmentsSharingAName(t *testing.T) {
 
 			config := changesOnlyConfig(server, file)
 			if existing {
-				require.NoError(t, Run(config))
+				require.NoError(t, Run(context.Background(), config))
 			}
 
 			require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o700))
@@ -433,7 +433,7 @@ func TestDryRunChangesOnlyFailsOnAttachmentsSharingAName(t *testing.T) {
 			config.DryRun = true
 			config.OutputFormat = "json"
 			config.Output = &bytes.Buffer{}
-			err := Run(config)
+			err := Run(context.Background(), config)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "would both be uploaded")
 		})
@@ -466,13 +466,13 @@ func TestLabelLookupIsSkippedWhenLabelsCannotChange(t *testing.T) {
 		config := changesOnlyConfig(server, file)
 		config.ChangesOnly = dryRun
 		config.AppendLabels = appendLabels
-		require.NoError(t, Run(config))
+		require.NoError(t, Run(context.Background(), config))
 
 		before := len(server.Requests())
 		if dryRun {
 			previewOf(t, config, "json")
 		} else {
-			require.NoError(t, Run(config))
+			require.NoError(t, Run(context.Background(), config))
 		}
 
 		n := 0
@@ -503,7 +503,7 @@ func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Manuals", "Doc"))
 
 	config := changesOnlyConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	id := mustFind(t, server, "Doc")
 	require.Len(t, server.Folders(), 1)
 	oldFolder := server.Folders()[0].ID
@@ -523,7 +523,7 @@ func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T
 	config.DryRun = false
 	config.OutputFormat = ""
 	config.Output = &bytes.Buffer{}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.NotEqual(t, oldFolder, server.Page(id).ParentID, "the real run should have moved the page")
 }
 
@@ -539,7 +539,7 @@ func TestDryRunChangesOnlyFollowsARenamedParent(t *testing.T) {
 
 	config := trackingConfig(server, file)
 	config.ChangesOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	server.RenamePage(guide.ID, "Guide Renamed")
 	id := mustFind(t, server, "Child")
@@ -555,7 +555,7 @@ func TestDryRunChangesOnlyFollowsARenamedParent(t *testing.T) {
 	config.DryRun = false
 	config.OutputFormat = ""
 	config.Output = &bytes.Buffer{}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.Equal(t, guide.ID, server.Page(id).ParentID)
 	for _, w := range nonGET(server)[before:] {
 		assert.NotContains(t, w, "/content/", "the real run should not have written a page: %s", w)
@@ -590,24 +590,24 @@ func TestChangesOnlySeesPagePropertyHeaders(t *testing.T) {
 			}
 			api := confluence.NewAPI(server.URL, "user", "token", false)
 
-			target, err := ProcessFile(file, api, config)
+			target, err := ProcessFile(context.Background(), file, api, config)
 			require.NoError(t, err)
 			published := server.Page(target.ID).Version
 
 			// Unchanged: skipped, which is the point of the flag.
-			_, err = ProcessFile(file, confluence.NewAPI(server.URL, "user", "token", false), config)
+			_, err = ProcessFile(context.Background(), file, confluence.NewAPI(server.URL, "user", "token", false), config)
 			require.NoError(t, err)
 			require.Equal(t, published, server.Page(target.ID).Version)
 
 			writeFile(t, dir, "doc.md", header+tt.extra+"\nbody\n")
-			_, err = ProcessFile(file, confluence.NewAPI(server.URL, "user", "token", false), config)
+			_, err = ProcessFile(context.Background(), file, confluence.NewAPI(server.URL, "user", "token", false), config)
 			require.NoError(t, err)
 			assert.Greater(t, server.Page(target.ID).Version, published,
 				"a changed %s header must update the page", tt.name)
 
 			// And having been published, it is up to date again.
 			updated := server.Page(target.ID).Version
-			_, err = ProcessFile(file, confluence.NewAPI(server.URL, "user", "token", false), config)
+			_, err = ProcessFile(context.Background(), file, confluence.NewAPI(server.URL, "user", "token", false), config)
 			require.NoError(t, err)
 			assert.Equal(t, updated, server.Page(target.ID).Version)
 		})
@@ -622,7 +622,7 @@ func TestNoOverwriteSkipsAPageEditedInConfluence(t *testing.T) {
 	server.EditPage(id, "<p>Written by a person.</p>")
 	edited := server.Page(id)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	after := server.Page(id)
 	assert.Equal(t, "<p>Written by a person.</p>", after.Body,
@@ -639,8 +639,8 @@ func TestNoOverwriteKeepsReportingUntilResolved(t *testing.T) {
 
 	server.EditPage(id, "<p>Written by a person.</p>")
 
-	require.NoError(t, Run(config))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
 		"the second run must skip the page as well")
@@ -652,7 +652,7 @@ func TestNoOverwritePublishesAnUntouchedPage(t *testing.T) {
 	server, id, config := noOverwriteFixture(t)
 
 	before := server.Page(id)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	after := server.Page(id)
 	assert.Contains(t, after.Body, "From mark",
@@ -668,7 +668,7 @@ func TestNoOverwriteDoesNotOrphanASkippedPage(t *testing.T) {
 	server, id, config := noOverwriteFixture(t)
 
 	server.EditPage(id, "<p>Written by a person.</p>")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	page := server.Page(id)
 	require.NotNil(t, page, "the page must not be deleted")
@@ -686,7 +686,7 @@ func TestNoOverwriteRequiresTrackPages(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), NoOverwrite: true, Output: io.Discard,
 	})
@@ -714,7 +714,7 @@ func TestNoOverwriteSurvivesTheRunThatReportsIt(t *testing.T) {
 	// The run that reports the drift, with the document edited too.
 	writeFile(t, filepath.Dir(config.Files), "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nSecond version.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
 		"the page must be left alone on the run that reports it")
@@ -722,7 +722,7 @@ func TestNoOverwriteSurvivesTheRunThatReportsIt(t *testing.T) {
 	// And the run after that, which had the baseline it needed taken away.
 	writeFile(t, filepath.Dir(config.Files), "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nThird version.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
 		"the hand-written page must still be there")
@@ -748,7 +748,7 @@ func TestNoOverwriteDoesNotRetryOverAnEditMadeMidRun(t *testing.T) {
 		return 0, "", false
 	})
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
@@ -803,7 +803,7 @@ func dataCenterMoveFixtureWith(
 	}
 	configure(&config)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")

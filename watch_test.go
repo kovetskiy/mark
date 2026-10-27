@@ -30,7 +30,7 @@ func TestUnwatchAfterPublish(t *testing.T) {
 			writeFile(t, dir, "doc.md",
 				"<!-- Space: DOCS -->\n<!-- Parent: New Parent -->\n<!-- Title: Doc -->\n\nBody.\n")
 
-			require.NoError(t, Run(Config{
+			require.NoError(t, Run(context.Background(), Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files:    filepath.Join(dir, "doc.md"),
 				Features: []string{"mention"},

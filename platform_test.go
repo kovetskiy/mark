@@ -29,7 +29,7 @@ func TestRunStopsWhenThePlatformCannotBeIdentified(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 
-	err := Run(trackingConfig(server, filepath.Join(dir, "*.md")))
+	err := Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md")))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unable to identify the Confluence platform")
 	assert.Equal(t, 0, countPagesTitled(t, server, "Doc"))
@@ -48,7 +48,7 @@ func TestRunPublishesWhenTheUserNamesNoPlatform(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 	assert.Equal(t, 1, countPagesTitled(t, server, "Doc"))
 }
 
@@ -60,7 +60,7 @@ func TestCompileOnlyDoesNotAskForThePlatform(t *testing.T) {
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
 	config.TrackPages = false
 	config.CompileOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	assert.Zero(t, server.CountRequests("GET", "/rest/api/user/current"))
 }
 
@@ -90,11 +90,11 @@ func TestPublishThroughTheGateway(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	writeFile(t, dir, "guide.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA revised guide.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(baseURL, "user", "token", false)
 	page, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
@@ -114,7 +114,7 @@ func TestPublishThroughTheGateway(t *testing.T) {
 // itself Cloud, a file with folders asks the server which platform it is. A
 // cancellation that cuts that question short is not "not Cloud": failing the
 // file saying folders need Cloud would be wrong, and not an error errors.Is
-// recognises as the cancellation ProcessFileContext promises.
+// recognises as the cancellation ProcessFile promises.
 func TestCancellingTheCloudProbeIsNotAFolderRefusal(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
@@ -143,7 +143,7 @@ func TestCancellingTheCloudProbeIsNotAFolderRefusal(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := ProcessFileContext(ctx, file, api, publishConfig(server.URL, file))
+	_, err := ProcessFile(ctx, file, api, publishConfig(server.URL, file))
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.NotContains(t, err.Error(), "only available on Confluence Cloud")

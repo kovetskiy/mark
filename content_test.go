@@ -31,7 +31,7 @@ func TestMalformedBodyIsRefusedBeforeUpload(t *testing.T) {
 Some text with an <span>unclosed tag.
 `)
 
-	err := Run(publishConfig(server.URL, file))
+	err := Run(context.Background(), publishConfig(server.URL, file))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not well-formed XML")
 	assert.Contains(t, err.Error(), "unclosed tag")
@@ -69,7 +69,7 @@ A claim[^why].
 [^why]: Because.
 `)
 
-	require.NoError(t, Run(publishConfig(server.URL, file)))
+	require.NoError(t, Run(context.Background(), publishConfig(server.URL, file)))
 	assert.Equal(t, 1, countPagesTitled(t, server, "Well Formed"))
 }
 
@@ -95,7 +95,7 @@ An <span>unclosed tag.
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
 	config.ContinueOnError = true
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 
 	assert.NotEmpty(t, bodyOfPageTitled(t, server, "Good"),
@@ -116,7 +116,7 @@ func TestCompileOnlyRefusesAMalformedBody(t *testing.T) {
 Text with an <span>unclosed tag.
 `)
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		Files: file, CompileOnly: true,
 		Features: []string{"mention"}, Output: io.Discard,
 	})
@@ -139,7 +139,7 @@ A & B, "quoted", 3 < 4, and a table:
 | 1 | 2 |
 `)
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		Files: file, CompileOnly: true,
 		Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -178,7 +178,7 @@ func TestByteOrderMarkDoesNotHideMetadata(t *testing.T) {
 	path := writeWithBOM(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: With BOM -->\n\nBody text.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: path, Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -199,7 +199,7 @@ func TestByteOrderMarkDoesNotHideFrontMatter(t *testing.T) {
 	path := writeWithBOM(t, dir, "doc.md",
 		"---\nspace: DOCS\ntitle: BOM Front Matter\nparents: [ Parent ]\n---\n\nBody text.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: path, Features: []string{"mention", "frontmatter"}, Output: io.Discard,
 	}))
@@ -226,9 +226,9 @@ func TestLinkToDocumentWithByteOrderMark(t *testing.T) {
 		Features: []string{"mention"}, Output: io.Discard,
 	}
 	config.Files = other
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	config.Files = doc
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	body := storedBody(t, server, "Doc")
 	assert.NotContains(t, body, `href="other.md"`)
