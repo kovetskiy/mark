@@ -3,6 +3,7 @@
 package mark
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -25,6 +26,7 @@ import (
 // not touched, and still remembered, so that a later run with a wider scope
 // still knows about it.
 func handleOrphans(
+	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
 	config Config,
@@ -50,7 +52,7 @@ func handleOrphans(
 			continue
 		}
 
-		scopeID, err := page.ResolveScope(api, space, config.OrphanUnder)
+		scopeID, err := page.ResolveScope(ctx, api, space, config.OrphanUnder)
 		if err != nil {
 			return err
 		}
@@ -63,7 +65,7 @@ func handleOrphans(
 				Title:  orphan.Entry.Title,
 			}
 
-			inScope, err := page.InScope(api, scopeID, candidate)
+			inScope, err := page.InScope(ctx, api, scopeID, candidate)
 			if err != nil {
 				return err
 			}
@@ -108,7 +110,7 @@ func handleOrphans(
 				continue
 			}
 
-			handled, err = page.HandleOrphans(api, action, candidates, config.readOnly())
+			handled, err = page.HandleOrphans(ctx, api, action, candidates, config.readOnly())
 			if err != nil {
 				return err
 			}
@@ -131,7 +133,7 @@ func handleOrphans(
 				File: path, PageID: candidate.PageID, Title: candidate.Title, Action: action,
 			})
 
-			if err := tracker.Forget(space, path); err != nil {
+			if err := tracker.Forget(ctx, space, path); err != nil {
 				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)
 			}
 		}

@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +15,7 @@ import (
 
 func compileWithImgTag(t *testing.T, src string) string {
 	t.Helper()
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
@@ -96,7 +97,7 @@ func countSubstr(s, sub string) int {
 func TestHTMLImgInsideMarkupBlockIsAttached(t *testing.T) {
 	doc := imageDocument(t, "my file.png", "other.png")
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	src := "<p align=\"center\">\n" +
@@ -163,7 +164,7 @@ func TestHTMLImgInsideMarkupBlockOutsideProjectIsRefused(t *testing.T) {
 	docs := filepath.Join(root, "docs")
 	require.NoError(t, os.Mkdir(docs, 0o755))
 
-	std, err := stdlib.New(nil)
+	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	_, _, err = CompileMarkdown(

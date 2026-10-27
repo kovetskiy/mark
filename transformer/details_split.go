@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/yuin/goldmark/ast"
 	"golang.org/x/net/html"
 )
@@ -122,7 +123,7 @@ func rewriteDetails(raw []byte) ([]byte, bool) {
 			if ok {
 				if title != "" {
 					buf.WriteString(`<ac:parameter ac:name="title">`)
-					buf.WriteString(html.EscapeString(title))
+					buf.WriteString(stdlib.XMLEscape(title))
 					buf.WriteString(`</ac:parameter>`)
 				}
 				if leadingWhitespace(toks, i+1, start) {

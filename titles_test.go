@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -29,12 +30,12 @@ func TestTitleLengthLimit(t *testing.T) {
 
 				config := trackingConfig(server, file)
 				config.DryRun = dryRun
-				err := Run(config)
+				err := Run(context.Background(), config)
 				require.Error(t, err, "dry run: %v", dryRun)
 				assert.Contains(t, err.Error(), "page title")
 				assert.Contains(t, err.Error(), test.want)
 
-				published, err := api.FindPage("DOCS", test.title, "page")
+				published, err := api.FindPage(context.Background(), "DOCS", test.title, "page")
 				require.NoError(t, err)
 				assert.Nil(t, published)
 			}
@@ -46,9 +47,9 @@ func TestTitleLengthLimit(t *testing.T) {
 		title := strings.Repeat("a", 255)
 		file := writeFile(t, t.TempDir(), "doc.md", markdownWithTitle(title))
 
-		require.NoError(t, Run(trackingConfig(server, file)))
+		require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
-		published, err := api.FindPage("DOCS", title, "page")
+		published, err := api.FindPage(context.Background(), "DOCS", title, "page")
 		require.NoError(t, err)
 		assert.NotNil(t, published)
 	})
@@ -59,11 +60,11 @@ func TestTitleLengthLimit(t *testing.T) {
 		file := writeFile(t, t.TempDir(), "doc.md",
 			strings.Replace(markdownWithTitle("Child"), "<!-- Parent: Parent -->", "<!-- Parent: "+parent+" -->", 1))
 
-		err := Run(trackingConfig(server, file))
+		err := Run(context.Background(), trackingConfig(server, file))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parent title")
 
-		created, err := api.FindPage("DOCS", parent, "page")
+		created, err := api.FindPage(context.Background(), "DOCS", parent, "page")
 		require.NoError(t, err)
 		assert.Nil(t, created, "the parent is not created")
 	})
@@ -78,9 +79,9 @@ func TestHeadersDifferingOnlyInCaseKeepThePage(t *testing.T) {
 	writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
-	before, err := api.FindPage("DOCS", "Doc", "page")
+	before, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, before)
 	parentID := server.Page(before.ID).ParentID
@@ -90,9 +91,9 @@ func TestHeadersDifferingOnlyInCaseKeepThePage(t *testing.T) {
 		"<!-- Title: Doc -->", "<!-- Title: doc -->",
 	).Replace(markdownWithTitle("Doc"))
 	writeFile(t, dir, "doc.md", recased)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
-	after, err := api.FindPage("DOCS", "doc", "page")
+	after, err := api.FindPage(context.Background(), "DOCS", "doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, after)
 	assert.Equal(t, before.ID, after.ID, "the page the document published is the one it names")

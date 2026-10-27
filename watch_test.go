@@ -1,6 +1,7 @@
 package mark
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"testing"
@@ -29,7 +30,7 @@ func TestUnwatchAfterPublish(t *testing.T) {
 			writeFile(t, dir, "doc.md",
 				"<!-- Space: DOCS -->\n<!-- Parent: New Parent -->\n<!-- Title: Doc -->\n\nBody.\n")
 
-			require.NoError(t, Run(Config{
+			require.NoError(t, Run(context.Background(), Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files:    filepath.Join(dir, "doc.md"),
 				Features: []string{"mention"},
@@ -38,7 +39,7 @@ func TestUnwatchAfterPublish(t *testing.T) {
 			}))
 
 			for _, title := range []string{"New Parent", "Doc"} {
-				page, err := api.FindPage("DOCS", title, "page")
+				page, err := api.FindPage(context.Background(), "DOCS", title, "page")
 				require.NoError(t, err)
 				require.NotNil(t, page, title)
 				assert.Equal(t, tc.want, server.Watchers(page.ID), title)

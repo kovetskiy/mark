@@ -55,7 +55,7 @@ func TestCompileMarkdown(t *testing.T) {
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
 		fmt.Printf("Testing: %v\n", filename)
-		lib, err := stdlib.New(nil)
+		lib, err := stdlib.New(context.Background(), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -102,7 +102,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
-		lib, err := stdlib.New(nil)
+		lib, err := stdlib.New(context.Background(), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -157,7 +157,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
-		lib, err := stdlib.New(nil)
+		lib, err := stdlib.New(context.Background(), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -206,7 +206,7 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 
 	test := assert.New(t)
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -235,7 +235,7 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 
 	test := assert.New(t)
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -270,7 +270,7 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 
 	test := assert.New(t)
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -323,7 +323,7 @@ func TestCompileMarkdownMath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			test := assert.New(t)
 
-			lib, err := stdlib.New(nil)
+			lib, err := stdlib.New(context.Background(), nil)
 			if err != nil {
 				panic(err)
 			}
@@ -359,7 +359,7 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 	render := func(t *testing.T, markdown string) (string, int) {
 		t.Helper()
 
-		lib, err := stdlib.New(nil)
+		lib, err := stdlib.New(context.Background(), nil)
 		assert.NoError(t, err)
 
 		actual, attachments, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/math.md",
@@ -413,7 +413,7 @@ func TestContinueOnError(t *testing.T) {
 // working page -- and the feature name is still accepted, since nothing
 // validates the list.
 func TestDetailsIsNotOptional(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	markdown := []byte(`<details>
 <summary>Summary Text</summary>
@@ -435,7 +435,7 @@ Some content
 // TestHTMLImgTagIsNotOptional: an <img> is a void tag, so leaving it as written
 // is not a page without a picture but a body Confluence rejects outright.
 func TestHTMLImgTagIsNotOptional(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	markdown := []byte(`<img src="https://example.com/image.png" width="300" alt="Test Image">`)
 
@@ -451,7 +451,7 @@ func TestHTMLImgTagIsNotOptional(t *testing.T) {
 }
 
 func TestDateFeature(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 	markdown := []byte(`Release on @date(2026-07-27) or <time datetime="2026-12-31">Dec 31</time>.`)
 
@@ -483,7 +483,7 @@ func TestDateFeature(t *testing.T) {
 func TestCompileMarkdownResolveLinkError(t *testing.T) {
 	test := assert.New(t)
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -509,7 +509,7 @@ func TestCompileMarkdownResolveLinkError(t *testing.T) {
 func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 	test := assert.New(t)
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -541,7 +541,7 @@ func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 // an image's destination is read. An ac: link is passed as written, since the
 // renderer takes its title from the destination as written.
 func TestCompileMarkdownResolveLinkDecodesDestination(t *testing.T) {
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}

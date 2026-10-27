@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,7 +32,7 @@ Body text.
 	config := publishConfig(server.URL, file)
 	config.PageHeader = writeFile(t, dir, "header.html", `<p>Generated: {{ .Title | xmlesc }}</p>`)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	body := bodyOfPageTitled(t, server, "Generated")
 	assert.Contains(t, body, "<p>Generated: Generated</p>")
@@ -54,7 +55,7 @@ Body text.
 	config := publishConfig(server.URL, file)
 	config.PageHeader = writeFile(t, dir, "header.html", `<p>Header</p>`)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, bodyOfPageTitled(t, server, "Article"), "<ac:layout-cell><p>Header</p>")
 }
@@ -68,7 +69,7 @@ Body text.
 `)
 
 	var output bytes.Buffer
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		Files: file, CompileOnly: true,
 		Features:   []string{"mention"},
 		PageHeader: writeFile(t, dir, "header.md", "**Generated** from {{ .Space }}\n"),
@@ -92,7 +93,7 @@ func TestPageHeaderNamesThePageInPageIDMode(t *testing.T) {
 	config.Space = "DOCS"
 	config.PageHeader = writeFile(t, dir, "header.html", `<p>{{ .Title | xmlesc }} in {{ .Space | xmlesc }}</p>`)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, bodyOfPageTitled(t, server, "Existing"), "<p>Existing in DOCS</p>")
 }
@@ -115,7 +116,7 @@ func TestPageHeaderNamesThePageInPageIDDryRun(t *testing.T) {
 	config.Output = &output
 	config.PageHeader = writeFile(t, dir, "header.html", `<p>{{ .Title | xmlesc }} in {{ .Space | xmlesc }}</p>`)
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, output.String(), "<p>Existing in DOCS</p>")
 }
@@ -139,7 +140,7 @@ func TestPageHeaderImageThatClashesWithTheDocumentsIsRefused(t *testing.T) {
 	config := publishConfig(server.URL, file)
 	config.PageHeader = writeFile(t, headerDir, "header.md", "![logo](logo.png)\n")
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "page header attachment")
 }
@@ -161,7 +162,7 @@ func TestPageHeaderImageIdenticalToTheDocumentsIsAttachedOnce(t *testing.T) {
 	config := publishConfig(server.URL, file)
 	config.PageHeader = writeFile(t, headerDir, "header.md", "![logo](logo.png)\n")
 
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 }
 
 // TestPageHeaderImageThatClashesWithADeclaredAttachmentUploadsNothing: the
@@ -185,7 +186,7 @@ Text.
 	config := publishConfig(server.URL, file)
 	config.PageHeader = writeFile(t, headerDir, "header.md", "![logo](logo.png)\n")
 
-	err := Run(config)
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "page header attachment")
 	assert.Equal(t, 0, server.CountRequests("POST", "/child/attachment"))
@@ -220,7 +221,7 @@ func TestPageHeaderAttachmentClashFailsADryRun(t *testing.T) {
 				config.Output = &bytes.Buffer{}
 				config.PageHeader = writeFile(t, headerDir, "header.md", header)
 
-				err := Run(config)
+				err := Run(context.Background(), config)
 				require.Error(t, err, header)
 				assert.Contains(t, err.Error(), "page header attachment")
 			}
@@ -250,10 +251,10 @@ func propertiesFixture(t *testing.T, doc string, config func(*Config)) (*conflue
 	if config != nil {
 		config(&cfg)
 	}
-	require.NoError(t, Run(cfg))
+	require.NoError(t, Run(context.Background(), cfg))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Doc", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
@@ -338,7 +339,7 @@ func TestPropertyUnchangedIsNotRewritten(t *testing.T) {
 		propertyHeaders+"<!-- Property: team=platform -->\n\nBody.\n", nil)
 
 	first := server.SpaceProperty(id, "team").Version
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, first, server.SpaceProperty(id, "team").Version,
 		"an unchanged property must not be written again")
@@ -352,7 +353,7 @@ func TestPropertyChangedIsRewritten(t *testing.T) {
 
 	writeFile(t, filepath.Dir(config.Files), "doc.md",
 		propertyHeaders+"<!-- Property: team=infrastructure -->\n\nBody.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Greater(t, server.SpaceProperty(id, "team").Version, first)
 	assert.JSONEq(t, `"infrastructure"`, string(server.SpaceProperty(id, "team").Value))
@@ -367,7 +368,7 @@ func TestPropertyHeaderMustBeKeyValue(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n<!-- Property: nonsense -->\n\nBody.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "doc.md"), Output: io.Discard,
 	})
@@ -381,7 +382,7 @@ func TestGlobalPropertiesFileMustParse(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("owner: [unclosed\n"), 0o600))
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: "http://127.0.0.1:1", Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), GlobalProperties: path, Output: io.Discard,
 	})
@@ -422,7 +423,7 @@ func TestRestrictionsLoosenAfterTheContent(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", restrictedDoc("hr", "secret"))
 	config := trackingConfig(server, file)
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	id := mustFind(t, server, "Restricted")
 	require.Equal(t, []string{"hr"}, server.Page(id).RestrictedGroups["read"])
@@ -431,7 +432,7 @@ func TestRestrictionsLoosenAfterTheContent(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Restricted -->\n\npublic\n")
 	config.Features = append(config.Features, "frontmatter")
 	from := len(server.Requests())
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	restriction, content := writesAfter(server, from, id)
 	require.NotEqual(t, -1, restriction, "the restriction is lifted")
@@ -448,7 +449,7 @@ func TestRestrictionsChangeIsAChange(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", restrictedDoc("hr", "same"))
 	config := trackingConfig(server, file)
 	config.ChangesOnly = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	writeFile(t, dir, "doc.md", restrictedDoc("eng", "same"))
 	assert.Contains(t, previewOf(t, config, "json"), `"status": "would-update"`)
@@ -474,9 +475,9 @@ func TestRestrictionsUnknownUserCreatesNothing(t *testing.T) {
 
 	dry := config
 	dry.DryRun = true
-	require.ErrorContains(t, Run(dry), `"Nobody Known"`)
+	require.ErrorContains(t, Run(context.Background(), dry), `"Nobody Known"`)
 
-	require.ErrorContains(t, Run(config), `"Nobody Known"`)
+	require.ErrorContains(t, Run(context.Background(), config), `"Nobody Known"`)
 	assert.Zero(t, countPagesTitled(t, server, "Restricted"))
 }
 
@@ -500,13 +501,13 @@ func TestSynchronizedFalseHeaderSkipsTheFile(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Draft -->\n"+
 			"<!-- Synchronized: false -->\n\nNot ready.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Draft", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
 }
@@ -519,14 +520,14 @@ func TestSynchronizedFalseFrontMatterSkipsTheFile(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"---\ntitle: Draft\nspace: DOCS\nparents:\n  - Parent\nsynchronized: false\n---\n\nNot ready.\n")
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention", "frontmatter"},
 		Output: io.Discard,
 	}))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	page, err := api.FindPage("DOCS", "Draft", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
 }
@@ -546,14 +547,14 @@ func TestSynchronizedTrueAndAbsentBothPublish(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n"+
 					header+"\nBody.\n")
 
-			require.NoError(t, Run(Config{
+			require.NoError(t, Run(context.Background(), Config{
 				BaseURL: server.URL, Username: "user", Password: "token",
 				Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 				Output: io.Discard,
 			}))
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			page, err := api.FindPage("DOCS", "Doc", "page")
+			page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 			require.NoError(t, err)
 			assert.NotNil(t, page)
 		})
@@ -583,22 +584,22 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"},
 		TrackPages: true, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	published, err := api.FindPage("DOCS", "Draft", "page")
+	published, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
 	// Now the draft opts out, while its neighbour keeps publishing.
 	writeFile(t, dir, "draft.md", draft+"<!-- Synchronized: false -->\n\nBody.\n")
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	// The page is never deleted either way; a forgotten mapping is what causes
 	// a duplicate the next time it publishes.
 	require.NotNil(t, server.Page(published.ID))
 
-	entry, ok, err := manifest.NewStore(api).Lookup("DOCS", filepath.Join(dir, "draft.md"))
+	entry, ok, err := manifest.NewStore(api).Lookup(context.Background(), "DOCS", filepath.Join(dir, "draft.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the page mapping must survive a document opting out")
 	assert.Equal(t, published.ID, entry.PageID)
@@ -611,7 +612,7 @@ func TestSynchronizedRejectsANonBoolean(t *testing.T) {
 	writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n<!-- Synchronized: maybe -->\n\nBody.\n")
 
-	err := Run(Config{
+	err := Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Output: io.Discard,
 	})
@@ -658,7 +659,7 @@ func TestOrderIsAppliedUnderAFolder(t *testing.T) {
 	writeFile(t, dir, "a.md", folderOrderedDocument("Second", "2"))
 	writeFile(t, dir, "b.md", folderOrderedDocument("First", "1"))
 
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
 	folders := server.Folders()
 	require.Len(t, folders, 1, "the declared folder should have been created once")
@@ -689,9 +690,9 @@ Some content.
 	writeFile(t, dir, "a.md", document("Second", "2"))
 	writeFile(t, dir, "b.md", document("First", "1"))
 
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 
@@ -726,9 +727,9 @@ Some content.
 	writeFile(t, dir, "a.md", document("Second", "2"))
 	writeFile(t, dir, "b.md", document("First", "1"))
 
-	require.NoError(t, Run(trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
 
-	parent, err := api.FindPage("DOCS", "Parent", "page")
+	parent, err := api.FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 
@@ -778,7 +779,7 @@ func TestOrderHeaderArrangesSiblings(t *testing.T) {
 	writeFile(t, dir, "b.md", orderedDoc("First", 10))
 	writeFile(t, dir, "c.md", orderedDoc("Second", 20))
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -800,11 +801,11 @@ func TestOrderIsIdempotent(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	require.Equal(t, []string{"First", "Second", "Third"}, titlesOf(t, server, parent.ID))
 
 	server.ResetRequests()
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, 0, countMoves(server), "a second run must not move anything")
 	assert.Equal(t, []string{"First", "Second", "Third"}, titlesOf(t, server, parent.ID))
@@ -833,14 +834,14 @@ func TestOrderMovesOnlyWhatMustMove(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 	require.Equal(t, []string{"One", "Two", "Three", "Four"}, titlesOf(t, server, parent.ID))
 
 	// "Four" is asked to lead. Everything else keeps its relative order, so
 	// only one page needs to move.
 	writeFile(t, dir, "3.md", orderedDoc("Four", 5))
 	server.ResetRequests()
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, []string{"Four", "One", "Two", "Three"}, titlesOf(t, server, parent.ID))
 	assert.Equal(t, 1, countMoves(server), "only the page that changed position should move")
@@ -856,7 +857,7 @@ func TestOrderLeavesUnorderedPagesAlone(t *testing.T) {
 	writeFile(t, dir, "a.md", orderedDoc("Second", 20))
 	writeFile(t, dir, "b.md", orderedDoc("First", 10))
 
-	require.NoError(t, Run(Config{
+	require.NoError(t, Run(context.Background(), Config{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}))
@@ -887,13 +888,13 @@ func TestOrderIsNotAppliedOnDryRun(t *testing.T) {
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Files: filepath.Join(dir, "*.md"), Features: []string{"mention"}, Output: io.Discard,
 	}
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	// Flip the requested order, then dry run.
 	writeFile(t, dir, "a.md", orderedDoc("Third", 5))
 	before := titlesOf(t, server, parent.ID)
 	config.DryRun = true
-	require.NoError(t, Run(config))
+	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, before, titlesOf(t, server, parent.ID),
 		"a dry run must leave the order exactly as it found it")

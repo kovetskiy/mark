@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -25,7 +26,7 @@ func compileLogged(t *testing.T, name, src, path string) (string, string) {
 	log.Logger = zerolog.New(&logs).Level(zerolog.WarnLevel)
 	t.Cleanup(func() { log.Logger = saved })
 
-	lib, err := stdlib.New(nil)
+	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
 	out, _, err := compilers[name]([]byte(src), lib, path, types.MarkConfig{})

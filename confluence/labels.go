@@ -3,6 +3,7 @@
 package confluence
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 // LabelChanges reads a page's labels and says which UpdateLabels would add and
 // which it would remove. A dry run asks it too, so the two agree.
 func (api *API) LabelChanges(
+	ctx context.Context,
 	target *PageInfo,
 	metaLabels []string,
 	appendOnly bool,
@@ -22,7 +24,7 @@ func (api *API) LabelChanges(
 		return nil, nil, nil
 	}
 
-	labelInfo, err := api.GetPageLabels(target, "global")
+	labelInfo, err := api.GetPageLabels(ctx, target, "global")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,20 +55,20 @@ func (api *API) LabelChanges(
 // destroys work no document ever mentioned. Appending leaves them, at the cost
 // of a label outliving the Label header that introduced it -- which is visible
 // and reversible, unlike the deletion.
-func (api *API) UpdateLabels(target *PageInfo, metaLabels []string, appendOnly bool) error {
-	addLabels, delLabels, err := api.LabelChanges(target, metaLabels, appendOnly)
+func (api *API) UpdateLabels(ctx context.Context, target *PageInfo, metaLabels []string, appendOnly bool) error {
+	addLabels, delLabels, err := api.LabelChanges(ctx, target, metaLabels, appendOnly)
 	if err != nil {
 		return err
 	}
 
 	if len(addLabels) > 0 {
-		if _, err = api.AddPageLabels(target, addLabels); err != nil {
+		if _, err = api.AddPageLabels(ctx, target, addLabels); err != nil {
 			return fmt.Errorf("error adding labels: %w", err)
 		}
 	}
 
 	for _, label := range delLabels {
-		if _, err = api.DeletePageLabel(target, label); err != nil {
+		if err = api.DeletePageLabel(ctx, target, label); err != nil {
 			return fmt.Errorf("error deleting label %q: %w", label, err)
 		}
 	}

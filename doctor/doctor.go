@@ -4,6 +4,7 @@
 package doctor
 
 import (
+	"context"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -55,8 +56,8 @@ var permissions = []permission{
 
 // Run checks the instance api talks to, and each space in spaces, and writes
 // a line per check to out. It returns an error when any check failed.
-func Run(api *confluence.API, baseURL, username string, spaces []string, out io.Writer) error {
-	checks := run(api, baseURL, username, spaces)
+func Run(ctx context.Context, api *confluence.API, baseURL, username string, spaces []string, out io.Writer) error {
+	checks := run(ctx, api, baseURL, username, spaces)
 
 	failed := 0
 	for _, check := range checks {
@@ -75,13 +76,13 @@ func Run(api *confluence.API, baseURL, username string, spaces []string, out io.
 	return nil
 }
 
-func run(api *confluence.API, baseURL, username string, spaces []string) []Check {
+func run(ctx context.Context, api *confluence.API, baseURL, username string, spaces []string) []Check {
 	host := ""
 	if u, err := url.Parse(baseURL); err == nil {
 		host = strings.ToLower(u.Hostname())
 	}
 
-	user, err := api.GetCurrentUser()
+	user, err := api.GetCurrentUser(ctx)
 	if err != nil {
 		return []Check{loginFailure(err, host, username)}
 	}
@@ -104,7 +105,7 @@ func run(api *confluence.API, baseURL, username string, spaces []string) []Check
 				"so mark assumes Confluence Server or Data Center",
 		})
 	} else {
-		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(api.IsCloud(), host)})
+		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(api.IsCloud(ctx), host)})
 	}
 
 	if len(spaces) == 0 {
@@ -125,7 +126,7 @@ func run(api *confluence.API, baseURL, username string, spaces []string) []Check
 		}
 		if !checked[space] {
 			checked[space] = true
-			checks = append(checks, checkSpace(api, space)...)
+			checks = append(checks, checkSpace(ctx, api, space)...)
 		}
 	}
 
@@ -223,10 +224,10 @@ func describePlatform(cloud bool, host string) string {
 	}
 }
 
-func checkSpace(api *confluence.API, key string) []Check {
+func checkSpace(ctx context.Context, api *confluence.API, key string) []Check {
 	name := "space " + key
 
-	title, operations, err := api.SpaceOperations(key)
+	title, operations, err := api.SpaceOperations(ctx, key)
 	switch {
 	case errors.Is(err, confluence.ErrNotFound):
 		return []Check{{
@@ -245,7 +246,7 @@ func checkSpace(api *confluence.API, key string) []Check {
 
 	// Publishing only compares pages against the home page, so a space without
 	// one is published to all the same.
-	home, homeErr := api.FindHomePage(key)
+	home, homeErr := api.FindHomePage(ctx, key)
 	switch {
 	case errors.Is(homeErr, confluence.ErrNoHomePage):
 		checks = append(checks, Check{

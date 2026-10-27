@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,7 +90,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 			failWhen(server, tc.gateway, nil)
 			stored := server.AddPage("DOCS", "Target", tc.pageType, "")
 
-			page, err := api.FindPage("DOCS", "Target", tc.pageType)
+			page, err := api.FindPage(context.Background(), "DOCS", "Target", tc.pageType)
 			require.NoError(t, err)
 			require.NotNil(t, page)
 			require.EqualValues(t, 1, page.Version.Number)
@@ -98,7 +99,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 			server.EditPage(stored.ID, "<p>by hand, twice</p>")
 			server.ResetRequests()
 
-			require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "sync", "full-width", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "sync", "full-width", ""))
 
 			after := server.Page(stored.ID)
 			assert.Equal(t, "<p>from mark</p>", after.Body)
@@ -107,7 +108,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 				"the caller has to hold the version that was actually written")
 			assert.Equal(t, 2, countContentPuts(server, stored.ID), "one retry, no more")
 
-			cached, err := api.FindPage("DOCS", "Target", tc.pageType)
+			cached, err := api.FindPage(context.Background(), "DOCS", "Target", tc.pageType)
 			require.NoError(t, err)
 			require.NotNil(t, cached)
 			assert.EqualValues(t, 4, cached.Version.Number,
@@ -115,7 +116,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 
 			// And the next update goes straight through.
 			server.ResetRequests()
-			require.NoError(t, api.UpdatePage(page, "<p>again</p>", false, "", "full-width", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>again</p>", false, "", "full-width", ""))
 			assert.Equal(t, 1, countContentPuts(server, stored.ID))
 		})
 	}
@@ -127,7 +128,7 @@ func TestUpdatePageRetryCarriesPropertiesV1(t *testing.T) {
 	api, server := newConflictAPI(t, false)
 	stored := server.AddPage("DOCS", "Target", "page", "")
 
-	page, err := api.GetPageByID(stored.ID)
+	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 	server.EditPage(stored.ID, "<p>by hand</p>")
 
@@ -141,7 +142,7 @@ func TestUpdatePageRetryCarriesPropertiesV1(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "🚀"))
 	require.Len(t, bodies, 2)
 
 	var retried struct {
@@ -167,11 +168,11 @@ func TestUpdatePageRetryWritesPropertiesV2(t *testing.T) {
 	failWhen(server, true, nil)
 	stored := server.AddPage("DOCS", "Target", "page", "")
 
-	page, err := api.GetPageByID(stored.ID)
+	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 	server.EditPage(stored.ID, "<p>by hand</p>")
 
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "🚀"))
 
 	appearance := server.SpaceProperty(stored.ID, "content-appearance-published")
 	require.NotNil(t, appearance)
@@ -192,7 +193,7 @@ func TestUpdatePageRetriesATransientConflict(t *testing.T) {
 			api.KeepConcurrentEdits = keep
 			server.AddSpace("DOCS")
 
-			page, err := api.CreatePage("DOCS", "page", nil, "Fresh", "")
+			page, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Fresh", "")
 			require.NoError(t, err)
 
 			refused := false
@@ -204,7 +205,7 @@ func TestUpdatePageRetriesATransientConflict(t *testing.T) {
 				return 0, "", false
 			})
 
-			require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "full-width", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "full-width", ""))
 			assert.Equal(t, "<p>body</p>", server.Page(page.ID).Body)
 			assert.EqualValues(t, 2, server.Page(page.ID).Version)
 			assert.EqualValues(t, 2, page.Version.Number)
@@ -221,7 +222,7 @@ func TestUpdatePagePersistentConflictFails(t *testing.T) {
 			failWhen(server, gateway, nil)
 			stored := server.AddPage("DOCS", "Busy", "page", "")
 
-			page, err := api.GetPageByID(stored.ID)
+			page, err := api.GetPageByID(context.Background(), stored.ID)
 			require.NoError(t, err)
 
 			// Every update is overtaken by another writer just before it lands.
@@ -232,9 +233,9 @@ func TestUpdatePagePersistentConflictFails(t *testing.T) {
 				return 0, "", false
 			})
 
-			err = api.UpdatePage(page, "<p>from mark</p>", false, "", "full-width", "")
+			err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "")
 			require.Error(t, err)
-			assert.True(t, errors.Is(err, errConflict))
+			assert.True(t, errors.Is(err, ErrConflict))
 			assert.Contains(t, err.Error(), `page "Busy"`)
 			assert.Contains(t, err.Error(), "again after reading the page afresh")
 			assert.Equal(t, 2, countContentPuts(server, stored.ID), "exactly one retry")
@@ -252,13 +253,13 @@ func TestUpdatePageKeepConcurrentEditsRefusesToOverwrite(t *testing.T) {
 	api.KeepConcurrentEdits = true
 	stored := server.AddPage("DOCS", "Guarded", "page", "")
 
-	page, err := api.GetPageByID(stored.ID)
+	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 	server.EditPage(stored.ID, "<p>by hand</p>")
 
-	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "full-width", "")
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "")
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, errConflict))
+	assert.True(t, errors.Is(err, ErrConflict))
 	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")
 	assert.Equal(t, "<p>by hand</p>", server.Page(stored.ID).Body)
 	assert.Equal(t, 1, countContentPuts(server, stored.ID))
@@ -281,7 +282,7 @@ func newConflictDataCenterAPI(
 		}
 		return f(r)
 	})
-	require.False(t, api.IsCloud())
+	require.False(t, api.IsCloud(context.Background()))
 
 	return api, server
 }
@@ -315,7 +316,7 @@ func TestReparentConflictKeepsTheConcurrentEdit(t *testing.T) {
 			pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
 			server.EditPage(pageID, "<p>as mark read it</p>")
 
-			require.NoError(t, api.MoveContentAppend(pageID, newParent.ID))
+			require.NoError(t, api.MoveContentAppend(context.Background(), pageID, newParent.ID))
 
 			require.True(t, edited, "the edit has to land between the read and the write")
 			after := server.Page(pageID)
@@ -348,9 +349,9 @@ func TestReparentPersistentConflictFails(t *testing.T) {
 	newParent := server.AddPage("DOCS", "New Parent", "page", "")
 	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
 
-	err := api.MoveContentAppend(pageID, newParent.ID)
+	err := api.MoveContentAppend(context.Background(), pageID, newParent.ID)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, errConflict))
+	assert.True(t, errors.Is(err, ErrConflict))
 	assert.Contains(t, err.Error(), "something else is writing to the page")
 	assert.Equal(t, 2, countContentPuts(server, pageID), "exactly one retry")
 	assert.Equal(t, oldParent.ID, server.Page(pageID).ParentID)

@@ -23,23 +23,23 @@ func TestWatchCloud(t *testing.T) {
 	p := server.AddPage("DOCS", "Page", "page", "")
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	require.NoError(t, api.WatchPage(p.ID, ""))
-	require.NoError(t, api.WatchPage(p.ID, "Jane Doe"))
+	require.NoError(t, api.WatchPage(context.Background(), p.ID, ""))
+	require.NoError(t, api.WatchPage(context.Background(), p.ID, "Jane Doe"))
 	assert.Equal(t, []string{"acct-current", "acct-jane"}, server.Watchers(p.ID),
 		"a full name that another contains still names one user")
 
-	watching, err := api.IsWatching(p.ID, "accountid:acct-jane")
+	watching, err := api.IsWatching(context.Background(), p.ID, "accountid:acct-jane")
 	require.NoError(t, err)
 	assert.True(t, watching)
 
-	require.NoError(t, api.WatchPage(p.ID, "Current User"))
+	require.NoError(t, api.WatchPage(context.Background(), p.ID, "Current User"))
 	assert.Zero(t, server.CountRequests("POST", "accountId=acct-current"),
 		"naming yourself is naming nobody")
 
-	require.NoError(t, api.UnwatchPage(p.ID, ""))
+	require.NoError(t, api.UnwatchPage(context.Background(), p.ID, ""))
 	assert.Equal(t, []string{"acct-jane"}, server.Watchers(p.ID))
 
-	require.ErrorContains(t, api.WatchPage(p.ID, "Nobody"), `watcher "Nobody"`)
+	require.ErrorContains(t, api.WatchPage(context.Background(), p.ID, "Nobody"), `watcher "Nobody"`)
 }
 
 func TestWatchDataCenter(t *testing.T) {
@@ -48,11 +48,11 @@ func TestWatchDataCenter(t *testing.T) {
 	p := server.AddPage("DOCS", "Page", "page", "")
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	require.NoError(t, api.WatchPage(p.ID, ""))
-	require.NoError(t, api.WatchPage(p.ID, "jane"))
+	require.NoError(t, api.WatchPage(context.Background(), p.ID, ""))
+	require.NoError(t, api.WatchPage(context.Background(), p.ID, "jane"))
 	assert.Equal(t, []string{"current", "jane"}, server.Watchers(p.ID))
 
-	require.NoError(t, api.UnwatchPage(p.ID, "jane"))
+	require.NoError(t, api.UnwatchPage(context.Background(), p.ID, "jane"))
 	assert.Equal(t, []string{"current"}, server.Watchers(p.ID))
 }
 
@@ -93,18 +93,18 @@ func TestUnwatchAfterWrites(t *testing.T) {
 			api, server := newUnwatchAPIAt(t, tc.dataCenter, tc.gateway)
 			server.AddSpace("DOCS")
 
-			created, err := api.CreatePage("DOCS", "page", nil, "New", "")
+			created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "")
 			require.NoError(t, err)
-			require.NoError(t, api.UpdatePage(created, "<p>body</p>", false, "", "", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), created, "<p>body</p>", false, "", "", ""))
 			for _, name := range []string{"a.png", "b.png"} {
-				_, err = api.CreateAttachment(created.ID, name, "c", strings.NewReader("png"))
+				_, err = api.CreateAttachment(context.Background(), created.ID, name, "c", strings.NewReader("png"))
 				require.NoError(t, err)
 			}
 
 			existing := server.AddPage("DOCS", "Existing", "page", "")
-			page, err := api.GetPageByID(existing.ID)
+			page, err := api.GetPageByID(context.Background(), existing.ID)
 			require.NoError(t, err)
-			require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 
 			assert.NotEmpty(t, server.Watchers(created.ID), "nothing is unwatched before the writes are done")
 
@@ -127,14 +127,14 @@ func TestUnwatchLeavesAWatchedPageWatched(t *testing.T) {
 	stored := server.AddPage("DOCS", "Watched", "page", "")
 
 	plain := confluence.NewAPI(server.URL, "user", "token", false)
-	require.NoError(t, plain.WatchPage(stored.ID, ""))
+	require.NoError(t, plain.WatchPage(context.Background(), stored.ID, ""))
 
-	page, err := api.GetPageByID(stored.ID)
+	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(page, "<p>one</p>", false, "", "", ""))
-	_, err = api.CreateAttachment(stored.ID, "a.png", "c", strings.NewReader("png"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>one</p>", false, "", "", ""))
+	_, err = api.CreateAttachment(context.Background(), stored.ID, "a.png", "c", strings.NewReader("png"))
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(page, "<p>two</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "", "", ""))
 	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(stored.ID))
@@ -148,9 +148,9 @@ func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
 	api.Unwatch = false
 	server.AddSpace("DOCS")
 
-	created, err := api.CreatePage("DOCS", "page", nil, "New", "")
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "")
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(created, "<p>body</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), created, "<p>body</p>", false, "", "", ""))
 	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(created.ID))
@@ -172,16 +172,16 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 
 	buffer := captureLog(t)
 
-	created, err := api.CreatePage("DOCS", "page", nil, "New", "")
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "")
 	require.NoError(t, err)
 	for _, name := range []string{"a.png", "b.png"} {
-		_, err = api.CreateAttachment(created.ID, name, "c", strings.NewReader("png"))
+		_, err = api.CreateAttachment(context.Background(), created.ID, name, "c", strings.NewReader("png"))
 		require.NoError(t, err)
 	}
 	existing := server.AddPage("DOCS", "Existing", "page", "")
-	page, err := api.GetPageByID(existing.ID)
+	page, err := api.GetPageByID(context.Background(), existing.ID)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, 2, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
@@ -196,9 +196,9 @@ func TestUnwatchStopsWhenTheRunIsInterrupted(t *testing.T) {
 	var ids []string
 	for _, title := range []string{"One", "Two"} {
 		stored := server.AddPage("DOCS", title, "page", "")
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		ids = append(ids, stored.ID)
 	}
 	buffer := captureLog(t)
@@ -245,9 +245,9 @@ func TestUnwatchReportsEveryPageItCouldNotRead(t *testing.T) {
 	var ids []string
 	for _, title := range []string{"One", "Two"} {
 		stored := server.AddPage("DOCS", title, "page", "")
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		ids = append(ids, stored.ID)
 	}
 	api.UnwatchWritten(t.Context())
@@ -278,9 +278,9 @@ func TestUnwatchAsksOnceWhenReadingIsRefused(t *testing.T) {
 			var ids []string
 			for _, title := range []string{"One", "Two", "Three"} {
 				stored := server.AddPage("DOCS", title, "page", "")
-				page, err := api.GetPageByID(stored.ID)
+				page, err := api.GetPageByID(context.Background(), stored.ID)
 				require.NoError(t, err)
-				require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+				require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 				ids = append(ids, stored.ID)
 			}
 			api.UnwatchWritten(t.Context())
@@ -312,9 +312,9 @@ func TestUnwatchAsksAgainAfterAnotherReadFailure(t *testing.T) {
 	var ids []string
 	for _, title := range []string{"One", "Two"} {
 		stored := server.AddPage("DOCS", title, "page", "")
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		ids = append(ids, stored.ID)
 	}
 	api.UnwatchWritten(t.Context())
@@ -336,13 +336,13 @@ func TestUnwatchAfterAMoveByUpdate(t *testing.T) {
 	moved := server.AddPage("DOCS", "Moved and updated", "page", "")
 	onlyMoved := server.AddPage("DOCS", "Only moved", "page", "")
 
-	require.NoError(t, api.MoveContentAppend(moved.ID, parent.ID))
-	require.NoError(t, api.MoveContentAppend(onlyMoved.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), moved.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), onlyMoved.ID, parent.ID))
 	require.Equal(t, []string{"current"}, server.Watchers(moved.ID), "the move has to be one that makes a watcher")
 
-	page, err := api.GetPageByID(moved.ID)
+	page, err := api.GetPageByID(context.Background(), moved.ID)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 	api.UnwatchWritten(t.Context())
 
 	assert.Empty(t, server.Watchers(moved.ID))
@@ -376,9 +376,9 @@ func TestUnwatchAfterMoves(t *testing.T) {
 			before := server.AddPage("DOCS", "Before", "page", "")
 			after := server.AddPage("DOCS", "After", "page", "")
 
-			require.NoError(t, api.MoveContentAppend(appended.ID, parent.ID))
-			require.NoError(t, api.MoveContentBefore(before.ID, appended.ID))
-			require.NoError(t, api.MoveContentAfter(after.ID, appended.ID))
+			require.NoError(t, api.MoveContentAppend(context.Background(), appended.ID, parent.ID))
+			require.NoError(t, api.MoveContentBefore(context.Background(), before.ID, appended.ID))
+			require.NoError(t, api.MoveContentAfter(context.Background(), after.ID, appended.ID))
 			require.NotZero(t, server.CountRequests(tc.method, tc.path), "moved the way this case is about")
 			for _, id := range []string{appended.ID, before.ID, after.ID} {
 				require.NotEmpty(t, server.Watchers(id), "the move has to be one that makes a watcher")
@@ -405,8 +405,8 @@ func TestUnwatchSkipsAPageAlreadyInPlace(t *testing.T) {
 	moved := server.AddPage("DOCS", "Moved", "page", "")
 	placed := server.AddPage("DOCS", "Placed", "page", parent.ID)
 
-	require.NoError(t, api.MoveContentAppend(moved.ID, parent.ID))
-	require.NoError(t, api.MoveContentAppend(placed.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), moved.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), placed.ID, parent.ID))
 	api.UnwatchWritten(t.Context())
 
 	assert.Empty(t, server.Watchers(moved.ID))
@@ -420,13 +420,13 @@ func TestUnwatchAfterLabelWrites(t *testing.T) {
 	added := server.AddPage("DOCS", "Added", "page", "")
 	removed := server.AddPage("DOCS", "Removed", "page", "")
 
-	page, err := api.GetPageByID(added.ID)
+	page, err := api.GetPageByID(context.Background(), added.ID)
 	require.NoError(t, err)
-	_, err = api.AddPageLabels(page, []string{"docs"})
+	_, err = api.AddPageLabels(context.Background(), page, []string{"docs"})
 	require.NoError(t, err)
-	page, err = api.GetPageByID(removed.ID)
+	page, err = api.GetPageByID(context.Background(), removed.ID)
 	require.NoError(t, err)
-	_, err = api.DeletePageLabel(page, "docs")
+	err = api.DeletePageLabel(context.Background(), page, "docs")
 	require.NoError(t, err)
 	require.NotEmpty(t, server.Watchers(added.ID), "the label write has to be one that makes a watcher")
 	require.NotEmpty(t, server.Watchers(removed.ID))

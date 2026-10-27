@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -26,7 +27,7 @@ func (ref Ref) String() string {
 
 // Resolve reads the page a Ref names, with its space, ancestors and version,
 // and whatever else expand asks for.
-func Resolve(api *confluence.API, ref Ref, expand ...string) (*confluence.PageInfo, error) {
+func Resolve(ctx context.Context, api *confluence.API, ref Ref, expand ...string) (*confluence.PageInfo, error) {
 	id := ref.ID
 
 	if id == "" {
@@ -37,7 +38,7 @@ func Resolve(api *confluence.API, ref Ref, expand ...string) (*confluence.PageIn
 		var found *confluence.PageInfo
 		for _, pageType := range []string{"page", "blogpost"} {
 			var err error
-			found, err = api.FindPage(ref.Space, ref.Title, pageType)
+			found, err = api.FindPage(ctx, ref.Space, ref.Title, pageType)
 			if err != nil {
 				return nil, fmt.Errorf("unable to find page %s: %w", ref, err)
 			}
@@ -52,7 +53,7 @@ func Resolve(api *confluence.API, ref Ref, expand ...string) (*confluence.PageIn
 		id = found.ID
 	}
 
-	page, err := api.GetPageByIDExpanded(id, strings.Join(append([]string{"ancestors", "version", "space"}, expand...), ","))
+	page, err := api.GetPageByIDExpanded(ctx, id, strings.Join(append([]string{"ancestors", "version", "space"}, expand...), ","))
 	if err != nil {
 		return nil, fmt.Errorf("unable to read page %s: %w", id, err)
 	}
@@ -75,8 +76,8 @@ type MoveOptions struct {
 }
 
 // Move moves a page within its space, and its descendants with it.
-func Move(api *confluence.API, ref Ref, options MoveOptions, out io.Writer) error {
-	target, err := Resolve(api, ref)
+func Move(ctx context.Context, api *confluence.API, ref Ref, options MoveOptions, out io.Writer) error {
+	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
@@ -85,23 +86,23 @@ func Move(api *confluence.API, ref Ref, options MoveOptions, out io.Writer) erro
 	}
 
 	if options.Before != nil || options.After != nil {
-		return moveBeside(api, target, options, out)
+		return moveBeside(ctx, api, target, options, out)
 	}
 	if options.Parent == nil {
 		return errors.New("say where to move the page: under a parent, or before or after a sibling")
 	}
 
-	parent, err := Resolve(api, *options.Parent)
+	parent, err := Resolve(ctx, api, *options.Parent)
 	if err != nil {
 		if options.Parent.ID == "" {
 			return err
 		}
 		// A folder is not content v1 can read; the same id may still name one.
-		folder, folderErr := api.GetFolderByID(options.Parent.ID)
+		folder, folderErr := api.GetFolderByID(ctx, options.Parent.ID)
 		if folderErr != nil {
 			return err
 		}
-		return moveUnderFolder(api, target, folder, options.DryRun, out)
+		return moveUnderFolder(ctx, api, target, folder, options.DryRun, out)
 	}
 
 	if err := checkMove(target, parent); err != nil {
@@ -116,7 +117,7 @@ func Move(api *confluence.API, ref Ref, options MoveOptions, out io.Writer) erro
 		fmt.Fprintf(out, "would move %s under %s\n", describe(target), describe(parent))
 		return nil
 	}
-	if err := api.MoveContentAppend(target.ID, parent.ID); err != nil {
+	if err := api.MoveContentAppend(ctx, target.ID, parent.ID); err != nil {
 		return fmt.Errorf("unable to move %s under %s: %w", describe(target), describe(parent), err)
 	}
 	fmt.Fprintf(out, "moved %s under %s\n", describe(target), describe(parent))
@@ -124,13 +125,13 @@ func Move(api *confluence.API, ref Ref, options MoveOptions, out io.Writer) erro
 	return nil
 }
 
-func moveBeside(api *confluence.API, target *confluence.PageInfo, options MoveOptions, out io.Writer) error {
+func moveBeside(ctx context.Context, api *confluence.API, target *confluence.PageInfo, options MoveOptions, out io.Writer) error {
 	position, siblingRef := "before", options.Before
 	if options.After != nil {
 		position, siblingRef = "after", options.After
 	}
 
-	sibling, err := Resolve(api, *siblingRef)
+	sibling, err := Resolve(ctx, api, *siblingRef)
 	if err != nil {
 		return err
 	}
@@ -147,7 +148,7 @@ func moveBeside(api *confluence.API, target *confluence.PageInfo, options MoveOp
 	}
 
 	if options.Parent != nil {
-		parent, err := Resolve(api, *options.Parent)
+		parent, err := Resolve(ctx, api, *options.Parent)
 		if err != nil {
 			return err
 		}
@@ -162,9 +163,9 @@ func moveBeside(api *confluence.API, target *confluence.PageInfo, options MoveOp
 	}
 
 	if position == "before" {
-		err = api.MoveContentBefore(target.ID, sibling.ID)
+		err = api.MoveContentBefore(ctx, target.ID, sibling.ID)
 	} else {
-		err = api.MoveContentAfter(target.ID, sibling.ID)
+		err = api.MoveContentAfter(ctx, target.ID, sibling.ID)
 	}
 	if err != nil {
 		return fmt.Errorf("unable to place %s %s %s: %w", describe(target), position, describe(sibling), err)
@@ -174,8 +175,8 @@ func moveBeside(api *confluence.API, target *confluence.PageInfo, options MoveOp
 	return nil
 }
 
-func moveUnderFolder(api *confluence.API, target *confluence.PageInfo, folder *confluence.FolderInfo, dryRun bool, out io.Writer) error {
-	spaceID, err := api.GetSpaceID(target.Space.Key)
+func moveUnderFolder(ctx context.Context, api *confluence.API, target *confluence.PageInfo, folder *confluence.FolderInfo, dryRun bool, out io.Writer) error {
+	spaceID, err := api.GetSpaceID(ctx, target.Space.Key)
 	if err != nil {
 		return fmt.Errorf("unable to read space %s: %w", target.Space.Key, err)
 	}
@@ -187,7 +188,7 @@ func moveUnderFolder(api *confluence.API, target *confluence.PageInfo, folder *c
 		fmt.Fprintf(out, "would move %s into folder %q (%s)\n", describe(target), folder.Title, folder.ID)
 		return nil
 	}
-	if err := api.MoveContentAppend(target.ID, folder.ID); err != nil {
+	if err := api.MoveContentAppend(ctx, target.ID, folder.ID); err != nil {
 		return fmt.Errorf("unable to move %s into folder %q (%s): %w", describe(target), folder.Title, folder.ID, err)
 	}
 	fmt.Fprintf(out, "moved %s into folder %q (%s)\n", describe(target), folder.Title, folder.ID)
@@ -210,13 +211,13 @@ func checkMove(target, destination *confluence.PageInfo) error {
 
 // Rename changes a page's title and leaves its content as it is. The new
 // version is a minor edit, so watchers are not notified.
-func Rename(api *confluence.API, ref Ref, title string, dryRun bool, out io.Writer) error {
+func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, dryRun bool, out io.Writer) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return errors.New("a page needs a title")
 	}
 
-	target, err := Resolve(api, ref, "body.storage")
+	target, err := Resolve(ctx, api, ref, "body.storage")
 	if err != nil {
 		return err
 	}
@@ -225,7 +226,7 @@ func Rename(api *confluence.API, ref Ref, title string, dryRun bool, out io.Writ
 		return nil
 	}
 
-	existing, err := api.FindPage(target.Space.Key, title, target.Type)
+	existing, err := api.FindPage(ctx, target.Space.Key, title, target.Type)
 	if err != nil {
 		return fmt.Errorf("unable to look for a page titled %q in space %s: %w", title, target.Space.Key, err)
 	}
@@ -240,7 +241,7 @@ func Rename(api *confluence.API, ref Ref, title string, dryRun bool, out io.Writ
 	}
 
 	target.Title = title
-	err = api.UpdatePage(target, target.Body.Storage.Value, true, fmt.Sprintf("renamed from %q", oldTitle), "", "")
+	err = api.UpdatePage(ctx, target, target.Body.Storage.Value, true, fmt.Sprintf("renamed from %q", oldTitle), "", "")
 	if err != nil {
 		return fmt.Errorf("unable to rename %s: %w", old, err)
 	}
@@ -251,16 +252,16 @@ func Rename(api *confluence.API, ref Ref, title string, dryRun bool, out io.Writ
 
 // Archive archives a page without children. Confluence Cloud only, and
 // Confluence archives after it answers, so this reports the request.
-func Archive(api *confluence.API, ref Ref, dryRun bool, out io.Writer) error {
-	target, err := Resolve(api, ref)
+func Archive(ctx context.Context, api *confluence.API, ref Ref, dryRun bool, out io.Writer) error {
+	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
-	if err := checkRemovable(api, target); err != nil {
+	if err := checkRemovable(ctx, api, target); err != nil {
 		return err
 	}
 
-	children, err := directChildren(api, target, removeFolders)
+	children, err := directChildren(ctx, api, target, removeFolders)
 	if err != nil {
 		return err
 	}
@@ -272,7 +273,7 @@ func Archive(api *confluence.API, ref Ref, dryRun bool, out io.Writer) error {
 		fmt.Fprintf(out, "would archive %s\n", describe(target))
 		return nil
 	}
-	if err := api.ArchivePage(target.ID); err != nil {
+	if err := api.ArchivePage(ctx, target.ID); err != nil {
 		return fmt.Errorf("unable to archive %s: %w", describe(target), err)
 	}
 	fmt.Fprintf(out, "asked Confluence to archive %s\n", describe(target))
@@ -287,16 +288,16 @@ const removeFolders = "mark does not remove folders: move it first"
 // page with children is refused unless recursive is set, and then its
 // descendants are trashed first, deepest first, so that every delete is of a
 // page with nothing beneath it.
-func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer) error {
-	target, err := Resolve(api, ref)
+func Delete(ctx context.Context, api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer) error {
+	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
-	if err := checkRemovable(api, target); err != nil {
+	if err := checkRemovable(ctx, api, target); err != nil {
 		return err
 	}
 
-	children, err := directChildren(api, target, removeFolders)
+	children, err := directChildren(ctx, api, target, removeFolders)
 	if err != nil {
 		return err
 	}
@@ -307,7 +308,7 @@ func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer)
 
 	var doomed []confluence.PageInfo
 	for _, child := range children {
-		descendants, err := subtree(api, child, removeFolders)
+		descendants, err := subtree(ctx, api, child, removeFolders)
 		if err != nil {
 			return err
 		}
@@ -321,7 +322,7 @@ func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer)
 			fmt.Fprintf(out, "would trash %s\n", describe(page))
 			continue
 		}
-		if err := api.DeletePage(page.ID); err != nil {
+		if err := api.DeletePage(ctx, page.ID); err != nil {
 			return fmt.Errorf("unable to trash %s, after trashing %d page(s): %w", describe(page), i, err)
 		}
 		fmt.Fprintf(out, "trashed %s\n", describe(page))
@@ -332,15 +333,15 @@ func Delete(api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer)
 
 // subtree is page and everything beneath it, deepest first. A folder anywhere
 // in it is refused, for beyondFolder.
-func subtree(api *confluence.API, page confluence.PageInfo, beyondFolder string) ([]confluence.PageInfo, error) {
-	children, err := directChildren(api, &page, beyondFolder)
+func subtree(ctx context.Context, api *confluence.API, page confluence.PageInfo, beyondFolder string) ([]confluence.PageInfo, error) {
+	children, err := directChildren(ctx, api, &page, beyondFolder)
 	if err != nil {
 		return nil, err
 	}
 
 	var all []confluence.PageInfo
 	for _, child := range children {
-		descendants, err := subtree(api, child, beyondFolder)
+		descendants, err := subtree(ctx, api, child, beyondFolder)
 		if err != nil {
 			return nil, err
 		}
@@ -354,13 +355,13 @@ func subtree(api *confluence.API, page confluence.PageInfo, beyondFolder string)
 // holds a folder, for beyondFolder. The listing is of pages, so whatever is
 // inside a folder is out of its sight: trashing the page would take the folder
 // with it, and a recursive watch would miss the pages in it.
-func directChildren(api *confluence.API, page *confluence.PageInfo, beyondFolder string) ([]confluence.PageInfo, error) {
-	children, err := api.GetChildPages(page.ID)
+func directChildren(ctx context.Context, api *confluence.API, page *confluence.PageInfo, beyondFolder string) ([]confluence.PageInfo, error) {
+	children, err := api.GetChildPages(ctx, page.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the children of %s: %w", describe(page), err)
 	}
 
-	folders, err := api.HasChildFolders(page.ID)
+	folders, err := api.HasChildFolders(ctx, page.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the children of %s: %w", describe(page), err)
 	}
@@ -372,12 +373,12 @@ func directChildren(api *confluence.API, page *confluence.PageInfo, beyondFolder
 }
 
 // checkRemovable refuses the space homepage, which holds the whole tree.
-func checkRemovable(api *confluence.API, page *confluence.PageInfo) error {
+func checkRemovable(ctx context.Context, api *confluence.API, page *confluence.PageInfo) error {
 	if page.Type == "blogpost" {
 		return nil
 	}
 
-	home, err := api.FindHomePage(page.Space.Key)
+	home, err := api.FindHomePage(ctx, page.Space.Key)
 	if errors.Is(err, confluence.ErrNoHomePage) {
 		return nil
 	}
@@ -411,8 +412,8 @@ func describe(page *confluence.PageInfo) string {
 // for every page beneath it, from the top down. No users means the
 // authenticated one; anyone else is named as restrictions name a user, and
 // takes space administration.
-func Watch(api *confluence.API, ref Ref, users []string, watch, recursive, dryRun bool, out io.Writer) error {
-	target, err := Resolve(api, ref)
+func Watch(ctx context.Context, api *confluence.API, ref Ref, users []string, watch, recursive, dryRun bool, out io.Writer) error {
+	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
@@ -424,7 +425,7 @@ func Watch(api *confluence.API, ref Ref, users []string, watch, recursive, dryRu
 	if recursive {
 		// The whole tree is read before anything changes, so a folder deep
 		// inside it refuses the run rather than stopping it halfway.
-		pages, err = subtree(api, *target, "a recursive watch does not reach into folders")
+		pages, err = subtree(ctx, api, *target, "a recursive watch does not reach into folders")
 		if err != nil {
 			return err
 		}
@@ -444,7 +445,7 @@ func Watch(api *confluence.API, ref Ref, users []string, watch, recursive, dryRu
 				who, subject = fmt.Sprintf("%q is", user), fmt.Sprintf("%q", user)
 			}
 
-			watching, err := api.IsWatching(page.ID, user)
+			watching, err := api.IsWatching(ctx, page.ID, user)
 			if err != nil {
 				return fmt.Errorf("unable to read who watches %s: %w", describe(page), err)
 			}
@@ -459,9 +460,9 @@ func Watch(api *confluence.API, ref Ref, users []string, watch, recursive, dryRu
 			}
 
 			if watch {
-				err = api.WatchPage(page.ID, user)
+				err = api.WatchPage(ctx, page.ID, user)
 			} else {
-				err = api.UnwatchPage(page.ID, user)
+				err = api.UnwatchPage(ctx, page.ID, user)
 			}
 			if err != nil {
 				return fmt.Errorf("unable to %s %s for %s: %w", verb, describe(page), subject, err)

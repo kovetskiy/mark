@@ -96,7 +96,7 @@ func TestCreatePageThatLandedIsNotSentAgain(t *testing.T) {
 			failWhen(server, tc.gateway, nil)
 			server.AddSpace("DOCS")
 
-			page, err := api.CreatePage("DOCS", "page", nil, "Once Only", "<p>body</p>")
+			page, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Once Only", "<p>body</p>")
 			require.NoError(t, err)
 			require.NotNil(t, page)
 
@@ -114,7 +114,7 @@ func TestCreatePageThatDidNotLandIsSentAgain(t *testing.T) {
 	server.AddSpace("DOCS")
 	refuse(server, false, 2, isPost("/rest/api/content/"))
 
-	page, err := api.CreatePage("DOCS", "page", nil, "Third Time", "<p>body</p>")
+	page, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Third Time", "<p>body</p>")
 	require.NoError(t, err)
 	require.NotNil(t, server.Page(page.ID))
 	assert.Equal(t, 3, server.CountRequests(http.MethodPost, "/rest/api/content"))
@@ -125,7 +125,7 @@ func TestCreatePageGivesUpAfterMaxAttempts(t *testing.T) {
 	server.AddSpace("DOCS")
 	refuse(server, false, maxAttempts, isPost("/rest/api/content/"))
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Never", "")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Never", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 	assert.Equal(t, maxAttempts, server.CountRequests(http.MethodPost, "/rest/api/content"))
@@ -143,7 +143,7 @@ func TestCreatePageIsNotSentAgainAfterA500(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Once Only", "")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Once Only", "")
 	require.Error(t, err)
 	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/rest/api/content"))
 }
@@ -164,11 +164,11 @@ func TestUpdatePageThatLandedIsNotSentAgain(t *testing.T) {
 			failWhen(server, tc.gateway, nil)
 			id = server.AddPage("DOCS", "Target", "page", "").ID
 
-			page, err := api.GetPageByID(id)
+			page, err := api.GetPageByID(context.Background(), id)
 			require.NoError(t, err)
 			server.ResetRequests()
 
-			require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
 
 			assert.Equal(t, 1, countContentPuts(server, id))
 			assert.EqualValues(t, 2, server.Page(id).Version,
@@ -183,10 +183,10 @@ func TestUpdatePageThatDidNotLandIsSentAgain(t *testing.T) {
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 	refuse(server, false, 1, func(r *http.Request) bool { return isContentPut(r, id) })
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
 	assert.Equal(t, 2, countContentPuts(server, id))
 	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
 	assert.EqualValues(t, 2, server.Page(id).Version)
@@ -199,7 +199,7 @@ func TestUpdatePageUnavailableThenEditedIsAConflict(t *testing.T) {
 	api.KeepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
 	failWhen(server, false, func(r *http.Request) (int, string, bool) {
@@ -211,8 +211,8 @@ func TestUpdatePageUnavailableThenEditedIsAConflict(t *testing.T) {
 		return 0, "", false
 	})
 
-	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "", "")
-	require.ErrorIs(t, err, errConflict)
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", "")
+	require.ErrorIs(t, err, ErrConflict)
 	assert.Contains(t, err.Error(), "--no-overwrite")
 	assert.Equal(t, "<p>by hand, twice</p>", server.Page(id).Body)
 }
@@ -221,7 +221,7 @@ func TestCreateAttachmentThatLandedIsNotSentAgain(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 1, isPost("/child/attachment"))
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
-	info, err := api.CreateAttachment(id, "a.png", "mark:checksum: abc", strings.NewReader("png"))
+	info, err := api.CreateAttachment(context.Background(), id, "a.png", "mark:checksum: abc", strings.NewReader("png"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, info.ID)
 	assert.Len(t, server.Attachments(id), 1)
@@ -233,7 +233,7 @@ func TestCreateAttachmentThatDidNotLandIsSentAgain(t *testing.T) {
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 	refuse(server, false, 1, isPost("/child/attachment"))
 
-	info, err := api.CreateAttachment(id, "a.png", "mark:checksum: abc", strings.NewReader("png"))
+	info, err := api.CreateAttachment(context.Background(), id, "a.png", "mark:checksum: abc", strings.NewReader("png"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, info.ID)
 
@@ -248,7 +248,7 @@ func TestUpdateAttachmentThatLandedIsNotSentAgain(t *testing.T) {
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 	attachment := server.AddAttachment(id, "a.png", "mark:checksum: old")
 
-	info, err := api.UpdateAttachment(id, attachment.ID, "a.png", "mark:checksum: new", strings.NewReader("new"))
+	info, err := api.UpdateAttachment(context.Background(), id, attachment.ID, "a.png", "mark:checksum: new", strings.NewReader("new"))
 	require.NoError(t, err)
 	assert.Equal(t, attachment.ID, info.ID)
 	assert.Equal(t, "mark:checksum: new", server.Attachments(id)[0].Comment)
@@ -261,7 +261,7 @@ func TestUpdateAttachmentThatDidNotLandIsSentAgain(t *testing.T) {
 	attachment := server.AddAttachment(id, "a.png", "mark:checksum: old")
 	refuse(server, false, 1, isPost("/data"))
 
-	_, err := api.UpdateAttachment(id, attachment.ID, "a.png", "mark:checksum: new", strings.NewReader("new"))
+	_, err := api.UpdateAttachment(context.Background(), id, attachment.ID, "a.png", "mark:checksum: new", strings.NewReader("new"))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("new"), server.Attachments(id)[0].Data)
 	assert.Equal(t, 2, server.CountRequests(http.MethodPost, "/data"))
@@ -294,7 +294,7 @@ func TestCreatePageThatLandedLateIsKept(t *testing.T) {
 		landed = server.AddPage("DOCS", "Late", "page", "")
 	})
 
-	page, err := api.CreatePage("DOCS", "page", nil, "Late", "")
+	page, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Late", "")
 	require.NoError(t, err, "the second create's duplicate title is the first one landing")
 	assert.Equal(t, landed.ID, page.ID)
 }
@@ -315,10 +315,10 @@ func TestCreatePageDoesNotAdoptAPageUnderAnotherParent(t *testing.T) {
 		return 0, "", false
 	})
 
-	parentInfo, err := api.GetPageByID(parent.ID)
+	parentInfo, err := api.GetPageByID(context.Background(), parent.ID)
 	require.NoError(t, err)
 
-	_, err = api.CreatePage("DOCS", "page", parentInfo, "Taken", "")
+	_, err = api.CreatePage(context.Background(), "DOCS", "page", parentInfo, "Taken", "")
 	require.ErrorContains(t, err, "already exists")
 }
 
@@ -333,10 +333,10 @@ func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
 		server.WritePage(id, "<p>from mark</p>")
 	})
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
 	assert.EqualValues(t, 2, server.Page(id).Version, "no version on top of the one that landed")
 	assert.EqualValues(t, 2, page.Version.Number)
 }
@@ -347,16 +347,16 @@ func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
 func TestATimeoutIsUnavailable(t *testing.T) {
 	timeout := fmt.Errorf("timeout awaiting response headers: %w", context.DeadlineExceeded)
 
-	err := newTransportError(nil, "update page", &url.Error{Op: "Put", URL: "https://x", Err: timeout})
+	err := markUnavailable(http.MethodPut, nil, "", &url.Error{Op: "Put", URL: "https://x", Err: timeout})
 	assert.True(t, isUnavailable(err))
 
-	err = newTransportError(nil, "read page", &url.Error{Op: "Get", URL: "https://x", Err: timeout})
+	err = markUnavailable(http.MethodGet, nil, "", &url.Error{Op: "Get", URL: "https://x", Err: timeout})
 	assert.False(t, isUnavailable(err), "a read changed nothing, and the transport has retried it")
 
-	err = newTransportError(nil, "update page", &url.Error{Op: "parse", URL: "%", Err: errors.New("bad")})
+	err = markUnavailable(http.MethodPut, nil, "", &url.Error{Op: "parse", URL: "%", Err: errors.New("bad")})
 	assert.False(t, isUnavailable(err), "a request that could not be built was never sent")
 
-	err = newTransportError(nil, "update page", &url.Error{Op: "Put", URL: "https://x", Err: &net.DNSError{Err: "no such host"}})
+	err = markUnavailable(http.MethodPut, nil, "", &url.Error{Op: "Put", URL: "https://x", Err: &net.DNSError{Err: "no such host"}})
 	assert.False(t, isUnavailable(err), "a name that did not resolve stopped the request before it was sent")
 }
 
@@ -367,7 +367,7 @@ func TestUpdatePageUnavailableThenEditedOnceIsAConflict(t *testing.T) {
 	api.KeepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
 	var once atomic.Bool
@@ -379,8 +379,8 @@ func TestUpdatePageUnavailableThenEditedOnceIsAConflict(t *testing.T) {
 		return 0, "", false
 	})
 
-	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "", "")
-	require.ErrorIs(t, err, errConflict)
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", "")
+	require.ErrorIs(t, err, ErrConflict)
 	assert.Contains(t, err.Error(), "--no-overwrite")
 	assert.Equal(t, "<p>by hand</p>", server.Page(id).Body)
 }
@@ -392,7 +392,7 @@ func TestCreatePageThatLandedOnTheLastAttemptIsKept(t *testing.T) {
 	server.AddSpace("DOCS")
 	refuse(server, false, maxAttempts-1, isPost("/rest/api/content/"))
 
-	page, err := api.CreatePage("DOCS", "page", nil, "Last", "")
+	page, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Last", "")
 	require.NoError(t, err)
 	assert.Equal(t, "Last", server.Page(page.ID).Title)
 	assert.Equal(t, maxAttempts, server.CountRequests(http.MethodPost, "/rest/api/content"))
@@ -401,10 +401,10 @@ func TestCreatePageThatLandedOnTheLastAttemptIsKept(t *testing.T) {
 func TestCreatePageUnderAParentThatLandedIsKept(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 1, isPost("/rest/api/content/"))
 	server.AddSpace("DOCS")
-	parent, err := api.GetPageByID(server.AddPage("DOCS", "Parent", "page", "").ID)
+	parent, err := api.GetPageByID(context.Background(), server.AddPage("DOCS", "Parent", "page", "").ID)
 	require.NoError(t, err)
 
-	page, err := api.CreatePage("DOCS", "page", parent, "Child", "")
+	page, err := api.CreatePage(context.Background(), "DOCS", "page", parent, "Child", "")
 	require.NoError(t, err)
 	assert.Equal(t, parent.ID, server.Page(page.ID).ParentID)
 	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/rest/api/content"))
@@ -416,7 +416,7 @@ func TestCreatePageUnderAFolderThatLandedIsKept(t *testing.T) {
 	server.AddSpace("DOCS")
 	folder := server.AddFolder("DOCS", "Folder", "", "")
 
-	page, err := api.CreatePageWithFolderParent("DOCS", "page", folder.ID, "In a folder", "")
+	page, err := api.CreatePageWithFolderParent(context.Background(), "DOCS", "page", folder.ID, "In a folder", "")
 	require.NoError(t, err)
 	assert.Equal(t, folder.ID, server.Page(page.ID).ParentID)
 	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/api/v2/pages"))
@@ -431,9 +431,9 @@ func TestUnavailableWriteWaitsForRetryAfter(t *testing.T) {
 	api.unavailableWait = func(_ context.Context, _ int, retryAfter string) { waited = append(waited, retryAfter) }
 	id = server.AddPage("DOCS", "Target", "page", "").ID
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
 	assert.Equal(t, []string{"7"}, waited)
 }
 
@@ -442,7 +442,7 @@ func TestUpdatePageUnavailableThenEditedOnceIsAConflictThroughTheGateway(t *test
 	api.KeepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
 	var once atomic.Bool
@@ -454,8 +454,8 @@ func TestUpdatePageUnavailableThenEditedOnceIsAConflictThroughTheGateway(t *test
 		return 0, "", false
 	})
 
-	err = api.UpdatePage(page, "<p>from mark</p>", false, "", "", "")
-	require.ErrorIs(t, err, errConflict)
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", "")
+	require.ErrorIs(t, err, ErrConflict)
 	assert.Equal(t, "<p>by hand</p>", server.Page(id).Body)
 }
 
@@ -466,7 +466,7 @@ func TestUpdatePageWhoseAuthorCannotBeReadIsWrittenAgain(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 1, func(r *http.Request) bool { return isContentPut(r, id) })
 	id = server.AddPage("DOCS", "Target", "page", "").ID
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 	failWhen(server, false, func(r *http.Request) (int, string, bool) {
 		if strings.HasSuffix(r.URL.Path, "/user/current") {
@@ -475,7 +475,7 @@ func TestUpdatePageWhoseAuthorCannotBeReadIsWrittenAgain(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
 	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
 	assert.EqualValues(t, 3, server.Page(id).Version)
 }
@@ -489,7 +489,7 @@ func TestUpdatePageRetriedAfterAConflictThatLandedIsKept(t *testing.T) {
 	})
 	id = server.AddPage("DOCS", "Target", "page", "").ID
 
-	page, err := api.GetPageByID(id)
+	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 	server.EditPage(id, "<p>by hand</p>")
 	failWhen(server, false, func(r *http.Request) (int, string, bool) {
@@ -499,7 +499,7 @@ func TestUpdatePageRetriedAfterAConflictThatLandedIsKept(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
 	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
 	assert.EqualValues(t, 3, server.Page(id).Version)
 	assert.EqualValues(t, 3, page.Version.Number)
@@ -520,7 +520,7 @@ func TestCreatePageDoesNotAdoptAPageSomebodyElseMade(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := api.CreatePage("DOCS", "page", nil, "Taken", "")
+	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Taken", "")
 	require.ErrorContains(t, err, "already exists")
 }
 
@@ -546,9 +546,9 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 			return 0, "", false
 		})
 
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		api.UnwatchWritten(t.Context())
 
 		assert.Empty(t, server.Watchers(stored.ID))
@@ -561,9 +561,9 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 		api.Unwatch = true
 		stored := server.AddPage("DOCS", "Page", "page", "")
 
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		api.UnwatchWritten(t.Context())
 
 		assert.Empty(t, server.Watchers(stored.ID))
@@ -585,9 +585,9 @@ func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
 	var ids []string
 	for _, title := range []string{"One", "Two", "Three"} {
 		stored := server.AddPage("DOCS", title, "page", "")
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		ids = append(ids, stored.ID)
 	}
 
@@ -621,9 +621,9 @@ func TestUnwatchWrittenStopsWaitingWhenInterrupted(t *testing.T) {
 	var ids []string
 	for _, title := range []string{"One", "Two"} {
 		stored := server.AddPage("DOCS", title, "page", "")
-		page, err := api.GetPageByID(stored.ID)
+		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
 		ids = append(ids, stored.ID)
 	}
 

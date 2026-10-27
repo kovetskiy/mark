@@ -1,10 +1,12 @@
 package confluence_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -55,7 +57,7 @@ func newDataCenterAPIWith(
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(), "the fixture has to look like Data Center for this to mean anything")
+	require.False(t, api.IsCloud(context.Background()), "the fixture has to look like Data Center for this to mean anything")
 
 	return api, server
 }
@@ -75,7 +77,7 @@ func TestReparentOnDataCenterFallsBackToAnUpdate(t *testing.T) {
 	moved := server.AddPage("DOCS", "Release Notes", "page", oldParent.ID)
 	server.EditPage(moved.ID, "<p>the notes</p>")
 
-	require.NoError(t, api.MoveContentAppend(moved.ID, newParent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), moved.ID, newParent.ID))
 
 	after := server.Page(moved.ID)
 	require.NotNil(t, after)
@@ -96,10 +98,10 @@ func TestReparentOnDataCenterStopsProbingTheMissingEndpoint(t *testing.T) {
 	first := server.AddPage("DOCS", "First", "page", "")
 	second := server.AddPage("DOCS", "Second", "page", "")
 
-	require.NoError(t, api.MoveContentAppend(first.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), first.ID, parent.ID))
 	require.Equal(t, 1, server.CountRequests(http.MethodPut, "/move/"))
 
-	require.NoError(t, api.MoveContentAppend(second.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, parent.ID))
 	assert.Equal(t, 1, server.CountRequests(http.MethodPut, "/move/"),
 		"the second move must not pay for a request that is known to 404")
 	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
@@ -115,7 +117,7 @@ func TestReparentOnDataCenterLeavesAPageThatIsAlreadyThereAlone(t *testing.T) {
 	child := server.AddPage("DOCS", "Child", "page", parent.ID)
 	before := server.Page(child.ID).Version
 
-	require.NoError(t, api.MoveContentAppend(child.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), child.ID, parent.ID))
 
 	assert.Equal(t, before, server.Page(child.ID).Version,
 		"a move to where the page already is must not bump its version")
@@ -132,8 +134,8 @@ func TestOrderingOnDataCenterSaysWhatCannotBeDone(t *testing.T) {
 	second := server.AddPage("DOCS", "Second", "page", parent.ID)
 
 	for name, order := range map[string]func() error{
-		"before": func() error { return api.MoveContentBefore(second.ID, first.ID) },
-		"after":  func() error { return api.MoveContentAfter(second.ID, first.ID) },
+		"before": func() error { return api.MoveContentBefore(context.Background(), second.ID, first.ID) },
+		"after":  func() error { return api.MoveContentAfter(context.Background(), second.ID, first.ID) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := order()
@@ -174,11 +176,11 @@ func TestOrderingNamesThePageByTitleWhenItCan(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	page, err := api.FindPage("DOCS", "Release Notes", "page")
+	page, err := api.FindPage(context.Background(), "DOCS", "Release Notes", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	err = api.MoveContentAfter(page.ID, "1003")
+	err = api.MoveContentAfter(context.Background(), page.ID, "1003")
 	require.Error(t, err)
 	require.True(t, moveRefused)
 	assert.Contains(t, err.Error(), `"Release Notes"`,
@@ -190,12 +192,47 @@ func TestOrderingNamesThePageByTitleWhenItCan(t *testing.T) {
 func TestMoveOnCloudStillReportsAPlain404(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
-	require.True(t, api.IsCloud(), "the fake answers /api/v2/spaces, so it is Cloud")
+	require.True(t, api.IsCloud(context.Background()), "the fake answers /api/v2/spaces, so it is Cloud")
 
-	err := api.MoveContentAppend("no-such-page", "1003")
+	err := api.MoveContentAppend(context.Background(), "no-such-page", "1003")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 	assert.NotContains(t, err.Error(), "move endpoint")
+}
+
+// TestAMissingMoveEndpointIsNotRememberedWhenThePlatformIsUnknown: one 404
+// from content/{id}/move rules the endpoint out for good only where the probe
+// has said this is not Cloud. A probe that failed says nothing either way, and
+// on a Cloud it could not identify every later move -- and every ordering,
+// which has no fallback outside Cloud -- would go without the endpoint.
+func TestAMissingMoveEndpointIsNotRememberedWhenThePlatformIsUnknown(t *testing.T) {
+	api, server := newAPI(t)
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", "")
+	second := server.AddPage("DOCS", "Second", "page", "")
+
+	var moves atomic.Int32
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/rest/api/user/current" {
+			return http.StatusForbidden, `{"message":"no"}`, true
+		}
+		if strings.Contains(r.URL.Path, "/move/") && moves.Add(1) == 1 {
+			return http.StatusNotFound, `{"message":"not now"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.Cloud(context.Background())
+	require.Error(t, err, "the probe has to fail for this to mean anything")
+
+	require.NoError(t, api.MoveContentAppend(context.Background(), first.ID, parent.ID))
+	assert.Equal(t, parent.ID, server.Page(first.ID).ParentID, "the fallbacks still move the page")
+
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, parent.ID))
+	assert.Equal(t, 2, server.CountRequests(http.MethodPut, "/move/"),
+		"the endpoint is asked again: one 404 on an unknown platform is not remembered")
+	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
 }
 
 // TestReparentOnDataCenterReportsAMissingPage: the fallback is reached on a
@@ -205,7 +242,7 @@ func TestReparentOnDataCenterReportsAMissingPage(t *testing.T) {
 	api, server := newDataCenterAPI(t)
 	server.AddPage("DOCS", "Parent", "page", "")
 
-	err := api.MoveContentAppend("no-such-page", "1003")
+	err := api.MoveContentAppend(context.Background(), "no-such-page", "1003")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no-such-page")
 	assert.Contains(t, err.Error(), "404")
@@ -226,7 +263,7 @@ func TestReparentOnDataCenterKeepsTheVersionMessage(t *testing.T) {
 	moved := server.AddPage("DOCS", "Release Notes", "page", old.ID)
 
 	const published = "[v0000000000000000000000000000000000000001] published by mark"
-	require.NoError(t, api.UpdatePage(
+	require.NoError(t, api.UpdatePage(context.Background(),
 		&confluence.PageInfo{
 			ID: moved.ID, Title: "Release Notes", Type: "page",
 			Version: struct {
@@ -238,7 +275,7 @@ func TestReparentOnDataCenterKeepsTheVersionMessage(t *testing.T) {
 	))
 	require.Equal(t, published, server.Page(moved.ID).Message)
 
-	require.NoError(t, api.MoveContentAppend(moved.ID, want.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), moved.ID, want.ID))
 
 	after := server.Page(moved.ID)
 	assert.Equal(t, want.ID, after.ParentID)
@@ -258,7 +295,7 @@ func TestReparentOnDataCenterUsesMovePageAction(t *testing.T) {
 	server.EditPage(moved.ID, "<p>the notes</p>")
 	before := server.Page(moved.ID).Version
 
-	require.NoError(t, api.MoveContentAppend(moved.ID, newParent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), moved.ID, newParent.ID))
 
 	after := server.Page(moved.ID)
 	assert.Equal(t, newParent.ID, after.ParentID)
@@ -279,10 +316,10 @@ func TestOrderingOnDataCenterUsesMovePageAction(t *testing.T) {
 	second := server.AddPage("DOCS", "Second", "page", parent.ID)
 	third := server.AddPage("DOCS", "Third", "page", parent.ID)
 
-	require.NoError(t, api.MoveContentBefore(third.ID, first.ID))
+	require.NoError(t, api.MoveContentBefore(context.Background(), third.ID, first.ID))
 	assert.Equal(t, []string{third.ID, first.ID, second.ID}, server.ChildOrder(parent.ID))
 
-	require.NoError(t, api.MoveContentAfter(third.ID, second.ID))
+	require.NoError(t, api.MoveContentAfter(context.Background(), third.ID, second.ID))
 	assert.Equal(t, []string{first.ID, second.ID, third.ID}, server.ChildOrder(parent.ID))
 }
 
@@ -302,12 +339,12 @@ func TestMovePageActionRefusalIsReported(t *testing.T) {
 	second := server.AddPage("DOCS", "Second", "page", parent.ID)
 	other := server.AddPage("DOCS", "Other", "page", "")
 
-	err := api.MoveContentBefore(second.ID, first.ID)
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "You cannot move this page.")
 	assert.Equal(t, []string{first.ID, second.ID}, server.ChildOrder(parent.ID))
 
-	require.NoError(t, api.MoveContentAppend(second.ID, other.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, other.ID))
 	assert.Equal(t, other.ID, server.Page(second.ID).ParentID)
 	assert.Equal(t, 1, countPuts(server, second.ID),
 		"the reparent has to have been done by update")
@@ -332,8 +369,8 @@ func TestMovePageActionBehindALoginPageIsGivenUp(t *testing.T) {
 	first := server.AddPage("DOCS", "First", "page", "")
 	second := server.AddPage("DOCS", "Second", "page", "")
 
-	require.NoError(t, api.MoveContentAppend(first.ID, parent.ID))
-	require.NoError(t, api.MoveContentAppend(second.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), first.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, parent.ID))
 
 	assert.Equal(t, parent.ID, server.Page(first.ID).ParentID)
 	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
@@ -360,7 +397,7 @@ func TestMovePageActionVersionIsNotAnEdit(t *testing.T) {
 	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
 	before := server.Page(pageID).Version
 
-	require.NoError(t, api.MoveContentAppend(pageID, newParent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), pageID, newParent.ID))
 
 	from, moved := api.ReparentedFrom(pageID, server.Page(pageID).Version)
 	require.True(t, moved)
@@ -409,7 +446,7 @@ func TestMovePageActionThatSettlesLateIsNotRedone(t *testing.T) {
 	pageID = server.AddPage("DOCS", "Release Notes", "page", oldParent.ID).ID
 	before := server.Page(pageID).Version
 
-	require.NoError(t, api.MoveContentAppend(pageID, newID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), pageID, newID))
 
 	assert.Equal(t, newID, server.Page(pageID).ParentID)
 	assert.Equal(t, before, server.Page(pageID).Version)
@@ -449,8 +486,8 @@ func TestMovePageActionAnsweringHTMLAfterAMoveIsTrusted(t *testing.T) {
 	first := server.AddPage("DOCS", "First", "page", "")
 	second := server.AddPage("DOCS", "Second", "page", "")
 
-	require.NoError(t, api.MoveContentAppend(first.ID, parent.ID))
-	require.NoError(t, api.MoveContentAppend(second.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), first.ID, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, parent.ID))
 
 	assert.Equal(t, parent.ID, server.Page(first.ID).ParentID)
 	assert.Equal(t, parent.ID, server.Page(second.ID).ParentID)
@@ -483,11 +520,11 @@ func TestMovePageActionHTMLRefusalOfOnePageIsNotGivenUp(t *testing.T) {
 	second := server.AddPage("DOCS", "Second", "page", parent.ID)
 	restricted = server.AddPage("DOCS", "Restricted", "page", "").ID
 
-	require.NoError(t, api.MoveContentAppend(restricted, parent.ID))
+	require.NoError(t, api.MoveContentAppend(context.Background(), restricted, parent.ID))
 	assert.Equal(t, parent.ID, server.Page(restricted).ParentID)
 	assert.Equal(t, 1, countPuts(server, restricted), "that one page is reparented by update")
 
-	require.NoError(t, api.MoveContentBefore(second.ID, first.ID))
+	require.NoError(t, api.MoveContentBefore(context.Background(), second.ID, first.ID))
 	assert.Equal(t, second.ID, server.ChildOrder(parent.ID)[0],
 		"ordering has to go on working through the action")
 }
@@ -507,7 +544,7 @@ func TestMovePageActionFieldErrorsAreARefusal(t *testing.T) {
 	first := server.AddPage("DOCS", "First", "page", parent.ID)
 	second := server.AddPage("DOCS", "Second", "page", parent.ID)
 
-	err := api.MoveContentBefore(second.ID, first.ID)
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "targetId: The target is not a valid parent.")
 }
@@ -531,4 +568,58 @@ func TestActionErrorsReadsEveryShape(t *testing.T) {
 			assert.Equal(t, testcase.want, confluence.ActionErrors(answer))
 		})
 	}
+}
+
+// TestMovePageActionRefusalIsReadUnderAnyContentType: movepage.action is an
+// XWork action, not a REST endpoint, and its JSON does not always say it is
+// JSON. A refusal under text/javascript is read for its reason like any
+// other, rather than thrown away with the body and waited on as a move.
+func TestMovePageActionRefusalIsReadUnderAnyContentType(t *testing.T) {
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/pages/movepage.action" {
+			return http.StatusOK, `{"actionErrors":["You cannot move this page."]}`, true
+		}
+		return 0, "", false
+	})
+	server.SetFailHeaders(http.Header{"Content-Type": {"text/javascript;charset=UTF-8"}})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "You cannot move this page.")
+}
+
+// TestMovePageActionTargetAnsweredEmptyIsAnError: an empty answer to reading
+// the move target left it with no space and no ancestors. An ordering then
+// said the target was at the root of its space, and an append posted the
+// action -- a write -- with a title and space of "".
+func TestMovePageActionTargetAnsweredEmptyIsAnError(t *testing.T) {
+	var targetID string
+	api, server := newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Path == "/rest/api/content/"+targetID {
+			return http.StatusOK, "", true
+		}
+		return 0, "", false
+	})
+
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	other := server.AddPage("DOCS", "Other", "page", "")
+
+	targetID = first.ID
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read move target")
+	assert.NotContains(t, err.Error(), "root of its space")
+
+	// An append falls back to an update, which needs nothing from the target.
+	targetID = other.ID
+	require.NoError(t, api.MoveContentAppend(context.Background(), second.ID, other.ID))
+	assert.Equal(t, other.ID, server.Page(second.ID).ParentID)
+	assert.Equal(t, 0, server.CountRequests(http.MethodPost, "/pages/movepage.action"),
+		"the action is not asked to move anything under a target it could not read")
 }

@@ -1,6 +1,7 @@
 package stdlib
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"text/template"
@@ -14,13 +15,15 @@ type Lib struct {
 	Templates *template.Template
 }
 
-func New(api *confluence.API) (*Lib, error) {
+// New builds the standard library. The "user" template func resolves names
+// through api, with ctx for its requests; api may be nil, and then it cannot.
+func New(ctx context.Context, api *confluence.API) (*Lib, error) {
 	var (
 		lib Lib
 		err error
 	)
 
-	lib.Templates, err = templates(api)
+	lib.Templates, err = templates(ctx, api)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +31,7 @@ func New(api *confluence.API) (*Lib, error) {
 	return &lib, nil
 }
 
-func templates(api *confluence.API) (*template.Template, error) {
+func templates(ctx context.Context, api *confluence.API) (*template.Template, error) {
 	text := func(line ...string) string {
 		return strings.Join(line, ``)
 	}
@@ -39,7 +42,7 @@ func templates(api *confluence.API) (*template.Template, error) {
 				if api == nil {
 					return nil
 				}
-				user, err := api.GetUserByName(name)
+				user, err := api.GetUserByName(ctx, name)
 				if err != nil {
 					log.Error().Err(err).Send()
 				}
