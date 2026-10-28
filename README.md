@@ -183,7 +183,7 @@ OPTIONS:
    --files string, -f string                      use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
    --continue-on-error                            don't exit if an error occurs while processing a file, continue processing remaining files. [$MARK_CONTINUE_ON_ERROR]
    --compile-only                                 show resulting HTML and don't update Confluence page content. [$MARK_COMPILE_ONLY]
-   --dry-run                                      resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github. [$MARK_DRY_RUN]
+   --dry-run, -n                                  resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github. [$MARK_DRY_RUN]
    --edit-lock, -k                                lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. [$MARK_EDIT_LOCK]
    --drop-h1                                      don't include the first H1 heading in Confluence output. [$MARK_DROP_H1]
    --strip-linebreaks, -L                         remove linebreaks inside of tags, to accommodate non-standard Confluence behavior [$MARK_STRIP_LINEBREAKS]
@@ -197,7 +197,7 @@ OPTIONS:
    --version-message string                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
    --target-url string, -l string                 edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
-   --space string                                 use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
+   --space string, -s string                      use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string                     The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
    --content-appearance string                    default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), fixed, default (Narrow), max (Max). [$MARK_CONTENT_APPEARANCE]
@@ -256,15 +256,15 @@ DESCRIPTION:
 
 OPTIONS:
    --page-id string            export the page or blog post with this id. [$MARK_PAGE_ID]
-   --url string                export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set. [$MARK_URL]
-   --space string              the space key --title looks the page up in. [$MARK_SPACE]
-   --title string              export the page or blog post with this title in --space. [$MARK_TITLE]
+   --url string, -l string     export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set. [$MARK_URL]
+   --space string, -s string   the space key --title looks the page up in. [$MARK_SPACE]
+   --title string, -t string   export the page or blog post with this title in --space. [$MARK_TITLE]
    --output string, -o string  write the Markdown to this file rather than to standard output ("-"). [$MARK_OUTPUT]
    --attachments-dir string    write the attachments the page shows or links to into this directory. Defaults to the directory of --output, or the working directory; a directory of their own changes their names when the document is published back, since mark names an attachment after its path. [$MARK_ATTACHMENTS_DIR]
    --overwrite                 replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything. [$MARK_OVERWRITE]
    --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
-   --recursive                 export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
-   --depth int                 with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)
+   --recursive, -r             export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
+   --depth int, -d int         with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)
    --relative-links            with --recursive, write a link between two exported pages, or a URL of one pasted into a page, as a relative link between their files, which a repository host can follow, rather than as ac:Title or the URL. Published back, such a link becomes a link to the page's address rather than Confluence's own page link.
    --help, -h                  show help
 

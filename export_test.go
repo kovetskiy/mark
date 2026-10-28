@@ -306,9 +306,13 @@ func TestExportOfAPageThatIsNotThere(t *testing.T) {
 	assert.Contains(t, err.Error(), `no page or blog post titled "Nowhere" in space DOCS`)
 }
 
-// TestExportWithoutAttachments writes the document alone.
+// TestExportWithoutAttachments writes the document alone, without asking for
+// the page's attachments: a token that may not read them exports the page.
 func TestExportWithoutAttachments(t *testing.T) {
 	server, id, _ := exportFixture(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusForbidden, `{}`, strings.Contains(r.URL.Path, "/child/attachment")
+	})
 
 	t.Chdir(t.TempDir())
 
@@ -326,6 +330,26 @@ func TestExportWithoutAttachments(t *testing.T) {
 
 	_, err = os.Stat("logo.png")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// TestExportWithoutAttachmentsDeclaresThemAll: without the page's attachments
+// there is no telling which it has, so an attachment storage format refers to
+// is declared as the document refers to it.
+func TestExportWithoutAttachmentsDeclaresThemAll(t *testing.T) {
+	server, id := exportPage(t,
+		`<table><tbody><tr><td colspan="2"><ac:image><ri:attachment ri:filename="kept.png"/></ac:image></td></tr></tbody></table>`)
+
+	var stdout bytes.Buffer
+	logged := captureLog(t, func() {
+		_, err := Export(context.Background(), ExportConfig{
+			BaseURL: server.URL, Username: "user", Password: "token", PageID: id,
+			NoAttachments: true, Stdout: &stdout,
+		})
+		require.NoError(t, err)
+	})
+	assert.Contains(t, stdout.String(), "<!-- Attachment: kept.png -->")
+	assert.NotContains(t, logged, "does not have")
+	assert.Zero(t, server.CountRequests("GET", "/child/attachment"))
 }
 
 // TestExportThroughTheGateway exports through the api.atlassian.com gateway,
@@ -349,6 +373,100 @@ func TestExportThroughTheGateway(t *testing.T) {
 	logo, err := os.ReadFile(filepath.Join(filepath.Dir(out), "logo.png"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, logo)
+}
+
+// TestExportThroughTheGatewayWithoutTheSpace: a token that may read the page
+// but not its space exports it into the space it is told.
+func TestExportThroughTheGatewayWithoutTheSpace(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`,
+			strings.Contains(r.URL.Path, "/api/v2/spaces/")
+	})
+
+	config := ExportConfig{
+		BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token",
+		PageID: id, NoAttachments: true, Stdout: io.Discard,
+	}
+	_, err := Export(context.Background(), config)
+	require.ErrorContains(t, err, "unable to tell which space")
+
+	var stdout bytes.Buffer
+	config.Space, config.Stdout = "DOCS", &stdout
+	_, err = Export(context.Background(), config)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "<!-- Space: DOCS -->\n")
+}
+
+// TestExportOfAPageInAFolder: v1's ancestors leave folders out, so the folders
+// above a page are read from v2 and written as Folder headers, which publish the
+// page back into the folder it was in.
+func TestExportOfAPageInAFolder(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		guides  bool
+		headers string
+	}{
+		{"below a page", true, "<!-- Parent: Guides -->\n<!-- Folder: Area -->\n"},
+		// Folder headers alone look for the folder at the root of the space.
+		{"below the home page", false, "<!-- Parent: Home -->\n<!-- Folder: Area -->\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+			above := home
+			if test.guides {
+				above = server.AddPage("DOCS", "Guides", "page", home.ID)
+			}
+			folder := server.AddFolder("DOCS", "Area", above.ID, "page")
+			inside := server.AddPage("DOCS", "Inside", "page", folder.ID)
+			server.EditPage(inside.ID, `<p>In the folder.</p>`)
+
+			out := filepath.Join(t.TempDir(), "inside.md")
+			_, err := Export(context.Background(), ExportConfig{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				PageID: inside.ID, Output: out,
+			})
+			require.NoError(t, err)
+
+			exported, err := os.ReadFile(out)
+			require.NoError(t, err)
+			assert.Contains(t, string(exported), "<!-- Space: DOCS -->\n"+test.headers+"<!-- Title: Inside -->\n")
+
+			require.NoError(t, Run(Config{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				Files: out, Output: io.Discard,
+			}))
+			assert.Equal(t, folder.ID, server.Page(inside.ID).ParentID, "the page stays in its folder")
+			assert.Len(t, server.Folders(), 1, "no folder is created")
+		})
+	}
+}
+
+// TestExportOfAPageBelowAFolderSays: a folder above a page that is not directly
+// above the exported one cannot be said with headers, and the export says so.
+func TestExportOfAPageBelowAFolderSays(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	folder := server.AddFolder("DOCS", "Area", home.ID, "page")
+	topic := server.AddPage("DOCS", "Topic", "page", folder.ID)
+	inside := server.AddPage("DOCS", "Inside", "page", topic.ID)
+	server.EditPage(inside.ID, `<p>Below the folder.</p>`)
+
+	var stdout bytes.Buffer
+	logged := captureLog(t, func() {
+		_, err := Export(context.Background(), ExportConfig{
+			BaseURL: server.URL, Username: "user", Password: "token",
+			PageID: inside.ID, Stdout: &stdout,
+		})
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, stdout.String(), "<!-- Space: DOCS -->\n<!-- Parent: Topic -->\n<!-- Title: Inside -->\n")
+	assert.NotContains(t, stdout.String(), "Folder:")
+	assert.Contains(t, logged, `folder \"Area\"`)
 }
 
 // exportPage puts a page with body into a fresh fake Confluence.
@@ -415,6 +533,35 @@ func TestExportGivesEveryAttachmentAFile(t *testing.T) {
 		"a_b.png": "a/b.png", "a_b-2.png": "a_b.png", "Image.png": "Image.png", "image-2.png": "image.png",
 	} {
 		assert.Contains(t, string(exported), "("+file+")")
+		data, err := os.ReadFile(filepath.Join(dir, file))
+		require.NoError(t, err, file)
+		assert.Equal(t, content, string(data), file)
+	}
+}
+
+// TestExportKeepsAttachmentsOffTheDocument: an attachment named like the
+// document, or like it but for case, which is one file on macOS and Windows,
+// gets a name of its own rather than replacing the document under --overwrite.
+func TestExportKeepsAttachmentsOffTheDocument(t *testing.T) {
+	server, id := exportPage(t, `<p><ac:link><ri:attachment ri:filename="page.md"/></ac:link>`+
+		`<ac:link><ri:attachment ri:filename="Page.md"/></ac:link></p>`)
+	server.AddAttachmentData(id, "page.md", []byte("lower"))
+	server.AddAttachmentData(id, "Page.md", []byte("upper"))
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "page.md")
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out, Overwrite: true,
+	})
+	require.NoError(t, err)
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(exported), "<!-- Title: Page -->")
+	assert.Contains(t, string(exported), "(page-2.md)")
+	assert.Contains(t, string(exported), "(Page-3.md)")
+
+	for file, content := range map[string]string{"page-2.md": "lower", "Page-3.md": "upper"} {
 		data, err := os.ReadFile(filepath.Join(dir, file))
 		require.NoError(t, err, file)
 		assert.Equal(t, content, string(data), file)

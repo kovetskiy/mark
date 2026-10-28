@@ -1,6 +1,9 @@
 package page_test
 
 import (
+	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence"
@@ -254,4 +257,208 @@ func TestValidateAncestryIgnoresCase(t *testing.T) {
 
 	_, err = page.ValidateAncestry(api, "DOCS", []string{"Elsewhere", "Team", "Guides"})
 	assert.ErrorIs(t, err, page.ErrAncestryMismatch, "a different parent is still a mismatch")
+}
+
+// TestDryRunDoesNotMoveAFolder covers the one write a dry run was still making.
+//
+// A folder left at the space root by an earlier sync is moved under the page
+// --parents names. That happens while the ancestry is being worked out, which
+// is long before the guard deciding whether this run writes anything -- so the
+// mode that promises to write nothing reparented a folder, and every page
+// inside it went with it.
+func TestDryRunDoesNotMoveAFolder(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	anchor := server.AddPage("DOCS", "Anchor", "page", "")
+
+	// At the space root, where an earlier sync left it: no page or folder
+	// parent, which is what makes it a candidate for the move.
+	server.AddFolder("DOCS", "Manuals", "", "")
+
+	var moved atomic.Bool
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/move/") {
+			moved.Store(true)
+		}
+
+		return 0, "", false
+	})
+
+	_, err := page.EnsureFolderAncestry(true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	require.NoError(t, err)
+
+	assert.False(t, moved.Load(), "a dry run must not move anything")
+
+	folders := server.Folders()
+	require.Len(t, folders, 1)
+	assert.Empty(t, folders[0].ParentID, "the folder must still be where it was")
+}
+
+// TestARealRunStillAsksToMoveTheFolder is the control: the move is wanted, and
+// only the mode that writes nothing should be without it.
+//
+// The request is what is asserted rather than the folder's new parent, because
+// the fake Confluence moves pages and not folders -- so the move is observed
+// going out, and whatever it answers is beside the point here.
+func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	anchor := server.AddPage("DOCS", "Anchor", "page", "")
+	server.AddFolder("DOCS", "Manuals", "", "")
+
+	var moved atomic.Bool
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/move/") {
+			moved.Store(true)
+		}
+
+		return 0, "", false
+	})
+
+	_, _ = page.EnsureFolderAncestry(false, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+
+	assert.True(t, moved.Load(), "a real run asks to move the folder")
+}
+
+// TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle: a MARK_PARENTS chain that
+// differs from the existing anchor page only in case names that page, so a dry
+// run finds the folders beneath it rather than standing in for ones a real run
+// would create.
+func TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	anchor := server.AddPage("DOCS", "My Parent", "page", "")
+	folder := server.AddFolder("DOCS", "Manuals", anchor.ID, "page")
+
+	parent, err := page.EnsureMixedAncestry(true, api, nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+
+	assert.Equal(t, folder.ID, parent.ID, "the existing folder under the anchor is the parent")
+}
+
+// TestFolderCreateConflictDoesNotDependOnWording pins the class of bug where an
+// error is identified by the text Confluence happened to put in it. A folder
+// another file created moments earlier makes the create fail, and recognising
+// that only by the English phrase "folder exists with the same title" turned a
+// recoverable collision into a hard failure the moment the wording changed or
+// the instance answered in another language.
+func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+
+	// The folder another file in this run already created. It is hidden from
+	// the first listing so that this run believes it has to create it.
+	server.AddFolder("DOCS", "Manuals", root.ID, "page")
+
+	searched := false
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if !searched && strings.HasSuffix(r.URL.Path, "/direct-children") {
+			searched = true
+
+			return http.StatusOK, `{"results":[]}`, true
+		}
+
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/api/v2/folders") {
+			// Confluence's own refusal, in a wording no caller may rely on.
+			return http.StatusBadRequest,
+				`{"errors":[{"title":"Es existiert bereits ein Ordner mit diesem Titel"}]}`,
+				true
+		}
+
+		return 0, "", false
+	})
+
+	parent, err := page.EnsureFolderAncestry(false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
+	require.NoError(t, err, "a folder that already exists is not a failure")
+	require.NotNil(t, parent)
+	assert.Equal(t, "Manuals", parent.Title)
+
+	assert.Len(t, server.Folders(), 1, "no second folder should have been created")
+}
+
+// TestFolderCreateFailureIsStillReported guards the other side: falling back to
+// a lookup must not turn a genuine refusal into silence. Nothing carries the
+// title, so there is nothing to find and the create's own error stands.
+func TestFolderCreateFailureIsStillReported(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/api/v2/folders") {
+			return http.StatusForbidden, `{"errors":[{"title":"not permitted"}]}`, true
+		}
+
+		return 0, "", false
+	})
+
+	_, err := page.EnsureFolderAncestry(false, api, "DOCS", []string{"Manuals"}, &root.ID, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `error creating folder with title "Manuals"`)
+	assert.Contains(t, err.Error(), "403", "the reason the create was refused has to survive")
+}
+
+// TestFolderLookupIgnoresASameTitledFolderFurtherDown: the folder beneath a
+// parent used to be found by CQL's ancestor=, which matches at any depth, with
+// limit=1. A folder of the same title deeper in the tree could come back
+// first, and was rightly refused for having the wrong parent -- after which
+// the create collided with the real one, and the lookup that follows a failed
+// create found the same wrong folder again. The run failed on a hierarchy that
+// was already exactly as declared.
+func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+
+	// Added first, so that anything answering in insertion order reaches the
+	// nested ones before the ones that are really wanted.
+	other := server.AddFolder("DOCS", "Other", root.ID, "page")
+	server.AddFolder("DOCS", "Manuals", other.ID, "folder")
+	manuals := server.AddFolder("DOCS", "Manuals", root.ID, "page")
+	deeper := server.AddFolder("DOCS", "Other", manuals.ID, "folder")
+	server.AddFolder("DOCS", "Guides", deeper.ID, "folder")
+	guides := server.AddFolder("DOCS", "Guides", manuals.ID, "folder")
+
+	before := len(server.Folders())
+
+	parent, err := page.EnsureFolderAncestry(
+		false, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID, nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+	assert.Equal(t, guides.ID, parent.ID)
+	assert.Len(t, server.Folders(), before, "nothing should have been created")
+}
+
+// TestRootFolderLookupIgnoresASameTitledNestedFolder is the space-root side of
+// the same thing. There is no listing of a space's root folders, so that
+// lookup still searches -- and with limit=1 a nested folder of the same title
+// hid the one at the root, which a run under a new --parents anchor exists to
+// find and move.
+func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
+	page.ResetFolderCache()
+
+	api, server := newAPI(t)
+	anchor := server.AddPage("DOCS", "Anchor", "page", "")
+	elsewhere := server.AddPage("DOCS", "Elsewhere", "page", "")
+
+	server.AddFolder("DOCS", "Manuals", elsewhere.ID, "page")
+	atRoot := server.AddFolder("DOCS", "Manuals", "", "")
+
+	// A dry run, because the fake does not move folders; it reports the move
+	// and hands back the folder it would have moved.
+	parent, err := page.EnsureFolderAncestry(true, api, "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+	assert.Equal(t, atRoot.ID, parent.ID)
 }

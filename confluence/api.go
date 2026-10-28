@@ -85,6 +85,9 @@ type API struct {
 	// the right collection; see collectionOfV2.
 	contentTypesV2 sync.Map
 
+	// spaceKeysV2 maps a v2 space id to its key; see spaceKeyV2.
+	spaceKeysV2 sync.Map
+
 	isCloudFlag bool
 	isCloudErr  error
 	isCloudOnce sync.Once

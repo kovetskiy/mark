@@ -125,6 +125,11 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	}
 
 	names := newLocalNames()
+	// An attachment named like the document would be written over it, or it
+	// over the attachment; on macOS and Windows, also when only case differs.
+	if output != "" && sameDir(outputDir, attachmentsDir) {
+		names.reserve(filepath.Base(output))
+	}
 	// Worked out only for a page that has attachments: on Windows there is no
 	// relative path to another drive.
 	var relative *string
@@ -198,12 +203,15 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
 	}
 
-	downloads, missing, err := attachmentsToWrite(api, page, doc, attachmentsDir, names, pathOf)
-	if err != nil {
-		return nil, err
-	}
-	if cfg.NoAttachments {
-		downloads = nil
+	// Without the attachments, the page's are not asked for: every one the
+	// document refers to is declared, as it would be were they all there.
+	var downloads []pendingDownload
+	var missing map[string]bool
+	if !cfg.NoAttachments {
+		downloads, missing, err = attachmentsToWrite(api, page, doc, attachmentsDir, names, pathOf)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	header, err := headers(api, page, space, doc, missing)
@@ -320,12 +328,17 @@ func headers(
 			return "", err
 		}
 	} else {
-		parents, err := parents(api, page, space)
+		parents, folders, err := parents(api, page, space)
 		if err != nil {
 			return "", err
 		}
 		for _, parent := range parents {
 			if err := add(metadata.HeaderParent, parent); err != nil {
+				return "", err
+			}
+		}
+		for _, folder := range folders {
+			if err := add(metadata.HeaderFolder, folder); err != nil {
 				return "", err
 			}
 		}
@@ -388,33 +401,93 @@ func headers(
 }
 
 // parents is the page's ancestry below the space's home page, which is where
-// mark starts from when it resolves Parent headers.
-func parents(api *confluence.API, page *confluence.PageInfo, space string) ([]string, error) {
-	if len(page.Ancestors) == 0 {
-		return nil, nil
+// mark starts from when it resolves Parent headers, as the titles of the pages
+// and of the folders beneath them.
+//
+// mark puts Folder headers beneath the pages the Parent headers name, so only
+// folders directly above the page can be said. One higher up is left out, with
+// a warning: the page is found by its parent's title, which still puts it in
+// the folder unless that parent is moved.
+func parents(api *confluence.API, page *confluence.PageInfo, space string) (pages, folders []string, err error) {
+	chain := ancestry(api, page)
+	if len(chain) == 0 {
+		return nil, nil, nil
 	}
 
 	home, err := api.FindHomePage(space)
 	if err != nil {
-		return nil, fmt.Errorf("unable to find the home page of space %s: %w", space, err)
+		return nil, nil, fmt.Errorf("unable to find the home page of space %s: %w", space, err)
 	}
 
-	ancestors := page.Ancestors
-	if home != nil && ancestors[0].ID == home.ID {
-		ancestors = ancestors[1:]
-	} else {
+	belowHome := home != nil && chain[0].ID == home.ID
+	if belowHome {
+		chain = chain[1:]
+	} else if chain[0].Type != "folder" {
 		log.Warn().Msgf(
 			"page %q is not below the home page of space %s; publishing it back puts it there",
 			page.Title, space,
 		)
 	}
 
-	titles := make([]string, 0, len(ancestors))
-	for _, ancestor := range ancestors {
-		titles = append(titles, ancestor.Title)
+	for _, ancestor := range chain {
+		if ancestor.Type == "folder" {
+			folders = append(folders, ancestor.Title)
+			continue
+		}
+		if len(folders) > 0 {
+			log.Warn().Msgf(
+				"page %q is below folder %q, with page %q between them, and Folder headers can only name "+
+					"the folders directly above a page: the folder is left out of its headers",
+				page.Title, folders[len(folders)-1], ancestor.Title,
+			)
+			return pageTitles(chain), nil, nil
+		}
+		pages = append(pages, ancestor.Title)
 	}
 
-	return titles, nil
+	// Folder headers with no Parent look for the folders at the root of the
+	// space, not beneath the home page.
+	if belowHome && len(pages) == 0 && len(folders) > 0 {
+		pages = []string{home.Title}
+	}
+
+	return pages, folders, nil
+}
+
+// pageTitles are the titles of the pages in chain.
+func pageTitles(chain []confluence.Ancestor) []string {
+	var titles []string
+	for _, ancestor := range chain {
+		if ancestor.Type != "folder" {
+			titles = append(titles, ancestor.Title)
+		}
+	}
+	return titles
+}
+
+// ancestry is the chain of pages and folders above page, root first. v1's
+// ancestors leave folders out, so where there can be folders, on Cloud, the
+// chain is read from v2 instead; where it cannot be read, a warning says the
+// folders may be missing.
+func ancestry(api *confluence.API, page *confluence.PageInfo) []confluence.Ancestor {
+	v1 := make([]confluence.Ancestor, 0, len(page.Ancestors))
+	for _, ancestor := range page.Ancestors {
+		v1 = append(v1, confluence.Ancestor{ID: ancestor.ID, Title: ancestor.Title, Type: "page"})
+	}
+
+	if isCloud, err := api.Cloud(); err == nil && !isCloud {
+		return v1
+	}
+
+	chain, err := api.AncestryV2(page.ID)
+	if err != nil {
+		log.Warn().Msgf(
+			"unable to tell whether page %q is in a folder, so its headers name no folder: %s", page.Title, err,
+		)
+		return v1
+	}
+
+	return chain
 }
 
 // appearanceOf reads the content appearance and the title emoji of a page,
@@ -493,6 +566,18 @@ func referTo(base, target string) string {
 	return relative
 }
 
+// sameDir reports whether two paths name one directory, without regard to
+// case: a name reserved in a directory that only differs in case costs a
+// number, where missing one costs a file.
+func sameDir(a, b string) bool {
+	absoluteA, errA := filepath.Abs(a)
+	absoluteB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return true
+	}
+	return strings.EqualFold(absoluteA, absoluteB)
+}
+
 // localName is the name an attachment is written under: its own, unless that
 // would reach into another directory.
 func localName(filename string) string {
@@ -514,6 +599,11 @@ type localNames struct {
 
 func newLocalNames() *localNames {
 	return &localNames{byName: map[string]string{}, taken: map[string]bool{}}
+}
+
+// reserve keeps a name from every attachment.
+func (l *localNames) reserve(name string) {
+	l.taken[strings.ToLower(name)] = true
 }
 
 func (l *localNames) of(filename string) string {

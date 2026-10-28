@@ -27,6 +27,11 @@ A page is named one way: `--page-id`, `--url`, or `--space` with `--title`.
 `/pages/viewpage.action?pageId=ID` on Server and Data Center, and a short
 `/x/...` link on either, which carries the page id. `--space` is the same setting publish uses, so a
 configuration file that names a space for publishing serves `--title` too.
+`--url` gives the base URL as well. A base URL set by `--base-url`,
+`MARK_BASE_URL` or the configuration file is used instead when it is on the
+same host, or is the `api.atlassian.com` gateway and the URL a Cloud site's;
+one on another host is refused, since a page id names a page of one instance
+only.
 
 The document starts with the headers that name the page, followed by its body:
 
@@ -44,7 +49,12 @@ The document starts with the headers that name the page, followed by its body:
 ```
 
 `Parent` headers are the page's ancestry below the space's home page, where mark
-starts when it resolves them. A blog post gets `Type: blogpost` instead.
+starts when it resolves them. A page in a folder on Cloud gets a `Folder`
+header for each folder directly above it, beneath its `Parent` headers, and a
+folder right below the home page gets the home page as its `Parent`. A folder
+higher up, with a page between it and the exported one, is left out with a
+warning: mark's headers put folders beneath parents, not above them. A blog
+post gets `Type: blogpost` instead.
 `Content-Appearance` is left out for a full-width page, which is what mark
 publishes by default, and `Emoji` is there when the page has a title emoji.
 Labels are written in alphabetical order.
@@ -57,11 +67,14 @@ mean to publish it back: mark names an attachment after its path, so
 `--attachments-dir files` turns `chart.png` into `files_chart.png` on the next
 publish, a new attachment next to the old one. The export fails before writing
 anything if a file it would write is already there, unless `--overwrite` is
-given, and `--no-attachments` writes the document alone. The attachments are
+given, and `--no-attachments` writes the document alone, without asking
+Confluence for the page's attachments. The attachments are
 moved into place only once all of them have downloaded. Two whose names would
 share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
-are told apart by a number, as `a_b-2.png`. An attachment the page refers to
-but no longer has is reported, and left out of the `Attachment` headers.
+are told apart by a number, as `a_b-2.png`, and so is one named like the
+document itself. An attachment the page refers to
+but no longer has is reported, and left out of the `Attachment` headers;
+with `--no-attachments` there is no telling, so every one is declared.
 
 ## Exporting a tree of pages, or a whole space
 
@@ -120,9 +133,8 @@ off by default.
 
 The whole tree is read, and every document's path checked, before anything is
 written: a document already there stops the export unless `--overwrite` is
-given, and so does a folder anywhere in the tree, since a page's `Parent`
-headers leave folders out and the pages inside one would be published back
-outside it. Content that is not a page, such as a whiteboard, is skipped with a
+given, and so does a folder anywhere in the tree, since the export does not
+list a folder's pages. Content that is not a page, such as a whiteboard, is skipped with a
 warning. `--attachments-dir` does not apply, and the Markdown cannot go to
 standard output.
 
@@ -185,8 +197,9 @@ same:
   width).
 * Inline comment markers are left out: the comments belong to Confluence, and
   `--preserve-comments` puts them back on publish. So are XML comments.
-* A page in a folder, or not below its space's home page, is published below the
-  home page.
+* A page not below its space's home page is published below the home page, and
+  one below a folder with a page between them is published below that page
+  without naming the folder.
 * Inline content that stands without a paragraph around it, next to other
   content, comes back inside one, and a paragraph in a table cell comes back as
   the cell's text.

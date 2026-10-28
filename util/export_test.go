@@ -135,6 +135,45 @@ func TestExportCommand(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, stdout)
 	})
+
+	t.Run("by URL, with the same base URL configured", func(t *testing.T) {
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL+"/",
+			"--url", server.URL+"/pages/viewpage.action?pageId="+page.ID)...)
+		require.NoError(t, err)
+		assert.Equal(t, want, stdout)
+	})
+
+	t.Run("by URL, with another instance configured", func(t *testing.T) {
+		_, _, err := runMark(t, append(credentials, "export", "-b", "http://other.invalid",
+			"--url", server.URL+"/pages/viewpage.action?pageId="+page.ID)...)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "other.invalid")
+		assert.Contains(t, err.Error(), "--page-id")
+	})
+}
+
+// TestExportBaseURL: a URL gives the instance unless one is configured, and a
+// configured instance on another host is refused, since a page id names a page
+// of one instance only. The gateway fronts every Cloud site.
+func TestExportBaseURL(t *testing.T) {
+	for _, test := range []struct {
+		configured, fromURL, want, err string
+	}{
+		{"", "https://a.atlassian.net/wiki", "https://a.atlassian.net/wiki", ""},
+		{"https://a.atlassian.net/wiki", "https://a.atlassian.net/wiki", "https://a.atlassian.net/wiki", ""},
+		{"https://A.atlassian.net:443", "https://a.atlassian.net/wiki", "https://A.atlassian.net:443", ""},
+		{"https://api.atlassian.com/ex/confluence/id", "https://a.atlassian.net/wiki", "https://api.atlassian.com/ex/confluence/id", ""},
+		{"https://b.atlassian.net/wiki", "https://a.atlassian.net/wiki", "", "b.atlassian.net"},
+		{"https://api.atlassian.com/ex/confluence/id", "https://confluence.example.com", "", "api.atlassian.com"},
+	} {
+		got, err := exportBaseURL(test.configured, test.fromURL)
+		if test.err != "" {
+			assert.ErrorContains(t, err, test.err, test.configured)
+			continue
+		}
+		require.NoError(t, err, test.configured)
+		assert.Equal(t, test.want, got)
+	}
 }
 
 // TestAPublishFlagBeforeExportIsRefused: a publish flag before "export" says

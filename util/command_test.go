@@ -622,3 +622,48 @@ func TestAHeldSourceOpensAtSettle(t *testing.T) {
 	assert.True(t, found)
 	assert.Equal(t, "me", value)
 }
+
+// TestShortFlagsMeanOneThing: a letter learned in one command should work, and
+// mean the same, in every other that takes the argument.
+func TestShortFlagsMeanOneThing(t *testing.T) {
+	// Different names for one argument: a page given by its address.
+	sameArgument := map[string]string{"url": "target-url"}
+	argument := func(name string) string {
+		if same, ok := sameArgument[name]; ok {
+			return same
+		}
+
+		return name
+	}
+
+	shorts := map[string]string{} // long name -> its short flags, as first seen
+	longs := map[string]string{}  // short flag -> the argument it stands for
+	where := map[string]string{}  // long name -> the command it was first seen in
+	var walk func(path string, cmd *cli.Command)
+	walk = func(path string, cmd *cli.Command) {
+		for _, f := range cmd.Flags {
+			names := f.Names()
+			long, aliases := names[0], strings.Join(names[1:], ",")
+
+			if seen, ok := shorts[long]; ok {
+				assert.Equal(t, seen, aliases,
+					"--%s has short flags %q in %q but %q in %q", long, seen, where[long], aliases, path)
+			} else {
+				shorts[long], where[long] = aliases, path
+			}
+
+			for _, short := range names[1:] {
+				if other, ok := longs[short]; ok {
+					assert.Equal(t, other, argument(long), "-%s stands for --%s and --%s", short, other, long)
+				} else {
+					longs[short] = argument(long)
+				}
+			}
+		}
+
+		for _, sub := range cmd.Commands {
+			walk(path+" "+sub.Name, sub)
+		}
+	}
+	walk("mark", newCommand("v16.x.x"))
+}

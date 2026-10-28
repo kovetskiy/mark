@@ -56,6 +56,10 @@ func Resolve(api *confluence.API, ref Ref, expand ...string) (*confluence.PageIn
 	if err != nil {
 		return nil, fmt.Errorf("unable to read page %s: %w", id, err)
 	}
+	// Every operation compares or looks things up by the space.
+	if page.Space.Key == "" {
+		return nil, fmt.Errorf("unable to tell which space page %s is in", id)
+	}
 
 	return page, nil
 }

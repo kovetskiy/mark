@@ -527,3 +527,16 @@ func TestConvertEscapesABangBeforeALink(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Wow\\![site](https://example.com/)\n", doc.Markdown)
 }
+
+// TestConvertEscapesOnlyWhatFeaturesParse: the math, emoji and date escapes
+// leave alone text those features would not parse.
+func TestConvertEscapesOnlyWhatFeaturesParse(t *testing.T) {
+	for storage, want := range map[string]string{
+		"<p>costs $5 and $ 6</p>":              `costs \$5 and $ 6`,
+		"<p>at 10:30:45, Note: :nosuch:</p>":   "at 10:30:45, Note: :nosuch:",
+		"<p>:smile: and :+1:</p>":              `\:smile: and \:+1:`,
+		"<p>@date(2024-01-01) and @date()</p>": `\@date(2024-01-01) and @date()`,
+	} {
+		assert.Equal(t, want+"\n", convert(t, storage), storage)
+	}
+}

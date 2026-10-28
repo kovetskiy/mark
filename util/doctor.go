@@ -23,6 +23,7 @@ func (line *commandLine) doctorCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "space",
+				Aliases: []string{"s"},
 				Value:   "",
 				Usage:   "the space key to check when no space is named as an argument.",
 				Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_SPACE"), line.config.value("space")),

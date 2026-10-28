@@ -51,9 +51,44 @@ func TestRoundTripFixtures(t *testing.T) {
 	}
 }
 
+// TestRoundTripTextFeaturesWouldParse: text that the math, emoji and date
+// features would publish as a formula, an emoji or a date comes back as the
+// text it was.
+func TestRoundTripTextFeaturesWouldParse(t *testing.T) {
+	for _, text := range []string{
+		"costs $5,$6 today", "$x$", "$$a$$", "a $b$ c", "price: $", "$ alone", `\(x\) and \[y\]`,
+		":smile:", "at 10:30:45", ":a:smile:", "a:smile:b", "Note: this", "::",
+		"@date(2024-01-01)", "on @date( x ) and @date()", "user@example",
+	} {
+		t.Run(text, func(t *testing.T) {
+			for _, storage := range []string{
+				"<p>" + escapeXMLText(text) + "</p>",
+				"<p><strong>" + escapeXMLText(text) + "</strong> and <em>" + escapeXMLText(text) + "</em></p>",
+				"<table><thead><tr><th>h</th></tr></thead><tbody><tr><td>" + escapeXMLText(text) + "</td></tr></tbody></table>",
+				`<p><a href="https://example.com">` + escapeXMLText(text) + "</a></p>",
+			} {
+				doc, err := Convert(storage, Options{})
+				require.NoError(t, err)
+
+				published := compileWith(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"),
+					"mention", "math", "emoji", "date")
+				assert.Equal(t, canonical(t, storage), canonical(t, published),
+					"exported Markdown:\n%s", doc.Markdown)
+			}
+		})
+	}
+}
+
 // compile publishes Markdown the way the golden tests in markdown/ do, as if
 // it were the document at path.
 func compile(t *testing.T, md, path string) string {
+	t.Helper()
+
+	return compileWith(t, md, path, "mkdocsadmonitions", "mention", "plantuml", "frontmatter")
+}
+
+// compileWith is compile with the features given.
+func compileWith(t *testing.T, md, path string, features ...string) string {
 	t.Helper()
 
 	lib, err := stdlib.New(nil)
@@ -62,7 +97,9 @@ func compile(t *testing.T, md, path string) string {
 	out, _, err := markdown.CompileMarkdown([]byte(md), lib, path, types.MarkConfig{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
-		Features:     []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
+		MathScale:    1.0,
+		MathFormat:   "svg",
+		Features:     features,
 	})
 	require.NoError(t, err, "exported Markdown:\n%s", md)
 
