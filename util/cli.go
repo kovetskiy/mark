@@ -12,6 +12,7 @@ import (
 	mark "github.com/kovetskiy/mark/v16"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/export"
+	"github.com/kovetskiy/mark/v16/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
@@ -347,6 +348,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		MermaidScale:     cmd.Float("mermaid-scale"),
 		MermaidOutput:    cmd.String("mermaid-output"),
 		MermaidBundle:    cmd.Bool("mermaid-bundle"),
+		MermaidMacroName: cmd.String("mermaid-macro-name"),
 		D2Output:         cmd.String("d2-output"),
 		D2BundleRemote:   cmd.Bool("d2-bundle-remote"),
 		D2Scale:          cmd.Float("d2-scale"),
@@ -359,6 +361,18 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		PageHeader:       cmd.String("page-header"),
 
 		Output: os.Stdout,
+	}
+
+	// Warned about, not refused: the value may come from the config file or the environment.
+	if !types.MermaidDraws(config.MermaidOutput) {
+		if cmd.IsSet("mermaid-engine") {
+			log.Warn().Msg("--mermaid-engine has no effect with --mermaid-output=macro: the macro does not draw the diagram")
+		}
+		if cmd.IsSet("mermaid-scale") {
+			log.Warn().Msg("--mermaid-scale has no effect with --mermaid-output=macro: the macro does not draw the diagram")
+		}
+	} else if cmd.IsSet("mermaid-macro-name") {
+		log.Warn().Msg("--mermaid-macro-name has no effect without --mermaid-output=macro")
 	}
 
 	// RunContext shuts the shared browser down on the way out, however the run

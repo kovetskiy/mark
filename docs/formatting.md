@@ -240,6 +240,42 @@ down once.
 
 The published Docker image carries merman on `amd64` and `arm64`.
 
+## Render Mermaid Diagrams via the Confluence Macro
+
+With `--mermaid-output=macro`, code blocks marked as "mermaid" are published as
+the Confluence macro named "mermaid-macro" instead of being drawn by mark. The
+source stays verbatim inside the macro, so the diagram is drawn by Confluence
+itself.
+
+```mermaid
+flowchart TD
+A[Start] --> B[End]
+```
+
+This requires a Mermaid plugin to be installed in your Confluence instance, such
+as `org.anvard.atlassian.mermaid-plugin` (Mermaid Diagrams for Confluence). The
+`mermaid` feature is on by default; a `--features` list that omits it keeps the
+fence a plain code block.
+
+A plugin that declares its macro under a different key is named with
+`--mermaid-macro-name`:
+
+```bash
+mark publish --mermaid-output=macro --mermaid-macro-name=my-mermaid
+```
+
+Surrounding space in the name is ignored. A blank name is refused rather than
+published as a key no plugin knows; any other name is used as written, so a
+typo is published as one.
+
+Nothing is drawn with `macro`, so `--mermaid-engine` and `--mermaid-scale` have
+no effect alongside it (mark warns), and `--mermaid-bundle` is refused. A
+`title` in the fence's info string is not used either: the macro carries no
+caption.
+
+`mark export` keeps the macro as storage format: a page published this way
+exports as the macro itself, not as a `mermaid` fence.
+
 ## Render D2 Diagram
 
 Optionally you can enable [D2](https://github.com/terrastruct/d2) rendering via `--features="d2"`.
@@ -284,7 +320,7 @@ Because the file carries what it points at, what it may point at is limited:
 ## Render PlantUML Diagrams
 
 Optionally you can enable [PlantUML](https://plantuml.com/) diagram rendering via `--features="plantuml"`.
-Unlike Mermaid and D2 which are rendered locally, code blocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml).
+Unlike Mermaid and D2, which mark renders locally by default, code blocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml). Mermaid can go the same way with `--mermaid-output=macro`.
 This requires the PlantUML for Confluence macro to be installed in your Confluence instance.
 
 ```plantuml

@@ -870,7 +870,10 @@ func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	err := Run(config)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "MermaidOutput")
+	assert.Contains(t, err.Error(), "jpeg")
+	assert.Contains(t, err.Error(), `"png"`)
+	assert.Contains(t, err.Error(), `"svg"`)
+	assert.Contains(t, err.Error(), `"macro"`)
 }
 
 // TestMermaidBundleNeedsAnSVGToGoIn is the same for the pair of them: a bundle
@@ -891,6 +894,80 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 // never heard of these fields leaves them zero, and has always got a PNG.
 func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
 	require.NoError(t, Run(mermaidFixture(t)))
+}
+
+// TestMermaidMacroIgnoresDrawingSettings: with the macro output nothing is
+// drawn, so an engine and a scale that drive drawing are ignored -- including
+// the values a configuration file carries for the image outputs.
+func TestMermaidMacroIgnoresDrawingSettings(t *testing.T) {
+	config := mermaidFixture(t)
+	config.MermaidOutput = "macro"
+	config.MermaidEngine = "bogus"
+	config.MermaidScale = -1
+	config.Features = []string{"mermaid"}
+
+	require.NoError(t, Run(config))
+}
+
+// TestMermaidMacroBlankNameIsRefused: a library caller reaching Config directly
+// gets the same refusal as the command line for a name that is only space.
+func TestMermaidMacroBlankNameIsRefused(t *testing.T) {
+	config := mermaidFixture(t)
+	config.MermaidOutput = "macro"
+	config.MermaidMacroName = "  "
+
+	err := Run(config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "blank")
+}
+
+// TestMarkConfigNormalisesTheMacroName: markConfig is where the published
+// configuration gets the default name and loses surrounding space, so the
+// renderer never has to.
+func TestMarkConfigNormalisesTheMacroName(t *testing.T) {
+	assert.Equal(t, "mermaid-macro", (Config{}).markConfig().MermaidMacroName)
+	assert.Equal(t, "my-macro", (Config{MermaidMacroName: "  my-macro  "}).markConfig().MermaidMacroName)
+}
+
+// TestMermaidMacroNameIsPublished: the name reaches ac:name trimmed, and an
+// unset name publishes under the default -- the one thing the empty-name rules
+// leave for a library caller.
+func TestMermaidMacroNameIsPublished(t *testing.T) {
+	tests := map[string]string{
+		"":             "mermaid-macro",
+		"  my-macro  ": "my-macro",
+	}
+
+	for name, want := range tests {
+		t.Run(want, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+
+			dir := t.TempDir()
+			file := writeFile(t, dir, "doc.md",
+				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n```mermaid\nflowchart TD\nA --> B\n```\n")
+
+			api := confluence.NewAPI(server.URL, "user", "token", false)
+
+			target, err := ProcessFile(file, api, Config{
+				BaseURL:          server.URL,
+				Username:         "user",
+				Password:         "token",
+				Files:            file,
+				MermaidOutput:    "macro",
+				MermaidMacroName: name,
+				Features:         []string{"mermaid"},
+				Output:           io.Discard,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, target)
+
+			body := server.Page(target.ID).Body
+			assert.Contains(t, body, `ac:name="`+want+`"`)
+			assert.NotContains(t, body, "<ac:image", "the macro output attaches no image")
+		})
+	}
 }
 
 // TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:

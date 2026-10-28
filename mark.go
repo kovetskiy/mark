@@ -86,12 +86,16 @@ type Config struct {
 	Unwatch bool
 
 	// Rendering
-	DropH1           bool
-	StripLinebreaks  bool
-	MermaidEngine    string
-	MermaidScale     float64
-	MermaidOutput    string
-	MermaidBundle    bool
+	DropH1          bool
+	StripLinebreaks bool
+	MermaidEngine   string
+	MermaidScale    float64
+	MermaidOutput   string
+	MermaidBundle   bool
+	// MermaidMacroName is the ac:name a diagram is published under with
+	// MermaidOutput "macro"; empty is the default, and a name that is only
+	// space is refused.
+	MermaidMacroName string
 	D2Output         string
 	D2Scale          float64
 	D2BundleRemote   bool
@@ -175,38 +179,38 @@ func RunContext(ctx context.Context, config Config) (err error) {
 // prepare checks the settings that decide how a document is rendered and what
 // is done about its links, and sets up the mermaid engine they name. Run and
 // ProcessFile both start here, so that a library caller publishing one file is
-// held to the same settings, and told the same thing about them, as a run is:
-// before this was shared, ProcessFile checked none of it, drew diagrams with
-// whatever engine happened to be current rather than the one asked for, and
-// published a PNG for a MermaidOutput it did not recognise.
+// held to the same settings, and told the same thing about them, as a run is.
 func (c Config) prepare() (page.LinkChecks, error) {
-	// The engine is chosen before anything is published, because it is built
-	// lazily and shared: a diagram already drawn is not drawn again to match.
-	if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
-		return page.LinkChecks{}, err
-	}
-
 	// Checked here as well as in the CLI, because Config is a public API and a
 	// library caller reaches this without passing a flag at all. A value the
 	// renderer does not know falls to its default branch, so an unrecognised
-	// format publishes a PNG without a word -- taking a bundle asked for
-	// alongside it down with it. An empty value is not that: it is a caller
-	// that never set the field, and it means the PNG mark has always published.
-	switch c.MermaidOutput {
-	case "", "png", "svg":
-		// ok
-	default:
-		return page.LinkChecks{}, fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			c.MermaidOutput,
-		)
+	// format publishes a PNG without a word; an empty value is a caller that
+	// never set the field, and it means the PNG mark has always published.
+	if err := types.ValidateMermaidOutput(c.MermaidOutput); err != nil {
+		return page.LinkChecks{}, err
 	}
 
-	if c.MermaidBundle && c.MermaidOutput != "svg" {
-		return page.LinkChecks{}, errors.New(
-			"MermaidBundle needs MermaidOutput \"svg\": " +
-				"there is nowhere in a PNG to keep the diagram's source",
-		)
+	if types.MermaidDraws(c.MermaidOutput) {
+		// The engine is chosen before anything is published, because it is built
+		// lazily and shared: a diagram already drawn is not drawn again to match.
+		if err := mermaid.UseEngine(c.MermaidEngine); err != nil {
+			return page.LinkChecks{}, err
+		}
+	} else {
+		// Nothing is drawn, so the engine and scale are ignored; only the macro name is used.
+		if c.MermaidMacroName != "" && strings.TrimSpace(c.MermaidMacroName) == "" {
+			return page.LinkChecks{}, errors.New(
+				"MermaidMacroName must not be blank: it names the macro to publish as",
+			)
+		}
+
+		if !slices.Contains(c.Features, "mermaid") {
+			log.Warn().Msg("MermaidOutput \"macro\" needs the mermaid feature: the fence stays a plain code block without it")
+		}
+	}
+
+	if err := types.ValidateMermaidBundle(c.MermaidOutput, c.MermaidBundle); err != nil {
+		return page.LinkChecks{}, fmt.Errorf("MermaidBundle needs MermaidOutput \"svg\": %w", err)
 	}
 
 	// The same for d2, and for the same reason: an unrecognised format falls to
@@ -244,8 +248,9 @@ func (c Config) prepare() (page.LinkChecks, error) {
 	// always drawn a zero scale at its default of 2, and a caller relying on
 	// that is not wrong. What neither has ever been able to draw is a negative,
 	// NaN or infinite scale, and those are refused here rather than part way
-	// through a run, when the first diagram reaches the browser.
-	if slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
+	// through a run, when the first diagram reaches the browser. A macro run
+	// draws nothing, so it has no scale to refuse.
+	if types.MermaidDraws(c.MermaidOutput) && slices.Contains(c.Features, "mermaid") && !isScaleOrDefault(c.MermaidScale) {
 		return page.LinkChecks{}, fmt.Errorf(
 			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
 			c.MermaidScale,
@@ -2000,6 +2005,7 @@ func (c Config) markConfig() types.MarkConfig {
 		MermaidScale:     c.MermaidScale,
 		MermaidOutput:    c.MermaidOutput,
 		MermaidBundle:    c.MermaidBundle,
+		MermaidMacroName: types.MermaidMacroNameOrDefault(c.MermaidMacroName),
 		D2Output:         c.D2Output,
 		D2Scale:          c.D2Scale,
 		D2BundleRemote:   c.D2BundleRemote,

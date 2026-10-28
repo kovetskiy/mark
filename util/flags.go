@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/types"
 
 	"github.com/urfave/cli/v3"
 )
@@ -271,14 +272,20 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "mermaid-output",
 			Value:   "png",
-			Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+			Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a mermaid-macro macro, drawn by the instance's own Mermaid macro rather than by mark; --mermaid-engine and --mermaid-scale have no effect with it, and --mermaid-bundle is refused).",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), config.value("mermaid-output")),
 		},
 		&cli.BoolFlag{
 			Name:    "mermaid-bundle",
 			Value:   false,
-			Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg.",
+			Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and is refused with png or macro.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), config.value("mermaid-bundle")),
+		},
+		&cli.StringFlag{
+			Name:    "mermaid-macro-name",
+			Value:   types.MermaidMacroDefaultName,
+			Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where it names the macro: surrounding space is ignored, and a blank name is refused.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_MACRO_NAME"), config.value("mermaid-macro-name")),
 		},
 		&cli.StringFlag{
 			Name:    "math-format",
@@ -776,7 +783,12 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	// The same for mermaid and math. Zero is refused on the command line even
 	// though a library Config reads it as the default: a flag nobody set never
 	// reaches here, so a zero is one somebody typed, and it is no scale.
+	mermaidOutput := command.String("mermaid-output")
+	draws := types.MermaidDraws(mermaidOutput)
 	for _, name := range []string{"d2-scale", "mermaid-scale", "math-scale"} {
+		if name == "mermaid-scale" && !draws {
+			continue
+		}
 		if scale := command.Float(name); command.IsSet(name) &&
 			(!(scale > 0) || math.IsInf(scale, 0)) {
 			return context, fmt.Errorf(
@@ -786,17 +798,14 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		}
 	}
 
-	mermaidOutput := command.String("mermaid-output")
-	if mermaidOutput != "" || command.IsSet("mermaid-output") {
-		switch mermaidOutput {
-		case "png", "svg":
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --mermaid-output: %q (expected: png or svg)",
-				mermaidOutput,
-			)
-		}
+	// Checked as written, without trimming: what is checked has to be what is
+	// used, since the renderer compares it literally. An emptied flag is
+	// somebody's doing, not the absence of one.
+	if command.IsSet("mermaid-output") && mermaidOutput == "" {
+		return context, errors.New("--mermaid-output must not be empty")
+	}
+	if err := types.ValidateMermaidOutput(mermaidOutput); err != nil {
+		return context, fmt.Errorf("--mermaid-output: %w", err)
 	}
 
 	// A bundle that goes nowhere is worth saying out loud rather than dropping:
@@ -804,28 +813,31 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	// value rather than of IsSet, because false is exactly what a bundle nobody
 	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
 	// way at all.
-	//
-	// The scale is not checked against the format any more: it applies to both,
-	// multiplying the pixels of a PNG and the size the page shows an SVG at.
-	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
-		return context, errors.New(
-			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
-		)
+	if err := types.ValidateMermaidBundle(mermaidOutput, command.Bool("mermaid-bundle")); err != nil {
+		return context, fmt.Errorf("--mermaid-bundle needs --mermaid-output=svg: %w", err)
 	}
 
-	// Checked as written, and asked of IsSet as well, so that a value somebody
-	// emptied is not read as one nobody set.
-	mermaidEngine := command.String("mermaid-engine")
-	if mermaidEngine != "" || command.IsSet("mermaid-engine") {
-		switch mermaidEngine {
-		case mermaid.EngineChrome, mermaid.EngineMerman:
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --mermaid-engine: %q (expected: %s or %s)",
-				mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
-			)
+	// With the macro output nothing is drawn, so an engine's value is unused.
+	// Asked of IsSet as well, so that a value somebody emptied is not read as
+	// one nobody set.
+	if draws {
+		mermaidEngine := command.String("mermaid-engine")
+		if mermaidEngine != "" || command.IsSet("mermaid-engine") {
+			switch mermaidEngine {
+			case mermaid.EngineChrome, mermaid.EngineMerman:
+				// ok
+			default:
+				return context, fmt.Errorf(
+					"invalid value for --mermaid-engine: %q (expected: %s or %s)",
+					mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
+				)
+			}
 		}
+	}
+
+	// A blank name is refused only where the macro output would use it.
+	if !draws && command.IsSet("mermaid-macro-name") && strings.TrimSpace(command.String("mermaid-macro-name")) == "" {
+		return context, errors.New("--mermaid-macro-name must not be blank")
 	}
 
 	mathFormat := strings.TrimSpace(command.String("math-format"))

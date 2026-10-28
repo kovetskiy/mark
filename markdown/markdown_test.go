@@ -19,6 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// fixtureWithItsOwnTest is the one fixture the generic runners would compile
+// with the feature off; its own golden test drives the macro, drop-h1 and
+// feature-off outputs.
+const fixtureWithItsOwnTest = "testdata/mermaid-macro.md"
+
 func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
 	t.Helper()
 	basename := filepath.Base(filename)
@@ -54,6 +59,9 @@ func TestCompileMarkdown(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
+		if filename == fixtureWithItsOwnTest {
+			continue // its own test pins the macro, the drop-h1 and the feature-off output
+		}
 		fmt.Printf("Testing: %v\n", filename)
 		lib, err := stdlib.New(nil)
 		if err != nil {
@@ -102,6 +110,9 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
+		if filename == fixtureWithItsOwnTest {
+			continue // its own test pins the macro, the drop-h1 and the feature-off output
+		}
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)
@@ -157,6 +168,9 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 
 	for _, filename := range testcases {
 		filename = filepath.ToSlash(filename) // the cases below compare slash paths
+		if filename == fixtureWithItsOwnTest {
+			continue // its own test pins the macro, the drop-h1 and the feature-off output
+		}
 		lib, err := stdlib.New(nil)
 		if err != nil {
 			panic(err)
@@ -223,6 +237,56 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 
 	actual, _, _ := mark.CompileMarkdown(markdown, lib, "testdata/plantuml.md", cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
+}
+
+// TestCompileMarkdownMermaidMacroGolden pins the macro rendering against the
+// fixture, as the other renderers have one: drawn by Confluence, with --drop-h1,
+// and with the feature off -- with and without --drop-h1 -- where the fence
+// stays a plain code block.
+func TestCompileMarkdownMermaidMacroGolden(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	tests := []struct {
+		name        string
+		variant     string
+		features    []string
+		dropFirstH1 bool
+	}{
+		{"the macro", "", []string{"mermaid"}, false},
+		{"with drop-h1", "-droph1", []string{"mermaid"}, true},
+		{"without the feature", "-nofeature", []string{"mkdocsadmonitions", "mention"}, false},
+		{"without the feature and drop-h1", "-nofeature-droph1", []string{"mkdocsadmonitions", "mention"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			test := assert.New(t)
+
+			markdown, htmlname, html := loadData(t, "testdata/mermaid-macro.md", tt.variant)
+
+			cfg := types.MarkConfig{
+				MermaidScale:  1.0,
+				D2Scale:       1.0,
+				DropFirstH1:   tt.dropFirstH1,
+				Features:      tt.features,
+				MermaidOutput: "macro",
+			}
+
+			actual, _, err := mark.CompileMarkdown(markdown, lib, "testdata/mermaid-macro.md", cfg)
+			test.NoError(err)
+			test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "testdata/mermaid-macro.md vs "+htmlname)
+		})
+	}
 }
 
 func TestCompileMarkdownInlineLinkCard(t *testing.T) {

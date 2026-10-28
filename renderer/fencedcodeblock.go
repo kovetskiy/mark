@@ -139,6 +139,10 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
 func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
+	// A MarkConfig is consumed here, so the macro name is normalised here for
+	// every caller -- the exported extensions and a direct renderer alike.
+	cfg.MermaidMacroName = types.MermaidMacroNameOrDefault(cfg.MermaidMacroName)
+
 	r := &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,
@@ -290,6 +294,14 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
+		if !types.MermaidDraws(r.MarkConfig.MermaidOutput) {
+			if err := r.renderPlainTextMacro(writer, r.MarkConfig.MermaidMacroName, lval); err != nil {
+				return ast.WalkStop, err
+			}
+
+			return ast.WalkContinue, nil
+		}
+
 		var (
 			att attachment.Attachment
 			err error
@@ -314,7 +326,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			line, col := GetLineCol(source, node.Pos())
 
 			return ast.WalkStop, fmt.Errorf(
-				"line %d, col %d: unknown mermaid-output %q: expected png or svg",
+				"line %d, col %d: unknown mermaid-output %q: expected png, svg or macro",
 				line, col, r.MarkConfig.MermaidOutput,
 			)
 		}
@@ -367,17 +379,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "plantuml" && slices.Contains(r.MarkConfig.Features, "plantuml") {
-		err := r.Stdlib.Templates.ExecuteTemplate(
-			writer,
-			"ac:plantuml",
-			struct {
-				Text string
-			}{
-				strings.TrimSuffix(string(lval), "\n"),
-			},
-		)
-
-		if err != nil {
+		if err := r.renderPlainTextMacro(writer, "plantuml", lval); err != nil {
 			return ast.WalkStop, err
 		}
 
@@ -410,4 +412,21 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	}
 
 	return ast.WalkContinue, nil
+}
+
+// renderPlainTextMacro writes lval as the plain-text body of the Confluence
+// macro called name, for a diagram the instance draws itself (plantuml, or
+// mermaid with MermaidOutput "macro").
+func (r *ConfluenceFencedCodeBlockRenderer) renderPlainTextMacro(writer util.BufWriter, name string, lval []byte) error {
+	return r.Stdlib.Templates.ExecuteTemplate(
+		writer,
+		"ac:plain-text-macro",
+		struct {
+			Name string
+			Text string
+		}{
+			name,
+			strings.TrimSuffix(string(lval), "\n"),
+		},
+	)
 }

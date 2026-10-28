@@ -1,6 +1,7 @@
 package stdlib
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -31,6 +32,27 @@ func TestNewParsesAllTemplates(t *testing.T) {
 	} {
 		assert.NotNil(t, lib.Templates.Lookup(name), "template %q is not defined", name)
 	}
+}
+
+// TestPlantumlTemplateMatchesPlainTextMacro: ac:plantuml is kept for macro
+// templates that call it by name, so its body has to stay the same as
+// ac:plain-text-macro with the plantuml name -- otherwise the two drift.
+func TestPlantumlTemplateMatchesPlainTextMacro(t *testing.T) {
+	lib, err := New(nil)
+	require.NoError(t, err)
+
+	var plantuml, plain bytes.Buffer
+	require.NoError(t, lib.Templates.ExecuteTemplate(
+		&plantuml, "ac:plantuml", struct{ Text string }{Text: "A -> B"},
+	))
+	require.NoError(t, lib.Templates.ExecuteTemplate(
+		&plain, "ac:plain-text-macro", struct {
+			Name string
+			Text string
+		}{Name: "plantuml", Text: "A -> B"},
+	))
+
+	assert.Equal(t, plain.String(), plantuml.String())
 }
 
 // TestTemplatesEscapeInterpolatedValues covers the escaping helpers that the
