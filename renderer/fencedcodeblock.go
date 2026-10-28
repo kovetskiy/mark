@@ -139,6 +139,10 @@ func parseBlockDetails(info string) (lang string, options []string, title string
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
 func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) renderer.NodeRenderer {
+	// A MarkConfig is consumed here, so the macro name is normalised here for
+	// every caller -- the exported extensions and a direct renderer alike.
+	cfg.MermaidMacroName = types.MermaidMacroNameOrDefault(cfg.MermaidMacroName)
+
 	r := &ConfluenceFencedCodeBlockRenderer{
 		Config:      html.NewConfig(),
 		Stdlib:      stdlib,

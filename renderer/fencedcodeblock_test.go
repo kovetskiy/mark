@@ -247,3 +247,32 @@ func TestFencedCodeBlockDiagramLanguagesNeedTheirFeature(t *testing.T) {
 		assert.NotContains(t, actual, "ac:image")
 	}
 }
+
+// TestFencedCodeBlockNormalisesTheMacroName: the renderer is where a MarkConfig
+// is consumed, so a caller that builds it directly -- without CompileMarkdown --
+// still gets the default name and loses surrounding space.
+func TestFencedCodeBlockNormalisesTheMacroName(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{"", "mermaid-macro"},
+		{"  my-macro  ", "my-macro"},
+	} {
+		t.Run(tt.want, func(t *testing.T) {
+			actual := render(t, "```mermaid\nflowchart TD\nA --> B\n```\n", []renderer.NodeRenderer{
+				crenderer.NewConfluenceFencedCodeBlockRenderer(
+					newStdlib(t), &collectingAttacher{},
+					types.MarkConfig{
+						Features:         []string{"mermaid"},
+						MermaidOutput:    "macro",
+						MermaidMacroName: tt.name,
+					},
+					"",
+				),
+			})
+
+			assert.Contains(t, actual, `ac:name="`+tt.want+`"`)
+		})
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -432,6 +433,30 @@ func TestMermaidMacroWarnsAboutWhatItDoesNotUse(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, stderr, "needs the mermaid feature")
 	})
+}
+
+// TestMermaidMacroFeatureWarningIsOncePerRun: prepare is called once for a run,
+// not once per file, so a run over several documents warns about the feature
+// once.
+func TestMermaidMacroFeatureWarningIsOncePerRun(t *testing.T) {
+	config := writeConfig(t, t.TempDir(), "mark.toml", "")
+
+	dir := t.TempDir()
+	for _, name := range []string{"a.md", "b.md"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name),
+			[]byte("<!-- Space: DOCS -->\n<!-- Title: "+name+" -->\n\n```mermaid\nflowchart TD\nA --> B\n```\n"),
+			0o600))
+	}
+
+	_, stderr, err := runMark(t,
+		"--config", config,
+		"--compile-only",
+		"--mermaid-output", "macro",
+		"--features", "mention",
+		"--files", filepath.Join(dir, "*.md"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(stderr, "needs the mermaid feature"))
 }
 
 // TestD2OutputFlagValidation covers the format a d2 diagram is published as.

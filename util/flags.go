@@ -801,12 +801,18 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		return context, fmt.Errorf("--mermaid-output: %w", err)
 	}
 
-	// A bundle that goes nowhere is worth saying out loud rather than dropping.
+	// A bundle that goes nowhere is worth saying out loud rather than dropping:
+	// it was asked for on purpose, and it silently does not happen. Asked of its
+	// value rather than of IsSet, because false is exactly what a bundle nobody
+	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
+	// way at all.
 	if err := types.ValidateMermaidBundle(mermaidOutput, command.Bool("mermaid-bundle")); err != nil {
 		return context, fmt.Errorf("--mermaid-bundle needs --mermaid-output=svg: %w", err)
 	}
 
 	// With the macro output nothing is drawn, so an engine's value is unused.
+	// Asked of IsSet as well, so that a value somebody emptied is not read as
+	// one nobody set.
 	if draws {
 		mermaidEngine := command.String("mermaid-engine")
 		if mermaidEngine != "" || command.IsSet("mermaid-engine") {

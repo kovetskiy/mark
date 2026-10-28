@@ -182,7 +182,10 @@ func RunContext(ctx context.Context, config Config) (err error) {
 // held to the same settings, and told the same thing about them, as a run is.
 func (c Config) prepare() (page.LinkChecks, error) {
 	// Checked here as well as in the CLI, because Config is a public API and a
-	// library caller reaches this without passing a flag at all.
+	// library caller reaches this without passing a flag at all. A value the
+	// renderer does not know falls to its default branch, so an unrecognised
+	// format publishes a PNG without a word; an empty value is a caller that
+	// never set the field, and it means the PNG mark has always published.
 	if err := types.ValidateMermaidOutput(c.MermaidOutput); err != nil {
 		return page.LinkChecks{}, err
 	}
