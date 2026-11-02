@@ -2735,7 +2735,7 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		ctx,
 		http.Header{"X-Atlassian-Token": {"no-check"}, "Accept": {"application/json"}},
 		http.MethodPost, []string{"pages", "movepage.action"}, query, nil,
-		&whateverContentType{out: &answer},
+		&answer,
 	)
 	// A response cut short by the run's context is no answer from the action,
 	// however much of it arrived: judged here, a cancelled move would be taken
@@ -3134,9 +3134,10 @@ func (api *API) moveContent(ctx context.Context, contentID, position, targetID s
 		// Only a probe that answered rules Cloud out. One that failed says
 		// nothing about the platform: this move still goes on to the
 		// fallbacks, which do not depend on knowing, but the endpoint is not
-		// remembered as missing, or every later move on a Cloud this API
-		// could not identify would go down the Data Center fallbacks, and
-		// ordering, which has none there, would fail.
+		// remembered as missing, so a later move asks it again and, on a
+		// Cloud the probe could not identify, gets it. Cloud itself does
+		// remember the failure (see Cloud), so what else asks it takes the
+		// Server and Data Center paths for the rest of the run.
 		isCloud, err := api.Cloud(ctx)
 		if IsCancellation(err) {
 			return fmt.Errorf(
