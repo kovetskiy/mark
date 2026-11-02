@@ -192,7 +192,15 @@ func parseAdmonitionOpeningLine(reader text.Reader, left int) *Admonition {
 	class := append([]byte("admonition adm-"), node.AdmonitionClass...)
 	hasClass := false
 
-	attributes, ok := parser.ParseAttributes(reader)
+	// The block has to end the opening line, in goldmark v1's grammar (see
+	// attributeBlock): goldmark v2's would take "{x}" and read on into the
+	// body's first line for one.
+	var attributes []ast.Attribute
+
+	ok := false
+	if _, at := reader.Position(); attributesEndLine(reader.Source(), at) {
+		attributes, ok = parser.ParseAttributes(reader)
+	}
 
 	// ParseAttributes skips blanks before the '{', and a newline is one, so
 	// on a line with no attributes it reads into the next line before putting
@@ -351,4 +359,13 @@ func hasAdmonitionClosingRun(line []byte, w int, pos int, state *admonitionState
 		return true, 1
 	}
 	return true, 0
+}
+
+// attributesEndLine reports whether an attribute block in goldmark v1's
+// grammar starts at the reader's position, blanks aside, and runs to the end
+// of its line.
+func attributesEndLine(source []byte, at text.Segment) bool {
+	end, _, ok := attributeBlock(source, at.Start)
+
+	return ok && util.IsBlank(source[end:max(end, at.Stop)])
 }
