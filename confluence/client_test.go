@@ -570,19 +570,19 @@ func TestClientRejectsDataAfterTheJSONValue(t *testing.T) {
 	}
 }
 
-// TestClientRejectsAContentTypeThatIsNotJSON: a 2xx that names a type other
-// than JSON, and is not a login page, is not decoded as though it were.
-func TestClientRejectsAContentTypeThatIsNotJSON(t *testing.T) {
-	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "text/plain", `{"id":"42"}`)
+// TestClientDecodesJSONWhateverItsContentType: a 2xx that is not a login page
+// is decoded whatever type it names, and fails only when it is not JSON.
+func TestClientDecodesJSONWhateverItsContentType(t *testing.T) {
+	c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, "text/plain", "not json")
 
 	var page PageInfo
 	_, err := c.do(context.Background(), nil, http.MethodGet, []string{"content", "42"}, nil, nil, &page)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrLoginPage)
-	assert.Contains(t, err.Error(), "text/plain")
+	assert.Contains(t, requestError("read page 42", err).Error(), "body that is not JSON")
 	assert.Empty(t, page.ID)
 
-	for _, contentType := range []string{"", "application/vnd.atlassian+json"} {
+	for _, contentType := range []string{"", "text/plain", "application/vnd.atlassian+json"} {
 		c, _ := clientServer(t, "/rest/api", "user", "token", http.StatusOK, contentType, `{"id":"42"}`)
 
 		var page PageInfo
