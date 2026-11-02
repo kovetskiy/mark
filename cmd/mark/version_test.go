@@ -29,7 +29,7 @@ func TestBuildVersion(t *testing.T) {
 		want            string
 	}{
 		{"the flags win", "v17.1.0", "abc", dirty, "v17.1.0@abc"},
-		{"go install", "dev", "none", installed, "v17.0.0@none"},
+		{"go install", "dev", "none", installed, "v17.0.0"},
 		{"a checkout", "dev", "none", checkout, pseudo},
 		{"a checkout with changes", "dev", "none", dirty, pseudo + "+dirty"},
 		{"a tagged checkout", "dev", "none", tagged, "v17.0.0@" + revision},

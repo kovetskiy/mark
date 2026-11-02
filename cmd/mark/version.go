@@ -37,6 +37,10 @@ func buildVersion(version, commit string, info *debug.BuildInfo) string {
 		dirty = "+dirty"
 	}
 
+	// A "go install ...@v17.0.0" build knows no commit to add.
+	if fromInfo && commit == "none" {
+		return version + dirty
+	}
 	// A pseudo-version ends in the commit's first 12 characters.
 	if len(commit) >= 12 && strings.HasSuffix(version, "-"+commit[:12]) {
 		return version + dirty
