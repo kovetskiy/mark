@@ -216,7 +216,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		theme = option
 	}
 
-	lval := nodeFencedCodeBlock.Value.Bytes(source)
+	lval := slices.Clip(nodeFencedCodeBlock.Value.Bytes(source))
 
 	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
 		var (

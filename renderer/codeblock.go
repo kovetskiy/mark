@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/stdlib"
@@ -47,7 +48,7 @@ func (r *ConfluenceCodeBlockRenderer) renderCodeBlock(writer util.BufWriter, sou
 	lang := ""
 	title := ""
 
-	lval := node.(*ast.CodeBlock).Value.Bytes(source)
+	lval := slices.Clip(node.(*ast.CodeBlock).Value.Bytes(source))
 	err := r.Stdlib.Templates.ExecuteTemplate(
 		writer,
 		"ac:code",
