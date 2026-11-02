@@ -72,6 +72,8 @@ func TestGHAlertMarkerMustEndItsLine(t *testing.T) {
 		"> [!NOTE]\t\n> body\n":    false,
 		"> [!NOTE] \n> [!TIP]\n":   false,
 		"> [!NOTE]  \n> body\n":    true,
+		"> [!NOTE] \n":             true,
+		"> [!NOTE] \n>\n> body\n":  true,
 	} {
 		t.Run(source, func(t *testing.T) {
 			actual := render(t, source, ghAlertRenderers(), ghAlertParserOptions()...)
