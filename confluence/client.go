@@ -127,11 +127,12 @@ type reply struct {
 //     with nothing but an HTML Content-Type to go on is not one. A Confluence
 //     behind SSO answers an API call with one, and the error says so rather
 //     than failing to parse it.
-//   - Any other 2xx: decoded into out, as it streams in, when its
-//     Content-Type is JSON or there is none; one that names anything else
-//     is an error, and so is a body that is not one JSON value and nothing
-//     after it -- though not one whose connection fails once the value has
-//     come whole. Either way the error comes with the response, as does one
+//   - Any other 2xx: decoded into out, as it streams in, whatever its
+//     Content-Type names: a Server or Data Center endpoint does not always
+//     call its JSON JSON, and a write it applied must not be reported as
+//     failed. A body that is not one JSON value and nothing after it is an
+//     error -- though not one whose connection fails once the value has come
+//     whole. Either way the error comes with the response, as does one
 //     reading a body that cannot be read in full.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
@@ -335,23 +336,6 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 		return nil
 	}
 
-	// A target that takes JSON under any name for it is decoded whatever the
-	// Content-Type says; what is not JSON still fails to decode.
-	lenient, anyType := out.(*whateverContentType)
-	if anyType {
-		out = lenient.out
-	}
-
-	if mediaType != "" && !isJSONMediaType(mediaType) && !anyType {
-		err := body.readPrefix(max(body.limit, 1))
-		// An empty body is success whatever it says it is.
-		if body.total == 0 {
-			return err
-		}
-
-		return fmt.Errorf("its Content-Type is %s, not JSON", mediaType)
-	}
-
 	decoder := json.NewDecoder(body)
 	if err := decoder.Decode(out); err != nil {
 		// An empty body is success, with out as it was. One with nothing but
@@ -381,18 +365,6 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 	default:
 		return errors.New("it goes on after the JSON value")
 	}
-}
-
-// whateverContentType is a decode target for an answer that is JSON under
-// whatever Content-Type it is sent with: do decodes into out as it would under
-// application/json, and a body that is not JSON fails as it would there. A
-// login page is still recognised first.
-//
-// For movepage.action, which is an XWork action rather than a REST endpoint:
-// it answers JSON when asked for it, but under no promise of what it calls
-// it, and its refusal is only in that JSON.
-type whateverContentType struct {
-	out any
 }
 
 // capture is a response body read through, keeping the first limit bytes of
