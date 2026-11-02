@@ -84,26 +84,35 @@ func endsWithBrace(line []byte) bool {
 }
 
 // setextHeadingParser is goldmark's setext heading parser, with attributes
-// off, taking the attribute block itself. goldmark reads it off the heading's
-// last line in Close and generates the id straight after, so it is taken here
-// instead, in Open, off the paragraph that is about to become the heading:
-// Close then finds the id named, or generates one from the line without the
-// block, as goldmark would have.
+// off, taking the attribute block itself. goldmark generates the id in Close,
+// from the paragraph the heading takes over, so the block is taken just
+// before, off that paragraph's last line. A paragraph the table transformer
+// has emptied by then is no heading's, and keeps its text: "a | b", "--|--",
+// "c | x {#id}" over "---" is a table, then a rule.
 type setextHeadingParser struct {
 	parser.BlockParser
 }
 
-func (p *setextHeadingParser) Open(parent ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
-	node, state := p.BlockParser.Open(parent, reader, pc)
-	if node == nil {
-		return node, state
-	}
+var setextParagraphKey = parser.NewContextKey()
 
-	if paragraph, ok := pc.LastOpenedBlock().Node.(*ast.Paragraph); ok {
-		takeLastLineAttributes(node, paragraph, reader)
+func (p *setextHeadingParser) Open(parent ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
+	last := pc.LastOpenedBlock().Node
+
+	node, state := p.BlockParser.Open(parent, reader, pc)
+	if node != nil {
+		pc.Set(setextParagraphKey, last)
 	}
 
 	return node, state
+}
+
+func (p *setextHeadingParser) Close(node ast.Node, reader text.Reader, pc parser.Context) {
+	if paragraph, ok := pc.Get(setextParagraphKey).(*ast.Paragraph); ok && len(paragraph.Source()) > 0 {
+		takeLastLineAttributes(node, paragraph, reader)
+	}
+
+	pc.Set(setextParagraphKey, nil)
+	p.BlockParser.Close(node, reader, pc)
 }
 
 // takeLastLineAttributes moves an attribute block that ends the last line of

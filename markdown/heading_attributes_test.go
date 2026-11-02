@@ -59,6 +59,7 @@ func TestHeadingAttributesTakeNoBareName(t *testing.T) {
 		"## Number {data-n=5}\n":                 `<h2 data-n="" id="Number">Number</h2>`,
 		"## Class word {class=foo}\n":            `<h2 class="foo" id="Class-word">Class word</h2>`,
 		"## Class number {class=1}\n":            `<h2 id="Class-number-class1">Class number {class=1}</h2>`,
+		"a | b\n--|--\nc | x {#id}\n---\n":       "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>c</td>\n<td>x {#id}</td>\n</tr>\n</tbody>\n</table>\n<hr />",
 	} {
 		out := compileDoc(t, source)
 		assert.Equal(t, want+"\n", out, "%q", source)
