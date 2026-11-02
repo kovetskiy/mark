@@ -10,6 +10,7 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/d2"
 	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/plantuml"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
 
@@ -360,6 +361,32 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				att.Filename,
 				"",
 			},
+		)
+
+		if err != nil {
+			return ast.WalkStop, err
+		}
+
+	} else if lang == "plantuml" && slices.Contains(r.MarkConfig.Features, "plantumlcloud") {
+		// The "PlantUML Diagrams for Confluence" add-on by Stratus Add-ons
+		// Ltd draws the diagram out of the macro itself: the markup travels
+		// in the data parameter and nothing is attached, which is why this
+		// branch, unlike the d2 and mermaid ones above, never touches
+		// r.Attachments. It takes precedence over the avono-style plantuml
+		// branch below when both features are on: a block can only be drawn
+		// one way, and this one is what the instance's add-on reads.
+		markup := strings.TrimSuffix(string(lval), "\n")
+
+		macro, err := plantuml.Process(title, []byte(markup))
+		if err != nil {
+			line, col := GetLineCol(source, node.Pos())
+			return ast.WalkStop, fmt.Errorf("line %d, col %d: plantumlcloud rendering failed: %w", line, col, err)
+		}
+
+		err = r.Stdlib.Templates.ExecuteTemplate(
+			writer,
+			"ac:plantumlcloud",
+			macro,
 		)
 
 		if err != nil {

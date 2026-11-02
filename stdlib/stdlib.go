@@ -10,6 +10,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// plantumlCloudMacroName is the macro name the "PlantUML Diagrams for
+// Confluence" add-on by Stratus Add-ons Ltd draws. mark's plantumlcloud
+// feature publishes this macro, where the plain plantuml one publishes the
+// avono-style ac:plantuml for other vendors' add-ons.
+const plantumlCloudMacroName = `plantumlcloud`
+
 type Lib struct {
 	Templates *template.Template
 }
@@ -534,6 +540,21 @@ func templates(api *confluence.API) (*template.Template, error) {
 		`ac:plantuml`: text(
 			`<ac:structured-macro ac:name="plantuml">`,
 			`<ac:plain-text-body><![CDATA[{{ .Text | cdata }}]]></ac:plain-text-body>`,
+			`</ac:structured-macro>`,
+		),
+
+		/* The "PlantUML Diagrams for Confluence" add-on by Stratus Add-ons
+		   Ltd, which draws the diagram out of the macro itself rather than
+		   out of an attachment: the plantumlcloud feature publishes this
+		   for it. */
+		`ac:` + plantumlCloudMacroName: text(
+			`<ac:structured-macro ac:name="`+plantumlCloudMacroName+`">`,
+			`<ac:parameter ac:name="filename">{{ .Filename | xmlesc }}</ac:parameter>`,
+			// Revision is always 1: with no attachment there is nothing to
+			// version, a changed diagram is a changed data parameter.
+			`<ac:parameter ac:name="revision">1</ac:parameter>`,
+			`<ac:parameter ac:name="data">{{ .Data | xmlesc }}</ac:parameter>`,
+			`<ac:parameter ac:name="compressed">true</ac:parameter>`,
 			`</ac:structured-macro>`,
 		),
 

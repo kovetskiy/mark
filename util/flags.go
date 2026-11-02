@@ -31,6 +31,7 @@ var KnownFeatures = []string{
 	"mermaid",
 	"mkdocsadmonitions",
 	"plantuml",
+	"plantumlcloud",
 }
 
 // defaultFeatures are what --features replaces when it is given at all, which
