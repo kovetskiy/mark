@@ -78,24 +78,39 @@ More details at Confluence [Code Block Macro](https://confluence.atlassian.com/d
 
 ### Language names
 
-Confluence knows each language by one name, so mark lowercases the language
-and replaces the common aliases with it: `sh`, `shell`, `zsh` and `console`
-become `bash`, `yml` becomes `yaml`, `py` becomes `python`, `c++` becomes
-`cpp`, `text` becomes `none`, and so on. Data Center fails to render a code
-block whose language it does not know, and Cloud shows it unhighlighted.
+Confluence resolves a code block's language against a list of its own, and
+the lists differ: Data Center 8 and earlier know about 25 languages and fail to
+render a code block whose language is not one of them, while Data Center 9 and
+later, like Cloud, know about 85 and show an unknown one unhighlighted. Cloud
+matches the language case-sensitively; Data Center lowercases it first.
 
-Some aliases name a language only Cloud highlights, such as `golang` for `go`,
-`ts` for `typescript` and `rs` for `rust`; those are renamed as well. A language
-that Cloud and Data Center spell differently is left as written, since mark
-does not know which one it is publishing to: write `javascript`, `csharp` and
-`html/xml` for Data Center, and `js`, `c#` and `html` for Cloud. Any other name
-is passed to Confluence unchanged, lowercased.
+mark replaces a few aliases that one of these lists lacks with a name for the
+same language that it has, matching them without regard to case:
 
-A few aliases name the nearest language Confluence has rather than the same
-one: `bazel` and `starlark` become `python`, `console` and `shell-session`
-become `bash`, and `latex` becomes `tex`. Confluence stores only the name it
-was given, so `mark export` writes such a block back with that name, not the
-one in the source.
+| Written | Published |
+| --- | --- |
+| `sh`, `zsh`, `ksh` | `bash` |
+| `txt`, `plaintext` | `text` |
+| `py3`, `python3` | `python` |
+| `rb` | `ruby` |
+| `cxx`, `cc`, `hpp` | `cpp` |
+| `posh`, `ps1`, `psm1`, `pwsh` | `powershell` |
+| `php3`, `php4`, `php5` | `php` |
+| `udiff`, `patch` | `diff` |
+| `as3` | `actionscript3` |
+| `cfc` | `coldfusion` |
+| `golang` | `go` |
+| `rs` | `rust` |
+| `kt`, `kts` | `kotlin` |
+| `clj` | `clojure` |
+| `hbs` | `handlebars` |
+| `tf` | `hcl` |
+| `md` | `markdown` |
+
+The targets in the last seven rows exist only on Cloud and Data Center 9 and
+later; Data Center 8 knows neither the alias nor the target. Every other
+language, including names every platform already knows such as `yml`, `py`,
+`shell`, `js` and `c++`, is passed to Confluence exactly as written.
 
 `mark export` writes a code block whose stored language is one of these aliases
 as the macro rather than as a fence, because the fence would publish back under
