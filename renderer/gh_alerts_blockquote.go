@@ -67,8 +67,8 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderBlockQuote(writer util.BufW
 		}
 	}
 
-	// Fall back to legacy blockquote rendering for non-GitHub Alert blockquotes
-	return r.renderLegacyBlockQuote(writer, source, node, entering)
+	// Not an alert: a quote, or an admonition in the "> Info:" syntax.
+	return r.renderQuote(writer, source, node, entering)
 }
 
 func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWriter, source []byte, node ast.Node, entering bool, alertType string) (ast.WalkStatus, error) {
@@ -123,8 +123,7 @@ func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderGHAlert(writer util.BufWrit
 	return ast.WalkContinue, nil
 }
 
-func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderLegacyBlockQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	// Legacy blockquote handling (same as original ParseBlockQuoteType logic)
+func (r *ConfluenceGHAlertsBlockQuoteRenderer) renderQuote(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	quoteType := ParseBlockQuoteType(node, source)
 	quoteLevel := r.LevelMap.Level(node)
 

@@ -96,9 +96,9 @@ func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) Adm
 	return t
 }
 
-// ParseBlockQuoteType parses the first line of a blockquote and returns its type
-// Note: This legacy function only handles traditional "info:", "note:", etc. syntax
-// GitHub Alerts ([!NOTE], [!TIP], etc.) are handled by the GitHub Alerts transformer
+// ParseBlockQuoteType parses the first line of a blockquote and returns its
+// type in the "> Info:" syntax. GitHub alerts ("> [!NOTE]") are recognised by
+// the GitHub Alerts transformer instead.
 func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
 	var t = AdmonitionNone
 	var legacyClassifier = LegacyBlockQuoteClassifier()
