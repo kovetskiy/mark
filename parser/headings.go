@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"bytes"
-
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -15,12 +13,11 @@ import (
 // derives a heading's id ahead of the publish has to parse with these too, or
 // it derives another id than the page gets.
 //
-// The attribute block is goldmark's, less a name standing alone: goldmark
-// takes "{id}" and "{a, b}" for attributes named id, a and b, but the trailing
-// "{id}" of "## GET /users/{id}" is text to anyone who wrote it. A block with a
-// bare name in it stays heading text; "{#id}", "{.class}" and "{key=value}"
-// are attributes. A comma may separate them, "{#id, .class}", as goldmark v1
-// allowed and goldmark v2 does not.
+// An attribute block is taken only when it is one in goldmark v1's grammar
+// (see attributeBlock), which is narrower than v2's: "{id}" and "{a, b}" stay
+// heading text, as do "{k='v'}" and "{k=}", while "{#id, .class}" is
+// attributes. A block that is text in one release and attributes in another
+// changes the heading's id and breaks every link to it.
 func HeadingOptions() []parser.Option {
 	return []parser.Option{
 		parser.WithAutoHeadingID(),
@@ -32,55 +29,59 @@ func HeadingOptions() []parser.Option {
 				BlockParser: parser.NewSetextHeadingParser(parser.WithAutoHeadingID()),
 			}, 99),
 			util.Prioritized[parser.BlockParser](&atxHeadingParser{
-				attributes: parser.NewATXHeadingParser(parser.WithAutoHeadingID(), parser.WithAttribute()),
-				plain:      parser.NewATXHeadingParser(parser.WithAutoHeadingID()),
+				BlockParser: parser.NewATXHeadingParser(parser.WithAutoHeadingID()),
 			}, 599),
 		),
 	}
 }
 
-// atxHeadingParser is goldmark's ATX heading parser, taking an attribute block
-// only when it names nothing bare. A heading whose block does is parsed again
-// as though attributes were off, which leaves the block in its text.
+// atxHeadingParser is goldmark's ATX heading parser, with attributes off,
+// taking the attribute block itself when it ends the line: a block followed by
+// a closing sequence, "## T {#x} ##", stays text.
 type atxHeadingParser struct {
-	attributes, plain parser.BlockParser
+	parser.BlockParser
 }
 
-func (p *atxHeadingParser) Trigger() []byte { return p.plain.Trigger() }
-
 func (p *atxHeadingParser) Open(parent ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
-	line, segment := reader.Position()
+	line, _ := reader.PeekLine()
 
-	node, state := p.attributes.Open(parent, reader, pc)
-	if node == nil || !hasBareAttribute(node, reader.Source()) {
-		return node, state
-	}
-
-	reader.SetPosition(line, segment)
-
-	// goldmark reads the "," of "{#id,.class}" as a bare name. Its block is
-	// still at the end of the heading's line, to be taken commas and all.
-	node, state = p.plain.Open(parent, reader, pc)
-	if heading, ok := node.(ast.BlockNode); ok {
-		takeLastLineAttributes(node, heading, reader)
+	node, state := p.BlockParser.Open(parent, reader, pc)
+	if heading, ok := node.(ast.BlockNode); ok && endsWithBrace(line) &&
+		takeLastLineAttributes(node, heading, reader) {
+		trimClosingSequence(heading, reader.Source())
 	}
 
 	return node, state
 }
 
-func (p *atxHeadingParser) Continue(node ast.Node, reader text.Reader, pc parser.Context) parser.State {
-	return p.plain.Continue(node, reader, pc)
+// trimClosingSequence drops the closing "#"s a block followed, "## T ## {#x}",
+// which goldmark left in the text because the block came after them.
+func trimClosingSequence(heading ast.BlockNode, source []byte) {
+	lines := heading.Source()
+	if len(lines) == 0 {
+		return
+	}
+
+	last := lines[len(lines)-1]
+
+	i := last.Stop
+	for i > last.Start && source[i-1] == '#' {
+		i--
+	}
+
+	if i == last.Stop || (i > last.Start && source[i-1] != ' ' && source[i-1] != '\t') {
+		return
+	}
+
+	last.Stop = i
+	lines[len(lines)-1] = last.TrimRightSpace(source)
 }
 
-// Close is the same for either parser: it generates the id, or registers the
-// one the attributes named.
-func (p *atxHeadingParser) Close(node ast.Node, reader text.Reader, pc parser.Context) {
-	p.plain.Close(node, reader, pc)
+func endsWithBrace(line []byte) bool {
+	line = util.TrimRightSpace(line)
+
+	return len(line) > 0 && line[len(line)-1] == '}'
 }
-
-func (p *atxHeadingParser) CanInterruptParagraph() bool { return p.plain.CanInterruptParagraph() }
-
-func (p *atxHeadingParser) CanAcceptIndentedLine() bool { return p.plain.CanAcceptIndentedLine() }
 
 // setextHeadingParser is goldmark's setext heading parser, with attributes
 // off, taking the attribute block itself. goldmark reads it off the heading's
@@ -106,177 +107,44 @@ func (p *setextHeadingParser) Open(parent ast.Node, reader text.Reader, pc parse
 }
 
 // takeLastLineAttributes moves an attribute block that ends the last line of
-// from onto to, and drops it from that line: goldmark's parseLastLineAttributes,
-// less a block hasBareAttribute turns down.
-func takeLastLineAttributes(to ast.Node, from ast.BlockNode, reader text.Reader) {
+// from onto to, and drops it from that line: the first unescaped "{" that
+// opens a block running to the end of the line. It reports whether it took
+// one.
+func takeLastLineAttributes(to ast.Node, from ast.BlockNode, reader text.Reader) bool {
 	lines := from.Source()
 	if len(lines) == 0 {
-		return
+		return false
 	}
 
+	source := reader.Source()
 	last := lines[len(lines)-1]
-	lr := text.NewReader(reader.Source(), reader.Decoder())
-	lr.SetPosition(0, last)
 
-	for {
-		c := lr.Peek()
-		if c == text.EOF || c == '\n' {
-			return
-		}
-
-		if c == '\\' {
-			lr.Advance(1)
-			if util.IsPunct(lr.Peek()) {
-				lr.Advance(1)
-			}
-
-			continue
-		}
-
-		if c == '{' {
-			line, start := lr.Position()
-
-			attrs, ok := parseAttributes(lr, reader.Source())
-			if ok {
-				if rest, _ := lr.PeekLine(); (rest == nil || util.IsBlank(rest)) && !anyBare(attrs, reader.Source()) {
-					for _, attr := range attrs {
-						to.SetAttribute(attr.Name, attr.Value)
-					}
-
-					last.Stop = start.Start
-					lines[len(lines)-1] = last.TrimRightSpace(reader.Source())
-
-					return
-				}
-			}
-
-			lr.SetPosition(line, start)
-		}
-
-		lr.Advance(1)
-	}
-}
-
-// parseAttributes is parser.ParseAttributes, taking a comma between two
-// attributes for the space goldmark v2 wants there. A block goldmark reads a
-// bare name in is read again with each such comma a space: a copy of the
-// source with the commas blanked has every attribute value at the offset it
-// has in source, so the values read from the copy are read from source as
-// well.
-func parseAttributes(reader text.Reader, source []byte) ([]ast.Attribute, bool) {
-	line, start := reader.Position()
-
-	attrs, ok := parser.ParseAttributes(reader)
-	if ok && !anyBare(attrs, source) {
-		return attrs, ok
-	}
-
-	blanked, found := blankAttributeCommas(source, start.Start)
-	if !found {
-		return attrs, ok
-	}
-
-	copied := text.NewReader(blanked, reader.Decoder())
-	copied.SetPosition(line, start)
-
-	attrs, ok = parser.ParseAttributes(copied)
-	if !ok {
-		reader.SetPosition(line, start)
-
-		return nil, false
-	}
-
-	reader.SetPosition(copied.Position())
-
-	return attrs, ok
-}
-
-// blankAttributeCommas returns a copy of source with each comma that follows
-// an attribute of the block opening at from a space: not one inside a quoted
-// value, and not one after the "{" or another comma, which goldmark v1 did not
-// take either. found is false when the block has no such comma, or no end on
-// its line.
-func blankAttributeCommas(source []byte, from int) ([]byte, bool) {
-	if from >= len(source) || source[from] != '{' {
-		return nil, false
-	}
-
-	var commas []int
-
-	var quote byte
-
-	previous := byte('{')
-
-	for i := from + 1; i < len(source); i++ {
-		c := source[i]
-
-		switch {
-		case c == '\n':
-			return nil, false
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '\'':
-			quote = c
-		case c == '}':
-			if len(commas) == 0 {
-				return nil, false
-			}
-
-			blanked := bytes.Clone(source)
-			for _, comma := range commas {
-				blanked[comma] = ' '
-			}
-
-			return blanked, true
-		case c == ',' && previous != '{' && previous != ',':
-			commas = append(commas, i)
-		}
-
-		if !util.IsSpace(c) {
-			previous = c
-		}
-	}
-
-	return nil, false
-}
-
-func hasBareAttribute(node ast.Node, source []byte) bool {
-	return anyBare(node.Attributes(), source)
-}
-
-// anyBare reports whether one of attrs is a name standing alone, rather than
-// "#id", ".class" or "key=value". goldmark gives a bare name a value that is
-// the name itself, so what comes before the value tells the forms apart: "#",
-// "." or "=" -- the last perhaps with a quote between. That depends on how
-// goldmark stores the values, so TestHeadingAttributesTakeNoBareName pins
-// every form.
-func anyBare(attrs []ast.Attribute, source []byte) bool {
-	for _, attr := range attrs {
-		// Two classes merged into one value, which only "." makes.
-		if attr.Value.IsOwned() {
-			continue
-		}
-
-		i := attr.Value.Index().Start - 1
-		if i >= 0 && (source[i] == '"' || source[i] == '\'') {
-			i--
-		}
-
-		for i >= 0 && util.IsSpace(source[i]) {
-			i--
-		}
-
-		if i < 0 {
-			return true
-		}
-
+	for i := last.Start; i < last.Stop; i++ {
 		switch source[i] {
-		case '#', '.', '=':
+		case '\\':
+			if i+1 < last.Stop && util.IsPunct(source[i+1]) {
+				i++
+			}
+
+			continue
+		case '{':
 		default:
-			return true
+			continue
 		}
+
+		end, attrs, ok := attributeBlock(source[:last.Stop], i)
+		if !ok || !util.IsBlank(source[end:last.Stop]) {
+			continue
+		}
+
+		for _, attr := range attrs {
+			to.SetAttribute(attr.Name, attr.Value)
+		}
+
+		last.Stop = i
+		lines[len(lines)-1] = last.TrimRightSpace(source)
+
+		return true
 	}
 
 	return false
