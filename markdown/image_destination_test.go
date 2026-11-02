@@ -108,7 +108,7 @@ func TestImageTitleAndAltAreUnescapedOnce(t *testing.T) {
 // An <img> is decoded by the HTML parser that finds it, so its title is not
 // read as Markdown again: "&amp;amp;" in the tag is "&amp;" on the page.
 func TestHTMLImgTitleIsNotDecodedTwice(t *testing.T) {
-	out := compileImgDoc(t, `<img src="https://example.com/x.png" title="a &amp;amp; b \_c">`+"\n")
+	out := compileDoc(t, `<img src="https://example.com/x.png" title="a &amp;amp; b \_c">`+"\n")
 
 	assert.Contains(t, out, `ac:title="a &amp;amp; b \_c"`)
 }
