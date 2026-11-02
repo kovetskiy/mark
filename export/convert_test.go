@@ -114,10 +114,14 @@ func TestConvertDiagramCodeStaysAMacro(t *testing.T) {
 		convert(t, storage))
 }
 
-// A fence of "sh" publishes as "bash", so a page holding "sh" -- one mark
-// published before it renamed aliases -- can only come back as the macro.
+// A fence of "sh" publishes as "bash", so a page holding "sh" can only come
+// back as the macro. "Python" is not renamed, so it comes back as a fence.
 func TestConvertCodeLanguageAliasStaysAMacro(t *testing.T) {
-	for _, language := range []string{"sh", "Python"} {
+	assert.Equal(t, "```Python\nx\n```\n", convert(t, `<ac:structured-macro ac:name="code">`+
+		`<ac:parameter ac:name="language">Python</ac:parameter>`+
+		`<ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`))
+
+	for _, language := range []string{"sh", "SH", "golang"} {
 		storage := `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">` + language +
 			`</ac:parameter><ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>`
 		md, published := republish(t, storage)
