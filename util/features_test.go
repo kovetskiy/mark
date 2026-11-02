@@ -50,8 +50,8 @@ func TestFeaturesSubprocess(t *testing.T) {
 	fmt.Printf("\nCHECKED-FEATURES<%s>CHECKED-FEATURES\n", encoded)
 }
 
-// checkFeatures runs CheckFlags in a fresh process and returns the features
-// it settled on, or its error.
+// checkFeatures runs publish's checks in a fresh process and returns the
+// features they settled on, or their error.
 func checkFeatures(t *testing.T, environment map[string]string, args ...string) ([]string, string) {
 	t.Helper()
 

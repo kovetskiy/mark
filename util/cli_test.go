@@ -29,7 +29,7 @@ func runWithArgs(args []string) error {
 			&cli.FloatFlag{Name: "mermaid-scale", Value: 1.0},
 			&cli.FloatFlag{Name: "math-scale", Value: 2.0},
 		},
-		Before: CheckFlags,
+		Before: checkPublishFlags,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return nil
 		},

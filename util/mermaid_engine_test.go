@@ -17,7 +17,7 @@ func TestMermaidEngineFlagValidation(t *testing.T) {
 			Flags: []cli.Flag{
 				&cli.StringFlag{Name: "mermaid-engine", Value: "chrome"},
 			},
-			Before: CheckFlags,
+			Before: checkPublishFlags,
 			Action: func(context.Context, *cli.Command) error { return nil },
 		}
 
