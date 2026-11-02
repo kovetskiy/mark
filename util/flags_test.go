@@ -290,7 +290,7 @@ func TestCheckConfigFileAcceptsNoDefault(t *testing.T) {
 // page with mermaid quietly not running, and said nothing.
 func TestFeaturesRejectsAnUnknownName(t *testing.T) {
 	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
-	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "mermaidd"))
+	_, err := checkPublishFlags(mustParseArgs(t, cmd, "mark", "--features", "mermaidd"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mermaidd", "the message names the value")
@@ -302,7 +302,7 @@ func TestFeaturesRejectsAnUnknownName(t *testing.T) {
 // unrecognised where it is read. Saying so beats switching it off in silence.
 func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
 	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
-	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", "math, mermaid"))
+	_, err := checkPublishFlags(mustParseArgs(t, cmd, "mark", "--features", "math, mermaid"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "features")
@@ -314,13 +314,13 @@ func TestFeaturesAcceptsEveryKnownName(t *testing.T) {
 	for _, feature := range KnownFeatures {
 		t.Run(feature, func(t *testing.T) {
 			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
-			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--features", feature))
+			_, err := checkPublishFlags(mustParseArgs(t, cmd, "mark", "--features", feature))
 			assert.NoError(t, err)
 		})
 	}
 }
 
-// mustParseArgs is mustParse with the context CheckFlags wants alongside.
+// mustParseArgs is mustParse with the context checkPublishFlags wants alongside.
 func mustParseArgs(t *testing.T, cmd *cli.Command, args ...string) (context.Context, *cli.Command) {
 	t.Helper()
 
@@ -360,7 +360,7 @@ func TestSplitParentsDropsEmptyFields(t *testing.T) {
 // failed the run.
 func TestImageAlignIsCheckedBeforeAnythingIsCreated(t *testing.T) {
 	cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
-	_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", "centre"))
+	_, err := checkPublishFlags(mustParseArgs(t, cmd, "mark", "--image-align", "centre"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "centre")
@@ -371,7 +371,7 @@ func TestImageAlignAcceptsWhatItDocuments(t *testing.T) {
 	for _, align := range []string{"left", "center", "right", "CENTER", " right "} {
 		t.Run(align, func(t *testing.T) {
 			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
-			_, err := CheckFlags(mustParseArgs(t, cmd, "mark", "--image-align", align))
+			_, err := checkPublishFlags(mustParseArgs(t, cmd, "mark", "--image-align", align))
 			assert.NoError(t, err)
 		})
 	}

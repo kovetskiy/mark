@@ -46,7 +46,7 @@ var defaultFeatures = []string{"mermaid", "mention"}
 const noFeatures = "none"
 
 // EnabledFeatures is the --features list mark compiles with: none of them for
-// "none", which CheckFlags has made sure stands alone.
+// "none", which checkPublishFlags has made sure stands alone.
 func EnabledFeatures(command *cli.Command) []string {
 	features := command.StringSlice("features")
 	if slices.Equal(features, []string{noFeatures}) {
@@ -656,16 +656,6 @@ func isEmptyValue(value any) bool {
 	}
 
 	return false
-}
-
-// CheckFlags reports a configuration file that cannot be used, and then
-// invalid publish flags.
-func CheckFlags(context context.Context, command *cli.Command) (context.Context, error) {
-	if err := CheckConfigFile(command); err != nil {
-		return context, err
-	}
-
-	return checkPublishFlags(context, command)
 }
 
 // checkPublishFlags validates combinations and values of the publish flags.
