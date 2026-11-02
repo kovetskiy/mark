@@ -69,12 +69,18 @@ func (t *GHAlertsTransformer) extractAlertType(blockquote *ast.Blockquote, reade
 
 // alertMarker returns the text of the leading Text nodes of paragraph up to
 // the end of its first line, and how many nodes that is, or "" if anything but
-// text comes first. How goldmark splits "[!NOTE]" into Text nodes is its own
-// business, and differs between releases, so the nodes are read as one string.
+// text comes first or the line ends in blanks. How goldmark splits "[!NOTE]"
+// into Text nodes is its own business, and differs between releases, so the
+// nodes are read as one string. goldmark leaves a line's trailing blanks out
+// of its text, so they are looked for in the source: "> [!NOTE] " is a
+// quote, and "> [!NOTE]" ending in a hard line break an alert.
 func alertMarker(paragraph *ast.Paragraph, source []byte) (string, int) {
 	var marker strings.Builder
 
 	count := 0
+
+	var last *ast.Text
+
 	for node := paragraph.FirstChild(); node != nil; node = node.NextSibling() {
 		textNode, ok := node.(*ast.Text)
 		if !ok {
@@ -83,9 +89,18 @@ func alertMarker(paragraph *ast.Paragraph, source []byte) (string, int) {
 
 		marker.WriteString(textNode.Value.Str(source))
 		count++
+		last = textNode
 
 		if textNode.SoftLineBreak() || textNode.HardLineBreak() {
 			break
+		}
+	}
+
+	if last != nil && !last.HardLineBreak() && !last.Value.IsOwned() {
+		if indices := last.Value.Indices(); len(indices) > 0 {
+			if end := indices[len(indices)-1].Stop; end < len(source) && (source[end] == ' ' || source[end] == '\t') {
+				return "", 0
+			}
 		}
 	}
 

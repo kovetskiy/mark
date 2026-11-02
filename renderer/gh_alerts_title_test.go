@@ -56,7 +56,7 @@ func TestGHAlertTitleDoesNotReachOtherQuotes(t *testing.T) {
 
 // TestGHAlertMarkerMustEndItsLine pins what is read as an alert's marker,
 // whichever way goldmark splits "[!NOTE]" into text nodes: the marker alone
-// on its line.
+// on its line, with no blank after it unless the blanks are a hard line break.
 func TestGHAlertMarkerMustEndItsLine(t *testing.T) {
 	for source, alert := range map[string]bool{
 		"> [!NOTE]\n":              true,
@@ -68,6 +68,10 @@ func TestGHAlertMarkerMustEndItsLine(t *testing.T) {
 		"> [!UNKNOWN]\n> body\n":   false,
 		"> [!NOTE\n> ]\n":          false,
 		"> text [!NOTE]\n> body\n": false,
+		"> [!NOTE] \n> body\n":     false,
+		"> [!NOTE]\t\n> body\n":    false,
+		"> [!NOTE] \n> [!TIP]\n":   false,
+		"> [!NOTE]  \n> body\n":    true,
 	} {
 		t.Run(source, func(t *testing.T) {
 			actual := render(t, source, ghAlertRenderers(), ghAlertParserOptions()...)
