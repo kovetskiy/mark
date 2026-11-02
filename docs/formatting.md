@@ -304,6 +304,37 @@ When enabled, this renders note, warning, tip, info admonitions as Confluence al
 !!! note
 ```
 
+Collapsible admonitions are supported too. Confluence's `expand` macro cannot
+start open, so the two spellings render differently:
+
+* `??? note "Title"` renders as an `expand` macro titled with the admonition
+  title (or the capitalised type, such as "Note", when there is none), around
+  the same panel `!!!` produces.
+* `???+ note "Title"` starts open in MkDocs and renders exactly like `!!!`.
+
+```markdown
+??? tip "Click to expand"
+    Hidden until the reader opens it.
+
+???+ warning "Always visible"
+    Rendered as an ordinary warning panel.
+```
+
+A closing run has to be made of the character that opened the block, so `???`
+closes a `???` or `???+` admonition and `!!!` closes a `!!!` one; `???+` is not
+a closing run. Classes without a Confluence macro (such as `danger`) stay
+blockquotes, collapsed or not. The collapsed form shows the title twice: on the
+expand macro, and in bold at the top of the panel inside it.
+
+Prose often starts with `???`, so a line that does is only an admonition when
+the type is a single word followed by a title in double quotes, attributes in
+braces, or nothing. A sentence such as `??? what is this` or an unquoted title
+as in `??? note Title` stays text. The next non-blank
+line must also be indented under the opening line, or be the closing run, so
+`??? note` or `??? note "Title"` above an ordinary paragraph stays text rather
+than hiding it in an empty expand. (Inside a list, a blockquote or another
+admonition that last check is skipped.) `!!!` keeps its looser rule.
+
 ## HTML Details/Summary Macro
 
 Standard HTML `<details>` and `<summary>` tags are converted to native

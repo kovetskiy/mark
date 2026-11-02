@@ -152,3 +152,68 @@ func TestAdmonitionClosedInsideAQuoteWithATab(t *testing.T) {
 	assert.Contains(t, actual, "<p>b</p>\n</ac:rich-text-body></ac:structured-macro>")
 	assert.Contains(t, actual, "<p>after</p>")
 }
+
+// TestAdmonitionCollapsedIsAnExpandAroundThePanel covers '???', which MkDocs
+// renders folded: the same panel '!!!' makes, inside an expand macro.
+func TestAdmonitionCollapsedIsAnExpandAroundThePanel(t *testing.T) {
+	for _, class := range []string{"info", "note", "warning", "tip"} {
+		t.Run(class, func(t *testing.T) {
+			actual := render(t, "??? "+class+" \"Fold me\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+			assertWellFormed(t, actual)
+
+			assert.True(t, strings.HasPrefix(actual, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">Fold me</ac:parameter><ac:rich-text-body>`+"\n\n"+`<ac:structured-macro ac:name="`+class+`">`), actual)
+			assert.True(t, strings.HasSuffix(actual, "</ac:rich-text-body></ac:structured-macro>\n\n</ac:rich-text-body></ac:structured-macro>\n"), actual)
+			assert.Contains(t, actual, "<p><strong>Fold me</strong></p>")
+			assert.Contains(t, actual, "The body.")
+		})
+	}
+}
+
+// TestAdmonitionCollapsedWithoutATitle: the expand macro needs a title, so the
+// class stands in for it.
+func TestAdmonitionCollapsedWithoutATitle(t *testing.T) {
+	actual := render(t, "??? warning\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">Warning</ac:parameter>`)
+	assert.NotContains(t, actual, "<strong>")
+}
+
+// TestAdmonitionOpenCollapsibleReadsAsAPanel: Confluence's expand cannot start
+// open, so '???+' is rendered exactly as '!!!' is.
+func TestAdmonitionOpenCollapsibleReadsAsAPanel(t *testing.T) {
+	open := render(t, "???+ note \"T\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	bang := render(t, "!!! note \"T\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, open)
+
+	assert.Equal(t, bang, open)
+	assert.NotContains(t, open, `ac:name="expand"`)
+}
+
+// TestAdmonitionCollapsedTitleIsEscaped: the title lands in a parameter element
+// as well as the body, and a stray "&" costs the page.
+func TestAdmonitionCollapsedTitleIsEscaped(t *testing.T) {
+	actual := render(t, "??? note \"A & B <script> ]]> \x1b\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">A &amp; B &lt;script&gt; ]]&gt; `)
+	assert.NotContains(t, actual, "\x1b")
+}
+
+// TestAdmonitionCollapsedUnknownClassStaysAQuote: no macro to put in an expand.
+func TestAdmonitionCollapsedUnknownClassStaysAQuote(t *testing.T) {
+	actual := render(t, "??? danger \"D\"\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, "<blockquote")
+	assert.NotContains(t, actual, "ac:structured-macro")
+}
+
+func TestAdmonitionCollapsedNested(t *testing.T) {
+	actual := render(t, "!!! note \"Outer\"\n    Text.\n\n    ??? tip \"Inner\"\n        Hidden.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Equal(t, 3, strings.Count(actual, "<ac:structured-macro"))
+	assert.Equal(t, 3, strings.Count(actual, "</ac:structured-macro>"))
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">Inner</ac:parameter>`)
+}
