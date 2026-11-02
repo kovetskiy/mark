@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"bytes"
+
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -17,7 +19,8 @@ import (
 // takes "{id}" and "{a, b}" for attributes named id, a and b, but the trailing
 // "{id}" of "## GET /users/{id}" is text to anyone who wrote it. A block with a
 // bare name in it stays heading text; "{#id}", "{.class}" and "{key=value}"
-// are attributes.
+// are attributes. A comma may separate them, "{#id, .class}", as goldmark v1
+// allowed and goldmark v2 does not.
 func HeadingOptions() []parser.Option {
 	return []parser.Option{
 		parser.WithAutoHeadingID(),
@@ -55,7 +58,14 @@ func (p *atxHeadingParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 
 	reader.SetPosition(line, segment)
 
-	return p.plain.Open(parent, reader, pc)
+	// goldmark reads the "," of "{#id,.class}" as a bare name. Its block is
+	// still at the end of the heading's line, to be taken commas and all.
+	node, state = p.plain.Open(parent, reader, pc)
+	if heading, ok := node.(ast.BlockNode); ok {
+		takeLastLineAttributes(node, heading, reader)
+	}
+
+	return node, state
 }
 
 func (p *atxHeadingParser) Continue(node ast.Node, reader text.Reader, pc parser.Context) parser.State {
@@ -126,7 +136,7 @@ func takeLastLineAttributes(to ast.Node, from ast.BlockNode, reader text.Reader)
 		if c == '{' {
 			line, start := lr.Position()
 
-			attrs, ok := parser.ParseAttributes(lr)
+			attrs, ok := parseAttributes(lr, reader.Source())
 			if ok {
 				if rest, _ := lr.PeekLine(); (rest == nil || util.IsBlank(rest)) && !anyBare(attrs, reader.Source()) {
 					for _, attr := range attrs {
@@ -145,6 +155,91 @@ func takeLastLineAttributes(to ast.Node, from ast.BlockNode, reader text.Reader)
 
 		lr.Advance(1)
 	}
+}
+
+// parseAttributes is parser.ParseAttributes, taking a comma between two
+// attributes for the space goldmark v2 wants there. A block goldmark reads a
+// bare name in is read again with each such comma a space: a copy of the
+// source with the commas blanked has every attribute value at the offset it
+// has in source, so the values read from the copy are read from source as
+// well.
+func parseAttributes(reader text.Reader, source []byte) ([]ast.Attribute, bool) {
+	line, start := reader.Position()
+
+	attrs, ok := parser.ParseAttributes(reader)
+	if ok && !anyBare(attrs, source) {
+		return attrs, ok
+	}
+
+	blanked, found := blankAttributeCommas(source, start.Start)
+	if !found {
+		return attrs, ok
+	}
+
+	copied := text.NewReader(blanked, reader.Decoder())
+	copied.SetPosition(line, start)
+
+	attrs, ok = parser.ParseAttributes(copied)
+	if !ok {
+		reader.SetPosition(line, start)
+
+		return nil, false
+	}
+
+	reader.SetPosition(copied.Position())
+
+	return attrs, ok
+}
+
+// blankAttributeCommas returns a copy of source with each comma that follows
+// an attribute of the block opening at from a space: not one inside a quoted
+// value, and not one after the "{" or another comma, which goldmark v1 did not
+// take either. found is false when the block has no such comma, or no end on
+// its line.
+func blankAttributeCommas(source []byte, from int) ([]byte, bool) {
+	if from >= len(source) || source[from] != '{' {
+		return nil, false
+	}
+
+	var commas []int
+
+	var quote byte
+
+	previous := byte('{')
+
+	for i := from + 1; i < len(source); i++ {
+		c := source[i]
+
+		switch {
+		case c == '\n':
+			return nil, false
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '}':
+			if len(commas) == 0 {
+				return nil, false
+			}
+
+			blanked := bytes.Clone(source)
+			for _, comma := range commas {
+				blanked[comma] = ' '
+			}
+
+			return blanked, true
+		case c == ',' && previous != '{' && previous != ',':
+			commas = append(commas, i)
+		}
+
+		if !util.IsSpace(c) {
+			previous = c
+		}
+	}
+
+	return nil, false
 }
 
 func hasBareAttribute(node ast.Node, source []byte) bool {
