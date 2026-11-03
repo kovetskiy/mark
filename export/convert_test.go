@@ -217,7 +217,7 @@ func TestParsePageURL(t *testing.T) {
 		// included.
 		{"https://example.com/confluence/plugins/viewsource/viewpagesrc.action?pageId=77",
 			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},
-		// A short link carries the page id, encoded: see page.GenerateTinyLink.
+		// A short link carries the page id, encoded: see confluence.GenerateTinyLink.
 		{"https://example.atlassian.net/wiki/x/AfIFKgE",
 			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "5000000001"}},
 		{"https://confluence.example.com/x/D4AB/",

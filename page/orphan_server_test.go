@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/page"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func TestHandleOrphansKeepsAFolderParentWhenThePlatformIsUnidentified(t *testing
 	})
 	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
 
-	handled, err := page.HandleOrphans(ctx, api, page.OnOrphanDelete, []page.Orphan{
+	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
 		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
 	}, false)
 	require.NoError(t, err)
@@ -63,7 +64,7 @@ func TestHandleOrphansKeepsAFolderParentBehindAnSSOProxy(t *testing.T) {
 	})
 	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
 
-	handled, err := page.HandleOrphans(ctx, api, page.OnOrphanDelete, []page.Orphan{
+	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
 		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
 	}, false)
 	require.NoError(t, err)

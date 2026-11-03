@@ -92,7 +92,7 @@ func handleOrphans(
 		)
 
 		handled := paths
-		if action != page.OnOrphanReport {
+		if action != report.OnOrphanReport {
 			// A run that published nothing in a space says nothing about that
 			// space: a failed checkout and every document having been deleted
 			// look exactly alike.

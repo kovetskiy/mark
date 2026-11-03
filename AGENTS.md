@@ -33,7 +33,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go` (upload and dry-run preview), `links.go`, `titles.go`, `runtitles.go` and `export.go` |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation, and the `--parents-from-path` hierarchy with its directory titles |
-| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache, page restrictions, label sync |
+| `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache, page restrictions, label sync, page URLs and tiny links |
 | `attachment/` | the `Attachment` type, checksums, upload names, local resolution and path containment, link rewriting; no Confluence client (uploading is `attachments.go` in the root package) |
 | `comments/` | `--preserve-comments`: re-places the page's inline-comment markers in the new body |
 | `fingerprint/` | the `--changes-only` content fingerprint, and the tag that carries it in a page's version message |
@@ -47,7 +47,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
 | `manifest/` | the `--track-pages` record of which page each source file publishes to, kept in Confluence |
 | `header/` | the `--page-header` template placed at the top of every published page |
-| `report/` | what a run did, for `--output-format` and the run's summary |
+| `report/` | what a run did, for `--output-format` and the run's summary, and the `--on-orphan` actions |
 | `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |

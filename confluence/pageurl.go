@@ -1,7 +1,11 @@
 package confluence
 
 import (
+	"encoding/base64"
+	"encoding/binary"
+	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -88,4 +92,73 @@ func spacesPageID(segments []string) string {
 	}
 
 	return ""
+}
+
+// GenerateTinyLink generates a Confluence tiny link from a page ID.
+// The page ID is packed little-endian into 64 bits, trailing zero bytes
+// trimmed, and written in tinyLinkEncoding.
+// Format: {baseURL}/x/{encodedID}
+//
+// Reference: https://support.atlassian.com/confluence/kb/how-to-programmatically-generate-the-tiny-link-of-a-confluence-page
+func GenerateTinyLink(baseURL string, pageID string) (string, error) {
+	id, err := strconv.ParseUint(pageID, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid page ID %q: %w", pageID, err)
+	}
+
+	encoded := encodeTinyLinkID(id)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
+	return baseURL + "/x/" + encoded, nil
+}
+
+// encodeTinyLinkID encodes a page ID into the Confluence tiny link format.
+func encodeTinyLinkID(id uint64) string {
+	buf := binary.LittleEndian.AppendUint64(nil, id)
+	for len(buf) > 1 && buf[len(buf)-1] == 0 {
+		buf = buf[:len(buf)-1]
+	}
+
+	return tinyLinkEncoding.EncodeToString(buf)
+}
+
+// tinyLinkCode is the alphabet of a tiny link's code: base64's, with "+" as
+// "_" and "/" as "-", the reverse of base64.URLEncoding.
+const tinyLinkCode = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+
+var tinyLinkEncoding = base64.NewEncoding(tinyLinkCode).WithPadding(base64.NoPadding)
+
+// DecodeTinyLinkID reads the page ID out of the code a tiny link ends in, the
+// reverse of encodeTinyLinkID. Confluence strips trailing "A"s as well as the
+// padding from the codes it hands out; both stand for zero bits, which are the
+// high bytes of a little-endian ID, so padding with "A" restores either.
+func DecodeTinyLinkID(code string) (string, error) {
+	if code == "" || strings.Trim(code, tinyLinkCode) != "" {
+		return "", fmt.Errorf("%q is not the code of a tiny link", code)
+	}
+
+	padded := code
+	for len(padded)%4 != 0 {
+		padded += "A"
+	}
+
+	raw, err := tinyLinkEncoding.DecodeString(padded)
+	if err != nil {
+		return "", fmt.Errorf("%q is not the code of a tiny link: %w", code, err)
+	}
+
+	for len(raw) > 0 && raw[len(raw)-1] == 0 {
+		raw = raw[:len(raw)-1]
+	}
+	switch {
+	case len(raw) == 0:
+		return "", fmt.Errorf("%q is not the code of a tiny link: it names no page ID", code)
+	case len(raw) > 8:
+		return "", fmt.Errorf("%q is not the code of a tiny link: it is too long for a page ID", code)
+	}
+
+	buf := make([]byte, 8)
+	copy(buf, raw)
+
+	return strconv.FormatUint(binary.LittleEndian.Uint64(buf), 10), nil
 }

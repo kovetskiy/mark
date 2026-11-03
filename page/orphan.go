@@ -7,39 +7,9 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/report"
 	"github.com/rs/zerolog/log"
 )
-
-// What to do about a page whose source file is gone.
-const (
-	// OnOrphanReport says so and does nothing, which is what mark has always
-	// done and remains the default.
-	OnOrphanReport = "report"
-
-	// OnOrphanArchive archives the page. Cloud only.
-	OnOrphanArchive = "archive"
-
-	// OnOrphanDelete moves the page to the trash, where a person can still
-	// change their mind.
-	OnOrphanDelete = "delete"
-)
-
-// ParseOnOrphan reads the value given to --on-orphan.
-func ParseOnOrphan(value string) (string, error) {
-	switch action := strings.ToLower(strings.TrimSpace(value)); action {
-	case "", OnOrphanReport:
-		return OnOrphanReport, nil
-	case OnOrphanArchive:
-		return OnOrphanArchive, nil
-	case OnOrphanDelete:
-		return OnOrphanDelete, nil
-	default:
-		return "", fmt.Errorf(
-			"unknown --on-orphan value %q: expected %s, %s or %s",
-			value, OnOrphanReport, OnOrphanArchive, OnOrphanDelete,
-		)
-	}
-}
 
 // Orphan is a tracked page whose source file was not seen in the run.
 type Orphan struct {
@@ -165,7 +135,7 @@ func HandleOrphans(
 	var handled []string
 
 	for _, orphan := range orphans {
-		if action == OnOrphanReport {
+		if action == report.OnOrphanReport {
 			handled = append(handled, orphan.Path)
 
 			continue
@@ -214,7 +184,7 @@ func HandleOrphans(
 
 		log.Info().Msgf("%s page %q (%s)", action, orphan.Title, orphan.PageID)
 
-		if action == OnOrphanArchive {
+		if action == report.OnOrphanArchive {
 			err = api.ArchivePage(ctx, orphan.PageID)
 		} else {
 			err = api.DeletePage(ctx, orphan.PageID)

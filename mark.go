@@ -74,7 +74,7 @@ type Config struct {
 	CheckLinksWarnOnly bool
 	AppendLabels       bool
 	GlobalProperties   string
-	OnOrphan           string
+	OnOrphan           string // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
 	OutputFormat       string
 	OrphanUnder        string
 
@@ -298,7 +298,7 @@ func run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
-	onOrphan, err := page.ParseOnOrphan(config.OnOrphan)
+	onOrphan, err := report.ParseOnOrphan(config.OnOrphan)
 	if err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// Removing a page needs to know mark put it there, and only the manifest
 	// knows that. Without it the flag could only guess from titles, which is
 	// not a guess worth making about deletion.
-	if onOrphan != page.OnOrphanReport && !config.TrackPages {
+	if onOrphan != report.OnOrphanReport && !config.TrackPages {
 		return fmt.Errorf(
 			"--on-orphan %s requires --track-pages: "+
 				"only the page manifest knows which pages mark published",

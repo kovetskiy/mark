@@ -14,7 +14,6 @@ import (
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
-	"github.com/kovetskiy/mark/v16/page"
 	"github.com/kovetskiy/mark/v16/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -190,7 +189,7 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 // action only, so the report said a page had been deleted without saying which,
 // and a run that only reported orphans -- the default -- recorded none at all.
 func TestOutputFormatJSONNamesOrphans(t *testing.T) {
-	for _, action := range []string{page.OnOrphanReport, page.OnOrphanDelete, page.OnOrphanArchive} {
+	for _, action := range []string{report.OnOrphanReport, report.OnOrphanDelete, report.OnOrphanArchive} {
 		t.Run(action, func(t *testing.T) {
 			out, id := orphanReport(t, action, report.FormatJSON)
 
@@ -212,9 +211,9 @@ func TestOutputFormatJSONNamesOrphans(t *testing.T) {
 // be reached.
 func TestOutputFormatGitHubNamesOrphans(t *testing.T) {
 	cases := map[string]string{
-		page.OnOrphanReport:  `page "Gone" has no source file`,
-		page.OnOrphanDelete:  `page "Gone" was deleted: its source file is gone`,
-		page.OnOrphanArchive: `page "Gone" was archived: its source file is gone`,
+		report.OnOrphanReport:  `page "Gone" has no source file`,
+		report.OnOrphanDelete:  `page "Gone" was deleted: its source file is gone`,
+		report.OnOrphanArchive: `page "Gone" was archived: its source file is gone`,
 	}
 
 	for action, want := range cases {
