@@ -195,23 +195,20 @@ func TestCodeLanguageAliasTargets(t *testing.T) {
 		assert.Equal(t, strings.ToLower(alias), alias, "an alias is matched in lower case")
 		assert.Equal(t, target, crenderer.CodeLanguage(target), "%s: the target %s must map to itself", alias, target)
 
-		targetCloud, ok := cloud[target]
-		if assert.True(t, ok, "%s: Cloud does not know the target %s", alias, target) {
-			if language, known := cloud[alias]; known {
-				assert.Equal(t, language, targetCloud, "%s: the target %s is another language on Cloud", alias, target)
-			}
+		aliasCloudLanguage, aliasCloud := cloud[alias]
+		targetCloudLanguage, targetCloud := cloud[target]
+		if assert.True(t, targetCloud, "%s: Cloud does not know the target %s", alias, target) && aliasCloud {
+			assert.Equal(t, aliasCloudLanguage, targetCloudLanguage, "%s: the target %s is another language on Cloud", alias, target)
 		}
 
-		if language, known := dataCenter8[alias]; known {
-			targetDC, ok := dataCenter8[target]
-			assert.True(t, ok, "%s: Data Center 8 knows the alias but not the target %s", alias, target)
-			assert.Equal(t, language, targetDC, "%s: the target %s is another language on Data Center 8", alias, target)
+		aliasDCLanguage, aliasDC := dataCenter8[alias]
+		targetDCLanguage, targetDC := dataCenter8[target]
+		if aliasDC {
+			assert.True(t, targetDC, "%s: Data Center 8 knows the alias but not the target %s", alias, target)
+			assert.Equal(t, aliasDCLanguage, targetDCLanguage, "%s: the target %s is another language on Data Center 8", alias, target)
 		}
 
-		_, aliasDC := dataCenter8[alias]
-		_, targetDC := dataCenter8[target]
-		_, aliasCloud := cloud[alias]
-		assert.True(t, (!aliasDC && targetDC) || (!aliasCloud && ok),
+		assert.True(t, (!aliasDC && targetDC) || (!aliasCloud && targetCloud),
 			"%s: no platform knows %s but not %s, so renaming it gains nothing", alias, target, alias)
 	}
 }
@@ -221,4 +218,9 @@ func TestFencedCodeBlockAlias(t *testing.T) {
 	assertWellFormed(t, actual)
 	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
 	assert.Contains(t, actual, `<ac:parameter ac:name="title">run.sh</ac:parameter>`)
+
+	// The language given as an attribute class is mapped too.
+	actual = fencedCode(t, "{.sh}")
+	assertWellFormed(t, actual)
+	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
 }
