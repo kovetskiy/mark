@@ -423,9 +423,8 @@ type Resolver struct {
 
 // NewResolver builds a resolver for the given attachments.
 //
-// Both spellings a document may use are accepted: the plain path, and the
-// legacy "attachment://" form. They map to the same upload, as does every way
-// of writing the path -- "./f.txt" is "f.txt" -- so names are looked up cleaned.
+// Every way of writing a path maps to the same upload -- "./f.txt" is "f.txt"
+// -- so names are looked up cleaned.
 func NewResolver(attachments []Attachment) *Resolver {
 	links := make(map[string]string, len(attachments))
 	for _, attachment := range attachments {
@@ -442,7 +441,7 @@ func (r *Resolver) Resolve(target string) string {
 		return ""
 	}
 
-	name := resolverKey(target)
+	name := cleanReference(target)
 	link, ok := r.links[name]
 	if !ok {
 		// A destination is a URL, so a file declared as a#b.png is linked as
@@ -452,7 +451,7 @@ func (r *Resolver) Resolve(target string) string {
 		if !escaped {
 			return ""
 		}
-		name = resolverKey(decoded)
+		name = cleanReference(decoded)
 		if link, ok = r.links[name]; !ok {
 			return ""
 		}
@@ -462,11 +461,6 @@ func (r *Resolver) Resolve(target string) string {
 	log.Debug().Msgf("replacing link: %q -> %q", name, link)
 
 	return link
-}
-
-// resolverKey is the name a link or image destination is looked up by.
-func resolverKey(target string) string {
-	return cleanReference(strings.TrimPrefix(target, "attachment://"))
 }
 
 // Unused reports the attachments that were uploaded but never referred to.
