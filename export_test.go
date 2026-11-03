@@ -145,7 +145,7 @@ func TestExportRoundTrip(t *testing.T) {
 		"<!-- Title: Installing -->",
 		"<!-- Label: how-to -->",
 		"<!-- Label: install -->",
-		"<!-- Content-Appearance: fixed -->",
+		"<!-- Content-Appearance: default -->",
 		"<!-- Emoji: 🚀 -->",
 		"",
 		"# Installing",

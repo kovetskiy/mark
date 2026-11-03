@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -219,7 +220,9 @@ type RestrictionSubjects struct {
 const (
 	// Confluence Cloud's editor shows three widths: Narrow, Wide and Max.
 	// They are stored as "default", "full-width" and "max" respectively.
-	// "fixed" is the legacy value for a narrow page.
+	// "fixed" is an older editor's narrow page, which a page in Confluence may
+	// still carry but mark does not publish: under it the title and the body
+	// are laid out at different widths.
 	FullWidthContentAppearance = "full-width"
 	FixedContentAppearance     = "fixed"
 	DefaultContentAppearance   = "default"
@@ -510,24 +513,38 @@ func toString(val any) string {
 	return ""
 }
 
-func setContentAppearance(meta *Meta, value string) {
-	meta.ContentAppearance = NormalizeContentAppearance(value)
+func setContentAppearance(meta *Meta, key, value string) error {
+	appearance, err := ParseContentAppearance(value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	meta.ContentAppearance = appearance
+
+	return nil
 }
 
-// NormalizeContentAppearance is the appearance a Content-Appearance value, or
-// the --content-appearance default, gives a page: fixed, default or max when
-// it says so, and full width otherwise.
-func NormalizeContentAppearance(value string) string {
-	switch strings.TrimSpace(value) {
+// ParseContentAppearance is the appearance a Content-Appearance value, or the
+// --content-appearance default, names: full-width, default or max, or "" when
+// it is empty. Anything else is refused rather than published full width.
+func ParseContentAppearance(value string) (string, error) {
+	switch appearance := strings.TrimSpace(value); appearance {
+	case "", FullWidthContentAppearance, DefaultContentAppearance, MaxContentAppearance:
+		return appearance, nil
 	case FixedContentAppearance:
-		return FixedContentAppearance
-	case DefaultContentAppearance:
-		return DefaultContentAppearance
-	case MaxContentAppearance:
-		return MaxContentAppearance
+		return "", fmt.Errorf("%q is not supported: use %q for a narrow page", appearance, DefaultContentAppearance)
 	default:
-		return FullWidthContentAppearance
+		return "", fmt.Errorf("unknown content appearance %q: expected %s, %s or %s",
+			appearance, FullWidthContentAppearance, DefaultContentAppearance, MaxContentAppearance)
 	}
+}
+
+// ResolveContentAppearance is the appearance a --content-appearance value gives
+// a page with no Content-Appearance of its own: what it names, and full width
+// when it is empty.
+func ResolveContentAppearance(value string) (string, error) {
+	appearance, err := ParseContentAppearance(value)
+
+	return cmp.Or(appearance, FullWidthContentAppearance), err
 }
 
 // normaliseFrontMatterKey is how a key written in a document is matched against
@@ -686,7 +703,15 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			case "labels":
 				meta.Labels = append(meta.Labels, toStringSlice(v, k, filename)...)
 			case "contentappearance":
-				setContentAppearance(meta, toString(v))
+				// Not toString, which would drop a value that is not a
+				// string for the default rather than refuse it.
+				var value string
+				if v != nil {
+					value = fmt.Sprint(v)
+				}
+				if err := setContentAppearance(meta, k, value); err != nil {
+					return nil, nil, err
+				}
 			case "imagealign":
 				meta.ImageAlign = strings.ToLower(toString(v))
 			case "order":
@@ -879,7 +904,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 					continue
 
 				case ContentAppearance:
-					setContentAppearance(meta, value)
+					if err := setContentAppearance(meta, ContentAppearance, value); err != nil {
+						return nil, nil, err
+					}
 
 				case HeaderImageAlign:
 					meta.ImageAlign = strings.ToLower(strings.TrimSpace(value))
@@ -977,11 +1004,12 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		}
 	}
 
-	// Use the global content appearance flag if the header is not set in the document
-	if meta != nil && defaultContentAppearance != "" && meta.ContentAppearance == "" {
-		setContentAppearance(meta, defaultContentAppearance)
-	} else if meta != nil && meta.ContentAppearance == "" {
-		meta.ContentAppearance = FullWidthContentAppearance // Default to full-width if nothing else is set for backwards compatibility
+	if meta != nil && meta.ContentAppearance == "" {
+		appearance, err := ResolveContentAppearance(defaultContentAppearance)
+		if err != nil {
+			return nil, nil, fmt.Errorf("default content appearance: %w", err)
+		}
+		meta.ContentAppearance = appearance
 	}
 
 	if meta == nil {

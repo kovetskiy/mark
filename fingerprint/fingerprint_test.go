@@ -17,14 +17,14 @@ func TestContentFingerprintOfAPlainPageIsTheBodyHash(t *testing.T) {
 
 	assert.Equal(t, SHA1(body), Content(body, "", "full-width", ""))
 	assert.Equal(t, SHA1(body), Content(body, "full-width", "full-width", ""))
-	assert.NotEqual(t, SHA1(body), Content(body, "fixed", "full-width", ""))
+	assert.NotEqual(t, SHA1(body), Content(body, "default", "full-width", ""))
 	assert.NotEqual(t, SHA1(body), Content(body, "full-width", "full-width", "🚀"))
-	assert.NotEqual(t, Content(body, "fixed", "full-width", "🚀"), Content(body, "default", "full-width", "🚀"))
+	assert.NotEqual(t, Content(body, "max", "full-width", "🚀"), Content(body, "default", "full-width", "🚀"))
 
-	// --content-appearance fixed gives every page without the header a fixed
-	// appearance: that is the default, and changes nothing about the hash.
-	assert.Equal(t, SHA1(body), Content(body, "fixed", "fixed", ""))
-	assert.NotEqual(t, SHA1(body), Content(body, "full-width", "fixed", ""))
+	// --content-appearance default gives every page without the header a
+	// narrow appearance: that is the default, and changes nothing about the hash.
+	assert.Equal(t, SHA1(body), Content(body, "default", "default", ""))
+	assert.NotEqual(t, SHA1(body), Content(body, "full-width", "default", ""))
 }
 
 // TestFormatVersionMessage covers the round trip --changes-only depends on:

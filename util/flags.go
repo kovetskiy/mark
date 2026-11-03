@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/mermaid"
+	"github.com/kovetskiy/mark/v16/metadata"
 
 	"github.com/urfave/cli/v3"
 )
@@ -249,7 +250,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:  "content-appearance",
 			Value: "",
-			Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), fixed, default (Narrow), max (Max).",
+			Usage: "default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), default (Narrow), max (Max).",
 			Sources: cli.NewValueSourceChain(
 				cli.EnvVar("MARK_CONTENT_APPEARANCE"),
 				config.value("content-appearance"),
@@ -654,17 +655,8 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
 	}
 
-	contentAppearance := strings.TrimSpace(command.String("content-appearance"))
-	if contentAppearance != "" {
-		switch contentAppearance {
-		case "full-width", "fixed", "default", "max":
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --content-appearance: %q (expected: full-width, fixed, default, or max)",
-				contentAppearance,
-			)
-		}
+	if _, err := metadata.ParseContentAppearance(command.String("content-appearance")); err != nil {
+		return context, fmt.Errorf("invalid value for --content-appearance: %w", err)
 	}
 
 	if err := checkEmptyFeatures(command); err != nil {

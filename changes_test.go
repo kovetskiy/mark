@@ -574,7 +574,7 @@ func TestChangesOnlySeesPagePropertyHeaders(t *testing.T) {
 		extra string
 	}{
 		{"emoji", "<!-- Emoji: 🚀 -->\n"},
-		{"content appearance", "<!-- Content-Appearance: fixed -->\n"},
+		{"content appearance", "<!-- Content-Appearance: default -->\n"},
 	}
 
 	for _, tt := range tests {

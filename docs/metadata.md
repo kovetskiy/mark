@@ -146,20 +146,25 @@ These headers are read as well:
 * blogpost: [Blog post](https://confluence.atlassian.com/doc/blog-posts-834222533.html) in `Space`.  Cannot have `Parent`(s)
 
 ```markdown
-<!-- Content-Appearance: (full-width|fixed|default|max) -->
+<!-- Content-Appearance: (full-width|default|max) -->
 ```
 
 The Confluence Cloud editor offers three widths — Narrow, Wide and Max — which
 map onto these values as `default`, `full-width` and `max`.
 
 * (default) full-width: content will fill the full page width. This is the Confluence UI's **Wide**.
-* fixed: content will be rendered in a fixed narrow view
-* default: sets the Confluence property value to `"default"`, which is the Confluence UI's **Narrow** layout. Note: `fixed` maps to a different Confluence property value and can cause misaligned page title and body content — use `default` instead for the narrow layout.
+* default: the Confluence UI's **Narrow** layout.
 * max: the Confluence UI's **Max** layout, which is wider than `full-width`.
 
 `--content-appearance` takes the same values and sets the width of every page
 that has no `Content-Appearance` header of its own; left unset, that is
 `full-width`.
+
+Any other value is an error, rather than a page published full width. That
+includes `fixed`, an older editor's narrow layout, under which Confluence lays
+the title and the body out at different widths: use `default` instead. A
+`--changes-only` run does not notice a change to `--content-appearance`, so
+after moving it from `fixed` to `default`, publish once without it.
 
 ```markdown
 <!-- ac:ignore -->

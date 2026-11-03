@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -67,10 +68,10 @@ func TestCheckMutuallyExclusiveTitleFlags(t *testing.T) {
 }
 
 func TestContentAppearanceFlagValidation(t *testing.T) {
-	t.Run("fixed is accepted", func(t *testing.T) {
+	t.Run("fixed is refused", func(t *testing.T) {
 		err := runWithArgs([]string{"cmd", "--content-appearance", "fixed"})
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err == nil || !strings.Contains(err.Error(), `use "default" for a narrow page`) {
+			t.Errorf("expected fixed to be refused, got %v", err)
 		}
 	})
 

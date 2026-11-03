@@ -211,6 +211,12 @@ func (c Config) prepare() (page.LinkChecks, error) {
 		)
 	}
 
+	// A page with no Content-Appearance of its own takes this one, and one
+	// that does not parse would fail every such page in turn.
+	if _, err := metadata.ParseContentAppearance(c.ContentAppearance); err != nil {
+		return page.LinkChecks{}, fmt.Errorf("invalid ContentAppearance: %w", err)
+	}
+
 	// The same for d2, and for the same reason: an unrecognised format falls to
 	// the renderer's PNG branch, publishing one without a word about the SVG
 	// that was asked for. An empty value is a caller that never set the field,
