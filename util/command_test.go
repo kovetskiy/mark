@@ -256,6 +256,21 @@ func publishable(t *testing.T) (config, document string) {
 	return config, document
 }
 
+// TestContinueOnErrorStillFailsTheRun: --continue-on-error processes every
+// file even when some fail, but the run still has to fail so that CI notices.
+func TestContinueOnErrorStillFailsTheRun(t *testing.T) {
+	noDefaultConfig(t)
+
+	files := filepath.Join("..", "testdata", "batch-tests", "*.md")
+
+	out, _, err := runMark(t, "publish", "--color", "never",
+		"--compile-only", "--continue-on-error", "--files", files)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "one or more files failed to process")
+	assert.Contains(t, out, ">e</h5>", "a file after the first failure is still compiled")
+}
+
 // TestBrokenConfigFileLeavesHelpAlone: help and completion read nothing from
 // the configuration file, so one that does not parse must not break them.
 // publish, which does read it, says so.
