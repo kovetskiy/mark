@@ -266,10 +266,7 @@ func TestReparentOnDataCenterKeepsTheVersionMessage(t *testing.T) {
 	require.NoError(t, api.UpdatePage(context.Background(),
 		&confluence.PageInfo{
 			ID: moved.ID, Title: "Release Notes", Type: "page",
-			Version: struct {
-				Number  int64  `json:"number"`
-				Message string `json:"message"`
-			}{Number: server.Page(moved.ID).Version},
+			Version: confluence.PageVersion{Number: server.Page(moved.ID).Version},
 		},
 		"<p>the notes</p>", false, published, "full-width", "",
 	))

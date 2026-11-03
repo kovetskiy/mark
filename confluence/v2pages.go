@@ -63,9 +63,10 @@ type contentV2 struct {
 	SpaceID    string `json:"spaceId"`
 
 	Version struct {
-		Number   int64  `json:"number"`
-		Message  string `json:"message"`
-		AuthorID string `json:"authorId"`
+		Number    int64  `json:"number"`
+		Message   string `json:"message"`
+		AuthorID  string `json:"authorId"`
+		CreatedAt string `json:"createdAt"`
 	} `json:"version"`
 
 	Body struct {
@@ -93,6 +94,10 @@ func (api *API) pageInfoV2(content contentV2, pageType string) *PageInfo {
 	}
 	page.Version.Number = content.Version.Number
 	page.Version.Message = content.Version.Message
+	page.Version.When = content.Version.CreatedAt
+	if content.Version.AuthorID != "" {
+		page.Version.By = &User{AccountID: content.Version.AuthorID}
+	}
 	page.Body.Storage.Value = content.Body.Storage.Value
 	page.Links.Full = content.Links.WebUI
 

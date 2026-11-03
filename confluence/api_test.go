@@ -96,12 +96,15 @@ func TestPageCache(t *testing.T) {
 		Type:  pageType,
 	}
 	aliasKey := pageCacheKey(space, "Alias Title", pageType)
+	cachedPage.Version = PageVersion{Number: 41, Message: "old", When: "2026-01-01T00:00:00Z", By: &User{Username: "ann"}}
 	api.pageCache[key] = cachedPage
 	api.pageCache[aliasKey] = aliasPage
 	api.pageCacheByID[cachedPage.ID] = cachedPage
 	api.updateCachedPageVersion(cachedPage.ID, 42)
 	assert.Equal(t, int64(42), api.pageCache[key].Version.Number)
 	assert.Equal(t, int64(42), api.pageCache[aliasKey].Version.Number)
+	assert.Equal(t, PageVersion{Number: 42}, api.pageCache[key].Version,
+		"the time, author and message of the version before are not the new one's")
 
 	// 5. Concurrent Cache Operations
 	// Validates RWMutex under concurrent goroutines using tight loops to create contention.

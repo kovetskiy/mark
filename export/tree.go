@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -43,10 +46,23 @@ type TreeOptions struct {
 // beside the home page's children. Each document carries the headers that
 // publish it back where it was, whichever directory it is in.
 //
+// With FormatOKF the tree is an Open Knowledge Format bundle instead: each
+// page a concept, <slug>.md, with the pages beneath it in the directory <slug>
+// beside it; an index.md in every directory listing what is in it, the
+// bundle's own declaring the OKF version; every page's attachments in
+// references/attachments/<page id>; and links between the pages relative
+// links, whatever RelativeLinks says.
+//
 // The tree is read and every document's path checked before anything is
 // written. A folder in it is refused, since the export does not list a
 // folder's pages.
 func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOptions) ([]*Result, error) {
+	format, err := ParseFormat(cfg.Format)
+	if err != nil {
+		return nil, err
+	}
+	l := layout{okf: format == FormatOKF}
+
 	if cfg.Output == "" || cfg.Output == "-" {
 		return nil, errors.New("a recursive export writes a directory: name it with --output")
 	}
@@ -55,28 +71,37 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 	}
 
 	var plan []planned
-	var err error
+	heading := cfg.Space
 	if cfg.PageID == "" && cfg.Title == "" {
-		plan, err = planSpace(ctx, api, cfg.Space, cfg.Output, options.Depth)
+		plan, err = planSpace(ctx, api, l, cfg.Space, cfg.Output, options.Depth)
 	} else {
-		plan, err = planPage(ctx, api, cfg, options.Depth)
+		plan, err = planPage(ctx, api, l, cfg, options.Depth)
+		if len(plan) > 0 {
+			heading = plan[0].title
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
 
+	var indexes map[string]string
+	if l.okf {
+		indexes = okfIndexes(cfg.Output, heading, plan)
+	}
+
 	if !cfg.Overwrite {
-		documents := make([]string, len(plan))
-		for i, p := range plan {
-			documents[i] = p.output
+		documents := make([]string, 0, len(plan)+len(indexes))
+		for _, p := range plan {
+			documents = append(documents, p.output)
 		}
+		documents = slices.AppendSeq(documents, maps.Keys(indexes))
 		if err := refuseExisting(documents); err != nil {
 			return nil, err
 		}
 	}
 
 	var documents *Documents
-	if options.RelativeLinks {
+	if options.RelativeLinks || l.okf {
 		listed := make([]PageFile, len(plan))
 		for i, p := range plan {
 			listed[i] = PageFile{ID: p.id, Title: p.title, Output: p.output}
@@ -86,13 +111,21 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 
 	results := make([]*Result, 0, len(plan))
 	for _, p := range plan {
+		var attachments string
+		if l.okf {
+			attachments = filepath.Join(cfg.Output, okfReferences, "attachments", p.id)
+		}
+
 		result, err := Page(ctx, api, Config{
-			PageID:        p.id,
-			Output:        p.output,
-			Overwrite:     cfg.Overwrite,
-			NoAttachments: cfg.NoAttachments,
-			Stdout:        cfg.Stdout,
-			Documents:     documents,
+			PageID:         p.id,
+			Output:         p.output,
+			AttachmentsDir: attachments,
+			Overwrite:      cfg.Overwrite,
+			NoAttachments:  cfg.NoAttachments,
+			Stdout:         cfg.Stdout,
+			Format:         format,
+			Generator:      cfg.Generator,
+			Documents:      documents,
 		})
 		if err != nil {
 			return results, fmt.Errorf("unable to export page %s, after exporting %d: %w", p.id, len(results), err)
@@ -100,7 +133,54 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 		results = append(results, result)
 	}
 
+	if err := writeIndexes(indexes); err != nil {
+		return results, err
+	}
+
 	return results, nil
+}
+
+// layout is where a tree puts each page's document.
+type layout struct{ okf bool }
+
+// document is the file a page called name, in dir, is written to, and the
+// directory the pages beneath it go in: name/index.md and name for mark,
+// name.md and name for OKF.
+func (l layout) document(dir, name string) (output, below string) {
+	if l.okf {
+		return filepath.Join(dir, name+".md"), filepath.Join(dir, name)
+	}
+	return filepath.Join(dir, name, TreeDocument), filepath.Join(dir, name)
+}
+
+// names are the names taken in a directory before any page is named: none
+// for mark; for OKF, the index and log, and at the root of the tree the
+// references directory the bundle keeps attachments in.
+func (l layout) names(atRoot bool) map[string]bool {
+	taken := map[string]bool{}
+	if !l.okf {
+		return taken
+	}
+	for _, name := range okfReserved {
+		taken[name] = true
+	}
+	if atRoot {
+		taken[okfReferences] = true
+	}
+	return taken
+}
+
+// writeIndexes writes an OKF bundle's index files.
+func writeIndexes(indexes map[string]string) error {
+	for _, path := range slices.Sorted(maps.Keys(indexes)) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return fmt.Errorf("unable to create the directory of %s: %w", path, err)
+		}
+		if err := os.WriteFile(path, []byte(indexes[path]), 0o644); err != nil { //nolint:gosec // G306: a document, meant to be read like the others beside it
+			return fmt.Errorf("unable to write %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 type planned struct {
@@ -115,7 +195,7 @@ type branch struct {
 	depth int
 }
 
-func planPage(ctx context.Context, api *confluence.API, cfg Config, depth int) ([]planned, error) {
+func planPage(ctx context.Context, api *confluence.API, l layout, cfg Config, depth int) ([]planned, error) {
 	root, err := findPage(ctx, api, cfg)
 	if err != nil {
 		return nil, err
@@ -124,14 +204,21 @@ func planPage(ctx context.Context, api *confluence.API, cfg Config, depth int) (
 		return nil, fmt.Errorf("%q (%s) is a blog post, and a blog post has no pages beneath it", root.Title, root.ID)
 	}
 
+	page := confluence.Child{ID: root.ID, Type: "page", Title: root.Title}
+
 	var plan []planned
-	err = planTree(ctx, api, confluence.Child{ID: root.ID, Type: "page", Title: root.Title}, cfg.Output, depth, &plan)
+	if l.okf {
+		// A concept is never an index.md, so the page is named like any other.
+		err = planBranches(ctx, api, l, []branch{{Child: page, depth: depth}}, cfg.Output, l.names(true), &plan)
+	} else {
+		err = planTree(ctx, api, l, page, filepath.Join(cfg.Output, TreeDocument), cfg.Output, depth, &plan)
+	}
 	return plan, err
 }
 
 // planSpace plans the whole of a space: the home page as the tree's own
 // page, and every other top-level page beside the home page's children.
-func planSpace(ctx context.Context, api *confluence.API, space, dir string, depth int) ([]planned, error) {
+func planSpace(ctx context.Context, api *confluence.API, l layout, space, dir string, depth int) ([]planned, error) {
 	if space == "" {
 		return nil, errors.New("a recursive export needs a page, or a space to export the whole of")
 	}
@@ -153,7 +240,7 @@ func planSpace(ctx context.Context, api *confluence.API, space, dir string, dept
 	var plan []planned
 	var branches []branch
 
-	if home != nil {
+	if home != nil && !l.okf {
 		plan = append(plan, planned{id: home.ID, title: home.Title, output: filepath.Join(dir, TreeDocument)})
 		if depth != 1 {
 			children, err := children(ctx, api, confluence.Child{ID: home.ID, Type: "page", Title: home.Title})
@@ -167,10 +254,10 @@ func planSpace(ctx context.Context, api *confluence.API, space, dir string, dept
 	}
 
 	for _, root := range roots {
-		if home != nil && root.ID == home.ID {
-			continue
-		}
-		if home != nil {
+		if home != nil && !l.okf {
+			if root.ID == home.ID {
+				continue
+			}
 			log.Warn().Msgf(
 				"%q (%s) is at the top of space %s rather than beneath its home page: published back, it goes beneath the home page",
 				root.Title, root.ID, space,
@@ -179,18 +266,33 @@ func planSpace(ctx context.Context, api *confluence.API, space, dir string, dept
 		branches = append(branches, branch{Child: root, depth: depth})
 	}
 
-	if err := planBranches(ctx, api, branches, dir, &plan); err != nil {
+	taken := l.names(true)
+	if err := planBranches(ctx, api, l, branches, dir, taken, &plan); err != nil {
 		return nil, err
+	}
+
+	// An OKF bundle has no document of its own for the home page to be, so it
+	// is a top-level page like the others: where Confluence lists it, or last
+	// when it is beneath another page and the export does not reach it there.
+	if home != nil && l.okf && !slices.ContainsFunc(plan, func(p planned) bool { return p.id == home.ID }) {
+		homeBranch := []branch{{Child: confluence.Child{ID: home.ID, Type: "page", Title: home.Title}, depth: depth}}
+		if err := planBranches(ctx, api, l, homeBranch, dir, taken, &plan); err != nil {
+			return nil, err
+		}
 	}
 
 	return plan, nil
 }
 
 // planTree adds the page and, while depth allows, what is beneath it, to
-// plan: the page's document in dir, each child's in a directory of its own
-// inside dir.
-func planTree(ctx context.Context, api *confluence.API, page confluence.Child, dir string, depth int, plan *[]planned) error {
-	*plan = append(*plan, planned{id: page.ID, title: page.Title, output: filepath.Join(dir, TreeDocument)})
+// plan: the page's document at output, and the pages beneath it in dir.
+func planTree(
+	ctx context.Context, api *confluence.API, l layout, page confluence.Child, output, dir string, depth int, plan *[]planned,
+) error {
+	if err := checkPageID(page.ID); err != nil {
+		return err
+	}
+	*plan = append(*plan, planned{id: page.ID, title: page.Title, output: output})
 	if depth == 1 {
 		return nil
 	}
@@ -205,26 +307,44 @@ func planTree(ctx context.Context, api *confluence.API, page confluence.Child, d
 		branches[i] = branch{Child: child, depth: below(depth)}
 	}
 
-	return planBranches(ctx, api, branches, dir, plan)
+	return planBranches(ctx, api, l, branches, dir, l.names(false), plan)
 }
 
-// planBranches plans each branch in a directory of its own inside dir,
-// named after its title, or after its title and id where another branch's
-// title names the same directory.
-func planBranches(ctx context.Context, api *confluence.API, branches []branch, dir string, plan *[]planned) error {
-	taken := map[string]bool{}
+// planBranches plans each branch under a name of its own inside dir: its
+// title, or its title and id where taken already has the name, as another
+// branch's title or a name the layout reserves.
+func planBranches(
+	ctx context.Context, api *confluence.API, l layout, branches []branch, dir string, taken map[string]bool, plan *[]planned,
+) error {
 	for _, b := range branches {
+		if err := checkPageID(b.ID); err != nil {
+			return err
+		}
 		name := slug(b.Title)
 		if name == "" || taken[name] {
 			name = strings.TrimPrefix(name+"-"+b.ID, "-")
 		}
+		// Another title can slug to the name with the id already.
+		for base, n := name, 2; taken[name]; n++ {
+			name = fmt.Sprintf("%s-%d", base, n)
+		}
 		taken[name] = true
 
-		if err := planTree(ctx, api, b.Child, filepath.Join(dir, name), b.depth, plan); err != nil {
+		output, below := l.document(dir, name)
+		if err := planTree(ctx, api, l, b.Child, output, below, b.depth, plan); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+// checkPageID refuses a page id that is not all digits, since ids become
+// parts of the paths a tree is written to.
+func checkPageID(id string) error {
+	if id == "" || strings.Trim(id, "0123456789") != "" {
+		return fmt.Errorf("refusing page id %q: a page id is a number", id)
+	}
 	return nil
 }
 

@@ -199,6 +199,10 @@ func clonePageInfo(page *PageInfo) *PageInfo {
 		}, len(page.Ancestors))
 		copy(cp.Ancestors, page.Ancestors)
 	}
+	if page.Version.By != nil {
+		by := *page.Version.By
+		cp.Version.By = &by
+	}
 	return &cp
 }
 
@@ -245,6 +249,9 @@ func (api *API) invalidatePage(space, title, pageType string) {
 	api.pageCacheMutex.Unlock()
 }
 
+// updateCachedPageVersion records that page id is now at newVersion. The
+// time, author and message the entry had describe the version before, so they
+// are dropped rather than handed out as the new one's.
 func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 	api.lazyInit()
 	api.pageCacheMutex.Lock()
@@ -253,7 +260,7 @@ func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 	var updatedEntry *PageInfo
 	if entry, ok := api.pageCacheByID[id]; ok && entry != nil {
 		newEntry := clonePageInfo(entry)
-		newEntry.Version.Number = newVersion
+		newEntry.Version = PageVersion{Number: newVersion}
 		api.pageCacheByID[id] = newEntry
 		updatedEntry = newEntry
 	}
@@ -264,7 +271,7 @@ func (api *API) updateCachedPageVersion(id string, newVersion int64) {
 				api.pageCache[key] = updatedEntry
 			} else {
 				newEntry := clonePageInfo(entry)
-				newEntry.Version.Number = newVersion
+				newEntry.Version = PageVersion{Number: newVersion}
 				api.pageCache[key] = newEntry
 				updatedEntry = newEntry
 			}
@@ -300,10 +307,7 @@ type PageInfo struct {
 	// archived page is invisible and still owns the name.
 	Status string `json:"status"`
 
-	Version struct {
-		Number  int64  `json:"number"`
-		Message string `json:"message"`
-	} `json:"version"`
+	Version PageVersion `json:"version"`
 
 	Ancestors []struct {
 		ID    string `json:"id"`
@@ -338,6 +342,15 @@ type PageInfo struct {
 		// api.BaseURL and became dead api.atlassian.com URLs.
 		Base string `json:"base,omitempty"`
 	} `json:"_links"`
+}
+
+// PageVersion is a version of a page.
+type PageVersion struct {
+	Number  int64  `json:"number"`
+	Message string `json:"message"`
+	// When and By are the version's time, as ISO 8601, and author.
+	When string `json:"when,omitempty"`
+	By   *User  `json:"by,omitempty"`
 }
 
 type AttachmentInfo struct {

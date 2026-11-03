@@ -448,3 +448,17 @@ func TestGatewayUpdateWithoutPropertiesReadsNone(t *testing.T) {
 	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "", ""))
 	assert.Equal(t, 0, server.CountRequests(http.MethodGet, "/properties"))
 }
+
+// Through the gateway a page's version still says when it was written and by
+// whom, as v1's does: an OKF export records both.
+func TestGatewayPageVersionTimeAndAuthor(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	page := server.AddPage("DOCS", "Page", "page", "")
+	page.When = "2026-05-01T10:30:00.000Z"
+
+	got, err := api.GetPageByIDExpanded(context.Background(), page.ID, "version")
+	require.NoError(t, err)
+	assert.Equal(t, "2026-05-01T10:30:00.000Z", got.Version.When)
+	require.NotNil(t, got.Version.By)
+	assert.Equal(t, "acct-current", got.Version.By.AccountID)
+}

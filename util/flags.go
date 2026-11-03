@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/export"
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/metadata"
 
@@ -490,6 +491,12 @@ func exportFlags(config *configFile) []cli.Flag {
 			Usage:   "replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OVERWRITE"), config.value("overwrite")),
 		},
+		&cli.StringFlag{
+			Name:    "format",
+			Value:   export.FormatMark,
+			Usage:   "what to write: \"mark\", a document mark publishes back to the page, or \"okf\", an Open Knowledge Format concept, and with --recursive a bundle of them, for agents and knowledge catalogs to read.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FORMAT"), config.value("format")),
+		},
 		&cli.BoolFlag{
 			Name:    "no-attachments",
 			Value:   false,
@@ -528,6 +535,11 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 		}
 	}
 
+	format, err := export.ParseFormat(command.String("format"))
+	if err != nil {
+		return ctx, fmt.Errorf("--format: %w", err)
+	}
+
 	switch {
 	case len(named) == 0 && command.Bool("recursive") && command.String("space") != "":
 		// The whole space.
@@ -541,12 +553,14 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 		return ctx, errors.New("--depth limits --recursive, and does nothing without it")
 	case command.Bool("relative-links") && !command.Bool("recursive"):
 		return ctx, errors.New("--relative-links links the pages of a --recursive export, and does nothing without it")
+	case command.Bool("relative-links") && format == export.FormatOKF:
+		return ctx, errors.New("--relative-links is what --format okf does already")
 	case command.Int("depth") < 0:
 		return ctx, errors.New("--depth counts levels, and cannot be negative")
 	case command.Bool("recursive") && (command.String("output") == "" || command.String("output") == "-"):
 		return ctx, errors.New("--recursive writes a directory: name it with --output")
 	case command.Bool("recursive") && command.String("attachments-dir") != "":
-		return ctx, errors.New("--recursive writes each page's attachments beside it, so --attachments-dir does not apply")
+		return ctx, errors.New("--recursive writes each page's attachments where it keeps them, so --attachments-dir does not apply")
 	}
 
 	return ctx, nil

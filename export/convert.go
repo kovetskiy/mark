@@ -37,11 +37,28 @@ type Options struct {
 	// [text](ac:Title). Nil writes every one as ac:.
 	PagePath func(title string) (string, bool)
 
+	// Title is the page's own title, which a link to an anchor on the page
+	// itself may name.
+	Title string
+
+	// PageURL maps the title of a page that PagePath does not, in the space
+	// given or, for "", the page's own, to the address it is at, and reports
+	// whether it found one. With Reading, a link to such a page is written as
+	// a link to that address. Nil leaves those links as they are.
+	PageURL func(space, title string) (string, bool)
+
 	// PageURLPath maps a URL that points at a page -- pasted into the body
 	// rather than inserted as a page link -- to the path of the document that
 	// page is exported to, as PagePath does for a title, and to the page's
 	// title. Nil leaves every URL as it is.
 	PageURLPath func(href string) (path, title string, ok bool)
+
+	// Reading is set when the Markdown is to be read rather than published
+	// back. An article layout's sidebar stays in the body, a page link that
+	// PagePath or PageURL resolves is written whatever its title and text, and
+	// an attachment in storage format kept as it is names the file it was
+	// written to.
+	Reading bool
 }
 
 // Document is a converted page body.
@@ -84,7 +101,7 @@ func Convert(storage string, opts Options) (*Document, error) {
 	doc := &Document{}
 
 	children := root.children
-	if body, sidebar, ok := articleLayout(root); ok {
+	if body, sidebar, ok := articleLayout(root); ok && !opts.Reading {
 		// The sidebar travels in a header, which cannot hold the end of the
 		// comment it is written in.
 		if text := strings.TrimSpace(c.rawChildren(sidebar, rawLine)); !strings.Contains(text, "-->") {

@@ -34,8 +34,11 @@ type Page struct {
 	ParentID string
 	Version  int64
 	Message  string
-	Body     string
-	Labels   []string
+	// When is the version's time as Confluence writes it, ISO 8601; empty
+	// leaves it out.
+	When   string
+	Body   string
+	Labels []string
 
 	// Trashed and Archived record what became of a page, so a test can tell
 	// "moved to the trash" from "gone" and from "archived".
@@ -746,11 +749,15 @@ func (s *Server) pageJSON(p *Page, expand map[string]bool) map[string]any {
 		expandable["ancestors"] = ""
 	}
 	if expand["version"] {
-		out["version"] = map[string]any{
+		version := map[string]any{
 			"number":  p.Version,
 			"message": p.Message,
 			"by":      s.versionBy(p),
 		}
+		if p.When != "" {
+			version["when"] = p.When
+		}
+		out["version"] = version
 	} else {
 		expandable["version"] = ""
 	}
@@ -2777,6 +2784,9 @@ func (s *Server) contentJSONV2(p *Page, withBody bool) map[string]any {
 			"authorId": s.versionBy(p)["accountId"],
 		},
 		"_links": s.pageLinks(p),
+	}
+	if p.When != "" {
+		out["version"].(map[string]any)["createdAt"] = p.When
 	}
 
 	if withBody {
