@@ -41,7 +41,7 @@ The document starts with the headers that name the page, followed by its body:
 <!-- Parent: Setup -->
 <!-- Title: Release process -->
 <!-- Label: how-to -->
-<!-- Content-Appearance: fixed -->
+<!-- Content-Appearance: default -->
 <!-- Emoji: 🚀 -->
 
 # Release process
@@ -56,7 +56,9 @@ higher up, with a page between it and the exported one, is left out with a
 warning: mark's headers put folders beneath parents, not above them. A blog
 post gets `Type: blogpost` instead.
 `Content-Appearance` is left out for a full-width page, which is what mark
-publishes by default, and `Emoji` is there when the page has a title emoji.
+publishes by default. A page Confluence keeps as `fixed`, an older editor's
+narrow layout, is written as `default`, the narrow layout mark publishes.
+`Emoji` is there when the page has a title emoji.
 Labels are written in alphabetical order.
 
 The attachments the body shows or links to are downloaded into

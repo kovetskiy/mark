@@ -50,7 +50,7 @@ func previewChange(
 		return "", "", err
 	}
 
-	hash := fingerprint.Content(wrapped, appearance, metadata.NormalizeContentAppearance(config.ContentAppearance), emoji)
+	hash := fingerprint.Content(wrapped, appearance, defaultAppearance(config.ContentAppearance), emoji)
 	retitled := meta != nil && existing.Title != title
 	reason := strings.Join(others, "; ")
 
@@ -187,7 +187,7 @@ func (r *publishRun) changeCheck(doc *document, dest *destination, html string) 
 	target := dest.page
 	contentAppearance, emoji := appearanceOf(doc.meta)
 
-	contentHash := fingerprint.Content(html, contentAppearance, metadata.NormalizeContentAppearance(r.config.ContentAppearance), emoji)
+	contentHash := fingerprint.Content(html, contentAppearance, defaultAppearance(r.config.ContentAppearance), emoji)
 	log.Debug().Msgf("content hash: %s", contentHash)
 
 	shouldUpdatePage := true
@@ -239,4 +239,12 @@ func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, f
 	}
 
 	return others, nil
+}
+
+// defaultAppearance is the appearance a page with no Content-Appearance of its
+// own takes. Config's checks have refused a value that does not parse.
+func defaultAppearance(value string) string {
+	appearance, _ := metadata.ResolveContentAppearance(value)
+
+	return appearance
 }

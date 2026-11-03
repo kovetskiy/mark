@@ -82,19 +82,43 @@ func TestSetTitleFromFilename(t *testing.T) {
 }
 
 func TestExtractMetaContentAppearance(t *testing.T) {
+	for _, test := range []struct {
+		name, header, frontMatter, fallback, error string
+	}{
+		{name: "an unknown header", header: "wide", error: `Content-Appearance: unknown content appearance "wide": expected full-width, default or max`},
+		{name: "a fixed header", header: "fixed", error: `Content-Appearance: "fixed" is not supported: use "default" for a narrow page`},
+		{name: "an unknown front matter value", frontMatter: "Full-Width", error: `content-appearance: unknown content appearance "Full-Width"`},
+		{name: "a front matter value that is not a string", frontMatter: "[max]", error: `content-appearance: unknown content appearance "[max]"`},
+		{name: "an unknown default", fallback: "narrow", error: `unknown content appearance "narrow"`},
+	} {
+		t.Run(test.name+" is refused", func(t *testing.T) {
+			data := "<!-- Space: DOC -->\n<!-- Title: Example -->\n"
+			if test.header != "" {
+				data += "<!-- Content-Appearance: " + test.header + " -->\n"
+			}
+			if test.frontMatter != "" {
+				data = "---\ncontent-appearance: " + test.frontMatter + "\n---\n" + data
+			}
+
+			_, _, err := ExtractMeta([]byte(data+"\nbody\n"), "", false, false, "", nil, false, test.fallback, true)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.error)
+		})
+	}
+
 	t.Run("default fills missing content appearance", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, FixedContentAppearance, false)
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, DefaultContentAppearance, false)
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
-		assert.Equal(t, FixedContentAppearance, meta.ContentAppearance)
+		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
 	})
 
 	t.Run("header takes precedence over default", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: full-width -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, FixedContentAppearance, false)
+		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, DefaultContentAppearance, false)
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
@@ -332,7 +356,7 @@ folders: [ Folder ]
 title: Test Page
 attachments: [ image.png ]
 labels: [ alpha ]
-content_appearance: fixed
+content_appearance: max
 image_align: right
 ---
 # Content
@@ -344,7 +368,7 @@ image_align: right
 	assert.Equal(t, []string{"Folder"}, meta.Folders)
 	assert.Equal(t, []string{"image.png"}, meta.Attachments)
 	assert.Equal(t, []string{"alpha"}, meta.Labels)
-	assert.Equal(t, FixedContentAppearance, meta.ContentAppearance)
+	assert.Equal(t, MaxContentAppearance, meta.ContentAppearance)
 	assert.Equal(t, "right", meta.ImageAlign)
 	assert.Equal(t, "# Content\n", string(body))
 }
@@ -436,7 +460,7 @@ func TestExtractMetaYAMLFrontMatterSmartKeys(t *testing.T) {
 SPACE: DOCS
 parents: [ "A Single Parent" ]
 Folders: [ "Folder A", "Folder B" ]
-Content_Appearance: fixed
+Content_Appearance: max
 Image-Align: center
 ---
 # Content
@@ -447,7 +471,7 @@ Image-Align: center
 	assert.Equal(t, "DOCS", meta.Space)
 	assert.Equal(t, []string{"A Single Parent"}, meta.Parents)
 	assert.Equal(t, []string{"Folder A", "Folder B"}, meta.Folders)
-	assert.Equal(t, FixedContentAppearance, meta.ContentAppearance)
+	assert.Equal(t, MaxContentAppearance, meta.ContentAppearance)
 	assert.Equal(t, "center", meta.ImageAlign)
 	assert.Equal(t, "# Content\n", string(body))
 }

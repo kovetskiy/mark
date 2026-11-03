@@ -517,14 +517,19 @@ func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.Pag
 		}
 	}
 
-	// mark publishes a page full width unless told otherwise, so that is the
-	// one appearance there is no need to say.
-	if normalized := metadata.NormalizeContentAppearance(appearance); normalized != appearance {
-		log.Warn().Msgf("page %q has the content appearance %q, which mark does not know; publishing it back makes it full width",
-			page.Title, appearance)
+	switch appearance {
+	case metadata.FixedContentAppearance:
+		// An older editor's narrow page is the narrow page mark publishes.
+		appearance = metadata.DefaultContentAppearance
+	case metadata.FullWidthContentAppearance:
+		// mark publishes full width unless told otherwise.
 		appearance = ""
-	} else if appearance == metadata.FullWidthContentAppearance {
-		appearance = ""
+	default:
+		if _, err := metadata.ParseContentAppearance(appearance); err != nil {
+			log.Warn().Msgf("page %q has the content appearance %q, which mark does not know; publishing it back gives it the default width",
+				page.Title, appearance)
+			appearance = ""
+		}
 	}
 
 	return appearance, emoji

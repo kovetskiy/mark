@@ -200,7 +200,7 @@ OPTIONS:
    --space string, -s string                      use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
    --parents-delimiter string                     The delimiter used for the parents list (default: "/") [$MARK_PARENTS_DELIMITER]
-   --content-appearance string                    default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), fixed, default (Narrow), max (Max). [$MARK_CONTENT_APPEARANCE]
+   --content-appearance string                    default content appearance for pages without a Content-Appearance header. Possible values: full-width (Wide), default (Narrow), max (Max). [$MARK_CONTENT_APPEARANCE]
    --mermaid-scale float                          defines the scaling factor for mermaid renderings: the pixels of a png, and the size the page displays an svg at. (default: 1) [$MARK_MERMAID_SCALE]
    --mermaid-engine string                        what mermaid diagrams are drawn by: chrome (the default, a headless browser running mermaid.js) or merman (experimental, a native reimplementation that needs no browser and must be installed separately). (default: "chrome") [$MARK_MERMAID_ENGINE]
    --mermaid-output string                        image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MERMAID_OUTPUT]
