@@ -29,7 +29,6 @@ import (
 	"github.com/kovetskiy/mark/v16/report"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
 )
 
@@ -1691,7 +1690,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 	}
 
 	localAttachments, err := attachment.ResolveLocalAttachments(
-		vfs.LocalOS,
+		attachment.LocalOS,
 		filepath.Dir(file),
 		declared,
 	)
@@ -1731,7 +1730,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		return "", nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}
 
-	attaches, remoteAttachments, err := attachment.ResolveAttachmentsWithRemotes(
+	attaches, remoteAttachments, err := uploadAttachments(
 		ctx,
 		api, target, localAttachments, remoteAttachments,
 	)
@@ -1767,7 +1766,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		log.Warn().Msgf("unused attachment: %s", unused)
 	}
 
-	if _, _, err = attachment.ResolveAttachmentsWithRemotes(
+	if _, _, err = uploadAttachments(
 		ctx,
 		api, target, inlineAttachments, remoteAttachments,
 	); err != nil {

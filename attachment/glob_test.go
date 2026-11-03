@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +43,7 @@ func TestAttachmentPatternUploadsEveryMatch(t *testing.T) {
 	write(t, docs, "images/c.png")
 	write(t, docs, "images/notes.txt")
 
-	got, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"images/*.png"})
+	got, err := ResolveLocalAttachments(LocalOS, docs, []string{"images/*.png"})
 	require.NoError(t, err)
 
 	// Sorted, because the order files are uploaded in should not depend on how
@@ -60,7 +59,7 @@ func TestAttachmentPatternMatchesRecursively(t *testing.T) {
 	write(t, docs, "media/a.png")
 	write(t, docs, "media/nested/b.png")
 
-	got, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"media/**/*.png"})
+	got, err := ResolveLocalAttachments(LocalOS, docs, []string{"media/**/*.png"})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"media/a.png", "media/nested/b.png"}, names(got))
@@ -72,11 +71,11 @@ func TestAttachmentWithoutAPatternIsUnchanged(t *testing.T) {
 	_, docs := project(t)
 	write(t, docs, "logo.png")
 
-	got, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"logo.png"})
+	got, err := ResolveLocalAttachments(LocalOS, docs, []string{"logo.png"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"logo.png"}, names(got))
 
-	_, err = ResolveLocalAttachments(vfs.LocalOS, docs, []string{"missing.png"})
+	_, err = ResolveLocalAttachments(LocalOS, docs, []string{"missing.png"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing.png")
 }
@@ -92,7 +91,7 @@ func TestAttachmentNamedLikeAPatternStillWorks(t *testing.T) {
 	_, docs := project(t)
 	write(t, docs, "report[2024].pdf")
 
-	got, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"report[2024].pdf"})
+	got, err := ResolveLocalAttachments(LocalOS, docs, []string{"report[2024].pdf"})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"report[2024].pdf"}, names(got))
@@ -105,7 +104,7 @@ func TestAttachmentPatternMatchingNothingIsReportedByName(t *testing.T) {
 	_, docs := project(t)
 	write(t, docs, "images/a.png")
 
-	_, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"pictures/*.png"})
+	_, err := ResolveLocalAttachments(LocalOS, docs, []string{"pictures/*.png"})
 	require.Error(t, err)
 
 	// %q in the error doubles the backslashes of a Windows path.
@@ -123,14 +122,14 @@ func TestAttachmentPatternCannotReachOutsideTheProject(t *testing.T) {
 
 	t.Cleanup(func() { _ = os.Remove(secret) })
 
-	_, err := ResolveLocalAttachments(vfs.LocalOS, docs,
+	_, err := ResolveLocalAttachments(LocalOS, docs,
 		[]string{filepath.Join("..", "..", "secret-"+filepath.Base(root)+".pem")})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOutsideProject)
 
 	// And the same reach written as a pattern, which is the form that would
 	// otherwise sweep up whatever it found.
-	_, err = ResolveLocalAttachments(vfs.LocalOS, docs, []string{filepath.Join("..", "..", "*.pem")})
+	_, err = ResolveLocalAttachments(LocalOS, docs, []string{filepath.Join("..", "..", "*.pem")})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOutsideProject)
 }
@@ -146,7 +145,7 @@ func TestMatchedAttachmentsAreNotReportedUnused(t *testing.T) {
 	write(t, docs, "images/b.png")
 	write(t, docs, "named.png")
 
-	got, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"images/*.png", "named.png"})
+	got, err := ResolveLocalAttachments(LocalOS, docs, []string{"images/*.png", "named.png"})
 	require.NoError(t, err)
 
 	resolver := NewResolver(got)

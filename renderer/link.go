@@ -12,7 +12,6 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
-	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
@@ -280,7 +279,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 	}
 
 	attached, err := attachment.ResolveLocalAttachment(
-		vfs.LocalOS, filepath.Dir(r.Path), name,
+		attachment.LocalOS, filepath.Dir(r.Path), name,
 	)
 
 	// Refused rather than published as a link to somewhere it should not have

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +47,7 @@ func TestAttachmentOutsideTheProjectIsRefused(t *testing.T) {
 	secret := filepath.Join(filepath.Dir(root), "id_rsa")
 	require.NoError(t, os.WriteFile(secret, []byte("PRIVATE KEY"), 0o600))
 
-	_, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"../../id_rsa"})
+	_, err := ResolveLocalAttachments(LocalOS, docs, []string{"../../id_rsa"})
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOutsideProject)
@@ -65,7 +64,7 @@ func TestSymlinkOutOfTheProjectIsRefused(t *testing.T) {
 	require.NoError(t, os.WriteFile(secret, []byte("aws_secret_access_key = x"), 0o600))
 	require.NoError(t, os.Symlink(secret, filepath.Join(docs, "logo.png")))
 
-	_, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"logo.png"})
+	_, err := ResolveLocalAttachments(LocalOS, docs, []string{"logo.png"})
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOutsideProject)
@@ -81,7 +80,7 @@ func TestUpwardPathInsideTheProjectStillWorks(t *testing.T) {
 	require.NoError(t, os.MkdirAll(images, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(images, "logo.png"), []byte("png"), 0o600))
 
-	attachments, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"../images/logo.png"})
+	attachments, err := ResolveLocalAttachments(LocalOS, docs, []string{"../images/logo.png"})
 
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
@@ -95,7 +94,7 @@ func TestAttachmentBesideTheDocumentStillWorks(t *testing.T) {
 	elsewhere := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(elsewhere, "logo.png"), []byte("png"), 0o600))
 
-	attachments, err := ResolveLocalAttachments(vfs.LocalOS, elsewhere, []string{"logo.png"})
+	attachments, err := ResolveLocalAttachments(LocalOS, elsewhere, []string{"logo.png"})
 
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
@@ -115,7 +114,7 @@ func TestProjectReachedThroughASymlinkStillWorks(t *testing.T) {
 	require.NoError(t, os.Symlink(root, link))
 
 	attachments, err := ResolveLocalAttachments(
-		vfs.LocalOS, filepath.Join(link, "docs"), []string{"logo.png"},
+		LocalOS, filepath.Join(link, "docs"), []string{"logo.png"},
 	)
 
 	require.NoError(t, err)
@@ -136,7 +135,7 @@ func TestUpwardPathThroughASymlinkStillWorks(t *testing.T) {
 	require.NoError(t, os.Symlink(root, link))
 
 	attachments, err := ResolveLocalAttachments(
-		vfs.LocalOS, filepath.Join(link, "docs"), []string{"../images/logo.png"},
+		LocalOS, filepath.Join(link, "docs"), []string{"../images/logo.png"},
 	)
 
 	require.NoError(t, err)
@@ -155,7 +154,7 @@ func TestOutsideTheProjectIsStillRefusedThroughASymlink(t *testing.T) {
 	require.NoError(t, os.Symlink(root, link))
 
 	_, err := ResolveLocalAttachments(
-		vfs.LocalOS, filepath.Join(link, "docs"), []string{"../../id_rsa"},
+		LocalOS, filepath.Join(link, "docs"), []string{"../../id_rsa"},
 	)
 
 	require.Error(t, err)
@@ -168,7 +167,7 @@ func TestOutsideTheProjectIsStillRefusedThroughASymlink(t *testing.T) {
 func TestMissingFileIsReportedByTheOpen(t *testing.T) {
 	_, docs := project(t)
 
-	_, err := ResolveLocalAttachments(vfs.LocalOS, docs, []string{"logo.png"})
+	_, err := ResolveLocalAttachments(LocalOS, docs, []string{"logo.png"})
 
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrOutsideProject)

@@ -30,11 +30,11 @@ tests, which take minutes. There is currently no `-short` skip.
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
 | `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
-| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go`, `links.go`, `titles.go`, `runtitles.go` and `export.go` |
+| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go` (upload and dry-run preview), `links.go`, `titles.go`, `runtitles.go` and `export.go` |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation, and the `--parents-from-path` hierarchy with its directory titles |
 | `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache, page restrictions, label sync |
-| `attachment/` | checksum, upload/update, link rewriting |
+| `attachment/` | the `Attachment` type, checksums, upload names, local resolution and path containment, link rewriting; no Confluence client (uploading is `attachments.go` in the root package) |
 | `comments/` | `--preserve-comments`: re-places the page's inline-comment markers in the new body |
 | `fingerprint/` | the `--changes-only` content fingerprint, and the tag that carries it in a page's version message |
 | `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
@@ -159,7 +159,7 @@ that fails silently without recording into the pipeline will produce a wrong pag
 zero exit code.
 
 **6. Attachment checksums are content-addressed, but rendered ones are source-addressed.**
-Checksums live in the remote attachment's comment behind the `AttachmentChecksumPrefix`
+Checksums live in the remote attachment's comment behind `attachment.AttachmentChecksumPrefix`
 (`mark:checksum:` followed by a space).
 Mermaid attachments and d2 PNGs set `Checksum` from the *diagram source* (plus the scale
 for a PNG, and the bundle flag for a mermaid SVG), not the rendered bytes, because Chrome's
@@ -169,7 +169,8 @@ change the name or the page keeps the attachment it had. The exception is a d2 S
 checksum is taken over the rendered, bundled drawing (`ProcessD2SVG` in `d2/d2.go`): an
 image it inlines can change without the source changing, and d2's SVG output is
 deterministic.
-`ResolveAttachments` skips checksum computation when `Checksum` is already set — preserve
+`classifyAttachments` (`attachments.go`), which both the upload and the dry run go
+through, skips checksum computation when `Checksum` is already set — preserve
 that.
 
 **7. `--features` replaces the defaults, it does not add to them.** Defaults are
@@ -223,11 +224,11 @@ both unconditionally. There is no `-update` flag; golden files are written by ha
 
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
-`util/` 89%, `page/` 52%, `attachment/` 53%, `parser/` 36%, `chrome/` 54%, and the root
-package 87%. `cmd/mark/` and `vfs/` are at 0% on purpose: a thin `main` and a 19-line
-`os.Open` wrapper. `chrome/` has tests of its own for the raster bounds and the shared
-browser, and is otherwise exercised through its callers: `PNGFromSVG` by `d2/` and
-`math/`, and the allocator options and `CheckRasterBounds` by `mermaid/`.
+`util/` 89%, `page/` 52%, `parser/` 36%, `chrome/` 54%, and the root
+package 87%. `cmd/mark/` is at 0% on purpose: a thin `main`. `chrome/` has tests of
+its own for the raster bounds and the shared browser, and is otherwise exercised through
+its callers: `PNGFromSVG` by `d2/` and `math/`, and the allocator options and
+`CheckRasterBounds` by `mermaid/`.
 
 Two things to know before reading those numbers. `make test` passes no `-coverpkg`, so a
 package's figure counts only what its *own* tests exercise — renderer code driven by the
