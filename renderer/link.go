@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/kovetskiy/mark/v16/attachment"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 
@@ -64,33 +64,6 @@ func (r *ConfluenceLinkRenderer) RendererOptions(cfg *html.Config) []html.Option
 	})}
 }
 
-// SplitPageAnchor separates a page title from the anchor written after it.
-//
-// Exported for the link checker in page/, which has to look up the same title
-// the renderer links to.
-//
-// A "#" alone is not enough to split on: "ac:C# Guide" is a page whose title
-// contains one, and reading it as a page called "C" with an anchor called
-// " Guide" would break a link that works today. So the part after the last "#"
-// has to look like an anchor -- present, and with no whitespace in it, which is
-// true of every id mark generates, since a heading's spaces become hyphens.
-//
-// The last "#" rather than the first, so a title containing one can still be
-// given an anchor.
-func SplitPageAnchor(destination string) (title, anchor string) {
-	at := strings.LastIndex(destination, "#")
-	if at <= 0 || at == len(destination)-1 {
-		return destination, ""
-	}
-
-	candidate := destination[at+1:]
-	if strings.ContainsFunc(candidate, unicode.IsSpace) {
-		return destination, ""
-	}
-
-	return destination[:at], candidate
-}
-
 // renderLink renders links specifically for confluence
 func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*ast.Link)
@@ -130,7 +103,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 			// page called "Other Page#Setup". Storage format says so with the
 			// same ac:anchor a same-page link uses, alongside the ri:page that
 			// says which page.
-			title, anchor := SplitPageAnchor(destination[3:])
+			title, anchor := syntax.SplitPageAnchor(destination[3:])
 
 			opening := "<ac:link>"
 			if anchor != "" {

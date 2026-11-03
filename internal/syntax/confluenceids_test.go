@@ -1,9 +1,8 @@
-package parser_test
+package syntax
 
 import (
 	"testing"
 
-	cparser "github.com/kovetskiy/mark/v16/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/ast"
 	gparser "github.com/yuin/goldmark/v2/parser"
@@ -13,7 +12,7 @@ import (
 // generator mark configures it with, so these tests exercise the numbering and
 // the base ids together the way a parse does.
 func newIDs() *gparser.IDs {
-	return gparser.NewIDs(gparser.WithIDGenerator(cparser.ConfluenceIDGenerator{}))
+	return gparser.NewIDs(gparser.WithIDGenerator(confluenceIDGenerator{}))
 }
 
 func TestConfluenceIDs_Generate(t *testing.T) {

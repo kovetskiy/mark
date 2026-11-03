@@ -1,4 +1,4 @@
-package renderer_test
+package syntax
 
 import (
 	"strings"
@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	crenderer "github.com/kovetskiy/mark/v16/renderer"
 )
 
 func TestCodeLanguage(t *testing.T) {
@@ -34,7 +32,7 @@ func TestCodeLanguage(t *testing.T) {
 		{"console", "console"},
 		{"", ""},
 	} {
-		assert.Equal(t, tt.want, crenderer.CodeLanguage(tt.fence), tt.fence)
+		assert.Equal(t, tt.want, CodeLanguage(tt.fence), tt.fence)
 	}
 }
 
@@ -188,12 +186,12 @@ func TestCodeLanguageAliasTargets(t *testing.T) {
 	}
 	cloud := languageIndex(cloudNames)
 
-	aliases := crenderer.CodeLanguageAliases()
+	aliases := codeLanguageAliases
 	require.NotEmpty(t, aliases)
 
 	for alias, target := range aliases {
 		assert.Equal(t, strings.ToLower(alias), alias, "an alias is matched in lower case")
-		assert.Equal(t, target, crenderer.CodeLanguage(target), "%s: the target %s must map to itself", alias, target)
+		assert.Equal(t, target, CodeLanguage(target), "%s: the target %s must map to itself", alias, target)
 
 		aliasCloudLanguage, aliasCloud := cloud[alias]
 		targetCloudLanguage, targetCloud := cloud[target]
@@ -211,16 +209,4 @@ func TestCodeLanguageAliasTargets(t *testing.T) {
 		assert.True(t, (!aliasDC && targetDC) || (!aliasCloud && targetCloud),
 			"%s: no platform knows %s but not %s, so renaming it gains nothing", alias, target, alias)
 	}
-}
-
-func TestFencedCodeBlockAlias(t *testing.T) {
-	actual := fencedCode(t, "sh title run.sh")
-	assertWellFormed(t, actual)
-	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
-	assert.Contains(t, actual, `<ac:parameter ac:name="title">run.sh</ac:parameter>`)
-
-	// The language given as an attribute class is mapped too.
-	actual = fencedCode(t, "{.sh}")
-	assertWellFormed(t, actual)
-	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
 }

@@ -3,13 +3,13 @@ package renderer
 import (
 	"fmt"
 	"io"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/d2"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
@@ -31,112 +31,6 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	// reads "-" as a diagram that came from nowhere on disk, and resolves
 	// nothing local against it.
 	Path string
-}
-
-var reBlockDetails = regexp.MustCompile(
-	// (<Lang>|-) (collapse|<theme>|\d)* (title <title>)?
-	//
-	// The language class is [\w#+./-] rather than \w: real language names carry
-	// non-word characters (c#, c++, objective-c, html/xml, .NET), and \w stopped
-	// at the first of them. The remainder was not rejected -- it fell through to
-	// the options group and then into the theme catch-all, so "```c#" compiled to
-	// language "c" plus a bogus theme "#". The \b after the options group is
-	// dropped too: it required a word character to follow, so it split "c#" even
-	// once the class accepted "#".
-	`^(?:([\w#+./-]*)|-)\s*(\S.*?\S?)??\s*(?:\btitle\s+(\S.*\S?))?$`,
-)
-
-// reAttributeBlock matches the "{...}" attribute list Pandoc and Material for
-// MkDocs write in an info string -- "``` { .js hl_lines="1 2" }" or
-// "```python {.line-numbers}".
-//
-// None of what it holds is mark's option vocabulary, and left in place every
-// word of it fell through to the theme catch-all: the two examples above
-// published a Confluence code macro with a theme of "}" and of
-// "{.line-numbers}" respectively, and the first also lost its language and had
-// its line numbering turned on by the digits inside hl_lines.
-//
-// Anchored to the ends of the info string, which is the only place Pandoc and
-// MkDocs put one. Matching anywhere took a brace out of a title written in the
-// documented space form -- "```js title Some {Thing} Here" published its
-// caption as "Some  Here".
-var reAttributeBlock = regexp.MustCompile(`^\{[^}]*\}|\{[^}]*\}$`)
-
-// reAttributeLang matches the ".language" class inside an attribute block,
-// which is where the language is named when the block is the whole info
-// string.
-var reAttributeLang = regexp.MustCompile(`\.([\w#+./-]+)`)
-
-// reAssignedTitle matches a title written with "=" rather than a space.
-//
-// Material for MkDocs' title="config.yml" is the commonest way to caption a
-// code block in a docs-as-code repository, and mark accepted only its own
-// "title config.yml": the caption was dropped and the whole token was
-// published as the macro's theme.
-var reAssignedTitle = regexp.MustCompile(`\btitle\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))`)
-
-// ParseCodeBlockInfo reads a fence info string into the language, options
-// and title the ac:code macro is given, as publishing does.
-func ParseCodeBlockInfo(info string) (lang string, options []string, title string) {
-	return parseBlockDetails(info)
-}
-
-// parseBlockDetails reads a fence info string into the parts the ac:code macro
-// is given.
-func parseBlockDetails(info string) (lang string, options []string, title string) {
-	info = strings.TrimSpace(info)
-
-	// "-" is the documented way to write "no language, but there are options
-	// after it" -- README's "```- 1 collapse midnight title ...". Widening the
-	// language class to accept the hyphens in real language names made the bare
-	// marker match as a language of its own, so the macro was published with
-	// ac:name="language" set to "-".
-	noLanguage := false
-	if info == "-" || strings.HasPrefix(info, "- ") {
-		noLanguage = true
-		info = strings.TrimSpace(strings.TrimPrefix(info, "-"))
-	}
-
-	if groups := reAssignedTitle.FindStringSubmatch(info); groups != nil {
-		for _, group := range groups[1:] {
-			if group != "" {
-				title = group
-				break
-			}
-		}
-		info = strings.TrimSpace(reAssignedTitle.ReplaceAllString(info, " "))
-	}
-
-	if block := reAttributeBlock.FindString(info); block != "" {
-		// Only a leading block names the language: Pandoc writes the whole
-		// info string as one attribute list, while MkDocs appends the list
-		// after a language it has already given in the ordinary place.
-		if strings.HasPrefix(info, "{") {
-			if class := reAttributeLang.FindStringSubmatch(block); class != nil {
-				lang = class[1]
-			}
-		}
-		info = strings.TrimSpace(strings.Replace(info, block, " ", 1))
-	}
-
-	// The "-" marker stands for no language and must be present for the match.
-	if noLanguage {
-		info = "- " + info
-	}
-
-	groups := reBlockDetails.FindStringSubmatch(info)
-	if len(groups) == 0 {
-		return lang, nil, title
-	}
-
-	if lang == "" && !noLanguage {
-		lang = groups[1]
-	}
-	if title == "" {
-		title = groups[3]
-	}
-
-	return lang, strings.Fields(groups[2]), title
 }
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
@@ -188,7 +82,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	theme := ""
 	collapse := false
 
-	lang, options, title := parseBlockDetails(string(info))
+	lang, options, title := syntax.ParseCodeBlockInfo(string(info))
 	for _, option := range options {
 		if option == "collapse" {
 			collapse = true
@@ -403,7 +297,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				Firstline   int
 				Text        string
 			}{
-				CodeLanguage(lang),
+				syntax.CodeLanguage(lang),
 				collapse,
 				title,
 				theme,

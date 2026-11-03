@@ -1,4 +1,4 @@
-package parser
+package syntax
 
 import (
 	"regexp"
@@ -18,17 +18,17 @@ import (
 // reader sees, so it is the part the id is built from.
 var reInlineLink = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
 
-// ConfluenceIDGenerator is the parser.IDGenerator goldmark is given for
+// confluenceIDGenerator is the parser.IDGenerator goldmark is given for
 // Confluence-compatible header anchor IDs, preserving '/', '_', '.', and '-'
 // characters in heading IDs.
 //
 // It returns the base id only. goldmark's parser.IDs keeps the ids a document
 // has used, the ones an author wrote as {#id} included, and numbers a repeat
 // "-1", "-2" and so on.
-type ConfluenceIDGenerator struct{}
+type confluenceIDGenerator struct{}
 
 // Generate implements parser.IDGenerator.
-func (ConfluenceIDGenerator) Generate(value []byte, kind ast.NodeKind) []byte {
+func (confluenceIDGenerator) Generate(value []byte, kind ast.NodeKind) []byte {
 	return confluenceID(value, kind)
 }
 

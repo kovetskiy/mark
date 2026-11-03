@@ -1,4 +1,4 @@
-package parser
+package syntax
 
 import (
 	"strconv"
@@ -9,7 +9,7 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// attributeBlock reads the heading attribute block whose "{" is at
+// AttributeBlock reads the heading attribute block whose "{" is at
 // source[start], in goldmark v1's grammar, the one heading attributes are
 // written in:
 //
@@ -24,7 +24,7 @@ import (
 // goldmark v1 rendered it. Several classes are joined with a space,
 // where the first one stood. It
 // returns the offset just past the closing "}".
-func attributeBlock(source []byte, start int) (end int, attrs []ast.Attribute, ok bool) {
+func AttributeBlock(source []byte, start int) (end int, attrs []ast.Attribute, ok bool) {
 	s := attributeScanner{source: source, pos: start}
 
 	var classes []string

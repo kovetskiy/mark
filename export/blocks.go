@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/renderer"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 )
 
 // blockContext is where a run of blocks is written.
@@ -278,8 +278,8 @@ func (c *converter) heading(n *node) string {
 	if anchor := leadingAnchor(n); anchor != nil {
 		params, _ := anchor.parameters()
 		name := params[""]
-		if c.anchors[anchorKey(name)] {
-			if anchorKey(name) != anchorKey(headingText(n, anchor)) {
+		if c.anchors[syntax.AnchorKey(name)] {
+			if syntax.AnchorKey(name) != syntax.AnchorKey(headingText(n, anchor)) {
 				customID = name
 			}
 			if customID == "" || customHeadingID.MatchString(customID) {
@@ -512,7 +512,7 @@ func listItem(marker, content string) string {
 // would publish it as a macro for, or with a GitHub alert's marker.
 func (c *converter) blockquote(n *node) string {
 	text := strings.TrimSpace(n.textContent())
-	if renderer.AdmonitionMarker(text) != "" || strings.HasPrefix(text, "[!") {
+	if syntax.AdmonitionMarker(text) != "" || strings.HasPrefix(text, "[!") {
 		return c.htmlBlock(n)
 	}
 

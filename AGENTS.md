@@ -5,7 +5,7 @@ Guidance for AI coding agents (and new human contributors) working in this repos
 `mark` reads Markdown and writes **Confluence storage format** — an XML dialect, not
 HTML. Most of the subtle bugs in this project's history come from forgetting that. Read
 the Invariants section before changing anything under `renderer/`, `transformer/`,
-`parser/`, `macro/`, `includes/`, or `stdlib/`.
+`parser/`, `internal/syntax/`, `macro/`, `includes/`, or `stdlib/`.
 
 ## Build, test, lint
 
@@ -53,6 +53,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
+| `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve restricted users and groups → resolve/create page + ancestry → tighten
