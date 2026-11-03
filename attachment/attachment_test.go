@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -253,18 +252,6 @@ func TestResolverNil(t *testing.T) {
 	assert.Nil(t, resolver.Unused([]Attachment{{Replace: "a.png"}}))
 }
 
-// TestDifferentFilesUnderOneFilenameAreRefused covers two files that flatten to
-// the same name: uploading one would serve it under both links.
-func TestDifferentFilesUnderOneFilenameAreRefused(t *testing.T) {
-	_, _, err := splitByFilename([]Attachment{
-		{Name: "a/b_c.txt", Filename: "a_b_c.txt", Checksum: "1"},
-		{Name: "a_b/c.txt", Filename: "a_b_c.txt", Checksum: "2"},
-	})
-	if err == nil {
-		t.Fatal("expected an error for two different files under one filename")
-	}
-}
-
 // TestUploadNameCleansTheReference covers the spellings of one file: each gets
 // the name the plainest spelling does, and none gets an empty one.
 func TestUploadNameCleansTheReference(t *testing.T) {
@@ -306,7 +293,7 @@ func TestPreparedAttachmentIsNamedCleaned(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.txt"), []byte("f"), 0o600))
 
-	attachment, err := ResolveLocalAttachment(vfs.LocalOS, dir, "./f.txt")
+	attachment, err := ResolveLocalAttachment(LocalOS, dir, "./f.txt")
 	require.NoError(t, err)
 	assert.Equal(t, "f.txt", attachment.Name)
 	assert.Equal(t, "f.txt", attachment.Replace)

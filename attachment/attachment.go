@@ -2,7 +2,6 @@ package attachment
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -21,13 +20,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
-)
-
-const (
-	AttachmentChecksumPrefix = `mark:checksum: `
 )
 
 // FlattenFilename returns the name an attachment called name is uploaded and
@@ -80,244 +73,6 @@ type Attacher interface {
 	Attach(Attachment)
 }
 
-// ResolveAttachments uploads the given attachments to the page, skipping any
-// whose checksum already matches what is stored remotely.
-//
-// It fetches the page's current attachment list itself. Callers that resolve
-// attachments more than once for the same page -- as mark does, first for
-// declared attachments and then for diagrams discovered while rendering --
-// should use ResolveAttachmentsWithRemotes to avoid re-fetching a list they
-// already hold.
-func ResolveAttachments(
-	ctx context.Context,
-	api *confluence.API,
-	page *confluence.PageInfo,
-	attachments []Attachment,
-) ([]Attachment, error) {
-	remotes, err := api.GetAttachments(ctx, page.ID)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get attachments for page %s: %w", page.ID, err)
-	}
-
-	resolved, _, err := ResolveAttachmentsWithRemotes(ctx, api, page, attachments, remotes)
-	return resolved, err
-}
-
-// Pending returns the attachments that ResolveAttachmentsWithRemotes would
-// upload against remotes -- created, or updated because their checksum
-// differs -- without uploading anything, and refuses what it would refuse.
-// Alongside them come the ones it would keep as they are, with the link the
-// remote they match already has.
-//
-// It is what a dry run asks: the same decision a real run makes, from the same
-// list, so the two cannot disagree about which files would be sent.
-func Pending(
-	attachments []Attachment,
-	remotes []confluence.AttachmentInfo,
-) (existing, pending []Attachment, err error) {
-	existing, creating, updating, _, err := classify(attachments, remotes)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return existing, append(creating, updating...), nil
-}
-
-// classify sorts attachments by what uploading them against remotes takes:
-// nothing, a create, or an update. Repeats of a filename come back apart, as
-// splitByFilename returns them. Checksums not already set are computed in
-// place.
-func classify(
-	attachments []Attachment,
-	remotes []confluence.AttachmentInfo,
-) (existing, creating, updating, duplicates []Attachment, err error) {
-	for i := range attachments {
-		// Skip checksum computation if already set (e.g. by mermaid/d2 renderers
-		// which use the source content as the stable checksum rather than the
-		// rendered PNG bytes, which may be non-deterministic across environments).
-		if attachments[i].Checksum != "" {
-			continue
-		}
-
-		checksum, err := GetChecksum(bytes.NewReader(attachments[i].FileBytes))
-		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("unable to get checksum for attachment %q: %w", attachments[i].Name, err)
-		}
-
-		attachments[i].Checksum = checksum
-	}
-
-	unique, duplicates, err := splitByFilename(attachments)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	existing = []Attachment{}
-	creating = []Attachment{}
-	updating = []Attachment{}
-	for _, attachment := range unique {
-		var found bool
-		var same bool
-		for _, remote := range remotes {
-			if remote.Filename == attachment.Filename {
-				same = attachment.Checksum == strings.TrimPrefix(
-					remote.Metadata.Comment,
-					AttachmentChecksumPrefix,
-				)
-
-				attachment.ID = remote.ID
-				attachment.Link = path.Join(
-					remote.Links.Context,
-					remote.Links.Download,
-				)
-
-				found = true
-
-				break
-			}
-		}
-
-		if found {
-			if same {
-				existing = append(existing, attachment)
-			} else {
-				updating = append(updating, attachment)
-			}
-		} else {
-			creating = append(creating, attachment)
-		}
-	}
-
-	return existing, creating, updating, duplicates, nil
-}
-
-// ResolveAttachmentsWithRemotes is ResolveAttachments against an
-// already-fetched remote attachment list. It returns the resolved attachments
-// and an updated remote list that includes anything created or updated by this
-// call, so a subsequent call can be made without another round-trip.
-func ResolveAttachmentsWithRemotes(
-	ctx context.Context,
-	api *confluence.API,
-	page *confluence.PageInfo,
-	attachments []Attachment,
-	remotes []confluence.AttachmentInfo,
-) ([]Attachment, []confluence.AttachmentInfo, error) {
-	existing, creating, updating, duplicates, err := classify(attachments, remotes)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for i, attachment := range creating {
-		log.Info().Msgf("creating attachment: %q", attachment.Name)
-
-		info, err := api.CreateAttachment(ctx,
-			page.ID,
-			attachment.Filename,
-			AttachmentChecksumPrefix+attachment.Checksum,
-			bytes.NewReader(attachment.FileBytes),
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to create attachment %q: %w", attachment.Name, err)
-		}
-
-		attachment.ID = info.ID
-		attachment.Link = path.Join(
-			info.Links.Context,
-			info.Links.Download,
-		)
-
-		creating[i] = attachment
-		remotes = append(remotes, info)
-	}
-
-	for i, attachment := range updating {
-		log.Info().Msgf("updating attachment: %q", attachment.Name)
-
-		info, err := api.UpdateAttachment(ctx,
-			page.ID,
-			attachment.ID,
-			attachment.Filename,
-			AttachmentChecksumPrefix+attachment.Checksum,
-			bytes.NewReader(attachment.FileBytes),
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to update attachment %q: %w", attachment.Name, err)
-		}
-
-		attachment.Link = path.Join(
-			info.Links.Context,
-			info.Links.Download,
-		)
-
-		updating[i] = attachment
-
-		// Reflect the new checksum so a later call against this same list sees
-		// the attachment as current rather than re-uploading it.
-		for j := range remotes {
-			if remotes[j].Filename == attachment.Filename {
-				remotes[j].Metadata.Comment = AttachmentChecksumPrefix + attachment.Checksum
-				break
-			}
-		}
-	}
-
-	for i := range existing {
-		log.Info().Msgf("keeping unmodified attachment: %q", existing[i].Name)
-	}
-
-	attachments = []Attachment{}
-	attachments = append(attachments, existing...)
-	attachments = append(attachments, creating...)
-	attachments = append(attachments, updating...)
-
-	// A repeat is the file that was just uploaded or kept under the same name,
-	// so it points where the first one does. It stays in the list because its
-	// Replace may be what a link in the document is resolved by.
-	byFilename := make(map[string]Attachment, len(attachments))
-	for _, attachment := range attachments {
-		byFilename[attachment.Filename] = attachment
-	}
-	for _, duplicate := range duplicates {
-		resolved := byFilename[duplicate.Filename]
-		duplicate.ID = resolved.ID
-		duplicate.Link = resolved.Link
-		attachments = append(attachments, duplicate)
-	}
-
-	return attachments, remotes, nil
-}
-
-// splitByFilename separates the first attachment for each Filename from the
-// ones after it.
-//
-// A document that links or embeds the same file twice hands it over twice, and
-// the remotes are compared against once, before anything is uploaded: on a page
-// that does not have the file yet, both copies would be created, and Confluence
-// refuses the second because the first now holds the name. Only the first is
-// uploaded; every link renders the same ri:filename, so it serves them all.
-//
-// Two different files can land on one name too -- "a/b_c.txt" and "a_b/c.txt"
-// both flatten to "a_b_c.txt" -- and one upload would then serve the wrong one
-// under a link that reads as right. That is refused rather than guessed at.
-func splitByFilename(attachments []Attachment) ([]Attachment, []Attachment, error) {
-	names := make(Filenames, len(attachments))
-	var unique, duplicates []Attachment
-	for _, attachment := range attachments {
-		taken, err := names.Claim(attachment)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if taken {
-			duplicates = append(duplicates, attachment)
-		} else {
-			unique = append(unique, attachment)
-		}
-	}
-
-	return unique, duplicates, nil
-}
-
 // Filenames holds the attachment each upload name went to first.
 type Filenames map[string]Attachment
 
@@ -353,7 +108,7 @@ func same(a, b Attachment) bool {
 	return bytes.Equal(a.FileBytes, b.FileBytes)
 }
 
-func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
+func ResolveLocalAttachments(opener Opener, base string, replacements []string) ([]Attachment, error) {
 	attachments, err := prepareAttachments(opener, base, replacements)
 	if err != nil {
 		return nil, err
@@ -376,7 +131,7 @@ func ResolveLocalAttachments(opener vfs.Opener, base string, replacements []stri
 // filename, and globbing it would publish whichever of report2.pdf,
 // report0.pdf or report4.pdf happens to sit beside it -- a different file from
 // the one the link names, under a link that reads as if it were right.
-func ResolveLocalAttachment(opener vfs.Opener, base, name string) (Attachment, error) {
+func ResolveLocalAttachment(opener Opener, base, name string) (Attachment, error) {
 	attachment, err := prepareAttachment(opener, base, name)
 	if err != nil {
 		return Attachment{}, err
@@ -403,7 +158,7 @@ func setChecksum(attachment *Attachment) error {
 }
 
 // prepareAttachements creates an array of attachement objects based on an array of filepaths
-func prepareAttachments(opener vfs.Opener, base string, replacements []string) ([]Attachment, error) {
+func prepareAttachments(opener Opener, base string, replacements []string) ([]Attachment, error) {
 	attachments := []Attachment{}
 
 	for _, name := range replacements {
@@ -619,7 +374,7 @@ func withinAny(path string, roots []string) bool {
 }
 
 // prepareAttachement opens the file, reads its content and creates an attachement object
-func prepareAttachment(opener vfs.Opener, base, name string) (Attachment, error) {
+func prepareAttachment(opener Opener, base, name string) (Attachment, error) {
 	attachmentPath := filepath.Join(base, name)
 
 	if err := checkAttachmentPath(base, name); err != nil {
@@ -740,6 +495,10 @@ func (r *Resolver) Unused(attachments []Attachment) []string {
 
 	return unused
 }
+
+// AttachmentChecksumPrefix leads the comment in which mark keeps an uploaded
+// attachment's checksum, so a later run can tell whether the file changed.
+const AttachmentChecksumPrefix = `mark:checksum: `
 
 func GetChecksum(reader io.Reader) (string, error) {
 	hash := sha256.New()

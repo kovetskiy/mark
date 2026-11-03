@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
@@ -979,4 +980,80 @@ func TestD2ScaleIsOnlyCheckedWhereDiagramsAreDrawn(t *testing.T) {
 	config.D2Scale = 0
 
 	require.NoError(t, Run(context.Background(), config))
+}
+
+func remoteWith(name, id, checksum string) confluence.AttachmentInfo {
+	r := confluence.AttachmentInfo{Filename: name, ID: id}
+	r.Metadata.Comment = attachment.AttachmentChecksumPrefix + checksum
+	r.Links.Context = "/wiki"
+	r.Links.Download = "/download/attachments/1/" + name
+
+	return r
+}
+
+// TestPendingSplitsWhatARealRunWouldKeepFromWhatItWouldSend: the dry run asks
+// the same question a real run does, and gets the link of every file it keeps.
+func TestPendingSplitsWhatARealRunWouldKeepFromWhatItWouldSend(t *testing.T) {
+	remotes := []confluence.AttachmentInfo{
+		remoteWith("same.png", "1", "aaa"),
+		remoteWith("changed.png", "2", "old"),
+	}
+	local := []attachment.Attachment{
+		{Filename: "same.png", Checksum: "aaa"},
+		{Filename: "changed.png", Checksum: "new"},
+		{Filename: "fresh.png", Checksum: "bbb"},
+	}
+
+	existing, pending, err := pendingAttachments(local, remotes)
+	require.NoError(t, err)
+
+	require.Len(t, existing, 1)
+	assert.Equal(t, "same.png", existing[0].Filename)
+	assert.Equal(t, "/wiki/download/attachments/1/same.png", existing[0].Link)
+
+	var names []string
+	for _, p := range pending {
+		names = append(names, p.Filename)
+	}
+	assert.ElementsMatch(t, []string{"changed.png", "fresh.png"}, names)
+}
+
+// Two files that flatten to one name would serve one file under both links.
+func TestPendingRefusesWhatARealRunRefuses(t *testing.T) {
+	_, _, err := pendingAttachments([]attachment.Attachment{
+		{Name: "a/b_c.txt", Filename: "a_b_c.txt", Checksum: "one"},
+		{Name: "a_b/c.txt", Filename: "a_b_c.txt", Checksum: "two"},
+	}, nil)
+
+	require.Error(t, err)
+}
+
+// UploadAttachments sends a file once: a second call finds the checksum the
+// first left on the page and keeps the file.
+func TestUploadAttachmentsKeepsWhatThePageHolds(t *testing.T) {
+	server := confluencetest.New(t)
+	pg := server.AddPage("SPACE", "Page", "page", "")
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	info := &confluence.PageInfo{ID: pg.ID}
+
+	upload := func() []attachment.Attachment {
+		t.Helper()
+		got, err := UploadAttachments(t.Context(), api, info, []attachment.Attachment{
+			{Name: "a.txt", Filename: "a.txt", FileBytes: []byte("one\n")},
+		})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+
+		return got
+	}
+
+	first := upload()
+	assert.NotEmpty(t, first[0].Link)
+	require.Len(t, server.Attachments(pg.ID), 1)
+	assert.Equal(t, attachment.AttachmentChecksumPrefix+first[0].Checksum, server.Attachments(pg.ID)[0].Comment)
+
+	posts := server.CountRequests("POST", "/child/attachment")
+	second := upload()
+	assert.Equal(t, first[0].Link, second[0].Link)
+	assert.Equal(t, posts, server.CountRequests("POST", "/child/attachment"), "the unchanged file was sent again")
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/kovetskiy/mark/v16/vfs"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
@@ -339,7 +338,7 @@ func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]atta
 			continue
 		}
 
-		file, err := attachment.ResolveLocalAttachment(vfs.LocalOS, filepath.Dir(path), name)
+		file, err := attachment.ResolveLocalAttachment(attachment.LocalOS, filepath.Dir(path), name)
 		if errors.Is(err, attachment.ErrOutsideProject) {
 			return nil, fmt.Errorf("unable to attach %q named by a macro: %w", name, err)
 		}

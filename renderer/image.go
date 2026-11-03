@@ -12,7 +12,6 @@ import (
 	"github.com/kovetskiy/mark/v16/attachment"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v16/transformer"
-	"github.com/kovetskiy/mark/v16/vfs"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
@@ -256,7 +255,7 @@ func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachm
 	for _, path := range ctransformer.LocalImagePaths(destination) {
 		var attached attachment.Attachment
 
-		attached, err = attachment.ResolveLocalAttachment(vfs.LocalOS, filepath.Dir(r.Path), path)
+		attached, err = attachment.ResolveLocalAttachment(attachment.LocalOS, filepath.Dir(r.Path), path)
 		if err == nil || errors.Is(err, attachment.ErrOutsideProject) {
 			return attached, err
 		}
