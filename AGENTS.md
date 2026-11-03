@@ -30,7 +30,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | --- | --- |
 | `cmd/mark` | thin `main`; flag wiring lives in `util/` |
 | `util/` | the command line (`Run`), flags, config file/env sourcing, credential resolution |
-| `mark.go` | orchestration: `Run` (glob → loop) and `ProcessFile` (the whole per-file pipeline); its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go` (upload and dry-run preview), `links.go`, `titles.go`, `runtitles.go` and `export.go` |
+| `mark.go` | orchestration: `Run` (glob → loop), `Publisher` for a library caller's files (`ProcessFile` publishes one), and `publishRun.processFile`, the whole per-file pipeline both share; its concerns sit beside it in `tracking.go` (`--track-pages`), `orphans.go`, `changes.go` (`--changes-only`, `--no-overwrite`), `attachments.go` (upload and dry-run preview), `links.go`, `titles.go`, `runtitles.go` and `export.go` |
 | `metadata/` | `<!-- Header: -->` comments and YAML front matter → `Meta` |
 | `page/` | ancestry/folder resolution, relative-link rewriting, relocation, and the `--parents-from-path` hierarchy with its directory titles |
 | `confluence/` | REST client (v1 `/rest/api` + v2 `/api/v2`) on `net/http` (`client.go`), page cache, page restrictions, label sync, page URLs and tiny links |
@@ -56,7 +56,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
-Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative
+Pipeline in `publishRun.processFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve restricted users and groups → resolve/create page + ancestry → tighten
 restrictions → resolve attachments → `CompileMarkdown` → resolve inline attachments →
 wrap in `ac:layout` → optionally merge inline comments → update page → apply final
@@ -184,14 +184,15 @@ and name it in `defaultFeatures`, add it to the `Usage` string of the `features`
 
 **8. Everything is sequential today, and one thing still relies on that.**
 State a run builds up is a value the run creates, passes down and closes, never a
-package global. `page.FolderCache` is created per run and handed to the ancestry
-functions: it is keyed with no notion of which Confluence it came from, so it must not
-outlive the run. It sits behind an `RWMutex` (`TestFolderCacheConcurrentAccess` in
-`page/ancestry_test.go` races it on purpose). `chrome.Browser` and `mermaid.Engine`
-travel in `types.MarkConfig`, start on the first picture that needs them, and are closed
-by whoever created them. `confluence.API`'s Cloud probe runs under a mutex held for the whole probe, and the API
-holds no context: every
-`confluence.API` method that makes a request takes `ctx context.Context` first, and so
+package global. `page.FolderCache` is created per run (or per `mark.Publisher`) and
+handed to the ancestry functions: it is keyed with no notion of which Confluence it came
+from, so it must not outlive the run. It sits behind an `RWMutex`
+(`TestFolderCacheConcurrentAccess` in `page/ancestry_test.go` races it on purpose).
+`chrome.Browser` and `mermaid.Engine` travel in `types.MarkConfig`, start on the first
+picture that needs them, and are closed by whoever created them.
+
+`confluence.API`'s Cloud probe runs under a mutex held for the whole probe, and the API
+holds no context: every `confluence.API` method that makes a request takes `ctx context.Context` first, and so
 does everything above it that makes one later (`manifest.Store`,
 `page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
 What is genuinely single-threaded is `page.LinkChecker`: `MissingPages` reads
@@ -249,7 +250,7 @@ the API is untestable.
   `build(deps):`. The release changelog excludes `docs:` and `test:`.
 - Errors wrap with `%w` and read bottom-up: `fmt.Errorf("unable to compile markdown: %w", err)`.
 - Logging is `zerolog` via the package-level `log`; user-facing results go to
-  `config.output()`, never directly to `os.Stdout`.
+  `config.Report.output()`, never directly to `os.Stdout`.
 - Suppress a linter only with a reason attached: `//nolint:gosec // G401: ...`.
   The two existing suppressions (SHA-1 as a content fingerprint, opt-in TLS skip) are
   the model.

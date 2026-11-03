@@ -57,6 +57,11 @@ type ConnectionConfig struct {
 	InsecureSkipTLSVerify bool
 }
 
+// api is a client for this Confluence.
+func (c ConnectionConfig) api() *confluence.API {
+	return confluence.NewAPI(c.BaseURL, c.Username, c.Password, c.InsecureSkipTLSVerify)
+}
+
 // ModeConfig is how far a run goes and what it does about a failure.
 type ModeConfig struct {
 	CompileOnly     bool
@@ -65,7 +70,7 @@ type ModeConfig struct {
 	CI              bool
 }
 
-// readOnly reports whether this run may leave Confluence untouched. A compile
+// readOnly reports whether a run in this mode must leave Confluence untouched. A compile
 // prints the body it would have sent and stops; a dry run reports what it would
 // have done. Neither publishes anything, so neither may delete, archive or
 // reorder either -- a guard that asks only about --dry-run is one --compile-only
@@ -99,8 +104,9 @@ type UpdateConfig struct {
 	AppendLabels     bool
 	GlobalProperties string
 
-	// Unwatch is read by Run, which unwatches as the run ends. ProcessFile
-	// leaves it to the caller: set the API's Unwatch, and call its
+	// Unwatch is read by Run, which unwatches as the run ends. A Publisher,
+	// and so ProcessFile, leaves it to the caller: set the API's Unwatch, and
+	// call its
 	// UnwatchWritten after the last file, with a context that is not done yet,
 	// or nothing is unwatched.
 	Unwatch bool
@@ -179,6 +185,142 @@ func isScaleOrDefault(scale float64) bool {
 	return scale == 0 || isPositiveScale(scale)
 }
 
+// resources are what one run starts and shuts down again: the browser and
+// mermaid engine its pictures are drawn in, each launched by the first picture
+// that needs it, and the folders it has resolved, which are only true of the
+// one Confluence the run publishes to.
+type resources struct {
+	browser *chrome.Browser
+	mermaid *mermaid.Engine
+	folders *page.FolderCache
+}
+
+// newResources creates them for the mermaid engine kind names, starting
+// nothing yet.
+func newResources(kind string) (*resources, error) {
+	engine, err := mermaid.NewEngine(kind)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resources{browser: chrome.NewBrowser(), mermaid: engine, folders: page.NewFolderCache()}, nil
+}
+
+func (r *resources) close() {
+	r.browser.Close()
+	r.mermaid.Close()
+}
+
+// prepare checks the settings that decide how a document is rendered and what
+// is done about its links. Run and NewPublisher both start here, so that a
+// library caller is held to the same settings, and told the same thing about
+// them, as a run is. The mermaid engine's name is checked by newResources,
+// which both call next.
+func (c Config) prepare() (page.LinkChecks, error) {
+	if err := c.Rendering.validate(); err != nil {
+		return page.LinkChecks{}, err
+	}
+
+	// A page with no Content-Appearance of its own takes this one, and one
+	// that does not parse would fail every such page in turn.
+	if _, err := metadata.ParseContentAppearance(c.Page.ContentAppearance); err != nil {
+		return page.LinkChecks{}, fmt.Errorf("invalid ContentAppearance: %w", err)
+	}
+
+	if c.Links.CheckLinksWarnOnly && len(c.Links.CheckLinks) == 0 {
+		return page.LinkChecks{}, fmt.Errorf(
+			"--check-links-warn-only requires --check-links: " +
+				"on its own no links are checked, so the silence means nothing",
+		)
+	}
+
+	checks, err := page.ParseLinkChecks(c.Links.CheckLinks)
+	if err != nil {
+		return page.LinkChecks{}, err
+	}
+
+	return checks, nil
+}
+
+// validate refuses rendering settings the renderers cannot act on.
+func (r RenderingConfig) validate() error {
+	// Checked here as well as in the CLI, because Config is a public API and a
+	// library caller reaches this without passing a flag at all. A value the
+	// renderer does not know falls to its default branch, so an unrecognised
+	// format publishes a PNG without a word -- taking a bundle asked for
+	// alongside it down with it. An empty value is not that: it is a caller
+	// that never set the field, and it means the PNG mark has always published.
+	switch r.MermaidOutput {
+	case "", "png", "svg":
+		// ok
+	default:
+		return fmt.Errorf(
+			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
+			r.MermaidOutput,
+		)
+	}
+
+	if r.MermaidBundle && r.MermaidOutput != "svg" {
+		return errors.New(
+			"MermaidBundle needs MermaidOutput \"svg\": " +
+				"there is nowhere in a PNG to keep the diagram's source",
+		)
+	}
+
+	// The same for d2, and for the same reason: an unrecognised format falls to
+	// the renderer's PNG branch, publishing one without a word about the SVG
+	// that was asked for. An empty value is a caller that never set the field,
+	// and means the PNG mark has always published.
+	switch r.D2Output {
+	case "", "png", "svg":
+		// ok
+	default:
+		return fmt.Errorf(
+			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
+			r.D2Output,
+		)
+	}
+
+	// Zero is the field a caller never set, which for a scale is not a default
+	// but a diagram rendered at nothing. Only checked where diagrams are drawn
+	// at all, since a configuration that never turns d2 on carries the field
+	// past every code path that reads it.
+	if r.enabled("d2") && !isPositiveScale(r.D2Scale) {
+		return fmt.Errorf(
+			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
+			r.D2Scale,
+		)
+	}
+
+	// Mermaid and math take the same numbers, with one difference: zero is
+	// their default rather than an error. Mermaid is on by default, so refusing
+	// zero would refuse every Config that never heard of the field; math has
+	// always drawn a zero scale at its default of 2, and a caller relying on
+	// that is not wrong. What neither has ever been able to draw is a negative,
+	// NaN or infinite scale, and those are refused here rather than part way
+	// through a run, when the first diagram reaches the browser.
+	if r.enabled("mermaid") && !isScaleOrDefault(r.MermaidScale) {
+		return fmt.Errorf(
+			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
+			r.MermaidScale,
+		)
+	}
+
+	if r.enabled("math") && !isScaleOrDefault(r.MathScale) {
+		return fmt.Errorf(
+			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
+			r.MathScale,
+		)
+	}
+
+	return nil
+}
+
+// enabled reports whether --features turns feature on.
+func (r RenderingConfig) enabled(feature string) bool {
+	return slices.Contains(r.Features, feature)
+}
+
 // Run processes all files matching Config.Files and publishes them to
 // Confluence.
 //
@@ -204,137 +346,8 @@ func isScaleOrDefault(scale float64) bool {
 // The browsers diagrams and formulas are drawn in belong to the run: started
 // by the first picture that needs one, and shut down before this returns.
 func Run(ctx context.Context, config Config) (err error) {
-	return run(ctx, config)
-}
-
-// resources are what one run starts and shuts down again: the browser and
-// mermaid engine its pictures are drawn in, each launched by the first picture
-// that needs it, and the folders it has resolved, which are only true of the
-// one Confluence the run publishes to.
-type resources struct {
-	browser *chrome.Browser
-	mermaid *mermaid.Engine
-	folders *page.FolderCache
-}
-
-func newResources(engine *mermaid.Engine) *resources {
-	return &resources{browser: chrome.NewBrowser(), mermaid: engine, folders: page.NewFolderCache()}
-}
-
-func (r *resources) close() {
-	r.browser.Close()
-	r.mermaid.Close()
-}
-
-// prepare checks the settings that decide how a document is rendered and what
-// is done about its links, and returns the mermaid engine they name, not yet
-// started. Run and ProcessFile both start here, so that a library caller
-// publishing one file is held to the same settings, and told the same thing
-// about them, as a run is.
-func (c Config) prepare() (page.LinkChecks, *mermaid.Engine, error) {
-	engine, err := mermaid.NewEngine(c.Rendering.MermaidEngine)
-	if err != nil {
-		return page.LinkChecks{}, nil, err
-	}
-
-	// Checked here as well as in the CLI, because Config is a public API and a
-	// library caller reaches this without passing a flag at all. A value the
-	// renderer does not know falls to its default branch, so an unrecognised
-	// format publishes a PNG without a word -- taking a bundle asked for
-	// alongside it down with it. An empty value is not that: it is a caller
-	// that never set the field, and it means the PNG mark has always published.
-	switch c.Rendering.MermaidOutput {
-	case "", "png", "svg":
-		// ok
-	default:
-		return page.LinkChecks{}, nil, fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			c.Rendering.MermaidOutput,
-		)
-	}
-
-	if c.Rendering.MermaidBundle && c.Rendering.MermaidOutput != "svg" {
-		return page.LinkChecks{}, nil, errors.New(
-			"MermaidBundle needs MermaidOutput \"svg\": " +
-				"there is nowhere in a PNG to keep the diagram's source",
-		)
-	}
-
-	// A page with no Content-Appearance of its own takes this one, and one
-	// that does not parse would fail every such page in turn.
-	if _, err := metadata.ParseContentAppearance(c.Page.ContentAppearance); err != nil {
-		return page.LinkChecks{}, nil, fmt.Errorf("invalid ContentAppearance: %w", err)
-	}
-
-	// The same for d2, and for the same reason: an unrecognised format falls to
-	// the renderer's PNG branch, publishing one without a word about the SVG
-	// that was asked for. An empty value is a caller that never set the field,
-	// and means the PNG mark has always published.
-	switch c.Rendering.D2Output {
-	case "", "png", "svg":
-		// ok
-	default:
-		return page.LinkChecks{}, nil, fmt.Errorf(
-			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
-			c.Rendering.D2Output,
-		)
-	}
-
-	// Zero is the field a caller never set, which for a scale is not a default
-	// but a diagram rendered at nothing. Only checked where diagrams are drawn
-	// at all, since a configuration that never turns d2 on carries the field
-	// past every code path that reads it.
-	// Not a plain "> 0": NaN fails every comparison, so NaN <= 0 is false and it
-	// would pass a check written that way, and an infinite scale passes one
-	// outright. Either reaches Chrome as a screenshot scale it cannot use, or
-	// multiplies an SVG's size into something that is not a number of pixels.
-	if slices.Contains(c.Rendering.Features, "d2") && !isPositiveScale(c.Rendering.D2Scale) {
-		return page.LinkChecks{}, nil, fmt.Errorf(
-			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
-			c.Rendering.D2Scale,
-		)
-	}
-
-	// Mermaid and math take the same numbers, with one difference: zero is
-	// their default rather than an error. Mermaid is on by default, so refusing
-	// zero would refuse every Config that never heard of the field; math has
-	// always drawn a zero scale at its default of 2, and a caller relying on
-	// that is not wrong. What neither has ever been able to draw is a negative,
-	// NaN or infinite scale, and those are refused here rather than part way
-	// through a run, when the first diagram reaches the browser.
-	if slices.Contains(c.Rendering.Features, "mermaid") && !isScaleOrDefault(c.Rendering.MermaidScale) {
-		return page.LinkChecks{}, nil, fmt.Errorf(
-			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
-			c.Rendering.MermaidScale,
-		)
-	}
-
-	if slices.Contains(c.Rendering.Features, "math") && !isScaleOrDefault(c.Rendering.MathScale) {
-		return page.LinkChecks{}, nil, fmt.Errorf(
-			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
-			c.Rendering.MathScale,
-		)
-	}
-
-	if c.Links.CheckLinksWarnOnly && len(c.Links.CheckLinks) == 0 {
-		return page.LinkChecks{}, nil, fmt.Errorf(
-			"--check-links-warn-only requires --check-links: " +
-				"on its own no links are checked, so the silence means nothing",
-		)
-	}
-
-	checks, err := page.ParseLinkChecks(c.Links.CheckLinks)
-	if err != nil {
-		return page.LinkChecks{}, nil, err
-	}
-
-	return checks, engine, nil
-}
-
-// The error result is named so the deferred report write below can see, and
-// replace, what the run is returning. Without it the closure assigned to a
-// local err that no return statement read, and a failed write went unheard.
-func run(ctx context.Context, config Config) (err error) {
+	// err is named so the deferred report write below can see, and replace,
+	// what the run is returning.
 	// Settings are checked before anything else happens. A value that cannot be
 	// acted on should be said so plainly, not after a glob has been resolved
 	// and a connection opened -- and least of all part way through publishing.
@@ -346,16 +359,19 @@ func run(ctx context.Context, config Config) (err error) {
 	// combination that merely does nothing, and that nobody would read anything
 	// into, is a warning.
 
-	linkChecks, engine, err := config.prepare()
+	linkChecks, err := config.prepare()
 	if err != nil {
 		return err
 	}
 
-	res := newResources(engine)
+	res, err := newResources(config.Rendering.MermaidEngine)
+	if err != nil {
+		return err
+	}
 	defer res.close()
 
 	// The rest is about the run as a whole -- the report written at the end of
-	// it and the manifest kept across runs -- so ProcessFile, which has
+	// it and the manifest kept across runs -- so a Publisher, which has
 	// neither, does not ask.
 	outputFormat, err := report.ParseFormat(config.Report.OutputFormat)
 	if err != nil {
@@ -398,7 +414,7 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	api := confluence.NewAPI(config.Connection.BaseURL, config.Connection.Username, config.Connection.Password, config.Connection.InsecureSkipTLSVerify)
+	api := config.Connection.api()
 	// An update refused as a conflict is retried against the page's current
 	// version, which overwrites whatever changed it. --no-overwrite exists to
 	// stop exactly that, so under it the retry goes ahead only when nobody else
@@ -436,33 +452,10 @@ func run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	// The standard library is a fixed set of templates that does not depend on
-	// the file being processed, so it is built once for the whole run rather
-	// than once per file. Building it cannot reach the network -- the "user"
-	// template func captures the API, and ctx for its requests, but is only
-	// invoked during rendering.
-	std, err := stdlib.New(ctx, api)
-	if err != nil {
-		return fmt.Errorf("unable to retrieve standard library: %w", err)
-	}
-
-	// Read once and before anything is published: a file that cannot be parsed
-	// should not be discovered halfway through a repository.
-	globalProperties, err := page.LoadGlobalProperties(config.Update.GlobalProperties)
+	pub, err := newPublishRun(ctx, api, config, res, linkChecks)
 	if err != nil {
 		return err
 	}
-
-	pageHeader, err := header.Load(config.Rendering.PageHeader, std, config.Rendering.markConfig(res))
-	if err != nil {
-		return err
-	}
-
-	if err := settlePlatform(ctx, api, config); err != nil {
-		return err
-	}
-
-	checker := page.NewLinkChecker(linkChecks)
 
 	// What the run did, for whatever is reading the output rather than the log.
 	results := report.New()
@@ -589,7 +582,7 @@ func run(ctx context.Context, config Config) (err error) {
 	// Not on a dry run or a compile: nothing is published, so nothing a link is
 	// waiting for will come to exist, and the wait is worth reporting instead.
 	var deferrals *page.Deferrals
-	if !config.Mode.DryRun && !config.Mode.CompileOnly {
+	if !config.Mode.readOnly() {
 		deferrals = page.NewDeferrals()
 	}
 
@@ -601,7 +594,7 @@ func run(ctx context.Context, config Config) (err error) {
 		directoryTitles := page.DirectoryTitleReader(func(file string) ([]byte, error) {
 			_, markdown, err := readSource(file)
 			return markdown, err
-		}, config.Page.TitleFromH1, slices.Contains(config.Rendering.Features, "frontmatter"))
+		}, config.Page.TitleFromH1, config.Rendering.enabled("frontmatter"))
 
 		hierarchy, err = page.BuildHierarchy(config.Page.ParentsFromPathRoot, config.Files, files, directoryTitles)
 		if err != nil {
@@ -609,22 +602,13 @@ func run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	pub := &publishRun{
-		api:              api,
-		config:           config,
-		res:              res,
-		std:              std,
-		pageHeader:       pageHeader,
-		tracker:          tracker,
-		ancestryTracker:  ancestryTracker,
-		checker:          checker,
-		globalProperties: globalProperties,
-		deferrals:        deferrals,
-		results:          results,
-		hierarchy:        hierarchy,
-		// Read only once a parent is missing.
-		titles: &runTitles{config: config, files: files, hierarchy: hierarchy},
-	}
+	pub.tracker = tracker
+	pub.ancestryTracker = ancestryTracker
+	pub.deferrals = deferrals
+	pub.results = results
+	pub.hierarchy = hierarchy
+	// Read only once a parent is missing.
+	pub.titles = &runTitles{config: config, files: files, hierarchy: hierarchy}
 
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
@@ -648,7 +632,7 @@ func run(ctx context.Context, config Config) (err error) {
 				File: file, Status: report.StatusFailed, Reason: err.Error(),
 			})
 
-			if stepPast(ctx, config, file, err) {
+			if stepPast(ctx, config.Mode, file, err) {
 				hasErrors = true
 				continue
 			}
@@ -718,7 +702,7 @@ func run(ctx context.Context, config Config) (err error) {
 					File: file, Status: report.StatusFailed, Reason: err.Error(),
 				})
 
-				if stepPast(ctx, config, file, err) {
+				if stepPast(ctx, config.Mode, file, err) {
 					hasErrors = true
 
 					continue
@@ -733,7 +717,7 @@ func run(ctx context.Context, config Config) (err error) {
 
 	// Once everything that was going to be published has been, an ac: link that
 	// still names no page names none.
-	missingPages, err := checker.MissingPages(ctx, api)
+	missingPages, err := pub.checker.MissingPages(ctx, api)
 	if err != nil {
 		return err
 	}
@@ -813,8 +797,8 @@ func run(ctx context.Context, config Config) (err error) {
 //
 // A file that failed because the run was cancelled is not a file failure to
 // step past: the run stops, so that it reports the cancellation.
-func stepPast(ctx context.Context, config Config, file string, err error) bool {
-	if !config.Mode.ContinueOnError || ctx.Err() != nil {
+func stepPast(ctx context.Context, mode ModeConfig, file string, err error) bool {
+	if !mode.ContinueOnError || ctx.Err() != nil {
 		return false
 	}
 
@@ -823,38 +807,171 @@ func stepPast(ctx context.Context, config Config, file string, err error) bool {
 	return true
 }
 
-// ProcessFile processes a single markdown file and publishes it to Confluence.
-// Returns nil for the page info when compile-only or dry-run mode is active.
-//
-// Callers processing several files should prefer Run, which builds the standard
-// library once instead of once per file.
+// ProcessFile publishes one markdown file, as a Publisher made for it alone
+// would. Returns nil for the page info when compile-only or dry-run mode is
+// active.
 //
 // Every Confluence request made for the file carries ctx, so cancelling it
 // stops the file at its next request, or during the one in flight, with an
 // error errors.Is recognises as ctx.Err(); see Run for what that can leave
-// behind. A caller looping over files gets the same effect as Run by stopping
-// when one fails with it.
+// behind.
 //
-// Like Run, it shuts down the browsers it started before returning, so a
-// caller publishing several files is better served by Run.
+// Everything is started afresh and shut down again for the one file: the
+// browser, the mermaid engine and the folder cache. A caller publishing
+// several files should use a Publisher, which keeps them across files.
+// ProcessFile leaves out what a Publisher leaves out of a run; see Publisher.
 func ProcessFile(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
+	publisher, err := NewPublisher(ctx, api, config)
+	if err != nil {
+		return nil, err
+	}
+	defer publisher.Close()
+
+	return publisher.Publish(ctx, file)
+}
+
+// Publisher publishes files one at a time for a library caller, keeping
+// between them the templates and page header, the folders resolved so far,
+// what the link checks learned about external URLs, and the browser and
+// mermaid engine pictures are drawn in, each started by the first picture that
+// needs it. Close shuts those down. A Publisher is not safe for concurrent
+// use.
+//
+// A Publisher is meant for one batch of files: the folders and link answers it
+// keeps are never forgotten, and may go stale. A long-lived program makes a
+// new one for each batch rather than holding one open.
+//
+// A Publisher sees one file at a time, never the run's whole list, so it does
+// none of what Run does across files. These settings are accepted and do
+// nothing: ParentsFromPath, TrackPages and what depends on it (NoOverwrite,
+// OnOrphan, the manifest). A page's Position is not applied among its
+// siblings, a document linking to a page published after it is not published
+// again once that page exists, and no run report is written. Unwatch is left
+// to the caller; see UpdateConfig.
+//
+// With Page.PageID set, every file would publish over the one page, so a
+// Publisher publishes only the first file it is given, as Run refuses more
+// than one.
+type Publisher struct {
+	run    *publishRun
+	closed bool
+
+	// pageFile is the file published to Page.PageID, once there is one.
+	pageFile string
+}
+
+// errNoPublisher is what Publish says on a Publisher NewPublisher did not make.
+var errNoPublisher = errors.New("mark: Publisher was not made by NewPublisher")
+
+// errPublisherClosed is what Publish says once Close has been called.
+var errPublisherClosed = errors.New("mark: Publisher has been closed")
+
+// NewPublisher checks config as Run does and prepares to publish with api.
+func NewPublisher(ctx context.Context, api *confluence.API, config Config) (*Publisher, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	linkChecks, engine, err := config.prepare()
+	checks, err := config.prepare()
 	if err != nil {
 		return nil, err
 	}
 
-	res := newResources(engine)
-	defer res.close()
+	res, err := newResources(config.Rendering.MermaidEngine)
+	if err != nil {
+		return nil, err
+	}
 
-	std, err := stdlib.New(ctx, api)
+	pub, err := newPublishRun(ctx, api, config, res, checks)
+	if err != nil {
+		res.close()
+		return nil, err
+	}
+
+	return &Publisher{run: pub}, nil
+}
+
+// Publish publishes file, and checks the ac: links it holds once it has.
+// Returns nil for the page info when compile-only or dry-run mode is active.
+// A caller looping over files gets what Run does on cancellation by stopping
+// when one fails with ctx.Err().
+func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageInfo, error) {
+	if p == nil || p.run == nil {
+		return nil, errNoPublisher
+	}
+
+	if p.closed {
+		return nil, errPublisherClosed
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if p.run.config.Page.PageID != "" {
+		if p.pageFile != "" && filepath.Clean(p.pageFile) != filepath.Clean(file) {
+			return nil, fmt.Errorf(
+				"mark: Page.PageID names one page, which %s publishes to: refusing to publish %s over it",
+				p.pageFile, file,
+			)
+		}
+		p.pageFile = file
+	}
+
+	// Each file's ac: links are checked, and reported, on their own.
+	p.run.checker.ForgetPages()
+
+	target, _, err := p.run.processFile(ctx, file)
+	if err != nil {
+		return target, err
+	}
+
+	missing, err := p.run.checker.MissingPages(ctx, p.run.api)
+	if err != nil {
+		return target, err
+	}
+
+	for _, item := range missing {
+		log.Warn().Msg(item)
+	}
+
+	if !p.run.config.Links.CheckLinksWarnOnly {
+		return target, unresolvedLinks(missing)
+	}
+
+	return target, nil
+}
+
+// Close shuts down the browser and mermaid engine, if a picture started them,
+// and refuses every Publish after it. Closing twice, closing nil, or closing a
+// Publisher NewPublisher did not make is harmless.
+func (p *Publisher) Close() {
+	if p == nil || p.run == nil {
+		return
+	}
+
+	p.closed = true
+	p.run.res.close()
+}
+
+// newPublishRun builds what every file of a run shares and does not depend on
+// the files: the templates, the global properties and the page header. It also
+// settles which platform api is, before anything is published.
+func newPublishRun(
+	ctx context.Context, api *confluence.API, config Config, res *resources, checks page.LinkChecks,
+) (*publishRun, error) {
+	// Building the templates cannot reach the network: the "user" template
+	// func is only invoked during rendering, and then under the context of the
+	// file being rendered, which processFile hands to users.
+	users := &runUsers{api: api, ctx: ctx}
+
+	std, err := stdlib.New(ctx, users)
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve standard library: %w", err)
 	}
 
+	// Read once and before anything is published: a file that cannot be parsed
+	// should not be discovered halfway through a repository.
 	globalProperties, err := page.LoadGlobalProperties(config.Update.GlobalProperties)
 	if err != nil {
 		return nil, err
@@ -865,41 +982,34 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 		return nil, err
 	}
 
-	if err := settlePlatform(ctx, api, config); err != nil {
+	if err := settlePlatform(ctx, api, config.Mode); err != nil {
 		return nil, err
 	}
 
-	checker := page.NewLinkChecker(linkChecks)
-
-	pub := &publishRun{
+	return &publishRun{
 		api:              api,
 		config:           config,
 		res:              res,
+		users:            users,
 		std:              std,
 		pageHeader:       pageHeader,
-		checker:          checker,
+		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
+	}, nil
+}
+
+// settlePlatform identifies the Confluence platform once the run's local
+// inputs have been checked and before anything is published, so that one
+// failed request cannot send a Cloud tenant down Server's paths for the rest
+// of the run. A compile-only run never contacts Confluence.
+func settlePlatform(ctx context.Context, api *confluence.API, mode ModeConfig) error {
+	if mode.CompileOnly {
+		return nil
 	}
 
-	target, _, err := pub.processFile(ctx, file)
-	if err != nil {
-		return target, err
-	}
+	_, err := api.Cloud(ctx)
 
-	missing, err := checker.MissingPages(ctx, api)
-	if err != nil {
-		return target, err
-	}
-
-	for _, item := range missing {
-		log.Warn().Msg(item)
-	}
-
-	if !config.Links.CheckLinksWarnOnly {
-		return target, unresolvedLinks(missing)
-	}
-
-	return target, nil
+	return err
 }
 
 // readSource reads a document the way everything that looks at its headers
@@ -911,20 +1021,6 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 // document for its title, and a title read from bytes publishing never sees --
 // a byte-order mark in front of the header, a header inside an ignored region
 // -- is a different title from the one the page is published under.
-// settlePlatform identifies the Confluence platform once the run's local
-// inputs have been checked and before anything is published, so that one
-// failed request cannot send a Cloud tenant down Server's paths for the rest
-// of the run. A compile-only run never contacts Confluence.
-func settlePlatform(ctx context.Context, api *confluence.API, config Config) error {
-	if config.Mode.CompileOnly {
-		return nil
-	}
-
-	_, err := api.Cloud(ctx)
-
-	return err
-}
-
 func readSource(file string) ([]byte, []byte, error) {
 	source, err := os.ReadFile(file)
 	if err != nil {
@@ -982,7 +1078,7 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 		// has one; see below.
 		config.Page.TitleAppendGeneratedHash && hierarchy == nil,
 		config.Page.ContentAppearance,
-		slices.Contains(config.Rendering.Features, "frontmatter"),
+		config.Rendering.enabled("frontmatter"),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
@@ -1032,13 +1128,14 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 }
 
 // publishRun is what every document of a run shares: the connection, the
-// settings, and the state built once and threaded through each file. A single
-// ProcessFile leaves the run-wide parts nil, and each of them is nil-safe or
+// settings, and the state built once and threaded through each file. A
+// Publisher leaves the run-wide parts nil, and each of them is nil-safe or
 // checked where it is used.
 type publishRun struct {
 	api              *confluence.API
 	config           Config
 	res              *resources
+	users            *runUsers
 	std              *stdlib.Lib
 	pageHeader       *header.Header
 	tracker          *manifest.Store
@@ -1049,6 +1146,19 @@ type publishRun struct {
 	results          *report.Report
 	hierarchy        *page.Hierarchy
 	titles           *runTitles
+}
+
+// runUsers is the "user" template func's lookup for a run's templates and
+// page header. They are built once and kept across files, so a lookup is made
+// under the context of the file being published rather than the one the
+// templates were built under.
+type runUsers struct {
+	api *confluence.API
+	ctx context.Context
+}
+
+func (u *runUsers) LookupUser(_ context.Context, name string) (any, error) {
+	return u.api.LookupUser(u.ctx, name)
 }
 
 // document is one source file as read for publishing.
@@ -1091,6 +1201,8 @@ type pagePreview struct {
 }
 
 func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.PageInfo, *page.Ordered, error) {
+	r.users.ctx = ctx
+
 	doc, err := r.readDocument(file)
 	if err != nil {
 		return nil, nil, err
@@ -1113,7 +1225,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 		return nil, nil, err
 	}
 
-	if r.config.Mode.CompileOnly || r.config.Mode.DryRun {
+	if r.config.Mode.readOnly() {
 		return nil, nil, r.preview(ctx, doc)
 	}
 
@@ -1310,7 +1422,7 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 		config.Page.TitleFromFilename,
 		config.Page.Parents,
 		config.Page.TitleAppendGeneratedHash,
-		slices.Contains(config.Rendering.Features, "frontmatter"),
+		config.Rendering.enabled("frontmatter"),
 		r.checker,
 		searchDirs,
 	)

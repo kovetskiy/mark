@@ -176,6 +176,20 @@ func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]st
 	return missing, nil
 }
 
+// ForgetPages drops the ac: links noted so far, keeping every answer about an
+// external URL, so that a caller publishing files one at a time can report
+// each file's links on their own without asking the same hosts again.
+func (c *LinkChecker) ForgetPages() {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.pending = map[string]pendingPage{}
+}
+
 // PageFinder is the part of the Confluence API this needs, kept narrow so the
 // check can be exercised without one.
 type PageFinder interface {
