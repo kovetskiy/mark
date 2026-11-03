@@ -53,6 +53,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
+| `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
 Pipeline in `ProcessFile`: read → normalise CRLF → extract metadata → resolve relative

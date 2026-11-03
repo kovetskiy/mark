@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/internal/htmlblock"
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
@@ -1038,14 +1039,14 @@ func warnStrandedHeaders(body []byte) {
 	// stranded one -- which is how any document about mark shows the syntax,
 	// this repository's README included. Every other pass over raw bytes in
 	// this package already skips code regions.
-	code := CodeRegions(body)
+	code := mdsource.CodeRegions(body)
 
 	offset := 0
 	for _, line := range strings.Split(string(body), "\n") {
 		start := offset
 		offset += len(line) + 1
 
-		if InCode(code, start) {
+		if mdsource.InCode(code, start) {
 			continue
 		}
 
@@ -1154,30 +1155,12 @@ func ExtractDocumentLeadingH1(doc ast.Node, markdown []byte) string {
 	return h1Text
 }
 
-const (
-	commentOpen  = "<!--"
-	commentClose = "-->"
-)
-
 // parseHeaderComment checks if a line is a valid metadata header comment of the form "<!-- key: value -->".
 func parseHeaderComment(line string) (string, string, bool) {
-	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, commentOpen) || !strings.HasSuffix(line, commentClose) {
+	content, ok := mdsource.CommentBody(line)
+	if !ok {
 		return "", "", false
 	}
-
-	// The prefix and suffix can overlap: in "<!-->" both match, because the
-	// "-->" is found starting at index 2, inside the "<!--". Slicing then asks
-	// for line[4:2] and panics. Requiring room for both delimiters separately
-	// is what makes the slice below safe -- this is the same class of crash as
-	// issue #686.
-	if len(line) < len(commentOpen)+len(commentClose) {
-		return "", "", false
-	}
-
-	// Strip "<!--" and "-->"
-	content := line[len(commentOpen) : len(line)-len(commentClose)]
-	content = strings.TrimSpace(content)
 
 	colonIdx := strings.Index(content, ":")
 	if colonIdx == -1 {

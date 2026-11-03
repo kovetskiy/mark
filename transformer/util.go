@@ -100,7 +100,7 @@ func withinSource(start, stop int, source []byte) bool {
 //
 // A directive is only a directive where it would run. The pass that expands
 // includes and macros before goldmark ever sees the document skips code
-// regions, and metadata.CodeRegions covers spans as well as fenced blocks -- but
+// regions, and mdsource.CodeRegions covers spans as well as fenced blocks -- but
 // the AST transformers that pick up what that pass left behind had no
 // equivalent, and they match a paragraph at a time. So
 //

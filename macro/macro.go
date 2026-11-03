@@ -11,7 +11,7 @@ import (
 	"text/template/parse"
 
 	"github.com/kovetskiy/mark/v16/includes"
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
@@ -117,7 +117,7 @@ func (macro *Macro) ApplyCollecting(
 	// judged: a macro that wraps a region of the document may perfectly well
 	// have code inside it, and refusing that would break the very macros this
 	// is protecting.
-	code := metadata.CodeRegions(content)
+	code := mdsource.CodeRegions(content)
 
 	content = replaceAllOutsideCode(
 		macro.Regexp, content, code,
@@ -331,7 +331,7 @@ func replaceCaptures(s string, groups [][]byte) string {
 func replaceAllOutsideCode(
 	re *regexp.Regexp,
 	content []byte,
-	code []metadata.Region,
+	code []mdsource.Region,
 	expand func(match []byte) []byte,
 ) []byte {
 	matches := re.FindAllIndex(content, -1)
@@ -343,7 +343,7 @@ func replaceAllOutsideCode(
 	last := 0
 
 	for _, match := range matches {
-		if metadata.InCode(code, match[0]) {
+		if mdsource.InCode(code, match[0]) {
 			continue
 		}
 
@@ -400,7 +400,7 @@ func ExtractMacros(
 	// refuses to rewrite matches inside code; only this pass was missing it, so
 	// the example was hoisted out of the block, registered as a real macro, and
 	// the code block left empty.
-	codeRegions := metadata.CodeRegions(remaining)
+	codeRegions := mdsource.CodeRegions(remaining)
 
 	searchOffset := 0
 	for searchOffset < len(remaining) {
@@ -420,7 +420,7 @@ func ExtractMacros(
 			continue
 		}
 
-		if metadata.InCode(codeRegions, startIdx) {
+		if mdsource.InCode(codeRegions, startIdx) {
 			searchOffset = startIdx + 4
 			continue
 		}
@@ -503,7 +503,7 @@ func ExtractMacros(
 		// Every offset after the splice has moved, so the regions have to be
 		// found again rather than adjusted -- a directive removed from between
 		// two code blocks changes where both of them start.
-		codeRegions = metadata.CodeRegions(remaining)
+		codeRegions = mdsource.CodeRegions(remaining)
 	}
 
 	return extracted, remaining, nil

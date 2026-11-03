@@ -1,24 +1,16 @@
 package metadata
 
-import "bytes"
+import "github.com/kovetskiy/mark/v16/internal/mdsource"
 
-// byteOrderMark is the UTF-8 encoding of U+FEFF, which some editors write in
-// front of a file.
-var byteOrderMark = []byte{0xEF, 0xBB, 0xBF}
-
-// NormalizeSource puts a document's bytes into the shape every parser here
-// expects: "\n" line endings, and no byte-order mark.
-//
-// A byte-order mark is not content, and leaving it in front of the first
-// header comment makes the file look to every parser here like one with no
-// metadata at all. Windows editors write one routinely.
-//
-// Every reader of a document goes through this, not only the one publishing
-// it: a link to a document is rewritten from that document's headers, and
-// reading them from different bytes than publishing does found no headers
-// behind a BOM and left the link pointing at a .md file.
+// NormalizeSource gives a document "\n" line endings and drops a byte-order
+// mark, as every reader of a document in mark does before parsing it.
 func NormalizeSource(data []byte) []byte {
-	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	return mdsource.Normalize(data)
+}
 
-	return bytes.TrimPrefix(data, byteOrderMark)
+// StripIgnoredBlocks removes the regions between <!-- ac:ignore --> and
+// <!-- ac:ignore end -->, leaving markers inside code alone. Publishing does
+// this before compiling; markdown.CompileMarkdown does not.
+func StripIgnoredBlocks(data []byte) ([]byte, error) {
+	return mdsource.StripIgnoredBlocks(data)
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/kovetskiy/mark/v16/fingerprint"
 	"github.com/kovetskiy/mark/v16/header"
 	"github.com/kovetskiy/mark/v16/includes"
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/kovetskiy/mark/v16/manifest"
 	markmd "github.com/kovetskiy/mark/v16/markdown"
 	"github.com/kovetskiy/mark/v16/mermaid"
@@ -871,14 +872,14 @@ func readSource(file string) ([]byte, []byte, error) {
 	// A byte-order mark left in front of the first header comment would be
 	// reported as "doesn't contain metadata", which is not where the author
 	// would look.
-	source = metadata.NormalizeSource(source)
+	source = mdsource.Normalize(source)
 
 	// Before the headers are read, so that the line numbers in any complaint
 	// are the ones in the file the author is looking at rather than offsets
 	// into what is left after the header block is taken off. It also means an
 	// ignored region is ignored entirely, headers and all, which is what the
 	// markers say on the tin.
-	markdown, err := metadata.StripIgnoredBlocks(source)
+	markdown, err := mdsource.StripIgnoredBlocks(source)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to process %q: %w", file, err)
 	}
