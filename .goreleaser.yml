@@ -8,6 +8,9 @@ builds:
   - CGO_ENABLED=0
   flags:
     - -trimpath
+  # The default passes the version without its leading "v".
+  ldflags:
+    - -s -w -X main.version={{.Tag}} -X main.commit={{.Commit}}
   goos:
   - darwin
   - linux

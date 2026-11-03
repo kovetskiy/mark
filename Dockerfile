@@ -5,8 +5,14 @@ WORKDIR /go/src/github.com/kovetskiy/mark
 COPY go.mod go.sum ./
 RUN go mod download
 COPY / .
+# A Git build context, as CI's, has no .git to read these from.
+ARG VERSION
+ARG COMMIT
+# .dockerignore leaves tracked files out of the context, which git and go
+# build would otherwise count as changes.
 RUN make get \
-&& make build
+&& GOFLAGS=-buildvcs=false make build DIRTY= \
+   ${VERSION:+VERSION=$VERSION} ${COMMIT:+COMMIT=$COMMIT}
 
 FROM chromedp/headless-shell:latest
 
