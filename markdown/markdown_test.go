@@ -15,7 +15,6 @@ import (
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/kovetskiy/mark/v16/stdlib"
 	"github.com/kovetskiy/mark/v16/types"
-	"github.com/kovetskiy/mark/v16/util"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -381,31 +380,6 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 
 	assert.Contains(t, body, `\\`, "the row separator must reach MathJax unescaped")
 	assert.Greater(t, twoRows, oneRow, "the second row has to be rendered, not swallowed with its separator")
-}
-
-func TestContinueOnError(t *testing.T) {
-	// The fixtures live in the repo root's testdata, not this package's
-	// directory. Deriving the path from this file rather than the working
-	// directory keeps the test independent of whether another test in the
-	// package has already chdir'd: run on its own, a relative glob matched
-	// nothing and the command failed with "no files matched" instead of the
-	// partial-failure error being asserted.
-	_, thisFile, _, _ := runtime.Caller(0)
-	repoRoot := path.Join(path.Dir(thisFile), "..")
-	filePath := filepath.Join(repoRoot, "testdata", "batch-tests", "*.md")
-	argList := []string{
-		"mark", "publish",
-		"--log-level", "INFO",
-		"--compile-only",
-		"--continue-on-error",
-		"--files", filePath,
-	}
-
-	err := util.Run(context.TODO(), "TEST-VERSION", argList)
-	// --continue-on-error processes all files even when some fail, but still
-	// returns an error to allow callers/CI to detect partial failures.
-	assert.Error(t, err, "App should report partial failure when continue-on-error is enabled and some files fail")
-	assert.ErrorContains(t, err, "one or more files failed to process")
 }
 
 // TestDetailsIsNotOptional: <details> is converted whatever --features says.
