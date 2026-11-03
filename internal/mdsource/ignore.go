@@ -1,18 +1,15 @@
-package metadata
+package mdsource
 
 import (
 	"fmt"
 	"strings"
-
-	"github.com/yuin/goldmark/v2/ast"
-	"github.com/yuin/goldmark/v2/parser"
 )
 
 const (
-	// IgnoreStart opens a region that is not published, and IgnoreEnd closes
+	// ignoreStart opens a region that is not published, and ignoreEnd closes
 	// it. The spelling follows the one agreed in issue #317.
-	IgnoreStart = "ac:ignore"
-	IgnoreEnd   = "ac:ignore end"
+	ignoreStart = "ac:ignore"
+	ignoreEnd   = "ac:ignore end"
 )
 
 // StripIgnoredBlocks removes the regions a document marked as not for
@@ -26,8 +23,7 @@ const (
 //
 // The point is a document that reads well in both places. Some things render
 // nicely in one and badly in the other -- a table of contents, a macro that
-// only Confluence understands, a plain-text stand-in for it -- and until now
-// the only way to have both was to keep two copies of the file.
+// only Confluence understands, a plain-text stand-in for it.
 //
 // Ignored lines are removed rather than blanked. Leaving blank lines behind
 // would be kinder to line numbers in later error messages, but a blank line is
@@ -40,7 +36,7 @@ const (
 // half a page is a worse answer than refusing.
 func StripIgnoredBlocks(data []byte) ([]byte, error) {
 	content := string(data)
-	if !strings.Contains(strings.ToLower(content), IgnoreStart) {
+	if !strings.Contains(strings.ToLower(content), ignoreStart) {
 		return data, nil
 	}
 
@@ -69,7 +65,7 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 			if ignoring {
 				return nil, fmt.Errorf(
 					"line %d: <!-- %s --> opened again before the one on line %d was closed",
-					i+1, IgnoreStart, openedAt,
+					i+1, ignoreStart, openedAt,
 				)
 			}
 			ignoring = true
@@ -79,7 +75,7 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 			if !ignoring {
 				return nil, fmt.Errorf(
 					"line %d: <!-- %s --> without a matching <!-- %s -->",
-					i+1, IgnoreEnd, IgnoreStart,
+					i+1, ignoreEnd, ignoreStart,
 				)
 			}
 			ignoring = false
@@ -94,7 +90,7 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 	if ignoring {
 		return nil, fmt.Errorf(
 			"<!-- %s --> on line %d is never closed with <!-- %s -->",
-			IgnoreStart, openedAt, IgnoreEnd,
+			ignoreStart, openedAt, ignoreEnd,
 		)
 	}
 
@@ -114,103 +110,23 @@ const (
 // The end marker is checked first: it begins with the start marker's text, so
 // testing the other way round would read every "ac:ignore end" as an opening.
 func ignoreMarker(line string) marker {
-	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, commentOpen) || !strings.HasSuffix(line, commentClose) {
+	content, ok := CommentBody(line)
+	if !ok {
 		return markerNone
 	}
-	if len(line) < len(commentOpen)+len(commentClose) {
-		return markerNone
-	}
-
-	content := strings.ToLower(strings.TrimSpace(
-		line[len(commentOpen) : len(line)-len(commentClose)],
-	))
+	content = strings.ToLower(content)
 	// Collapse the space between the words so that "ac:ignore  end" is the same
 	// marker as "ac:ignore end".
 	content = strings.Join(strings.Fields(content), " ")
 
 	switch content {
-	case IgnoreEnd:
+	case ignoreEnd:
 		return markerEnd
-	case IgnoreStart:
+	case ignoreStart:
 		return markerStart
 	default:
 		return markerNone
 	}
-}
-
-// Region is a half-open byte range within a document.
-type Region struct {
-	Start int
-	Stop  int
-}
-
-// Contains reports whether offset falls inside the region.
-func (r Region) Contains(offset int) bool {
-	return offset >= r.Start && offset < r.Stop
-}
-
-// InCode reports whether offset falls inside any of the regions.
-func InCode(regions []Region, offset int) bool {
-	for _, region := range regions {
-		if region.Contains(offset) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// CodeRegions reports where the code is in a document.
-//
-// Fenced blocks, indented blocks and code spans, which between them are every
-// place a reader is being shown text rather than told something. Anything that
-// rewrites a document -- a macro, an include directive, an ignore marker -- has
-// to leave these alone, or a page documenting the feature has its own example
-// eaten by it.
-//
-// Asking the parser rather than looking for backticks is deliberate: tildes,
-// indented blocks, closing fences longer than their opener and nesting are all
-// easy to get subtly wrong, and goldmark already knows.
-func CodeRegions(data []byte) []Region {
-	var regions []Region
-
-	doc := parser.New().Parse(data)
-
-	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		switch n := node.(type) {
-		case *ast.CodeBlock:
-			// Fenced and indented blocks alike: goldmark has the one node
-			// for both.
-			lines := n.Value.Segments()
-			if len(lines) == 0 {
-				return ast.WalkContinue, nil
-			}
-			regions = append(regions, Region{
-				Start: lines[0].Start,
-				Stop:  lines[len(lines)-1].Stop,
-			})
-
-		case *ast.CodeSpan:
-			// A span's content is its value, one index per source line.
-			indices := n.Value.Indices()
-			if len(indices) == 0 || n.Value.IsEmpty() {
-				return ast.WalkContinue, nil
-			}
-			regions = append(regions, Region{
-				Start: indices[0].Start,
-				Stop:  indices[len(indices)-1].Stop,
-			})
-		}
-
-		return ast.WalkContinue, nil
-	})
-
-	return regions
 }
 
 // codeLines reports which lines of the document are inside code.

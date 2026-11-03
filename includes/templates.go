@@ -9,7 +9,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/metadata"
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
@@ -313,7 +313,7 @@ func loadTemplate(
 	// the pieces are assembled the markers have already been through template
 	// expansion -- and because the whole point of the feature is that the file
 	// reads well on its own, which is as true of a fragment as of a page.
-	body, err = metadata.StripIgnoredBlocks(body)
+	body, err = mdsource.StripIgnoredBlocks(body)
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to process template file %q: %w", path, err)
 	}
@@ -358,7 +358,7 @@ func protectMacroDirectives(body []byte, left, right string) []byte {
 		return body
 	}
 
-	code := metadata.CodeRegions(body)
+	code := mdsource.CodeRegions(body)
 
 	var out strings.Builder
 	last, from := 0, 0
@@ -372,7 +372,7 @@ func protectMacroDirectives(body []byte, left, right string) []byte {
 		end := start + MacroDirectiveEnd(s[start:])
 		from = end
 
-		if metadata.InCode(code, start) {
+		if mdsource.InCode(code, start) {
 			continue
 		}
 
@@ -485,9 +485,9 @@ func processIncludes(
 		// A directive inside a code block is a code sample: a page documenting how
 		// to write an Include had the file pulled in where its own example should
 		// have been.
-		code := metadata.CodeRegions(contents)
+		code := mdsource.CodeRegions(contents)
 		startIdx, endIdx := findIncludeDirective(s, func(offset int) bool {
-			return metadata.InCode(code, offset)
+			return mdsource.InCode(code, offset)
 		})
 		if startIdx == -1 {
 			return templates, contents, modified, nil
@@ -578,14 +578,14 @@ func processIncludes(
 // rather than from wherever it is pulled into.
 func DirectiveTargets(contents []byte) []string {
 	s := string(contents)
-	code := metadata.CodeRegions(contents)
+	code := mdsource.CodeRegions(contents)
 
 	var targets []string
 	searchFrom := 0
 
 	for searchFrom < len(s) {
 		start, end := findIncludeDirective(s[searchFrom:], func(offset int) bool {
-			return metadata.InCode(code, searchFrom+offset)
+			return mdsource.InCode(code, searchFrom+offset)
 		})
 		if start == -1 {
 			break

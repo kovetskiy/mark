@@ -3,8 +3,7 @@ package parser
 import (
 	"bytes"
 
-	"github.com/kovetskiy/mark/v16/metadata"
-
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -151,7 +150,7 @@ func openingFence(line []byte, pos int) (fence, bool) {
 // between them, the opening ``` included -- which left the rest of the document
 // inside a code block that nothing had opened on purpose. Silently, and with a
 // zero exit code.
-func (f fence) closerAhead(source []byte, from int, code []metadata.Region) bool {
+func (f fence) closerAhead(source []byte, from int, code []mdsource.Region) bool {
 	if from < 0 || from >= len(source) {
 		return false
 	}
@@ -164,7 +163,7 @@ func (f fence) closerAhead(source []byte, from int, code []metadata.Region) bool
 		// region that describes it.
 		content, skipped := undoContainerPrefix(line)
 
-		if !metadata.InCode(code, offset+skipped) && f.closesBlock(content) {
+		if !mdsource.InCode(code, offset+skipped) && f.closesBlock(content) {
 			return true
 		}
 
@@ -182,12 +181,12 @@ var codeRegionsKey = parser.NewContextKey()
 // goldmark is asked rather than the bytes searched for backticks: tildes,
 // indented blocks, closing fences longer than their opener and nesting are all
 // easy to get subtly wrong, and the parser already knows.
-func codeRegions(reader text.Reader, pc parser.Context) []metadata.Region {
-	if cached, ok := pc.Get(codeRegionsKey).([]metadata.Region); ok {
+func codeRegions(reader text.Reader, pc parser.Context) []mdsource.Region {
+	if cached, ok := pc.Get(codeRegionsKey).([]mdsource.Region); ok {
 		return cached
 	}
 
-	regions := metadata.CodeRegions(reader.Source())
+	regions := mdsource.CodeRegions(reader.Source())
 	pc.Set(codeRegionsKey, regions)
 
 	return regions

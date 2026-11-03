@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -144,12 +145,12 @@ func TestStrandedHeaderWarningSkipsCodeBlocks(t *testing.T) {
 	require.NoError(t, err)
 
 	// warnStrandedHeaders only logs, so the assertion is on what it inspects:
-	// the fenced line must be inside a region CodeRegions reports.
-	regions := CodeRegions([]byte(body))
+	// the fenced line must be inside a region mdsource.CodeRegions reports.
+	regions := mdsource.CodeRegions([]byte(body))
 	index := strings.Index(body, "<!-- Space: EXAMPLE -->")
 	require.GreaterOrEqual(t, index, 0)
 
-	assert.True(t, InCode(regions, index),
+	assert.True(t, mdsource.InCode(regions, index),
 		"the example must be seen as code, not as a stranded header")
 }
 

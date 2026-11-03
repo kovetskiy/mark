@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/internal/mdsource"
 	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/kovetskiy/mark/v16/metadata"
 	"github.com/rs/zerolog/log"
@@ -293,7 +294,7 @@ func resolveLink(
 
 		// Read the way the document is read when it is published, BOM
 		// and all: its headers are what the link is rewritten from.
-		linkContents = metadata.NormalizeSource(linkContents)
+		linkContents = mdsource.Normalize(linkContents)
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
