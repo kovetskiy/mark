@@ -29,6 +29,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -193,7 +194,7 @@ func parseAdmonitionOpeningLine(reader text.Reader, left int) *Admonition {
 	hasClass := false
 
 	// The block has to end the opening line, in goldmark v1's grammar (see
-	// attributeBlock): goldmark v2's would take "{x}" and read on into the
+	// syntax.AttributeBlock): goldmark v2's would take "{x}" and read on into the
 	// body's first line for one.
 	var attributes []ast.Attribute
 
@@ -365,7 +366,7 @@ func hasAdmonitionClosingRun(line []byte, w int, pos int, state *admonitionState
 // grammar starts at the reader's position, blanks aside, and runs to the end
 // of its line.
 func attributesEndLine(source []byte, at text.Segment) bool {
-	end, _, ok := attributeBlock(source, at.Start)
+	end, _, ok := syntax.AttributeBlock(source, at.Start)
 
 	return ok && util.IsBlank(source[end:max(end, at.Stop)])
 }

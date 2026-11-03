@@ -2,8 +2,8 @@ package transformer
 
 import (
 	"strings"
-	"unicode"
 
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -29,29 +29,6 @@ func NewAnchorTransformer() *AnchorTransformer {
 	return &AnchorTransformer{}
 }
 
-// AnchorKey reduces an id or a link target to what the two conventions agree
-// on: the letters and digits, in order, folded to lower case.
-//
-// Everything else is discarded rather than mapped, because the conventions do
-// not merely punctuate differently -- they disagree about which characters
-// survive at all. mark keeps "/" and "." in an id where a slug drops them, so
-// "API/v2 Guide" becomes "API/v2-Guide" one way and "apiv2-guide" the other.
-// Comparing only the alphanumerics is what makes those the same heading.
-//
-// "Letters and digits" has to mean it in every script, not just in ASCII: mark
-// keeps non-ASCII letters in an id, so an a-z test folded every heading written
-// in CJK or Cyrillic down to the empty key -- which is discarded -- and no link
-// to one could ever be matched.
-func AnchorKey(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
 // Transform implements the parser.ASTTransformer interface.
 func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
@@ -68,7 +45,7 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 			return ast.WalkContinue, nil
 		}
 
-		key := AnchorKey(value)
+		key := syntax.AnchorKey(value)
 		if key == "" {
 			return ast.WalkContinue, nil
 		}
@@ -112,7 +89,7 @@ func (t *AnchorTransformer) Transform(doc *ast.Document, reader text.Reader, pc 
 			}
 		}
 
-		key := AnchorKey(target)
+		key := syntax.AnchorKey(target)
 		if ambiguous[key] {
 			return ast.WalkContinue, nil
 		}

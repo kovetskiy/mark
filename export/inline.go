@@ -6,8 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/kovetskiy/mark/v16/renderer"
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 )
 
 type inlineContext struct {
@@ -516,7 +515,7 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 
 		// A title mark would split into a title and an anchor cannot be
 		// written.
-		if _, misread := renderer.SplitPageAnchor(title); misread != "" {
+		if _, misread := syntax.SplitPageAnchor(title); misread != "" {
 			return "", false
 		}
 		if strings.ContainsFunc(anchor, unicode.IsSpace) {
@@ -654,8 +653,4 @@ func (w *inlineWriter) imageMarkdown(n *node, use bool) (string, bool) {
 	}
 
 	return "![" + escapeInline(alt, inlineOptions{table: w.ctx.table}) + "](" + destination(src) + linkTitle(title) + ")", true
-}
-
-func anchorKey(s string) string {
-	return transformer.AnchorKey(s)
 }

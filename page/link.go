@@ -15,8 +15,8 @@ import (
 	"sync"
 
 	"github.com/kovetskiy/mark/v16/confluence"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/kovetskiy/mark/v16/metadata"
-	"github.com/kovetskiy/mark/v16/renderer"
 	"github.com/rs/zerolog/log"
 )
 
@@ -213,7 +213,7 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 		return nil
 	}
 
-	title, _ := renderer.SplitPageAnchor(strings.TrimPrefix(target, confluenceLinkPrefix))
+	title, _ := syntax.SplitPageAnchor(strings.TrimPrefix(target, confluenceLinkPrefix))
 	title = strings.TrimSpace(title)
 	if title == "" {
 		title = strings.TrimSpace(text)

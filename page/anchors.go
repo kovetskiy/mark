@@ -1,8 +1,7 @@
 package page
 
 import (
-	"github.com/kovetskiy/mark/v16/parser"
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
 	gparser "github.com/yuin/goldmark/v2/parser"
 )
@@ -31,7 +30,7 @@ func headingAnchor(document []byte, fragment string) string {
 		}
 	}
 
-	key := transformer.AnchorKey(fragment)
+	key := syntax.AnchorKey(fragment)
 	if key == "" {
 		return ""
 	}
@@ -39,7 +38,7 @@ func headingAnchor(document []byte, fragment string) string {
 	var found string
 
 	for _, id := range ids {
-		if transformer.AnchorKey(id) != key {
+		if syntax.AnchorKey(id) != key {
 			continue
 		}
 
@@ -63,7 +62,7 @@ func headingAnchor(document []byte, fragment string) string {
 // included, since an id that is derived differently here would match the
 // wrong heading -- or none.
 func headingIDs(document []byte) []string {
-	md := gparser.New(parser.HeadingOptions()...)
+	md := gparser.New(syntax.HeadingOptions()...)
 
 	doc := md.Parse(document)
 
@@ -74,8 +73,8 @@ func headingIDs(document []byte) []string {
 			return ast.WalkContinue, nil
 		}
 
-		if id, ok := transformer.AttributeText(node, "id", document); ok {
-			ids = append(ids, id)
+		if id, ok := node.Attribute("id"); ok {
+			ids = append(ids, id.Str(document))
 		}
 
 		return ast.WalkContinue, nil

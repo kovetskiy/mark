@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/renderer"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 )
 
 // macro renders a structured macro that stands on its own.
@@ -67,7 +67,7 @@ func (c *converter) codeMacro(n *node) (string, bool) {
 	// A language publishing would rename, such as "sh", could only come back
 	// under the other name, so it is kept as the macro.
 	if language != "" && (!codeLanguage.MatchString(language) || language == "-" ||
-		diagramLanguages[strings.ToLower(language)] || renderer.CodeLanguage(language) != language) {
+		diagramLanguages[strings.ToLower(language)] || syntax.CodeLanguage(language) != language) {
 		return "", false
 	}
 
@@ -132,7 +132,7 @@ func codeInfo(language string, options []string, title string) (string, bool) {
 	}
 
 	for _, info := range candidates {
-		lang, read, readTitle := renderer.ParseCodeBlockInfo(info)
+		lang, read, readTitle := syntax.ParseCodeBlockInfo(info)
 		if lang == language && readTitle == title && slices.Equal(read, options) {
 			return info, true
 		}

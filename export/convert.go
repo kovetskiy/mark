@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kovetskiy/mark/v16/transformer"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 )
 
 // Options configures Convert.
@@ -126,7 +126,7 @@ type converter struct {
 func (c *converter) collectAnchors(n *node) {
 	if n.is("ac:link") {
 		if anchor := n.attr("ac:anchor"); anchor != "" && n.child("ri:page") == nil {
-			c.anchors[transformer.AnchorKey(anchor)] = true
+			c.anchors[syntax.AnchorKey(anchor)] = true
 		}
 	}
 

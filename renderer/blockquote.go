@@ -2,9 +2,9 @@ package renderer
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/kovetskiy/mark/v16/internal/htmlblock"
+	"github.com/kovetskiy/mark/v16/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
 )
 
@@ -18,25 +18,6 @@ type BlockQuoteClassifier struct {
 	patternMap map[string]*regexp.Regexp
 }
 
-// blockQuoteMarker matches a line that opens with an admonition marker.
-//
-// Anchored, and requiring the marker to end on a word boundary, because the
-// unanchored version this replaces matched the word anywhere in the line:
-// "Information about pricing is below." became an info macro and "Please note
-// that the API changed." became a note, since `info` and `note` are substrings
-// of both. Four of the commonest words in English documentation silently
-// rewrote the paragraphs that used them, and the author's only recourse was to
-// reword the sentence.
-//
-// Everything the documented syntax allows still matches -- "Info: text",
-// "**Note:** text", "NOTES:", a bare "Warn" -- because the marker is written
-// at the front of the line in every one of them. Emphasis is not in the text
-// this sees, goldmark having already made a node of it, so "**Warn**" arrives
-// as "Warn".
-var blockQuoteMarker = regexp.MustCompile(
-	`^(?i)(info|infos|note|notes|warn|warns|warning|warnings|tip|tips)\b[[:punct:]]*(\s|$)`,
-)
-
 func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
 	return BlockQuoteClassifier{
 		patternMap: map[string]*regexp.Regexp{
@@ -48,37 +29,11 @@ func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
 	}
 }
 
-// AdmonitionMarker returns the word a blockquote's first line opens with that
-// makes mark publish it as an info, note, tip or warning macro, or "".
-func AdmonitionMarker(line string) string {
-	return markerOf(line)
-}
-
-// markerOf returns the admonition marker a line opens with, or "" if the line
-// is ordinary prose.
-//
-// The comment form is stripped first: "<!-- Info -->" is a marker written in a
-// way that keeps it out of the rendered page, and testdata/quotes.md has
-// carried one since long before this was written.
-func markerOf(literal string) string {
-	marker := strings.TrimSpace(literal)
-	marker = strings.TrimPrefix(marker, "<!--")
-	marker = strings.TrimSuffix(marker, "-->")
-	marker = strings.TrimSpace(marker)
-
-	found := blockQuoteMarker.FindString(marker)
-	if found == "" {
-		return ""
-	}
-
-	return found
-}
-
 // ClassifyingBlockQuote compares a string against a set of patterns and returns its AdmonitionType.
 // GitHub Alerts ([!NOTE], [!TIP], etc.) are handled by the GitHub Alerts transformer instead.
 func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) AdmonitionType {
 
-	marker := markerOf(literal)
+	marker := syntax.AdmonitionMarker(literal)
 	if marker == "" {
 		return AdmonitionNone
 	}

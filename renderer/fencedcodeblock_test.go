@@ -23,7 +23,7 @@ func (c *collectingAttacher) Attach(a attachment.Attachment) {
 
 // fencedCode renders one fenced block with the given info string.
 //
-// The info string is parsed by parseBlockDetails in fencedcodeblock.go.
+// The info string is parsed by syntax.ParseCodeBlockInfo.
 func fencedCode(t *testing.T, info string) string {
 	t.Helper()
 
@@ -246,4 +246,16 @@ func TestFencedCodeBlockDiagramLanguagesNeedTheirFeature(t *testing.T) {
 		assert.Contains(t, actual, `<ac:parameter ac:name="language">`+lang+`</ac:parameter>`)
 		assert.NotContains(t, actual, "ac:image")
 	}
+}
+
+func TestFencedCodeBlockAlias(t *testing.T) {
+	actual := fencedCode(t, "sh title run.sh")
+	assertWellFormed(t, actual)
+	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
+	assert.Contains(t, actual, `<ac:parameter ac:name="title">run.sh</ac:parameter>`)
+
+	// The language given as an attribute class is mapped too.
+	actual = fencedCode(t, "{.sh}")
+	assertWellFormed(t, actual)
+	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
 }
