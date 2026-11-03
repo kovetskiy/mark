@@ -10,18 +10,27 @@ import (
 // unset, so a go install or plain go build still names its release. A
 // pseudo-version already ends in the commit, so the commit is not repeated.
 func buildVersion(version, commit string, info *debug.BuildInfo) string {
-	if info == nil {
-		return version + "@" + commit
+	// The Makefile passes "+dirty" on the commit, and an empty version or
+	// commit when git cannot name them, as in a source archive.
+	commit, flagDirty := strings.CutSuffix(commit, "+dirty")
+	if version == "" {
+		version = "dev"
+	}
+	if commit == "" {
+		commit = "none"
 	}
 
-	var revision string
-	for _, setting := range info.Settings {
-		if setting.Key == "vcs.revision" {
-			revision = setting.Value
+	var module, revision string
+	modified := false
+	if info != nil {
+		module, modified = strings.CutSuffix(info.Main.Version, "+dirty")
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" {
+				revision = setting.Value
+			}
 		}
 	}
 
-	module, modified := strings.CutSuffix(info.Main.Version, "+dirty")
 	fromInfo := false
 	if version == "dev" && module != "" && module != "(devel)" {
 		version = module
@@ -33,7 +42,7 @@ func buildVersion(version, commit string, info *debug.BuildInfo) string {
 	}
 
 	dirty := ""
-	if fromInfo && modified {
+	if flagDirty || fromInfo && modified {
 		dirty = "+dirty"
 	}
 
