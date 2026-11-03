@@ -139,8 +139,8 @@ func TestExportRoundTrip(t *testing.T) {
 
 	out := filepath.Join(t.TempDir(), "export", "installing.md")
 	result, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: id, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Output: out,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, out, result.Output)
@@ -226,8 +226,8 @@ func TestExportRoundTripFrontMatter(t *testing.T) {
 
 	out := filepath.Join(t.TempDir(), "export", "installing.md")
 	result, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: id, Output: out, Metadata: export.MetadataFrontMatter,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Output: out, Metadata: export.MetadataFrontMatter,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"how-to", "install"}, result.Labels, "the result names the labels the front matter does")
@@ -281,8 +281,8 @@ func TestExportOKFIgnoresMetadata(t *testing.T) {
 
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: id, Format: export.FormatOKF, Metadata: export.MetadataFrontMatter,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Format: export.FormatOKF, Metadata: export.MetadataFrontMatter,
 		Stdout: &stdout, AttachmentsDir: t.TempDir(),
 	})
 	require.NoError(t, err)
@@ -308,8 +308,8 @@ func TestExportPageFromConfluence(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "notes.md")
 	result, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Space: "DOCS", Title: "Release notes",
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		Space:      "DOCS", Title: "Release notes",
 		Output: out, AttachmentsDir: filepath.Join(dir, "files"),
 	})
 	require.NoError(t, err)
@@ -379,8 +379,8 @@ func TestExportRefusesToOverwrite(t *testing.T) {
 	out := writeFile(t, dir, "installing.md", "mine")
 
 	config := ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: id, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Output: out,
 	}
 
 	_, err := Export(context.Background(), config)
@@ -409,8 +409,8 @@ func TestExportOfAPageThatIsNotThere(t *testing.T) {
 	server.SetHomepage("DOCS", home.ID)
 
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Space: "DOCS", Title: "Nowhere",
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		Space:      "DOCS", Title: "Nowhere",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `no page or blog post titled "Nowhere" in space DOCS`)
@@ -428,8 +428,8 @@ func TestExportWithoutAttachments(t *testing.T) {
 
 	var stdout bytes.Buffer
 	result, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: id, NoAttachments: true, Stdout: &stdout,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, NoAttachments: true, Stdout: &stdout,
 	})
 	require.NoError(t, err)
 	assert.Empty(t, result.Attachments)
@@ -454,7 +454,7 @@ func TestExportWithoutAttachmentsDeclaresThemAll(t *testing.T) {
 	logged := captureLog(t, func() {
 		var err error
 		result, err = Export(context.Background(), ExportConfig{
-			BaseURL: server.URL, Username: "user", Password: "token", PageID: id,
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id,
 			NoAttachments: true, Stdout: &stdout,
 		})
 		require.NoError(t, err)
@@ -473,8 +473,8 @@ func TestExportThroughTheGateway(t *testing.T) {
 
 	out := filepath.Join(t.TempDir(), "installing.md")
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token",
-		PageID: id, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token"},
+		PageID:     id, Output: out,
 	})
 	require.NoError(t, err)
 
@@ -498,8 +498,8 @@ func TestExportThroughTheGatewayWithoutTheSpace(t *testing.T) {
 	})
 
 	config := ExportConfig{
-		BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token",
-		PageID: id, NoAttachments: true, Stdout: io.Discard,
+		Connection: ConnectionConfig{BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token"},
+		PageID:     id, NoAttachments: true, Stdout: io.Discard,
 	}
 	_, err := Export(context.Background(), config)
 	require.ErrorContains(t, err, "unable to tell which space")
@@ -538,8 +538,8 @@ func TestExportOfAPageInAFolder(t *testing.T) {
 
 			out := filepath.Join(t.TempDir(), "inside.md")
 			_, err := Export(context.Background(), ExportConfig{
-				BaseURL: server.URL, Username: "user", Password: "token",
-				PageID: inside.ID, Output: out,
+				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+				PageID:     inside.ID, Output: out,
 			})
 			require.NoError(t, err)
 
@@ -578,8 +578,8 @@ func TestExportOfAPageBelowAFolderSays(t *testing.T) {
 	var stdout bytes.Buffer
 	logged := captureLog(t, func() {
 		_, err := Export(context.Background(), ExportConfig{
-			BaseURL: server.URL, Username: "user", Password: "token",
-			PageID: inside.ID, Stdout: &stdout,
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			PageID:     inside.ID, Stdout: &stdout,
 		})
 		require.NoError(t, err)
 	})
@@ -613,7 +613,7 @@ func TestExportDeclaresOnlyAttachmentsThePageHas(t *testing.T) {
 
 	out := filepath.Join(t.TempDir(), "page.md")
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Output: out,
 	})
 	require.NoError(t, err)
 
@@ -650,7 +650,7 @@ func TestExportGivesEveryAttachmentAFile(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "page.md")
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Output: out,
 	})
 	require.NoError(t, err)
 
@@ -678,7 +678,7 @@ func TestExportKeepsAttachmentsOffTheDocument(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "page.md")
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Output: out, Overwrite: true,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Output: out, Overwrite: true,
 	})
 	require.NoError(t, err)
 
@@ -709,7 +709,7 @@ func TestAFailedDownloadWritesNothing(t *testing.T) {
 
 	dir := t.TempDir()
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token", PageID: id,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id,
 		Output: filepath.Join(dir, "page.md"),
 	})
 	require.Error(t, err)
@@ -728,7 +728,7 @@ func TestExportKeepsTheMaxAppearance(t *testing.T) {
 
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token", PageID: id, Stdout: &stdout,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Stdout: &stdout,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "<!-- Content-Appearance: max -->")
@@ -762,8 +762,8 @@ func exportTree(t *testing.T, server *confluencetest.Server, pageID, output stri
 	t.Helper()
 
 	_, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pageID, Output: output, Overwrite: overwrite,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pageID, Output: output, Overwrite: overwrite,
 	}, export.TreeOptions{Depth: depth})
 	return err
 }
@@ -877,8 +877,8 @@ func TestExportTreeRoundTrip(t *testing.T) {
 			server, pages := exportTreeSpace(t)
 			out := filepath.Join(t.TempDir(), "guide")
 			_, err := ExportTree(context.Background(), ExportConfig{
-				BaseURL: server.URL, Username: "user", Password: "token",
-				PageID: pages["Guide"].ID, Output: out, Metadata: spelling,
+				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+				PageID:     pages["Guide"].ID, Output: out, Metadata: spelling,
 			}, export.TreeOptions{})
 			require.NoError(t, err)
 
@@ -937,8 +937,8 @@ func TestExportTreeRelativeLinks(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "guide")
 
 	_, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pages["Guide"].ID, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pages["Guide"].ID, Output: out,
 	}, export.TreeOptions{RelativeLinks: true})
 	require.NoError(t, err)
 
@@ -1001,8 +1001,8 @@ func TestExportTreeRelativeLinksFromURLs(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "guide")
 
 	_, err = ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pages["Guide"].ID, Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pages["Guide"].ID, Output: out,
 	}, export.TreeOptions{RelativeLinks: true})
 	require.NoError(t, err)
 
@@ -1046,8 +1046,8 @@ func TestExportSpace(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "docs")
 
 	results, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Space: "DOCS", Output: out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		Space:      "DOCS", Output: out,
 	}, export.TreeOptions{})
 	require.NoError(t, err)
 	assert.Len(t, results, 6)
@@ -1067,8 +1067,8 @@ func TestExportSpace(t *testing.T) {
 	t.Run("one level", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "docs")
 		results, err := ExportTree(context.Background(), ExportConfig{
-			BaseURL: server.URL, Username: "user", Password: "token",
-			Space: "DOCS", Output: out,
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			Space:      "DOCS", Output: out,
 		}, export.TreeOptions{Depth: 1})
 		require.NoError(t, err)
 

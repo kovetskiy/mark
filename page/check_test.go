@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +67,38 @@ func TestLinkCheckerAsksOnce(t *testing.T) {
 		assert.NoError(t, checker.CheckExternal(context.Background(), server.URL+"/page"))
 	}
 
+	assert.Equal(t, int64(1), atomic.LoadInt64(&requests))
+}
+
+// unreachableFinder fails the test that asks it for a page.
+type unreachableFinder struct{ t *testing.T }
+
+func (f unreachableFinder) FindPage(context.Context, string, string, string) (*confluence.PageInfo, error) {
+	f.t.Error("a forgotten page was looked up")
+	return nil, nil
+}
+
+// TestForgetPagesKeepsExternalAnswers: forgetting the ac: links noted for one
+// file leaves what external URLs answered, so the next file does not ask again.
+func TestForgetPagesKeepsExternalAnswers(t *testing.T) {
+	var requests int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&requests, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	checker := NewLinkChecker(LinkChecks{Confluence: true, External: true})
+	require.NoError(t, checker.CheckExternal(context.Background(), server.URL))
+	checker.NotePage("DOCS", "Missing", "a.md")
+
+	checker.ForgetPages()
+
+	missing, err := checker.MissingPages(context.Background(), unreachableFinder{t})
+	require.NoError(t, err)
+	assert.Empty(t, missing)
+
+	require.NoError(t, checker.CheckExternal(context.Background(), server.URL))
 	assert.Equal(t, int64(1), atomic.LoadInt64(&requests))
 }
 

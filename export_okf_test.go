@@ -40,8 +40,8 @@ func TestExportOKFPage(t *testing.T) {
 	dir := t.TempDir()
 
 	result, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: guide.ID, Output: filepath.Join(dir, "guide.md"),
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     guide.ID, Output: filepath.Join(dir, "guide.md"),
 		Format: export.FormatOKF, Generator: "mark/v1.2.3",
 	})
 	require.NoError(t, err)
@@ -92,8 +92,8 @@ func TestExportOKFPageByAnAppIsAProcess(t *testing.T) {
 	dir := t.TempDir()
 
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: rule.ID, Output: filepath.Join(dir, "guide.md"),
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     rule.ID, Output: filepath.Join(dir, "guide.md"),
 		Format: export.FormatOKF, Generator: "mark/v1.2.3",
 	})
 	require.NoError(t, err)
@@ -115,8 +115,8 @@ func TestExportOKFTree(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "bundle")
 
 	results, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pages["Guide"].ID, Output: out, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pages["Guide"].ID, Output: out, Format: export.FormatOKF,
 	}, export.TreeOptions{})
 	require.NoError(t, err)
 	assert.Len(t, results, 4)
@@ -169,8 +169,8 @@ func TestExportOKFSpace(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "bundle")
 
 	_, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Space: "DOCS", Output: out, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		Space:      "DOCS", Output: out, Format: export.FormatOKF,
 	}, export.TreeOptions{})
 	require.NoError(t, err)
 
@@ -195,8 +195,8 @@ func TestExportRefusesAnUnknownFormat(t *testing.T) {
 	server, pages := exportTreeSpace(t)
 
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: "html",
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: "html",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown export format "html"`)
@@ -206,8 +206,8 @@ func exportTreeOKF(t *testing.T, server *confluencetest.Server, pageID, out stri
 	t.Helper()
 
 	_, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pageID, Output: out, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pageID, Output: out, Format: export.FormatOKF,
 	}, export.TreeOptions{})
 	return err
 }
@@ -279,8 +279,8 @@ func TestExportOKFPageKeepsWhatMarkCannotSay(t *testing.T) {
 
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: guide.ID, Stdout: &stdout, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     guide.ID, Stdout: &stdout, Format: export.FormatOKF,
 	})
 	require.NoError(t, err)
 	document := stdout.String()
@@ -303,8 +303,8 @@ func TestExportOKFPageThroughTheGatewayLinksIntoAMissingSpace(t *testing.T) {
 
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token",
-		PageID: pages["Guide"].ID, Stdout: &stdout, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token"},
+		PageID:     pages["Guide"].ID, Stdout: &stdout, Format: export.FormatOKF,
 	})
 	require.NoError(t, err)
 	document := stdout.String()
@@ -325,8 +325,8 @@ func TestExportOKFPageReportsAFailedLookup(t *testing.T) {
 	})
 
 	_, err := Export(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: export.FormatOKF,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unable to look up page "C++"`)
@@ -340,8 +340,8 @@ func TestExportOKFPageRefusesAReservedName(t *testing.T) {
 
 	for _, name := range []string{"index.md", "LOG.md"} {
 		_, err := Export(context.Background(), ExportConfig{
-			BaseURL: server.URL, Username: "user", Password: "token",
-			PageID: pages["Guide"].ID, Output: filepath.Join(dir, name), Format: export.FormatOKF,
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			PageID:     pages["Guide"].ID, Output: filepath.Join(dir, name), Format: export.FormatOKF,
 		})
 		require.Error(t, err, name)
 		assert.Contains(t, err.Error(), "OKF reserves the name "+name)
@@ -367,8 +367,8 @@ func TestExportOKFTreeNamesAndIndexes(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "bundle")
 
 	_, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: guide.ID, Output: out + string(filepath.Separator), Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     guide.ID, Output: out + string(filepath.Separator), Format: export.FormatOKF,
 	}, export.TreeOptions{Depth: 2})
 	require.NoError(t, err)
 
@@ -407,8 +407,8 @@ func TestExportOKFSpaceHomePage(t *testing.T) {
 		t.Helper()
 		require.NoError(t, os.RemoveAll(out))
 		_, err := ExportTree(context.Background(), ExportConfig{
-			BaseURL: server.URL, Username: "user", Password: "token",
-			Space: "DOCS", Output: out, Format: "okf",
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			Space:      "DOCS", Output: out, Format: "okf",
 		}, export.TreeOptions{Depth: depth})
 		require.NoError(t, err)
 		data, err := os.ReadFile(filepath.Join(out, "index.md"))
@@ -434,8 +434,8 @@ func TestExportOKFEmptySpaceIsABundle(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "bundle")
 
 	results, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Space: "EMPTY", Output: out, Format: export.FormatOKF,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		Space:      "EMPTY", Output: out, Format: export.FormatOKF,
 	}, export.TreeOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, results)
@@ -466,8 +466,8 @@ func TestExportTreeLongTitles(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out")
 			_, err := ExportTree(context.Background(), ExportConfig{
-				BaseURL: server.URL, Username: "user", Password: "token",
-				PageID: root.ID, Output: out, Format: format,
+				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+				PageID:     root.ID, Output: out, Format: format,
 			}, export.TreeOptions{})
 			require.NoError(t, err)
 

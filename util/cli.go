@@ -449,10 +449,12 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	logFlags(cmd)
 
 	config := mark.ExportConfig{
-		BaseURL:               creds.BaseURL,
-		Username:              creds.Username,
-		Password:              creds.Password,
-		InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		Connection: mark.ConnectionConfig{
+			BaseURL:               creds.BaseURL,
+			Username:              creds.Username,
+			Password:              creds.Password,
+			InsecureSkipTLSVerify: cmd.Bool("insecure-skip-tls-verify"),
+		},
 
 		PageID: pageID,
 		Space:  space,

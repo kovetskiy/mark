@@ -4,17 +4,13 @@ import (
 	"context"
 	"io"
 
-	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/kovetskiy/mark/v16/export"
 )
 
 // ExportConfig holds the options of Export: where Confluence is and how to
 // sign in to it, as for Config, and which page to export to where.
 type ExportConfig struct {
-	BaseURL               string
-	Username              string
-	Password              string
-	InsecureSkipTLSVerify bool
+	Connection ConnectionConfig
 
 	// PageID names the page to export. Without it, Space and Title do.
 	PageID string
@@ -57,7 +53,7 @@ type ExportConfig struct {
 // publish back to the same page. See the export package for what is converted
 // and what is kept as storage format.
 func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := config.Connection.api()
 
 	stdout := config.Stdout
 	if stdout == nil {
@@ -71,7 +67,7 @@ func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 // no page the whole of config.Space, into the directory config.Output names.
 // See export.Tree for the layout.
 func ExportTree(ctx context.Context, config ExportConfig, options export.TreeOptions) ([]*export.Result, error) {
-	api := confluence.NewAPI(config.BaseURL, config.Username, config.Password, config.InsecureSkipTLSVerify)
+	api := config.Connection.api()
 
 	stdout := config.Stdout
 	if stdout == nil {

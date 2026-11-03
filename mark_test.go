@@ -20,7 +20,6 @@ import (
 	"github.com/kovetskiy/mark/v16/mermaid"
 	"github.com/kovetskiy/mark/v16/report"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -488,6 +487,11 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 
 			server.ResetRequests()
 
+			publisher, err := NewPublisher(context.Background(), api, config)
+			require.Error(t, err)
+			assert.Nil(t, publisher)
+			assert.Equal(t, runErr.Error(), err.Error(), "the same setting is refused in the same words")
+
 			target, err := ProcessFile(context.Background(), file, api, config)
 			require.Error(t, err)
 			assert.Nil(t, target)
@@ -500,21 +504,17 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 // TestProcessFileUsesTheMermaidEngine: a library caller asking ProcessFile for
 // merman gets merman, not whichever engine some earlier run chose.
 func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
-	var logged bytes.Buffer
+	// No merman to be found, so the diagram fails in a way only merman can:
+	// Chrome would have drawn it.
+	t.Setenv("PATH", t.TempDir())
 
-	restore := log.Logger
-	log.Logger = zerolog.New(&logged)
-	t.Cleanup(func() { log.Logger = restore })
-
-	_, api, file, config := processFileFixture(t, "Body.\n")
+	_, api, file, config := processFileFixture(t, "```mermaid\ngraph TD\n  A --> B\n```\n")
+	config.Rendering.Features = []string{"mermaid"}
 	config.Rendering.MermaidEngine = mermaid.EngineMerman
 
 	_, err := ProcessFile(context.Background(), file, api, config)
-	require.NoError(t, err)
-
-	// The warning is said by choosing merman and by nothing else, so it is how
-	// the choice shows from outside the package.
-	assert.Contains(t, logged.String(), "merman render engine is experimental")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to start the merman render engine")
 }
 
 // TestProcessFileReportsMissingPagesAsRunDoes: the ac: links a run leaves
@@ -824,4 +824,169 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 			}
 		})
 	}
+}
+
+// A Publisher keeps a run's state across files, but each file's links are its
+// own: a link the first file left unresolved is not the second's failure.
+func TestPublisherChecksEachFilesLinks(t *testing.T) {
+	server, api, first, config := processFileFixture(t, "[x](ac:Missing)\n")
+	config.Links.CheckLinks = []string{"confluence"}
+	second := writeFile(t, filepath.Dir(first), "other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nBody.\n")
+
+	publisher, err := NewPublisher(context.Background(), api, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(context.Background(), first)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Missing")
+
+	target, err := publisher.Publish(context.Background(), second)
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	assert.NotNil(t, server.Page(target.ID))
+}
+
+// A Publisher's templates and page header outlive the context it was made
+// under: a user is looked up under the context Publish was given.
+func TestPublisherLooksUsersUpUnderPublishContext(t *testing.T) {
+	server, api, file, config := processFileFixture(t, "Ask @{Alice Example}.\n")
+	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
+	// Named by the document's title, so that the header's checks at load time
+	// do not look it up and leave it cached.
+	server.AddUser(confluencetest.User{AccountID: "acct-doc", FullName: "Doc"})
+	config.Rendering.PageHeader = writeFile(t, t.TempDir(), "header.html",
+		`<p>{{ with user .Title }}{{ .AccountID }}{{ end }}</p>`)
+
+	setup, cancel := context.WithCancel(context.Background())
+
+	publisher, err := NewPublisher(setup, api, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	cancel()
+
+	target, err := publisher.Publish(context.Background(), file)
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	body := server.Page(target.ID).Body
+	assert.Contains(t, body, `ri:account-id="acct-alice"`)
+	assert.Contains(t, body, `<p>acct-doc</p>`)
+}
+
+// The merman engine's "experimental" warning is said once a publisher, not
+// once for each time its name is checked.
+func TestPublisherWarnsOfMermanOnce(t *testing.T) {
+	_, api, _, config := processFileFixture(t, "Body.\n")
+	config.Rendering.MermaidEngine = mermaid.EngineMerman
+
+	var err error
+	logged := captureLog(t, func() {
+		var publisher *Publisher
+		publisher, err = NewPublisher(context.Background(), api, config)
+		publisher.Close()
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(logged, "experimental"))
+}
+
+// A Publisher that failed to be made is nil, and closing it is harmless, so
+// that a deferred Close cannot hide the error.
+func TestNilPublisherCloses(t *testing.T) {
+	var publisher *Publisher
+
+	assert.NotPanics(t, publisher.Close)
+}
+
+// A Publisher NewPublisher did not make, nil or zero, refuses to publish
+// rather than panicking, and closing it is harmless.
+func TestUnmadePublisherRefuses(t *testing.T) {
+	_, _, file, _ := processFileFixture(t, "Body.\n")
+
+	for name, publisher := range map[string]*Publisher{"nil": nil, "zero": {}} {
+		t.Run(name, func(t *testing.T) {
+			target, err := publisher.Publish(context.Background(), file)
+			require.ErrorIs(t, err, errNoPublisher)
+			assert.Nil(t, target)
+			assert.NotPanics(t, publisher.Close)
+		})
+	}
+}
+
+// A closed Publisher refuses a file before Confluence is asked anything.
+func TestClosedPublisherRefuses(t *testing.T) {
+	server, api, file, config := processFileFixture(t, "Body.\n")
+
+	publisher, err := NewPublisher(context.Background(), api, config)
+	require.NoError(t, err)
+	publisher.Close()
+	publisher.Close()
+
+	server.ResetRequests()
+
+	target, err := publisher.Publish(context.Background(), file)
+	require.ErrorIs(t, err, errPublisherClosed)
+	assert.Nil(t, target)
+	assert.Empty(t, server.Requests())
+}
+
+// TestPublisherKeepsFoldersAcrossFiles: a Publisher remembers the folders it
+// resolved, so a second file in the same folder does not look it up again,
+// where ProcessFile, starting afresh each time, does.
+func TestPublisherKeepsFoldersAcrossFiles(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	first := writeFile(t, dir, "a.md", markdownInFolder("Manuals", "A"))
+	second := writeFile(t, dir, "b.md", markdownInFolder("Manuals", "B"))
+	third := writeFile(t, dir, "c.md", markdownInFolder("Manuals", "C"))
+	config := publishConfig(server.URL, first)
+
+	publisher, err := NewPublisher(context.Background(), api, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(context.Background(), first)
+	require.NoError(t, err)
+	require.Len(t, server.Folders(), 1)
+
+	// A folder is found by listing what is beneath its parent.
+	const lookup = "/direct-children"
+
+	server.ResetRequests()
+	_, err = publisher.Publish(context.Background(), second)
+	require.NoError(t, err)
+	assert.Zero(t, server.CountRequests("GET", lookup), "the Publisher does not look the folder up again")
+
+	server.ResetRequests()
+	_, err = ProcessFile(context.Background(), third, api, config)
+	require.NoError(t, err)
+	assert.NotZero(t, server.CountRequests("GET", lookup), "ProcessFile starts without the folder")
+
+	assert.Len(t, server.Folders(), 1, "every file lands in the one folder")
+}
+
+// TestPublisherPublishesOneFileToAPageID: with Page.PageID every file would
+// publish over the one page, so a Publisher refuses a second file, as Run
+// does, and still takes the first one again.
+func TestPublisherPublishesOneFileToAPageID(t *testing.T) {
+	server, api, first, config := processFileFixture(t, "First.\n")
+	target := server.AddPage("DOCS", "Target", "page", "")
+	config.Page.PageID = target.ID
+	second := writeFile(t, filepath.Dir(first), "other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nSecond.\n")
+
+	publisher, err := NewPublisher(context.Background(), api, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(context.Background(), first)
+	require.NoError(t, err)
+	published := server.Page(target.ID).Body
+
+	_, err = publisher.Publish(context.Background(), second)
+	require.ErrorContains(t, err, "Page.PageID names one page")
+	assert.Equal(t, published, server.Page(target.ID).Body, "the page keeps the first file")
+
+	_, err = publisher.Publish(context.Background(), first)
+	require.NoError(t, err, "publishing the same file again is not a second file")
 }
