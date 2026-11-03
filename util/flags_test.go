@@ -16,14 +16,14 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// TestCheckConfigFile covers the reason issue #613 was so hard to diagnose.
+// TestConfigFileCheck covers the reason issue #613 was so hard to diagnose.
 //
 // Settings are read from the file lazily, one flag at a time, so a file that
 // cannot be parsed yields nothing at all and says nothing about it. Every
 // setting disappears at once, and the first sign of trouble is whichever
 // required value went with them -- which is how an unquoted list produces
 // "confluence password should be specified".
-func TestCheckConfigFile(t *testing.T) {
+func TestConfigFileCheck(t *testing.T) {
 	write := func(t *testing.T, content string) string {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "mark.toml")
@@ -33,11 +33,13 @@ func TestCheckConfigFile(t *testing.T) {
 
 	run := func(t *testing.T, args ...string) error {
 		t.Helper()
+		file := newConfigFile(new(string))
 		cmd := &cli.Command{
-			Flags:  globalFlags(newConfigFile(new(string))),
+			Flags:  globalFlags(file),
 			Action: func(context.Context, *cli.Command) error { return nil },
 		}
-		return CheckConfigFile(mustParse(t, cmd, args...))
+		mustParse(t, cmd, args...)
+		return file.check()
 	}
 
 	t.Run("a file that cannot be parsed is reported", func(t *testing.T) {
@@ -275,13 +277,10 @@ func TestFlagsResolveWithoutAConfigDir(t *testing.T) {
 	})
 }
 
-// TestCheckConfigFileAcceptsNoDefault: with no default, having no file at all
+// TestConfigFileCheckAcceptsNoDefault: with no default, having no file at all
 // is still the ordinary case and must not be reported.
-func TestCheckConfigFileAcceptsNoDefault(t *testing.T) {
-	cmd := &cli.Command{
-		Flags: []cli.Flag{&cli.StringFlag{Name: "config"}},
-	}
-	assert.NoError(t, CheckConfigFile(mustParse(t, cmd, "mark")))
+func TestConfigFileCheckAcceptsNoDefault(t *testing.T) {
+	assert.NoError(t, newConfigFile(new(string)).check())
 }
 
 // TestFeaturesRejectsAnUnknownName: every feature is read with a plain

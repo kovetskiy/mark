@@ -575,15 +575,6 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 	return ctx, nil
 }
 
-// CheckConfigFile reports a configuration file the command's "config" flag
-// names that cannot be used: one that does not parse, or a path somebody gave
-// that does not exist.
-func CheckConfigFile(command *cli.Command) error {
-	path := command.String("config")
-
-	return newConfigFile(&path).check()
-}
-
 // checkEmptyFeatures refuses an empty MARK_FEATURES or features = [], which
 // urfave takes for no value at all and answers with the defaults: whoever
 // wrote them meant something, and it was not that. A --features on the
@@ -603,10 +594,10 @@ func checkEmptyFeatures(command *cli.Command) error {
 	}
 
 	// A file that cannot be read or parsed has been reported by
-	// CheckConfigFile already.
+	// configFile.check already.
 	values, err := readConfigFile(path)
 	if err != nil {
-		return nil //nolint:nilerr // reported by CheckConfigFile
+		return nil //nolint:nilerr // reported by configFile.check
 	}
 
 	if value, ok := values["features"]; ok && isEmptyValue(value) {
