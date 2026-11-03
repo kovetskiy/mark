@@ -7,7 +7,6 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v16/attachment"
-	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
 )
 
@@ -15,15 +14,26 @@ type Lib struct {
 	Templates *template.Template
 }
 
+// UserLookup resolves a user name for the "user" template func.
+// *confluence.API implements it, returning a *confluence.User.
+//
+// The user is handed to the templates as it is, so a template reads whichever
+// fields it has: the built-in ones read AccountID and UserKey. A nil user is
+// nobody.
+type UserLookup interface {
+	LookupUser(ctx context.Context, name string) (any, error)
+}
+
 // New builds the standard library. The "user" template func resolves names
-// through api, with ctx for its requests; api may be nil, and then it cannot.
-func New(ctx context.Context, api *confluence.API) (*Lib, error) {
+// through users, with ctx for its requests; users may be nil, and then it
+// cannot.
+func New(ctx context.Context, users UserLookup) (*Lib, error) {
 	var (
 		lib Lib
 		err error
 	)
 
-	lib.Templates, err = templates(ctx, api)
+	lib.Templates, err = templates(ctx, users)
 	if err != nil {
 		return nil, err
 	}
@@ -31,20 +41,21 @@ func New(ctx context.Context, api *confluence.API) (*Lib, error) {
 	return &lib, nil
 }
 
-func templates(ctx context.Context, api *confluence.API) (*template.Template, error) {
+func templates(ctx context.Context, users UserLookup) (*template.Template, error) {
 	text := func(line ...string) string {
 		return strings.Join(line, ``)
 	}
 
 	templates := template.New(`stdlib`).Funcs(
 		template.FuncMap{
-			"user": func(name string) *confluence.User {
-				if api == nil {
+			"user": func(name string) any {
+				if users == nil {
 					return nil
 				}
-				user, err := api.GetUserByName(ctx, name)
+				user, err := users.LookupUser(ctx, name)
 				if err != nil {
-					log.Error().Err(err).Send()
+					log.Error().Err(err).Str("user", name).Msg("unable to look up user")
+					return nil
 				}
 
 				return user

@@ -1,9 +1,12 @@
 package stdlib
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -197,4 +200,61 @@ func BenchmarkNew(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// fakeUser has the fields a custom template may read, beyond the two the
+// built-in ones do.
+type fakeUser struct {
+	AccountID, UserKey, DisplayName string
+}
+
+type fakeUsers map[string]*fakeUser
+
+func (f fakeUsers) LookupUser(_ context.Context, name string) (any, error) {
+	u, ok := f[name]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	return u, nil
+}
+
+// TestUserTemplatesUseLookup drives the "user" template func through a
+// UserLookup that is not the Confluence client.
+func TestUserTemplatesUseLookup(t *testing.T) {
+	lib, err := New(t.Context(), fakeUsers{
+		"cloud": {AccountID: `a"1`, DisplayName: "Ada"},
+		"dc":    {UserKey: "k1"},
+	})
+	require.NoError(t, err)
+
+	render := func(tpl, name string) string {
+		var out strings.Builder
+		require.NoError(t, lib.Templates.ExecuteTemplate(&out, tpl, struct{ Name string }{name}))
+		return out.String()
+	}
+
+	assert.Equal(t, `<ac:link><ri:user ri:account-id="a&#34;1" /></ac:link>`, render("ac:link:user", "cloud"))
+	assert.Equal(t, `<ac:link><ri:user ri:userkey="k1" /></ac:link>`, render("ac:link:user", "dc"))
+	assert.Equal(t, `nobody`, render("ac:link:user", "nobody"))
+	assert.Contains(t, render("ac:profile", "dc"), `<ri:user ri:userkey="k1" />`)
+	assert.Empty(t, render("ac:profile", "nobody"))
+
+	// A template of the user's own reads the user as the lookup returned it.
+	custom, err := lib.Templates.New("custom").Parse(`{{ with user .Name }}{{ .DisplayName }}{{ end }}`)
+	require.NoError(t, err)
+	var out strings.Builder
+	require.NoError(t, custom.Execute(&out, struct{ Name string }{"cloud"}))
+	assert.Equal(t, "Ada", out.String())
+}
+
+// TestNilConfluenceAPIIsNoLookup: a nil *confluence.API in the interface must
+// behave as no lookup at all rather than panic.
+func TestNilConfluenceAPIIsNoLookup(t *testing.T) {
+	var api *confluence.API
+	lib, err := New(t.Context(), api)
+	require.NoError(t, err)
+
+	var out strings.Builder
+	require.NoError(t, lib.Templates.ExecuteTemplate(&out, "ac:link:user", struct{ Name string }{"x"}))
+	assert.Equal(t, "x", out.String())
 }

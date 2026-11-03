@@ -1814,6 +1814,22 @@ func (api *API) GetUserByName(ctx context.Context, name string) (*User, error) {
 	return user, err
 }
 
+// LookupUser is GetUserByName for stdlib's "user" template func, which takes
+// it through an interface so that the Markdown pipeline does not depend on
+// this package. A nil api, or a name that finds nobody, gives a nil user.
+func (api *API) LookupUser(ctx context.Context, name string) (any, error) {
+	if api == nil {
+		return nil, nil
+	}
+
+	user, err := api.GetUserByName(ctx, name)
+	if err != nil || user == nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
 func (api *API) cachedUser(name string) (userCacheEntry, bool) {
 	api.userCacheMutex.RLock()
 	defer api.userCacheMutex.RUnlock()
