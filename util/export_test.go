@@ -177,12 +177,11 @@ func TestExportBaseURL(t *testing.T) {
 }
 
 // TestAPublishFlagBeforeExportIsRefused: a publish flag before "export" says
-// whose flag it is, rather than that it is not defined.
+// whose flag it is, as well as that the root does not have it.
 func TestAPublishFlagBeforeExportIsRefused(t *testing.T) {
 	noDefaultConfig(t)
 
-	got, _, err := dispatch(t, "-f", "doc.md", "export", "--page-id", "1")
+	_, _, err := dispatch(t, "-f", "doc.md", "export", "--page-id", "1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `--files is a flag of "publish", not of "export"`)
-	assert.Nil(t, got)
+	assert.Contains(t, err.Error(), `-f: it is a flag of "publish"`)
 }

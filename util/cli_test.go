@@ -320,12 +320,10 @@ func TestWatchFlag(t *testing.T) {
 		env      map[string]string
 		config   string
 		args     []string
-		bare     bool
 		watchers []string
 	}{
 		{name: "by default", watchers: []string{"acct-current"}},
 		{name: "--watch=false", args: []string{"--watch=false"}},
-		{name: "--watch=false without publish", args: []string{"--watch=false"}, bare: true},
 		{name: "MARK_WATCH=false", env: map[string]string{"MARK_WATCH": "false"}},
 		{name: "watch = false", config: "watch = false\n"},
 		{name: "--watch over watch = false", config: "watch = false\n", args: []string{"--watch"},
@@ -337,11 +335,8 @@ func TestWatchFlag(t *testing.T) {
 			}
 
 			watchers, err := watchedAfterPublish(t, tc.config, func(server, config, document string) error {
-				args := []string{"-c", config, "--color", "never", "-u", "user", "-p", "token"}
-				if !tc.bare {
-					args = append(args, "publish")
-				}
-				args = append(args, "-b", server, "--files", document)
+				args := []string{"-c", config, "--color", "never", "-u", "user", "-p", "token",
+					"publish", "-b", server, "--files", document}
 				_, _, err := runMark(t, append(args, tc.args...)...)
 				return err
 			})

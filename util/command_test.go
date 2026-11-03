@@ -25,21 +25,15 @@ func noDefaultConfig(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 }
 
-// published is what a run handed to publish: whether it came through the
-// bare form, and the files it was to publish.
-type published struct {
-	bare  bool
-	files string
-}
-
 // dispatch runs mark's command line with publishing swapped out, and says
-// what would have been published.
-func dispatch(t *testing.T, args ...string) (*published, string, error) {
+// what would have been published: the files publish was given, or nil.
+func dispatch(t *testing.T, args ...string) (*string, string, error) {
 	t.Helper()
 
-	var got *published
+	var got *string
 	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
-		got = &published{bare: c == c.Root(), files: c.String("files")}
+		files := c.String("files")
+		got = &files
 		return nil
 	}, nil)
 	var out bytes.Buffer
@@ -52,93 +46,63 @@ func dispatch(t *testing.T, args ...string) (*published, string, error) {
 	return got, out.String() + logged, err
 }
 
-// TestTheBareForm covers a command line that names no command: it publishes
-// as "mark publish" with the same arguments would, which is what mark did
-// before it had commands.
-func TestTheBareForm(t *testing.T) {
+// TestTheRootCommand covers a command line that names no command, or names
+// publish's flags before it, which fails naming the command the flag belongs
+// to.
+func TestTheRootCommand(t *testing.T) {
 	noDefaultConfig(t)
 	config := writeConfig(t, t.TempDir(), "mark.toml", "")
 
+	hint := `it is a flag of "publish", so write it after "publish"`
 	for _, test := range []struct {
 		name  string
 		args  []string
-		want  *published
+		want  string
 		error string
 	}{
-		{"flags only", []string{"-f", "a.md", "--dry-run"}, &published{true, "a.md"}, ""},
-		{"an inline value", []string{"--files=a.md"}, &published{true, "a.md"}, ""},
-		{"global flags too", []string{"-c", config, "-u", "me", "-f", "a.md"}, &published{true, "a.md"}, ""},
-		{"publish named", []string{"publish", "-f", "a.md"}, &published{false, "a.md"}, ""},
-		{"global flags before publish", []string{"-u", "me", "--config", config, "publish", "-f", "a.md"}, &published{false, "a.md"}, ""},
-		// A flag's value is not a command, however it is spelled.
-		{"a value that reads as a command", []string{"--version-message", "publish", "-f", "a.md"}, &published{true, "a.md"}, ""},
-		{"a global flag's value that reads as a command", []string{"-u", "publish", "-f", "a.md"}, &published{true, "a.md"}, ""},
-		// Arguments that are not flags were ignored, and a --files pattern the
-		// shell expanded still is.
-		{"a stray argument", []string{"-f", "a.md", "b.md"}, &published{true, "a.md"}, ""},
-		// publish has no such history to keep.
-		{"a stray argument after publish", []string{"publish", "-f", "a.md", "b.md"}, nil, `unexpected argument "b.md"`},
-		// A mistyped command is not a stray argument.
-		{"a mistyped command first", []string{"publsh", "--compile-only", "-f", "x.md"}, nil, `unknown command "publsh": did you mean "publish"?`},
-		{"a mistyped command last", []string{"-f", "x.md", "pubish"}, nil, `did you mean "publish"?`},
-		{"anything at all without --files", []string{"--compile-only", "doc.md"}, nil, `unknown command "doc.md"`},
-		// A publish flag before a command is not that command's.
-		{"a publish flag before publish", []string{"-f", "a.md", "publish"}, nil, `--files is a flag of "publish": write it after "publish"`},
+		{"publish named", []string{"publish", "-f", "a.md"}, "a.md", ""},
+		{"global flags before publish", []string{"-u", "me", "--config", config, "publish", "-f", "a.md"}, "a.md", ""},
+		{"a stray argument after publish", []string{"publish", "-f", "a.md", "b.md"}, "", `unexpected argument "b.md"`},
+		{"publish's flags alone", []string{"-f", "a.md", "--dry-run"}, "", "flag provided but not defined: -f: " + hint},
+		{"an inline value", []string{"--files=a.md"}, "", "flag provided but not defined: -files: " + hint},
+		{"after a global flag", []string{"-c", config, "-u", "me", "-f", "a.md"}, "", hint},
+		{"a publish flag before publish", []string{"-f", "a.md", "publish"}, "", hint},
+		{"a global flag's value that reads as a command", []string{"-u", "publish", "-f", "a.md"}, "", hint},
+		{"a flag of no command", []string{"--no-such-flag"}, "", "flag provided but not defined: -no-such-flag"},
+		{"a mistyped command", []string{"publsh", "--compile-only", "-f", "x.md"}, "", `unknown command "publsh": did you mean "publish"?`},
+		{"an argument that is no command", []string{"doc.md"}, "", `unknown command "doc.md"`},
+		{"an argument that is no command, then publish's flags", []string{"doc.md", "-f", "a.md"}, "", `unknown command "doc.md"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, _, err := dispatch(t, test.args...)
 			if test.error != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), test.error)
+				if !strings.Contains(test.error, hint) {
+					assert.NotContains(t, err.Error(), hint)
+				}
 				assert.Nil(t, got, "nothing is published")
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, test.want, got)
+			require.NotNil(t, got)
+			assert.Equal(t, test.want, *got)
 		})
 	}
 }
 
-// TestMarkOnItsOwn: "mark" alone publishes what the environment or the file
-// names, as it did, and otherwise shows the help -- and still fails, so that a
-// pipeline that lost its settings does not pass.
+// TestMarkOnItsOwn: "mark" alone shows the help and fails, so that a pipeline
+// still written for "mark" with its settings in the environment does not pass.
 func TestMarkOnItsOwn(t *testing.T) {
 	noDefaultConfig(t)
+	t.Setenv("MARK_FILES", "env.md")
 
 	got, out, err := dispatch(t)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no command given")
+	assert.Contains(t, err.Error(), `no command given: run "mark publish" to publish`)
 	assert.Nil(t, got)
 	assert.Contains(t, out, "COMMANDS:")
 	assert.NotContains(t, out, "--files", "the help is mark's, not publish's")
-
-	t.Setenv("MARK_FILES", "env.md")
-	got, out, err = dispatch(t)
-	require.NoError(t, err)
-	assert.Equal(t, &published{true, "env.md"}, got)
-	assert.Contains(t, out, "deprecated")
-}
-
-// TestTheBareFormReadsTheFileForPublishFlags: publish's flags on the root
-// read the environment and the file as publish's own do.
-func TestTheBareFormReadsTheFileForPublishFlags(t *testing.T) {
-	noDefaultConfig(t)
-	config := writeConfig(t, t.TempDir(), "mark.toml", "files = \"from-file.md\"\n")
-
-	got, _, err := dispatch(t, "-c", config)
-	require.NoError(t, err)
-	assert.Equal(t, &published{true, "from-file.md"}, got)
-
-	t.Setenv("MARK_FILES", "from-env.md")
-	got, _, err = dispatch(t, "-c", config)
-	require.NoError(t, err)
-	assert.Equal(t, &published{true, "from-env.md"}, got)
-
-	// Held until the root's action, so they are not mistaken for flags
-	// written before a command.
-	got, _, err = dispatch(t, "-c", config, "publish")
-	require.NoError(t, err)
-	assert.Equal(t, &published{false, "from-env.md"}, got)
 }
 
 // TestPublishResolvesFlags: the global flags belong to the root command and
@@ -171,7 +135,6 @@ func TestPublishResolvesFlags(t *testing.T) {
 		{"file named after publish", nil, []string{"publish", "--config", config}},
 		{"file named before publish", nil, []string{"--config", config, "publish"}},
 		{"file named in the environment", map[string]string{"MARK_CONFIG": config}, []string{"publish"}},
-		{"file named with no command", nil, []string{"-c", config}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			resolved := resolveFlags(t, test.env, names, test.args...)
@@ -293,42 +256,6 @@ func publishable(t *testing.T) (config, document string) {
 	return config, document
 }
 
-// TestBareMarkStillPublishes: "mark <flags>" is how mark runs in a great many
-// CI pipelines, so it has to go on doing exactly what "mark publish <flags>"
-// does, and log that it is deprecated.
-func TestBareMarkStillPublishes(t *testing.T) {
-	dir := t.TempDir()
-	config := writeConfig(t, dir, "mark.toml", "")
-	document := filepath.Join(dir, "page.md")
-	require.NoError(t, os.WriteFile(document,
-		[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
-
-	args := []string{"--config", config, "--color", "never", "--compile-only", "--files", document}
-
-	bareOut, bareLog, err := runMark(t, args...)
-	require.NoError(t, err)
-
-	publishOut, publishLog, err := runMark(t, append([]string{"publish"}, args...)...)
-	require.NoError(t, err)
-
-	assert.Contains(t, bareOut, "<p>Body.</p>", "the bare form publishes")
-	assert.Equal(t, publishOut, bareOut, "and publishes exactly what mark publish does")
-
-	assert.Contains(t, bareLog, `deprecated: run "mark publish"`)
-	assert.NotContains(t, publishLog, "deprecated")
-}
-
-// TestPublishFlagsBelongAfterPublish: a publish flag written before the
-// command it belongs to is refused rather than silently dropped.
-func TestPublishFlagsBelongAfterPublish(t *testing.T) {
-	cmd := newCommand("test")
-	cmd.Writer, cmd.ErrWriter = &bytes.Buffer{}, &bytes.Buffer{}
-
-	err := cmd.Run(context.Background(), []string{"mark", "--files", "a.md", "publish"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "files")
-}
-
 // TestBrokenConfigFileLeavesHelpAlone: help and completion read nothing from
 // the configuration file, so one that does not parse must not break them.
 // publish, which does read it, says so.
@@ -416,12 +343,6 @@ func TestHelp(t *testing.T) {
 		assert.Contains(t, help, "--username", "the global flags are listed with it")
 	})
 
-	t.Run("mark -f doc.md --help", func(t *testing.T) {
-		want := helpOutput(t, "test", "--help")
-		assert.Equal(t, want, helpOutput(t, "test", "-f", "doc.md", "--help"), "the bare form gets mark's help, which names publish")
-		assert.Equal(t, want, helpOutput(t, "test", "-h", "--files=doc.md"))
-	})
-
 	t.Run("mark help publish", func(t *testing.T) {
 		assert.Contains(t, helpOutput(t, "test", "help", "publish"), "--files")
 	})
@@ -430,9 +351,6 @@ func TestHelp(t *testing.T) {
 		assert.Equal(t, "mark version v1.2.3@abc\n", helpOutput(t, "v1.2.3@abc", "--version"))
 	})
 
-	t.Run("mark -f doc.md --version", func(t *testing.T) {
-		assert.Equal(t, "mark version v1.2.3@abc\n", helpOutput(t, "v1.2.3@abc", "-f", "doc.md", "--version"))
-	})
 }
 
 var updateREADME = flag.Bool("update-readme", false, "rewrite README.md's help blocks from the binary")
@@ -500,34 +418,6 @@ func TestPublishHelpLeavesTheFlagsAlone(t *testing.T) {
 func TestHelpComesBeforeTheVersion(t *testing.T) {
 	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "--help", "--version"), "COMMANDS:")
 	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "--version", "--help"), "COMMANDS:")
-	assert.Contains(t, helpOutput(t, "v1.2.3@abc", "-f", "doc.md", "--version", "--help"), "COMMANDS:")
-}
-
-// TestTheDeprecationIsLogged: the notice is a warning, so --log-level
-// governs it, and it comes only from a run that publishes.
-func TestTheDeprecationIsLogged(t *testing.T) {
-	config, document := publishable(t)
-
-	_, logged, err := runMark(t, "--config", config, "--compile-only", "-f", document)
-	require.NoError(t, err)
-	assert.Contains(t, logged, `deprecated: run "mark publish"`)
-
-	_, logged, err = runMark(t, "--config", config, "--log-level", "error", "--compile-only", "-f", document)
-	require.NoError(t, err)
-	assert.NotContains(t, logged, "deprecated")
-
-	broken := writeConfig(t, t.TempDir(), "broken.toml", "x = [")
-	_, logged, err = runMark(t, "--config", broken, "--compile-only", "-f", document)
-	require.Error(t, err)
-	assert.NotContains(t, logged, "deprecated", "the error is what needs fixing first")
-
-	_, logged, err = runMark(t, "--nosuchflag")
-	require.Error(t, err)
-	assert.NotContains(t, logged, "deprecated")
-
-	_, logged, err = runMark(t, "-f", document, "--help")
-	require.NoError(t, err)
-	assert.NotContains(t, logged, "deprecated", "asking for help is not a run to migrate")
 }
 
 // TestTheConfigDumpNamesEachFlagOnce: the root and publish both carry a help

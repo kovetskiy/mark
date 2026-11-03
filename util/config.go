@@ -78,8 +78,7 @@ func (c *configFile) value(key string) cli.ValueSource {
 
 // hold makes source answer nothing until settle. urfave/cli resolves the
 // root's flags as it parses the root, before "mark publish --config X" has
-// named X, and before the root's action can tell which of its flags the
-// command line set.
+// named X.
 func (c *configFile) hold(source cli.ValueSource) cli.ValueSource {
 	return &heldSource{ValueSource: source, file: c}
 }

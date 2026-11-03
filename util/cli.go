@@ -42,19 +42,16 @@ func newCommand(version string) *cli.Command {
 // commandLine is what the actions of one run of mark's command line share.
 type commandLine struct {
 	config *configFile
-	// bare are publish's flags on the root; see bareFlags.
-	bare []cli.Flag
 	// publish and export do the work, once the flags are checked; tests
 	// swap them out.
 	publish, export cli.ActionFunc
 }
 
 // buildCommand is mark's command line: the global flags on the root, and a
-// command for each thing mark does. The root's own action is the deprecated
-// "mark <publish flags>".
+// command for each thing mark does.
 func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 	config := newConfigFile(new(string))
-	line := &commandLine{config: config, bare: bareFlags(config), publish: publish, export: export}
+	line := &commandLine{config: config, publish: publish, export: export}
 
 	publishCommand := &cli.Command{
 		Name:  PublishCommand,
@@ -70,9 +67,10 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 		Usage:                 usage,
 		Description:           description,
 		Version:               version,
-		Flags:                 append(globalFlags(config), line.bare...),
+		Flags:                 globalFlags(config),
 		EnableShellCompletion: true,
-		Action:                line.runBare,
+		Action:                runRoot,
+		OnUsageError:          publishFlagHint(publishCommand.Flags),
 		Commands: []*cli.Command{publishCommand, {
 			Name:  ExportCommand,
 			Usage: "export a Confluence page, or a tree of them, to markdown (experimental)",
@@ -87,32 +85,13 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 	return root
 }
 
-// bareFlagSet is the name of a publish flag the root has, or "". Until
-// settle, that is one the command line gave before any command.
-func (line *commandLine) bareFlagSet() string {
-	for _, flag := range line.bare {
-		if flag.IsSet() {
-			return flag.Names()[0]
-		}
-	}
-	return ""
-}
-
 // prepare readies cmd's action: it reads the configuration file, resolves the
 // global flags from it, and sets up logging.
 func (line *commandLine) prepare(cmd *cli.Command) error {
-	root := cmd.Root()
-	if name := line.bareFlagSet(); name != "" && cmd != root {
-		if cmd.Name == PublishCommand {
-			return fmt.Errorf("--%s is a flag of %q: write it after %q", name, PublishCommand, cmd.Name)
-		}
-		return fmt.Errorf("--%s is a flag of %q, not of %q", name, PublishCommand, cmd.Name)
-	}
-
 	if err := line.config.check(); err != nil {
 		return err
 	}
-	if err := line.config.settle(root); err != nil {
+	if err := line.config.settle(cmd.Root()); err != nil {
 		return err
 	}
 
@@ -123,8 +102,8 @@ func (line *commandLine) runPublish(ctx context.Context, cmd *cli.Command) error
 	if err := line.prepare(cmd); err != nil {
 		return err
 	}
-	// The bare form has to tolerate these; publish is new and need not. An
-	// unquoted --files glob the shell expanded publishes only its first match.
+	// An unquoted --files glob the shell expanded would publish only its
+	// first match.
 	if cmd.NArg() > 0 {
 		return fmt.Errorf("unexpected argument %q: --files takes one pattern, so quote a glob", cmd.Args().First())
 	}
@@ -146,44 +125,52 @@ func (line *commandLine) runExport(ctx context.Context, cmd *cli.Command) error 
 	return line.export(ctx, cmd)
 }
 
-// runBare is "mark" with no command, which publishes as "mark publish" would.
-// It is how mark ran before it had commands, in a great many CI pipelines.
-func (line *commandLine) runBare(ctx context.Context, root *cli.Command) error {
-	written := line.bareFlagSet() != ""
-
-	if err := line.prepare(root); err != nil {
-		return err
-	}
-
-	files := root.IsSet("files")
-	if !files && !written && root.NArg() == 0 {
-		// Nothing says what to publish: "mark" on its own. This still fails,
-		// as it did, so a pipeline missing its settings does not pass.
+// runRoot is "mark" with no command. It fails, so a pipeline that names no
+// command does not pass.
+func runRoot(_ context.Context, root *cli.Command) error {
+	if root.NArg() == 0 {
 		_ = cli.ShowRootCommandHelp(root)
 		return fmt.Errorf("no command given: run %q to publish", "mark "+PublishCommand)
 	}
 
-	// Arguments that are not flags used to be ignored, which made a mistyped
-	// command publish. A command it could be is refused; so is anything at
-	// all when --files is not given. Anything else is still ignored: it is
-	// usually a --files pattern the shell expanded.
-	if args := root.Args().Slice(); len(args) > 0 {
-		if command := closestCommand(root, args[0]); command != "" {
-			return fmt.Errorf("unknown command %q: did you mean %q?", args[0], command)
-		}
-		if !files {
-			return fmt.Errorf("unknown command %q", args[0])
-		}
-		log.Warn().Msgf("ignoring %s: --files takes one pattern, so quote a glob", strings.Join(args, " "))
+	return unknownCommand(root, root.Args().First())
+}
+
+// unknownCommand refuses name, which is none of root's commands, naming the one
+// it is a typo of if there is one.
+func unknownCommand(root *cli.Command, name string) error {
+	if command := closestCommand(root, name); command != "" {
+		return fmt.Errorf("unknown command %q: did you mean %q?", name, command)
 	}
 
-	if _, err := checkPublishFlags(ctx, root); err != nil {
+	return fmt.Errorf("unknown command %q", name)
+}
+
+// publishFlagHint names the command a flag the root does not have belongs to,
+// when it is one of publish's.
+func publishFlagHint(flags []cli.Flag) cli.OnUsageErrorFunc {
+	publish := map[string]bool{}
+	for _, flag := range flags {
+		for _, name := range flag.Names() {
+			publish[name] = true
+		}
+	}
+
+	return func(_ context.Context, cmd *cli.Command, err error, _ bool) error {
+		// urfave/cli reads flags after an argument too, so "mark publsh -f
+		// doc.md" fails on -f before the argument can be named.
+		first := cmd.Args().First()
+		if first != "" && cmd.Command(first) == nil {
+			return unknownCommand(cmd, first)
+		}
+
+		name, ok := strings.CutPrefix(err.Error(), "flag provided but not defined: -")
+		if ok && publish[name] {
+			return fmt.Errorf("%w: it is a flag of %q, so write it after %q", err, PublishCommand, PublishCommand)
+		}
+
 		return err
 	}
-
-	log.Warn().Msg(`running mark without a command is deprecated: run "mark publish" with the same flags instead`)
-
-	return line.publish(ctx, root)
 }
 
 // closestCommand is the name of root's command that name is a typo of, or "".

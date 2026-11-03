@@ -190,6 +190,7 @@ func TestConfigFromTheEnvironmentAppliesToEveryFlag(t *testing.T) {
 	resolved := resolveFlags(t,
 		map[string]string{"MARK_CONFIG": path},
 		[]string{"files", "username", "password", "space"},
+		"publish",
 	)
 
 	// Declared after "config", and honoured even before the fix.

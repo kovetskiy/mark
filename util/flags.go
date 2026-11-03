@@ -432,37 +432,6 @@ func publishFlags(config *configFile) []cli.Flag {
 	}
 }
 
-// bareFlags are publish's flags as the root takes them, for the deprecated
-// "mark <publish flags>" with no command: hidden from the root's help, not
-// passed on to commands, and with every source held, so that until settle a
-// flag that is set is one the command line set.
-func bareFlags(config *configFile) []cli.Flag {
-	flags := publishFlags(config)
-	for _, flag := range flags {
-		switch flag := flag.(type) {
-		case *cli.StringFlag:
-			onRoot(flag, config)
-		case *cli.BoolFlag:
-			onRoot(flag, config)
-		case *cli.FloatFlag:
-			onRoot(flag, config)
-		case *cli.StringSliceFlag:
-			onRoot(flag, config)
-		default:
-			panic(fmt.Sprintf("bareFlags: no case for %T", flag))
-		}
-	}
-
-	return flags
-}
-
-func onRoot[T, C any, VC cli.ValueCreator[T, C]](flag *cli.FlagBase[T, C, VC], config *configFile) {
-	flag.Hidden, flag.Local = true, true
-	for i, source := range flag.Sources.Chain {
-		flag.Sources.Chain[i] = config.hold(source)
-	}
-}
-
 // exportFlags are the flags of "mark export". Like the publish flags, each
 // reads the configuration file the "config" flag names.
 //
