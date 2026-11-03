@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v16/confluence"
-	"github.com/kovetskiy/mark/v16/page"
 )
 
 // PageRef is a page as a URL names it: by id, or by space and title.
@@ -95,7 +94,7 @@ func ParsePageURL(raw string) (PageRef, error) {
 	}
 
 	if m := tinyPath.FindStringSubmatch(path); m != nil {
-		id, err := page.DecodeTinyLinkID(m[1])
+		id, err := confluence.DecodeTinyLinkID(m[1])
 		if err != nil {
 			return PageRef{}, fmt.Errorf("unable to read the short link %q: %w", raw, err)
 		}

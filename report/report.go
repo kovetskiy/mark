@@ -12,8 +12,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-
-	"github.com/kovetskiy/mark/v16/page"
 )
 
 // The shapes a run's outcome can be written in.
@@ -91,9 +89,39 @@ type Orphan struct {
 	PageID string `json:"pageId,omitempty"`
 	Title  string `json:"title,omitempty"`
 
-	// Action is the --on-orphan action taken, one of the page.OnOrphan
-	// values; page.OnOrphanReport means the page was left where it is.
+	// Action is the --on-orphan action taken, one of the OnOrphan values;
+	// OnOrphanReport means the page was left where it is.
 	Action string `json:"action"`
+}
+
+// What to do about a page whose source file is gone.
+const (
+	// OnOrphanReport says so and does nothing. It is the default.
+	OnOrphanReport = "report"
+
+	// OnOrphanArchive archives the page. Cloud only.
+	OnOrphanArchive = "archive"
+
+	// OnOrphanDelete moves the page to the trash, where a person can still
+	// change their mind.
+	OnOrphanDelete = "delete"
+)
+
+// ParseOnOrphan reads the value given to --on-orphan.
+func ParseOnOrphan(value string) (string, error) {
+	switch action := strings.ToLower(strings.TrimSpace(value)); action {
+	case "", OnOrphanReport:
+		return OnOrphanReport, nil
+	case OnOrphanArchive:
+		return OnOrphanArchive, nil
+	case OnOrphanDelete:
+		return OnOrphanDelete, nil
+	default:
+		return "", fmt.Errorf(
+			"unknown --on-orphan value %q: expected %s, %s or %s",
+			value, OnOrphanReport, OnOrphanArchive, OnOrphanDelete,
+		)
+	}
 }
 
 // Report is everything a run has to say.
@@ -243,7 +271,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 
 	for _, orphan := range r.Orphans {
 		message := fmt.Sprintf("page %q has no source file", orphan.Title)
-		if orphan.Action != page.OnOrphanReport {
+		if orphan.Action != OnOrphanReport {
 			message = fmt.Sprintf("page %q was %sd: its source file is gone", orphan.Title, orphan.Action)
 		}
 

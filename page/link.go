@@ -2,15 +2,12 @@ package page
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -450,107 +447,12 @@ func getConfluenceLink(
 		baseURL = api.BaseURL
 	}
 
-	tiny, err := GenerateTinyLink(baseURL, page.ID)
+	tiny, err := confluence.GenerateTinyLink(baseURL, page.ID)
 	if err != nil {
 		return "", fmt.Errorf("generate tiny link for page %s: %w", page.ID, err)
 	}
 
 	return tiny, nil
-}
-
-// GenerateTinyLink generates a Confluence tiny link from a page ID.
-// The algorithm converts the page ID to a little-endian 32-bit byte array,
-// base64-encodes it, and applies URL-safe transformations.
-// Format: {baseURL}/x/{encodedID}
-//
-// Reference: https://support.atlassian.com/confluence/kb/how-to-programmatically-generate-the-tiny-link-of-a-confluence-page
-func GenerateTinyLink(baseURL string, pageID string) (string, error) {
-	id, err := strconv.ParseUint(pageID, 10, 64)
-	if err != nil {
-		return "", fmt.Errorf("invalid page ID %q: %w", pageID, err)
-	}
-
-	encoded := encodeTinyLinkID(id)
-	baseURL = strings.TrimSuffix(baseURL, "/")
-
-	return baseURL + "/x/" + encoded, nil
-}
-
-// encodeTinyLinkID encodes a page ID into the Confluence tiny link format.
-// This is the core algorithm extracted for testability.
-func encodeTinyLinkID(id uint64) string {
-	// Pack as little-endian. Use 8 bytes to support large page IDs,
-	// but the base64 trimming will remove unnecessary trailing zeros.
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, id)
-
-	// Trim trailing zero bytes (they become 'A' padding in base64)
-	for len(buf) > 1 && buf[len(buf)-1] == 0 {
-		buf = buf[:len(buf)-1]
-	}
-
-	// Base64 encode
-	encoded := base64.StdEncoding.EncodeToString(buf)
-
-	// Transform to URL-safe format:
-	// - Strip '=' padding
-	// - Replace '/' with '-'
-	// - Replace '+' with '_'
-	var result strings.Builder
-	for _, c := range encoded {
-		switch c {
-		case '=':
-			continue
-		case '/':
-			result.WriteByte('-')
-		case '+':
-			result.WriteByte('_')
-		default:
-			result.WriteRune(c)
-		}
-	}
-
-	return result.String()
-}
-
-// tinyLinkCode is every character a tiny link's code may hold, in no order
-// that means anything: Confluence swaps base64's "/" for "-" and "+" for "_",
-// the reverse of base64.URLEncoding.
-const tinyLinkCode = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-
-// DecodeTinyLinkID reads the page ID out of the code a tiny link ends in, the
-// reverse of encodeTinyLinkID. Confluence strips trailing "A"s as well as the
-// padding from the codes it hands out; both stand for zero bits, which are the
-// high bytes of a little-endian ID, so padding with "A" restores either.
-func DecodeTinyLinkID(code string) (string, error) {
-	if code == "" || strings.Trim(code, tinyLinkCode) != "" {
-		return "", fmt.Errorf("%q is not the code of a tiny link", code)
-	}
-
-	padded := strings.NewReplacer("-", "/", "_", "+").Replace(code)
-	for len(padded)%4 != 0 {
-		padded += "A"
-	}
-
-	raw, err := base64.StdEncoding.DecodeString(padded)
-	if err != nil {
-		return "", fmt.Errorf("%q is not the code of a tiny link: %w", code, err)
-	}
-
-	for len(raw) > 0 && raw[len(raw)-1] == 0 {
-		raw = raw[:len(raw)-1]
-	}
-	switch {
-	case len(raw) == 0:
-		return "", fmt.Errorf("%q is not the code of a tiny link: it names no page ID", code)
-	case len(raw) > 8:
-		return "", fmt.Errorf("%q is not the code of a tiny link: it is too long for a page ID", code)
-	}
-
-	buf := make([]byte, 8)
-	copy(buf, raw)
-
-	return strconv.FormatUint(binary.LittleEndian.Uint64(buf), 10), nil
 }
 
 // Deferrals remembers which documents linked to pages that did not exist yet.
