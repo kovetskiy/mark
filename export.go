@@ -34,6 +34,14 @@ type ExportConfig struct {
 	// NoAttachments writes the Markdown only.
 	NoAttachments bool
 
+	// Format is export.FormatMark, or "", for documents mark publishes back,
+	// or export.FormatOKF for an Open Knowledge Format concept or bundle.
+	Format string
+
+	// Generator is who an OKF concept says generated it, as
+	// <producer>/<version>; empty is "mark/unknown".
+	Generator string
+
 	// Stdout receives the Markdown when Output names no file. Nil discards
 	// it, as Config.Output does for a library caller that sets nothing.
 	Stdout io.Writer
@@ -76,6 +84,8 @@ func exportConfig(config ExportConfig, stdout io.Writer) export.Config {
 		AttachmentsDir: config.AttachmentsDir,
 		Overwrite:      config.Overwrite,
 		NoAttachments:  config.NoAttachments,
+		Format:         config.Format,
+		Generator:      config.Generator,
 		Stdout:         stdout,
 	}
 }

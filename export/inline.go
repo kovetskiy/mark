@@ -469,6 +469,32 @@ func (w *inlineWriter) acLink(n *node) {
 	w.write(w.c.raw(n, rawInline))
 }
 
+// readingPageDestination is where a link to the page titled title, in space
+// ("" for the page's own), goes in Markdown that is read rather than
+// published: the document it is exported to, with the anchor, or else its
+// address, without one, since Confluence spells an anchor in a page's address
+// its own way. A link to an anchor on the page itself stays on the page.
+func (w *inlineWriter) readingPageDestination(space, title, anchor string) (string, bool) {
+	if space == "" {
+		if anchor != "" && title == w.c.opts.Title {
+			return "#" + anchor, true
+		}
+		if w.c.opts.PagePath != nil {
+			if path, ok := w.c.opts.PagePath(title); ok {
+				dest := pathDestination(path)
+				if anchor != "" {
+					dest += "#" + anchor
+				}
+				return dest, true
+			}
+		}
+	}
+	if w.c.opts.PageURL != nil {
+		return w.c.opts.PageURL(space, title)
+	}
+	return "", false
+}
+
 // titleDestination matches a page title that can be written after "ac:" as it
 // is.
 var titleDestination = regexp.MustCompile(`^[^\s()<>\\]+$`)
@@ -509,7 +535,20 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 		if title == "" || strings.ContainsAny(title, "<>\n") || !plainAttrs(target, "ri:content-title", "ri:space-key", "ri:version-at-save") {
 			return "", false
 		}
-		if space := target.attr("ri:space-key"); space != "" && space != w.c.opts.Space {
+		space := target.attr("ri:space-key")
+		if space == w.c.opts.Space {
+			space = ""
+		}
+
+		if w.c.opts.Reading {
+			if dest, ok := w.readingPageDestination(space, title, anchor); ok {
+				if !hasText {
+					text = escapeInline(title, inlineOptions{table: w.ctx.table})
+				}
+				return "[" + text + "](" + destination(dest) + ")", true
+			}
+		}
+		if space != "" {
 			return "", false
 		}
 

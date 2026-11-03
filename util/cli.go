@@ -452,6 +452,8 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		AttachmentsDir: cmd.String("attachments-dir"),
 		Overwrite:      cmd.Bool("overwrite"),
 		NoAttachments:  cmd.Bool("no-attachments"),
+		Format:         cmd.String("format"),
+		Generator:      generator(cmd.Root().Version),
 
 		Stdout: os.Stdout,
 	}
@@ -470,6 +472,15 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	_, err = mark.Export(ctx, config)
 
 	return err
+}
+
+// generator names mark and its version, as OKF's generated.by does. Without
+// a version it is empty, which the export takes as "mark/unknown".
+func generator(version string) string {
+	if version == "" {
+		return ""
+	}
+	return "mark/" + version
 }
 
 // logFlags logs every flag a command was run with, at debug level, with the

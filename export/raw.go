@@ -114,7 +114,10 @@ func (c *converter) openTag(n *node) string {
 	for _, a := range n.attrs {
 		value := a.value
 		if n.is("ri:attachment") && a.name == "ri:filename" && len(n.elements()) == 0 {
-			value = attachment.UploadName(c.useAttachment(a.value, true))
+			value = c.useAttachment(a.value, true)
+			if !c.opts.Reading {
+				value = attachment.UploadName(value)
+			}
 		}
 		b.WriteString(" " + a.name + `="` + escapeAttr(value) + `"`)
 	}

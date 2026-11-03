@@ -3,6 +3,7 @@ package util
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v16/confluence/confluencetest"
@@ -79,6 +80,8 @@ func TestExportNamesExactlyOnePage(t *testing.T) {
 		{"a negative --depth", []string{"--page-id", "1", "--recursive", "-o", "out", "--depth", "-1"}, "cannot be negative"},
 		{"--relative-links without --recursive", []string{"--page-id", "1", "--relative-links"}, "does nothing without it"},
 		{"a space without --recursive", []string{"--space", "DOCS"}, "or the space alone with --recursive"},
+		{"an unknown --format", []string{"--page-id", "1", "--format", "html"}, `--format: unknown export format "html"`},
+		{"--relative-links with --format okf", []string{"--page-id", "1", "-r", "-o", "out", "--format", "okf", "--relative-links"}, "does already"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, err := runMark(t, append([]string{"-c", config, "--color", "never", "export"}, test.args...)...)
@@ -113,6 +116,15 @@ func TestExportCommand(t *testing.T) {
 		written, err := os.ReadFile(out)
 		require.NoError(t, err)
 		assert.Equal(t, want, string(written))
+	})
+
+	t.Run("as an OKF concept", func(t *testing.T) {
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "--format", "okf")...)
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(stdout, "---\ntype: Confluence Page\ntitle: Exported page\n"), stdout)
+		assert.Contains(t, stdout, "tags:\n  - exported\n")
+		assert.Contains(t, stdout, "generated:\n  by: mark/test\n", "mark and its version generated it")
+		assert.True(t, strings.HasSuffix(stdout, "---\n\n# Hello\n\nFrom **Confluence**.\n"), stdout)
 	})
 
 	t.Run("by URL, to standard output", func(t *testing.T) {

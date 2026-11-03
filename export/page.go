@@ -1,6 +1,7 @@
 package export
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,14 @@ type Config struct {
 
 	// Stdout is where the Markdown goes when Output names no file.
 	Stdout io.Writer
+
+	// Format is FormatMark, or "", for a document mark publishes back, or
+	// FormatOKF for an Open Knowledge Format concept.
+	Format string
+
+	// Generator is who an OKF concept says generated it, as
+	// <producer>/<version>; empty is "mark/unknown".
+	Generator string
 
 	// Documents are the other pages exported with this one. A link to one of
 	// them, or a URL of one pasted into the body, is written as a relative link
@@ -95,7 +104,23 @@ const expansions = "body.storage,ancestors,version,space"
 // back: its body converted to Markdown, below the metadata headers that name
 // the page -- its space, its ancestry, its title, its labels -- and with the
 // attachments it refers to written beside it.
+//
+// With FormatOKF it is written as an Open Knowledge Format concept instead:
+// the same body below OKF front matter, for reading rather than publishing.
 func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error) {
+	format, err := ParseFormat(cfg.Format)
+	if err != nil {
+		return nil, err
+	}
+	okf := format == FormatOKF
+
+	// OKF reads these names as a directory's index and log at any level.
+	if okf && cfg.Output != "" && cfg.Output != "-" {
+		if name := filepath.Base(cfg.Output); okfReservedFile(name) {
+			return nil, fmt.Errorf("%s cannot hold an OKF concept: OKF reserves the name %s", cfg.Output, name)
+		}
+	}
+
 	page, err := findPage(ctx, api, cfg)
 	if err != nil {
 		return nil, err
@@ -125,6 +150,7 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	}
 
 	names := newLocalNames()
+	names.okf = okf
 	// An attachment named like the document would be written over it, or it
 	// over the attachment; on macOS and Windows, also when only case differs.
 	if output != "" && sameDir(outputDir, attachmentsDir) {
@@ -196,11 +222,21 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		}
 	}
 
+	var pageAddress func(string, string) (string, bool)
+	var lookupErr error
+	if okf {
+		pageAddress = pageURLs(ctx, api, space, &lookupErr)
+	}
+
 	doc, err := Convert(page.Body.Storage.Value, Options{
-		Space: space, AttachmentPath: pathOf, PagePath: pagePath, PageURLPath: pageURLPath,
+		Space: space, Title: page.Title, AttachmentPath: pathOf, PagePath: pagePath, PageURL: pageAddress, PageURLPath: pageURLPath,
+		Reading: okf,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
+	}
+	if lookupErr != nil {
+		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, lookupErr)
 	}
 
 	// Without the attachments, the page's are not asked for: every one the
@@ -214,7 +250,12 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		}
 	}
 
-	header, err := headers(ctx, api, page, space, doc, missing)
+	var header string
+	if okf {
+		header, err = conceptHeader(ctx, api, page, cfg.Generator)
+	} else {
+		header, err = headers(ctx, api, page, space, doc, missing)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -349,16 +390,10 @@ func headers(
 		return "", err
 	}
 
-	labels, err := api.GetPageLabels(ctx, page, "global")
+	names, err := pageLabels(ctx, api, page)
 	if err != nil {
-		return "", fmt.Errorf("unable to read the labels of page %s: %w", page.ID, err)
+		return "", err
 	}
-	// In a stable order, so that exporting a page twice writes the same file.
-	names := make([]string, 0, len(labels.Labels))
-	for _, label := range labels.Labels {
-		names = append(names, label.Name)
-	}
-	sort.Strings(names)
 	for _, name := range names {
 		if err := add(metadata.HeaderLabel, name); err != nil {
 			return "", err
@@ -399,6 +434,57 @@ func headers(
 	}
 
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+// conceptHeader is the OKF front matter of the concept page is exported as.
+func conceptHeader(ctx context.Context, api *confluence.API, page *confluence.PageInfo, generator string) (string, error) {
+	labels, err := pageLabels(ctx, api, page)
+	if err != nil {
+		return "", err
+	}
+	if generator == "" {
+		generator = "mark/unknown"
+	}
+	return okfFrontMatter(page, pageURL(api, page), generator, labels)
+}
+
+// pageLabels are the page's global labels, sorted, so that exporting a page
+// twice writes the same file.
+func pageLabels(ctx context.Context, api *confluence.API, page *confluence.PageInfo) ([]string, error) {
+	labels, err := api.GetPageLabels(ctx, page, "global")
+	if err != nil {
+		return nil, fmt.Errorf("unable to read the labels of page %s: %w", page.ID, err)
+	}
+	names := make([]string, 0, len(labels.Labels))
+	for _, label := range labels.Labels {
+		names = append(names, label.Name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// pageURLs looks up the address of a page by its space ("" for space) and
+// title; the API caches the answers. A page that is not there has none. The
+// first lookup that fails is kept in failed, for the caller to report, since
+// the link would otherwise point nowhere although the page may exist; once one
+// has failed the export fails anyway, so no more are made.
+func pageURLs(ctx context.Context, api *confluence.API, space string, failed *error) func(string, string) (string, bool) {
+	return func(in, title string) (string, bool) {
+		if *failed != nil {
+			return "", false
+		}
+		in = cmp.Or(in, space)
+		page, err := api.FindPage(ctx, in, title, "page")
+		if err != nil {
+			*failed = fmt.Errorf("unable to look up page %q in space %s: %w", title, in, err)
+			return "", false
+		}
+		if page == nil {
+			return "", false
+		}
+		address := pageURL(api, page)
+		return address, address != ""
+	}
 }
 
 // parents is the page's ancestry below the space's home page, which is where
@@ -601,6 +687,7 @@ func localName(filename string) string {
 type localNames struct {
 	byName map[string]string
 	taken  map[string]bool
+	okf    bool
 }
 
 func newLocalNames() *localNames {
@@ -618,6 +705,9 @@ func (l *localNames) of(filename string) string {
 	}
 
 	name := localName(filename)
+	if l.okf {
+		name = okfName(name)
+	}
 	extension := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, extension)
 	for i := 2; l.taken[strings.ToLower(name)]; i++ {

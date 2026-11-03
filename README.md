@@ -261,6 +261,7 @@ OPTIONS:
    --output string, -o string  write the Markdown to this file rather than to standard output ("-"). [$MARK_OUTPUT]
    --attachments-dir string    write the attachments the page shows or links to into this directory. Defaults to the directory of --output, or the working directory; a directory of their own changes their names when the document is published back, since mark names an attachment after its path. [$MARK_ATTACHMENTS_DIR]
    --overwrite                 replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything. [$MARK_OVERWRITE]
+   --format string             what to write: "mark", a document mark publishes back to the page, or "okf", an Open Knowledge Format concept, and with --recursive a bundle of them, for agents and knowledge catalogs to read. (default: "mark") [$MARK_FORMAT]
    --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
    --recursive, -r             export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
    --depth int, -d int         with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)

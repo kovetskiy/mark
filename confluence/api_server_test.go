@@ -57,6 +57,23 @@ func TestFindPageIsCachedAcrossCalls(t *testing.T) {
 		"repeated FindPage calls should be served from the cache")
 }
 
+// A cached page is handed out as a copy, its version's author included, so
+// that one caller changing it changes nothing another sees.
+func TestFindPageCopiesTheCachedAuthor(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Cached", "page", "")
+
+	first, err := api.FindPage(context.Background(), "DOCS", "Cached", "page")
+	require.NoError(t, err)
+	require.NotNil(t, first.Version.By)
+	first.Version.By.Username = "changed"
+
+	second, err := api.FindPage(context.Background(), "DOCS", "Cached", "page")
+	require.NoError(t, err)
+	require.NotNil(t, second.Version.By)
+	assert.Equal(t, "current", second.Version.By.Username)
+}
+
 // TestFindPageNegativeResultIsCached covers the miss path: a page that does not
 // exist must also be remembered, or every ancestry walk re-queries it.
 func TestFindPageNegativeResultIsCached(t *testing.T) {

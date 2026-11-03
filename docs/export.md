@@ -207,3 +207,85 @@ same:
 * Inline content that stands without a paragraph around it, next to other
   content, comes back inside one, and a paragraph in a table cell comes back as
   the cell's text.
+
+## Open Knowledge Format
+
+`--format okf` writes the page as a concept of the
+[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+(OKF) 0.2, for agents and knowledge catalogs to read, instead of a document mark
+publishes back. mark does not publish an OKF export back.
+
+```shell
+mark export -b https://example.atlassian.net/wiki --page-id 1234 --format okf -o setup.md
+mark export -b https://example.atlassian.net/wiki --space DOCS --recursive --format okf -o docs-bundle
+```
+
+The body is the same Markdown. In place of mark's headers it has OKF front
+matter:
+
+```yaml
+---
+type: Confluence Page              # or Confluence Blog Post
+title: Setup
+resource: https://example.atlassian.net/wiki/spaces/DOCS/pages/1234/Setup
+tags:                              # the page's labels
+  - install
+generated:
+  by: mark/v17.0.0                 # what wrote the file
+sources:
+  - id: confluence
+    resource: https://example.atlassian.net/wiki/spaces/DOCS/pages/1234/Setup
+    title: Setup
+    author: human:jdoe             # who last edited it: the username, or the Cloud account id
+    last_modified: "2026-05-01T10:30:00Z"
+---
+```
+
+`generated` names mark, which wrote the file, and has no `at`: the page was
+written by a person, whose last edit is the source's `author` and
+`last_modified`, and an export time would make every export of an unchanged
+page differ. A link to another page, in this space or another, is written as a
+link to its address whatever its text, and without an anchor, since Confluence
+spells one in an address its own way; one to a page that is not there stays as
+it was, and one mark cannot look up fails the export. A link to an anchor on
+the page itself is written as `#anchor`. Each page linked this way costs one
+lookup, the first time it is linked. The sidebar of an article layout stays in
+the body, between layout markers, rather than going in a header.
+`-o index.md` and `-o log.md` are refused, since OKF reserves those names.
+
+With `--recursive` the directory is an OKF bundle:
+
+```text
+docs-bundle/
+  index.md                  # okf_version: "0.2", and the top-level pages
+  home.md
+  home/
+    index.md                # the pages beneath Home
+    setup.md
+    setup/
+      index.md
+      linux.md
+  references/
+    attachments/
+      1234/                 # each page's attachments, by page id
+        diagram.png
+```
+
+* Each page is a concept named after its title, as a directory is above, with
+  the pages beneath it in a directory of the same name beside it. A whole
+  space has no document of its own for the home page, so the home page is a
+  concept among the other top-level pages, where Confluence lists it.
+* Every directory has an `index.md` listing its concepts and the directories
+  below it, in the order Confluence lists the pages. The bundle's own declares
+  the OKF version, and is headed with the space key, or the title of the page
+  the export starts from.
+* A page whose title would come out as `index` or `log`, which OKF reserves, or
+  as `references` at the top of the bundle, has the page id added to its name.
+  A page id that is not a number, which would end up in a path, fails the
+  export.
+* Links between the pages are relative links, as `--relative-links` writes
+  them, which `--format okf` does without it, anchors included.
+* An attachment referred to from storage format the export keeps as it is,
+  such as a macro's, is named by its path in the bundle.
+* An attachment whose name ends in `.md` is written with `.txt` after it,
+  so that it is not read as a concept.
