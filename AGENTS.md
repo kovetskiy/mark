@@ -67,11 +67,12 @@ connection and credentials, logging) and one command per job: `publish`,
 record.
 A new flag goes in `globalFlags` only if every command needs it; otherwise it
 belongs to its command. Every flag reads the TOML file through a `configFile`
-source (`util/config.go`), parsed once a run. The root also carries hidden
-copies of publish's flags, for the deprecated `mark <publish flags>` its action
-still runs. The root's flags are resolved as it is parsed, before
-`mark publish --config X` names X, so their file and environment sources are
-held until a command's action settles them (`configFile.hold`). `util.Flags`,
+source (`util/config.go`), parsed once a run. The root's own action only
+refuses: `mark` alone, or an unknown command; a publish flag written before
+`publish` is refused naming its command (`publishFlagHint`). The root's flags
+are resolved as it is parsed, before `mark publish --config X` names X, so
+their file and environment sources are held until a command's action settles
+them (`configFile.hold`). `util.Flags`,
 `util.CheckFlags` and `util.RunMark` remain for programs that built mark's
 single command themselves. `util/command_test.go` fails when the help blocks in
 `README.md` drift from the binary;

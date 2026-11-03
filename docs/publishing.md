@@ -24,7 +24,7 @@ usual use is a warning that the page is generated, with a link to the file to
 edit:
 
 ```bash
-mark --page-header generated.md --files "docs/**/*.md"
+mark publish --page-header generated.md --files "docs/**/*.md"
 ```
 
 A file with a Markdown extension (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`
