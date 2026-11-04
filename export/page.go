@@ -50,6 +50,13 @@ type Config struct {
 	// FormatOKF for an Open Knowledge Format concept.
 	Format string
 
+	// Metadata is how a FormatMark document spells the metadata that names
+	// its page: MetadataComments, or "", for HTML comment headers, or
+	// MetadataFrontMatter for YAML front matter, which mark publishes only
+	// with the frontmatter feature. FormatOKF writes front matter of its own
+	// and refuses MetadataFrontMatter.
+	Metadata string
+
 	// Generator is who an OKF concept says generated it, as
 	// <producer>/<version>; empty is "mark/unknown".
 	Generator string
@@ -108,7 +115,7 @@ const expansions = "body.storage,ancestors,version,space"
 // With FormatOKF it is written as an Open Knowledge Format concept instead:
 // the same body below OKF front matter, for reading rather than publishing.
 func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error) {
-	format, err := ParseFormat(cfg.Format)
+	format, spelling, err := parseOptions(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +261,7 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 	if okf {
 		header, err = conceptHeader(ctx, api, page, cfg.Generator)
 	} else {
-		header, err = headers(ctx, api, page, space, doc, missing)
+		header, err = headers(ctx, api, page, space, doc, missing, spelling)
 	}
 	if err != nil {
 		return nil, err
@@ -341,8 +348,8 @@ func findPage(ctx context.Context, api *confluence.API, cfg Config) (*confluence
 	return page, nil
 }
 
-// headers writes the metadata headers that publish the document back to the
-// page it came from.
+// headers writes the metadata that publishes the document back to the page it
+// came from, spelled as MetadataComments or MetadataFrontMatter says.
 func headers(
 	ctx context.Context,
 	api *confluence.API,
@@ -350,90 +357,55 @@ func headers(
 	space string,
 	doc *Document,
 	missing map[string]bool,
+	spelling string,
 ) (string, error) {
-	var lines []string
-	add := func(name, value string) error {
-		value, err := headerValue(name, value)
-		if err != nil {
-			return err
-		}
-		lines = append(lines, "<!-- "+name+": "+value+" -->")
-		return nil
-	}
-
-	if err := add(metadata.HeaderSpace, space); err != nil {
-		return "", err
-	}
+	h := pageHeaders{Space: space, Title: strings.TrimSpace(page.Title)}
 
 	if page.Type == "blogpost" {
-		if err := add(metadata.HeaderType, "blogpost"); err != nil {
-			return "", err
-		}
+		h.Type = "blogpost"
 	} else {
 		parents, folders, err := parents(ctx, api, page, space)
 		if err != nil {
 			return "", err
 		}
-		for _, parent := range parents {
-			if err := add(metadata.HeaderParent, parent); err != nil {
-				return "", err
-			}
-		}
-		for _, folder := range folders {
-			if err := add(metadata.HeaderFolder, folder); err != nil {
-				return "", err
-			}
-		}
+		h.Parents, h.Folders = trimmed(parents), trimmed(folders)
 	}
 
-	if err := add(metadata.HeaderTitle, page.Title); err != nil {
-		return "", err
-	}
-
-	names, err := pageLabels(ctx, api, page)
+	labels, err := pageLabels(ctx, api, page)
 	if err != nil {
 		return "", err
 	}
-	for _, name := range names {
-		if err := add(metadata.HeaderLabel, name); err != nil {
-			return "", err
-		}
+	h.Labels = trimmed(labels)
+
+	// A sidebar implies the article layout, so only one of them is said.
+	if doc.Sidebar != "" {
+		h.Sidebar = strings.TrimSpace(doc.Sidebar)
+	} else {
+		h.Layout = strings.TrimSpace(doc.Layout)
 	}
 
-	switch {
-	case doc.Sidebar != "":
-		if err := add(metadata.HeaderSidebar, doc.Sidebar); err != nil {
-			return "", err
-		}
-	case doc.Layout != "":
-		if err := add(metadata.HeaderLayout, doc.Layout); err != nil {
-			return "", err
-		}
-	}
-
-	appearance, emoji := appearanceOf(ctx, api, page)
-	if appearance != "" {
-		if err := add(metadata.ContentAppearance, appearance); err != nil {
-			return "", err
-		}
-	}
-	if emoji != "" {
-		if err := add(metadata.HeaderEmoji, emoji); err != nil {
-			return "", err
-		}
-	}
+	h.ContentAppearance, h.Emoji = appearanceOf(ctx, api, page)
 
 	for _, name := range doc.Declared {
 		// A header naming a file that is not there fails the publish.
-		if missing[name] {
-			continue
-		}
-		if err := add(metadata.HeaderAttachment, name); err != nil {
-			return "", err
+		if !missing[name] {
+			h.Attachments = append(h.Attachments, strings.TrimSpace(name))
 		}
 	}
 
-	return strings.Join(lines, "\n") + "\n", nil
+	if spelling == MetadataFrontMatter {
+		return h.frontMatter()
+	}
+	return h.comments()
+}
+
+// trimmed is values without the space around each, as mark reads them.
+func trimmed(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, strings.TrimSpace(value))
+	}
+	return out
 }
 
 // conceptHeader is the OKF front matter of the concept page is exported as.
