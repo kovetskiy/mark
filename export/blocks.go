@@ -297,11 +297,8 @@ func (c *converter) heading(n *node) string {
 		return ""
 	}
 
-	// A closing sequence of #s would be read as the end of the heading, and
-	// a closing brace as the end of an id.
-	if strings.HasSuffix(text, "#") {
-		text = text[:len(text)-1] + "\\#"
-	}
+	// A closing brace would be read as the end of an id.
+	text = escapeClosingHashes(text)
 	if strings.HasSuffix(text, "}") {
 		text = text[:len(text)-1] + "\\}"
 	}
@@ -311,6 +308,15 @@ func (c *converter) heading(n *node) string {
 	}
 
 	return strings.Repeat("#", level) + " " + text
+}
+
+// escapeClosingHashes escapes the last # of an ATX heading's text, which
+// would otherwise end a closing sequence and be left out of the heading.
+func escapeClosingHashes(text string) string {
+	if strings.HasSuffix(text, "#") {
+		return text[:len(text)-1] + "\\#"
+	}
+	return text
 }
 
 // customHeadingID is an id a heading can be given with {#id}.

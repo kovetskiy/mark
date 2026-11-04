@@ -1,11 +1,15 @@
 package export
 
 import (
+	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/kovetskiy/mark/v16/internal/goldmarktest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // A page id goes into the paths a tree is written to, so one that could
@@ -36,5 +40,29 @@ func TestSlugIsCapped(t *testing.T) {
 		assert.Greater(t, len(s), slugMax-utf8.UTFMax, "%q", title)
 		assert.True(t, utf8.ValidString(s), "%q", s)
 		assert.False(t, strings.HasSuffix(s, "-"), "%q", s)
+	}
+}
+
+// A title ending in # keeps it in its directory's index heading, which would
+// otherwise read the #s as a closing sequence.
+func TestOKFIndexHeadingKeepsTrailingHashes(t *testing.T) {
+	for title, heading := range map[string]string{
+		"C #":      `# C \#`,
+		"Notes ##": `# Notes #\#`,
+		"#":        `# \#`,
+		"C#":       `# C\#`,
+	} {
+		t.Run(title, func(t *testing.T) {
+			idx := okfIndexes("out", "x", []planned{
+				{id: "1", title: title, output: "out/c.md"},
+				{id: "2", title: "Child", output: "out/c/child.md"},
+			})
+			index := idx[filepath.Join("out", "c", "index.md")]
+			assert.Contains(t, index, heading+"\n")
+
+			var html bytes.Buffer
+			require.NoError(t, goldmarktest.New().Convert([]byte(index), &html))
+			assert.Contains(t, html.String(), "<h1>"+title+"</h1>")
+		})
 	}
 }

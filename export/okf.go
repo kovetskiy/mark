@@ -206,7 +206,7 @@ func okfIndexes(root, heading string, plan []planned) map[string]string {
 			fmt.Fprintf(&b, "---\nokf_version: %q\n---\n\n", OKFVersion)
 			title = heading
 		}
-		fmt.Fprintf(&b, "# %s\n\n", indexText(title))
+		fmt.Fprintf(&b, "# %s\n\n", escapeClosingHashes(indexText(title)))
 		for _, e := range entries {
 			fmt.Fprintf(&b, "* [%s](%s)\n", indexText(e.title), pathDestination(e.target))
 		}
