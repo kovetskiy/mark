@@ -262,19 +262,24 @@ func (e *Engine) startMerman() (mermaid.Renderer, error) {
 // discard drops engine from e and closes it, so that the next diagram launches
 // a new one. It leaves e alone when e has already moved on, so that a second
 // diagram failing against the same dead engine cannot tear down the
-// replacement the first one built. It reports whether e has been closed, in
-// which case the failure was Close cancelling the render, not a crash.
-func (e *Engine) discard(engine mermaid.Renderer) (closed bool) {
+// replacement the first one built. It returns err, marked with errClosed when
+// e has been closed, since then the failure was Close cancelling the render,
+// not a crash.
+func (e *Engine) discard(engine mermaid.Renderer, err error) error {
 	e.mu.Lock()
 	if e.renderer == engine {
 		e.renderer = nil
 	}
-	closed = e.closed
+	closed := e.closed
 	e.mu.Unlock()
 
 	engine.Cancel()
 
-	return closed
+	if closed {
+		return fmt.Errorf("%w: %w", errClosed, err)
+	}
+
+	return err
 }
 
 // render runs one diagram through e's engine, deciding from mermaid.go's
@@ -303,14 +308,11 @@ func (e *Engine) render(title string, once func(ctx context.Context, engine merm
 			// Every later render on this engine fails the same way, so it is
 			// closed here and the next attempt gets a fresh browser. This is the
 			// one failure a retry can fix.
-			if e.discard(engine) {
-				return fmt.Errorf("%w: %w", errClosed, err)
+			err = e.discard(engine, err)
+			if errors.Is(err, errClosed) || attempt >= renderAttempts {
+				return err
 			}
-			if attempt < renderAttempts {
-				log.Warn().Err(err).Msgf("Mermaid render engine died on %q, retrying with a new browser", title)
-				continue
-			}
-			return err
+			log.Warn().Err(err).Msgf("Mermaid render engine died on %q, retrying with a new browser", title)
 
 		case errors.Is(err, chrome.ErrRasterRefused):
 			// Refused before the capture was asked for, so the browser never saw
@@ -335,10 +337,7 @@ func (e *Engine) render(title string, once func(ctx context.Context, engine merm
 			// An unclassified failure says nothing about whether the browser
 			// survived it, so it is discarded: starting the next diagram over is
 			// cheap next to producing a page with a diagram missing from it.
-			if e.discard(engine) {
-				return fmt.Errorf("%w: %w", errClosed, err)
-			}
-			return err
+			return e.discard(engine, err)
 		}
 	}
 }

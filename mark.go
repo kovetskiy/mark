@@ -187,12 +187,10 @@ func isScaleOrDefault(scale float64) bool {
 
 // resources are what one run starts and shuts down again: the browser and
 // mermaid engine its pictures are drawn in, each launched by the first picture
-// that needs it, and the folders it has resolved, which are only true of the
-// one Confluence the run publishes to.
+// that needs it.
 type resources struct {
 	browser *chrome.Browser
 	mermaid *mermaid.Engine
-	folders *page.FolderCache
 }
 
 // newResources creates them for the mermaid engine kind names, starting
@@ -203,7 +201,7 @@ func newResources(kind string) (*resources, error) {
 		return nil, err
 	}
 
-	return &resources{browser: chrome.NewBrowser(), mermaid: engine, folders: page.NewFolderCache()}, nil
+	return &resources{browser: chrome.NewBrowser(), mermaid: engine}, nil
 }
 
 func (r *resources) close() {
@@ -212,10 +210,7 @@ func (r *resources) close() {
 }
 
 // prepare checks the settings that decide how a document is rendered and what
-// is done about its links. Run and NewPublisher both start here, so that a
-// library caller is held to the same settings, and told the same thing about
-// them, as a run is. The mermaid engine's name is checked by newResources,
-// which both call next.
+// is done about its links; newPublisher calls it for Run and NewPublisher alike.
 func (c Config) prepare() (page.LinkChecks, error) {
 	if err := c.Rendering.validate(); err != nil {
 		return page.LinkChecks{}, err
@@ -359,16 +354,11 @@ func Run(ctx context.Context, config Config) (err error) {
 	// combination that merely does nothing, and that nobody would read anything
 	// into, is a warning.
 
-	linkChecks, err := config.prepare()
-	if err != nil {
+	// newPublisher checks these again; asked here too so that a bad setting is
+	// reported before the glob is.
+	if _, err := config.prepare(); err != nil {
 		return err
 	}
-
-	res, err := newResources(config.Rendering.MermaidEngine)
-	if err != nil {
-		return err
-	}
-	defer res.close()
 
 	// The rest is about the run as a whole -- the report written at the end of
 	// it and the manifest kept across runs -- so a Publisher, which has
@@ -452,10 +442,13 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	pub, err := newPublishRun(ctx, api, config, res, linkChecks)
+	publisher, err := newPublisher(ctx, api, config)
 	if err != nil {
 		return err
 	}
+	defer publisher.Close()
+
+	pub := publisher.run
 
 	// What the run did, for whatever is reading the output rather than the log.
 	results := report.New()
@@ -853,18 +846,12 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 // Publisher publishes only the first file it is given, as Run refuses more
 // than one.
 type Publisher struct {
-	run    *publishRun
-	closed bool
-
-	// pageFile is the file published to Page.PageID, once there is one.
-	pageFile string
+	run *publishRun
 }
 
-// errNoPublisher is what Publish says on a Publisher NewPublisher did not make.
-var errNoPublisher = errors.New("mark: Publisher was not made by NewPublisher")
-
-// errPublisherClosed is what Publish says once Close has been called.
-var errPublisherClosed = errors.New("mark: Publisher has been closed")
+// errNoPublisher is what Publish says once Close has been called, or on a
+// Publisher NewPublisher did not make.
+var errNoPublisher = errors.New("mark: Publisher is closed, or was not made by NewPublisher")
 
 // NewPublisher checks config as Run does and prepares to publish with api.
 func NewPublisher(ctx context.Context, api *confluence.API, config Config) (*Publisher, error) {
@@ -872,6 +859,12 @@ func NewPublisher(ctx context.Context, api *confluence.API, config Config) (*Pub
 		return nil, err
 	}
 
+	return newPublisher(ctx, api, config)
+}
+
+// newPublisher checks config and builds what Run and NewPublisher both publish
+// with, closing anything it started if that fails.
+func newPublisher(ctx context.Context, api *confluence.API, config Config) (*Publisher, error) {
 	checks, err := config.prepare()
 	if err != nil {
 		return nil, err
@@ -900,22 +893,8 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 		return nil, errNoPublisher
 	}
 
-	if p.closed {
-		return nil, errPublisherClosed
-	}
-
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-
-	if p.run.config.Page.PageID != "" {
-		if p.pageFile != "" && filepath.Clean(p.pageFile) != filepath.Clean(file) {
-			return nil, fmt.Errorf(
-				"mark: Page.PageID names one page, which %s publishes to: refusing to publish %s over it",
-				p.pageFile, file,
-			)
-		}
-		p.pageFile = file
 	}
 
 	// Each file's ac: links are checked, and reported, on their own.
@@ -950,8 +929,8 @@ func (p *Publisher) Close() {
 		return
 	}
 
-	p.closed = true
 	p.run.res.close()
+	p.run = nil
 }
 
 // newPublishRun builds what every file of a run shares and does not depend on
@@ -990,6 +969,7 @@ func newPublishRun(
 		api:              api,
 		config:           config,
 		res:              res,
+		folders:          page.NewFolderCache(),
 		users:            users,
 		std:              std,
 		pageHeader:       pageHeader,
@@ -1135,6 +1115,7 @@ type publishRun struct {
 	api              *confluence.API
 	config           Config
 	res              *resources
+	folders          *page.FolderCache
 	users            *runUsers
 	std              *stdlib.Lib
 	pageHeader       *header.Header
@@ -1146,6 +1127,9 @@ type publishRun struct {
 	results          *report.Report
 	hierarchy        *page.Hierarchy
 	titles           *runTitles
+
+	// pageFile is the file published to Page.PageID, once there is one.
+	pageFile string
 }
 
 // runUsers is the "user" template func's lookup for a run's templates and
@@ -1201,6 +1185,16 @@ type pagePreview struct {
 }
 
 func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.PageInfo, *page.Ordered, error) {
+	if r.config.Page.PageID != "" {
+		if r.pageFile != "" && filepath.Clean(r.pageFile) != filepath.Clean(file) {
+			return nil, nil, fmt.Errorf(
+				"Page.PageID names one page, which %s publishes to: refusing to publish %s over it",
+				r.pageFile, file,
+			)
+		}
+		r.pageFile = file
+	}
+
 	r.users.ctx = ctx
 
 	doc, err := r.readDocument(file)
@@ -1484,7 +1478,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, err
 	}
 
-	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, r.res.folders, meta, r.ancestryTracker)
+	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, r.folders, meta, r.ancestryTracker)
 	if err != nil {
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
@@ -1763,7 +1757,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 		return nil, err
 	}
 
-	parent, pg, err := page.ResolvePage(ctx, false, api, r.res.folders, meta, r.ancestryTracker)
+	parent, pg, err := page.ResolvePage(ctx, false, api, r.folders, meta, r.ancestryTracker)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 	}
