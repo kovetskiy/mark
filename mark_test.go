@@ -926,7 +926,7 @@ func TestClosedPublisherRefuses(t *testing.T) {
 	server.ResetRequests()
 
 	target, err := publisher.Publish(context.Background(), file)
-	require.ErrorIs(t, err, errPublisherClosed)
+	require.ErrorIs(t, err, errNoPublisher)
 	assert.Nil(t, target)
 	assert.Empty(t, server.Requests())
 }
