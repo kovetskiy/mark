@@ -192,6 +192,68 @@ func TestExportRoundTrip(t *testing.T) {
 		"publishing the export back uploads nothing under a new name")
 }
 
+// TestExportRoundTripFrontMatter: exported with front matter, the page
+// publishes back as it was with the frontmatter feature on.
+func TestExportRoundTripFrontMatter(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	published := server.Page(id).Body
+
+	api := confluence.NewAPI(server.URL, "user", "token", false)
+	setContentProperty(t, api, id, "content-appearance-published", `"fixed"`)
+	setContentProperty(t, api, id, "emoji-title-published", `"1f680"`)
+
+	out := filepath.Join(t.TempDir(), "export", "installing.md")
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		PageID: id, Output: out, Metadata: export.MetadataFrontMatter,
+	})
+	require.NoError(t, err)
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+
+	assert.True(t, strings.HasPrefix(string(exported), strings.Join([]string{
+		"---",
+		"space: DOCS",
+		"parents:",
+		"  - Guides",
+		"  - Setup",
+		"title: Installing",
+		"labels:",
+		"  - how-to",
+		"  - install",
+		"content-appearance: default",
+		`emoji: "🚀"`,
+		"---",
+		"",
+		"# Installing",
+	}, "\n")), "the front matter names the page it came from:\n%s", exported)
+	assert.NotContains(t, string(exported), "<!-- ")
+
+	server.EditPage(id, "<p>edited in Confluence</p>")
+	require.NoError(t, Run(context.Background(), Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: out, AttachReferenced: true, Features: []string{"mention", "frontmatter"},
+		Output: io.Discard,
+	}))
+
+	assert.Equal(t, published, server.Page(id).Body)
+	assert.Equal(t, "Installing", server.Page(id).Title)
+}
+
+// TestExportRefusesFrontMatterForOKF: OKF has front matter of its own, so
+// asking for mark's as well fails before anything is read.
+func TestExportRefusesFrontMatterForOKF(t *testing.T) {
+	server, id, _ := exportFixture(t)
+
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		PageID: id, Format: export.FormatOKF, Metadata: export.MetadataFrontMatter,
+		Output: filepath.Join(t.TempDir(), "installing.md"),
+	})
+	assert.ErrorContains(t, err, "front matter of its own")
+}
+
 // TestExportPageFromConfluence exports storage format Confluence's own editor
 // writes rather than mark: what has no Markdown form is kept as it is, and the
 // attachments it refers to are declared so that they are uploaded again.
@@ -751,6 +813,40 @@ func TestExportTreeRoundTrip(t *testing.T) {
 			names = append(names, attachment.Filename)
 		}
 		assert.Equal(t, []string{"image.png"}, names, title)
+	}
+	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
+}
+
+// TestExportTreeRoundTripFrontMatter: a tree exported with front matter
+// publishes back onto the pages it came from, under the same parents.
+func TestExportTreeRoundTripFrontMatter(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	out := filepath.Join(t.TempDir(), "guide")
+	_, err := ExportTree(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		PageID: pages["Guide"].ID, Output: out, Metadata: export.MetadataFrontMatter,
+	}, export.TreeOptions{})
+	require.NoError(t, err)
+
+	before := map[string]string{}
+	for title, p := range pages {
+		before[title] = server.Page(p.ID).ParentID
+		server.EditPage(p.ID, "<p>edited in Confluence</p>")
+	}
+
+	require.NoError(t, Run(context.Background(), Config{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		Files: filepath.Join(out, "**", "*.md"), AttachReferenced: true, Features: []string{"mention", "frontmatter"},
+		Output: io.Discard,
+	}))
+
+	for title, p := range pages {
+		if title == "Home" {
+			continue
+		}
+		got := server.Page(p.ID)
+		assert.Contains(t, got.Body, "<p>"+title+"</p>", "%s is published back to the page it came from", title)
+		assert.Equal(t, before[title], got.ParentID, "%s keeps its parent", title)
 	}
 	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
 }

@@ -57,7 +57,7 @@ type TreeOptions struct {
 // written. A folder in it is refused, since the export does not list a
 // folder's pages.
 func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOptions) ([]*Result, error) {
-	format, err := ParseFormat(cfg.Format)
+	format, spelling, err := parseOptions(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +124,7 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 			NoAttachments:  cfg.NoAttachments,
 			Stdout:         cfg.Stdout,
 			Format:         format,
+			Metadata:       spelling,
 			Generator:      cfg.Generator,
 			Documents:      documents,
 		})

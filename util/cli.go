@@ -453,6 +453,7 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		Overwrite:      cmd.Bool("overwrite"),
 		NoAttachments:  cmd.Bool("no-attachments"),
 		Format:         cmd.String("format"),
+		Metadata:       cmd.String("metadata"),
 		Generator:      generator(cmd.Root().Version),
 
 		Stdout: os.Stdout,

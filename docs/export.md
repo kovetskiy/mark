@@ -78,6 +78,35 @@ document itself. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers;
 with `--no-attachments` there is no telling, so every one is declared.
 
+## Front matter instead of headers
+
+`--metadata front-matter` writes the same metadata as YAML front matter, under
+the plural keys mark reads there (see [YAML front matter](metadata.md#yaml-front-matter)):
+
+```markdown
+---
+space: DOCS
+parents:
+  - Guides
+  - Setup
+title: Release process
+labels:
+  - how-to
+content-appearance: default
+emoji: "🚀"
+---
+
+# Release process
+...
+```
+
+mark reads front matter only with the `frontmatter` feature, and `--features`
+replaces the default features rather than adding to them, so publish such a
+document back with `--features=mermaid,mention,frontmatter`. Without the
+feature the YAML is published as part of the page. `--metadata comments`, the
+default, writes the comment headers. `--format okf` writes front matter of its
+own and refuses `--metadata front-matter`.
+
 ## Exporting a tree of pages, or a whole space
 
 `--recursive` exports the page and every page beneath it into the directory

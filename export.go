@@ -38,6 +38,12 @@ type ExportConfig struct {
 	// or export.FormatOKF for an Open Knowledge Format concept or bundle.
 	Format string
 
+	// Metadata is how documents of export.FormatMark spell the metadata that
+	// names their page: export.MetadataComments, or "", for HTML comment
+	// headers, or export.MetadataFrontMatter for YAML front matter, which
+	// mark publishes only with the frontmatter feature.
+	Metadata string
+
 	// Generator is who an OKF concept says generated it, as
 	// <producer>/<version>; empty is "mark/unknown".
 	Generator string
@@ -85,6 +91,7 @@ func exportConfig(config ExportConfig, stdout io.Writer) export.Config {
 		Overwrite:      config.Overwrite,
 		NoAttachments:  config.NoAttachments,
 		Format:         config.Format,
+		Metadata:       config.Metadata,
 		Generator:      config.Generator,
 		Stdout:         stdout,
 	}
