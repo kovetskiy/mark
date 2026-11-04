@@ -116,6 +116,9 @@ type User struct {
 	Username  string
 	FullName  string
 	Email     string
+	// AccountType is Cloud's kind of account, such as "app"; empty leaves it
+	// out of a version's author, as Data Center does.
+	AccountType string
 }
 
 // Request is a single recorded inbound request.
@@ -649,7 +652,7 @@ func (s *Server) versionBy(p *Page) map[string]any {
 	}
 
 	by := map[string]any{}
-	for key, value := range map[string]string{"accountId": u.AccountID, "userKey": u.UserKey, "username": u.Username} {
+	for key, value := range map[string]string{"accountId": u.AccountID, "userKey": u.UserKey, "username": u.Username, "accountType": u.AccountType} {
 		if value != "" {
 			by[key] = value
 		}

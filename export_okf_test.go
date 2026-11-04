@@ -83,6 +83,27 @@ sources:
 	assert.NoError(t, err)
 }
 
+// A page an app last edited, such as Automation for Confluence, names it as a
+// process: human: is what consumers trust as written by a person.
+func TestExportOKFPageByAnAppIsAProcess(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	server.SetCurrentUser(confluencetest.User{AccountID: "557058:automation", AccountType: "app"})
+	rule := server.AddPage("DOCS", "Rule", "page", pages["Home"].ID)
+	dir := t.TempDir()
+
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL, Username: "user", Password: "token",
+		PageID: rule.ID, Output: filepath.Join(dir, "guide.md"),
+		Format: export.FormatOKF, Generator: "mark/v1.2.3",
+	})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, "guide.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "    author: process:557058:automation\n")
+	assert.NotContains(t, string(data), "human:")
+}
+
 // An OKF tree is a bundle: each page a concept beside the directory holding
 // the pages beneath it, an index.md in every directory, attachments under
 // references/, and links between the pages relative links, anchors kept.
