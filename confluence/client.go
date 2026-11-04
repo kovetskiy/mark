@@ -685,12 +685,10 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string) (ev
 		if !strings.EqualFold(final.Hostname(), req.URL.Hostname()) {
 			return "redirected to " + final.Hostname(), true
 		}
-		if reason := resp.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
-			return "X-Seraph-LoginReason: " + reason, true
-		}
-		if resp.Header.Get("X-AUSERNAME") == "anonymous" {
-			return "X-AUSERNAME: anonymous", true
-		}
+	}
+
+	if evidence := seraphLoginEvidence(resp.Header, mediaType); evidence != "" {
+		return evidence, true
 	}
 
 	if mediaType == "text/html" || mediaType == "application/xhtml+xml" {
@@ -698,6 +696,19 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string) (ev
 	}
 
 	return "", false
+}
+
+func seraphLoginEvidence(header http.Header, mediaType string) string {
+	if isJSONMediaType(mediaType) {
+		return ""
+	}
+	if reason := header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
+		return "X-Seraph-LoginReason: " + reason
+	}
+	if header.Get("X-AUSERNAME") == "anonymous" {
+		return "X-AUSERNAME: anonymous"
+	}
+	return ""
 }
 
 // contentMediaType is the media type of a Content-Type header, lowercased and
