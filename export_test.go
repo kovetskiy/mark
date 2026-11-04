@@ -250,7 +250,7 @@ func TestExportOKFIgnoresMetadata(t *testing.T) {
 	_, err := Export(context.Background(), ExportConfig{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		PageID: id, Format: export.FormatOKF, Metadata: export.MetadataFrontMatter,
-		Stdout: &stdout,
+		Stdout: &stdout, AttachmentsDir: t.TempDir(),
 	})
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(stdout.String(), "---\ntype: "), "an OKF concept:\n%s", stdout.String())

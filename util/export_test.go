@@ -18,7 +18,7 @@ func TestExportResolvesFlags(t *testing.T) {
 	config := writeConfig(t, dir, "mark.toml",
 		"username = \"cfguser\"\nbase-url = \"http://cfg.invalid\"\n"+
 			"space = \"CFG\"\ntitle = \"From config\"\noutput = \"out.md\"\n"+
-			"attachments-dir = \"files\"\noverwrite = true\nno-attachments = true\nmetadata = \"front-matter\"\n")
+			"attachments-dir = \"files\"\noverwrite = true\nno-attachments = true\nmetadata = \"frontmatter\"\n")
 
 	names := []string{"username", "base-url", "space", "title", "output", "attachments-dir", "overwrite", "no-attachments", "metadata"}
 	fromFile := map[string]string{
@@ -30,7 +30,7 @@ func TestExportResolvesFlags(t *testing.T) {
 		"attachments-dir": "files",
 		"overwrite":       "true",
 		"no-attachments":  "true",
-		"metadata":        "front-matter",
+		"metadata":        "frontmatter",
 	}
 
 	for _, test := range []struct {
