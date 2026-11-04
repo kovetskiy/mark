@@ -16,7 +16,7 @@ const (
 
 	// MetadataFrontMatter writes it as YAML front matter, which mark reads
 	// only with the frontmatter feature.
-	MetadataFrontMatter = "front-matter"
+	MetadataFrontMatter = "frontmatter"
 )
 
 // ParseMetadata reads the value given to --metadata.
@@ -24,7 +24,7 @@ func ParseMetadata(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", MetadataComments:
 		return MetadataComments, nil
-	case MetadataFrontMatter, "frontmatter":
+	case MetadataFrontMatter:
 		return MetadataFrontMatter, nil
 	default:
 		return "", fmt.Errorf("unknown export metadata %q: expected %s or %s", value, MetadataComments, MetadataFrontMatter)

@@ -80,7 +80,7 @@ with `--no-attachments` there is no telling, so every one is declared.
 
 ## Front matter instead of headers
 
-`--metadata front-matter` writes the same metadata as YAML front matter, under
+`--metadata frontmatter` writes the same metadata as YAML front matter, under
 the plural keys mark reads there (see [YAML front matter](metadata.md#yaml-front-matter)):
 
 ```markdown

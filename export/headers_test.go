@@ -12,7 +12,6 @@ func TestParseMetadata(t *testing.T) {
 	for value, want := range map[string]string{
 		"":              MetadataComments,
 		"comments":      MetadataComments,
-		"front-matter":  MetadataFrontMatter,
 		" Frontmatter ": MetadataFrontMatter,
 	} {
 		got, err := ParseMetadata(value)
@@ -20,8 +19,10 @@ func TestParseMetadata(t *testing.T) {
 		assert.Equal(t, want, got, value)
 	}
 
-	_, err := ParseMetadata("toml")
-	assert.ErrorContains(t, err, `unknown export metadata "toml"`)
+	for _, value := range []string{"toml", "front-matter"} {
+		_, err := ParseMetadata(value)
+		assert.ErrorContains(t, err, `unknown export metadata "`+value+`"`)
+	}
 }
 
 func TestFrontMatterWritesEmojiAsThemselves(t *testing.T) {

@@ -500,7 +500,7 @@ func exportFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "metadata",
 			Value:   export.MetadataComments,
-			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, or \"front-matter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter). --format okf ignores it.",
+			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, or \"frontmatter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter). --format okf ignores it.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_METADATA"), config.value("metadata")),
 		},
 		&cli.BoolFlag{
