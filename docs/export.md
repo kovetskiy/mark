@@ -103,9 +103,15 @@ emoji: "🚀"
 mark reads front matter only with the `frontmatter` feature, and `--features`
 replaces the default features rather than adding to them, so publish such a
 document back with `--features=mermaid,mention,frontmatter`. Without the
-feature the YAML is published as part of the page. `--metadata comments`, the
-default, writes the comment headers. `--format okf` writes front matter of its
-own and refuses `--metadata front-matter`.
+feature mark does not read the metadata at all: the publish fails for want of a
+space, or, with a space and title given some other way, puts the YAML on the
+page as text and the page beneath the space's home page.
+
+Front matter can also hold an article layout's sidebar that has `-->` in it,
+in a code block for instance, which a comment header cannot: under
+`--metadata comments` such a layout stays in the body as storage format.
+`--metadata comments`, the default, writes the comment headers. `--format okf`
+writes front matter of its own and ignores `--metadata`.
 
 ## Exporting a tree of pages, or a whole space
 

@@ -31,32 +31,65 @@ func TestFrontMatterWritesEmojiAsThemselves(t *testing.T) {
 	assert.Equal(t, "---\nspace: DOCS\ntitle: \"🚀 Launch\"\nemoji: \"🚀\"\n---\n", frontMatter)
 }
 
-// TestFrontMatterKeepsLineBreaks: a value comments cannot hold is still
-// written as front matter, on one line, and read back as it was.
-func TestFrontMatterKeepsLineBreaks(t *testing.T) {
-	sidebar := "<h2>Test</h2>\n<p>\"🚀\" \\U0001F680</p>"
-	h := pageHeaders{Space: "DOCS", Title: "Page", Sidebar: sidebar}
+// TestFrontMatterQuotesWhatYAMLWouldMisread: what YAML cannot hold as it is
+// is escaped on one line, what it can -- emoji joined into one, flags -- is
+// written as it is, and all of it reads back as it was.
+func TestFrontMatterQuotesWhatYAMLWouldMisread(t *testing.T) {
+	for _, test := range []struct{ value, want string }{
+		{"👨\u200d💻", "\"👨\u200d💻\""},
+		{"🏴\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F", "\"🏴\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F\""},
+		{"a\nb\r\tc", `"a\nb\r\tc"`},
+		{"next\u0085line\u2028sep\u2029par", `"next\u0085line\u2028sep\u2029par"`},
+		{"bell\x07 bom\ufeff", `"bell\u0007 bom\uFEFF"`},
+		{`"quoted" \U0001F680`, `'"quoted" \U0001F680'`},
+		{"--> -->", "--> -->"},
+		{"yes", `"yes"`},
+	} {
+		got, err := yamlScalar(test.value)
+		require.NoError(t, err, test.value)
+		assert.Equal(t, test.want, got, test.value)
 
-	_, err := h.comments()
-	require.Error(t, err)
-
-	frontMatter, err := h.frontMatter()
-	require.NoError(t, err)
-	assert.Contains(t, frontMatter, `sidebar: "<h2>Test</h2>\n<p>\"🚀\" \\U0001F680</p>"`+"\n")
-
-	meta, _, err := metadata.ExtractMeta([]byte(frontMatter+"\nbody\n"), "", false, false, "page.md", nil, false, "", true)
-	require.NoError(t, err)
-	assert.Equal(t, sidebar, meta.Sidebar)
+		h := pageHeaders{Space: "DOCS", Title: "Page", Labels: []string{"x" + test.value}}
+		frontMatter, err := h.frontMatter()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"x" + test.value}, readMeta(t, frontMatter).Labels, frontMatter)
+	}
 }
 
-func TestParseOptionsRefusesFrontMatterForOKF(t *testing.T) {
-	_, _, err := parseOptions(Config{Format: FormatOKF, Metadata: MetadataFrontMatter})
-	assert.ErrorContains(t, err, "front matter of its own")
+// TestFrontMatterHoldsTheSidebarCommentsCannot: a sidebar with "-->" in it
+// stays in the body under comment headers, and goes to the sidebar key in
+// front matter.
+func TestFrontMatterHoldsTheSidebarCommentsCannot(t *testing.T) {
+	storage := `<ac:layout><ac:layout-section ac:type="two_right_sidebar">` +
+		`<ac:layout-cell><p>Body</p></ac:layout-cell>` +
+		`<ac:layout-cell><ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[A-->B]]></ac:plain-text-body></ac:structured-macro></ac:layout-cell>` +
+		`</ac:layout-section></ac:layout>`
 
-	format, spelling, err := parseOptions(Config{Format: FormatOKF, Metadata: MetadataComments})
-	require.NoError(t, err, "the default spelling is not a choice OKF has to refuse")
+	doc, err := Convert(storage, Options{})
+	require.NoError(t, err)
+	assert.Empty(t, doc.Sidebar)
+	assert.Contains(t, doc.Markdown, "ac:layout")
+
+	doc, err = Convert(storage, Options{FrontMatter: true})
+	require.NoError(t, err)
+	assert.Equal(t, "article", doc.Layout)
+	assert.Contains(t, doc.Sidebar, "A-->B")
+	assert.Equal(t, "Body\n", doc.Markdown)
+
+	h := pageHeaders{Space: "DOCS", Title: "Page", Sidebar: doc.Sidebar}
+	frontMatter, err := h.frontMatter()
+	require.NoError(t, err)
+	assert.Equal(t, doc.Sidebar, readMeta(t, frontMatter).Sidebar)
+}
+
+func TestParseOptionsLeavesOKFItsOwnFrontMatter(t *testing.T) {
+	format, spelling, err := parseOptions(Config{Format: FormatOKF, Metadata: MetadataFrontMatter})
+	require.NoError(t, err, "a configuration file setting front matter for mark's documents does not stop an OKF export")
 	assert.Equal(t, FormatOKF, format)
-	assert.Equal(t, MetadataComments, spelling)
+	assert.Equal(t, MetadataFrontMatter, spelling)
+
+	_, _, err = parseOptions(Config{Format: FormatOKF, Metadata: "toml"})
+	assert.ErrorContains(t, err, "unknown export metadata")
 }
 
 // TestHeadersReadTheSameBothWays: mark reads the front matter as it reads the
@@ -88,17 +121,19 @@ func TestHeadersReadTheSameBothWays(t *testing.T) {
 			frontMatter, err := h.frontMatter()
 			require.NoError(t, err)
 
-			read := func(header string) *metadata.Meta {
-				meta, _, err := metadata.ExtractMeta([]byte(header+"\nbody\n"), "", false, false, "page.md", nil, false, "", true)
-				require.NoError(t, err, header)
-				require.NotNil(t, meta, header)
-				return meta
-			}
-
-			fromComments, fromFrontMatter := read(comments), read(frontMatter)
+			fromComments, fromFrontMatter := readMeta(t, comments), readMeta(t, frontMatter)
 			assert.Equal(t, fromComments, fromFrontMatter, "front matter:\n%s\ncomments:\n%s", frontMatter, comments)
 			assert.Equal(t, h.Title, fromFrontMatter.Title)
 			assert.Equal(t, h.Parents, fromFrontMatter.Parents)
 		})
 	}
+}
+
+// readMeta is the metadata mark reads from header, front matter enabled.
+func readMeta(t *testing.T, header string) *metadata.Meta {
+	t.Helper()
+	meta, _, err := metadata.ExtractMeta([]byte(header+"\nbody\n"), "", false, false, "page.md", nil, false, "", true)
+	require.NoError(t, err, header)
+	require.NotNil(t, meta, header)
+	return meta
 }

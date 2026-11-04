@@ -59,6 +59,11 @@ type Options struct {
 	// an attachment in storage format kept as it is names the file it was
 	// written to.
 	Reading bool
+
+	// FrontMatter is set when the metadata is written as front matter, which
+	// can hold any sidebar. Without it, a sidebar with "-->" in it, which a
+	// comment header cannot hold, stays in the body.
+	FrontMatter bool
 }
 
 // Document is a converted page body.
@@ -102,9 +107,9 @@ func Convert(storage string, opts Options) (*Document, error) {
 
 	children := root.children
 	if body, sidebar, ok := articleLayout(root); ok && !opts.Reading {
-		// The sidebar travels in a header, which cannot hold the end of the
-		// comment it is written in.
-		if text := strings.TrimSpace(c.rawChildren(sidebar, rawLine)); !strings.Contains(text, "-->") {
+		// The sidebar travels in a header, and a comment header cannot hold
+		// the end of the comment it is written in.
+		if text := strings.TrimSpace(c.rawChildren(sidebar, rawLine)); opts.FrontMatter || !strings.Contains(text, "-->") {
 			doc.Layout = "article"
 			doc.Sidebar = text
 			children = body.children
@@ -241,7 +246,7 @@ func fence(text string, minimum int) string {
 func headerValue(name, value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if strings.ContainsAny(value, "\r\n") || strings.Contains(value, "-->") {
-		return "", fmt.Errorf("the %s %q cannot be written in a metadata header", strings.ToLower(name), value)
+		return "", fmt.Errorf("the %s %q cannot be written in a metadata header; --metadata front-matter can write it", strings.ToLower(name), value)
 	}
 
 	return value, nil

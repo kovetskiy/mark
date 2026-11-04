@@ -18,9 +18,9 @@ func TestExportResolvesFlags(t *testing.T) {
 	config := writeConfig(t, dir, "mark.toml",
 		"username = \"cfguser\"\nbase-url = \"http://cfg.invalid\"\n"+
 			"space = \"CFG\"\ntitle = \"From config\"\noutput = \"out.md\"\n"+
-			"attachments-dir = \"files\"\noverwrite = true\nno-attachments = true\n")
+			"attachments-dir = \"files\"\noverwrite = true\nno-attachments = true\nmetadata = \"front-matter\"\n")
 
-	names := []string{"username", "base-url", "space", "title", "output", "attachments-dir", "overwrite", "no-attachments"}
+	names := []string{"username", "base-url", "space", "title", "output", "attachments-dir", "overwrite", "no-attachments", "metadata"}
 	fromFile := map[string]string{
 		"username":        "cfguser",
 		"base-url":        "http://cfg.invalid",
@@ -30,6 +30,7 @@ func TestExportResolvesFlags(t *testing.T) {
 		"attachments-dir": "files",
 		"overwrite":       "true",
 		"no-attachments":  "true",
+		"metadata":        "front-matter",
 	}
 
 	for _, test := range []struct {
@@ -51,12 +52,13 @@ func TestExportResolvesFlags(t *testing.T) {
 
 	t.Run("the environment wins over the file, and the command line over both", func(t *testing.T) {
 		resolved := resolveFlags(t,
-			map[string]string{"MARK_TITLE": "From env", "MARK_OUTPUT": "env.md"},
-			[]string{"title", "output", "space"},
+			map[string]string{"MARK_TITLE": "From env", "MARK_OUTPUT": "env.md", "MARK_METADATA": "comments"},
+			[]string{"title", "output", "space", "metadata"},
 			"export", "-c", config, "-o", "cli.md", "--space", "CLI")
 		assert.Equal(t, "From env", resolved["title"])
 		assert.Equal(t, "cli.md", resolved["output"])
 		assert.Equal(t, "CLI", resolved["space"])
+		assert.Equal(t, "comments", resolved["metadata"])
 	})
 }
 
@@ -81,6 +83,7 @@ func TestExportNamesExactlyOnePage(t *testing.T) {
 		{"--relative-links without --recursive", []string{"--page-id", "1", "--relative-links"}, "does nothing without it"},
 		{"a space without --recursive", []string{"--space", "DOCS"}, "or the space alone with --recursive"},
 		{"an unknown --format", []string{"--page-id", "1", "--format", "html"}, `--format: unknown export format "html"`},
+		{"an unknown --metadata", []string{"--page-id", "1", "--metadata", "toml"}, `--metadata: unknown export metadata "toml"`},
 		{"--relative-links with --format okf", []string{"--page-id", "1", "-r", "-o", "out", "--format", "okf", "--relative-links"}, "does already"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

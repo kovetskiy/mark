@@ -3,7 +3,6 @@ package export
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v16/metadata"
 	"go.yaml.in/yaml/v3"
@@ -32,8 +31,9 @@ func ParseMetadata(value string) (string, error) {
 	}
 }
 
-// parseOptions reads the format and the metadata together, refusing the one
-// pair that does not go: OKF writes front matter of its own.
+// parseOptions reads the format and the metadata. OKF writes front matter of
+// its own and has no use for the metadata, which is still checked, so that a
+// configuration file setting it for mark's documents serves OKF exports too.
 func parseOptions(cfg Config) (format, spelling string, err error) {
 	format, err = ParseFormat(cfg.Format)
 	if err != nil {
@@ -43,107 +43,102 @@ func parseOptions(cfg Config) (format, spelling string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	if format == FormatOKF && spelling == MetadataFrontMatter {
-		return "", "", fmt.Errorf("the %s format writes front matter of its own: %s metadata is for the %s format", FormatOKF, MetadataFrontMatter, FormatMark)
-	}
 	return format, spelling, nil
 }
 
-// pageHeaders is the metadata that publishes a document back to its page,
-// with the front matter keys mark reads, in the order the headers are
-// written.
+// pageHeaders is the metadata that publishes a document back to its page.
 type pageHeaders struct {
-	Space             string   `yaml:"space"`
-	Type              string   `yaml:"type,omitempty"`
-	Parents           []string `yaml:"parents,omitempty"`
-	Folders           []string `yaml:"folders,omitempty"`
-	Title             string   `yaml:"title"`
-	Labels            []string `yaml:"labels,omitempty"`
-	Sidebar           string   `yaml:"sidebar,omitempty"`
-	Layout            string   `yaml:"layout,omitempty"`
-	ContentAppearance string   `yaml:"content-appearance,omitempty"`
-	Emoji             string   `yaml:"emoji,omitempty"`
-	Attachments       []string `yaml:"attachments,omitempty"`
+	Space             string
+	Type              string
+	Parents           []string
+	Folders           []string
+	Title             string
+	Labels            []string
+	Sidebar           string
+	Layout            string
+	ContentAppearance string
+	Emoji             string
+	Attachments       []string
+}
+
+// headerField is one piece of the metadata under both its names: the comment
+// header, and the front matter key, which is plural where the header can be
+// given more than once.
+type headerField struct {
+	header, key string
+	list        bool
+	values      []string
+}
+
+// fields are the headers in the order they are written either way.
+func (h *pageHeaders) fields() []headerField {
+	one := func(header, key, value string) headerField {
+		return headerField{header: header, key: key, values: []string{value}}
+	}
+	many := func(header, key string, values []string) headerField {
+		return headerField{header: header, key: key, list: true, values: values}
+	}
+	return []headerField{
+		one(metadata.HeaderSpace, "space", h.Space),
+		one(metadata.HeaderType, "type", h.Type),
+		many(metadata.HeaderParent, "parents", h.Parents),
+		many(metadata.HeaderFolder, "folders", h.Folders),
+		one(metadata.HeaderTitle, "title", h.Title),
+		many(metadata.HeaderLabel, "labels", h.Labels),
+		one(metadata.HeaderSidebar, "sidebar", h.Sidebar),
+		one(metadata.HeaderLayout, "layout", h.Layout),
+		one(metadata.ContentAppearance, "content-appearance", h.ContentAppearance),
+		one(metadata.HeaderEmoji, "emoji", h.Emoji),
+		many(metadata.HeaderAttachment, "attachments", h.Attachments),
+	}
+}
+
+// present is the field's values that say something, without the space around
+// each, as mark reads them.
+func (f headerField) present() []string {
+	var values []string
+	for _, value := range f.values {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // comments writes the headers as HTML comments.
 func (h *pageHeaders) comments() (string, error) {
 	var lines []string
-	add := func(name string, values ...string) error {
-		for _, value := range values {
-			if value == "" {
-				continue
-			}
-			value, err := headerValue(name, value)
+	for _, field := range h.fields() {
+		for _, value := range field.present() {
+			value, err := headerValue(field.header, value)
 			if err != nil {
-				return err
+				return "", err
 			}
-			lines = append(lines, "<!-- "+name+": "+value+" -->")
-		}
-		return nil
-	}
-
-	for _, header := range []struct {
-		name   string
-		values []string
-	}{
-		{metadata.HeaderSpace, []string{h.Space}},
-		{metadata.HeaderType, []string{h.Type}},
-		{metadata.HeaderParent, h.Parents},
-		{metadata.HeaderFolder, h.Folders},
-		{metadata.HeaderTitle, []string{h.Title}},
-		{metadata.HeaderLabel, h.Labels},
-		{metadata.HeaderSidebar, []string{h.Sidebar}},
-		{metadata.HeaderLayout, []string{h.Layout}},
-		{metadata.ContentAppearance, []string{h.ContentAppearance}},
-		{metadata.HeaderEmoji, []string{h.Emoji}},
-		{metadata.HeaderAttachment, h.Attachments},
-	} {
-		if err := add(header.name, header.values...); err != nil {
-			return "", err
+			lines = append(lines, "<!-- "+field.header+": "+value+" -->")
 		}
 	}
-
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
-// frontMatter writes the headers as YAML front matter, under the keys and in
-// the order the comments are written.
+// frontMatter writes the headers as YAML front matter.
 func (h *pageHeaders) frontMatter() (string, error) {
 	var b strings.Builder
 	b.WriteString("---\n")
-
-	for _, field := range []struct {
-		key    string
-		value  string
-		values []string
-	}{
-		{key: "space", value: h.Space},
-		{key: "type", value: h.Type},
-		{key: "parents", values: h.Parents},
-		{key: "folders", values: h.Folders},
-		{key: "title", value: h.Title},
-		{key: "labels", values: h.Labels},
-		{key: "sidebar", value: h.Sidebar},
-		{key: "layout", value: h.Layout},
-		{key: "content-appearance", value: h.ContentAppearance},
-		{key: "emoji", value: h.Emoji},
-		{key: "attachments", values: h.Attachments},
-	} {
-		if field.value != "" {
-			value, err := yamlScalar(field.value)
+	for _, field := range h.fields() {
+		values := field.present()
+		if len(values) == 0 {
+			continue
+		}
+		if !field.list {
+			value, err := yamlScalar(values[0])
 			if err != nil {
 				return "", err
 			}
 			b.WriteString(field.key + ": " + value + "\n")
-		}
-		if len(field.values) == 0 {
 			continue
 		}
-		if field.value == "" {
-			b.WriteString(field.key + ":\n")
-		}
-		for _, item := range field.values {
+		b.WriteString(field.key + ":\n")
+		for _, item := range values {
 			value, err := yamlScalar(item)
 			if err != nil {
 				return "", err
@@ -151,76 +146,70 @@ func (h *pageHeaders) frontMatter() (string, error) {
 			b.WriteString("  - " + value + "\n")
 		}
 	}
-
 	b.WriteString("---\n")
 	return b.String(), nil
 }
 
-// yamlScalar is value as a YAML scalar on one line: quoted where YAML would
-// read it as something other than that string, and double-quoted, with its
-// line breaks escaped, where it has any.
+// yamlScalar is value as a YAML scalar on one line: as yaml.v3 writes it, or,
+// where that is in double quotes or the value has a line break, quoted by
+// yamlQuote, since yaml.v3 escapes every character beyond U+FFFF, emoji
+// among them.
 func yamlScalar(value string) (string, error) {
-	node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
 	if strings.ContainsAny(value, "\r\n") {
-		node.Style = yaml.DoubleQuotedStyle
+		return yamlQuote(value), nil
 	}
-	out, err := yaml.Marshal(node)
+	out, err := yaml.Marshal(value)
 	if err != nil {
 		return "", fmt.Errorf("unable to write %q as front matter: %w", value, err)
 	}
 	scalar := strings.TrimSuffix(string(out), "\n")
 	if strings.HasPrefix(scalar, `"`) {
-		scalar = unescapeAstral(scalar)
+		return yamlQuote(value), nil
 	}
 	return scalar, nil
 }
 
-// unescapeAstral writes the \UXXXXXXXX escapes yaml.v3 gives every character
-// beyond U+FFFF, emoji among them, as the characters, which a double-quoted
-// scalar may hold as they are. It is given one double-quoted scalar, where
-// every backslash begins an escape.
-func unescapeAstral(scalar string) string {
-	var out strings.Builder
-	for i := 0; i < len(scalar); i++ {
-		if scalar[i] != '\\' {
-			out.WriteByte(scalar[i])
-			continue
-		}
-		if i+10 <= len(scalar) && scalar[i+1] == 'U' {
-			if r, ok := hexRune(scalar[i+2 : i+10]); ok && r > 0xFFFF {
-				out.WriteRune(r)
-				i += 9
-				continue
-			}
-		}
-		// Any other escape is kept whole, so that the second backslash of \\
-		// is not read as beginning one.
-		out.WriteByte('\\')
-		if i+1 < len(scalar) {
-			i++
-			out.WriteByte(scalar[i])
+// yamlQuote is value as a double-quoted YAML scalar, every character YAML
+// counts as printable written as it is and the rest escaped. The line breaks
+// YAML 1.1 knows beyond \n and \r, U+0085, U+2028 and U+2029, are escaped
+// too, so that the scalar stays on one line for every reader.
+func yamlQuote(value string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range value {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case yamlPrintable(r) && r != 0x85 && r != 0x2028 && r != 0x2029:
+			b.WriteRune(r)
+		case r <= 0xFFFF:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			fmt.Fprintf(&b, `\U%08X`, r)
 		}
 	}
-	return out.String()
+	b.WriteByte('"')
+	return b.String()
 }
 
-// hexRune reads the hexadecimal digits of an escape as the character they
-// name, if they name one.
-func hexRune(digits string) (rune, bool) {
-	var r rune
-	for _, c := range []byte(digits) {
-		var d byte
-		switch {
-		case '0' <= c && c <= '9':
-			d = c - '0'
-		case 'a' <= c && c <= 'f':
-			d = c - 'a' + 10
-		case 'A' <= c && c <= 'F':
-			d = c - 'A' + 10
-		default:
-			return 0, false
-		}
-		r = r<<4 | rune(d)
+// yamlPrintable reports whether YAML lets r stand in a scalar as it is: its
+// c-printable set, without the byte order mark.
+func yamlPrintable(r rune) bool {
+	switch {
+	case r >= 0x20 && r <= 0x7E, r == 0x85:
+		return true
+	case r >= 0xA0 && r <= 0xD7FF:
+		return true
+	case r >= 0xE000 && r <= 0xFFFD:
+		return r != 0xFEFF
+	default:
+		return r >= 0x10000 && r <= 0x10FFFF
 	}
-	return r, utf8.ValidRune(r)
 }
