@@ -54,8 +54,8 @@ type TreeOptions struct {
 // references/attachments/<page id>; and links between the pages relative
 // links, whatever RelativeLinks says.
 //
-// The tree is read and every document's path checked before anything is
-// written. A folder in it is refused, since the export does not list a
+// The tree is read, every page converted, and every path it writes to --
+// documents, indexes, attachments -- checked before anything is written. A folder in it is refused, since the export does not list a
 // folder's pages.
 func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOptions) ([]*Result, error) {
 	format, spelling, err := parseOptions(cfg)
@@ -90,17 +90,6 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 		indexes = okfIndexes(cfg.Output, heading, plan)
 	}
 
-	if !cfg.Overwrite {
-		documents := make([]string, 0, len(plan)+len(indexes))
-		for _, p := range plan {
-			documents = append(documents, p.output)
-		}
-		documents = slices.AppendSeq(documents, maps.Keys(indexes))
-		if err := refuseExisting(documents); err != nil {
-			return nil, err
-		}
-	}
-
 	var documents *Documents
 	if options.RelativeLinks || l.okf {
 		listed := make([]PageFile, len(plan))
@@ -110,18 +99,20 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 		documents = NewDocuments(listed)
 	}
 
-	results := make([]*Result, 0, len(plan))
+	// Every page is converted before any is written, so that an existing
+	// attachment of the last page is refused as early as a document.
+	exports := make([]*pageExport, 0, len(plan))
+	targets := slices.Collect(maps.Keys(indexes))
 	for _, p := range plan {
 		var attachments string
 		if l.okf {
 			attachments = filepath.Join(cfg.Output, okfReferences, "attachments", p.id)
 		}
 
-		result, err := Page(ctx, api, Config{
+		export, err := preparePage(ctx, api, Config{
 			PageID:         p.id,
 			Output:         p.output,
 			AttachmentsDir: attachments,
-			Overwrite:      cfg.Overwrite,
 			NoAttachments:  cfg.NoAttachments,
 			Stdout:         cfg.Stdout,
 			Format:         format,
@@ -130,7 +121,23 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 			Documents:      documents,
 		})
 		if err != nil {
-			return results, fmt.Errorf("unable to export page %s, after exporting %d: %w", p.id, len(results), err)
+			return nil, fmt.Errorf("unable to export page %s: %w", p.id, err)
+		}
+		exports = append(exports, export)
+		targets = append(targets, export.targets()...)
+	}
+
+	if !cfg.Overwrite {
+		if err := refuseExisting(targets); err != nil {
+			return nil, err
+		}
+	}
+
+	results := make([]*Result, 0, len(exports))
+	for _, export := range exports {
+		result, err := export.write(ctx, api)
+		if err != nil {
+			return results, fmt.Errorf("unable to export page %s, after exporting %d: %w", export.page.ID, len(results), err)
 		}
 		results = append(results, result)
 	}
