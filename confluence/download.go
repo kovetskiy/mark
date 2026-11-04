@@ -142,6 +142,15 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 		)
 	}
 
+	if evidence := seraphLoginEvidence(response.Header, contentMediaType(response.Header)); evidence != "" {
+		return fmt.Errorf("unable to download attachment %q: %w", info.Filename, &loginPageError{
+			answer: &reply{
+				StatusCode: response.StatusCode, Status: response.Status, Request: response.Request,
+			},
+			requested: request.URL.Redacted(), evidence: evidence, strong: true,
+		})
+	}
+
 	written, err := io.Copy(w, io.LimitReader(response.Body, maxAttachmentDownload+1))
 	if err != nil {
 		return fmt.Errorf("unable to download attachment %q: %w", info.Filename, err)
