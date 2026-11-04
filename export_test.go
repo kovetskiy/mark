@@ -205,11 +205,12 @@ func TestExportRoundTripFrontMatter(t *testing.T) {
 	setContentProperty(t, api, id, "emoji-title-published", `"1f680"`)
 
 	out := filepath.Join(t.TempDir(), "export", "installing.md")
-	_, err := Export(context.Background(), ExportConfig{
+	result, err := Export(context.Background(), ExportConfig{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		PageID: id, Output: out, Metadata: export.MetadataFrontMatter,
 	})
 	require.NoError(t, err)
+	assert.Equal(t, []string{"how-to", "install"}, result.Labels, "the result names the labels the front matter does")
 
 	exported, err := os.ReadFile(out)
 	require.NoError(t, err)
