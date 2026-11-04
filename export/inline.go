@@ -495,6 +495,29 @@ func (w *inlineWriter) readingPageDestination(space, title, anchor string) (stri
 	return "", false
 }
 
+// readingPageLink writes a link to the page target names, in Markdown that is
+// read rather than published, with the link's own text or else the page's
+// title, if the page can be found.
+func (w *inlineWriter) readingPageLink(target *node, anchor, text string, hasText bool) (string, bool) {
+	title := target.attr("ri:content-title")
+	if title == "" || strings.ContainsAny(title, "<>\n") {
+		return "", false
+	}
+	space := target.attr("ri:space-key")
+	if space == w.c.opts.Space {
+		space = ""
+	}
+
+	dest, ok := w.readingPageDestination(space, title, anchor)
+	if !ok {
+		return "", false
+	}
+	if !hasText {
+		text = escapeInline(title, inlineOptions{table: w.ctx.table})
+	}
+	return "[" + text + "](" + destination(dest) + ")", true
+}
+
 // titleDestination matches a page title that can be written after "ac:" as it
 // is.
 var titleDestination = regexp.MustCompile(`^[^\s()<>\\]+$`)
@@ -504,11 +527,6 @@ var titleDestination = regexp.MustCompile(`^[^\s()<>\\]+$`)
 // an attachment of the page.
 func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 	anchor := n.attr("ac:anchor")
-	for _, a := range n.attrs {
-		if a.name != "ac:anchor" {
-			return "", false
-		}
-	}
 
 	var target *node
 	for _, child := range n.elements() {
@@ -521,6 +539,21 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 	}
 
 	text, hasText := w.linkBody(n)
+
+	// Markdown that is read is not published back, so attributes that only
+	// change how Confluence shows a page link, such as an inline card's, do
+	// not stop it being written.
+	if w.c.opts.Reading && target != nil && target.is("ri:page") {
+		if link, ok := w.readingPageLink(target, anchor, text, hasText); ok {
+			return link, true
+		}
+	}
+
+	for _, a := range n.attrs {
+		if a.name != "ac:anchor" {
+			return "", false
+		}
+	}
 
 	switch {
 	case target == nil:
@@ -535,20 +568,7 @@ func (w *inlineWriter) acLinkMarkdown(n *node) (string, bool) {
 		if title == "" || strings.ContainsAny(title, "<>\n") || !plainAttrs(target, "ri:content-title", "ri:space-key", "ri:version-at-save") {
 			return "", false
 		}
-		space := target.attr("ri:space-key")
-		if space == w.c.opts.Space {
-			space = ""
-		}
-
-		if w.c.opts.Reading {
-			if dest, ok := w.readingPageDestination(space, title, anchor); ok {
-				if !hasText {
-					text = escapeInline(title, inlineOptions{table: w.ctx.table})
-				}
-				return "[" + text + "](" + destination(dest) + ")", true
-			}
-		}
-		if space != "" {
+		if target.attr("ri:space-key") != "" && target.attr("ri:space-key") != w.c.opts.Space {
 			return "", false
 		}
 

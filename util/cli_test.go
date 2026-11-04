@@ -393,3 +393,13 @@ func TestWatchWithoutTheFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"acct-current"}, watchers)
 }
+
+// generated.by names mark's version without the commit the binary's version
+// carries, so two builds of a release write the same concepts.
+func TestGenerator(t *testing.T) {
+	assert.Equal(t, "mark/v17.0.0", generator("v17.0.0@3f2a9c1"))
+	assert.Equal(t, "mark/dev", generator("dev@none"))
+	assert.Equal(t, "mark/v17.0.0", generator("v17.0.0"))
+	assert.Empty(t, generator(""))
+	assert.Empty(t, generator("@3f2a9c1"))
+}
