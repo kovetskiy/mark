@@ -39,12 +39,14 @@ func TestExportOKFPage(t *testing.T) {
 	server.AddAttachmentData(guide.ID, "notes.md", []byte("# notes"))
 	dir := t.TempDir()
 
-	_, err := Export(context.Background(), ExportConfig{
+	result, err := Export(context.Background(), ExportConfig{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		PageID: guide.ID, Output: filepath.Join(dir, "guide.md"),
 		Format: export.FormatOKF, Generator: "mark/v1.2.3",
 	})
 	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "zeta"}, result.Labels, "the result names the labels the tags do")
+	assert.Nil(t, result.DeclaredAttachments, "OKF declares no attachments")
 
 	data, err := os.ReadFile(filepath.Join(dir, "guide.md"))
 	require.NoError(t, err)

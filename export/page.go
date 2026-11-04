@@ -104,11 +104,11 @@ type Result struct {
 	Attachments []string
 
 	// Labels are the page's global labels, sorted: the Label headers, or
-	// the tags of OKF front matter.
+	// the tags of OKF front matter. Nil when the page has none.
 	Labels []string
 
 	// DeclaredAttachments are the attachments named by Attachment headers,
-	// in order. OKF declares none.
+	// in order. Nil when there are none, as under OKF, which declares none.
 	DeclaredAttachments []string
 }
 
@@ -421,7 +421,7 @@ func pageLabels(ctx context.Context, api *confluence.API, page *confluence.PageI
 	if err != nil {
 		return nil, fmt.Errorf("unable to read the labels of page %s: %w", page.ID, err)
 	}
-	names := make([]string, 0, len(labels.Labels))
+	var names []string
 	for _, label := range labels.Labels {
 		names = append(names, label.Name)
 	}
