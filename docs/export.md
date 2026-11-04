@@ -100,11 +100,13 @@ docs/guides/setup/tuning/index.md     Guides > Setup > Tuning
 ```
 
 Every page gets a directory of its own, named after its title in lower case
-with a dash for anything that is not a letter or digit, and its attachments go
-beside it there. A directory of its own is what keeps two pages' `image.png`
+with a dash for anything that is not a letter or digit, cut to 200 bytes so
+that a long title still makes a name the file system takes, and its
+attachments go beside it there. A directory of its own is what keeps two pages' `image.png`
 apart: mark names an attachment after its path, so two pages sharing a
 directory would share their attachments' names too. A title that comes out like
-a sibling's, as `C++` and `C` do, has the page id added to it.
+a sibling's, as `C++` and `C` do, or two long titles alike up to the cut, has
+the page id added to it.
 
 A whole space puts its home page at `index.md` and the home page's children
 in directories beside it. A page at the top of the space other than the home

@@ -402,3 +402,55 @@ func TestExportOKFEmptySpaceIsABundle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "---\nokf_version: \"0.2\"\n---\n\n# EMPTY\n\n", string(root))
 }
+
+// A title as long as Confluence allows, in ASCII or in a script of three
+// bytes a character, still makes a file name the file system takes, in
+// either layout, and two long titles alike up to the cut keep apart.
+func TestExportTreeLongTitles(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	root := server.AddPage("DOCS", "Root", "page", "")
+	server.SetHomepage("DOCS", root.ID)
+	prefix := strings.Repeat("a", 250)
+	first := server.AddPage("DOCS", prefix+"1111", "page", root.ID)
+	second := server.AddPage("DOCS", prefix+"2222", "page", root.ID)
+	cjk := server.AddPage("DOCS", strings.Repeat("文", 255), "page", root.ID)
+	server.AddPage("DOCS", strings.Repeat("字", 255), "page", cjk.ID)
+	for _, p := range []*confluencetest.Page{root, first, second, cjk} {
+		server.EditPage(p.ID, "<p>"+p.ID+"</p>")
+	}
+
+	for _, format := range []string{export.FormatMark, export.FormatOKF} {
+		t.Run(format, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "out")
+			_, err := ExportTree(context.Background(), ExportConfig{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				PageID: root.ID, Output: out, Format: format,
+			}, export.TreeOptions{})
+			require.NoError(t, err)
+
+			var documents []string
+			require.NoError(t, filepath.WalkDir(out, func(path string, d fs.DirEntry, err error) error {
+				require.NoError(t, err)
+				assert.LessOrEqual(t, len(d.Name()), 255, path)
+				if !d.IsDir() && d.Name() != "index.md" {
+					documents = append(documents, path)
+				}
+				return nil
+			}))
+
+			cut := prefix[:200]
+			firstDoc, secondDoc := filepath.Join(out, cut, "index.md"), filepath.Join(out, cut+"-"+second.ID, "index.md")
+			if format == export.FormatOKF {
+				firstDoc = filepath.Join(out, "root", cut+".md")
+				secondDoc = filepath.Join(out, "root", cut+"-"+second.ID+".md")
+				assert.Len(t, documents, 5, documents)
+			}
+			for doc, id := range map[string]string{firstDoc: first.ID, secondDoc: second.ID} {
+				data, err := os.ReadFile(doc)
+				require.NoError(t, err)
+				assert.Contains(t, string(data), id)
+			}
+		})
+	}
+}

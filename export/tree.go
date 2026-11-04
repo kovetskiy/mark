@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v16/confluence"
 	"github.com/rs/zerolog/log"
@@ -379,14 +380,28 @@ func below(depth int) int {
 	return 0
 }
 
+// slugMax caps a slug in bytes. A file name may be 255 bytes, and the slug
+// still takes ".md" and, beside a sibling that slugs alike, "-<id>" and
+// "-<n>": 200 leaves room for all three.
+const slugMax = 200
+
 // slug is a directory name for a title: its letters and digits, lowercased,
-// with a dash for each run of anything else.
+// with a dash for each run of anything else, cut on a character's boundary
+// to at most slugMax bytes. Two titles cut to the same slug are told apart
+// as any two that slug alike are, by the page id.
 func slug(title string) string {
 	var b strings.Builder
 	dash := false
 	for _, r := range strings.ToLower(title) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			sep := 0
 			if dash && b.Len() > 0 {
+				sep = 1
+			}
+			if b.Len()+sep+utf8.RuneLen(r) > slugMax {
+				break
+			}
+			if sep > 0 {
 				b.WriteByte('-')
 			}
 			b.WriteRune(r)
