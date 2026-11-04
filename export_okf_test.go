@@ -212,6 +212,25 @@ func exportTreeOKF(t *testing.T, server *confluencetest.Server, pageID, out stri
 	return err
 }
 
+// An attachment of the last page already in the bundle fails the export
+// before any concept or index is written, so it can be run again.
+func TestExportOKFTreeRefusesAnExistingAttachmentFirst(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	out := filepath.Join(t.TempDir(), "bundle")
+	stale := filepath.Join(out, "references", "attachments", pages["Deep dive"].ID, "image.png")
+	require.NoError(t, os.MkdirAll(filepath.Dir(stale), 0o755))
+	require.NoError(t, os.WriteFile(stale, []byte("old"), 0o600))
+
+	err := exportTreeOKF(t, server, pages["Guide"].ID, out)
+	require.ErrorContains(t, err, "--overwrite")
+	assert.NoFileExists(t, filepath.Join(out, "guide.md"))
+	assert.NoFileExists(t, filepath.Join(out, "index.md"))
+
+	require.NoError(t, os.Remove(stale))
+	require.NoError(t, exportTreeOKF(t, server, pages["Guide"].ID, out))
+	assertOKFBundle(t, out)
+}
+
 // assertOKFBundle checks what OKF requires of a bundle: every .md file but
 // index.md and log.md has front matter with a type, and an index.md has none,
 // except the bundle's own, which may say the version.

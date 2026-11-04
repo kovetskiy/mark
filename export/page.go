@@ -123,6 +123,46 @@ const expansions = "body.storage,ancestors,version,space"
 // With FormatOKF it is written as an Open Knowledge Format concept instead:
 // the same body below OKF front matter, for reading rather than publishing.
 func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error) {
+	export, err := preparePage(ctx, api, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if !cfg.Overwrite {
+		if err := refuseExisting(export.targets()); err != nil {
+			return nil, err
+		}
+	}
+	return export.write(ctx, api)
+}
+
+// pageExport is a page read and converted, with the files it is written to,
+// none of them written yet.
+type pageExport struct {
+	page      *confluence.PageInfo
+	output    string
+	outputDir string
+	markdown  string
+	downloads []pendingDownload
+	stdout    io.Writer
+	labels    []string
+	declared  []string
+}
+
+// targets are the files the export writes.
+func (e *pageExport) targets() []string {
+	targets := make([]string, 0, len(e.downloads)+1)
+	if e.output != "" {
+		targets = append(targets, e.output)
+	}
+	for _, d := range e.downloads {
+		targets = append(targets, d.path)
+	}
+	return targets
+}
+
+// preparePage reads and converts the page cfg names and works out every file
+// its export writes, without writing any.
+func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExport, error) {
 	format, spelling, err := parseOptions(cfg)
 	if err != nil {
 		return nil, err
@@ -292,42 +332,38 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		markdown += "\n" + doc.Markdown
 	}
 
-	if !cfg.Overwrite {
-		targets := make([]string, 0, len(downloads)+1)
-		if output != "" {
-			targets = append(targets, output)
-		}
-		for _, d := range downloads {
-			targets = append(targets, d.path)
-		}
-		if err := refuseExisting(targets); err != nil {
-			return nil, err
-		}
-	}
+	return &pageExport{
+		page: page, output: output, outputDir: outputDir, markdown: markdown, downloads: downloads, stdout: cfg.Stdout,
+		labels: labels, declared: declared,
+	}, nil
+}
 
-	result := &Result{Page: page, Output: output, Labels: labels, DeclaredAttachments: declared}
+// write downloads the attachments and writes the document, over whatever is
+// there: refusing existing files is the caller's.
+func (e *pageExport) write(ctx context.Context, api *confluence.API) (*Result, error) {
+	result := &Result{Page: e.page, Output: e.output, Labels: e.labels, DeclaredAttachments: e.declared}
 
-	written, err := downloadAll(ctx, api, page.ID, downloads)
+	written, err := downloadAll(ctx, api, e.page.ID, e.downloads)
 	if err != nil {
 		return nil, err
 	}
 	result.Attachments = written
 
-	if output == "" {
-		if _, err := io.WriteString(cfg.Stdout, markdown); err != nil {
+	if e.output == "" {
+		if _, err := io.WriteString(e.stdout, e.markdown); err != nil {
 			return nil, fmt.Errorf("unable to write the page: %w", err)
 		}
 		return result, nil
 	}
 
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("unable to create %s: %w", outputDir, err)
+	if err := os.MkdirAll(e.outputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("unable to create %s: %w", e.outputDir, err)
 	}
-	if err := os.WriteFile(output, []byte(markdown), 0o644); err != nil { //nolint:gosec // G306: a document, meant to be read like the others beside it
-		return nil, fmt.Errorf("unable to write %s: %w", output, err)
+	if err := os.WriteFile(e.output, []byte(e.markdown), 0o644); err != nil { //nolint:gosec // G306: a document, meant to be read like the others beside it
+		return nil, fmt.Errorf("unable to write %s: %w", e.output, err)
 	}
 
-	log.Info().Msgf("page %q exported to %s", page.Title, output)
+	log.Info().Msgf("page %q exported to %s", e.page.Title, e.output)
 
 	return result, nil
 }

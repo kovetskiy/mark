@@ -786,6 +786,24 @@ func TestExportTreeWritesNothingItCannotFinish(t *testing.T) {
 		assert.FileExists(t, filepath.Join(out, "index.md"))
 	})
 
+	t.Run("an attachment of a later page already there", func(t *testing.T) {
+		server, pages := exportTreeSpace(t)
+		out := filepath.Join(t.TempDir(), "guide")
+		stale := filepath.Join(out, "c", "deep-dive", "image.png")
+		require.NoError(t, os.MkdirAll(filepath.Dir(stale), 0o755))
+		require.NoError(t, os.WriteFile(stale, []byte("mine"), 0o600))
+
+		err := exportTree(t, server, pages["Guide"].ID, out, 0, false)
+		require.ErrorContains(t, err, "--overwrite")
+		assert.NoFileExists(t, filepath.Join(out, "index.md"), "nothing was written")
+		assert.NoFileExists(t, filepath.Join(out, "c", "index.md"), "nothing was written")
+
+		require.NoError(t, exportTree(t, server, pages["Guide"].ID, out, 0, true))
+		data, err := os.ReadFile(stale)
+		require.NoError(t, err)
+		assert.Equal(t, "image of Deep dive", string(data))
+	})
+
 	t.Run("no directory to write to", func(t *testing.T) {
 		server, pages := exportTreeSpace(t)
 		require.ErrorContains(t, exportTree(t, server, pages["Guide"].ID, "", 0, false), "--output")
