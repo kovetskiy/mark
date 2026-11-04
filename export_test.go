@@ -282,7 +282,7 @@ func TestExportPageFromConfluence(t *testing.T) {
 		Output: out, AttachmentsDir: filepath.Join(dir, "files"),
 	})
 	require.NoError(t, err)
-	assert.Empty(t, result.Labels)
+	assert.Nil(t, result.Labels, "a page without labels has none")
 	assert.Equal(t, []string{"files/chart.png"}, result.DeclaredAttachments,
 		"the result names the attachments the headers declare, and not the one the page lacks")
 
