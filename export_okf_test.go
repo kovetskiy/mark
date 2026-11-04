@@ -230,7 +230,8 @@ func TestExportOKFPageKeepsWhatMarkCannotSay(t *testing.T) {
 	server.EditPage(guide.ID, `<ac:layout><ac:layout-section ac:type="two_right_sidebar">`+
 		`<ac:layout-cell><p>Body, see `+
 		`<ac:link><ri:page ri:content-title="C++"/><ac:link-body><strong>C</strong>++</ac:link-body></ac:link>`+
-		` and <ac:link ac:anchor="set up"><ri:page ri:content-title="C"/><ac:plain-text-link-body><![CDATA[C setup]]></ac:plain-text-link-body></ac:link>.</p></ac:layout-cell>`+
+		` and <ac:link ac:anchor="set up"><ri:page ri:content-title="C"/><ac:plain-text-link-body><![CDATA[C setup]]></ac:plain-text-link-body></ac:link>`+
+		` and <ac:link ac:card-appearance="inline"><ri:page ri:content-title="Deep dive" ri:version-at-save="3"/></ac:link>.</p></ac:layout-cell>`+
 		`<ac:layout-cell><p>Sidebar, see `+pageLink("Deep dive")+`.</p></ac:layout-cell>`+
 		`</ac:layout-section></ac:layout>`)
 
@@ -245,7 +246,28 @@ func TestExportOKFPageKeepsWhatMarkCannotSay(t *testing.T) {
 	address := func(title string) string { return server.URL + "/display/DOCS/" + pages[title].ID }
 	assert.Contains(t, document, "see [**C**++]("+address("C++")+")")
 	assert.Contains(t, document, "[C setup]("+address("C")+")")
+	assert.Contains(t, document, " and [Deep dive]("+address("Deep dive")+").",
+		"an inline card is a link like any other")
 	assert.Contains(t, document, "Sidebar, see [Deep dive]("+address("Deep dive")+").")
+}
+
+// Through the gateway a space that is not there, or that the token cannot see,
+// is not found, and a link into it is left as it was rather than failing the
+// export.
+func TestExportOKFPageThroughTheGatewayLinksIntoAMissingSpace(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	server.EditPage(pages["Guide"].ID, `<p>See `+pageLink("C++")+`,`+
+		` <ac:link><ri:page ri:space-key="GONE" ri:content-title="Old"/><ac:plain-text-link-body><![CDATA[old]]></ac:plain-text-link-body></ac:link>.</p>`)
+
+	var stdout bytes.Buffer
+	_, err := Export(context.Background(), ExportConfig{
+		BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token",
+		PageID: pages["Guide"].ID, Stdout: &stdout, Format: export.FormatOKF,
+	})
+	require.NoError(t, err)
+	document := stdout.String()
+	assert.Contains(t, document, "See [C++](")
+	assert.Contains(t, document, `<ri:page ri:space-key="GONE" ri:content-title="Old"/>`)
 }
 
 // A page link the export cannot look up is an error, not a link left pointing

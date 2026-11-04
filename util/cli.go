@@ -474,9 +474,12 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	return err
 }
 
-// generator names mark and its version, as OKF's generated.by does. Without
-// a version it is empty, which the export takes as "mark/unknown".
+// generator names mark and its version, as OKF's generated.by does, without
+// the commit the binary's version carries after "@", so that two builds of a
+// release write the same files. Without a version it is empty, which the
+// export takes as "mark/unknown".
 func generator(version string) string {
+	version, _, _ = strings.Cut(version, "@")
 	if version == "" {
 		return ""
 	}

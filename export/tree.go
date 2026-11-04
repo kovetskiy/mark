@@ -317,9 +317,6 @@ func planBranches(
 	ctx context.Context, api *confluence.API, l layout, branches []branch, dir string, taken map[string]bool, plan *[]planned,
 ) error {
 	for _, b := range branches {
-		if err := checkPageID(b.ID); err != nil {
-			return err
-		}
 		name := slug(b.Title)
 		if name == "" || taken[name] {
 			name = strings.TrimPrefix(name+"-"+b.ID, "-")

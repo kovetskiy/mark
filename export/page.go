@@ -464,10 +464,12 @@ func pageLabels(ctx context.Context, api *confluence.API, page *confluence.PageI
 }
 
 // pageURLs looks up the address of a page by its space ("" for space) and
-// title; the API caches the answers. A page that is not there has none. The
-// first lookup that fails is kept in failed, for the caller to report, since
-// the link would otherwise point nowhere although the page may exist; once one
-// has failed the export fails anyway, so no more are made.
+// title; the API caches the answers. A page that is not there has none, and
+// neither has one in a space that is not there, which through the gateway is
+// also a space the token cannot see. The first lookup that fails otherwise is
+// kept in failed, for the caller to report, since the link would point nowhere
+// although the page may exist; once one has failed the export fails anyway,
+// so no more are made.
 func pageURLs(ctx context.Context, api *confluence.API, space string, failed *error) func(string, string) (string, bool) {
 	return func(in, title string) (string, bool) {
 		if *failed != nil {
@@ -475,6 +477,9 @@ func pageURLs(ctx context.Context, api *confluence.API, space string, failed *er
 		}
 		in = cmp.Or(in, space)
 		page, err := api.FindPage(ctx, in, title, "page")
+		if errors.Is(err, confluence.ErrNotFound) {
+			return "", false
+		}
 		if err != nil {
 			*failed = fmt.Errorf("unable to look up page %q in space %s: %w", title, in, err)
 			return "", false
