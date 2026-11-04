@@ -55,8 +55,8 @@ type TreeOptions struct {
 // links, whatever RelativeLinks says.
 //
 // The tree is read, every page converted, and every path it writes to --
-// documents, indexes, attachments -- checked before anything is written. A folder in it is refused, since the export does not list a
-// folder's pages.
+// documents, indexes, attachments -- checked before anything is written. A
+// folder in it is refused, since the export does not list a folder's pages.
 func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOptions) ([]*Result, error) {
 	format, spelling, err := parseOptions(cfg)
 	if err != nil {

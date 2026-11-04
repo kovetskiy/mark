@@ -140,7 +140,6 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 type pageExport struct {
 	page      *confluence.PageInfo
 	output    string
-	outputDir string
 	markdown  string
 	downloads []pendingDownload
 	stdout    io.Writer
@@ -333,7 +332,7 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 	}
 
 	return &pageExport{
-		page: page, output: output, outputDir: outputDir, markdown: markdown, downloads: downloads, stdout: cfg.Stdout,
+		page: page, output: output, markdown: markdown, downloads: downloads, stdout: cfg.Stdout,
 		labels: labels, declared: declared,
 	}, nil
 }
@@ -356,8 +355,9 @@ func (e *pageExport) write(ctx context.Context, api *confluence.API) (*Result, e
 		return result, nil
 	}
 
-	if err := os.MkdirAll(e.outputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("unable to create %s: %w", e.outputDir, err)
+	dir := filepath.Dir(e.output)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("unable to create %s: %w", dir, err)
 	}
 	if err := os.WriteFile(e.output, []byte(e.markdown), 0o644); err != nil { //nolint:gosec // G306: a document, meant to be read like the others beside it
 		return nil, fmt.Errorf("unable to write %s: %w", e.output, err)
