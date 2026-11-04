@@ -297,8 +297,8 @@ func (c *converter) heading(n *node) string {
 		return ""
 	}
 
-	// A closing brace would be read as the end of an id.
 	text = escapeClosingHashes(text)
+	// A closing brace would be read as the end of an id.
 	if strings.HasSuffix(text, "}") {
 		text = text[:len(text)-1] + "\\}"
 	}
