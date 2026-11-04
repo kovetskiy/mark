@@ -102,6 +102,14 @@ type Result struct {
 
 	// Attachments are the files the attachments were written to.
 	Attachments []string
+
+	// Labels are the page's global labels, sorted: the Label headers, or
+	// the tags of OKF front matter.
+	Labels []string
+
+	// DeclaredAttachments are the attachments named by Attachment headers,
+	// in order. OKF declares none.
+	DeclaredAttachments []string
 }
 
 // expansions are what an exported page is read with.
@@ -257,11 +265,23 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		}
 	}
 
+	labels, err := pageLabels(ctx, api, page)
+	if err != nil {
+		return nil, err
+	}
+
 	var header string
+	var declared []string
 	if okf {
-		header, err = conceptHeader(ctx, api, page, cfg.Generator)
+		header, err = conceptHeader(page, pageURL(api, page), cfg.Generator, labels)
 	} else {
-		header, err = headers(ctx, api, page, space, doc, missing, spelling)
+		// A header naming a file that is not there fails the publish.
+		for _, name := range doc.Declared {
+			if !missing[name] {
+				declared = append(declared, name)
+			}
+		}
+		header, err = headers(ctx, api, page, space, doc, labels, declared, spelling)
 	}
 	if err != nil {
 		return nil, err
@@ -285,7 +305,7 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 		}
 	}
 
-	result := &Result{Page: page, Output: output}
+	result := &Result{Page: page, Output: output, Labels: labels, DeclaredAttachments: declared}
 
 	written, err := downloadAll(ctx, api, page.ID, downloads)
 	if err != nil {
@@ -356,10 +376,10 @@ func headers(
 	page *confluence.PageInfo,
 	space string,
 	doc *Document,
-	missing map[string]bool,
+	labels, declared []string,
 	spelling string,
 ) (string, error) {
-	h := pageHeaders{Space: space, Title: page.Title}
+	h := pageHeaders{Space: space, Title: page.Title, Labels: labels, Attachments: declared}
 
 	var err error
 	if page.Type == "blogpost" {
@@ -371,11 +391,6 @@ func headers(
 		}
 	}
 
-	h.Labels, err = pageLabels(ctx, api, page)
-	if err != nil {
-		return "", err
-	}
-
 	// A sidebar implies the article layout, so only one of them is said.
 	if doc.Sidebar != "" {
 		h.Sidebar = doc.Sidebar
@@ -385,13 +400,6 @@ func headers(
 
 	h.ContentAppearance, h.Emoji = appearanceOf(ctx, api, page)
 
-	for _, name := range doc.Declared {
-		// A header naming a file that is not there fails the publish.
-		if !missing[name] {
-			h.Attachments = append(h.Attachments, name)
-		}
-	}
-
 	if spelling == MetadataFrontMatter {
 		return h.frontMatter()
 	}
@@ -399,15 +407,11 @@ func headers(
 }
 
 // conceptHeader is the OKF front matter of the concept page is exported as.
-func conceptHeader(ctx context.Context, api *confluence.API, page *confluence.PageInfo, generator string) (string, error) {
-	labels, err := pageLabels(ctx, api, page)
-	if err != nil {
-		return "", err
-	}
+func conceptHeader(page *confluence.PageInfo, address, generator string, labels []string) (string, error) {
 	if generator == "" {
 		generator = "mark/unknown"
 	}
-	return okfFrontMatter(page, pageURL(api, page), generator, labels)
+	return okfFrontMatter(page, address, generator, labels)
 }
 
 // pageLabels are the page's global labels, sorted, so that exporting a page
