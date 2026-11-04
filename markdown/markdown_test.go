@@ -224,6 +224,51 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
 }
 
+// TestCompileMarkdownPlantumlcloud covers the plantumlcloud feature: the same
+// ```plantuml block the plantuml feature hands to the avono-style add-ons,
+// published for the "PlantUML Diagrams for Confluence" add-on by Stratus
+// Add-ons Ltd instead, which draws the diagram out of the macro itself -- the
+// markup travels in the data parameter and nothing is attached. The fixture
+// loops above compile the same document with plantuml on and plantumlcloud
+// off, so the pair of goldens records exactly what the feature changes.
+func TestCompileMarkdownPlantumlcloud(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	lib, err := stdlib.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	const fixture = "testdata/plantumlcloud.md"
+	markdown, htmlname, html := loadData(t, fixture, "-cloud")
+
+	cfg := types.MarkConfig{
+		MermaidScale:  1.0,
+		D2Scale:       1.0,
+		DropFirstH1:   false,
+		StripNewlines: false,
+		Features:      []string{"plantumlcloud"},
+	}
+
+	actual, attachments, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	test.Empty(attachments, "the add-on draws the diagram out of the macro itself, so nothing is attached")
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
+
+	// The legacy compile path shares the fenced code renderer, so the macro
+	// has to come out of it the same.
+	legacy, legacyAttachments, err := mark.CompileMarkdownLegacy(markdown, lib, fixture, cfg)
+	test.NoError(err)
+	test.Empty(legacyAttachments)
+	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(legacy, "\n"), fixture+" vs "+htmlname+" (legacy)")
+}
+
 func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "..")

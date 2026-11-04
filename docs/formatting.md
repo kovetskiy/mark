@@ -323,9 +323,23 @@ Because the file carries what it points at, what it may point at is limited:
 
 ## Render PlantUML Diagrams
 
-Optionally you can enable [PlantUML](https://plantuml.com/) diagram rendering via `--features="plantuml"`.
-Unlike Mermaid and D2 which are rendered locally, code blocks marked as "plantuml" are rendered in Confluence by the [PlantUML for Confluence Macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml).
-This requires the PlantUML for Confluence macro to be installed in your Confluence instance.
+There are two features, one per add-on: which to enable is decided by which
+add-on the Confluence instance has, since each reads only its own macro.
+
+The `plantuml` feature publishes the
+[plantuml macro](https://avono-support.atlassian.net/wiki/spaces/PUML/pages/9699367/Macro+plantuml)
+that the PlantUML for Confluence add-on by avono renders. Unlike Mermaid and
+D2, which mark renders locally, the diagram is rendered in Confluence by the
+add-on.
+
+The `plantumlcloud` feature publishes the `plantumlcloud` macro that the
+[PlantUML Diagrams for Confluence](https://marketplace.atlassian.com/apps/1215115)
+add-on by Stratus Add-ons Ltd renders, which draws the diagram out of the
+macro itself: the markup travels percent-encoded, deflated and base64-encoded
+in the macro's `data` parameter, and neither an attachment nor a PlantUML
+server is involved.
+
+Both read the same block:
 
 ```plantuml
 @startuml
@@ -333,6 +347,8 @@ Alice -> Bob: Authentication Request
 Bob --> Alice: Authentication Response
 @enduml
 ```
+
+With both features on, `plantumlcloud` wins: a block can only be drawn one way.
 
 ## MkDocs' Admonitions
 
