@@ -500,7 +500,7 @@ func exportFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "metadata",
 			Value:   export.MetadataComments,
-			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, or \"front-matter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter).",
+			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, or \"front-matter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter). --format okf ignores it.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_METADATA"), config.value("metadata")),
 		},
 		&cli.BoolFlag{
@@ -544,6 +544,9 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 	format, err := export.ParseFormat(command.String("format"))
 	if err != nil {
 		return ctx, fmt.Errorf("--format: %w", err)
+	}
+	if _, err := export.ParseMetadata(command.String("metadata")); err != nil {
+		return ctx, fmt.Errorf("--metadata: %w", err)
 	}
 
 	switch {

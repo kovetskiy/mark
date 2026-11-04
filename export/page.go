@@ -54,7 +54,7 @@ type Config struct {
 	// its page: MetadataComments, or "", for HTML comment headers, or
 	// MetadataFrontMatter for YAML front matter, which mark publishes only
 	// with the frontmatter feature. FormatOKF writes front matter of its own
-	// and refuses MetadataFrontMatter.
+	// and ignores it.
 	Metadata string
 
 	// Generator is who an OKF concept says generated it, as
@@ -237,7 +237,7 @@ func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error)
 
 	doc, err := Convert(page.Body.Storage.Value, Options{
 		Space: space, Title: page.Title, AttachmentPath: pathOf, PagePath: pagePath, PageURL: pageAddress, PageURLPath: pageURLPath,
-		Reading: okf,
+		Reading: okf, FrontMatter: !okf && spelling == MetadataFrontMatter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
@@ -359,29 +359,28 @@ func headers(
 	missing map[string]bool,
 	spelling string,
 ) (string, error) {
-	h := pageHeaders{Space: space, Title: strings.TrimSpace(page.Title)}
+	h := pageHeaders{Space: space, Title: page.Title}
 
+	var err error
 	if page.Type == "blogpost" {
 		h.Type = "blogpost"
 	} else {
-		parents, folders, err := parents(ctx, api, page, space)
+		h.Parents, h.Folders, err = parents(ctx, api, page, space)
 		if err != nil {
 			return "", err
 		}
-		h.Parents, h.Folders = trimmed(parents), trimmed(folders)
 	}
 
-	labels, err := pageLabels(ctx, api, page)
+	h.Labels, err = pageLabels(ctx, api, page)
 	if err != nil {
 		return "", err
 	}
-	h.Labels = trimmed(labels)
 
 	// A sidebar implies the article layout, so only one of them is said.
 	if doc.Sidebar != "" {
-		h.Sidebar = strings.TrimSpace(doc.Sidebar)
+		h.Sidebar = doc.Sidebar
 	} else {
-		h.Layout = strings.TrimSpace(doc.Layout)
+		h.Layout = doc.Layout
 	}
 
 	h.ContentAppearance, h.Emoji = appearanceOf(ctx, api, page)
@@ -389,7 +388,7 @@ func headers(
 	for _, name := range doc.Declared {
 		// A header naming a file that is not there fails the publish.
 		if !missing[name] {
-			h.Attachments = append(h.Attachments, strings.TrimSpace(name))
+			h.Attachments = append(h.Attachments, name)
 		}
 	}
 
@@ -397,15 +396,6 @@ func headers(
 		return h.frontMatter()
 	}
 	return h.comments()
-}
-
-// trimmed is values without the space around each, as mark reads them.
-func trimmed(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		out = append(out, strings.TrimSpace(value))
-	}
-	return out
 }
 
 // conceptHeader is the OKF front matter of the concept page is exported as.

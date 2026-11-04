@@ -241,17 +241,20 @@ func TestExportRoundTripFrontMatter(t *testing.T) {
 	assert.Equal(t, "Installing", server.Page(id).Title)
 }
 
-// TestExportRefusesFrontMatterForOKF: OKF has front matter of its own, so
-// asking for mark's as well fails before anything is read.
-func TestExportRefusesFrontMatterForOKF(t *testing.T) {
+// TestExportOKFIgnoresMetadata: OKF has front matter of its own, and writes
+// it whatever the metadata says.
+func TestExportOKFIgnoresMetadata(t *testing.T) {
 	server, id, _ := exportFixture(t)
 
+	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		PageID: id, Format: export.FormatOKF, Metadata: export.MetadataFrontMatter,
-		Output: filepath.Join(t.TempDir(), "installing.md"),
+		Stdout: &stdout,
 	})
-	assert.ErrorContains(t, err, "front matter of its own")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(stdout.String(), "---\ntype: "), "an OKF concept:\n%s", stdout.String())
+	assert.NotContains(t, stdout.String(), "space: DOCS")
 }
 
 // TestExportPageFromConfluence exports storage format Confluence's own editor
@@ -780,75 +783,53 @@ func TestExportTreeWritesNothingItCannotFinish(t *testing.T) {
 	})
 }
 
-// TestExportTreeRoundTrip publishes an exported tree back: every page has to
-// land on the page it came from, under the parent it had, with no new pages
-// and no attachment uploaded under a new name.
+// TestExportTreeRoundTrip publishes an exported tree back, its metadata
+// written either way: every page has to land on the page it came from, under
+// the parent it had, with no new pages and no attachment uploaded under a new
+// name.
 func TestExportTreeRoundTrip(t *testing.T) {
-	server, pages := exportTreeSpace(t)
-	out := filepath.Join(t.TempDir(), "guide")
-	require.NoError(t, exportTree(t, server, pages["Guide"].ID, out, 0, false))
+	for spelling, features := range map[string][]string{
+		export.MetadataComments:    {"mention"},
+		export.MetadataFrontMatter: {"mention", "frontmatter"},
+	} {
+		t.Run(spelling, func(t *testing.T) {
+			server, pages := exportTreeSpace(t)
+			out := filepath.Join(t.TempDir(), "guide")
+			_, err := ExportTree(context.Background(), ExportConfig{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				PageID: pages["Guide"].ID, Output: out, Metadata: spelling,
+			}, export.TreeOptions{})
+			require.NoError(t, err)
 
-	before := map[string]string{}
-	for title, p := range pages {
-		before[title] = server.Page(p.ID).ParentID
-		server.EditPage(p.ID, "<p>edited in Confluence</p>")
+			before := map[string]string{}
+			for title, p := range pages {
+				before[title] = server.Page(p.ID).ParentID
+				server.EditPage(p.ID, "<p>edited in Confluence</p>")
+			}
+
+			require.NoError(t, Run(context.Background(), Config{
+				BaseURL: server.URL, Username: "user", Password: "token",
+				Files: filepath.Join(out, "**", "*.md"), AttachReferenced: true, Features: features,
+				Output: io.Discard,
+			}))
+
+			for title, p := range pages {
+				if title == "Home" {
+					continue
+				}
+				got := server.Page(p.ID)
+				assert.Contains(t, got.Body, "<p>"+title+"</p>", "%s is published back to the page it came from", title)
+				assert.Equal(t, before[title], got.ParentID, "%s keeps its parent", title)
+
+				var names []string
+				for _, attachment := range server.Attachments(p.ID) {
+					names = append(names, attachment.Filename)
+				}
+				assert.Equal(t, []string{"image.png"}, names, title)
+			}
+			assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
+		})
 	}
-
-	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(out, "**", "*.md"), AttachReferenced: true, Features: []string{"mention"},
-		Output: io.Discard,
-	}))
-
-	for title, p := range pages {
-		if title == "Home" {
-			continue
-		}
-		got := server.Page(p.ID)
-		assert.Contains(t, got.Body, "<p>"+title+"</p>", "%s is published back to the page it came from", title)
-		assert.Equal(t, before[title], got.ParentID, "%s keeps its parent", title)
-
-		var names []string
-		for _, attachment := range server.Attachments(p.ID) {
-			names = append(names, attachment.Filename)
-		}
-		assert.Equal(t, []string{"image.png"}, names, title)
-	}
-	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
-}
-
-// TestExportTreeRoundTripFrontMatter: a tree exported with front matter
-// publishes back onto the pages it came from, under the same parents.
-func TestExportTreeRoundTripFrontMatter(t *testing.T) {
-	server, pages := exportTreeSpace(t)
-	out := filepath.Join(t.TempDir(), "guide")
-	_, err := ExportTree(context.Background(), ExportConfig{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		PageID: pages["Guide"].ID, Output: out, Metadata: export.MetadataFrontMatter,
-	}, export.TreeOptions{})
-	require.NoError(t, err)
-
-	before := map[string]string{}
-	for title, p := range pages {
-		before[title] = server.Page(p.ID).ParentID
-		server.EditPage(p.ID, "<p>edited in Confluence</p>")
-	}
-
-	require.NoError(t, Run(context.Background(), Config{
-		BaseURL: server.URL, Username: "user", Password: "token",
-		Files: filepath.Join(out, "**", "*.md"), AttachReferenced: true, Features: []string{"mention", "frontmatter"},
-		Output: io.Discard,
-	}))
-
-	for title, p := range pages {
-		if title == "Home" {
-			continue
-		}
-		got := server.Page(p.ID)
-		assert.Contains(t, got.Body, "<p>"+title+"</p>", "%s is published back to the page it came from", title)
-		assert.Equal(t, before[title], got.ParentID, "%s keeps its parent", title)
-	}
-	assert.Len(t, server.ChildOrder(pages["Home"].ID), 1, "no page was created")
 }
 
 func pageLink(title string) string {
