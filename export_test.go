@@ -821,24 +821,45 @@ func TestExportKeepsAttachmentsOffTheDocument(t *testing.T) {
 // once every one of them is downloaded, so a retry is not refused for the
 // files a failed export left behind.
 func TestAFailedDownloadWritesNothing(t *testing.T) {
-	server, id := exportPage(t, `<p><ac:image><ri:attachment ri:filename="first.png"/></ac:image>`+
-		`<ac:image><ri:attachment ri:filename="second.png"/></ac:image></p>`)
-	server.AddAttachmentData(id, "first.png", []byte("first"))
-	server.AddAttachmentData(id, "second.png", []byte("second"))
-	server.SetFail(func(r *http.Request) (int, string, bool) {
-		return http.StatusNotFound, `{}`, strings.HasSuffix(r.URL.Path, "/second.png")
-	})
+	for _, test := range []struct {
+		name, body string
+		status     int
+		login      bool
+	}{
+		{"not found", `{}`, http.StatusNotFound, false},
+		{"login page", `<html>Log in</html>`, http.StatusOK, true},
+		{"empty login page", "", http.StatusOK, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, id := exportPage(t, `<p><ac:image><ri:attachment ri:filename="first.png"/></ac:image>`+
+				`<ac:image><ri:attachment ri:filename="second.png"/></ac:image></p>`)
+			server.AddAttachmentData(id, "first.png", []byte("first"))
+			server.AddAttachmentData(id, "second.png", []byte("second"))
+			server.SetFailHeaders(http.Header{
+				"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
+			})
+			server.SetFail(func(r *http.Request) (int, string, bool) {
+				return test.status, test.body, strings.HasSuffix(r.URL.Path, "/second.png")
+			})
 
-	dir := t.TempDir()
-	_, err := Export(context.Background(), ExportConfig{
-		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id,
-		Output: filepath.Join(dir, "page.md"),
-	})
-	require.Error(t, err)
+			dir := t.TempDir()
+			_, err := Export(context.Background(), ExportConfig{
+				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id,
+				Output: filepath.Join(dir, "page.md"),
+			})
+			if test.login {
+				assert.ErrorIs(t, err, confluence.ErrLoginPage)
+			} else {
+				assert.Error(t, err)
+			}
+			assert.Equal(t, 1, server.CountRequests(http.MethodGet, "/first.png"))
+			assert.Equal(t, 1, server.CountRequests(http.MethodGet, "/second.png"))
 
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	assert.Empty(t, entries)
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			assert.Empty(t, entries)
+		})
+	}
 }
 
 // TestExportKeepsTheMaxAppearance: an appearance mark publishes is written
