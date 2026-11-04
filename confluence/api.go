@@ -37,6 +37,11 @@ type User struct {
 	// Type is "anonymous" for the user a Confluence that took no credentials
 	// answers as.
 	Type string `json:"type,omitempty"`
+
+	// AccountType is Cloud's kind of account: "atlassian" for a person, "app"
+	// for an app or bot such as Automation, "customer" for a JSM customer.
+	// Server and Data Center leave it empty.
+	AccountType string `json:"accountType,omitempty"`
 }
 
 // isNamed reports whether name is one of the identifiers the user goes by.

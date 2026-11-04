@@ -236,7 +236,7 @@ sources:
   - id: confluence
     resource: https://example.atlassian.net/wiki/spaces/DOCS/pages/1234/Setup
     title: Setup
-    author: human:jdoe             # who last edited it: the username, or the Cloud account id
+    author: human:jdoe             # who last edited it: the username, or the Cloud account id; process:<account id> for a Cloud app
     last_modified: "2026-05-01T10:30:00Z"
 ---
 ```
@@ -251,6 +251,10 @@ it was, and one mark cannot look up fails the export. A link to an anchor on
 the page itself is written as `#anchor`. Each page linked this way costs one
 lookup, the first time it is linked. The sidebar of an article layout stays in
 the body, between layout markers, rather than going in a header.
+An edit a Cloud app made, such as Automation for Confluence's, has the author
+`process:<account id>`, since OKF's consumers trust `human:` as a person's
+work; through the api.atlassian.com gateway Confluence does not say which
+accounts are apps, so there every author is `human:`.
 `-o index.md` and `-o log.md` are refused, since OKF reserves those names.
 
 With `--recursive` the directory is an OKF bundle:

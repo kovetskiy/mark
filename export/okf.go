@@ -137,14 +137,20 @@ func okfTime(value string) string {
 
 // okfActor names the user who wrote a version in OKF's actor convention:
 // human:<username> on Server and Data Center, human:<accountId> on Cloud,
-// which has no usernames.
+// which has no usernames, and process:<accountId> for a Cloud app, since
+// consumers trust human: as hand-authored. v2 gives only the author's id, so
+// through the gateway an app's edit still reads as human.
 func okfActor(user *confluence.User) string {
 	if user == nil {
 		return ""
 	}
+	kind := "human:"
+	if user.AccountType == "app" {
+		kind = "process:"
+	}
 	for _, id := range []string{user.Username, user.AccountID, user.UserKey} {
 		if id != "" {
-			return "human:" + id
+			return kind + id
 		}
 	}
 	return ""
