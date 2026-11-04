@@ -134,6 +134,8 @@ func TestExportRoundTrip(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, out, result.Output)
+	assert.Equal(t, []string{"how-to", "install"}, result.Labels, "the result names the labels the headers do")
+	assert.Empty(t, result.DeclaredAttachments, "Markdown refers to its attachments without declaring them")
 
 	exported, err := os.ReadFile(out)
 	require.NoError(t, err)
@@ -274,12 +276,15 @@ func TestExportPageFromConfluence(t *testing.T) {
 
 	dir := t.TempDir()
 	out := filepath.Join(dir, "notes.md")
-	_, err := Export(context.Background(), ExportConfig{
+	result, err := Export(context.Background(), ExportConfig{
 		BaseURL: server.URL, Username: "user", Password: "token",
 		Space: "DOCS", Title: "Release notes",
 		Output: out, AttachmentsDir: filepath.Join(dir, "files"),
 	})
 	require.NoError(t, err)
+	assert.Empty(t, result.Labels)
+	assert.Equal(t, []string{"files/chart.png"}, result.DeclaredAttachments,
+		"the result names the attachments the headers declare, and not the one the page lacks")
 
 	exported, err := os.ReadFile(out)
 	require.NoError(t, err)
@@ -404,14 +409,17 @@ func TestExportWithoutAttachmentsDeclaresThemAll(t *testing.T) {
 		`<table><tbody><tr><td colspan="2"><ac:image><ri:attachment ri:filename="kept.png"/></ac:image></td></tr></tbody></table>`)
 
 	var stdout bytes.Buffer
+	var result *export.Result
 	logged := captureLog(t, func() {
-		_, err := Export(context.Background(), ExportConfig{
+		var err error
+		result, err = Export(context.Background(), ExportConfig{
 			BaseURL: server.URL, Username: "user", Password: "token", PageID: id,
 			NoAttachments: true, Stdout: &stdout,
 		})
 		require.NoError(t, err)
 	})
 	assert.Contains(t, stdout.String(), "<!-- Attachment: kept.png -->")
+	assert.Equal(t, []string{"kept.png"}, result.DeclaredAttachments)
 	assert.NotContains(t, logged, "does not have")
 	assert.Zero(t, server.CountRequests("GET", "/child/attachment"))
 }
