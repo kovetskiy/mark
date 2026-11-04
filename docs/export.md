@@ -242,7 +242,7 @@ sources:
 ```
 
 `generated` names mark, which wrote the file, and has no `at`: the page was
-written by a person, whose last edit is the source's `author` and
+written by its author, whose last edit is the source's `author` and
 `last_modified`, and an export time would make every export of an unchanged
 page differ. A link to another page, in this space or another, is written as a
 link to its address whatever its text, and without an anchor, since Confluence
@@ -253,7 +253,7 @@ lookup, the first time it is linked. The sidebar of an article layout stays in
 the body, between layout markers, rather than going in a header.
 An edit a Cloud app made, such as Automation for Confluence's, has the author
 `process:<account id>`, since OKF's consumers trust `human:` as a person's
-work; through the api.atlassian.com gateway Confluence does not say which
+work; through the `api.atlassian.com` gateway Confluence does not say which
 accounts are apps, so there every author is `human:`.
 `-o index.md` and `-o log.md` are refused, since OKF reserves those names.
 
