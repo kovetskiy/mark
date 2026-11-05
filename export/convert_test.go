@@ -213,7 +213,7 @@ func TestParsePageURL(t *testing.T) {
 			PageRef{BaseURL: "https://confluence.example.com", Space: "DOCS", Title: "Some Title?"}},
 		{"https://confluence.example.com/display/DOCS/2024/01/31/Notes",
 			PageRef{BaseURL: "https://confluence.example.com", Space: "DOCS", Title: "Notes"}},
-		// The context path is found as --target-url finds it, any *.action
+		// The context path is found as mark publish --url finds it, any *.action
 		// included.
 		{"https://example.com/confluence/plugins/viewsource/viewpagesrc.action?pageId=77",
 			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},

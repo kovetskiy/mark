@@ -30,7 +30,7 @@ func namesSomethingInTheInstance(segment string) bool {
 }
 
 // SplitPageURL reads the context path and the page id out of the URL of a
-// page, as --target-url and mark export --url take it.
+// page, as --url takes it.
 //
 // The context path is everything ahead of the part that names the page: /wiki
 // on Cloud, whatever the instance is deployed under on Server -- /confluence is

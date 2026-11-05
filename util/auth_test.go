@@ -112,10 +112,10 @@ func feedStdin(t *testing.T, value string) {
 	}()
 }
 
-// TestGetCredentialsBaseURLFromTargetURL covers the shortest way to publish:
+// TestGetCredentialsBaseURLFromPageURL covers the shortest way to publish:
 // paste the URL of an existing page and let mark take the instance and the page
 // id out of it.
-func TestGetCredentialsBaseURLFromTargetURL(t *testing.T) {
+func TestGetCredentialsBaseURLFromPageURL(t *testing.T) {
 	creds, err := GetCredentials(context.Background(), "user", "secret", "",
 		"https://confluence.example.com/pages/viewpage.action?pageId=12345", "", false)
 	require.NoError(t, err)
@@ -126,11 +126,11 @@ func TestGetCredentialsBaseURLFromTargetURL(t *testing.T) {
 	assert.Equal(t, "secret", creds.Password)
 }
 
-// TestGetCredentialsTargetURLKeepsTheContextPath covers an instance that is
+// TestGetCredentialsPageURLKeepsTheContextPath covers an instance that is
 // not at the root of its host, which every Cloud site is: the page URL is
 // under /wiki, and so is the REST API. Taking only the scheme and host sent
 // every call to the wrong place.
-func TestGetCredentialsTargetURLKeepsTheContextPath(t *testing.T) {
+func TestGetCredentialsPageURLKeepsTheContextPath(t *testing.T) {
 	for _, testcase := range []struct {
 		name   string
 		target string

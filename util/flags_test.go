@@ -182,7 +182,7 @@ func writeConfig(t *testing.T, dir, name, content string) string {
 //
 // A path on the command line happened to survive that. One in MARK_CONFIG did
 // not, so "MARK_CONFIG=/etc/mark.toml mark" silently ignored files, username,
-// password, target-url, base-url and log-level while honouring space, parents
+// password, url, base-url and log-level while honouring space, parents
 // and features -- and the only sign of it was the misleading "confluence
 // password should be specified using -p flag".
 func TestConfigFromTheEnvironmentAppliesToEveryFlag(t *testing.T) {

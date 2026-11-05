@@ -61,8 +61,9 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 		Usage: "publish markdown files to Confluence",
 		Description: "Compile each markdown file --files names into Confluence storage format and " +
 			"create or update the page its metadata names.",
-		Flags:  publishFlags(config),
-		Action: line.runPublish,
+		Flags:        publishFlags(config),
+		Action:       line.runPublish,
+		OnUsageError: renamedFlagHint,
 	}
 
 	root := &cli.Command{
@@ -80,8 +81,9 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 			Description: "Experimental: the Markdown it writes may change between releases. " +
 				"Write the page --page-id, --url or --space and --title names as markdown, with the " +
 				"metadata headers that publish it back to the same page, and download the attachments it shows or links to.",
-			Flags:  exportFlags(config),
-			Action: line.runExport,
+			Flags:        exportFlags(config),
+			Action:       line.runExport,
+			OnUsageError: renamedFlagHint,
 		}, line.pageCommand(), line.doctorCommand()},
 	}
 
@@ -159,7 +161,7 @@ func publishFlagHint(flags []cli.Flag) cli.OnUsageErrorFunc {
 		}
 	}
 
-	return func(_ context.Context, cmd *cli.Command, err error, _ bool) error {
+	return func(ctx context.Context, cmd *cli.Command, err error, _ bool) error {
 		// urfave/cli reads flags after an argument too, so "mark publsh -f
 		// doc.md" fails on -f before the argument can be named.
 		first := cmd.Args().First()
@@ -172,8 +174,18 @@ func publishFlagHint(flags []cli.Flag) cli.OnUsageErrorFunc {
 			return fmt.Errorf("%w: it is a flag of %q, so write it after %q", err, PublishCommand, PublishCommand)
 		}
 
-		return err
+		return renamedFlagHint(ctx, cmd, err, false)
 	}
+}
+
+// renamedFlagHint names the flag that replaced one mark no longer has.
+func renamedFlagHint(_ context.Context, _ *cli.Command, err error, _ bool) error {
+	name, ok := strings.CutPrefix(err.Error(), "flag provided but not defined: -")
+	if now, known := renamed[name]; ok && known {
+		return fmt.Errorf("%w: it is --%s now", err, now)
+	}
+
+	return err
 }
 
 // closestCommand is the name of root's command that name is a typo of, or "".
@@ -287,7 +299,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		cmd.String("username"),
 		cmd.String("password"),
 		cmd.String("password-command"),
-		cmd.String("target-url"),
+		cmd.String("url"),
 		cmd.String("base-url"),
 		cmd.Bool("compile-only"),
 	)
