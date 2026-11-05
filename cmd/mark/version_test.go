@@ -35,13 +35,13 @@ func TestBuildVersion(t *testing.T) {
 		{"a tagged checkout", "dev", "none", tagged, "v17.0.0@" + revision},
 		{"a tagged checkout with changes", "dev", "none", taggedDirty, "v17.0.0@" + revision + "+dirty"},
 		{"a commit from the flags", "dev", "abc", checkout, pseudo + "@abc"},
-		{"make build with no tags", "", revision, checkout, pseudo},
-		{"make build with no tags and changes", "", revision + "+dirty", dirty, pseudo + "+dirty"},
+		{"make build with no tags", "dev", revision, checkout, pseudo},
+		{"make build with no tags and changes", "dev", revision + "+dirty", dirty, pseudo + "+dirty"},
 		{"make build with changes", "v17.0.0", revision + "+dirty", dirty, "v17.0.0@" + revision + "+dirty"},
-		{"no VCS information", "dev", "none", noVCS, "dev@none"},
+		{"no VCS information, as a source archive has", "dev", "none", noVCS, "dev@none"},
 		{"no build info", "dev", "none", nil, "dev@none"},
-		{"make build from a source archive", "", "", noVCS, "dev@none"},
-		{"make build with no build info", "", "", nil, "dev@none"},
+		{"empty flags", "", "", checkout, pseudo},
+		{"empty flags and no build info", "", "", nil, "dev@none"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := buildVersion(test.version, test.commit, test.info); got != test.want {
