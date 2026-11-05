@@ -54,6 +54,8 @@ The reference is split by topic under [`docs/`](docs/):
   integration, preserving inline comments, and leaving hand-edited pages alone.
 * [Exporting a page](docs/export.md), or a tree of them, from Confluence back to
   Markdown.
+* [Upgrading to v17](docs/upgrading.md): what changed for the command line and
+  the Go library, and what to do about it.
 
 ## Installation
 
@@ -69,10 +71,6 @@ brew install mark
 ```bash
 go install github.com/kovetskiy/mark/v17/cmd/mark@latest
 ```
-
-This installs the newest v17 release, so it needs a v17 tag. Until v17.0.0 is
-tagged, `@latest` builds the newest commit on the default branch instead of a
-release; install from the Releases page or Homebrew to get a release.
 
 ### Releases
 
@@ -284,30 +282,14 @@ GLOBAL OPTIONS:
    --color string                display logs in color. Possible values: auto, never. (default: "auto") [$MARK_COLOR]
 ```
 
-### Upgrading from mark without a command
+### Upgrading to v17
 
-Before it had commands, `mark` took the publish options directly. Since v17
-it no longer does: `mark -f doc.md` fails, naming the command the option
-belongs to, and `mark` on its own prints the help and fails. Put `publish`
-after `mark`, before the publish options:
-
-```bash
-mark -c ci.toml -f doc.md            # before v17
-mark -c ci.toml publish -f doc.md    # v17
-```
-
-The global options can stay where they were, and the environment variables
-and the configuration file are read as before.
-
-One publish option was renamed, so that the three that pick between PNG and
-SVG share a name: `--math-format` is now `--math-output`, alongside
-`--mermaid-output` and `--d2-output`. Rename `math-format` to `math-output` in
-the configuration file, which otherwise refuses it as an unknown key, and
-`MARK_MATH_FORMAT` to `MARK_MATH_OUTPUT` in the environment, where the old name
-is no longer read. Library callers rename `RenderingConfig.MathFormat` and
-`markdown.Options.MathFormat` to `MathOutput`. It and `MermaidOutput` and
-`D2Output` are an `imageformat.Format`: `imageformat.PNG` or
-`imageformat.SVG`, or `imageformat.Parse` for a value a person wrote.
+`mark` alone no longer publishes: put `publish` after `mark`, before the publish
+options (`mark -c ci.toml publish -f doc.md`). Some flags, environment variables
+and configuration keys were renamed, unknown configuration keys are refused,
+and blockquotes become admonitions only on an explicit marker. [Upgrading to
+v17](docs/upgrading.md) lists every change, for the command line and the Go
+library, and what to do about it.
 
 You can store user credentials in the configuration file, which should be
 located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):
