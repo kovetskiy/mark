@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -22,6 +23,10 @@ type configFile struct {
 
 	// settled opens the sources hold wraps. Until then they answer nothing.
 	settled bool
+
+	// keys are the settings flags look up, in any command: the keys the
+	// file may hold.
+	keys map[string]bool
 
 	loaded     bool
 	loadedPath string
@@ -49,9 +54,46 @@ func (c *configFile) load() error {
 
 // check reports a file that cannot be used. A lookup in one answers nothing,
 // so without this a syntax error surfaces only as whichever required setting
-// went missing with it.
+// went missing with it. It also refuses a key no flag reads, which would
+// otherwise be a misspelt setting that silently does nothing.
 func (c *configFile) check() error {
-	return c.load()
+	if err := c.load(); err != nil {
+		return err
+	}
+
+	return c.unknownKeys()
+}
+
+// unknownKeys refuses every key of the file that no command's flag reads, each
+// with the key it is a typo of when there is one. One file serves every
+// command, so a key of another command is known too.
+func (c *configFile) unknownKeys() error {
+	var unknown []string
+	for key := range c.values {
+		if name := fmt.Sprint(key); !c.keys[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	slices.Sort(unknown)
+
+	known := make([]string, 0, len(c.keys))
+	for key := range c.keys {
+		known = append(known, key)
+	}
+	slices.Sort(known)
+
+	errs := make([]error, len(unknown))
+	for i, key := range unknown {
+		errs[i] = fmt.Errorf("unknown key %q in configuration file %q", key, c.loadedPath)
+		if meant := closest(key, known); meant != "" {
+			errs[i] = fmt.Errorf("%w: did you mean %q?", errs[i], meant)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // settle opens the held sources and resolves every flag of root that the
@@ -73,6 +115,10 @@ func (c *configFile) settle(root *cli.Command) error {
 
 // value is a source for the setting under key.
 func (c *configFile) value(key string) cli.ValueSource {
+	if c.keys == nil {
+		c.keys = map[string]bool{}
+	}
+	c.keys[key] = true
 	return &configValue{file: c, key: key}
 }
 
