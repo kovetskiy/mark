@@ -10,7 +10,7 @@ import (
 func extractFrontMatterDocument(t *testing.T, document string) (*Meta, string, error) {
 	t.Helper()
 
-	meta, body, err := ExtractMeta([]byte(document), "", false, false, "doc.md", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(document), ExtractOptions{Filename: "doc.md", FrontMatter: true})
 
 	return meta, string(body), err
 }

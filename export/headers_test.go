@@ -133,7 +133,7 @@ func TestHeadersReadTheSameBothWays(t *testing.T) {
 // readMeta is the metadata mark reads from header, front matter enabled.
 func readMeta(t *testing.T, header string) *metadata.Meta {
 	t.Helper()
-	meta, _, err := metadata.ExtractMeta([]byte(header+"\nbody\n"), "", false, false, "page.md", nil, false, "", true)
+	meta, _, err := metadata.ExtractMeta([]byte(header+"\nbody\n"), metadata.ExtractOptions{Filename: "page.md", FrontMatter: true})
 	require.NoError(t, err, header)
 	require.NotNil(t, meta, header)
 	return meta

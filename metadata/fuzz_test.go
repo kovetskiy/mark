@@ -41,10 +41,13 @@ func FuzzExtractMeta(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte, space string, titleFromH1, titleFromFilename, frontMatter bool) {
-		meta, body, err := ExtractMeta(
-			data, space, titleFromH1, titleFromFilename,
-			"fuzz.md", nil, false, "", frontMatter,
-		)
+		meta, body, err := ExtractMeta(data, ExtractOptions{
+			Filename:          "fuzz.md",
+			Space:             space,
+			TitleFromH1:       titleFromH1,
+			TitleFromFilename: titleFromFilename,
+			FrontMatter:       frontMatter,
+		})
 		if err != nil {
 			// An error is a legitimate outcome; it just must not be a panic.
 			return

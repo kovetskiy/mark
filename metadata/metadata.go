@@ -644,14 +644,53 @@ func splitFrontMatter(data []byte) (frontMatter, body []byte, found bool, err er
 	return nil, nil, false, fmt.Errorf("unterminated YAML front matter")
 }
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFilename bool, filename string, parents []string, titleAppendGeneratedHash bool, defaultContentAppearance string, frontMatterEnabled bool) (*Meta, []byte, error) {
+// ExtractOptions says how ExtractMeta reads a document. The zero value reads
+// only the document's own headers, with every optional behaviour off.
+type ExtractOptions struct {
+	// Filename names the document in warnings and, with TitleFromFilename,
+	// gives it a title. It may be empty for a document that has no file.
+	Filename string
+
+	// Space is the space for a document that names none itself.
+	Space string
+
+	// TitleFromH1 titles a document with no title header after its leading
+	// level-one heading.
+	TitleFromH1 bool
+
+	// TitleFromFilename titles a document with no title from either its
+	// headers or, with TitleFromH1, its heading after Filename.
+	TitleFromFilename bool
+
+	// Parents are put above the parents the document declares itself. They
+	// are ignored when the first one is empty.
+	Parents []string
+
+	// TitleAppendGeneratedHash makes the title unique to its space and
+	// parents; see AppendGeneratedHash. A caller that settles the parents
+	// later leaves it off and calls AppendGeneratedHash itself.
+	TitleAppendGeneratedHash bool
+
+	// ContentAppearance is the appearance of a page that declares none:
+	// one of the *ContentAppearance constants, or empty for full width.
+	ContentAppearance string
+
+	// FrontMatter reads YAML front matter. Without it, front matter is body
+	// text, and one that declares restrictions is refused.
+	FrontMatter bool
+}
+
+// ExtractMeta reads a document's metadata from its headers or front matter,
+// filled in as opts asks, and returns it with the document's body. The
+// metadata is nil when the document has none and opts adds none.
+func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	var meta *Meta
 
 	var (
 		frontMatter []byte
 		found       bool
 	)
-	if frontMatterEnabled {
+	if opts.FrontMatter {
 		var err error
 		frontMatter, data, found, err = splitFrontMatter(data)
 		if err != nil {
@@ -682,10 +721,10 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 
 			switch normKey {
 			case "parents":
-				meta.Parents = append(meta.Parents, toStringSlice(v, k, filename)...)
+				meta.Parents = append(meta.Parents, toStringSlice(v, k, opts.Filename)...)
 				meta.DeclaredParents = true
 			case "folders":
-				meta.Folders = append(meta.Folders, toStringSlice(v, k, filename)...)
+				meta.Folders = append(meta.Folders, toStringSlice(v, k, opts.Filename)...)
 			case "space":
 				meta.Space = toString(v)
 			case "type":
@@ -699,9 +738,9 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			case "emoji":
 				meta.Emoji = toString(v)
 			case "attachments":
-				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, filename)...)
+				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, opts.Filename)...)
 			case "labels":
-				meta.Labels = append(meta.Labels, toStringSlice(v, k, filename)...)
+				meta.Labels = append(meta.Labels, toStringSlice(v, k, opts.Filename)...)
 			case "contentappearance":
 				// Not toString, which would drop a value that is not a
 				// string for the default rather than refuse it.
@@ -752,7 +791,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			}
 		}
 
-		warnAboutUnknownKeys(unknown, filename)
+		warnAboutUnknownKeys(unknown, opts.Filename)
 
 		// Presence of a non-empty sidebar forces the article layout, regardless of map key iteration order.
 		if meta.Sidebar != "" {
@@ -984,7 +1023,7 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 		warnStrandedHeaders(body)
 	}
 
-	if titleFromH1 || titleFromFilename || spaceFromCli != "" {
+	if opts.TitleFromH1 || opts.TitleFromFilename || opts.Space != "" {
 		if meta == nil {
 			meta = &Meta{}
 		}
@@ -993,19 +1032,19 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 			meta.Type = "page"
 		}
 
-		if titleFromH1 && meta.Title == "" {
+		if opts.TitleFromH1 && meta.Title == "" {
 			meta.Title = ExtractDocumentLeadingH1(doc, data)
 		}
-		if titleFromFilename && meta.Title == "" && filename != "" {
-			setTitleFromFilename(meta, filename)
+		if opts.TitleFromFilename && meta.Title == "" && opts.Filename != "" {
+			setTitleFromFilename(meta, opts.Filename)
 		}
-		if spaceFromCli != "" && meta.Space == "" {
-			meta.Space = spaceFromCli
+		if opts.Space != "" && meta.Space == "" {
+			meta.Space = opts.Space
 		}
 	}
 
 	if meta != nil && meta.ContentAppearance == "" {
-		appearance, err := ResolveContentAppearance(defaultContentAppearance)
+		appearance, err := ResolveContentAppearance(opts.ContentAppearance)
 		if err != nil {
 			return nil, nil, fmt.Errorf("default content appearance: %w", err)
 		}
@@ -1023,11 +1062,11 @@ func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, titleFromFi
 	// every linked document resolved along the way. Two documents then held
 	// the same backing array, and the second one's own Parent header, or a
 	// renamed parent written back into the chain, overwrote the first's.
-	if len(parents) > 0 && parents[0] != "" {
-		meta.Parents = slices.Concat(parents, meta.Parents)
+	if len(opts.Parents) > 0 && opts.Parents[0] != "" {
+		meta.Parents = slices.Concat(opts.Parents, meta.Parents)
 	}
 
-	if titleAppendGeneratedHash {
+	if opts.TitleAppendGeneratedHash {
 		AppendGeneratedHash(meta)
 	}
 

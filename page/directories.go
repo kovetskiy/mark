@@ -107,10 +107,11 @@ func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, f
 				return "", err
 			}
 
-			meta, _, err := metadata.ExtractMeta(
-				markdown, "", titleFromH1, false, indexFile, nil, false, "",
-				frontmatter,
-			)
+			meta, _, err := metadata.ExtractMeta(markdown, metadata.ExtractOptions{
+				Filename:    indexFile,
+				TitleFromH1: titleFromH1,
+				FrontMatter: frontmatter,
+			})
 			if err != nil {
 				return "", fmt.Errorf("unable to read the title of %q: %w", indexFile, err)
 			}

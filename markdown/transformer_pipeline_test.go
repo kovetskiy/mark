@@ -50,17 +50,12 @@ This is the main body text.`)
 	assert.Contains(t, htmlOutput, "main body text")
 
 	// Verify Metadata can be extracted from the expanded document
-	meta, _, err := metadata.ExtractMeta(
-		[]byte(htmlOutput),
-		"MYSPACE",
-		true,
-		false,
-		"test.md",
-		nil,
-		false,
-		"",
-		true,
-	)
+	meta, _, err := metadata.ExtractMeta([]byte(htmlOutput), metadata.ExtractOptions{
+		Filename:    "test.md",
+		Space:       "MYSPACE",
+		TitleFromH1: true,
+		FrontMatter: true,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "MYSPACE", meta.Space)
 }
@@ -107,17 +102,12 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 	assert.Contains(t, htmlOutput, "Root document body")
 
 	// Verify Metadata extracted from deep nested template
-	meta, _, err := metadata.ExtractMeta(
-		[]byte(htmlOutput),
-		"DEEPSPACE",
-		true,
-		false,
-		"test.md",
-		nil,
-		false,
-		"",
-		true,
-	)
+	meta, _, err := metadata.ExtractMeta([]byte(htmlOutput), metadata.ExtractOptions{
+		Filename:    "test.md",
+		Space:       "DEEPSPACE",
+		TitleFromH1: true,
+		FrontMatter: true,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "DEEPSPACE", meta.Space)
 }
