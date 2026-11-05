@@ -370,6 +370,33 @@ func TestWatchWithoutTheFlag(t *testing.T) {
 	assert.Equal(t, []string{"acct-current"}, watchers)
 }
 
+// --watch=false typed on the command line asks for no watch, so an empty
+// MARK_WATCH or watch = "" beside it is set aside rather than refused.
+func TestWatchFalseOnTheCommandLineOverAnEmptyValue(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		env    bool
+		config string
+	}{
+		{name: "MARK_WATCH", env: true},
+		{name: "configuration file", config: "watch = \"\"\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env {
+				t.Setenv("MARK_WATCH", "")
+			}
+
+			watchers, err := watchedAfterPublish(t, tc.config, func(server, config, document string) error {
+				_, _, err := runMark(t, "-c", config, "--color", "never", "-u", "user", "-p", "token",
+					"publish", "-b", server, "--files", document, "--watch=false")
+				return err
+			})
+			require.NoError(t, err)
+			assert.Empty(t, watchers)
+		})
+	}
+}
+
 // generated.by names mark's version without the commit the binary's version
 // carries, so two builds of a release write the same concepts.
 func TestGenerator(t *testing.T) {
