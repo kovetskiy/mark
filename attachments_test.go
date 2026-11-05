@@ -15,6 +15,7 @@ import (
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
@@ -908,19 +909,25 @@ func mermaidFixture(t *testing.T) Config {
 	}
 }
 
-// TestMermaidOutputRejectsAFormatMarkCannotPublish covers the settings from the
-// side the flags do not reach. Config is a public API, so a library caller
-// arrives here without a command line to have been checked, and a format the
-// renderer does not know falls to its default branch: a PNG, published without
-// a word about the SVG that was asked for.
-func TestMermaidOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
-	config := mermaidFixture(t)
-	config.Rendering.MermaidOutput = "jpeg"
+// TestImageOutputsRejectAFormatMarkCannotPublish covers the settings from the
+// side the flags do not reach: a library caller arrives with no command line
+// to have been checked, and is refused before anything is published. The
+// fields are compared as written, so "SVG" is refused too.
+func TestImageOutputsRejectAFormatMarkCannotPublish(t *testing.T) {
+	for field, set := range map[string]func(*RenderingConfig, imageformat.Format){
+		"MermaidOutput": func(r *RenderingConfig, f imageformat.Format) { r.MermaidOutput = f },
+		"D2Output":      func(r *RenderingConfig, f imageformat.Format) { r.D2Output = f },
+		"MathOutput":    func(r *RenderingConfig, f imageformat.Format) { r.MathOutput = f },
+	} {
+		for _, value := range []imageformat.Format{"jpeg", "SVG"} {
+			config := mermaidFixture(t)
+			set(&config.Rendering, value)
 
-	err := Run(context.Background(), config)
-	require.Error(t, err)
-
-	assert.Contains(t, err.Error(), "MermaidOutput")
+			err := Run(context.Background(), config)
+			require.Error(t, err, "%s %q", field, value)
+			assert.Contains(t, err.Error(), field)
+		}
+	}
 }
 
 // TestMermaidBundleNeedsAnSVGToGoIn is the same for the pair of them: a bundle
@@ -941,32 +948,6 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 // never heard of these fields leaves them zero, and has always got a PNG.
 func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
 	require.NoError(t, Run(context.Background(), mermaidFixture(t)))
-}
-
-// TestD2OutputRejectsAFormatMarkCannotPublish is the d2 half of the same rule:
-// Config is a public API, so a library caller arrives with no command line to
-// have been checked, and a format the renderer does not know falls to its PNG
-// branch without a word.
-func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
-	config := mermaidFixture(t)
-	config.Rendering.D2Output = "jpeg"
-
-	err := Run(context.Background(), config)
-	require.Error(t, err)
-
-	assert.Contains(t, err.Error(), "D2Output")
-}
-
-// TestMathOutputRejectsAFormatMarkCannotPublish: a format math does not know
-// fails the run before it publishes anything, not at the first formula.
-func TestMathOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
-	config := mermaidFixture(t)
-	config.Rendering.MathOutput = "jpeg"
-
-	err := Run(context.Background(), config)
-	require.Error(t, err)
-
-	assert.Contains(t, err.Error(), "MathOutput")
 }
 
 // TestD2DefaultsPublishAsBefore is its control: a caller that never heard of
