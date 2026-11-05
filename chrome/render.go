@@ -104,6 +104,11 @@ func startSession(life context.Context) (*session, error) {
 			return nil, err
 		}
 
+	case <-life.Done():
+		stop()
+
+		return nil, context.Cause(life)
+
 	case <-timer.C:
 		stop()
 
@@ -156,7 +161,8 @@ func (b *Browser) failed(s *session, err error) error {
 	return err
 }
 
-// Close shuts the browser down for good. A Browser that never rendered anything has nothing
+// Close shuts the browser down for good, and stops one still starting
+// without waiting for it. A Browser that never rendered anything has nothing
 // to shut down, and closing twice, or closing nil, is harmless.
 func (b *Browser) Close() {
 	if b == nil {

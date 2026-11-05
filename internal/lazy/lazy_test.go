@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -92,6 +93,79 @@ func TestGetSharesOneResource(t *testing.T) {
 	assert.Equal(t, int64(1), f.starts.Load())
 }
 
+// TestCloseDoesNotWaitOutAStart: the start in flight is cancelled, not waited
+// for, and Close returns at once.
+func TestCloseDoesNotWaitOutAStart(t *testing.T) {
+	f := newFake()
+	f.release = make(chan struct{}) // never released
+	l := f.lazy()
+
+	got := make(chan error, 1)
+	go func() {
+		_, err := l.Get(context.Background())
+		got <- err
+	}()
+	<-f.began
+
+	began := time.Now()
+	l.Close()
+	assert.Less(t, time.Since(began), 500*time.Millisecond)
+
+	select {
+	case err := <-got:
+		require.ErrorIs(t, err, errTestClosed)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("the waiting Get was not released by Close")
+	}
+}
+
+// TestCloseStopsWhatALateStartMade: a start that finishes after Close despite
+// being cancelled leaves nothing running once Close returns.
+func TestCloseStopsWhatALateStartMade(t *testing.T) {
+	stopped := make(chan *resource, 1)
+	release := make(chan struct{})
+	began := make(chan struct{})
+
+	l := New(func(ctx context.Context) (*resource, error) {
+		close(began)
+		<-ctx.Done()
+		<-release // ignores the cancellation for a moment
+
+		return &resource{}, nil
+	}, func(r *resource) { stopped <- r }, errTestClosed)
+
+	got := make(chan error, 1)
+	go func() {
+		_, err := l.Get(context.Background())
+		got <- err
+	}()
+	<-began
+
+	closed := make(chan struct{})
+	go func() {
+		l.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+		t.Fatal("Close returned before the start it cancelled had finished")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(release)
+	<-closed
+
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("what the start made was not stopped")
+	}
+
+	require.ErrorIs(t, <-got, errTestClosed)
+}
+
 func TestCloseTwice(t *testing.T) {
 	f := newFake()
 	l := f.lazy()
@@ -145,37 +219,82 @@ func TestDiscardStartsAnother(t *testing.T) {
 }
 
 func TestFailedStartIsShared(t *testing.T) {
-	f := newFake()
-	f.release = make(chan struct{})
-	f.failing.Store(true)
-	l := f.lazy()
-	t.Cleanup(l.Close)
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		f.release = make(chan struct{})
+		f.failing.Store(true)
+		l := f.lazy()
+		t.Cleanup(l.Close)
 
-	const callers = 4
+		const callers = 4
 
-	errs := make(chan error, callers)
-	for range callers {
+		errs := make(chan error, callers)
+		for range callers {
+			go func() {
+				_, err := l.Get(t.Context())
+				errs <- err
+			}()
+		}
+
+		// Returns once every caller is waiting on the one start.
+		synctest.Wait()
+		close(f.release)
+
+		for range callers {
+			require.Error(t, <-errs)
+		}
+
+		assert.Equal(t, int64(1), f.starts.Load())
+
+		f.failing.Store(false)
+
+		_, err := l.Get(t.Context())
+		require.NoError(t, err, "a failed start is tried again")
+	})
+}
+
+// TestCloseWaitsForDiscard: Close does not return while Discard is still
+// stopping the value it took.
+func TestCloseWaitsForDiscard(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		stopped := make(chan struct{})
+
+		l := New(func(context.Context) (*resource, error) {
+			return &resource{}, nil
+		}, func(*resource) {
+			<-release
+			close(stopped)
+		}, errTestClosed)
+
+		r, err := l.Get(t.Context())
+		require.NoError(t, err)
+
+		go func() { _ = l.Discard(r, nil) }()
+		synctest.Wait() // Discard is inside stop
+
+		closed := make(chan struct{})
 		go func() {
-			_, err := l.Get(t.Context())
-			errs <- err
+			l.Close()
+			close(closed)
 		}()
-	}
-	<-f.began
+		synctest.Wait()
 
-	// Gives every caller time to find the start in flight.
-	time.Sleep(20 * time.Millisecond)
-	close(f.release)
+		select {
+		case <-closed:
+			t.Fatal("Close returned while Discard was still stopping the value")
+		default:
+		}
 
-	for range callers {
-		require.Error(t, <-errs)
-	}
+		close(release)
+		<-closed
 
-	assert.Equal(t, int64(1), f.starts.Load())
-
-	f.failing.Store(false)
-
-	_, err := l.Get(t.Context())
-	require.NoError(t, err, "a failed start is tried again")
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("Close returned before the stop finished")
+		}
+	})
 }
 
 // TestCallerGivesUpOnAStart: a caller's context bounds its own wait, and the

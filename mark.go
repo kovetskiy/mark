@@ -915,7 +915,8 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 }
 
 // Close shuts down the browser and mermaid engine, if a picture started them,
-// and refuses every Publish after it. Closing twice, closing nil, or closing a
+// and refuses every Publish after it. One still starting is stopped rather
+// than waited for, so Close returns promptly. Closing twice, closing nil, or closing a
 // Publisher NewPublisher did not make is harmless.
 func (p *Publisher) Close() {
 	if p == nil || p.run == nil {

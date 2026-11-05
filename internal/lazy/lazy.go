@@ -19,9 +19,14 @@ type Lazy[T comparable] struct {
 	stop   func(T)
 	closed error
 
-	// starts is waited for by Close, so that what a start makes is stopped
-	// before Close returns.
-	starts sync.WaitGroup
+	// life is what every start runs under. Close cancels it, so that a start
+	// in flight gives up at once instead of running to its own timeout.
+	life   context.Context
+	cancel context.CancelFunc
+
+	// pending counts the starts and Discard's stops in flight. Close waits
+	// for it, so that nothing they made or are stopping outlives Close.
+	pending sync.WaitGroup
 
 	mu       sync.Mutex
 	value    T
@@ -37,12 +42,16 @@ type attempt[T any] struct {
 	err   error
 }
 
-// New returns a Lazy that has not started. start makes the resource, which
-// may outlive ctx and lives until stop. stop shuts a resource down and may be
-// called more than once for the same one. closed is what Get answers once
-// Close has been called.
+// New returns a Lazy that has not started. start makes the resource and must
+// return promptly once its ctx is done, which happens when Close is called;
+// the resource it returns may outlive that call and lives until stop. stop
+// shuts a resource down and may be called more than once for the same one.
+// closed is what Get answers once Close has been called.
 func New[T comparable](start func(ctx context.Context) (T, error), stop func(T), closed error) *Lazy[T] {
-	return &Lazy[T]{start: start, stop: stop, closed: closed}
+	l := &Lazy[T]{start: start, stop: stop, closed: closed}
+	l.life, l.cancel = context.WithCancel(context.Background()) //nolint:gosec // G118: Close calls l.cancel
+
+	return l
 }
 
 // Get returns the resource, starting it if there is none. Callers that arrive
@@ -76,7 +85,7 @@ func (l *Lazy[T]) Get(ctx context.Context) (T, error) {
 	if try == nil {
 		try = &attempt[T]{done: make(chan struct{})}
 		l.attempt = try
-		l.starts.Add(1)
+		l.pending.Add(1)
 
 		go l.run(try)
 	}
@@ -94,10 +103,10 @@ func (l *Lazy[T]) Get(ctx context.Context) (T, error) {
 // run performs one start and publishes what it made, or stops it when Close
 // came first.
 func (l *Lazy[T]) run(try *attempt[T]) {
-	defer l.starts.Done()
+	defer l.pending.Done()
 	defer close(try.done)
 
-	value, err := l.start(context.Background())
+	value, err := l.start(l.life)
 
 	l.mu.Lock()
 	l.attempt = nil
@@ -131,11 +140,13 @@ func (l *Lazy[T]) Discard(value T) {
 	if current {
 		var zero T
 		l.value, l.has = zero, false
+		l.pending.Add(1)
 	}
 	l.mu.Unlock()
 
 	if current {
 		l.stop(value)
+		l.pending.Done()
 	}
 }
 
@@ -156,8 +167,10 @@ func (l *Lazy[T]) Closed() bool {
 	return l.isClosed
 }
 
-// Close stops the resource for good. A start in flight is waited for, and
-// whatever it made is stopped before Close returns. Closing twice is harmless.
+// Close stops the resource for good. A start in flight is cancelled rather
+// than waited out, and whatever it made is stopped before Close returns, as is
+// a value Discard is still stopping.
+// Closing twice is harmless.
 func (l *Lazy[T]) Close() {
 	l.mu.Lock()
 
@@ -167,6 +180,7 @@ func (l *Lazy[T]) Close() {
 	}
 
 	l.isClosed = true
+	l.cancel()
 
 	value, has := l.value, l.has
 
@@ -178,5 +192,5 @@ func (l *Lazy[T]) Close() {
 		l.stop(value)
 	}
 
-	l.starts.Wait()
+	l.pending.Wait()
 }

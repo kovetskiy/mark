@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v17/imageformat"
@@ -145,6 +146,39 @@ func TestCloseDuringARenderIsNotACrash(t *testing.T) {
 	require.ErrorIs(t, err, errClosed)
 	assert.Equal(t, 1, renderer.renders)
 	assert.NotContains(t, logged.String(), "died", "a closed engine did not crash")
+}
+
+// TestCloseDuringAStartReturnsAtOnce: a Publisher closed while the engine is
+// still launching does not wait out the launch, and the render that asked for
+// it is told the engine was closed.
+func TestCloseDuringAStartReturnsAtOnce(t *testing.T) {
+	engine, _ := useEngine(t, EngineChrome)
+
+	started := make(chan struct{})
+	engine.renderer = lazy.New(func(life context.Context) (mermaid.Renderer, error) {
+		close(started)
+		<-life.Done()
+
+		return nil, context.Cause(life)
+	}, mermaid.Renderer.Cancel, errClosed)
+
+	got := make(chan error, 1)
+	go func() {
+		_, err := engine.Render(context.Background(), "d", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG})
+		got <- err
+	}()
+	<-started
+
+	began := time.Now()
+	engine.Close()
+	assert.Less(t, time.Since(began), 500*time.Millisecond)
+
+	select {
+	case err := <-got:
+		require.ErrorIs(t, err, errClosed)
+	case <-time.After(time.Second):
+		t.Fatal("the render was not released by Close")
+	}
 }
 
 // TestMermanReportsWhatIsMissingByName covers the machine without merman on it,
