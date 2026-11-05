@@ -149,6 +149,117 @@ func (h *heldSource) Lookup() (string, bool) {
 	return h.ValueSource.Lookup()
 }
 
+// trackSources lets fromCommandLine tell, for every flag of command and its
+// subcommands, a value given on the command line from one a source supplied:
+// it puts a sourceProbe first in each flag's sources. The root's flags are
+// left out, since urfave reads their sources before the command's own
+// command line, which may then set them anyway.
+func trackSources(command *cli.Command) {
+	for _, flag := range command.Flags {
+		if chain := sourcesOf(flag); chain != nil {
+			chain.Chain = slices.Insert(chain.Chain, 0, cli.ValueSource(&sourceProbe{flag: flag}))
+		}
+	}
+	for _, subcommand := range command.Commands {
+		trackSources(subcommand)
+	}
+}
+
+// sourcesOf is flag's chain of sources, or nil for a kind of flag mark does
+// not use.
+func sourcesOf(flag cli.Flag) *cli.ValueSourceChain {
+	switch f := flag.(type) {
+	case *cli.StringFlag:
+		return &f.Sources
+	case *cli.BoolFlag:
+		return &f.Sources
+	case *cli.IntFlag:
+		return &f.Sources
+	case *cli.FloatFlag:
+		return &f.Sources
+	case *cli.StringSliceFlag:
+		return &f.Sources
+	}
+	return nil
+}
+
+// sourceProbe answers nothing, and notes being asked while its flag is unset:
+// urfave asks a flag's sources, first to last, only when the command line
+// has not set it.
+type sourceProbe struct {
+	flag  cli.Flag
+	asked bool
+}
+
+func (p *sourceProbe) Lookup() (string, bool) {
+	if !p.flag.IsSet() {
+		p.asked = true
+	}
+	return "", false
+}
+
+func (p *sourceProbe) String() string   { return "no source" }
+func (p *sourceProbe) GoString() string { return "sourceProbe{}" }
+
+// valueSource is the source that gave cmd's flag name its value, or nil when
+// the command line did, nothing did, or trackSources did not reach the flag.
+func valueSource(cmd *cli.Command, name string) cli.ValueSource {
+	for _, command := range cmd.Lineage() {
+		for _, flag := range command.Flags {
+			if !slices.Contains(flag.Names(), name) {
+				continue
+			}
+			chain := sourcesOf(flag)
+			if !flag.IsSet() || chain == nil || len(chain.Chain) == 0 {
+				return nil
+			}
+			if probe, ok := chain.Chain[0].(*sourceProbe); !ok || !probe.asked {
+				return nil
+			}
+			_, source, _ := chain.LookupWithSource()
+			return source
+		}
+	}
+	return nil
+}
+
+// fromCommandLine reports whether cmd's flag name was given on the command
+// line. A flag trackSources did not reach counts as given there whenever it
+// is set, which is all IsSet can say.
+func fromCommandLine(cmd *cli.Command, name string) bool {
+	return cmd.IsSet(name) && valueSource(cmd, name) == nil
+}
+
+// flagName is name as a flag, followed by the source that set it when that
+// was not the command line.
+func flagName(cmd *cli.Command, name string) string {
+	if source := valueSource(cmd, name); source != nil {
+		return fmt.Sprintf("--%s (from %s)", name, source)
+	}
+	return "--" + name
+}
+
+// commandLineFirst is those of names that given says are given, keeping only
+// the ones given on the command line when there are any: of settings that
+// exclude each other, one given for this run sets aside those standing in the
+// environment or the configuration file.
+func commandLineFirst(cmd *cli.Command, names []string, given func(string) bool) []string {
+	var all, typed []string
+	for _, name := range names {
+		if !given(name) {
+			continue
+		}
+		all = append(all, name)
+		if fromCommandLine(cmd, name) {
+			typed = append(typed, name)
+		}
+	}
+	if len(typed) > 0 {
+		return typed
+	}
+	return all
+}
+
 // configValue is one setting of a configFile, as a flag's source.
 type configValue struct {
 	file *configFile

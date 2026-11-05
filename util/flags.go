@@ -515,13 +515,39 @@ func exportFlags(config *configFile) []cli.Flag {
 	}
 }
 
+// exportPageFlags each name the page "mark export" exports.
+var exportPageFlags = []string{"page-id", "url", "title"}
+
+// exportPage is those of exportPageFlags that name the page to export, by
+// their values. One given on the command line sets aside those from the
+// environment or the configuration file, and so does --space for a page id or
+// URL, which ignore it: a MARK_PAGE_URL that a CI job sets for publishing must
+// not collide with the page a command line names.
+func exportPage(cmd *cli.Command) map[string]string {
+	page := map[string]string{}
+	for _, name := range commandLineFirst(cmd, exportPageFlags, func(name string) bool { return cmd.String(name) != "" }) {
+		page[name] = cmd.String(name)
+	}
+
+	if fromCommandLine(cmd, "space") {
+		for _, name := range []string{"page-id", "url"} {
+			if !fromCommandLine(cmd, name) {
+				delete(page, name)
+			}
+		}
+	}
+
+	return page
+}
+
 // CheckExportFlags validates the flags of "mark export": the page has to be
 // named exactly one way.
 func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Context, error) {
+	page := exportPage(command)
 	var named []string
-	for _, name := range []string{"page-id", "url", "title"} {
-		if command.String(name) != "" {
-			named = append(named, "--"+name)
+	for _, name := range exportPageFlags {
+		if page[name] != "" {
+			named = append(named, flagName(command, name))
 		}
 	}
 
@@ -540,7 +566,7 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 		return ctx, errors.New("name the page to export with --page-id, --url, or --space and --title; or the space alone with --recursive")
 	case len(named) > 1:
 		return ctx, fmt.Errorf("%s each name a page; give only one of them", strings.Join(named, " and "))
-	case command.String("title") != "" && command.String("space") == "":
+	case page["title"] != "" && command.String("space") == "":
 		return ctx, errors.New("--title needs --space: a title names a page only within a space")
 	case command.IsSet("depth") && !command.Bool("recursive"):
 		return ctx, errors.New("--depth limits --recursive, and does nothing without it")
@@ -552,7 +578,7 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 		return ctx, errors.New("--depth counts levels, and cannot be negative")
 	case command.Bool("recursive") && (command.String("output") == "" || command.String("output") == "-"):
 		return ctx, errors.New("--recursive writes a directory: name it with --output")
-	case command.Bool("recursive") && command.String("attachments-dir") != "":
+	case command.Bool("recursive") && command.String("attachments-dir") != "" && fromCommandLine(command, "attachments-dir"):
 		return ctx, errors.New("--recursive writes each page's attachments where it keeps them, so --attachments-dir does not apply")
 	}
 
