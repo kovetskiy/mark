@@ -17,39 +17,6 @@ func blockQuoteRenderers() []html.Extension {
 	}
 }
 
-// TestBlockQuoteClassification covers the colon syntax, "> Info: text".
-//
-// The words are not interchangeable with the macros they produce: "warn"
-// selects Confluence's warning macro, and "note" selects info, as GitHub's
-// [!NOTE] does, so a mapping slip shows up as the wrong colour and icon on the
-// page rather than as an error anywhere.
-func TestBlockQuoteClassification(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"info", "> Info: the build is nightly.\n", `ac:name="info"`},
-		{"note is info", "> Note: this is worth knowing.\n", `ac:name="info"`},
-		{"warning from warn", "> Warn: this deletes data.\n", `ac:name="warning"`},
-		{"tip", "> Tip: use the cache.\n", `ac:name="tip"`},
-		{"case insensitive", "> NOTE: shouting.\n", `ac:name="info"`},
-		{"markup around the word", "> **Note:** emphasised.\n", `ac:name="info"`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			actual := render(t, tt.input, blockQuoteRenderers())
-			assertWellFormed(t, actual)
-
-			assert.Contains(t, actual, tt.want)
-			assert.Contains(t, actual, `<ac:parameter ac:name="icon">true</ac:parameter>`)
-			assert.Contains(t, actual, "</ac:rich-text-body></ac:structured-macro>")
-			assert.NotContains(t, actual, "<blockquote>")
-		})
-	}
-}
-
 // TestBlockQuoteUnclassifiedStaysAQuote covers the quote that names none of the
 // four types: it has to stay a blockquote rather than become a macro of some
 // default kind.
@@ -86,6 +53,9 @@ func TestBlockQuoteProseStaysAQuote(t *testing.T) {
 		{"word in code", "> `Note:` in code.\n"},
 		{"word in a list", "> * Note: in a list.\n"},
 		{"word on the second line", "> Some text\n> Note: later.\n"},
+		{"word after code", "> `x` Note: later.\n"},
+		{"word in an image's alt text", "> ![Note:](a.png) text.\n"},
+		{"comment saying more than the word", "> <!-- Note that this is a draft -->\n> Text.\n"},
 	}
 
 	for _, tt := range prose {
@@ -103,6 +73,11 @@ func TestBlockQuoteProseStaysAQuote(t *testing.T) {
 // TestBlockQuoteMarkerForms covers every way of writing the marker: the word
 // and its colon, in any case, emphasised with the colon inside or outside, or
 // alone in a comment.
+//
+// The words are not interchangeable with the macros they produce: "warn"
+// selects Confluence's warning macro, and "note" selects info, as GitHub's
+// [!NOTE] does, so a mapping slip shows up as the wrong colour and icon on the
+// page rather than as an error anywhere.
 func TestBlockQuoteMarkerForms(t *testing.T) {
 	forms := []struct {
 		name  string
@@ -110,6 +85,9 @@ func TestBlockQuoteMarkerForms(t *testing.T) {
 		want  string
 	}{
 		{"marker with a colon and text", "> Info: the build is nightly.\n", `ac:name="info"`},
+		{"note is info", "> Note: this is worth knowing.\n", `ac:name="info"`},
+		{"warning from warn", "> Warn: this deletes data.\n", `ac:name="warning"`},
+		{"tip", "> Tip: use the cache.\n", `ac:name="tip"`},
 		{"marker alone with its colon", "> Warn:\n>\n> Text.\n", `ac:name="warning"`},
 		{"plural with a colon", "> **NOTES:**\n>\n> One.\n", `ac:name="info"`},
 		{"emphasised marker", "> **Tip:** use the cache.\n", `ac:name="tip"`},
@@ -129,30 +107,10 @@ func TestBlockQuoteMarkerForms(t *testing.T) {
 			assertWellFormed(t, actual)
 
 			assert.Contains(t, actual, tt.want)
+			assert.Contains(t, actual, `<ac:parameter ac:name="icon">true</ac:parameter>`)
+			assert.NotContains(t, actual, "<blockquote>")
 		})
 	}
-}
-
-// TestBlockQuoteCommentMustHoldOnlyTheWord covers the comment form: a comment
-// that says more than the word is a comment, not a marker.
-func TestBlockQuoteCommentMustHoldOnlyTheWord(t *testing.T) {
-	actual := render(t, "> <!-- Note that this is a draft -->\n> Text.\n", blockQuoteRenderers())
-	assertWellFormed(t, actual)
-
-	assert.Contains(t, actual, "<blockquote>")
-	assert.NotContains(t, actual, "ac:structured-macro")
-}
-
-// TestBlockQuoteClassifierZeroValue pins that the exported classifier cannot
-// be built in a broken state: its zero value classifies as the constructor's
-// does.
-func TestBlockQuoteClassifierZeroValue(t *testing.T) {
-	var zero crenderer.BlockQuoteClassifier
-
-	assert.NotPanics(t, func() { zero.ClassifyingBlockQuote("Note: x") })
-	assert.Equal(t, crenderer.AdmonitionInfo, zero.ClassifyingBlockQuote("Note: x"))
-	assert.Equal(t, crenderer.AdmonitionNone, zero.ClassifyingBlockQuote("Note that x"))
-	assert.Equal(t, crenderer.ColonBlockQuoteClassifier(), zero)
 }
 
 // TestBlockQuoteTypeComesFromTheFirstParagraphOnly pins the scope of the

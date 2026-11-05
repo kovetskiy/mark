@@ -6,22 +6,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAdmonitionMarker(t *testing.T) {
+func TestAdmonitionWord(t *testing.T) {
 	markers := map[string]string{
 		"Info: text":     "info",
 		"note:":          "note",
 		"NOTES: text":    "note",
 		"Warn:\ttext":    "warn",
+		"Warns: text":    "warn",
 		"Warnings: text": "warning",
 		"tIpS: text":     "tip",
+		"Note:\nmore":    "note",
 		"<!-- Info -->":  "info",
 		"<!-- Tip: -->":  "tip",
 		"<!-- Warn":      "warn",
 	}
 	for line, word := range markers {
-		marker := AdmonitionMarker(line)
-		assert.NotEmpty(t, marker, "%q is a marker", line)
-		assert.Equal(t, word, AdmonitionWord(marker), "%q", line)
+		assert.Equal(t, word, AdmonitionWord(line), "%q", line)
 	}
 
 	for _, line := range []string{
@@ -36,6 +36,6 @@ func TestAdmonitionMarker(t *testing.T) {
 		"<!-- Info: more -->",
 		"",
 	} {
-		assert.Empty(t, AdmonitionMarker(line), "%q is not a marker", line)
+		assert.Empty(t, AdmonitionWord(line), "%q is not a marker", line)
 	}
 }
