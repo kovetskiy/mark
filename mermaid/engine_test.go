@@ -79,7 +79,7 @@ func TestChoosingChromeSaysNothing(t *testing.T) {
 func TestEngineStartsOnlyWhenUsed(t *testing.T) {
 	engine, _ := useEngine(t, EngineChrome)
 
-	_, started := engine.renderer.Peek()
+	_, started := engine.renderers().Peek()
 	assert.False(t, started)
 }
 
@@ -94,7 +94,7 @@ func TestEndedRenderStartsNoEngine(t *testing.T) {
 	_, err := engine.Render(ctx, "d", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	require.ErrorIs(t, err, context.Canceled)
 
-	_, started := engine.renderer.Peek()
+	_, started := engine.renderers().Peek()
 	assert.False(t, started)
 }
 
@@ -125,6 +125,17 @@ func (r *closingRenderer) RenderContext(context.Context, string, ...mermaid.Rend
 }
 
 func (r *closingRenderer) Cancel() {}
+
+// TestZeroEngine: an Engine made without NewEngine works the same, and once
+// closed refuses to draw rather than panicking.
+func TestZeroEngine(t *testing.T) {
+	var engine Engine
+
+	engine.Close()
+
+	_, err := engine.Render(t.Context(), "zero", []byte("graph TD; A-->B"), Options{})
+	require.ErrorIs(t, err, errClosed)
+}
 
 // TestCloseDuringARenderIsNotACrash: the render Close cancels is reported as
 // the engine closing, not logged and retried as though the browser had died.

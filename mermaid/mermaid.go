@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
@@ -47,9 +48,11 @@ const (
 // launches nothing, and is shared by every diagram after that.
 //
 // Whoever creates one closes it. It is safe for concurrent use; a nil Engine
-// refuses to draw.
+// refuses to draw. The zero value is ready to use, as an EngineChrome.
 type Engine struct {
-	kind     EngineKind
+	kind EngineKind
+
+	once     sync.Once
 	renderer *lazy.Lazy[mermaid.Renderer]
 }
 
@@ -75,10 +78,19 @@ func NewEngine(kind EngineKind) (*Engine, error) {
 		)
 	}
 
-	e := &Engine{kind: kind}
-	e.renderer = lazy.New(e.start, mermaid.Renderer.Cancel, errClosed)
+	return &Engine{kind: kind}, nil
+}
 
-	return e, nil
+// renderers returns the engine's lazy renderer, making it on first use so that
+// the zero Engine works. One set beforehand, as tests do, is kept.
+func (e *Engine) renderers() *lazy.Lazy[mermaid.Renderer] {
+	e.once.Do(func() {
+		if e.renderer == nil {
+			e.renderer = lazy.New(e.start, mermaid.Renderer.Cancel, errClosed)
+		}
+	})
+
+	return e.renderer
 }
 
 // CheckEngine refuses an engine kind NewEngine would not know, without making
@@ -94,15 +106,15 @@ func CheckEngine(kind EngineKind) error {
 	}
 }
 
-// Close shuts the renderer down for good, if one was started, and stops one
-// still starting without waiting for it. Closing twice, or closing nil, is
-// harmless.
+// Close shuts the renderer down for good, if one was started, and cancels one
+// still starting rather than waiting out its launch. Closing twice, or closing
+// nil, is harmless.
 func (e *Engine) Close() {
 	if e == nil {
 		return
 	}
 
-	e.renderer.Close()
+	e.renderers().Close()
 }
 
 // renderTimeout bounds a single diagram: the wait for any render already
@@ -253,19 +265,6 @@ func startMerman(life context.Context) (mermaid.Renderer, error) {
 	return engine, nil
 }
 
-// discard drops engine from e and closes it, so that the next diagram launches
-// a new one, and returns err, marked with errClosed when e has been closed,
-// since then the failure was Close cancelling the render, not a crash.
-func (e *Engine) discard(engine mermaid.Renderer, err error) error {
-	e.renderer.Discard(engine)
-
-	if e.renderer.Closed() {
-		return fmt.Errorf("%w: %w", errClosed, err)
-	}
-
-	return err
-}
-
 // render runs one diagram through e's engine, deciding from mermaid.go's
 // sentinel errors whether the engine survived the failure and whether another
 // attempt is worth making. What to render with it is left to the caller, since
@@ -286,7 +285,7 @@ func (e *Engine) render(ctx context.Context, title string, once func(ctx context
 	}
 
 	for attempt := 1; ; attempt++ {
-		engine, err := e.renderer.Get(ctx)
+		engine, err := e.renderers().Get(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return fmt.Errorf("mermaid rendering stopped: %w", err)
@@ -315,7 +314,7 @@ func (e *Engine) render(ctx context.Context, title string, once func(ctx context
 			// Every later render on this engine fails the same way, so it is
 			// closed here and the next attempt gets a fresh browser. This is the
 			// one failure a retry can fix.
-			err = e.discard(engine, err)
+			err = e.renderers().Discard(engine, err)
 			if errors.Is(err, errClosed) || attempt >= renderAttempts {
 				return err
 			}
@@ -344,7 +343,7 @@ func (e *Engine) render(ctx context.Context, title string, once func(ctx context
 			// An unclassified failure says nothing about whether the browser
 			// survived it, so it is discarded: starting the next diagram over is
 			// cheap next to producing a page with a diagram missing from it.
-			return e.discard(engine, err)
+			return e.renderers().Discard(engine, err)
 		}
 	}
 }

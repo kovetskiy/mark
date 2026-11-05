@@ -44,9 +44,10 @@ type attempt[T any] struct {
 
 // New returns a Lazy that has not started. start makes the resource and must
 // return promptly once its ctx is done, which happens when Close is called;
-// the resource it returns may outlive that call and lives until stop. stop
-// shuts a resource down and may be called more than once for the same one.
-// closed is what Get answers once Close has been called.
+// the resource it returns may outlive that call and lives until stop. start
+// must not call Close, which waits for it. stop shuts a resource down and is
+// called once for each resource start returned. closed is what Get answers
+// once Close has been called.
 func New[T comparable](start func(ctx context.Context) (T, error), stop func(T), closed error) *Lazy[T] {
 	l := &Lazy[T]{start: start, stop: stop, closed: closed}
 	l.life, l.cancel = context.WithCancel(context.Background()) //nolint:gosec // G118: Close calls l.cancel
@@ -133,7 +134,11 @@ func (l *Lazy[T]) run(try *attempt[T]) {
 // Discard stops value and forgets it, so that the next Get starts another. A
 // value that is no longer the current one was already stopped by whoever
 // replaced it, so the replacement is left alone.
-func (l *Lazy[T]) Discard(value T) {
+//
+// err is what using value failed with, and is returned marked with the closed
+// error once Close has been called, since Close cancelling the use is then
+// the likely cause rather than a fault.
+func (l *Lazy[T]) Discard(value T, err error) error {
 	l.mu.Lock()
 
 	current := l.has && l.value == value
@@ -142,29 +147,28 @@ func (l *Lazy[T]) Discard(value T) {
 		l.value, l.has = zero, false
 		l.pending.Add(1)
 	}
+
+	closed := l.isClosed
 	l.mu.Unlock()
 
 	if current {
 		l.stop(value)
 		l.pending.Done()
 	}
+
+	if closed && err != nil {
+		return fmt.Errorf("%w: %w", l.closed, err)
+	}
+
+	return err
 }
 
-// Peek returns the current resource without starting one.
+// Peek returns the current resource without starting one. Only tests use it.
 func (l *Lazy[T]) Peek() (T, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	return l.value, l.has
-}
-
-// Closed reports whether Close has been called. A caller whose use of the
-// resource failed asks it to tell Close interrupting it from a fault.
-func (l *Lazy[T]) Closed() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	return l.isClosed
 }
 
 // Close stops the resource for good. A start in flight is cancelled rather
