@@ -530,6 +530,12 @@ func redactHeaders(dump string) string {
 	return strings.Join(lines, "\n")
 }
 
+// Username is the login the API authenticates with, empty for a personal
+// access token.
+func (api *API) Username() string {
+	return api.username
+}
+
 func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")

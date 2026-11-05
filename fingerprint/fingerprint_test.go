@@ -15,16 +15,16 @@ import (
 func TestContentFingerprintOfAPlainPageIsTheBodyHash(t *testing.T) {
 	const body = "<p>body</p>"
 
-	assert.Equal(t, SHA1(body), Content(body, "", "full-width", ""))
-	assert.Equal(t, SHA1(body), Content(body, "full-width", "full-width", ""))
-	assert.NotEqual(t, SHA1(body), Content(body, "default", "full-width", ""))
-	assert.NotEqual(t, SHA1(body), Content(body, "full-width", "full-width", "🚀"))
-	assert.NotEqual(t, Content(body, "max", "full-width", "🚀"), Content(body, "default", "full-width", "🚀"))
+	assert.Equal(t, SHA1(body), Content(body, Properties{DefaultAppearance: "full-width"}))
+	assert.Equal(t, SHA1(body), Content(body, Properties{Appearance: "full-width", DefaultAppearance: "full-width"}))
+	assert.NotEqual(t, SHA1(body), Content(body, Properties{Appearance: "default", DefaultAppearance: "full-width"}))
+	assert.NotEqual(t, SHA1(body), Content(body, Properties{Appearance: "full-width", DefaultAppearance: "full-width", Emoji: "🚀"}))
+	assert.NotEqual(t, Content(body, Properties{Appearance: "max", DefaultAppearance: "full-width", Emoji: "🚀"}), Content(body, Properties{Appearance: "default", DefaultAppearance: "full-width", Emoji: "🚀"}))
 
 	// --content-appearance default gives every page without the header a
 	// narrow appearance: that is the default, and changes nothing about the hash.
-	assert.Equal(t, SHA1(body), Content(body, "default", "default", ""))
-	assert.NotEqual(t, SHA1(body), Content(body, "full-width", "default", ""))
+	assert.Equal(t, SHA1(body), Content(body, Properties{Appearance: "default", DefaultAppearance: "default"}))
+	assert.NotEqual(t, SHA1(body), Content(body, Properties{Appearance: "full-width", DefaultAppearance: "default"}))
 }
 
 // TestFormatVersionMessage covers the round trip --changes-only depends on:

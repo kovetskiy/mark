@@ -50,7 +50,11 @@ func previewChange(
 		return "", "", err
 	}
 
-	hash := fingerprint.Content(wrapped, appearance, defaultAppearance(config.Page.ContentAppearance), emoji)
+	hash := fingerprint.Content(wrapped, fingerprint.Properties{
+		Appearance:        appearance,
+		DefaultAppearance: defaultAppearance(config.Page.ContentAppearance),
+		Emoji:             emoji,
+	})
 	retitled := meta != nil && existing.Title != title
 	reason := strings.Join(others, "; ")
 
@@ -187,7 +191,11 @@ func (r *publishRun) changeCheck(doc *document, dest *destination, html string) 
 	target := dest.page
 	contentAppearance, emoji := appearanceOf(doc.meta)
 
-	contentHash := fingerprint.Content(html, contentAppearance, defaultAppearance(r.config.Page.ContentAppearance), emoji)
+	contentHash := fingerprint.Content(html, fingerprint.Properties{
+		Appearance:        contentAppearance,
+		DefaultAppearance: defaultAppearance(r.config.Page.ContentAppearance),
+		Emoji:             emoji,
+	})
 	log.Debug().Msgf("content hash: %s", contentHash)
 
 	shouldUpdatePage := true

@@ -54,10 +54,11 @@ var permissions = []permission{
 	{confluence.Operation{Operation: "restrict_content", TargetType: "space"}, false, "restrict pages (--edit-lock, Restriction headers)"},
 }
 
-// Run checks the instance api talks to, and each space in spaces, and writes
-// a line per check to out. It returns an error when any check failed.
-func Run(ctx context.Context, api *confluence.API, baseURL, username string, spaces []string, out io.Writer) error {
-	checks := run(ctx, api, baseURL, username, spaces)
+// Run checks the instance api talks to, logged in as api's user, and each
+// space in spaces, and writes a line per check to out. It returns an error
+// when any check failed.
+func Run(ctx context.Context, api *confluence.API, spaces []string, out io.Writer) error {
+	checks := run(ctx, api, spaces)
 
 	failed := 0
 	for _, check := range checks {
@@ -76,15 +77,15 @@ func Run(ctx context.Context, api *confluence.API, baseURL, username string, spa
 	return nil
 }
 
-func run(ctx context.Context, api *confluence.API, baseURL, username string, spaces []string) []Check {
+func run(ctx context.Context, api *confluence.API, spaces []string) []Check {
 	host := ""
-	if u, err := url.Parse(baseURL); err == nil {
+	if u, err := url.Parse(api.BaseURL); err == nil {
 		host = strings.ToLower(u.Hostname())
 	}
 
 	user, err := api.GetCurrentUser(ctx)
 	if err != nil {
-		return []Check{loginFailure(err, host, username)}
+		return []Check{loginFailure(err, host, api.Username())}
 	}
 	if user.Type == "anonymous" {
 		return []Check{{
