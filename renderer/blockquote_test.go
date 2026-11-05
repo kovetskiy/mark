@@ -152,7 +152,7 @@ func TestBlockQuoteClassifierZeroValue(t *testing.T) {
 	assert.NotPanics(t, func() { zero.ClassifyingBlockQuote("Note: x") })
 	assert.Equal(t, crenderer.AdmonitionInfo, zero.ClassifyingBlockQuote("Note: x"))
 	assert.Equal(t, crenderer.AdmonitionNone, zero.ClassifyingBlockQuote("Note that x"))
-	assert.Equal(t, crenderer.LegacyBlockQuoteClassifier(), zero)
+	assert.Equal(t, crenderer.ColonBlockQuoteClassifier(), zero)
 }
 
 // TestBlockQuoteTypeComesFromTheFirstParagraphOnly pins the scope of the
