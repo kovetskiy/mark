@@ -227,6 +227,17 @@ func valueSource(cmd *cli.Command, name string) cli.ValueSource {
 	return nil
 }
 
+// typedOnCommandLine reports whether trackSources' probe shows that flag was
+// given on the command line. Without a probe it cannot tell, and says no.
+func typedOnCommandLine(flag cli.Flag) bool {
+	chain := sourcesOf(flag)
+	if !flag.IsSet() || chain == nil || len(chain.Chain) == 0 {
+		return false
+	}
+	probe, ok := chain.Chain[0].(*sourceProbe)
+	return ok && !probe.asked
+}
+
 // fromCommandLine reports whether cmd's flag name was given on the command
 // line. A flag trackSources did not reach counts as given there whenever it
 // is set, which is all IsSet can say.

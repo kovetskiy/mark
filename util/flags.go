@@ -619,9 +619,9 @@ func checkEmptyFeatures(command *cli.Command) error {
 
 // checkEmptyWatch refuses an empty MARK_WATCH or watch = "", which urfave
 // reads as false: for the one bool flag that defaults to true, that would stop
-// the account watching without anybody asking. The source checked is the one
-// the chain reads first, which is the one urfave used unless the command line
-// set the flag; an empty one is refused then too.
+// the account watching without anybody asking. A --watch=false typed on the
+// command line has asked, so it sets the empty value aside; where no probe can
+// show that, the empty value is refused.
 func checkEmptyWatch(command *cli.Command) error {
 	if command.Bool("watch") {
 		return nil
@@ -631,6 +631,9 @@ func checkEmptyWatch(command *cli.Command) error {
 		watch, ok := flag.(*cli.BoolFlag)
 		if !ok || watch.Name != "watch" {
 			continue
+		}
+		if typedOnCommandLine(watch) {
+			return nil
 		}
 		if value, source, found := watch.Sources.LookupWithSource(); found && value == "" {
 			return fmt.Errorf("%s is empty: set --watch to true or false, or leave it out for the default (true)", source)
