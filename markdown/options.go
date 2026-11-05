@@ -7,7 +7,8 @@ import (
 )
 
 // Options is how CompileMarkdown turns a document into storage format. The
-// zero value compiles a document with no pictures and the default rendering.
+// zero value switches every optional feature off, mermaid and mention
+// included, so it draws no pictures and needs no browser.
 type Options struct {
 	// Browser rasterises d2 diagrams and math formulas published as PNG, and
 	// Mermaid draws mermaid diagrams. Both start on first use and belong to
@@ -23,23 +24,25 @@ type Options struct {
 	// rather than newlines.
 	StripLinebreaks bool
 
-	// MermaidOutput is the image a diagram is published as, "png" or "svg".
-	// MermaidScale multiplies the pixels of a PNG one and the size the page
-	// displays an SVG one at. MermaidBundle keeps the diagram's source inside
-	// the SVG it is published as, and applies to nothing else.
+	// MermaidOutput is the image a diagram is published as, "png" (the
+	// default) or "svg". MermaidScale multiplies the pixels of a PNG one and
+	// the size the page displays an SVG one at. MermaidBundle keeps the
+	// diagram's source inside the SVG it is published as, and applies to
+	// nothing else.
 	MermaidOutput string
 	MermaidScale  float64
 	MermaidBundle bool
-	// D2Output is the image a diagram is published as, "png" or "svg".
-	// D2Scale multiplies the pixels of a PNG one and the size the page
-	// displays an SVG one at.
+	// D2Output is the image a diagram is published as, "png" (the default)
+	// or "svg". D2Scale multiplies the pixels of a PNG one and the size the
+	// page displays an SVG one at.
 	D2Output string
 	D2Scale  float64
 	// D2BundleRemote allows a diagram to have mark fetch a URL it names and
 	// publish what comes back inside the drawing.
 	D2BundleRemote bool
-	// MathFormat is the image a formula is published as, "svg" or "png".
-	// MathScale multiplies the pixels of a PNG one, and is ignored for SVG.
+	// MathFormat is the image a formula is published as, "png" (the default)
+	// or "svg". MathScale multiplies the pixels of a PNG one, and is ignored
+	// for SVG.
 	MathFormat string
 	MathScale  float64
 

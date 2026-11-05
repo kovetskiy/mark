@@ -17,8 +17,8 @@ type MathConfig struct {
 	// Browser rasterises formulas published as PNG. It belongs to whoever
 	// created it, who closes it; nil fails the first PNG formula.
 	Browser *chrome.Browser
-	// Format is the image a formula is published as, "svg" or "png". Scale
-	// multiplies the pixels of a PNG one, and is ignored for SVG.
+	// Format is the image a formula is published as, "png" (the default) or
+	// "svg". Scale multiplies the pixels of a PNG one, and is ignored for SVG.
 	Format string
 	Scale  float64
 }

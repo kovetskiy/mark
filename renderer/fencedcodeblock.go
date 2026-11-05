@@ -36,17 +36,18 @@ type DiagramConfig struct {
 	// "right", or "" for Confluence's default.
 	ImageAlign string
 
-	// MermaidOutput is the image a diagram is published as, "png" or "svg".
-	// MermaidScale multiplies the pixels of a PNG one and the size the page
-	// displays an SVG one at. MermaidBundle keeps the diagram's source inside
-	// the SVG it is published as, and applies to nothing else.
+	// MermaidOutput is the image a diagram is published as, "png" (the
+	// default) or "svg". MermaidScale multiplies the pixels of a PNG one and
+	// the size the page displays an SVG one at. MermaidBundle keeps the
+	// diagram's source inside the SVG it is published as, and applies to
+	// nothing else.
 	MermaidOutput string
 	MermaidScale  float64
 	MermaidBundle bool
 
-	// D2Output is the image a diagram is published as, "png" or "svg".
-	// D2Scale multiplies the pixels of a PNG one and the size the page
-	// displays an SVG one at. D2BundleRemote allows a diagram to have mark
+	// D2Output is the image a diagram is published as, "png" (the default)
+	// or "svg". D2Scale multiplies the pixels of a PNG one and the size the
+	// page displays an SVG one at. D2BundleRemote allows a diagram to have mark
 	// fetch a URL it names and publish what comes back inside the drawing.
 	D2Output       string
 	D2Scale        float64
