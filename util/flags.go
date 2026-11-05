@@ -765,7 +765,8 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 }
 
 // mathFormat is --math-format as checked and as published: trimmed, so that a
-// padded value accepted by the check is not refused later by math.Process.
+// padded value the check accepts is not refused by Config's own validation,
+// which compares the format as written.
 func mathFormat(command *cli.Command) string {
 	return strings.TrimSpace(command.String("math-format"))
 }

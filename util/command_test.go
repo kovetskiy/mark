@@ -536,8 +536,8 @@ func TestShortFlagsMeanOneThing(t *testing.T) {
 }
 
 // TestMathFormatIsPublishedAsChecked: the check trims --math-format, so a
-// padded value from any source has to reach the renderer trimmed as well, or
-// the run fails at its first formula with "unknown math format".
+// padded value from any source has to reach the configuration trimmed as well,
+// or Config's validation refuses it as an invalid MathFormat.
 func TestMathFormatIsPublishedAsChecked(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
