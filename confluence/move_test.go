@@ -268,7 +268,7 @@ func TestReparentOnDataCenterKeepsTheVersionMessage(t *testing.T) {
 			ID: moved.ID, Title: "Release Notes", Type: "page",
 			Version: confluence.PageVersion{Number: server.Page(moved.ID).Version},
 		},
-		"<p>the notes</p>", false, published, "full-width", "",
+		"<p>the notes</p>", confluence.UpdateOptions{VersionMessage: published, Appearance: "full-width"},
 	))
 	require.Equal(t, published, server.Page(moved.ID).Message)
 

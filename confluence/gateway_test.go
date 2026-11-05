@@ -116,7 +116,7 @@ func TestGatewayCreateAndUpdatePage(t *testing.T) {
 	assert.Equal(t, parent.ID, stored.ParentID)
 	assert.Equal(t, "<p>one</p>", stored.Body)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", confluence.UpdateOptions{VersionMessage: "second", Appearance: "full-width", Emoji: "🚀"}))
 	assert.Equal(t, int64(2), page.Version.Number)
 
 	stored = server.Page(page.ID)
@@ -133,7 +133,7 @@ func TestGatewayCreateAndUpdatePage(t *testing.T) {
 	assert.JSONEq(t, `"1f680"`, string(emoji.Value))
 
 	// A second update supersedes the properties rather than colliding with them.
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>three</p>", false, "third", "fixed-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>three</p>", confluence.UpdateOptions{VersionMessage: "third", Appearance: "fixed-width"}))
 	appearance = server.SpaceProperty(page.ID, "content-appearance-published")
 	require.NotNil(t, appearance)
 	assert.JSONEq(t, `"fixed-width"`, string(appearance.Value))
@@ -235,7 +235,7 @@ func TestGatewayUpdateBlogpost(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", confluence.UpdateOptions{VersionMessage: "second", Appearance: "full-width", Emoji: "🚀"}))
 	assert.Equal(t, int64(2), page.Version.Number)
 
 	stored := server.Page(post.ID)
@@ -275,7 +275,7 @@ func TestGatewayUpdateBumpsTheVersionBeforeProperties(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.Error(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "full-width", ""))
+	require.Error(t, api.UpdatePage(context.Background(), page, "<p>two</p>", confluence.UpdateOptions{VersionMessage: "second", Appearance: "full-width"}))
 	assert.Equal(t, int64(2), page.Version.Number)
 
 	cached, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
@@ -430,7 +430,7 @@ func TestGatewayUpdateFinishesItsPropertiesWhenTheRunStops(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(ctx, page, "<p>two</p>", false, "second", "full-width", ""))
+	require.NoError(t, api.UpdatePage(ctx, page, "<p>two</p>", confluence.UpdateOptions{VersionMessage: "second", Appearance: "full-width"}))
 	assert.Equal(t, int64(2), page.Version.Number)
 	assert.Positive(t, server.CountRequests(http.MethodPost, "/properties"), "the properties were written")
 }
@@ -445,7 +445,7 @@ func TestGatewayUpdateWithoutPropertiesReadsNone(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "second", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", confluence.UpdateOptions{VersionMessage: "second"}))
 	assert.Equal(t, 0, server.CountRequests(http.MethodGet, "/properties"))
 }
 

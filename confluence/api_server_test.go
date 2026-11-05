@@ -174,7 +174,7 @@ func TestUpdatePageIncrementsVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.Version.Number)
 
-	err = api.UpdatePage(context.Background(), page, "<p>new</p>", false, "msg", "", "")
+	err = api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{VersionMessage: "msg"})
 	require.NoError(t, err)
 
 	after := server.Page(stored.ID)
@@ -195,7 +195,7 @@ func TestUpdatePageWritesBothAppearanceProperties(t *testing.T) {
 	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", false, "", "max", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{Appearance: "max"}))
 
 	for _, key := range []string{"content-appearance-published", "content-appearance-draft"} {
 		prop := server.ContentProperty(stored.ID, key)
@@ -216,7 +216,7 @@ func TestUpdatePageWithoutAppearanceLeavesThePropertiesAlone(t *testing.T) {
 	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{}))
 
 	for _, key := range []string{"content-appearance-published", "content-appearance-draft"} {
 		prop := server.ContentProperty(stored.ID, key)
@@ -235,10 +235,10 @@ func TestUpdatePageKeepsVersionInSync(t *testing.T) {
 	page, err := api.FindPage(context.Background(), "DOCS", "Target", "page")
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>first</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>first</p>", confluence.UpdateOptions{}))
 	assert.EqualValues(t, 2, page.Version.Number)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>second</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>second</p>", confluence.UpdateOptions{}))
 	assert.EqualValues(t, 3, page.Version.Number)
 
 	assert.EqualValues(t, 3, server.Page(stored.ID).Version)

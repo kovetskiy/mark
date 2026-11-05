@@ -86,7 +86,7 @@ func TestUpdatePageIsCutShortWhenItStallsAfterTheRunStops(t *testing.T) {
 	})
 
 	started := time.Now()
-	err = api.UpdatePage(ctx, page, "<p>two</p>", false, "", "", "")
+	err = api.UpdatePage(ctx, page, "<p>two</p>", UpdateOptions{})
 
 	require.ErrorIs(t, err, errGraceExpired)
 	assert.Less(t, time.Since(started), 5*time.Second)

@@ -35,7 +35,7 @@ func TestUpdateOmitsAncestorsWhenThereAreNone(t *testing.T) {
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
 	page := &confluence.PageInfo{ID: "1001", Title: "Orphan", Type: "page"}
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p/>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p/>", confluence.UpdateOptions{Appearance: "full-width"}))
 
 	var payload map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(body, &payload))
@@ -71,7 +71,7 @@ func TestUpdateKeepsTheAncestorItHas(t *testing.T) {
 		Title string `json:"title"`
 	}{ID: "950", Title: "Parent"})
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p/>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p/>", confluence.UpdateOptions{Appearance: "full-width"}))
 
 	var payload struct {
 		Ancestors []struct {
@@ -95,7 +95,7 @@ func TestUpdateDoesNotEvictAFolderParentedPage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, folder.ID, server.Page(page.ID).ParentID)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{Appearance: "full-width"}))
 
 	assert.Equal(t, folder.ID, server.Page(page.ID).ParentID,
 		"an update must not move the page out of its folder")

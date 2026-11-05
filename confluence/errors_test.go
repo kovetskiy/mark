@@ -61,7 +61,7 @@ func TestNonJSONSuccessIsExplainedOnEveryVerb(t *testing.T) {
 	assert.Contains(t, err.Error(), "New Page")
 
 	page := &confluence.PageInfo{ID: "1004", Title: "Existing", Type: "page"}
-	err = api.UpdatePage(context.Background(), page, "<p/>", false, "", "full-width", "")
+	err = api.UpdatePage(context.Background(), page, "<p/>", confluence.UpdateOptions{Appearance: "full-width"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "update page")
 	assert.Contains(t, err.Error(), "Existing")

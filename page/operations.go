@@ -241,7 +241,10 @@ func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, dry
 	}
 
 	target.Title = title
-	err = api.UpdatePage(ctx, target, target.Body.Storage.Value, true, fmt.Sprintf("renamed from %q", oldTitle), "", "")
+	err = api.UpdatePage(ctx, target, target.Body.Storage.Value, confluence.UpdateOptions{
+		MinorEdit:      true,
+		VersionMessage: fmt.Sprintf("renamed from %q", oldTitle),
+	})
 	if err != nil {
 		return fmt.Errorf("unable to rename %s: %w", old, err)
 	}

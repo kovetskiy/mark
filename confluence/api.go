@@ -1392,7 +1392,21 @@ func (api *API) createPageV1(ctx context.Context, space, pageType string, parent
 	return &page, nil
 }
 
-func (api *API) UpdatePage(ctx context.Context, page *PageInfo, newContent string, minorEdit bool, versionMessage string, appearance string, emojiString string) error {
+// UpdateOptions are the settings of a page update besides its content.
+type UpdateOptions struct {
+	// MinorEdit keeps Confluence from notifying the page's watchers.
+	MinorEdit bool
+	// VersionMessage is the message of the new version.
+	VersionMessage string
+	// Appearance is the page width, such as "full-width"; empty leaves it as
+	// it is.
+	Appearance string
+	// Emoji is the title emoji, a single character; empty leaves it as it is.
+	Emoji string
+}
+
+// UpdatePage writes content to page as its next version.
+func (api *API) UpdatePage(ctx context.Context, page *PageInfo, content string, opts UpdateOptions) error {
 	nextPageVersion := page.Version.Number + 1
 
 	properties := map[string]any{}
@@ -1400,12 +1414,12 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, newContent strin
 	// A page edited by id with no metadata in the file has no appearance to
 	// carry, and an empty value here would reset the width of a page nobody
 	// asked to restyle.
-	if appearance != "" {
+	if opts.Appearance != "" {
 		// Fix to set full-width as has changed on Confluence APIs again.
 		// https://jira.atlassian.com/browse/CONFCLOUD-65447
 		//
 		properties["content-appearance-published"] = map[string]any{
-			"value": appearance,
+			"value": opts.Appearance,
 		}
 		// The draft key was previously left alone, because the user's editor
 		// defaults drove it and writing it produced sporadic published widths
@@ -1414,14 +1428,14 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, newContent strin
 		// draft: the width reverts as soon as anyone opens the page. The
 		// Confluence editor itself writes both keys with the same value.
 		properties["content-appearance-draft"] = map[string]any{
-			"value": appearance,
+			"value": opts.Appearance,
 		}
 	}
 
-	if emojiString != "" {
-		r, size := utf8.DecodeRuneInString(emojiString)
+	if opts.Emoji != "" {
+		r, size := utf8.DecodeRuneInString(opts.Emoji)
 		if r == utf8.RuneError && size <= 1 {
-			return fmt.Errorf("invalid UTF-8 in emoji: %q", emojiString)
+			return fmt.Errorf("invalid UTF-8 in emoji: %q", opts.Emoji)
 		}
 		unicodeHex := fmt.Sprintf("%x", r)
 
@@ -1435,9 +1449,9 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, newContent strin
 
 	put := func(version int64) error {
 		if api.gateway {
-			return api.updatePageV2(ctx, page, newContent, minorEdit, versionMessage, version)
+			return api.updatePageV2(ctx, page, content, opts.MinorEdit, opts.VersionMessage, version)
 		}
-		return api.updatePageV1(ctx, page, newContent, minorEdit, versionMessage, version, properties)
+		return api.updatePageV1(ctx, page, content, opts.MinorEdit, opts.VersionMessage, version, properties)
 	}
 
 	api.watchBeforeWrite(ctx, page.ID)

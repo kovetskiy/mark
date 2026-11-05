@@ -2018,10 +2018,12 @@ func (r *publishRun) writePage(ctx context.Context, doc *document, target *confl
 		ctx,
 		target,
 		html,
-		r.config.Update.MinorEdit,
-		versionMessage,
-		contentAppearance,
-		emoji,
+		confluence.UpdateOptions{
+			MinorEdit:      r.config.Update.MinorEdit,
+			VersionMessage: versionMessage,
+			Appearance:     contentAppearance,
+			Emoji:          emoji,
+		},
 	); err != nil {
 		return fmt.Errorf("unable to update page: %w", err)
 	}
