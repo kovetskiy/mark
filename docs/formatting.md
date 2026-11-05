@@ -121,15 +121,18 @@ the other name.
 A blockquote at the top level of the document is published as one of
 Confluence's info, tip, note or warning boxes when its first line opens with a
 marker: a [GitHub alert](#github-alerts-support) or a
-[colon marker](#colon-markers). With the `mkdocsadmonitions` feature,
-[MkDocs admonitions](#mkdocs-admonitions) are published the same way. Any other
-blockquote, and a quote nested in another, stays an HTML `<blockquote>`.
+[colon marker](#colon-markers). Any other blockquote, and a quote nested in
+another, stays an HTML `<blockquote>`. With the `mkdocsadmonitions` feature,
+[MkDocs admonitions](#mkdocs-admonitions) are published as boxes too, nested or
+not.
 
 ### Admonition Words
 
 Each word is published as one box whichever syntax names it, in the colour
-GitHub and MkDocs Material give it. Confluence's note box is the yellow one, so
-the word "note" is the blue info box and "warning" is Confluence's note.
+GitHub gives it, and for a word GitHub does not have, the colour MkDocs Material
+gives it. MkDocs Material shows `important` green and `caution` orange; mark
+follows GitHub for those two. Confluence's note box is the yellow one, so the
+word "note" is the blue info box and "warning" is Confluence's note.
 
 | Word | Colon marker | GitHub alert | MkDocs | Confluence |
 | --- | --- | --- | --- | --- |

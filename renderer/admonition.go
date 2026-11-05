@@ -36,9 +36,10 @@ func (t AdmonitionType) String() string {
 	return admonitionMacros[t]
 }
 
-// admonitionTypes maps every admonition word to its macro, in the colours
-// GitHub and MkDocs Material give the word: blue for information, green for
-// advice, yellow for a warning, red for danger. Confluence's note macro is the
+// admonitionTypes maps every admonition word to its macro, in the colour
+// GitHub gives the word, or MkDocs Material for a word GitHub does not have:
+// blue for information, green for advice, yellow for a warning, red for
+// danger. Confluence's note macro is the
 // yellow one, so "note" is info and "warning" is note.
 //
 // Each syntax reads its own vocabulary from it: the colon syntax every word
