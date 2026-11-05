@@ -193,8 +193,8 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 	}
 	// A render that has already ended neither starts a browser nor discards
 	// one.
-	if err := ctx.Err(); err != nil {
-		return nil, 0, 0, err
+	if ctx.Err() != nil {
+		return nil, 0, 0, context.Cause(ctx)
 	}
 
 	b.render.Lock()
@@ -229,7 +229,7 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 		// A browser that failed a run is not trusted for the next one: the
 		// usual cause is that it died, and every later render would fail the
 		// same way until something restarted it.
-		return nil, 0, 0, b.failed(browserCtx, err)
+		return nil, 0, 0, b.failed(browserCtx, stoppedBy(ctx, err))
 	}
 
 	// Not a browser fault, so the browser is kept: the next diagram in the
@@ -240,10 +240,22 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 
 	result, err := chromedp.Run(runCtx, chromedp.ScreenshotScale(chromedp.JSPath(selector), scale))
 	if err != nil {
-		return nil, 0, 0, b.failed(browserCtx, err)
+		return nil, 0, 0, b.failed(browserCtx, stoppedBy(ctx, err))
 	}
 
 	return result, model.Width, model.Height, nil
+}
+
+// stoppedBy is a render's err, or the caller's reason when ctx is what ended
+// the render. The run's context is derived from the browser's and only
+// cancelled when ctx ends, so chromedp sees a caller's deadline as a bare
+// Canceled.
+func stoppedBy(ctx context.Context, err error) error {
+	if ctx.Err() == nil {
+		return err
+	}
+
+	return fmt.Errorf("render stopped: %w", context.Cause(ctx))
 }
 
 // ErrRasterRefused matches, through errors.Is, every capture CheckRasterBounds

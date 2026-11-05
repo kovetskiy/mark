@@ -2,10 +2,12 @@ package chrome
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -255,4 +257,25 @@ func TestConcurrentRendersEachGetTheirOwnPicture(t *testing.T) {
 		require.NoError(t, errs[i])
 		assert.Equal(t, int64(20+10*i), widths[i], "render %d", i)
 	}
+}
+
+// TestStoppedByReportsTheCallersReason: the render's own context is cancelled
+// when the caller's ends, so chromedp answers a caller's deadline with
+// Canceled. What comes back is the caller's reason.
+func TestStoppedByReportsTheCallersReason(t *testing.T) {
+	expired, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	err := stoppedBy(expired, fmt.Errorf("navigate: %w", context.Canceled))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.NotErrorIs(t, err, context.Canceled)
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, stoppedBy(cancelled, errors.New("navigate failed")), context.Canceled)
+
+	// A render that failed while the caller still waited keeps its own error,
+	// the renderer's timeout among them.
+	timedOut := fmt.Errorf("navigate: %w", context.DeadlineExceeded)
+	require.Equal(t, timedOut, stoppedBy(t.Context(), timedOut))
 }
