@@ -99,7 +99,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 			server.EditPage(stored.ID, "<p>by hand, twice</p>")
 			server.ResetRequests()
 
-			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "sync", "full-width", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{VersionMessage: "sync", Appearance: "full-width"}))
 
 			after := server.Page(stored.ID)
 			assert.Equal(t, "<p>from mark</p>", after.Body)
@@ -116,7 +116,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 
 			// And the next update goes straight through.
 			server.ResetRequests()
-			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>again</p>", false, "", "full-width", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>again</p>", UpdateOptions{Appearance: "full-width"}))
 			assert.Equal(t, 1, countContentPuts(server, stored.ID))
 		})
 	}
@@ -142,7 +142,7 @@ func TestUpdatePageRetryCarriesPropertiesV1(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{Appearance: "full-width", Emoji: "🚀"}))
 	require.Len(t, bodies, 2)
 
 	var retried struct {
@@ -172,7 +172,7 @@ func TestUpdatePageRetryWritesPropertiesV2(t *testing.T) {
 	require.NoError(t, err)
 	server.EditPage(stored.ID, "<p>by hand</p>")
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "🚀"))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{Appearance: "full-width", Emoji: "🚀"}))
 
 	appearance := server.SpaceProperty(stored.ID, "content-appearance-published")
 	require.NotNil(t, appearance)
@@ -205,7 +205,7 @@ func TestUpdatePageRetriesATransientConflict(t *testing.T) {
 				return 0, "", false
 			})
 
-			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "full-width", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", UpdateOptions{Appearance: "full-width"}))
 			assert.Equal(t, "<p>body</p>", server.Page(page.ID).Body)
 			assert.EqualValues(t, 2, server.Page(page.ID).Version)
 			assert.EqualValues(t, 2, page.Version.Number)
@@ -233,7 +233,7 @@ func TestUpdatePagePersistentConflictFails(t *testing.T) {
 				return 0, "", false
 			})
 
-			err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "")
+			err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{Appearance: "full-width"})
 			require.Error(t, err)
 			assert.True(t, errors.Is(err, ErrConflict))
 			assert.Contains(t, err.Error(), `page "Busy"`)
@@ -257,7 +257,7 @@ func TestUpdatePageKeepConcurrentEditsRefusesToOverwrite(t *testing.T) {
 	require.NoError(t, err)
 	server.EditPage(stored.ID, "<p>by hand</p>")
 
-	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "full-width", "")
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{Appearance: "full-width"})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrConflict))
 	assert.Contains(t, err.Error(), "edited in Confluence while mark was publishing it")

@@ -95,7 +95,7 @@ func TestUnwatchAfterWrites(t *testing.T) {
 
 			created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "")
 			require.NoError(t, err)
-			require.NoError(t, api.UpdatePage(context.Background(), created, "<p>body</p>", false, "", "", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), created, "<p>body</p>", confluence.UpdateOptions{}))
 			for _, name := range []string{"a.png", "b.png"} {
 				_, err = api.CreateAttachment(context.Background(), created.ID, name, "c", strings.NewReader("png"))
 				require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestUnwatchAfterWrites(t *testing.T) {
 			existing := server.AddPage("DOCS", "Existing", "page", "")
 			page, err := api.GetPageByID(context.Background(), existing.ID)
 			require.NoError(t, err)
-			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 
 			assert.NotEmpty(t, server.Watchers(created.ID), "nothing is unwatched before the writes are done")
 
@@ -131,10 +131,10 @@ func TestUnwatchLeavesAWatchedPageWatched(t *testing.T) {
 
 	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>one</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>one</p>", confluence.UpdateOptions{}))
 	_, err = api.CreateAttachment(context.Background(), stored.ID, "a.png", "c", strings.NewReader("png"))
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", confluence.UpdateOptions{}))
 	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(stored.ID))
@@ -150,7 +150,7 @@ func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
 
 	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "")
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(context.Background(), created, "<p>body</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), created, "<p>body</p>", confluence.UpdateOptions{}))
 	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, []string{"acct-current"}, server.Watchers(created.ID))
@@ -181,7 +181,7 @@ func TestUnwatchWarnsOnceWhenWatchingIsRefused(t *testing.T) {
 	existing := server.AddPage("DOCS", "Existing", "page", "")
 	page, err := api.GetPageByID(context.Background(), existing.ID)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 	api.UnwatchWritten(t.Context())
 
 	assert.Equal(t, 2, strings.Count(buffer.String(), `"level":"warn"`), buffer.String())
@@ -198,7 +198,7 @@ func TestUnwatchStopsWhenTheRunIsInterrupted(t *testing.T) {
 		stored := server.AddPage("DOCS", title, "page", "")
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 		ids = append(ids, stored.ID)
 	}
 	buffer := captureLog(t)
@@ -247,7 +247,7 @@ func TestUnwatchReportsEveryPageItCouldNotRead(t *testing.T) {
 		stored := server.AddPage("DOCS", title, "page", "")
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 		ids = append(ids, stored.ID)
 	}
 	api.UnwatchWritten(t.Context())
@@ -280,7 +280,7 @@ func TestUnwatchAsksOnceWhenReadingIsRefused(t *testing.T) {
 				stored := server.AddPage("DOCS", title, "page", "")
 				page, err := api.GetPageByID(context.Background(), stored.ID)
 				require.NoError(t, err)
-				require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+				require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 				ids = append(ids, stored.ID)
 			}
 			api.UnwatchWritten(t.Context())
@@ -314,7 +314,7 @@ func TestUnwatchAsksAgainAfterAnotherReadFailure(t *testing.T) {
 		stored := server.AddPage("DOCS", title, "page", "")
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 		ids = append(ids, stored.ID)
 	}
 	api.UnwatchWritten(t.Context())
@@ -342,7 +342,7 @@ func TestUnwatchAfterAMoveByUpdate(t *testing.T) {
 
 	page, err := api.GetPageByID(context.Background(), moved.ID)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{}))
 	api.UnwatchWritten(t.Context())
 
 	assert.Empty(t, server.Watchers(moved.ID))

@@ -54,7 +54,7 @@ func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, page)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", confluence.UpdateOptions{Appearance: "full-width"}))
 
 	assert.Equal(t, "application/json", putContentType,
 		"the GET response's Content-Type must not survive into the update body")

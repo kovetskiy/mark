@@ -62,7 +62,7 @@ func TestUpdatePageTakesAnUpdateAppliedBehindAnHTMLAnswer(t *testing.T) {
 	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>two</p>", UpdateOptions{}))
 	assert.Equal(t, int64(2), page.Version.Number)
 	assert.Equal(t, int64(2), fake.Page(stored.ID).Version)
 }
@@ -79,7 +79,7 @@ func TestUpdatePageRefusesAnHTMLAnswerToAnUpdateNotApplied(t *testing.T) {
 	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
 
-	err = api.UpdatePage(context.Background(), page, "<p>two</p>", false, "", "", "")
+	err = api.UpdatePage(context.Background(), page, "<p>two</p>", UpdateOptions{})
 	require.ErrorIs(t, err, ErrLoginPage)
 	assert.Equal(t, int64(1), page.Version.Number)
 	assert.Equal(t, int64(1), fake.Page(stored.ID).Version)

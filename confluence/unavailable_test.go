@@ -168,7 +168,7 @@ func TestUpdatePageThatLandedIsNotSentAgain(t *testing.T) {
 			require.NoError(t, err)
 			server.ResetRequests()
 
-			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
+			require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{}))
 
 			assert.Equal(t, 1, countContentPuts(server, id))
 			assert.EqualValues(t, 2, server.Page(id).Version,
@@ -186,7 +186,7 @@ func TestUpdatePageThatDidNotLandIsSentAgain(t *testing.T) {
 	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{}))
 	assert.Equal(t, 2, countContentPuts(server, id))
 	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
 	assert.EqualValues(t, 2, server.Page(id).Version)
@@ -211,7 +211,7 @@ func TestUpdatePageUnavailableThenEditedIsAConflict(t *testing.T) {
 		return 0, "", false
 	})
 
-	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", "")
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{})
 	require.ErrorIs(t, err, ErrConflict)
 	assert.Contains(t, err.Error(), "--no-overwrite")
 	assert.Equal(t, "<p>by hand, twice</p>", server.Page(id).Body)
@@ -336,7 +336,7 @@ func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
 	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{}))
 	assert.EqualValues(t, 2, server.Page(id).Version, "no version on top of the one that landed")
 	assert.EqualValues(t, 2, page.Version.Number)
 }
@@ -379,7 +379,7 @@ func TestUpdatePageUnavailableThenEditedOnceIsAConflict(t *testing.T) {
 		return 0, "", false
 	})
 
-	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", "")
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{})
 	require.ErrorIs(t, err, ErrConflict)
 	assert.Contains(t, err.Error(), "--no-overwrite")
 	assert.Equal(t, "<p>by hand</p>", server.Page(id).Body)
@@ -433,7 +433,7 @@ func TestUnavailableWriteWaitsForRetryAfter(t *testing.T) {
 
 	page, err := api.GetPageByID(context.Background(), id)
 	require.NoError(t, err)
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{}))
 	assert.Equal(t, []string{"7"}, waited)
 }
 
@@ -454,7 +454,7 @@ func TestUpdatePageUnavailableThenEditedOnceIsAConflictThroughTheGateway(t *test
 		return 0, "", false
 	})
 
-	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", "")
+	err = api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{})
 	require.ErrorIs(t, err, ErrConflict)
 	assert.Equal(t, "<p>by hand</p>", server.Page(id).Body)
 }
@@ -475,7 +475,7 @@ func TestUpdatePageWhoseAuthorCannotBeReadIsWrittenAgain(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{}))
 	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
 	assert.EqualValues(t, 3, server.Page(id).Version)
 }
@@ -499,7 +499,7 @@ func TestUpdatePageRetriedAfterAConflictThatLandedIsKept(t *testing.T) {
 		return 0, "", false
 	})
 
-	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", false, "", "", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>from mark</p>", UpdateOptions{}))
 	assert.Equal(t, "<p>from mark</p>", server.Page(id).Body)
 	assert.EqualValues(t, 3, server.Page(id).Version)
 	assert.EqualValues(t, 3, page.Version.Number)
@@ -548,7 +548,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", UpdateOptions{}))
 		api.UnwatchWritten(t.Context())
 
 		assert.Empty(t, server.Watchers(stored.ID))
@@ -563,7 +563,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", UpdateOptions{}))
 		api.UnwatchWritten(t.Context())
 
 		assert.Empty(t, server.Watchers(stored.ID))
@@ -587,7 +587,7 @@ func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
 		stored := server.AddPage("DOCS", title, "page", "")
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", UpdateOptions{}))
 		ids = append(ids, stored.ID)
 	}
 
@@ -623,7 +623,7 @@ func TestUnwatchWrittenStopsWaitingWhenInterrupted(t *testing.T) {
 		stored := server.AddPage("DOCS", title, "page", "")
 		page, err := api.GetPageByID(context.Background(), stored.ID)
 		require.NoError(t, err)
-		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", false, "", "", ""))
+		require.NoError(t, api.UpdatePage(context.Background(), page, "<p>body</p>", UpdateOptions{}))
 		ids = append(ids, stored.ID)
 	}
 

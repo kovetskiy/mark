@@ -42,7 +42,7 @@ func TestARequestCarriesTheContextItIsGiven(t *testing.T) {
 		"UpdatePage": func(ctx context.Context) error {
 			page, err := api.GetPageByID(context.Background(), stored.ID)
 			require.NoError(t, err)
-			return api.UpdatePage(ctx, page, "<p>new</p>", false, "", "", "")
+			return api.UpdatePage(ctx, page, "<p>new</p>", UpdateOptions{})
 		},
 		"GetChildPages": func(ctx context.Context) error {
 			_, err := api.GetChildPages(ctx, stored.ID)

@@ -71,7 +71,7 @@ func TestUpdateAfterMoveOnDataCenterIsNotAConflict(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, page.EnsurePageUnderParent(ctx, api, pg, want.ID))
 
-	require.NoError(t, api.UpdatePage(context.Background(), pg, "<p>published</p>", false, "", "full-width", ""))
+	require.NoError(t, api.UpdatePage(context.Background(), pg, "<p>published</p>", confluence.UpdateOptions{Appearance: "full-width"}))
 
 	after := server.Page(stored.ID)
 	assert.Equal(t, "<p>published</p>", after.Body)
