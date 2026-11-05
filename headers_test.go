@@ -70,17 +70,17 @@ Body text.
 
 	var output bytes.Buffer
 	require.NoError(t, Run(context.Background(), Config{
-		Files: file,
-		Mode: ModeConfig{
-			CompileOnly: true,
-		},
-		Rendering: RenderingConfig{
-			Features:   []string{"mention"},
-			PageHeader: writeFile(t, dir, "header.md", "**Generated** from {{ .Space }}\n"),
-		},
-		Report: ReportConfig{
+		PublishConfig: PublishConfig{
+			Mode: ModeConfig{
+				CompileOnly: true,
+			},
+			Rendering: RenderingConfig{
+				Features:   []string{"mention"},
+				PageHeader: writeFile(t, dir, "header.md", "**Generated** from {{ .Space }}\n"),
+			},
 			Output: &output,
 		},
+		Files: file,
 	}))
 
 	assert.Contains(t, output.String(), "<p><strong>Generated</strong> from DOCS</p>")
@@ -120,7 +120,7 @@ func TestPageHeaderNamesThePageInPageIDDryRun(t *testing.T) {
 	config.Page.PageID = existing.ID
 	config.Page.Space = "DOCS"
 	config.Mode.DryRun = true
-	config.Report.Output = &output
+	config.Output = &output
 	config.Rendering.PageHeader = writeFile(t, dir, "header.html", `<p>{{ .Title | xmlesc }} in {{ .Space | xmlesc }}</p>`)
 
 	require.NoError(t, Run(context.Background(), config))
@@ -225,7 +225,7 @@ func TestPageHeaderAttachmentClashFailsADryRun(t *testing.T) {
 				config := publishConfig(server.URL, file)
 				config.Mode.DryRun = mode == "dry-run"
 				config.Mode.CompileOnly = mode == "compile-only"
-				config.Report.Output = &bytes.Buffer{}
+				config.Output = &bytes.Buffer{}
 				config.Rendering.PageHeader = writeFile(t, headerDir, "header.md", header)
 
 				err := Run(context.Background(), config)
@@ -250,17 +250,17 @@ func propertiesFixture(t *testing.T, doc string, config func(*Config)) (*conflue
 	writeFile(t, dir, "doc.md", doc)
 
 	cfg := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	if config != nil {
@@ -384,14 +384,14 @@ func TestPropertyHeaderMustBeKeyValue(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n<!-- Property: nonsense -->\n\nBody.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -405,17 +405,17 @@ func TestGlobalPropertiesFileMustParse(t *testing.T) {
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Update: UpdateConfig{
+				GlobalProperties: path,
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  "http://127.0.0.1:1",
 			Username: "user",
 			Password: "token",
-		},
-		Update: UpdateConfig{
-			GlobalProperties: path,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -534,17 +534,17 @@ func TestSynchronizedFalseHeaderSkipsTheFile(t *testing.T) {
 			"<!-- Synchronized: false -->\n\nNot ready.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -563,17 +563,17 @@ func TestSynchronizedFalseFrontMatterSkipsTheFile(t *testing.T) {
 		"---\ntitle: Draft\nspace: DOCS\nparents:\n  - Parent\nsynchronized: false\n---\n\nNot ready.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention", "frontmatter"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention", "frontmatter"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -599,17 +599,17 @@ func TestSynchronizedTrueAndAbsentBothPublish(t *testing.T) {
 					header+"\nBody.\n")
 
 			require.NoError(t, Run(context.Background(), Config{
+				PublishConfig: PublishConfig{
+					Rendering: RenderingConfig{
+						Features: []string{"mention"},
+					},
+					Output: io.Discard,
+				},
 				Files: filepath.Join(dir, "*.md"),
 				Connection: ConnectionConfig{
 					BaseURL:  server.URL,
 					Username: "user",
 					Password: "token",
-				},
-				Rendering: RenderingConfig{
-					Features: []string{"mention"},
-				},
-				Report: ReportConfig{
-					Output: io.Discard,
 				},
 			}))
 
@@ -640,20 +640,20 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Other -->\n\nBody.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -685,14 +685,14 @@ func TestSynchronizedRejectsANonBoolean(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n<!-- Synchronized: maybe -->\n\nBody.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -859,17 +859,17 @@ func TestOrderHeaderArrangesSiblings(t *testing.T) {
 	writeFile(t, dir, "c.md", orderedDoc("Second", 20))
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -887,17 +887,17 @@ func TestOrderIsIdempotent(t *testing.T) {
 	writeFile(t, dir, "b.md", orderedDoc("First", 10))
 	writeFile(t, dir, "c.md", orderedDoc("Second", 20))
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -930,17 +930,17 @@ func TestOrderMovesOnlyWhatMustMove(t *testing.T) {
 		writeFile(t, dir, fmt.Sprintf("%d.md", i), orderedDoc(title, (i+1)*10))
 	}
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -967,17 +967,17 @@ func TestOrderLeavesUnorderedPagesAlone(t *testing.T) {
 	writeFile(t, dir, "b.md", orderedDoc("First", 10))
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -1004,17 +1004,17 @@ func TestOrderIsNotAppliedOnDryRun(t *testing.T) {
 	writeFile(t, dir, "a.md", orderedDoc("Third", 30))
 	writeFile(t, dir, "b.md", orderedDoc("First", 10))
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))

@@ -40,20 +40,20 @@ Some content.
 // trackingConfig is a publish configured to remember page identity.
 func trackingConfig(server *confluencetest.Server, files string) Config {
 	return Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: files,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 }
@@ -163,7 +163,7 @@ func previewOf(t *testing.T, config Config, format string) string {
 	var out bytes.Buffer
 	config.Mode.DryRun = true
 	config.Report.OutputFormat = format
-	config.Report.Output = &out
+	config.Output = &out
 	require.NoError(t, Run(context.Background(), config))
 	return out.String()
 }
@@ -193,23 +193,21 @@ func noOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nFrom mark.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
-			TrackPages: true,
-		},
-		Update: UpdateConfig{
+			TrackPages:  true,
 			NoOverwrite: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 
@@ -230,7 +228,7 @@ func runReported(t *testing.T, config Config) report.Page {
 
 	var out bytes.Buffer
 	config.Report.OutputFormat = report.FormatJSON
-	config.Report.Output = &out
+	config.Output = &out
 
 	require.NoError(t, Run(context.Background(), config))
 
@@ -245,17 +243,17 @@ func runReported(t *testing.T, config Config) report.Page {
 // reaches Confluence rather than about what mark remembers.
 func publishConfig(url, files string) Config {
 	return Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: files,
 		Connection: ConnectionConfig{
 			BaseURL:  url,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 }
@@ -271,4 +269,15 @@ func bodyOfPageTitled(t *testing.T, server *confluencetest.Server, title string)
 		return ""
 	}
 	return server.Page(found.ID).Body
+}
+
+// publishOne publishes one file with a Publisher made for it alone.
+func publishOne(ctx context.Context, file string, api *confluence.API, config PublishConfig) (*confluence.PageInfo, error) {
+	publisher, err := NewPublisher(ctx, api, config)
+	if err != nil {
+		return nil, err
+	}
+	defer publisher.Close()
+
+	return publisher.Publish(ctx, file)
 }

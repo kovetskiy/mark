@@ -24,11 +24,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestProcessFileFetchesAttachmentsOnce pins the fix for the duplicate
-// GetAttachments. ProcessFile resolves attachments twice per page -- declared
+// TestPublisherFetchesAttachmentsOnce pins the fix for the duplicate
+// GetAttachments. A Publisher resolves attachments twice per page -- declared
 // attachments, then diagrams found while rendering -- and each pass used to
 // issue its own paginated fetch of the same remote list.
-func TestProcessFileFetchesAttachmentsOnce(t *testing.T) {
+func TestPublisherFetchesAttachmentsOnce(t *testing.T) {
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
@@ -60,23 +60,23 @@ func TestProcessFileFetchesAttachmentsOnce(t *testing.T) {
 `)
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
 	}
 
 	server.ResetRequests()
 
-	target, err := ProcessFile(context.Background(), file, api, config)
+	target, err := publishOne(context.Background(), file, api, config.PublishConfig)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 
@@ -88,10 +88,10 @@ func TestProcessFileFetchesAttachmentsOnce(t *testing.T) {
 	assert.Equal(t, "logo.png", stored[0].Filename)
 }
 
-// TestProcessFileCreatesAndUpdatesPage is a smoke test for the whole
+// TestPublisherCreatesAndUpdatesPage is a smoke test for the whole
 // orchestration path, which had no coverage at all: metadata, ancestry, page
 // creation, body upload and labels in one run.
-func TestProcessFileCreatesAndUpdatesPage(t *testing.T) {
+func TestPublisherCreatesAndUpdatesPage(t *testing.T) {
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
@@ -113,21 +113,21 @@ Some **content**.
 `)
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
 	}
 
-	target, err := ProcessFile(context.Background(), file, api, config)
+	target, err := publishOne(context.Background(), file, api, config.PublishConfig)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 
@@ -143,7 +143,7 @@ Some **content**.
 	assert.Equal(t, parent.ID, stored.ParentID)
 }
 
-func TestProcessFileAppliesFrontMatterRestrictions(t *testing.T) {
+func TestPublisherAppliesFrontMatterRestrictions(t *testing.T) {
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	home := server.AddPage("DOCS", "Home", "page", "")
@@ -162,19 +162,11 @@ restrictions:
 # Restricted
 `)
 
-	target, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
+	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
 			Features: []string{"frontmatter"},
 		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, server.CountRequests("PUT", "/restriction"))
@@ -212,17 +204,17 @@ func TestRootLevelPageIsAdoptedRatherThanRefused(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Standalone -->\n\nAdopted body.\n")
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}), "a page at the space root must be publishable")
 
@@ -249,17 +241,17 @@ func TestHomepageItselfIsStillPublishable(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "home.md", "<!-- Space: DOCS -->\n<!-- Title: Team Home -->\n\nWelcome!\n")
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -297,17 +289,17 @@ Published body.
 Also published.
 `)
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -353,17 +345,17 @@ Body.
 <!-- ac:ignore end -->
 `)
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -403,17 +395,17 @@ Top.
 <!-- Include: part.md -->
 `)
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -427,9 +419,9 @@ Top.
 	assert.NotContains(t, body, "ac:ignore")
 }
 
-// processFileFixture is one publishable document and the server it goes to,
-// for comparing what ProcessFile and Run make of the same settings.
-func processFileFixture(t *testing.T, body string) (*confluencetest.Server, *confluence.API, string, Config) {
+// publisherFixture is one publishable document and the server it goes to,
+// for comparing what a Publisher and Run make of the same settings.
+func publisherFixture(t *testing.T, body string) (*confluencetest.Server, *confluence.API, string, Config) {
 	t.Helper()
 
 	server := confluencetest.New(t)
@@ -440,28 +432,27 @@ func processFileFixture(t *testing.T, body string) (*confluencetest.Server, *con
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n"+body)
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
 	}
 
 	return server, confluence.NewAPI(server.URL, "user", "token", false), file, config
 }
 
-// TestProcessFileRefusesWhatRunRefuses: ProcessFile is the library's other way
-// in, and it used to skip every check Run makes of the settings. A MermaidOutput
-// it did not recognise published a PNG without a word, and a bundle asked for
-// alongside one was dropped with it.
-func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
+// TestPublisherRefusesWhatRunRefuses: a Publisher is the library's other way
+// in, and refuses the publish settings Run refuses, in the same words and
+// before Confluence is asked anything.
+func TestPublisherRefusesWhatRunRefuses(t *testing.T) {
 	cases := map[string]func(*Config){
 		"an unknown mermaid engine": func(c *Config) { c.Rendering.MermaidEngine = "graphviz" },
 		"an unknown mermaid output": func(c *Config) { c.Rendering.MermaidOutput = "jpeg" },
@@ -479,7 +470,7 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
-			server, api, file, config := processFileFixture(t, "Body.\n")
+			server, api, _, config := publisherFixture(t, "Body.\n")
 			change(&config)
 
 			runErr := Run(context.Background(), config)
@@ -487,14 +478,9 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 
 			server.ResetRequests()
 
-			publisher, err := NewPublisher(context.Background(), api, config)
+			publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 			require.Error(t, err)
 			assert.Nil(t, publisher)
-			assert.Equal(t, runErr.Error(), err.Error(), "the same setting is refused in the same words")
-
-			target, err := ProcessFile(context.Background(), file, api, config)
-			require.Error(t, err)
-			assert.Nil(t, target)
 			assert.Equal(t, runErr.Error(), err.Error(), "the same setting is refused in the same words")
 			assert.Empty(t, server.Requests(), "refused before Confluence is asked anything")
 		})
@@ -504,7 +490,7 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 // TestRunRefusesAnUnknownEngineBeforeTheGlob: a mermaid engine mark does not
 // know is a setting like any other, said before a glob that matches nothing.
 func TestRunRefusesAnUnknownEngineBeforeTheGlob(t *testing.T) {
-	_, _, file, config := processFileFixture(t, "Body.\n")
+	_, _, file, config := publisherFixture(t, "Body.\n")
 	config.Files = filepath.Join(filepath.Dir(file), "missing-*.md")
 	config.Rendering.MermaidEngine = "graphviz"
 
@@ -512,33 +498,32 @@ func TestRunRefusesAnUnknownEngineBeforeTheGlob(t *testing.T) {
 	require.ErrorContains(t, err, "unknown mermaid engine")
 }
 
-// TestProcessFileUsesTheMermaidEngine: a library caller asking ProcessFile for
+// TestPublisherUsesTheMermaidEngine: a library caller asking a Publisher for
 // merman gets merman, not whichever engine some earlier run chose.
-func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
+func TestPublisherUsesTheMermaidEngine(t *testing.T) {
 	// No merman to be found, so the diagram fails in a way only merman can:
 	// Chrome would have drawn it.
 	t.Setenv("PATH", t.TempDir())
 
-	_, api, file, config := processFileFixture(t, "```mermaid\ngraph TD\n  A --> B\n```\n")
+	_, api, file, config := publisherFixture(t, "```mermaid\ngraph TD\n  A --> B\n```\n")
 	config.Rendering.Features = []string{"mermaid"}
 	config.Rendering.MermaidEngine = mermaid.EngineMerman
 
-	_, err := ProcessFile(context.Background(), file, api, config)
+	_, err := publishOne(context.Background(), file, api, config.PublishConfig)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unable to start the merman render engine")
 }
 
-// TestProcessFileReportsMissingPagesAsRunDoes: the ac: links a run leaves
-// unresolved are counted and introduced, and ProcessFile's were the bare list
-// with nothing in front of it.
-func TestProcessFileReportsMissingPagesAsRunDoes(t *testing.T) {
-	_, api, file, config := processFileFixture(t, "See [it](ac:Nowhere).\n")
+// TestPublisherReportsMissingPagesAsRunDoes: the ac: links a run leaves
+// unresolved are counted and introduced, and so are a Publisher's.
+func TestPublisherReportsMissingPagesAsRunDoes(t *testing.T) {
+	_, api, file, config := publisherFixture(t, "See [it](ac:Nowhere).\n")
 	config.Links.CheckLinks = []string{"confluence"}
 
 	runErr := Run(context.Background(), config)
 	require.Error(t, runErr)
 
-	_, err := ProcessFile(context.Background(), file, api, config)
+	_, err := publishOne(context.Background(), file, api, config.PublishConfig)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "1 link does not resolve:\n  ")
@@ -577,9 +562,9 @@ func TestRunPublishesWhenNotCancelled(t *testing.T) {
 	assert.Equal(t, 1, countPagesTitled(t, server, "Published"))
 }
 
-// TestProcessFileIsCancellable covers the single-file entry point, which
-// a caller loops over itself.
-func TestProcessFileIsCancellable(t *testing.T) {
+// TestPublisherIsCancellable covers the library's entry point, which a
+// caller loops over itself.
+func TestPublisherIsCancellable(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
 
@@ -588,7 +573,7 @@ func TestProcessFileIsCancellable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ProcessFile(ctx, file, api, publishConfig(server.URL, file))
+	_, err := publishOne(ctx, file, api, publishConfig(server.URL, file).PublishConfig)
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 0, countPagesTitled(t, server, "Not Published"))
@@ -684,7 +669,7 @@ func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
 	}()
 
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
-	config.Mode.ContinueOnError = true
+	config.ContinueOnError = true
 
 	err := Run(ctx, config)
 
@@ -734,9 +719,9 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 	var out bytes.Buffer
 	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
 	config.Tracking.TrackPages = true
-	config.Mode.ContinueOnError = true
+	config.ContinueOnError = true
 	config.Report.OutputFormat = report.FormatJSON
-	config.Report.Output = &out
+	config.Output = &out
 
 	err := Run(ctx, config)
 	require.Error(t, err)
@@ -754,9 +739,9 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 	first := findPageTitled(t, server, "First")
 
 	writeFile(t, dir, "a.md", markdownWithTitle("First Renamed"))
-	config.Mode.ContinueOnError = false
+	config.ContinueOnError = false
 	config.Report.OutputFormat = ""
-	config.Report.Output = io.Discard
+	config.Output = io.Discard
 	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, first.ID, findPageTitled(t, server, "First Renamed").ID,
@@ -812,18 +797,18 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 			}
 
 			config := Config{
+				PublishConfig: PublishConfig{
+					Mode: ModeConfig{
+						CompileOnly: true,
+					},
+					Rendering: RenderingConfig{
+						Features: []string{"mention"},
+					},
+					Output: io.Discard,
+				},
 				Files: filepath.Join(dir, "*.md"),
 				Connection: ConnectionConfig{
 					BaseURL: "http://127.0.0.1:1",
-				},
-				Mode: ModeConfig{
-					CompileOnly: true,
-				},
-				Rendering: RenderingConfig{
-					Features: []string{"mention"},
-				},
-				Report: ReportConfig{
-					Output: io.Discard,
 				},
 			}
 
@@ -840,11 +825,11 @@ func BenchmarkRunCompileOnly(b *testing.B) {
 // A Publisher keeps a run's state across files, but each file's links are its
 // own: a link the first file left unresolved is not the second's failure.
 func TestPublisherChecksEachFilesLinks(t *testing.T) {
-	server, api, first, config := processFileFixture(t, "[x](ac:Missing)\n")
+	server, api, first, config := publisherFixture(t, "[x](ac:Missing)\n")
 	config.Links.CheckLinks = []string{"confluence"}
 	second := writeFile(t, filepath.Dir(first), "other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nBody.\n")
 
-	publisher, err := NewPublisher(context.Background(), api, config)
+	publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -861,7 +846,7 @@ func TestPublisherChecksEachFilesLinks(t *testing.T) {
 // A Publisher's templates and page header outlive the context it was made
 // under: a user is looked up under the context Publish was given.
 func TestPublisherLooksUsersUpUnderPublishContext(t *testing.T) {
-	server, api, file, config := processFileFixture(t, "Ask @{Alice Example}.\n")
+	server, api, file, config := publisherFixture(t, "Ask @{Alice Example}.\n")
 	server.AddUser(confluencetest.User{AccountID: "acct-alice", FullName: "Alice Example"})
 	// Named by the document's title, so that the header's checks at load time
 	// do not look it up and leave it cached.
@@ -871,7 +856,7 @@ func TestPublisherLooksUsersUpUnderPublishContext(t *testing.T) {
 
 	setup, cancel := context.WithCancel(context.Background())
 
-	publisher, err := NewPublisher(setup, api, config)
+	publisher, err := NewPublisher(setup, api, config.PublishConfig)
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -888,13 +873,13 @@ func TestPublisherLooksUsersUpUnderPublishContext(t *testing.T) {
 // The merman engine's "experimental" warning is said once a publisher, not
 // once for each time its name is checked.
 func TestPublisherWarnsOfMermanOnce(t *testing.T) {
-	_, api, _, config := processFileFixture(t, "Body.\n")
+	_, api, _, config := publisherFixture(t, "Body.\n")
 	config.Rendering.MermaidEngine = mermaid.EngineMerman
 
 	var err error
 	logged := captureLog(t, func() {
 		var publisher *Publisher
-		publisher, err = NewPublisher(context.Background(), api, config)
+		publisher, err = NewPublisher(context.Background(), api, config.PublishConfig)
 		publisher.Close()
 	})
 
@@ -913,7 +898,7 @@ func TestNilPublisherCloses(t *testing.T) {
 // A Publisher NewPublisher did not make, nil or zero, refuses to publish
 // rather than panicking, and closing it is harmless.
 func TestUnmadePublisherRefuses(t *testing.T) {
-	_, _, file, _ := processFileFixture(t, "Body.\n")
+	_, _, file, _ := publisherFixture(t, "Body.\n")
 
 	for name, publisher := range map[string]*Publisher{"nil": nil, "zero": {}} {
 		t.Run(name, func(t *testing.T) {
@@ -927,9 +912,9 @@ func TestUnmadePublisherRefuses(t *testing.T) {
 
 // A closed Publisher refuses a file before Confluence is asked anything.
 func TestClosedPublisherRefuses(t *testing.T) {
-	server, api, file, config := processFileFixture(t, "Body.\n")
+	server, api, file, config := publisherFixture(t, "Body.\n")
 
-	publisher, err := NewPublisher(context.Background(), api, config)
+	publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 	require.NoError(t, err)
 	publisher.Close()
 	publisher.Close()
@@ -944,7 +929,7 @@ func TestClosedPublisherRefuses(t *testing.T) {
 
 // TestPublisherKeepsFoldersAcrossFiles: a Publisher remembers the folders it
 // resolved, so a second file in the same folder does not look it up again,
-// where ProcessFile, starting afresh each time, does.
+// where a Publisher made afresh for each file does.
 func TestPublisherKeepsFoldersAcrossFiles(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
@@ -953,7 +938,7 @@ func TestPublisherKeepsFoldersAcrossFiles(t *testing.T) {
 	third := writeFile(t, dir, "c.md", markdownInFolder("Manuals", "C"))
 	config := publishConfig(server.URL, first)
 
-	publisher, err := NewPublisher(context.Background(), api, config)
+	publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -970,9 +955,9 @@ func TestPublisherKeepsFoldersAcrossFiles(t *testing.T) {
 	assert.Zero(t, server.CountRequests("GET", lookup), "the Publisher does not look the folder up again")
 
 	server.ResetRequests()
-	_, err = ProcessFile(context.Background(), third, api, config)
+	_, err = publishOne(context.Background(), third, api, config.PublishConfig)
 	require.NoError(t, err)
-	assert.NotZero(t, server.CountRequests("GET", lookup), "ProcessFile starts without the folder")
+	assert.NotZero(t, server.CountRequests("GET", lookup), "a new Publisher starts without the folder")
 
 	assert.Len(t, server.Folders(), 1, "every file lands in the one folder")
 }
@@ -981,12 +966,12 @@ func TestPublisherKeepsFoldersAcrossFiles(t *testing.T) {
 // publish over the one page, so a Publisher refuses a second file, as Run
 // does, and still takes the first one again.
 func TestPublisherPublishesOneFileToAPageID(t *testing.T) {
-	server, api, first, config := processFileFixture(t, "First.\n")
+	server, api, first, config := publisherFixture(t, "First.\n")
 	target := server.AddPage("DOCS", "Target", "page", "")
 	config.Page.PageID = target.ID
 	second := writeFile(t, filepath.Dir(first), "other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nSecond.\n")
 
-	publisher, err := NewPublisher(context.Background(), api, config)
+	publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -1011,11 +996,11 @@ func TestPublisherPublishesOneFileToAPageID(t *testing.T) {
 // TestPublisherLeavesAPageIDToAFileThatReachesIt: a file that fails before
 // the page is reached has published nothing there, so the next file may.
 func TestPublisherLeavesAPageIDToAFileThatReachesIt(t *testing.T) {
-	server, api, first, config := processFileFixture(t, "First.\n")
+	server, api, first, config := publisherFixture(t, "First.\n")
 	target := server.AddPage("DOCS", "Target", "page", "")
 	config.Page.PageID = target.ID
 
-	publisher, err := NewPublisher(context.Background(), api, config)
+	publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -1033,13 +1018,13 @@ func TestPublisherLeavesAPageIDToAFileThatReachesIt(t *testing.T) {
 func TestPublisherKeepsAPageIDForAFileThatReachedIt(t *testing.T) {
 	for _, dryRun := range []bool{false, true} {
 		t.Run(fmt.Sprintf("dry run %v", dryRun), func(t *testing.T) {
-			server, api, first, config := processFileFixture(t, "<!-- Include: missing.md -->\n")
+			server, api, first, config := publisherFixture(t, "<!-- Include: missing.md -->\n")
 			target := server.AddPage("DOCS", "Target", "page", "")
 			config.Page.PageID = target.ID
 			config.Mode.DryRun = dryRun
 			second := writeFile(t, filepath.Dir(first), "other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nSecond.\n")
 
-			publisher, err := NewPublisher(context.Background(), api, config)
+			publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
 			require.NoError(t, err)
 			defer publisher.Close()
 

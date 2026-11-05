@@ -85,18 +85,18 @@ func exportFixture(t *testing.T) (*confluencetest.Server, string, string) {
 	file := writeFile(t, dir, "installing.md", exportDocument)
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				AttachReferenced: true,
+				Features:         []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			AttachReferenced: true,
-			Features:         []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -189,18 +189,18 @@ func TestExportRoundTrip(t *testing.T) {
 	// Published back, the page is what it was.
 	server.EditPage(id, "<p>edited in Confluence</p>")
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				AttachReferenced: true,
+				Features:         []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: out,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			AttachReferenced: true,
-			Features:         []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -255,18 +255,18 @@ func TestExportRoundTripFrontMatter(t *testing.T) {
 
 	server.EditPage(id, "<p>edited in Confluence</p>")
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				AttachReferenced: true,
+				Features:         []string{"mention", "frontmatter"},
+			},
+			Output: io.Discard,
+		},
 		Files: out,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			AttachReferenced: true,
-			Features:         []string{"mention", "frontmatter"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -348,17 +348,17 @@ func TestExportPageFromConfluence(t *testing.T) {
 	// Published back, the attachment kept as storage format is uploaded under
 	// the name the storage format now gives it.
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: out,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -548,14 +548,14 @@ func TestExportOfAPageInAFolder(t *testing.T) {
 			assert.Contains(t, string(exported), "<!-- Space: DOCS -->\n"+test.headers+"<!-- Title: Inside -->\n")
 
 			require.NoError(t, Run(context.Background(), Config{
+				PublishConfig: PublishConfig{
+					Output: io.Discard,
+				},
 				Files: out,
 				Connection: ConnectionConfig{
 					BaseURL:  server.URL,
 					Username: "user",
 					Password: "token",
-				},
-				Report: ReportConfig{
-					Output: io.Discard,
 				},
 			}))
 			assert.Equal(t, folder.ID, server.Page(inside.ID).ParentID, "the page stays in its folder")
@@ -623,14 +623,14 @@ func TestExportDeclaresOnlyAttachmentsThePageHas(t *testing.T) {
 	assert.NotContains(t, string(exported), "<!-- Attachment: gone.png -->")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: out,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}), "the export publishes")
 }
@@ -889,18 +889,18 @@ func TestExportTreeRoundTrip(t *testing.T) {
 			}
 
 			require.NoError(t, Run(context.Background(), Config{
+				PublishConfig: PublishConfig{
+					Rendering: RenderingConfig{
+						AttachReferenced: true,
+						Features:         features,
+					},
+					Output: io.Discard,
+				},
 				Files: filepath.Join(out, "**", "*.md"),
 				Connection: ConnectionConfig{
 					BaseURL:  server.URL,
 					Username: "user",
 					Password: "token",
-				},
-				Rendering: RenderingConfig{
-					AttachReferenced: true,
-					Features:         features,
-				},
-				Report: ReportConfig{
-					Output: io.Discard,
 				},
 			}))
 
@@ -952,17 +952,17 @@ func TestExportTreeRelativeLinks(t *testing.T) {
 	assert.Contains(t, string(deep), "Back to [Guide](../../index.md) or [C](../../c-"+pages["C"].ID+"/index.md).")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(out, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -1020,17 +1020,17 @@ func TestExportTreeRelativeLinksFromURLs(t *testing.T) {
 		"[Deep dive](c/deep-dive/index.md)")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(out, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 	assert.Contains(t, server.Page(pages["Guide"].ID).Body, tiny, "published back as a link to the page")

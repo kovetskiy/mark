@@ -147,7 +147,7 @@ func TestTrackingSavesManifestEvenWhenAFileFails(t *testing.T) {
 	writeFile(t, dir, "bad.md", "# Orphan\n\nNo metadata at all.\n")
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	config.Mode.ContinueOnError = true
+	config.ContinueOnError = true
 	require.Error(t, Run(context.Background(), config), "the bad file should still fail the run")
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Good", "page")
@@ -577,23 +577,23 @@ func TestDryRunStillWritesNothingWithTracking(t *testing.T) {
 // folders into a single space, which is a common way to run it.
 func multiGlobConfig(server *confluencetest.Server, glob string) Config {
 	return Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Page: PageConfig{
+				TitleFromFilename: true,
+			},
+			Output: io.Discard,
+		},
 		Files: glob,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Page: PageConfig{
-			TitleFromFilename: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 }
@@ -696,21 +696,21 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  baseURL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages:   true,
 			ManifestPage: "Home",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -758,21 +758,21 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	writeFile(t, dir, "b.md", "<!-- Space: OPS -->\n<!-- Title: Runbook -->\n\nA runbook.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages:   true,
 			ManifestPage: handbook.ID,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err, "a run spanning two spaces on one manifest page fails")
@@ -797,6 +797,9 @@ func TestManifestPageRequiresTrackPages(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
@@ -805,9 +808,6 @@ func TestManifestPageRequiresTrackPages(t *testing.T) {
 		},
 		Tracking: TrackingConfig{
 			ManifestPage: "Home",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -824,20 +824,20 @@ func TestManifestPrefixRequiresTrackPages(t *testing.T) {
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			ManifestPrefix: "mark.manifest",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config), "the default prefix asks for nothing")
@@ -1050,20 +1050,20 @@ func TestGeneratedHashDoesNotStandInForATitle(t *testing.T) {
 	file := writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nbody\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+			Page: PageConfig{
+				TitleAppendGeneratedHash: true,
+			},
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
-		Page: PageConfig{
-			TitleAppendGeneratedHash: true,
 		},
 	})
 	require.Error(t, err)

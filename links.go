@@ -35,8 +35,7 @@ func reportBrokenLinks(broken []string, file string, warnOnly bool) error {
 
 // unresolvedLinks is the error a failed link check ends with, or nil when
 // every link resolved. One wording for all of them: a file's broken links, the
-// ac: links a run left unresolved, and the ones ProcessFile did, which used to
-// be the bare list with no count and no sentence in front of it.
+// ac: links a run left unresolved, and the ones a Publisher's file did.
 func unresolvedLinks(links []string) error {
 	if len(links) == 0 {
 		return nil

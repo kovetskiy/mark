@@ -35,8 +35,7 @@ func TestPublisherEditLockUsesAPILogin(t *testing.T) {
 			file := writeFile(t, t.TempDir(), "doc.md", markdownWithTitle("Locked"))
 
 			api := confluence.NewAPI(server.URL, "publisher", "token", false)
-			config := publishConfig(server.URL, filepath.Dir(file))
-			config.Connection.Username = "someone-else"
+			config := publishConfig(server.URL, filepath.Dir(file)).PublishConfig
 			config.Update.EditLock = true
 
 			publisher, err := NewPublisher(context.Background(), api, config)

@@ -101,7 +101,7 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 
 	for name, tweak := range map[string]func(*Config, string){
 		"flat":      func(*Config, string) {},
-		"hierarchy": func(c *Config, dir string) { c.Page.ParentsFromPath = true; c.Page.ParentsFromPathRoot = dir },
+		"hierarchy": func(c *Config, dir string) { c.ParentsFromPath = true; c.ParentsFromPathRoot = dir },
 	} {
 		t.Run(name, func(t *testing.T) {
 			server, _ := docsSpace(t)
@@ -212,8 +212,8 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 			writeAt(t, dir, "guide/README.md", readme("Guide"))
 			writeAt(t, dir, "guide/API.md", api)
 			config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
-			config.Page.ParentsFromPath = true
-			config.Page.ParentsFromPathRoot = dir
+			config.ParentsFromPath = true
+			config.ParentsFromPathRoot = dir
 			config.Page.TitleAppendGeneratedHash = hash
 			require.NoError(t, Run(context.Background(), config))
 
@@ -346,7 +346,7 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 	writeFile(t, dir, "doc.md", markdownWithTitle("Moved"))
 
 	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
-	config.Update.NoOverwrite = true
+	config.Tracking.NoOverwrite = true
 	require.NoError(t, Run(context.Background(), config))
 
 	published, err := api.FindPage(context.Background(), "DOCS", "Moved", "page")
@@ -369,22 +369,14 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 		"nor may the run after it")
 }
 
-// publishOnce runs one file through ProcessFile against the fake, with a
+// publishOnce runs one file through a Publisher against the fake, with a
 // fresh client so nothing is answered from an earlier lookup's cache.
 func publishOnce(t *testing.T, server *confluencetest.Server, file string) {
 	t.Helper()
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
-	_, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+	_, err := publishOne(context.Background(), file, api, PublishConfig{
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 }
@@ -473,20 +465,20 @@ func TestATrackedPageIsMovedWhenItsFirstParentIsTheHomePage(t *testing.T) {
 	header := "<!-- Space: DOCS -->\n<!-- Parent: Home -->\n"
 	file := writeFile(t, dir, "doc.md", header+"<!-- Parent: Old -->\n<!-- Title: Doc -->\n\nbody\n")
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -695,17 +687,17 @@ func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -738,17 +730,17 @@ func TestDeeperNestingThanDeclaredIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -770,20 +762,20 @@ func TestDryRunDoesNotMoveThePage(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Other", "Doc"))
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Mode: ModeConfig{
+				DryRun: true,
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Mode: ModeConfig{
-			DryRun: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -808,20 +800,20 @@ func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -854,20 +846,20 @@ func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownUnderParent("Parent", "Doc"))
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))

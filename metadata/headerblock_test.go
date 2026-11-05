@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// extract runs ExtractMeta the way ProcessFile does, with every optional
+// extract runs ExtractMeta the way publishing does, with every optional
 // behaviour off, so that a test says only what the headers said.
 func extract(t *testing.T, document string) (*Meta, string, error) {
 	t.Helper()
