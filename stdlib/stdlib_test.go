@@ -202,15 +202,9 @@ func BenchmarkNew(b *testing.B) {
 	}
 }
 
-// fakeUser has the fields a custom template may read, beyond the two the
-// built-in ones do.
-type fakeUser struct {
-	AccountID, UserKey, DisplayName string
-}
+type fakeUsers map[string]*confluence.User
 
-type fakeUsers map[string]*fakeUser
-
-func (f fakeUsers) LookupUser(_ context.Context, name string) (any, error) {
+func (f fakeUsers) LookupUser(_ context.Context, name string) (*confluence.User, error) {
 	u, ok := f[name]
 	if !ok {
 		return nil, errors.New("user not found")
@@ -224,6 +218,7 @@ func TestUserTemplatesUseLookup(t *testing.T) {
 	lib, err := New(t.Context(), fakeUsers{
 		"cloud": {AccountID: `a"1`, DisplayName: "Ada"},
 		"dc":    {UserKey: "k1"},
+		"ghost": nil,
 	})
 	require.NoError(t, err)
 
@@ -236,6 +231,7 @@ func TestUserTemplatesUseLookup(t *testing.T) {
 	assert.Equal(t, `<ac:link><ri:user ri:account-id="a&#34;1" /></ac:link>`, render("ac:link:user", "cloud"))
 	assert.Equal(t, `<ac:link><ri:user ri:userkey="k1" /></ac:link>`, render("ac:link:user", "dc"))
 	assert.Equal(t, `nobody`, render("ac:link:user", "nobody"))
+	assert.Equal(t, `ghost`, render("ac:link:user", "ghost"), "a nil user is nobody")
 	assert.Contains(t, render("ac:profile", "dc"), `<ri:user ri:userkey="k1" />`)
 	assert.Empty(t, render("ac:profile", "nobody"))
 

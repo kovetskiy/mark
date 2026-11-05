@@ -13,7 +13,7 @@ import (
 
 // TestHandleOrphansKeepsAFolderParentWhenThePlatformIsUnidentified: a Cloud site
 // on a custom domain has only its current user to tell it is Cloud, and a proxy
-// answering that request with a 502 makes IsCloud false for the whole run. The
+// answering that request with a 502 leaves it unidentified for the whole run. The
 // folder check that guards the deletion must not read that as "no folders
 // here": the page would be trashed, and the folders and everything in them
 // with it.
@@ -32,7 +32,8 @@ func TestHandleOrphansKeepsAFolderParentWhenThePlatformIsUnidentified(t *testing
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
+	_, cloudErr := api.Cloud(context.Background())
+	require.Error(t, cloudErr, "the platform has to go unidentified for this to mean anything")
 
 	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
 		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
@@ -62,7 +63,8 @@ func TestHandleOrphansKeepsAFolderParentBehindAnSSOProxy(t *testing.T) {
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
+	_, cloudErr := api.Cloud(context.Background())
+	require.Error(t, cloudErr, "the platform has to go unidentified for this to mean anything")
 
 	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
 		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},

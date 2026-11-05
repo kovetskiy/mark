@@ -662,12 +662,12 @@ func TestGetUserByNameCachesPerName(t *testing.T) {
 		"one search per distinct name")
 }
 
-// TestIsCloudConcurrentCallsProbeOnce covers the memoisation and its safety
-// together: many goroutines calling IsCloud must agree on the answer, and the
+// TestCloudConcurrentCallsProbeOnce covers the memoisation and its safety
+// together: many goroutines calling Cloud must agree on the answer, and the
 // probe must be issued at most once. Before sync.Once the flag was
 // read and written without synchronisation, so concurrent callers raced on it
 // and each could issue its own probe.
-func TestIsCloudConcurrentCallsProbeOnce(t *testing.T) {
+func TestCloudConcurrentCallsProbeOnce(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
@@ -682,80 +682,83 @@ func TestIsCloudConcurrentCallsProbeOnce(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start // release them together to maximise contention
-			results[i] = api.IsCloud(context.Background())
+			results[i], _ = api.Cloud(context.Background())
 		}(i)
 	}
 	close(start)
 	wg.Wait()
 
 	for i, got := range results {
-		assert.Equal(t, results[0], got, "goroutine %d disagreed about IsCloud", i)
+		assert.Equal(t, results[0], got, "goroutine %d disagreed about Cloud", i)
 	}
 
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/user/current"),
 		"the Cloud probe should be issued at most once regardless of caller count")
 }
 
-// TestIsCloudCachesAcrossSequentialCalls is the plain-path counterpart: the
+// TestCloudCachesAcrossSequentialCalls is the plain-path counterpart: the
 // answer is memoised, so a second call does not re-probe.
-func TestIsCloudCachesAcrossSequentialCalls(t *testing.T) {
+func TestCloudCachesAcrossSequentialCalls(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
 
-	first := api.IsCloud(context.Background())
+	first := mustCloud(t, api)
 	before := server.CountRequests("GET", "/rest/api/user/current")
 
 	for range 5 {
-		assert.Equal(t, first, api.IsCloud(context.Background()))
+		assert.Equal(t, first, mustCloud(t, api))
 	}
 
 	assert.Equal(t, before, server.CountRequests("GET", "/rest/api/user/current"),
 		"repeat calls must not re-probe")
 }
 
-// TestIsCloudReadsTheCurrentUser: the platform is told by how the current user
+// TestCloudReadsTheCurrentUser: the platform is told by how the current user
 // is described, an Atlassian accountId on Cloud and a local username and userKey
 // on Server and Data Center.
-func TestIsCloudReadsTheCurrentUser(t *testing.T) {
+func TestCloudReadsTheCurrentUser(t *testing.T) {
 	t.Run("Cloud", func(t *testing.T) {
 		api, _ := newAPI(t)
 
-		assert.True(t, api.IsCloud(context.Background()))
+		assert.True(t, mustCloud(t, api))
 	})
 
 	t.Run("Data Center", func(t *testing.T) {
 		api, server := newAPI(t)
 		server.SetDataCenter()
 
-		assert.False(t, api.IsCloud(context.Background()))
+		assert.False(t, mustCloud(t, api))
 	})
 }
 
-// TestIsCloudOnAnUnreadableUserIsNotCloud: a target that cannot be identified
-// is not taken for Cloud, which is what every caller of IsCloud has always
-// assumed of a failed probe.
-func TestIsCloudOnAnUnreadableUserIsNotCloud(t *testing.T) {
-	for name, fail := range map[string]confluencetest.FailFunc{
-		"refused": func(r *http.Request) (int, string, bool) {
+// TestCloudOnAnUnreadableUser: a current user that cannot be read is an
+// error, and one that names no platform is taken for Server or Data Center.
+func TestCloudOnAnUnreadableUser(t *testing.T) {
+	t.Run("refused", func(t *testing.T) {
+		api, server := newAPI(t)
+		server.SetFail(func(r *http.Request) (int, string, bool) {
 			if r.URL.Path == "/rest/api/user/current" {
 				return http.StatusUnauthorized, `{"message":"bad credentials"}`, true
 			}
 			return 0, "", false
-		},
-		"neither accountId nor username": func(r *http.Request) (int, string, bool) {
+		})
+
+		cloud, err := api.Cloud(context.Background())
+		require.Error(t, err)
+		assert.False(t, cloud)
+	})
+
+	t.Run("neither accountId nor username", func(t *testing.T) {
+		api, server := newAPI(t)
+		server.SetFail(func(r *http.Request) (int, string, bool) {
 			if r.URL.Path == "/rest/api/user/current" {
 				return http.StatusOK, `{"type":"anonymous"}`, true
 			}
 			return 0, "", false
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			api, server := newAPI(t)
-			server.SetFail(fail)
-
-			assert.False(t, api.IsCloud(context.Background()))
 		})
-	}
+
+		assert.False(t, mustCloud(t, api))
+	})
 }
 
 // scopedTokenV1Gone makes the v1 space endpoint answer as it does for an
@@ -913,4 +916,14 @@ func TestStatusErrorCarriesTheFakesMessage(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status.StatusCode)
 	assert.Contains(t, status.Message(), "424242")
 	assert.Contains(t, err.Error(), status.Message())
+}
+
+// mustCloud is api.Cloud for a target that has to be identified.
+func mustCloud(t *testing.T, api *confluence.API) bool {
+	t.Helper()
+
+	cloud, err := api.Cloud(context.Background())
+	require.NoError(t, err)
+
+	return cloud
 }

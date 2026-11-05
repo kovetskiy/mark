@@ -16,7 +16,7 @@ import (
 )
 
 // newDataCenterAPI is the fake dressed as Confluence Server or Data Center:
-// a current user with no accountId, so IsCloud() is false, no /api/v2 at all,
+// a current user with no accountId, so Cloud reports false, no /api/v2 at all,
 // and no content move endpoint.
 // Everything else -- content read, content update, ancestors on an update,
 // /pages/movepage.action -- is what those releases really do serve.
@@ -72,7 +72,7 @@ func newDataCenterAPIWithOptions(
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(context.Background()), "the fixture has to look like Data Center for this to mean anything")
+	require.False(t, mustCloud(t, api), "the fixture has to look like Data Center for this to mean anything")
 
 	return api, server
 }
@@ -207,7 +207,7 @@ func TestOrderingNamesThePageByTitleWhenItCan(t *testing.T) {
 func TestMoveOnCloudStillReportsAPlain404(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
-	require.True(t, api.IsCloud(context.Background()), "the fake answers /api/v2/spaces, so it is Cloud")
+	require.True(t, mustCloud(t, api), "the fake answers /api/v2/spaces, so it is Cloud")
 
 	err := api.MoveContentAppend(context.Background(), "no-such-page", "1003")
 	require.Error(t, err)

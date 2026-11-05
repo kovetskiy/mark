@@ -46,7 +46,7 @@ func TestHasChildFoldersOutsideCloudAsksNothing(t *testing.T) {
 	page := server.AddPage("DOCS", "Gone", "page", "")
 
 	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	require.False(t, api.IsCloud(context.Background()), "the fixture has to be identified as Data Center for this to mean anything")
+	require.False(t, mustCloud(t, api), "the fixture has to be identified as Data Center for this to mean anything")
 
 	has, err := api.HasChildFolders(context.Background(), page.ID)
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestFindChildFolderOutsideCloudAsksNothing(t *testing.T) {
 	page := server.AddPage("DOCS", "Parent", "page", "")
 
 	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	require.False(t, api.IsCloud(context.Background()), "the fixture has to be identified as Data Center for this to mean anything")
+	require.False(t, mustCloud(t, api), "the fixture has to be identified as Data Center for this to mean anything")
 
 	folder, err := api.FindChildFolder(context.Background(), page.ID, "page", "Manuals")
 	require.NoError(t, err)
@@ -73,8 +73,8 @@ func TestFindChildFolderOutsideCloudAsksNothing(t *testing.T) {
 		"the v2 children route is not asked outside Cloud")
 }
 
-// TestHasChildFoldersAsksWhenThePlatformIsUnidentified: IsCloud reads a target
-// it could not identify as "not Cloud", and a Cloud site on a custom domain has
+// TestHasChildFoldersAsksWhenThePlatformIsUnidentified: a target Cloud could
+// not identify is not known to be Server, and a Cloud site on a custom domain has
 // nothing else to go on. Skipping the request on that answer told --on-orphan
 // delete that a page holding folders was childless, and trashing it took the
 // folders with it. Only a target identified as Server or Data Center may skip
@@ -87,7 +87,8 @@ func TestHasChildFoldersAsksWhenThePlatformIsUnidentified(t *testing.T) {
 			server.AddFolder("DOCS", "Manuals", page.ID, "page")
 
 			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-			require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
+			_, cloudErr := api.Cloud(context.Background())
+			require.Error(t, cloudErr, "the platform has to go unidentified for this to mean anything")
 
 			has, err := api.HasChildFolders(context.Background(), page.ID)
 			require.NoError(t, err)
@@ -105,7 +106,8 @@ func TestFindChildFolderAsksWhenThePlatformIsUnidentified(t *testing.T) {
 	server.AddFolder("DOCS", "Manuals", page.ID, "page")
 
 	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
+	_, cloudErr := api.Cloud(context.Background())
+	require.Error(t, cloudErr, "the platform has to go unidentified for this to mean anything")
 
 	folder, err := api.FindChildFolder(context.Background(), page.ID, "page", "Manuals")
 	require.NoError(t, err)

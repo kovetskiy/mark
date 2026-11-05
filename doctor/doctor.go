@@ -105,8 +105,10 @@ func run(ctx context.Context, api *confluence.API, spaces []string) []Check {
 			Status: Warn, Name: "platform", Detail: "the account has neither an accountId nor a username, " +
 				"so mark assumes Confluence Server or Data Center",
 		})
+	} else if cloud, err := api.Cloud(ctx); err != nil {
+		checks = append(checks, Check{Status: Fail, Name: "platform", Detail: "unable to identify the platform: " + err.Error()})
 	} else {
-		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(api.IsCloud(ctx), host)})
+		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(cloud, host)})
 	}
 
 	if len(spaces) == 0 {

@@ -216,7 +216,7 @@ func TestPageCacheZeroValueAPI(t *testing.T) {
 	api2.pageCacheMutex.Unlock()
 }
 
-// TestIsCloudHost pins the host classification the IsCloud fast path relies on.
+// TestIsCloudHost pins the host classification the Cloud fast path relies on.
 // The gateway host matters because scoped API tokens can only be used against
 // it, and the dot-boundary cases matter because a bare suffix check accepted
 // hosts like "notatlassian.net" and sent self-hosted instances down the Cloud

@@ -355,7 +355,11 @@ func (api *API) getPageRestrictions(ctx context.Context, pageID string) (restric
 		return nil, api.restrictionError(ctx, "read the restrictions of page "+pageID, err)
 	}
 
-	cloud := api.IsCloud(ctx)
+	cloud, err := api.Cloud(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read the restrictions of page %s: %w", pageID, err)
+	}
+
 	current := restrictions{}
 	for _, name := range restrictedOperations {
 		op := response[name].Restrictions
@@ -387,7 +391,10 @@ func (api *API) getPageRestrictions(ctx context.Context, pageID string) (restric
 // with restrictions. Both operations are always sent, so that the request
 // says what each one ends up as.
 func (api *API) putPageRestrictions(ctx context.Context, pageID string, restrictions restrictions) error {
-	cloud := api.IsCloud(ctx)
+	cloud, err := api.Cloud(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to set the restrictions of page %s: %w", pageID, err)
+	}
 
 	payload := make([]map[string]any, 0, len(restrictedOperations))
 	for _, operation := range restrictedOperations {
@@ -415,7 +422,7 @@ func (api *API) putPageRestrictions(ctx context.Context, pageID string, restrict
 	// Through do rather than send: nothing in the answer is used, and Data
 	// Center may answer with 204 and no body.
 	var answer any
-	_, err := api.v1.do(ctx, nil, http.MethodPut, []string{"content", pageID, "restriction"}, nil, payload, &answer)
+	_, err = api.v1.do(ctx, nil, http.MethodPut, []string{"content", pageID, "restriction"}, nil, payload, &answer)
 
 	return api.restrictionError(ctx, "set the restrictions of page "+pageID, err)
 }
@@ -423,12 +430,15 @@ func (api *API) putPageRestrictions(ctx context.Context, pageID string, restrict
 // restrictionError is the error a restriction request that is part of
 // operation ended with, or nil for none. Server and Data Center before 8.8
 // have no restriction endpoints to speak of, which reads as a missing page or
-// method.
+// method. A target that cannot be identified is not taken for one of those.
 func (api *API) restrictionError(ctx context.Context, operation string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if status := statusOf(err); (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) && !api.IsCloud(ctx) {
+	if status := statusOf(err); status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
+		if cloud, cloudErr := api.Cloud(ctx); cloudErr != nil || cloud {
+			return requestError(operation, err)
+		}
 		return fmt.Errorf("confluence server/datacenter version is too old to support page restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", status)
 	}
 

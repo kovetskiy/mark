@@ -282,7 +282,7 @@ func newConflictDataCenterAPI(
 		}
 		return f(r)
 	})
-	require.False(t, api.IsCloud(context.Background()))
+	require.False(t, mustCloud(t, api))
 
 	return api, server
 }
@@ -355,4 +355,14 @@ func TestReparentPersistentConflictFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "something else is writing to the page")
 	assert.Equal(t, 2, countContentPuts(server, pageID), "exactly one retry")
 	assert.Equal(t, oldParent.ID, server.Page(pageID).ParentID)
+}
+
+// mustCloud is api.Cloud for a target that has to be identified.
+func mustCloud(t *testing.T, api *API) bool {
+	t.Helper()
+
+	cloud, err := api.Cloud(context.Background())
+	require.NoError(t, err)
+
+	return cloud
 }

@@ -27,7 +27,7 @@ func dataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 		}
 		return 0, "", false
 	})
-	require.False(t, api.IsCloud(context.Background()))
+	require.False(t, mustCloud(t, api))
 
 	return api, server
 }
@@ -247,7 +247,7 @@ func assertNotMoved(ctx context.Context, t *testing.T, api *confluence.API, serv
 func TestAPageAlreadyInItsFolderIsNotMovedAgain(t *testing.T) {
 	ctx := t.Context()
 	api, server := newAPI(t)
-	require.True(t, api.IsCloud(context.Background()))
+	require.True(t, mustCloud(t, api))
 
 	folder, first := folderWithTwoPages(t, server)
 
@@ -264,7 +264,7 @@ func TestAPageAlreadyInItsFolderIsNotMovedAgainThroughTheGateway(t *testing.T) {
 	ctx := t.Context()
 	server := confluencetest.New(t)
 	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
-	require.True(t, api.IsCloud(context.Background()))
+	require.True(t, mustCloud(t, api))
 
 	folder, first := folderWithTwoPages(t, server)
 
@@ -292,4 +292,14 @@ func TestAPageInAnotherFolderIsStillMoved(t *testing.T) {
 	require.NoError(t, page.EnsurePageUnderFolderParent(ctx, api, pg, to.ID))
 
 	assert.Equal(t, to.ID, server.Page(stored.ID).ParentID)
+}
+
+// mustCloud is api.Cloud for a target that has to be identified.
+func mustCloud(t *testing.T, api *confluence.API) bool {
+	t.Helper()
+
+	cloud, err := api.Cloud(context.Background())
+	require.NoError(t, err)
+
+	return cloud
 }
