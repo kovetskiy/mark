@@ -33,9 +33,8 @@ import (
 )
 
 // Config is everything Run needs: the publish settings each document is
-// published with, and the settings about the run as a whole -- which files,
-// the connection, the page manifest and the run report -- that only Run, which
-// sees every file, can act on.
+// published with, and the settings about the run as a whole, which only Run,
+// seeing every file, can act on.
 type Config struct {
 	PublishConfig
 
@@ -56,7 +55,8 @@ type Config struct {
 	// CI makes a glob that matches no files a warning rather than an error.
 	CI bool
 
-	// Unwatch stops watching every page the run wrote, once it ends.
+	// Unwatch stops the authenticated user watching the pages the run wrote,
+	// once it ends, except those they watched before.
 	Unwatch bool
 
 	Tracking TrackingConfig
