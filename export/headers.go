@@ -126,32 +126,67 @@ func (h *pageHeaders) comments() (string, error) {
 
 // frontMatter writes the headers as YAML front matter.
 func (h *pageHeaders) frontMatter() (string, error) {
-	var b strings.Builder
-	b.WriteString("---\n")
+	var w yamlWriter
 	for _, field := range h.fields() {
 		values := field.present()
 		if len(values) == 0 {
 			continue
 		}
-		if !field.list {
-			value, err := yamlScalar(values[0])
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(field.key + ": " + value + "\n")
-			continue
-		}
-		b.WriteString(field.key + ":\n")
-		for _, item := range values {
-			value, err := yamlScalar(item)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString("  - " + value + "\n")
+		if field.list {
+			w.list(field.key, values)
+		} else {
+			w.scalar(field.key+": ", values[0])
 		}
 	}
-	b.WriteString("---\n")
-	return b.String(), nil
+	return w.document()
+}
+
+// yamlWriter writes YAML front matter one line at a time, every value by
+// yamlScalar, and keeps the first error.
+type yamlWriter struct {
+	b   strings.Builder
+	err error
+}
+
+// line writes s as it is.
+func (w *yamlWriter) line(s string) {
+	w.b.WriteString(s + "\n")
+}
+
+// scalar writes value after prefix, which holds the indent and the key.
+func (w *yamlWriter) scalar(prefix, value string) {
+	if w.err != nil {
+		return
+	}
+	var out string
+	out, w.err = yamlScalar(value)
+	w.line(prefix + out)
+}
+
+// optional writes value as scalar does, unless it is empty.
+func (w *yamlWriter) optional(prefix, value string) {
+	if value != "" {
+		w.scalar(prefix, value)
+	}
+}
+
+// list writes key and values as a block sequence, or nothing for no values.
+func (w *yamlWriter) list(key string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	w.line(key + ":")
+	for _, value := range values {
+		w.scalar("  - ", value)
+	}
+}
+
+// document is what was written between --- lines.
+func (w *yamlWriter) document() (string, error) {
+	if w.err != nil {
+		return "", w.err
+	}
+	return "---\n" + w.b.String() + "---\n", nil
 }
 
 // yamlScalar is value as a YAML scalar on one line: as yaml.v3 writes it, or,

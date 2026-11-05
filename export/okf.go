@@ -118,51 +118,28 @@ func okfFrontMatter(page *confluence.PageInfo, resource, generator string, label
 	return out, nil
 }
 
-// frontMatter is the concept as a YAML document between --- lines, laid out
-// as yaml.v3 would with an indent of 2 but with every scalar written by
-// yamlScalar, which keeps emoji as they are where yaml.v3 escapes them.
+// frontMatter is the concept as YAML front matter, laid out as yaml.v3 would
+// with an indent of 2, honouring the struct's omitempty, but with every scalar
+// written by yamlScalar, which keeps emoji as they are.
 func (c okfConcept) frontMatter() (string, error) {
-	var b strings.Builder
-	var err error
-	// field writes value after prefix, which holds the indent and the key,
-	// unless it is empty and omitEmpty says to leave it out.
-	field := func(prefix, value string, omitEmpty bool) {
-		if err != nil || (omitEmpty && value == "") {
-			return
-		}
-		var scalar string
-		scalar, err = yamlScalar(value)
-		b.WriteString(prefix + scalar + "\n")
-	}
-
-	b.WriteString("---\n")
-	field("type: ", c.Type, false)
-	field("title: ", c.Title, true)
-	field("resource: ", c.Resource, true)
-	if len(c.Tags) > 0 {
-		b.WriteString("tags:\n")
-		for _, tag := range c.Tags {
-			field("  - ", tag, false)
-		}
-	}
-	b.WriteString("generated:\n")
-	field("  by: ", c.Generated.By, false)
+	var w yamlWriter
+	w.scalar("type: ", c.Type)
+	w.optional("title: ", c.Title)
+	w.optional("resource: ", c.Resource)
+	w.list("tags", c.Tags)
+	w.line("generated:")
+	w.scalar("  by: ", c.Generated.By)
 	if len(c.Sources) > 0 {
-		b.WriteString("sources:\n")
+		w.line("sources:")
 		for _, source := range c.Sources {
-			field("  - id: ", source.ID, false)
-			field("    resource: ", source.Resource, false)
-			field("    title: ", source.Title, true)
-			field("    author: ", source.Author, true)
-			field("    last_modified: ", source.LastModified, true)
+			w.scalar("  - id: ", source.ID)
+			w.scalar("    resource: ", source.Resource)
+			w.optional("    title: ", source.Title)
+			w.optional("    author: ", source.Author)
+			w.optional("    last_modified: ", source.LastModified)
 		}
 	}
-	b.WriteString("---\n")
-
-	if err != nil {
-		return "", err
-	}
-	return b.String(), nil
+	return w.document()
 }
 
 // okfTime is a Confluence timestamp in the UTC form OKF asks for, or "" when
