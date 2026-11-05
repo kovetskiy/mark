@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -57,6 +58,7 @@ type DiagramConfig struct {
 type ConfluenceFencedCodeBlockRenderer struct {
 	htmlOptions
 
+	ctx         context.Context
 	Stdlib      *stdlib.Lib
 	Diagrams    DiagramConfig
 	Attachments attachment.Attacher
@@ -67,9 +69,12 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Path string
 }
 
-// NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg DiagramConfig, path string, opts ...html.Option) html.Extension {
+// NewConfluenceFencedCodeBlockRenderer creates a new instance of the
+// ConfluenceFencedCodeBlockRenderer. ctx bounds the diagrams it draws: goldmark
+// renders without a context, and a renderer lives for one document.
+func NewConfluenceFencedCodeBlockRenderer(ctx context.Context, stdlib *stdlib.Lib, attachments attachment.Attacher, cfg DiagramConfig, path string, opts ...html.Option) html.Extension {
 	r := &ConfluenceFencedCodeBlockRenderer{
+		ctx:         ctx,
 		Stdlib:      stdlib,
 		Diagrams:    cfg,
 		Attachments: attachments,
@@ -154,7 +159,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		// neither reaches the bundler. Render also refuses a format it does not
 		// know, which Run checks but options handed straight to
 		// CompileMarkdown never pass through.
-		attachment, err := d2.Render(renderContext(), title, lval, d2.Options{
+		attachment, err := d2.Render(orBackground(r.ctx), title, lval, d2.Options{
 			Format:       r.Diagrams.D2Output,
 			Scale:        r.Diagrams.D2Scale,
 			Browser:      r.Diagrams.Browser,
@@ -210,7 +215,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 	} else if lang == "mermaid" && slices.Contains(r.Diagrams.Features, "mermaid") {
 		// Render refuses a format it does not know, as the d2 branch does.
-		att, err := r.Diagrams.Mermaid.Render(renderContext(), title, lval, mermaid.Options{
+		att, err := r.Diagrams.Mermaid.Render(orBackground(r.ctx), title, lval, mermaid.Options{
 			Format: r.Diagrams.MermaidOutput,
 			Scale:  r.Diagrams.MermaidScale,
 			Bundle: r.Diagrams.MermaidBundle,

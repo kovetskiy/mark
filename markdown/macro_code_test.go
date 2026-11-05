@@ -24,6 +24,7 @@ func compile(t *testing.T, path string, source string) string {
 	require.NoError(t, err)
 
 	out, _, err := markdown.CompileMarkdown(
+		t.Context(),
 		[]byte(source), lib, path,
 		markdown.Options{MermaidScale: 1.0, D2Scale: 1.0},
 	)

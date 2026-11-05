@@ -16,7 +16,7 @@ func compileDoc(t *testing.T, src string, features ...string) string {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), std, "test.md", Options{Features: features})
+	out, _, err := CompileMarkdown(t.Context(), []byte(src), std, "test.md", Options{Features: features})
 	require.NoError(t, err)
 
 	return out

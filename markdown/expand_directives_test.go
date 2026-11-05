@@ -33,7 +33,7 @@ func compileFile(t *testing.T, path string) (string, error) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := markdown.CompileMarkdown(source, lib, path, markdown.Options{})
+	out, _, err := markdown.CompileMarkdown(t.Context(), source, lib, path, markdown.Options{})
 
 	return out, err
 }

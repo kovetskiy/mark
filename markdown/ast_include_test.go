@@ -35,7 +35,7 @@ func compileInDir(t *testing.T, dir string, doc string) string {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(doc), std, filepath.Join(dir, "doc.md"), Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(doc), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	return out

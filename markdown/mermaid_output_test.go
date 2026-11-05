@@ -22,7 +22,7 @@ func TestCompileMarkdownRefusesAnUnknownMermaidOutput(t *testing.T) {
 
 	document := []byte("# Title\n\n```mermaid\ngraph TD;\n A-->B;\n```\n")
 
-	_, _, err = CompileMarkdown(document, lib, "doc.md", Options{
+	_, _, err = CompileMarkdown(t.Context(), document, lib, "doc.md", Options{
 		Features:      []string{"mermaid"},
 		MermaidOutput: "jpeg",
 		MermaidScale:  1,

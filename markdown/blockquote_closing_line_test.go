@@ -31,7 +31,7 @@ func TestBlockQuoteTypeIgnoresAClosingLine(t *testing.T) {
 		{"one-line comment marker", "> <!-- Info -->\n> text\n", info, "<blockquote>"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", Options{})
+			out, _, err := CompileMarkdown(t.Context(), []byte(tc.input), std, "test.md", Options{})
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
 			assert.NotContains(t, out, tc.not)

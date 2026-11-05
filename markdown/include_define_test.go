@@ -42,7 +42,7 @@ func TestIncludedDefinesStayWithTheirFragment(t *testing.T) {
 		{"b/one.md", "header-b"},
 		{"a/two.md", "header-a"},
 	} {
-		out, _, err := CompileMarkdown(doc, lib, filepath.Join(dir, page.path), Options{})
+		out, _, err := CompileMarkdown(t.Context(), doc, lib, filepath.Join(dir, page.path), Options{})
 		require.NoError(t, err, page.path)
 		assert.Contains(t, out, page.want, page.path)
 	}
@@ -65,7 +65,7 @@ func TestIncludedDefinesServeTheRestOfThePage(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown(doc, lib, filepath.Join(dir, "doc.md"), Options{})
+	out, _, err := CompileMarkdown(t.Context(), doc, lib, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 	assert.Contains(t, out, "<p>see <b>hello</b></p>")
 	assert.Contains(t, out, "[<b>sibling</b>]")
@@ -84,11 +84,11 @@ func TestIncludedDefineDoesNotReplaceStdlib(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("<!-- Include: frag.md -->\n"), lib, filepath.Join(dir, "a/one.md"), Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte("<!-- Include: frag.md -->\n"), lib, filepath.Join(dir, "a/one.md"), Options{})
 	require.NoError(t, err)
 	assert.Contains(t, out, "HIJACKED")
 
-	out, _, err = CompileMarkdown([]byte("<!-- Include: ac:box\nName: info\nBody: hello -->\n"), lib, filepath.Join(dir, "b/two.md"), Options{})
+	out, _, err = CompileMarkdown(t.Context(), []byte("<!-- Include: ac:box\nName: info\nBody: hello -->\n"), lib, filepath.Join(dir, "b/two.md"), Options{})
 	require.NoError(t, err)
 	assert.NotContains(t, out, "HIJACKED")
 	assert.Contains(t, out, `<ac:structured-macro ac:name="info">`)
@@ -106,7 +106,7 @@ func TestIncludedDefineReachesNestedInclude(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("<!-- Include: outer.md -->\n"), lib, filepath.Join(dir, "page.md"), Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte("<!-- Include: outer.md -->\n"), lib, filepath.Join(dir, "page.md"), Options{})
 	require.NoError(t, err)
 	assert.Contains(t, out, "[from-outer]")
 }
@@ -122,11 +122,11 @@ func TestInlineMacroDefineDoesNotReplaceStdlib(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(macroPage), lib, filepath.Join(t.TempDir(), "a.md"), Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(macroPage), lib, filepath.Join(t.TempDir(), "a.md"), Options{})
 	require.NoError(t, err)
 	assert.Contains(t, out, "HIJACKED")
 
-	out, _, err = CompileMarkdown([]byte("<!-- Include: ac:box\nName: info\nBody: hello -->\n"), lib, filepath.Join(t.TempDir(), "b.md"), Options{})
+	out, _, err = CompileMarkdown(t.Context(), []byte("<!-- Include: ac:box\nName: info\nBody: hello -->\n"), lib, filepath.Join(t.TempDir(), "b.md"), Options{})
 	require.NoError(t, err)
 	assert.NotContains(t, out, "HIJACKED")
 	assert.Contains(t, out, `<ac:structured-macro ac:name="info">`)

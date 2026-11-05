@@ -31,7 +31,7 @@ func TestAdjacentDetailsDoNotNest(t *testing.T) {
 	document := "<details><summary>title a</summary>\n\nFIRSTBODY\n\n" +
 		"</details><details><summary>title c</summary>\n\nSECONDBODY\n\n</details>\n"
 
-	out, _, err := CompileMarkdown([]byte(document), std, "test.md", Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(document), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, strings.Count(out, `ac:name="expand"`), "both sections should be published")
@@ -62,7 +62,7 @@ func TestAdjacentDetailsOnOneLineStillPublishBoth(t *testing.T) {
 	document := "<details><summary>a</summary>\nb\n</details>\n" +
 		"<details><summary>c</summary>\nd\n</details>\n"
 
-	out, _, err := CompileMarkdown([]byte(document), std, "test.md", Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(document), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	require.NoError(t, CheckWellFormed(out))

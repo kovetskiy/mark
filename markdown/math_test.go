@@ -21,7 +21,7 @@ func compileMath(t *testing.T, source string, features ...string) (string, []att
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	return markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", markdown.Options{
+	return markdown.CompileMarkdown(t.Context(), []byte(source), lib, "testdata/test.md", markdown.Options{
 		Features:   features,
 		MathFormat: "svg",
 	})
@@ -126,7 +126,7 @@ func TestMathPNGFormat(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	actual, attachments, err := markdown.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
+	actual, attachments, err := markdown.CompileMarkdown(t.Context(), []byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
 		markdown.Options{Browser: markdown.TestBrowser, Features: []string{"math"}, MathScale: 2})
 	require.NoError(t, err)
 	assertWellFormed(t, actual)
@@ -146,7 +146,7 @@ func TestMathRejectsAnUnknownFormat(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	_, _, err = markdown.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
+	_, _, err = markdown.CompileMarkdown(t.Context(), []byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
 		markdown.Options{Features: []string{"math"}, MathFormat: "jpeg"})
 	require.Error(t, err)
 

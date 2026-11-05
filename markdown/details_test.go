@@ -65,7 +65,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", cfg)
+			actual, _, err := CompileMarkdown(t.Context(), []byte(tt.input), lib, "testdata/test.md", cfg)
 			assert.NoError(t, err)
 
 			// Normalize spaces/newlines to make assertions robust
@@ -83,7 +83,7 @@ func TestDetailsWithFencedCodeBlock(t *testing.T) {
 
 	markdown := []byte("```xml\n<![CDATA[hello world]]>\n```\n\n<details>\n<summary>Details</summary>\n<p>Some content</p>\n</details>")
 
-	actual, _, err := CompileMarkdown(markdown, lib, "testdata/test.md", cfg)
+	actual, _, err := CompileMarkdown(t.Context(), markdown, lib, "testdata/test.md", cfg)
 	assert.NoError(t, err)
 	assert.Contains(t, actual, "<![CDATA[hello world]]>")
 	assert.NotContains(t, actual, "<!--[CDATA[")
@@ -104,7 +104,7 @@ func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 	}
 
 	for _, input := range tests {
-		actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", cfg)
+		actual, _, err := CompileMarkdown(t.Context(), []byte(input), lib, "testdata/test.md", cfg)
 		assert.NoError(t, err)
 		assert.Contains(t, actual, "&lt;details&gt;", "literal tag should survive inside a code span")
 		assert.NotContains(t, actual, "<code></code>", "code span content was swallowed")
@@ -143,7 +143,7 @@ func TestDetailsWithBlankLines(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", cfg)
+			actual, _, err := CompileMarkdown(t.Context(), []byte(tt.input), lib, "testdata/test.md", cfg)
 			assert.NoError(t, err)
 
 			assert.NotContains(t, actual, "<details", "raw <details> tag leaked into output")
@@ -169,7 +169,7 @@ func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
 
 	markdown := []byte("<details>\n<summary>S</summary>\n\nBody with **bold** text.\n\n</details>\n")
 
-	actual, _, err := CompileMarkdown(markdown, lib, "testdata/test.md", cfg)
+	actual, _, err := CompileMarkdown(t.Context(), markdown, lib, "testdata/test.md", cfg)
 	assert.NoError(t, err)
 	assert.Contains(t, actual, "<strong>bold</strong>")
 	assert.NotContains(t, actual, "**bold**")
@@ -196,7 +196,7 @@ func TestDetailsMalformedStaysBalanced(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", cfg)
+			actual, _, err := CompileMarkdown(t.Context(), []byte(tt.input), lib, "testdata/test.md", cfg)
 			assert.NoError(t, err)
 			assert.Equal(t,
 				strings.Count(actual, "<ac:rich-text-body>"),
@@ -219,7 +219,7 @@ func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
 
 	markdown := []byte("```html\n<details>\n<summary>S</summary>\n</details>\n```\n")
 
-	actual, _, err := CompileMarkdown(markdown, lib, "testdata/test.md", cfg)
+	actual, _, err := CompileMarkdown(t.Context(), markdown, lib, "testdata/test.md", cfg)
 	assert.NoError(t, err)
 	assert.Contains(t, actual, "<details>")
 	assert.NotContains(t, actual, `ac:name="expand"`)
@@ -242,7 +242,7 @@ func TestCDATAInsideDetailsSurvivesUnaltered(t *testing.T) {
 		`<ac:structured-macro ac:name="code"><ac:plain-text-body>` + sample +
 		"</ac:plain-text-body></ac:structured-macro>\n</details>\n"
 
-	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", Options{})
+	actual, _, err := CompileMarkdown(t.Context(), []byte(input), lib, "testdata/test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, actual, sample, "the sample reaches the page as written")
@@ -264,7 +264,7 @@ func TestCDATAWithoutAngleBracketStillWorks(t *testing.T) {
 		`<ac:structured-macro ac:name="code"><ac:plain-text-body>` + sample +
 		"</ac:plain-text-body></ac:structured-macro>\n</details>\n"
 
-	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", Options{})
+	actual, _, err := CompileMarkdown(t.Context(), []byte(input), lib, "testdata/test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, actual, sample)

@@ -17,7 +17,7 @@ func compileWithImgTag(t *testing.T, src string) string {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), std, "test.md", Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(src), std, "test.md", Options{})
 	require.NoError(t, err)
 	return out
 }
@@ -105,7 +105,7 @@ func TestHTMLImgInsideMarkupBlockIsAttached(t *testing.T) {
 		"  <img src=\"https://example.com/remote.png\">\n" +
 		"</p>\n"
 
-	out, attachments, err := CompileMarkdown([]byte(src), std, doc, Options{})
+	out, attachments, err := CompileMarkdown(t.Context(), []byte(src), std, doc, Options{})
 	require.NoError(t, err)
 	require.NoError(t, CheckWellFormed(out))
 
@@ -167,6 +167,7 @@ func TestHTMLImgInsideMarkupBlockOutsideProjectIsRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = CompileMarkdown(
+		t.Context(),
 		[]byte("<p align=\"center\">\n  <img src=\"../secret.png\">\n</p>\n"),
 		std, filepath.Join(docs, "doc.md"), Options{},
 	)

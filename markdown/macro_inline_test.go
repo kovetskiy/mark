@@ -24,7 +24,7 @@ func TestInlineMacro(t *testing.T) {
 
 	input := []byte(doc)
 
-	out, _, err := CompileMarkdown(input, std, filepath.Join(t.TempDir(), "doc.md"), Options{})
+	out, _, err := CompileMarkdown(t.Context(), input, std, filepath.Join(t.TempDir(), "doc.md"), Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "<p>helm uses {{ .Values.x }} &amp; more</p>")

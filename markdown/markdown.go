@@ -3,6 +3,7 @@ package markdown
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -386,11 +387,12 @@ func expandIncludes(
 }
 
 // CompileMarkdown compiles a document to Confluence storage format, and
-// returns the attachments its diagrams and formulas were drawn as.
+// returns the attachments its diagrams and formulas were drawn as. ctx bounds
+// the drawing of those diagrams and formulas.
 // opts.Browser and opts.Mermaid are supplied, and closed, by whoever creates
 // opts; left nil, compiling fails at the first mermaid diagram, or d2 diagram
 // or formula published as PNG.
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, opts Options) (string, []attachment.Attachment, error) {
+func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, path string, opts Options) (string, []attachment.Attachment, error) {
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
 		return "", nil, err
@@ -409,7 +411,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, opts Opti
 		return "", nil, err
 	}
 
-	ghAlertsExtension := newConfluenceExtension(stdlib, path, opts, tmpl)
+	ghAlertsExtension := newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
 	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
@@ -433,6 +435,9 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, opts Opti
 // Confluence storage format, GitHub Alerts ([!NOTE], [!TIP], etc.) included.
 // It is a parser.Extension and an html.Extension at once.
 type ConfluenceExtension struct {
+	// ctx is the compile's, handed to the renderers that draw diagrams and
+	// formulas, since goldmark renders without one.
+	ctx             context.Context
 	Stdlib          *stdlib.Lib
 	Path            string
 	Options         Options
@@ -444,8 +449,9 @@ type ConfluenceExtension struct {
 
 // NewConfluenceExtension creates a new instance of the ConfluenceExtension, the
 // extension with GitHub Alerts support.
-// It is the standalone version that does not depend on feature flags.
-func NewConfluenceExtension(stdlib *stdlib.Lib, path string, opts Options) *ConfluenceExtension {
+// It is the standalone version that does not depend on feature flags. ctx
+// bounds the diagrams and formulas the extension's renderers draw.
+func NewConfluenceExtension(ctx context.Context, stdlib *stdlib.Lib, path string, opts Options) *ConfluenceExtension {
 	var tmpl *template.Template
 	if stdlib != nil {
 		// A page's own copy, for the reason pageTemplates gives. Cloning a
@@ -454,12 +460,12 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, opts Options) *Conf
 		tmpl, _ = stdlib.Templates.Clone()
 	}
 
-	return newConfluenceExtension(stdlib, path, opts, tmpl)
+	return newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
 }
 
 // newConfluenceExtension is NewConfluenceExtension with the template set the
 // include and macro transformers parse into given by the caller.
-func newConfluenceExtension(stdlib *stdlib.Lib, path string, opts Options, tmpl *template.Template) *ConfluenceExtension {
+func newConfluenceExtension(ctx context.Context, stdlib *stdlib.Lib, path string, opts Options, tmpl *template.Template) *ConfluenceExtension {
 	pipeline := ctransformer.NewPipelineTransformer(
 		// The base directory a template path is resolved against is the
 		// document's directory, not the document itself. Passing path for both
@@ -470,6 +476,7 @@ func newConfluenceExtension(stdlib *stdlib.Lib, path string, opts Options, tmpl 
 		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
+		ctx:             ctx,
 		Stdlib:          stdlib,
 		Path:            path,
 		Options:         opts,
@@ -497,7 +504,7 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 
 		// Core renderers (excluding blockquote and text which are replaced below)
 		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
-		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.Options.diagramConfig(), c.Path),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(c.ctx, c.Stdlib, c, c.Options.diagramConfig(), c.Path),
 		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.Options.DropH1),
 		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.Options.ImageAlign),
 		crenderer.NewConfluenceParagraphRenderer(),
@@ -517,7 +524,7 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 		// at all.
 		crenderer.NewConfluenceFootnoteRenderer(c.Stdlib),
 	}
-	renderers = append(renderers, featureRenderers(c.Options.Features, featureDeps{c.Stdlib, c, c.Options})...)
+	renderers = append(renderers, featureRenderers(c.Options.Features, featureDeps{c.ctx, c.Stdlib, c, c.Options})...)
 
 	return rendererOptions(cfg, renderers)
 }

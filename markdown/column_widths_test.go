@@ -28,7 +28,7 @@ func compileLogged(t *testing.T, src, path string) (string, string) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), lib, path, Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(src), lib, path, Options{})
 	require.NoError(t, err)
 
 	return out, logs.String()

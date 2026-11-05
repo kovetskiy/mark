@@ -57,7 +57,7 @@ func TestIncludeTransformerUnsafeHTML(t *testing.T) {
 
 	markdownInput := []byte("<!-- Include: raw_html.md -->")
 
-	output, _, err := markdown.CompileMarkdown(markdownInput, nil, filepath.Join(tempDir, "test.md"), markdown.Options{
+	output, _, err := markdown.CompileMarkdown(t.Context(), markdownInput, nil, filepath.Join(tempDir, "test.md"), markdown.Options{
 		IncludePath: tempDir,
 	})
 	require.NoError(t, err)

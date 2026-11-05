@@ -26,6 +26,7 @@ func compileBeside(t *testing.T, source string, files map[string]string) (string
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
+		t.Context(),
 		[]byte(source), std, filepath.Join(dir, "doc.md"), Options{},
 	)
 

@@ -28,6 +28,7 @@ func TestFenceLanguageWithNonWordCharacters(t *testing.T) {
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown(
+				t.Context(),
 				[]byte("```"+tt.info+"\nx\n```\n"), std, "test.md", Options{})
 			require.NoError(t, err)
 
@@ -56,6 +57,7 @@ func TestFenceOptionsStillParse(t *testing.T) {
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown(
+				t.Context(),
 				[]byte("```"+tt.info+"\nx\n```\n"), std, "test.md", Options{})
 			require.NoError(t, err)
 

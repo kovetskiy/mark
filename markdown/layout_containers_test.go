@@ -29,7 +29,7 @@ func TestLayoutDirectiveInsideAContainerIsLeftAlone(t *testing.T) {
 		"paragraph":  "text <!-- ac:layout-cell --> more text\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(document), std, "test.md", Options{})
+			out, _, err := CompileMarkdown(t.Context(), []byte(document), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.NotContains(t, out, "<ac:layout-cell>",
@@ -53,7 +53,7 @@ func TestLayoutDirectiveAtDocumentLevelStillConverts(t *testing.T) {
 		"<!-- ac:layout-section end -->\n" +
 		"<!-- ac:layout end -->\n"
 
-	out, _, err := CompileMarkdown([]byte(document), std, "test.md", Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte(document), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "<ac:layout>")

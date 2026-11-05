@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"context"
 	"slices"
 
 	"github.com/kovetskiy/mark/v17/attachment"
@@ -16,6 +17,7 @@ import (
 
 // featureDeps is what a feature's renderer is built from.
 type featureDeps struct {
+	ctx         context.Context
 	stdlib      *stdlib.Lib
 	attachments attachment.Attacher
 	opts        Options
@@ -97,7 +99,7 @@ var markdownFeatures = map[string]markdownFeature{
 			}
 		},
 		renderer: func(deps featureDeps) html.Extension {
-			return crenderer.NewConfluenceMathRenderer(deps.stdlib, deps.attachments, deps.opts.mathConfig())
+			return crenderer.NewConfluenceMathRenderer(deps.ctx, deps.stdlib, deps.attachments, deps.opts.mathConfig())
 		},
 	},
 	// Renders auto-detected bare URLs with the data-card-appearance="inline"

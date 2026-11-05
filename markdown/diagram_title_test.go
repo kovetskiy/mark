@@ -20,6 +20,7 @@ func TestDiagramWithoutTitleHasNoCaption(t *testing.T) {
 	require.NoError(t, err)
 
 	out, attachments, err := CompileMarkdown(
+		t.Context(),
 		[]byte("```d2\na -> b\n```\n"),
 		std, "test.md", Options{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 	)
@@ -44,6 +45,7 @@ func TestDiagramWithTitleKeepsCaption(t *testing.T) {
 	require.NoError(t, err)
 
 	out, attachments, err := CompileMarkdown(
+		t.Context(),
 		[]byte("```d2 title My Diagram\na -> b\n```\n"),
 		std, "test.md", Options{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 	)
@@ -75,7 +77,7 @@ func TestDiagramLeavesTheTextAfterItAlone(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, _, err := CompileMarkdown([]byte(test.source), std, "test.md", test.config)
+			out, _, err := CompileMarkdown(t.Context(), []byte(test.source), std, "test.md", test.config)
 			require.NoError(t, err)
 			assert.Contains(t, out, "<p>Next paragraph here.</p>")
 		})
