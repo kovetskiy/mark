@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/export"
@@ -81,6 +82,40 @@ sources:
 	assert.Contains(t, document, "(notes.md.txt)")
 	_, err = os.Stat(filepath.Join(dir, "notes.md.txt"))
 	assert.NoError(t, err)
+}
+
+// An OKF attachment ending in .md whose name is too long for a file is cut
+// before the .txt it gets, and the concept links to the file written.
+func TestExportOKFPageLongMarkdownAttachment(t *testing.T) {
+	server, pages := exportTreeSpace(t)
+	guide := pages["Guide"]
+	name := strings.Repeat("文", 100) + ".md"
+	server.EditPage(guide.ID, `<p><ac:link><ri:attachment ri:filename="`+name+`"/></ac:link></p>`)
+	server.AddAttachmentData(guide.ID, name, []byte("# notes"))
+	dir := t.TempDir()
+
+	_, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     guide.ID, Output: filepath.Join(dir, "guide.md"), Format: export.FormatOKF,
+	})
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	var written []string
+	for _, entry := range entries {
+		if entry.Name() != "guide.md" {
+			written = append(written, entry.Name())
+		}
+	}
+	require.Len(t, written, 1)
+	assert.LessOrEqual(t, len(written[0]), 255)
+	assert.True(t, utf8.ValidString(written[0]))
+	assert.True(t, strings.HasSuffix(written[0], ".txt"), "%q", written[0])
+
+	document, err := os.ReadFile(filepath.Join(dir, "guide.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(document), "("+written[0]+")")
 }
 
 // A page an app last edited, such as Automation for Confluence, names it as a

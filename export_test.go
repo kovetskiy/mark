@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
@@ -368,6 +369,82 @@ func TestExportPageFromConfluence(t *testing.T) {
 	}
 	assert.Contains(t, uploaded, "files_chart.png")
 	assert.Contains(t, server.Page(post.ID).Body, `<ri:attachment ri:filename="files_chart.png"/>`)
+}
+
+// TestExportLongAttachmentNames: an attachment whose name is longer than a
+// file name may be is written under a shorter one, which the document links
+// to and declares, and which publishing back uploads.
+func TestExportLongAttachmentNames(t *testing.T) {
+	long := strings.Repeat("a", 300)
+	image := long + "-one.png"
+	other := long + "-two.png"
+	linked := strings.Repeat("文", 100) + ".pdf"
+	raw := strings.Repeat("b", 300) + ".png"
+
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	page := server.AddPage("DOCS", "Long names", "page", home.ID)
+	server.EditPage(page.ID, `<p><ac:image><ri:attachment ri:filename="`+image+`"/></ac:image></p>`+
+		`<p><ac:image><ri:attachment ri:filename="`+other+`"/></ac:image></p>`+
+		`<p><ac:link><ri:attachment ri:filename="`+linked+`"/><ac:plain-text-link-body><![CDATA[report]]></ac:plain-text-link-body></ac:link></p>`+
+		`<table><tbody><tr><td colspan="2"><ac:image><ri:attachment ri:filename="`+raw+`"/></ac:image></td></tr></tbody></table>`)
+	for _, name := range []string{image, other, linked, raw} {
+		server.AddAttachmentData(page.ID, name, []byte(name[len(name)-8:]))
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "long.md")
+	result, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     page.ID, Output: out, AttachmentsDir: filepath.Join(dir, "files"),
+	})
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(filepath.Join(dir, "files"))
+	require.NoError(t, err)
+	require.Len(t, entries, 4, "every attachment has a file of its own")
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+	document := string(exported)
+
+	written := map[string]string{}
+	for _, entry := range entries {
+		name := entry.Name()
+		assert.LessOrEqual(t, len(name), 255, "%q", name)
+		assert.True(t, utf8.ValidString(name), "%q", name)
+		assert.Contains(t, document, "files/"+name, "the document links to the file written")
+
+		data, err := os.ReadFile(filepath.Join(dir, "files", name))
+		require.NoError(t, err)
+		written[string(data)] = name
+	}
+	for _, name := range []string{image, other, linked, raw} {
+		assert.Contains(t, written, name[len(name)-8:], "%q is written", name)
+	}
+
+	rawName := written[raw[len(raw)-8:]]
+	assert.Equal(t, []string{"files/" + rawName}, result.DeclaredAttachments)
+	assert.Contains(t, document, "<!-- Attachment: files/"+rawName+" -->")
+	assert.Contains(t, document, `ri:filename="files_`+rawName+`"`)
+
+	require.NoError(t, Run(context.Background(), Config{
+		Files:      out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{AttachReferenced: true},
+			Output:    io.Discard,
+		},
+	}))
+
+	var uploaded []string
+	for _, attachment := range server.Attachments(page.ID) {
+		uploaded = append(uploaded, attachment.Filename)
+	}
+	for _, name := range written {
+		assert.Contains(t, uploaded, "files_"+name, "published back, the file is uploaded under the name it was written with")
+	}
 }
 
 // TestExportRefusesToOverwrite: an export that would replace a file fails
