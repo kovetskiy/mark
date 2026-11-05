@@ -1,6 +1,7 @@
 package d2
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -92,7 +93,7 @@ func TestExtractD2Image(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ProcessD2(browser, tt.name, tt.markdown, tt.scale)
+			got, err := Render(context.Background(), tt.name, tt.markdown, Options{Browser: browser, Scale: tt.scale})
 			if !tt.wantErr(t, err, fmt.Sprintf("processD2(%v, %v)", tt.name, string(tt.markdown))) {
 				return
 			}
@@ -114,10 +115,10 @@ func TestExtractD2Image(t *testing.T) {
 	}
 }
 
-// TestProcessD2SVG covers the other thing a diagram can be published as: the
+// TestRenderSVG covers the other thing a diagram can be published as: the
 // drawing itself rather than a picture of it.
-func TestProcessD2SVG(t *testing.T) {
-	got, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0, false)
+func TestRenderSVG(t *testing.T) {
+	got, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, "example.svg", got.Filename)
@@ -135,15 +136,15 @@ func TestProcessD2SVG(t *testing.T) {
 	assert.Positive(t, height)
 }
 
-// TestProcessD2SVGScalesWhatThePageShowsAndNotTheFile covers what the scale
+// TestRenderSVGScalesWhatThePageShowsAndNotTheFile covers what the scale
 // means for an SVG. The drawing is the same at every size, so the file and the
 // checksum that identifies it do not move; the size the page displays it at
 // does.
-func TestProcessD2SVGScalesWhatThePageShowsAndNotTheFile(t *testing.T) {
-	plain, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0, false)
+func TestRenderSVGScalesWhatThePageShowsAndNotTheFile(t *testing.T) {
+	plain, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
-	scaled, err := ProcessD2SVG("example", []byte(diagram), "-", 2.0, false)
+	scaled, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 2.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, plain.Checksum, scaled.Checksum, "the drawing did not change")
@@ -158,26 +159,26 @@ func TestProcessD2SVGScalesWhatThePageShowsAndNotTheFile(t *testing.T) {
 	assert.Equal(t, plainWidth*2, scaledWidth, "the page shows it twice as wide")
 }
 
-// TestProcessD2SVGAndPNGAreDifferentAttachments pins that publishing the same
+// TestRenderSVGAndPNGAreDifferentAttachments pins that publishing the same
 // diagram both ways cannot be mistaken for publishing it once.
-func TestProcessD2SVGAndPNGAreDifferentAttachments(t *testing.T) {
-	svg, err := ProcessD2SVG("example", []byte(diagram), "-", 1.0, false)
+func TestRenderSVGAndPNGAreDifferentAttachments(t *testing.T) {
+	svg, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
-	png, err := ProcessD2(browser, "example", []byte(diagram), 1.0)
+	png, err := Render(context.Background(), "example", []byte(diagram), Options{Browser: browser, Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, svg.Checksum, png.Checksum)
 	assert.NotEqual(t, svg.Filename, png.Filename)
 }
 
-// TestProcessD2SVGInlinesWhatTheDiagramReferences covers the reason the SVG
+// TestRenderSVGInlinesWhatTheDiagramReferences covers the reason the SVG
 // path bundles at all.
 //
 // Confluence serves the attachment from its own host, where a path relative to
 // the document resolves to nothing: left as a reference, an icon beside the
 // document is a hole in the published diagram. The file has to carry it.
-func TestProcessD2SVGInlinesWhatTheDiagramReferences(t *testing.T) {
+func TestRenderSVGInlinesWhatTheDiagramReferences(t *testing.T) {
 	dir := t.TempDir()
 
 	// The bundler reads the file to inline it, so this has to be a real one.
@@ -186,7 +187,7 @@ func TestProcessD2SVGInlinesWhatTheDiagramReferences(t *testing.T) {
 
 	document := filepath.Join(dir, "doc.md")
 
-	got, err := ProcessD2SVG("icons", []byte("a: {icon: ./icon.png}\na -> b\n"), document, 1.0, false)
+	got, err := Render(context.Background(), "icons", []byte("a: {icon: ./icon.png}\na -> b\n"), Options{Format: "svg", InputPath: document, Scale: 1.0})
 	require.NoError(t, err)
 
 	published := string(got.FileBytes)
@@ -196,25 +197,25 @@ func TestProcessD2SVGInlinesWhatTheDiagramReferences(t *testing.T) {
 		"and nothing should be left pointing at a path Confluence cannot follow")
 }
 
-// TestProcessD2SVGRefusesAReferenceItCannotRead is the other half: a diagram
+// TestRenderSVGRefusesAReferenceItCannotRead is the other half: a diagram
 // published with an icon missing looks like a diagram that was drawn that way,
 // so the run stops instead.
-func TestProcessD2SVGRefusesAReferenceItCannotRead(t *testing.T) {
+func TestRenderSVGRefusesAReferenceItCannotRead(t *testing.T) {
 	dir := t.TempDir()
 	document := filepath.Join(dir, "doc.md")
 
-	_, err := ProcessD2SVG("missing", []byte("a: {icon: ./nothing-here.png}\na -> b\n"), document, 1.0, false)
+	_, err := Render(context.Background(), "missing", []byte("a: {icon: ./nothing-here.png}\na -> b\n"), Options{Format: "svg", InputPath: document, Scale: 1.0})
 	require.Error(t, err)
 }
 
-// TestProcessD2SVGWillNotReadFromTheWorkingDirectory covers a diagram compiled
+// TestRenderSVGWillNotReadFromTheWorkingDirectory covers a diagram compiled
 // without a document behind it, which CompileMarkdown does.
 //
 // A relative reference means nothing without a file to be relative to, and d2
 // does not treat it as meaning nothing: given "-" it leaves the path as written
 // and reads it from wherever mark happens to be running, so a diagram could
 // name a file beside the process and publish what it found. It is refused.
-func TestProcessD2SVGWillNotReadFromTheWorkingDirectory(t *testing.T) {
+func TestRenderSVGWillNotReadFromTheWorkingDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "private.png"), onePixelPNG(t), 0o600))
 
@@ -225,7 +226,7 @@ func TestProcessD2SVGWillNotReadFromTheWorkingDirectory(t *testing.T) {
 	// the value that makes the bundler read from the working directory rather
 	// than refuse.
 	for _, path := range []string{"", "-"} {
-		_, err := ProcessD2SVG("pathless", []byte("a: {icon: ./private.png}\na -> b\n"), path, 1.0, false)
+		_, err := Render(context.Background(), "pathless", []byte("a: {icon: ./private.png}\na -> b\n"), Options{Format: "svg", InputPath: path, Scale: 1.0})
 		require.Error(t, err, "path %q", path)
 
 		assert.Contains(t, err.Error(), "private.png")
@@ -233,11 +234,11 @@ func TestProcessD2SVGWillNotReadFromTheWorkingDirectory(t *testing.T) {
 	}
 }
 
-// TestProcessD2SVGWithoutAPathIsFineWithNothingToResolve is the boundary: only
+// TestRenderSVGWithoutAPathIsFineWithNothingToResolve is the boundary: only
 // a diagram that actually points at something local needs a document, so the
 // ordinary pathless compile still works.
-func TestProcessD2SVGWithoutAPathIsFineWithNothingToResolve(t *testing.T) {
-	got, err := ProcessD2SVG("pathless", []byte("a -> b\n"), "", 1.0, false)
+func TestRenderSVGWithoutAPathIsFineWithNothingToResolve(t *testing.T) {
+	got, err := Render(context.Background(), "pathless", []byte("a -> b\n"), Options{Format: "svg", Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, got.FileBytes)
@@ -256,7 +257,7 @@ func onePixelPNG(t *testing.T) []byte {
 	return decoded
 }
 
-// TestProcessD2SVGWillNotFetchWhatItWasNotAskedTo covers the request a diagram
+// TestRenderSVGWillNotFetchWhatItWasNotAskedTo covers the request a diagram
 // can make of the machine publishing it.
 //
 // d2's bundler fetches every URL a drawing names, with a client that follows
@@ -264,7 +265,7 @@ func onePixelPNG(t *testing.T) []byte {
 // metadata address -- and publishes what comes back inside the SVG. A document
 // nobody vetted, a pull request from a fork, would otherwise read a credential
 // endpoint and upload the answer to Confluence.
-func TestProcessD2SVGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
+func TestRenderSVGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
 	var asked bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -277,38 +278,37 @@ func TestProcessD2SVGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
 
 	diagram := []byte("a: {icon: " + server.URL + "/latest/meta-data/creds}\na -> b\n")
 
-	_, err := ProcessD2SVG("remote", diagram, "", 1.0, false)
+	_, err := Render(context.Background(), "remote", diagram, Options{Format: "svg", Scale: 1.0})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--d2-bundle-remote")
 	assert.False(t, asked, "nothing should have been requested")
 }
 
-// TestProcessD2SVGFetchesWhenAskedTo is the other half: the flag exists because
+// TestRenderSVGFetchesWhenAskedTo is the other half: the flag exists because
 // Confluence cannot fetch a remote image out of an SVG itself, so a document
 // whose diagrams are trusted still has a way to publish one.
-func TestProcessD2SVGFetchesWhenAskedTo(t *testing.T) {
+func TestRenderSVGFetchesWhenAskedTo(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(onePixelPNG(t))
 	}))
 	defer server.Close()
 
-	got, err := ProcessD2SVG("remote",
-		[]byte("a: {icon: "+server.URL+"/icon.png}\na -> b\n"), "", 1.0, true)
+	got, err := Render(context.Background(), "remote", []byte("a: {icon: "+server.URL+"/icon.png}\na -> b\n"), Options{Format: "svg", Scale: 1.0, BundleRemote: true})
 	require.NoError(t, err)
 
 	assert.Contains(t, string(got.FileBytes), "data:image/png;base64",
 		"the icon should have been fetched and carried in the drawing")
 }
 
-// TestProcessD2SVGWillNotReadOutsideTheProject covers a file the document names
+// TestRenderSVGWillNotReadOutsideTheProject covers a file the document names
 // but has no business naming: an absolute path, which d2's bundler reads
 // exactly as written, and an upward one, which it cleans its way out with.
 //
 // Held to the boundary an attachment is held to, since a diagram naming a file
 // is doing what a document does.
-func TestProcessD2SVGWillNotReadOutsideTheProject(t *testing.T) {
+func TestRenderSVGWillNotReadOutsideTheProject(t *testing.T) {
 	outside := t.TempDir()
 	secret := filepath.Join(outside, "id_rsa")
 	require.NoError(t, os.WriteFile(secret, onePixelPNG(t), 0o600))
@@ -329,26 +329,30 @@ func TestProcessD2SVGWillNotReadOutsideTheProject(t *testing.T) {
 			reference, refused = filepath.ToSlash(reference), "address"
 		}
 
-		_, err := ProcessD2SVG("outside",
-			[]byte("a: {icon: "+reference+"}\na -> b\n"), document, 1.0, false)
+		_, err := Render(context.Background(), "outside", []byte("a: {icon: "+reference+"}\na -> b\n"), Options{Format: "svg", InputPath: document, Scale: 1.0})
 		require.Error(t, err, "reference %q", reference)
 
 		assert.Contains(t, err.Error(), refused)
 	}
 }
 
-// TestProcessD2FlattensASlashInTheTitle: the page refers to an attachment by
+// TestRenderFlattensASlashInTheTitle: the page refers to an attachment by
 // its filename with any "/" flattened, so the file has to be uploaded under
 // that name too, or a diagram titled Auth/Login is a broken image.
-func TestProcessD2FlattensASlashInTheTitle(t *testing.T) {
-	got, err := ProcessD2SVG("Auth/Login", []byte(diagram), "-", 1.0, false)
+func TestRenderFlattensASlashInTheTitle(t *testing.T) {
+	got, err := Render(context.Background(), "Auth/Login", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, "Auth_Login.svg", got.Filename)
 }
 
 // A PNG with no browser to draw it in is refused before the layout is done.
-func TestProcessD2WithoutABrowser(t *testing.T) {
-	_, err := ProcessD2(nil, "nothing", []byte("a -> b"), 1)
+func TestRenderWithoutABrowser(t *testing.T) {
+	_, err := Render(context.Background(), "nothing", []byte("a -> b"), Options{Scale: 1})
 	assert.ErrorIs(t, err, chrome.ErrNoBrowser)
+}
+
+func TestRenderRefusesAnUnknownFormat(t *testing.T) {
+	_, err := Render(t.Context(), "gif", []byte("a -> b"), Options{Format: "gif"})
+	require.ErrorContains(t, err, `unknown d2 format "gif"`)
 }

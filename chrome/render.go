@@ -185,8 +185,9 @@ func (b *Browser) Close() {
 // the SVG asked for.
 //
 // selector differs by producer -- d2 nests its diagram in an outer svg, MathJax
-// does not -- so it is the caller's to give.
-func (b *Browser) PNGFromSVG(svg []byte, selector string, scale float64) (png []byte, width, height int64, err error) {
+// does not -- so it is the caller's to give. ctx bounds the render, not the
+// browser, which outlives it.
+func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, scale float64) (png []byte, width, height int64, err error) {
 	if b == nil {
 		return nil, 0, 0, ErrNoBrowser
 	}
@@ -194,13 +195,17 @@ func (b *Browser) PNGFromSVG(svg []byte, selector string, scale float64) (png []
 	b.render.Lock()
 	defer b.render.Unlock()
 
-	ctx, err := b.start()
+	browserCtx, err := b.start()
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, renderTimeout)
+	// Derived from the browser's context, since chromedp runs in the one it
+	// is given, and ended with the caller's too.
+	runCtx, cancel := context.WithTimeout(browserCtx, renderTimeout)
 	defer cancel()
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
 
 	// Measured before it is captured. A diagram's dimensions come from the
 	// document and are then multiplied by the scale, so four lines of d2 can
@@ -219,7 +224,7 @@ func (b *Browser) PNGFromSVG(svg []byte, selector string, scale float64) (png []
 		// A browser that failed a run is not trusted for the next one: the
 		// usual cause is that it died, and every later render would fail the
 		// same way until something restarted it.
-		return nil, 0, 0, b.failed(ctx, err)
+		return nil, 0, 0, b.failed(browserCtx, err)
 	}
 
 	// Not a browser fault, so the browser is kept: the next diagram in the
@@ -230,7 +235,7 @@ func (b *Browser) PNGFromSVG(svg []byte, selector string, scale float64) (png []
 
 	result, err := chromedp.Run(runCtx, chromedp.ScreenshotScale(chromedp.JSPath(selector), scale))
 	if err != nil {
-		return nil, 0, 0, b.failed(ctx, err)
+		return nil, 0, 0, b.failed(browserCtx, err)
 	}
 
 	return result, model.Width, model.Height, nil

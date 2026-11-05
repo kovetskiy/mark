@@ -10,6 +10,7 @@
 package math
 
 import (
+	"context"
 	"fmt"
 	"html"
 	gomath "math"
@@ -61,14 +62,30 @@ var svgError = regexp.MustCompile(`data-mjx-error="([^"]*)"`)
 // beside the text it sits in.
 const defaultScale = 2.0
 
+// Options say how Process renders a formula.
+type Options struct {
+	// Display selects the same distinction TeX makes: an inline formula is
+	// set compactly, a display one is given room.
+	Display bool
+
+	// Format is FormatPNG, the default when empty, or FormatSVG.
+	Format string
+
+	// Scale multiplies a PNG's pixels; zero is the default.
+	Scale float64
+
+	// Browser rasterises a PNG. An SVG needs none, and it may then be nil.
+	Browser *chrome.Browser
+}
+
 // Process renders one formula and returns it as an attachment.
 //
 // The name is derived from the formula rather than given by the author: math
 // has no equivalent of a diagram's title, and two identical formulas on a page
-// should be one attachment. display selects the same distinction TeX makes --
-// an inline formula is set compactly, a display one is given room. browser
-// rasterises a PNG; an SVG needs none, and browser may then be nil.
-func Process(browser *chrome.Browser, tex string, display bool, format string, scale float64) (attachment.Attachment, error) {
+// should be one attachment.
+func Process(ctx context.Context, tex string, options Options) (attachment.Attachment, error) {
+	browser, display, format, scale := options.Browser, options.Display, options.Format, options.Scale
+
 	switch format {
 	case "":
 		format = FormatPNG
@@ -127,7 +144,7 @@ func Process(browser *chrome.Browser, tex string, display bool, format string, s
 
 	contents := []byte(svg)
 	if format == FormatPNG {
-		contents, err = rasterise(browser, svg, width, height, scale)
+		contents, err = rasterise(ctx, browser, svg, width, height, scale)
 		if err != nil {
 			return attachment.Attachment{}, fmt.Errorf("unable to rasterise formula %q: %w", tex, err)
 		}
@@ -198,10 +215,10 @@ func sizeInPixels(svg string) (width, height string, err error) {
 // the formula asked for, with more pixels in it for a display that can use
 // them. A formula is small enough that a 1:1 rasterisation looks ragged beside
 // the text it sits in.
-func rasterise(browser *chrome.Browser, svg, width, height string, scale float64) ([]byte, error) {
+func rasterise(ctx context.Context, browser *chrome.Browser, svg, width, height string, scale float64) ([]byte, error) {
 	sized := svgSize.ReplaceAllString(svg, "${1}"+width+"${3}"+height+"${5}")
 
-	png, _, _, err := browser.PNGFromSVG([]byte(sized), `document.querySelector("svg")`, scale)
+	png, _, _, err := browser.PNGFromSVG(ctx, []byte(sized), `document.querySelector("svg")`, scale)
 	if err != nil {
 		return nil, err
 	}

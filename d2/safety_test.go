@@ -1,6 +1,7 @@
 package d2
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,11 +85,11 @@ func TestUnsafeLinksAreRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			diagram := []byte("a: click me\na.link: " + link + "\n")
 
-			_, err := ProcessD2SVG("probe", diagram, "", 1.0, false)
+			_, err := Render(context.Background(), "probe", diagram, Options{Format: "svg", Scale: 1.0})
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrUnsafeDiagram)
 
-			_, err = ProcessD2(browser, "probe", diagram, 1.0)
+			_, err = Render(context.Background(), "probe", diagram, Options{Browser: browser, Scale: 1.0})
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrUnsafeDiagram)
 		})
@@ -107,7 +108,7 @@ func TestLabelsThatOnlyDrawAreStillPublished(t *testing.T) {
 		"a list and code": "a: |md\n  - one\n  - `two`\n|\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := ProcessD2SVG("probe", []byte(label), "", 1.0, false)
+			got, err := Render(context.Background(), "probe", []byte(label), Options{Format: "svg", Scale: 1.0})
 			require.NoError(t, err)
 			assert.NotEmpty(t, got.FileBytes)
 		})
@@ -136,11 +137,11 @@ func publishable(t *testing.T, diagram []byte) [][]byte {
 
 	var drawings [][]byte
 
-	if png, err := ProcessD2(browser, "png", diagram, 1.0); err == nil {
+	if png, err := Render(context.Background(), "png", diagram, Options{Browser: browser, Scale: 1.0}); err == nil {
 		drawings = append(drawings, png.FileBytes)
 	}
 
-	if svg, err := ProcessD2SVG("svg", diagram, "", 1.0, false); err == nil {
+	if svg, err := Render(context.Background(), "svg", diagram, Options{Format: "svg", Scale: 1.0}); err == nil {
 		require.True(t, strings.Contains(string(svg.FileBytes), "<svg"),
 			"a diagram that was published should be a drawing")
 

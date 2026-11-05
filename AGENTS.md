@@ -166,7 +166,7 @@ for a PNG, and the bundle flag for a mermaid SVG), not the rendered bytes, becau
 output is not byte-stable across environments; `math/` does the same with the formula,
 plus the format and — for a PNG — the scale, since anything that changes the bytes has to
 change the name or the page keeps the attachment it had. The exception is a d2 SVG, whose
-checksum is taken over the rendered, bundled drawing (`ProcessD2SVG` in `d2/d2.go`): an
+checksum is taken over the rendered, bundled drawing (`renderSVGAttachment` in `d2/d2.go`): an
 image it inlines can change without the source changing, and d2's SVG output is
 deterministic.
 `classifyAttachments` (`attachments.go`), which both the upload and the dry run go

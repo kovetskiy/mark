@@ -84,7 +84,7 @@ func TestEngineStartsOnlyWhenUsed(t *testing.T) {
 func TestNilEngineSaysSo(t *testing.T) {
 	var engine *Engine
 
-	_, err := engine.ProcessMermaidLocally("d", []byte("graph TD;\n A-->B;"), 1.0)
+	_, err := engine.Render(context.Background(), "d", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	assert.ErrorIs(t, err, ErrNoEngine)
 
 	engine.Close()
@@ -120,7 +120,7 @@ func TestCloseDuringARenderIsNotACrash(t *testing.T) {
 	log.Logger = zerolog.New(&logged)
 	t.Cleanup(func() { log.Logger = restore })
 
-	_, err := engine.ProcessMermaidSVG("d", []byte("graph TD;\n A-->B;"), 1.0)
+	_, err := engine.Render(context.Background(), "d", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
 
 	require.ErrorIs(t, err, errClosed)
 	assert.Equal(t, 1, renderer.renders)
@@ -137,7 +137,7 @@ func TestMermanReportsWhatIsMissingByName(t *testing.T) {
 
 	engine, _ := useEngine(t, EngineMerman)
 
-	_, err := engine.ProcessMermaidLocally("d", []byte("graph TD;\n A-->B;"), 1.0)
+	_, err := engine.Render(context.Background(), "d", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--mermaid-engine")
@@ -193,18 +193,18 @@ func TestBothEnginesDrawTheSameDiagram(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			engine, _ := useEngine(t, kind)
 
-			png, err := engine.ProcessMermaidLocally("both", diagram, 1.0)
+			png, err := engine.Render(context.Background(), "both", diagram, Options{Scale: 1.0})
 			require.NoError(t, err)
 
 			assert.NotEmpty(t, png.FileBytes)
 			assert.Equal(t, "both.png", png.Filename)
 			assertPixelSize(t, png.Width, png.Height)
 
-			again, err := engine.ProcessMermaidLocally("both", diagram, 1.0)
+			again, err := engine.Render(context.Background(), "both", diagram, Options{Scale: 1.0})
 			require.NoError(t, err)
 			assert.Equal(t, png.Checksum, again.Checksum, "the same diagram is the same attachment")
 
-			svg, err := engine.ProcessMermaidSVG("both", diagram, 1.0)
+			svg, err := engine.Render(context.Background(), "both", diagram, Options{Format: "svg", Scale: 1.0})
 			require.NoError(t, err)
 
 			assert.True(t, hasSVGRoot(string(svg.FileBytes)))

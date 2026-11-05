@@ -96,14 +96,47 @@ func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height
 		nil
 }
 
-// ProcessD2 draws a diagram as a PNG, rasterised in browser.
-func ProcessD2(browser *chrome.Browser, title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
+// Options say how Render draws a diagram.
+type Options struct {
+	// Format is "png", the default when empty, or "svg".
+	Format string
+
+	// Scale multiplies a PNG's pixels, or the size the page displays an SVG
+	// at.
+	Scale float64
+
+	// Browser rasterises a PNG. An SVG needs none, and it may then be nil.
+	Browser *chrome.Browser
+
+	// InputPath is the document the diagram is in, which the images an SVG
+	// references are relative to; empty or "-" for none.
+	InputPath string
+
+	// BundleRemote lets an SVG inline the remote images it references.
+	BundleRemote bool
+}
+
+// Render draws a diagram as an attachment named after title, or after its
+// checksum when title is empty.
+func Render(ctx context.Context, title string, d2Diagram []byte, options Options) (attachment.Attachment, error) {
+	switch options.Format {
+	case "png", "":
+		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.Scale)
+	case "svg":
+		return renderSVGAttachment(ctx, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
+	default:
+		return attachment.Attachment{}, fmt.Errorf("unknown d2 format %q: expected png or svg", options.Format)
+	}
+}
+
+// renderPNGAttachment draws a diagram as a PNG, rasterised in browser.
+func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
 	// Before the layout, which can take seconds, rather than after it.
 	if browser == nil {
 		return attachment.Attachment{}, chrome.ErrNoBrowser
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
+	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
 
@@ -115,7 +148,7 @@ func ProcessD2(browser *chrome.Browser, title string, d2Diagram []byte, scale fl
 	log.Debug().Msgf("Rendering: %q", title)
 	// d2 nests the diagram in an outer svg, so the inner one is what to
 	// screenshot: the outer one carries the padding.
-	pngBytes, width, height, err := browser.PNGFromSVG(out, `document.querySelector("svg > svg")`, scale)
+	pngBytes, width, height, err := browser.PNGFromSVG(ctx, out, `document.querySelector("svg > svg")`, scale)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -153,14 +186,15 @@ func ProcessD2(browser *chrome.Browser, title string, d2Diagram []byte, scale fl
 	}, nil
 }
 
-// ProcessD2SVG publishes a diagram as the SVG it was drawn as, rather than a
-// picture of it: one file that is sharp at any zoom and whose text stays text.
+// renderSVGAttachment publishes a diagram as the SVG it was drawn as, rather
+// than a picture of it: one file that is sharp at any zoom and whose text
+// stays text.
 //
 // scale multiplies the size the page displays it at. The file itself is the
 // same drawing whatever that is, so unlike the PNG's the scale is not part of
 // what identifies the attachment.
-func ProcessD2SVG(title string, d2Diagram []byte, inputPath string, scale float64, bundleRemote bool) (attachment.Attachment, error) {
-	ctx, cancel := context.WithTimeout(context.TODO(), renderTimeout)
+func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, inputPath string, scale float64, bundleRemote bool) (attachment.Attachment, error) {
+	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
 
@@ -306,7 +340,7 @@ func references(svg []byte, inputPath string, bundleRemote bool) (local, remote 
 // pixel that would publish an enormous diagram one pixel wide.
 //
 // A scale that is not a number to multiply by leaves the length alone: run
-// checks it, but ProcessD2SVG is exported and reachable without that.
+// checks it, but Render is exported and reachable without that.
 func displayed(length int, scale float64) string {
 	size := float64(length)
 	if scale > 0 && !math.IsInf(scale, 0) {

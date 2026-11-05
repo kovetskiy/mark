@@ -39,7 +39,7 @@ func TestExtractMermaidImage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := engine.ProcessMermaidLocally(tt.name, tt.markdown, tt.scale)
+			got, err := engine.Render(context.Background(), tt.name, tt.markdown, Options{Scale: tt.scale})
 			if !tt.wantErr(t, err, fmt.Sprintf("processMermaidLocally(%v, %v)", tt.name, string(tt.markdown))) {
 				return
 			}
@@ -69,7 +69,7 @@ func TestInvalidDiagramKeepsEngine(t *testing.T) {
 	before, err := engine.get()
 	require.NoError(t, err)
 
-	_, err = engine.ProcessMermaidLocally("invalid", []byte("this is not a mermaid diagram"), 1.0)
+	_, err = engine.Render(context.Background(), "invalid", []byte("this is not a mermaid diagram"), Options{Scale: 1.0})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, mermaid.ErrRenderException)
 
@@ -103,12 +103,12 @@ func TestPNGBoundsAreMeasuredFromTheDrawing(t *testing.T) {
 func TestPNGBoundsMeasureWhatIsCaptured(t *testing.T) {
 	diagram := "sequenceDiagram\n Alice->>Bob: Hello\n Bob-->>Alice: Hi back"
 
-	svg, err := engine.renderSVG("measure", diagram, false)
+	svg, err := engine.renderSVG(context.Background(), "measure", diagram, false)
 	require.NoError(t, err)
 
 	width, height := extractSVGDimensions(svg)
 
-	png, err := engine.ProcessMermaidLocally("measure", []byte(diagram), 1)
+	png, err := engine.Render(context.Background(), "measure", []byte(diagram), Options{Scale: 1})
 	require.NoError(t, err)
 
 	// Within a pixel: the box model is a whole number and the SVG's size need
@@ -133,7 +133,7 @@ func TestOversizedPNGIsRefusedAndKeepsEngine(t *testing.T) {
 	before, err := engine.get()
 	require.NoError(t, err)
 
-	_, err = engine.ProcessMermaidLocally("huge", []byte("graph TD;\n A-->B;"), 1000)
+	_, err = engine.Render(context.Background(), "huge", []byte("graph TD;\n A-->B;"), Options{Scale: 1000})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, chrome.ErrRasterRefused)
 	assert.Contains(t, err.Error(), "lower the scale")
@@ -150,10 +150,10 @@ func TestOversizedPNGIsRefusedAndKeepsEngine(t *testing.T) {
 func TestScaleZeroIsTheDefault(t *testing.T) {
 	diagram := []byte("graph TD;\n A-->B;")
 
-	unset, err := engine.ProcessMermaidLocally("unset", diagram, 0)
+	unset, err := engine.Render(context.Background(), "unset", diagram, Options{})
 	require.NoError(t, err)
 
-	one, err := engine.ProcessMermaidLocally("one", diagram, 1)
+	one, err := engine.Render(context.Background(), "one", diagram, Options{Scale: 1})
 	require.NoError(t, err)
 
 	assert.Equal(t, one.Checksum, unset.Checksum)
@@ -165,11 +165,11 @@ func TestScaleZeroIsTheDefault(t *testing.T) {
 // and cost it its life. Refused before anything is drawn, for either output.
 func TestScaleRefusesWhatIsNotAScale(t *testing.T) {
 	for _, scale := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
-		_, err := engine.ProcessMermaidLocally("png", []byte("graph TD;\n A-->B;"), scale)
+		_, err := engine.Render(context.Background(), "png", []byte("graph TD;\n A-->B;"), Options{Scale: scale})
 		require.Error(t, err, "a scale of %v is not one", scale)
 		assert.Contains(t, err.Error(), "invalid mermaid scale")
 
-		_, err = engine.ProcessMermaidSVG("svg", []byte("graph TD;\n A-->B;"), scale)
+		_, err = engine.Render(context.Background(), "svg", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: scale})
 		require.Error(t, err, "a scale of %v is not one for an SVG either", scale)
 		assert.Contains(t, err.Error(), "invalid mermaid scale")
 	}
@@ -191,7 +191,7 @@ func TestRenderTimeoutKeepsEngine(t *testing.T) {
 	renderTimeout = time.Nanosecond
 	before.SetRenderTimeout(time.Nanosecond)
 
-	_, err = engine.ProcessMermaidLocally("timeout", []byte("graph TD;\n A-->B;"), 1.0)
+	_, err = engine.Render(context.Background(), "timeout", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -202,15 +202,37 @@ func TestRenderTimeoutKeepsEngine(t *testing.T) {
 	require.NoError(t, err)
 	assert.Same(t, before, after)
 
-	got, err := engine.ProcessMermaidLocally("after-timeout", []byte("graph TD;\n A-->B;"), 1.0)
+	got, err := engine.Render(context.Background(), "after-timeout", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	require.NoError(t, err)
 	assert.NotEmpty(t, got.FileBytes)
 }
 
-// TestProcessMermaidSVG covers the other thing a diagram can be published as:
+// TestRenderStoppedByTheCallerKeepsEngine: a render whose context the caller
+// ended fails with that, and leaves the engine for the next diagram.
+func TestRenderStoppedByTheCallerKeepsEngine(t *testing.T) {
+	before, err := engine.get()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err = engine.Render(ctx, "stopped", []byte("graph TD;\n A-->B;"), Options{})
+	require.ErrorIs(t, err, context.Canceled)
+
+	after, err := engine.get()
+	require.NoError(t, err)
+	assert.Same(t, before, after)
+}
+
+func TestRenderRefusesAnUnknownFormat(t *testing.T) {
+	_, err := engine.Render(t.Context(), "gif", []byte("graph TD;\n A-->B;"), Options{Format: "gif"})
+	require.ErrorContains(t, err, `unknown mermaid format "gif"`)
+}
+
+// TestRenderSVG covers the other thing a diagram can be published as:
 // the drawing itself rather than a picture of it.
-func TestProcessMermaidSVG(t *testing.T) {
-	got, err := engine.ProcessMermaidSVG("svgtest", []byte("graph TD;\n A-->B;"), 1.0)
+func TestRenderSVG(t *testing.T) {
+	got, err := engine.Render(context.Background(), "svgtest", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, "svgtest.svg", got.Filename)
@@ -221,11 +243,11 @@ func TestProcessMermaidSVG(t *testing.T) {
 	assertPixelSize(t, got.Width, got.Height)
 }
 
-// TestProcessMermaidWithBundle covers --mermaid-bundle: the same SVG, with the
+// TestRenderBundledSVG covers --mermaid-bundle: the same SVG, with the
 // diagram's own source kept in it, so that what was published can be opened and
 // edited again without the document it came from.
-func TestProcessMermaidWithBundle(t *testing.T) {
-	got, err := engine.ProcessMermaidWithBundle("bundletest", []byte("graph TD;\n A-->B;"), 1.0)
+func TestRenderBundledSVG(t *testing.T) {
+	got, err := engine.Render(context.Background(), "bundletest", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0, Bundle: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, "bundletest.svg", got.Filename)
@@ -245,10 +267,10 @@ func TestProcessMermaidWithBundle(t *testing.T) {
 func TestSVGChecksumsDifferByBundle(t *testing.T) {
 	diagram := []byte("graph TD;\n A-->B;")
 
-	plain, err := engine.ProcessMermaidSVG("chk", diagram, 1.0)
+	plain, err := engine.Render(context.Background(), "chk", diagram, Options{Format: "svg", Scale: 1.0})
 	require.NoError(t, err)
 
-	bundled, err := engine.ProcessMermaidWithBundle("chk", diagram, 1.0)
+	bundled, err := engine.Render(context.Background(), "chk", diagram, Options{Format: "svg", Scale: 1.0, Bundle: true})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, plain.Checksum, bundled.Checksum)
@@ -417,7 +439,7 @@ func descContent(document string) (string, bool) {
 // cap then overrides -- and the file states no size of its own for mark to ask
 // with.
 func TestSVGStatesItsOwnSizeUncapped(t *testing.T) {
-	got, err := engine.ProcessMermaidSVG("uncapped", []byte("graph TD;\n A-->B;"), 1.0)
+	got, err := engine.Render(context.Background(), "uncapped", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
 	require.NoError(t, err)
 
 	// The root element, not the whole file: mermaid ships a stylesheet inside
@@ -445,7 +467,7 @@ func TestSVGIsUncappedForEveryKindOfDiagram(t *testing.T) {
 
 	for name, source := range diagrams {
 		t.Run(name, func(t *testing.T) {
-			got, err := engine.ProcessMermaidSVG(name, []byte(source), 1.0)
+			got, err := engine.Render(context.Background(), name, []byte(source), Options{Format: "svg", Scale: 1.0})
 			require.NoError(t, err)
 
 			assert.NotContains(t, svgRootElement(t, got.FileBytes), "max-width")
@@ -461,10 +483,10 @@ func TestSVGIsUncappedForEveryKindOfDiagram(t *testing.T) {
 func TestSVGScaleMultipliesWhatThePageShowsAndNotTheFile(t *testing.T) {
 	diagram := []byte("graph TD;\n A-->B;")
 
-	plain, err := engine.ProcessMermaidSVG("scaled", diagram, 1.0)
+	plain, err := engine.Render(context.Background(), "scaled", diagram, Options{Format: "svg", Scale: 1.0})
 	require.NoError(t, err)
 
-	scaled, err := engine.ProcessMermaidSVG("scaled", diagram, 2.0)
+	scaled, err := engine.Render(context.Background(), "scaled", diagram, Options{Format: "svg", Scale: 2.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, plain.Checksum, scaled.Checksum, "the drawing did not change")
@@ -545,15 +567,15 @@ func svgRootElement(t *testing.T, document []byte) string {
 	}
 }
 
-// TestProcessMermaidFlattensASlashInTheTitle: the page refers to an attachment
+// TestRenderFlattensASlashInTheTitle: the page refers to an attachment
 // by its filename with any "/" flattened, so the file has to be uploaded under
 // that name too, or a diagram titled Auth/Login is a broken image.
-func TestProcessMermaidFlattensASlashInTheTitle(t *testing.T) {
-	svg, err := engine.ProcessMermaidSVG("Auth/Login", []byte("graph TD;\n A-->B;"), 1.0)
+func TestRenderFlattensASlashInTheTitle(t *testing.T) {
+	svg, err := engine.Render(context.Background(), "Auth/Login", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
 	require.NoError(t, err)
 	assert.Equal(t, "Auth_Login.svg", svg.Filename)
 
-	png, err := engine.ProcessMermaidLocally("Auth/Login", []byte("graph TD;\n A-->B;"), 1.0)
+	png, err := engine.Render(context.Background(), "Auth/Login", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	require.NoError(t, err)
 	assert.Equal(t, "Auth_Login.png", png.Filename)
 }

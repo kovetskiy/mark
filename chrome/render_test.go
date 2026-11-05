@@ -197,10 +197,29 @@ func TestRenderInterruptedByCloseSaysSo(t *testing.T) {
 func TestNilBrowserSaysSo(t *testing.T) {
 	var browser *Browser
 
-	_, _, _, err := browser.PNGFromSVG([]byte("<svg/>"), "svg", 1)
+	_, _, _, err := browser.PNGFromSVG(t.Context(), []byte("<svg/>"), "svg", 1)
 	assert.ErrorIs(t, err, ErrNoBrowser)
 
 	browser.Close()
+}
+
+// TestRenderStoppedByTheCaller: a render whose context has ended fails with
+// that, and the next one is drawn.
+func TestRenderStoppedByTheCaller(t *testing.T) {
+	browser := NewBrowser()
+	t.Cleanup(browser.Close)
+
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>`)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, _, _, err := browser.PNGFromSVG(ctx, svg, "document.querySelector('svg')", 1)
+	require.ErrorIs(t, err, context.Canceled)
+
+	_, width, _, err := browser.PNGFromSVG(t.Context(), svg, "document.querySelector('svg')", 1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(20), width)
 }
 
 // TestConcurrentRendersEachGetTheirOwnPicture: every render navigates the
@@ -226,7 +245,7 @@ func TestConcurrentRendersEachGetTheirOwnPicture(t *testing.T) {
 				`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="10"><rect width="100%%" height="100%%"/></svg>`,
 				20+10*i,
 			)
-			_, widths[i], _, errs[i] = browser.PNGFromSVG([]byte(svg), "document.querySelector('svg')", 1)
+			_, widths[i], _, errs[i] = browser.PNGFromSVG(t.Context(), []byte(svg), "document.querySelector('svg')", 1)
 		}()
 	}
 
