@@ -177,6 +177,39 @@ func TestClosedBrowserRefusesToRender(t *testing.T) {
 	assert.ErrorIs(t, err, errClosed)
 }
 
+// TestCloseStopsAStartingBrowser: Close during a launch ends the launch
+// rather than waiting out startupTimeout, and the render that asked for it
+// says the browser was closed.
+func TestCloseStopsAStartingBrowser(t *testing.T) {
+	browser := NewBrowser()
+
+	got := make(chan error, 1)
+	go func() {
+		_, err := browser.start(context.Background())
+		got <- err
+	}()
+
+	// Long enough for chromedp to be launching Chrome, short of it being
+	// ready.
+	time.Sleep(20 * time.Millisecond)
+
+	began := time.Now()
+	browser.Close()
+	assert.Less(t, time.Since(began), 2*time.Second)
+
+	select {
+	case err := <-got:
+		// A launch fast enough to have finished before Close is fine too: it
+		// was then stopped by Close, and the render is refused all the same
+		// on its next start.
+		if err != nil {
+			assert.ErrorIs(t, err, errClosed)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the start was not released by Close")
+	}
+}
+
 // TestRenderInterruptedByCloseSaysSo: Close cancels the context a render in
 // flight is using, and the failure that render returns should name Close
 // rather than read as a bare "context canceled".

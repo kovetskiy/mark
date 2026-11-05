@@ -94,8 +94,9 @@ func CheckEngine(kind EngineKind) error {
 	}
 }
 
-// Close shuts the renderer down for good, if one was started. Closing twice,
-// or closing nil, is harmless.
+// Close shuts the renderer down for good, if one was started, and stops one
+// still starting without waiting for it. Closing twice, or closing nil, is
+// harmless.
 func (e *Engine) Close() {
 	if e == nil {
 		return
