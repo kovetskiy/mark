@@ -1,37 +1,66 @@
 package renderer
 
 import (
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/stretchr/testify/assert"
 )
 
-// TestAdmonitionSyntaxesDiverge pins the per-syntax tables, which do not agree
-// on what a word means: `!!! note` is the note macro, `> [!NOTE]` the info
-// macro. The divergence is published behaviour; this is here so that
-// unifying it is a decision rather than an accident of a refactor.
-func TestAdmonitionSyntaxesDiverge(t *testing.T) {
-	gh := map[string]string{
-		"note":      "info",
-		"tip":       "tip",
-		"important": "info",
-		"warning":   "note",
-		"caution":   "warning",
-		"unknown":   "info",
-	}
-	for alert, macro := range gh {
-		assert.Equal(t, macro, ghAlertType(alert).String(), "GitHub alert %q", alert)
+// admonitionSyntaxes is each admonition word, the macro it is published as,
+// and the syntaxes that accept it: every word means one macro wherever it is
+// written.
+var admonitionSyntaxes = []struct {
+	word           string
+	macro          string
+	github, mkdocs bool
+}{
+	{"note", "info", true, true},
+	{"info", "info", false, true},
+	{"important", "info", true, true},
+	{"tip", "tip", true, true},
+	{"hint", "tip", false, true},
+	{"success", "tip", false, true},
+	{"warning", "note", true, true},
+	{"warn", "note", false, false},
+	{"attention", "note", false, true},
+	{"caution", "warning", true, true},
+	{"danger", "warning", false, true},
+	{"error", "warning", false, true},
+}
+
+func TestAdmonitionWordsHaveOneMacro(t *testing.T) {
+	for _, s := range admonitionSyntaxes {
+		assert.Equal(t, s.macro, ClassifyBlockQuote(s.word+": text").String(), "colon %q", s.word)
+		assert.Equal(t, s.macro, ClassifyBlockQuote(strings.ToUpper(s.word)+":").String(), "colon %q", s.word)
+
+		mkdocs := "none"
+		if s.mkdocs {
+			mkdocs = s.macro
+		}
+		assert.Equal(t, mkdocs, mkDocsAdmonitionType(s.word).String(), "MkDocs %q", s.word)
+
+		// The transformer hands over only GitHub's five types; the rest
+		// never reach ghAlertType.
+		if s.github {
+			assert.Equal(t, s.macro, ghAlertType(s.word).String(), "GitHub %q", s.word)
+		}
 	}
 
-	mkdocs := map[string]string{
-		"info":    "info",
-		"note":    "note",
-		"warning": "warning",
-		"tip":     "tip",
+	assert.Equal(t, "info", ghAlertType("unknown").String())
+	for _, class := range []string{"abstract", "question", "example", "quote", "bug", "failure", "Note"} {
+		assert.Equal(t, "none", mkDocsAdmonitionType(class).String(), "MkDocs %q", class)
 	}
-	for class, macro := range mkdocs {
-		assert.Equal(t, macro, mkDocsAdmonitionTypes[class].String(), "MkDocs class %q", class)
-	}
+}
+
+// TestAdmonitionWordsAgree keeps the words the colon syntax reads and the
+// words with a macro one list.
+func TestAdmonitionWordsAgree(t *testing.T) {
+	assert.ElementsMatch(t, syntax.AdmonitionWords, slices.Collect(maps.Keys(admonitionTypes)))
+	assert.Len(t, admonitionSyntaxes, len(admonitionTypes))
 }
 
 // TestAdmonitionTypeOutOfRange covers a value outside the table. The name is

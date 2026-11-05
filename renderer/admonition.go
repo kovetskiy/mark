@@ -4,11 +4,8 @@ package renderer
 // syntax mark understands is published as. Its String is the macro's ac:name.
 //
 // Three syntaxes produce one -- a colon blockquote ("> Info:"), a GitHub
-// alert and an MkDocs "!!!" admonition -- and each has its own vocabulary: the
-// tables below, and colonAdmonitionTypes. The colon syntax reads "note" as
-// GitHub does, as info. MkDocs does not: `!!! note` is the note macro, and an
-// MkDocs "warning" is Confluence's warning where a GitHub one is its note.
-// That divergence is published behaviour, kept as it is.
+// alert and an MkDocs "!!!" admonition -- and a word means the same macro in
+// each of them: admonitionTypes.
 type AdmonitionType int
 
 const (
@@ -39,32 +36,57 @@ func (t AdmonitionType) String() string {
 	return admonitionMacros[t]
 }
 
-// mkDocsAdmonitionTypes maps an MkDocs admonition class to its macro. Any other
-// class -- MkDocs has a dozen -- is AdmonitionNone.
-var mkDocsAdmonitionTypes = map[string]AdmonitionType{
-	"info":    AdmonitionInfo,
-	"note":    AdmonitionNote,
-	"warning": AdmonitionWarning,
-	"tip":     AdmonitionTip,
-}
-
-// ghAlertTypes maps a GitHub alert type, as the GH alerts transformer records
-// it, to its macro. Confluence has no "important" or "caution", so the five
-// alerts are folded onto its four macros, and the names shift on the way:
-// note is info, warning is note, caution is warning. An unknown type is info
-// (see ghAlertType).
-var ghAlertTypes = map[string]AdmonitionType{
+// admonitionTypes maps every admonition word to its macro, in the colours
+// GitHub and MkDocs Material give the word: blue for information, green for
+// advice, yellow for a warning, red for danger. Confluence's note macro is the
+// yellow one, so "note" is info and "warning" is note.
+//
+// Each syntax reads its own vocabulary from it: the colon syntax every word
+// (syntax.AdmonitionWords), GitHub its five alert types, and MkDocs every word
+// but "warn", which is not one of its types.
+var admonitionTypes = map[string]AdmonitionType{
 	"note":      AdmonitionInfo,
-	"tip":       AdmonitionTip,
+	"info":      AdmonitionInfo,
 	"important": AdmonitionInfo,
+
+	"tip":     AdmonitionTip,
+	"hint":    AdmonitionTip,
+	"success": AdmonitionTip,
+
 	"warning":   AdmonitionNote,
-	"caution":   AdmonitionWarning,
+	"warn":      AdmonitionNote,
+	"attention": AdmonitionNote,
+
+	"caution": AdmonitionWarning,
+	"danger":  AdmonitionWarning,
+	"error":   AdmonitionWarning,
 }
 
-// ghAlertType looks an alert type up in ghAlertTypes, falling back to info.
+// admonitionType looks word up in admonitionTypes, answering AdmonitionNone
+// for a word that is not there.
+func admonitionType(word string) AdmonitionType {
+	if t, ok := admonitionTypes[word]; ok {
+		return t
+	}
+	return AdmonitionNone
+}
+
+// ghAlertType returns the macro of a GitHub alert type, as the GH alerts
+// transformer records it: one of note, tip, important, warning and caution.
+// Anything else is info.
 func ghAlertType(alertType string) AdmonitionType {
-	if t, ok := ghAlertTypes[alertType]; ok {
+	if t := admonitionType(alertType); t != AdmonitionNone {
 		return t
 	}
 	return AdmonitionInfo
+}
+
+// mkDocsAdmonitionType returns the macro of an MkDocs admonition class. A class
+// MkDocs has that is not an admonition word -- abstract, question, quote and
+// the rest -- is AdmonitionNone, and so is "warn", which MkDocs does not have.
+func mkDocsAdmonitionType(class string) AdmonitionType {
+	if class == "warn" {
+		return AdmonitionNone
+	}
+	return admonitionType(class)
 }

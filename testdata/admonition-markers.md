@@ -43,15 +43,85 @@
 > <!-- Info -->
 > A marker kept off the page.
 
-## GitHub alerts are unchanged
+## Every word in the colon syntax
+
+> Important: blue, as GitHub's is.
+
+> Hint: green.
+
+> Success: green.
+
+> Attention: yellow.
+
+> Caution: red.
+
+> Danger: red.
+
+> Error: red.
+
+> **Errors:** a plural.
+
+> <!-- danger -->
+> A comment chooses red.
+
+## A quoted log line is a marker too
+
+> Error: connection refused
+
+> Success: 3 files written
+
+## GitHub alerts
 
 > [!NOTE]
 > GitHub's note.
 
+> [!TIP]
+> GitHub's tip.
+
+> [!IMPORTANT]
+> GitHub's important.
+
 > [!WARNING]
 > GitHub's warning.
 
-## MkDocs admonitions are unchanged
+> [!CAUTION]
+> GitHub's caution.
+
+> [!DANGER]
+>
+> Not one of GitHub's types.
+
+## MkDocs admonitions
 
 !!! note
     MkDocs' note.
+
+!!! info
+    MkDocs' info.
+
+!!! important
+    MkDocs' important.
+
+!!! tip
+    MkDocs' tip.
+
+!!! hint
+    MkDocs' hint.
+
+!!! success
+    MkDocs' success.
+
+!!! warning
+    MkDocs' warning.
+
+!!! attention
+    MkDocs' attention.
+
+!!! caution
+    MkDocs' caution.
+
+!!! danger
+    MkDocs' danger.
+
+!!! error
+    MkDocs' error.

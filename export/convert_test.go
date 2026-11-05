@@ -116,6 +116,8 @@ func TestConvertBlockquoteMarkdownOnlyWithoutAMarker(t *testing.T) {
 		"<blockquote><p><strong>Tip</strong>: a marker</p></blockquote>",
 		"<blockquote><p>Note:<br/>on its own line</p></blockquote>",
 		"<blockquote><p><strong>Notes:</strong></p><ul><li>one</li></ul></blockquote>",
+		"<blockquote><p>Error: connection refused</p></blockquote>",
+		"<blockquote><p>Successes: 3</p></blockquote>",
 	} {
 		assert.Equal(t, storage+"\n", convert(t, storage))
 	}

@@ -15,26 +15,12 @@ func (m BlockQuoteLevelMap) Level(node ast.Node) int {
 	return m[node]
 }
 
-// colonAdmonitionTypes maps the word of a colon marker, as
-// syntax.AdmonitionWord gives it, to its macro. Note is the info macro, as
-// GitHub's [!NOTE] is, so that one word has one colour.
-var colonAdmonitionTypes = map[string]AdmonitionType{
-	"info":    AdmonitionInfo,
-	"note":    AdmonitionInfo,
-	"warn":    AdmonitionWarning,
-	"warning": AdmonitionWarning,
-	"tip":     AdmonitionTip,
-}
-
 // ClassifyBlockQuote returns the AdmonitionType of a blockquote's first line
 // in the colon syntax: an admonition word and a colon, "Info: text", or a
 // comment holding only the word. GitHub Alerts ([!NOTE], [!TIP], etc.) are
 // handled by the GitHub Alerts transformer instead.
 func ClassifyBlockQuote(line string) AdmonitionType {
-	if t, ok := colonAdmonitionTypes[syntax.AdmonitionWord(line)]; ok {
-		return t
-	}
-	return AdmonitionNone
+	return admonitionType(syntax.AdmonitionWord(line))
 }
 
 // ParseBlockQuoteType returns the type of a blockquote in the colon syntax,

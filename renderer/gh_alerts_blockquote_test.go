@@ -68,7 +68,7 @@ func TestGHAlertRendererFallsBackToColonSyntax(t *testing.T) {
 	actual := render(t, "> Warn: the old syntax.\n", ghAlertRenderers(), ghAlertParserOptions()...)
 	assertWellFormed(t, actual)
 
-	assert.Contains(t, actual, `ac:name="warning"`)
+	assert.Contains(t, actual, `ac:name="note"`)
 }
 
 // TestGHAlertRendererLeavesPlainQuotesAlone covers the third case the same
