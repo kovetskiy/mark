@@ -169,6 +169,20 @@ type AncestryTracker interface {
 	ParentTracker
 }
 
+// AncestryOptions are the settings shared by the functions that resolve and
+// create a page's ancestry.
+type AncestryOptions struct {
+	// DryRun looks up what exists and creates nothing.
+	DryRun bool
+	// FolderCache holds the folders the run has already resolved; nil
+	// resolves every one.
+	FolderCache *FolderCache
+	// Parents and Folders remember what parent chains and folder paths
+	// resolved to; nil remembers nothing. An AncestryTracker serves as both.
+	Parents ParentTracker
+	Folders FolderTracker
+}
+
 // ParentPathKey names a parent by the chain of titles leading to it.
 //
 // No anchor, unlike folderPathKey: a parent chain is resolved from the space
@@ -194,16 +208,14 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
 //
-// cache holds the folders the run has already resolved; nil resolves every one.
+// It reads options.DryRun, FolderCache and Folders.
 func EnsureFolderAncestry(
 	ctx context.Context,
-	dryRun bool,
 	api *confluence.API,
-	cache *FolderCache,
 	space string,
 	folders []string,
 	anchorPageID *string,
-	tracker FolderTracker,
+	options AncestryOptions,
 ) (*ParentInfo, error) {
 	if len(folders) == 0 {
 		return nil, nil
@@ -230,22 +242,22 @@ func EnsureFolderAncestry(
 			underID = *anchorPageID
 		}
 
-		if id, ok := cache.lookup(space, underID, title); ok {
+		if id, ok := options.FolderCache.lookup(space, underID, title); ok {
 			folder, err = api.GetFolderByID(ctx, id)
 		} else {
-			folder, err = resolveFolder(ctx, api, dryRun, space, title, underID, anchorPageID)
+			folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
 		}
 
-		if folder == nil && tracker != nil {
+		if folder == nil && options.Folders != nil {
 			// No folder carries this title. It may have been renamed in
 			// Confluence since the last run, in which case the folder recorded
 			// for this position is still the right one and creating another
 			// would split the hierarchy in two.
 			key := folderPathKey(anchorPageID, folders, i)
-			id, ok, lookupErr := tracker.LookupFolder(ctx, space, key)
+			id, ok, lookupErr := options.Folders.LookupFolder(ctx, space, key)
 			if lookupErr != nil {
 				return nil, fmt.Errorf("unable to check whether folder %q was renamed: %w", title, lookupErr)
 			}
@@ -281,13 +293,13 @@ func EnsureFolderAncestry(
 			break
 		}
 
-		if tracker != nil {
-			if err := tracker.RecordFolder(ctx, space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
+		if options.Folders != nil {
+			if err := options.Folders.RecordFolder(ctx, space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
 				return nil, err
 			}
 		}
 
-		cache.store(space, underID, title, folder.ID)
+		options.FolderCache.store(space, underID, title, folder.ID)
 		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
@@ -311,7 +323,7 @@ func EnsureFolderAncestry(
 		strings.Join(rest, ` > `),
 	)
 
-	if !dryRun {
+	if !options.DryRun {
 		// rest is the tail of folders that does not exist yet, so its offset
 		// within folders is what makes a recorded key match on the next run.
 		firstNew := len(folders) - len(rest)
@@ -349,10 +361,10 @@ func EnsureFolderAncestry(
 				// hit into a hard failure. A create that failed for a real
 				// reason leaves nothing to find, and the original error is what
 				// gets reported.
-				if id, ok := cache.lookup(space, underID, title); ok {
+				if id, ok := options.FolderCache.lookup(space, underID, title); ok {
 					folder, err = api.GetFolderByID(ctx, id)
 				} else {
-					folder, err = resolveFolder(ctx, api, dryRun, space, title, underID, anchorPageID)
+					folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
 				}
 				if err != nil || folder == nil {
 					return nil, fmt.Errorf(
@@ -374,11 +386,11 @@ func EnsureFolderAncestry(
 			} else if anchorPageID != nil {
 				underID = *anchorPageID
 			}
-			cache.store(space, underID, title, folder.ID)
+			options.FolderCache.store(space, underID, title, folder.ID)
 
-			if tracker != nil {
+			if options.Folders != nil {
 				key := folderPathKey(anchorPageID, folders, firstNew+offset)
-				if err := tracker.RecordFolder(ctx, space, key, folder.ID); err != nil {
+				if err := options.Folders.RecordFolder(ctx, space, key, folder.ID); err != nil {
 					return nil, err
 				}
 			}
@@ -413,18 +425,16 @@ func EnsureFolderAncestry(
 // marker so leaf pages are created inside the deepest folder.
 func EnsureMixedAncestry(
 	ctx context.Context,
-	dryRun bool,
 	api *confluence.API,
-	cache *FolderCache,
-	tracker AncestryTracker,
 	space string,
 	folders []string,
 	pages []string,
+	options AncestryOptions,
 ) (*confluence.PageInfo, error) {
 	var anchorPageID *string
 
 	if len(pages) > 0 {
-		anchor, err := EnsureAncestry(ctx, dryRun, api, space, pages, tracker)
+		anchor, err := EnsureAncestry(ctx, api, space, pages, options)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve MARK_PARENTS page ancestry: %w", err)
 		}
@@ -438,7 +448,7 @@ func EnsureMixedAncestry(
 		// sits now rather than where a real run would put it. A real run
 		// creates the rest of the chain and new folders beneath it, so the
 		// folder parent is one that does not exist yet.
-		if dryRun && len(folders) > 0 && !strings.EqualFold(anchor.Title, pages[len(pages)-1]) {
+		if options.DryRun && len(folders) > 0 && !strings.EqualFold(anchor.Title, pages[len(pages)-1]) {
 			log.Info().Msgf(
 				"skipping folder creation due to dry-run mode: MARK_PARENTS chain %q is not there yet, so neither are folders %v",
 				strings.Join(pages, " > "), folders,
@@ -456,10 +466,10 @@ func EnsureMixedAncestry(
 		if len(pages) == 0 {
 			return nil, nil
 		}
-		return EnsureAncestry(ctx, dryRun, api, space, pages, tracker)
+		return EnsureAncestry(ctx, api, space, pages, options)
 	}
 
-	folderParent, err := EnsureFolderAncestry(ctx, dryRun, api, cache, space, folders, anchorPageID, tracker)
+	folderParent, err := EnsureFolderAncestry(ctx, api, space, folders, anchorPageID, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder hierarchy: %w", err)
 	}
@@ -478,13 +488,14 @@ func EnsureMixedAncestry(
 	}, nil
 }
 
+// EnsureAncestry finds the chain of parent pages titled ancestry, creating the
+// missing ones, and returns the last. It reads options.DryRun and Parents.
 func EnsureAncestry(
 	ctx context.Context,
-	dryRun bool,
 	api *confluence.API,
 	space string,
 	ancestry []string,
-	tracker ParentTracker,
+	options AncestryOptions,
 ) (*confluence.PageInfo, error) {
 	var parent *confluence.PageInfo
 
@@ -502,8 +513,8 @@ func EnsureAncestry(
 
 		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
 
-		if tracker != nil {
-			if err := tracker.RecordParent(ctx, space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
+		if options.Parents != nil {
+			if err := options.Parents.RecordParent(ctx, space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -533,7 +544,7 @@ func EnsureAncestry(
 			strings.Join(rest, ` > `),
 		)
 
-	if !dryRun {
+	if !options.DryRun {
 		// rest is the tail of ancestry that does not exist yet, so its offset
 		// within ancestry is what makes a recorded key match on the next run.
 		firstNew := len(ancestry) - len(rest)
@@ -543,9 +554,9 @@ func EnsureAncestry(
 				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
 			}
 
-			if tracker != nil {
+			if options.Parents != nil {
 				key := ParentPathKey(ancestry[:firstNew+offset+1])
-				if err := tracker.RecordParent(ctx, space, key, page.ID); err != nil {
+				if err := options.Parents.RecordParent(ctx, space, key, page.ID); err != nil {
 					return nil, err
 				}
 			}

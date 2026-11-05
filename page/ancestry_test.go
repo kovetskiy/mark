@@ -137,7 +137,7 @@ func TestFolderAncestryReportsAFailedRead(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := EnsureFolderAncestry(ctx, false, api, NewFolderCache(), "DOCS", folders, &anchorID, tracker)
+	_, err := EnsureFolderAncestry(ctx, api, "DOCS", folders, &anchorID, AncestryOptions{FolderCache: NewFolderCache(), Folders: tracker})
 
 	require.Error(t, err, "a folder that could not be read is not a folder that is gone")
 	assert.Contains(t, err.Error(), "Manuals-failed-read")
@@ -166,7 +166,7 @@ func TestFolderAncestryRecreatesAFolderThatIsReallyGone(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	parent, err := EnsureFolderAncestry(ctx, false, api, NewFolderCache(), "DOCS", folders, &anchorID, tracker)
+	parent, err := EnsureFolderAncestry(ctx, api, "DOCS", folders, &anchorID, AncestryOptions{FolderCache: NewFolderCache(), Folders: tracker})
 
 	require.NoError(t, err)
 	require.NotNil(t, parent)

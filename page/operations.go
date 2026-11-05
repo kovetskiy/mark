@@ -209,9 +209,14 @@ func checkMove(target, destination *confluence.PageInfo) error {
 	return nil
 }
 
+// RenameOptions are Rename's settings.
+type RenameOptions struct {
+	DryRun bool
+}
+
 // Rename changes a page's title and leaves its content as it is. The new
 // version is a minor edit, so watchers are not notified.
-func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, dryRun bool, out io.Writer) error {
+func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, options RenameOptions, out io.Writer) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return errors.New("a page needs a title")
@@ -235,7 +240,7 @@ func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, dry
 	}
 
 	old, oldTitle := describe(target), target.Title
-	if dryRun {
+	if options.DryRun {
 		fmt.Fprintf(out, "would rename %s to %q\n", old, title)
 		return nil
 	}
@@ -253,9 +258,14 @@ func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, dry
 	return nil
 }
 
+// ArchiveOptions are Archive's settings.
+type ArchiveOptions struct {
+	DryRun bool
+}
+
 // Archive archives a page without children. Confluence Cloud only, and
 // Confluence archives after it answers, so this reports the request.
-func Archive(ctx context.Context, api *confluence.API, ref Ref, dryRun bool, out io.Writer) error {
+func Archive(ctx context.Context, api *confluence.API, ref Ref, options ArchiveOptions, out io.Writer) error {
 	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
@@ -272,7 +282,7 @@ func Archive(ctx context.Context, api *confluence.API, ref Ref, dryRun bool, out
 		return fmt.Errorf("%s has %d child page(s): archive or move them first", describe(target), len(children))
 	}
 
-	if dryRun {
+	if options.DryRun {
 		fmt.Fprintf(out, "would archive %s\n", describe(target))
 		return nil
 	}
@@ -287,11 +297,18 @@ func Archive(ctx context.Context, api *confluence.API, ref Ref, dryRun bool, out
 // removeFolders is why removing a page is refused when a folder is beneath it.
 const removeFolders = "mark does not remove folders: move it first"
 
+// DeleteOptions are Delete's settings. Recursive trashes the page's
+// descendants with it.
+type DeleteOptions struct {
+	Recursive bool
+	DryRun    bool
+}
+
 // Delete moves a page to the trash, where Confluence keeps it recoverable. A
-// page with children is refused unless recursive is set, and then its
+// page with children is refused unless Recursive is set, and then its
 // descendants are trashed first, deepest first, so that every delete is of a
 // page with nothing beneath it.
-func Delete(ctx context.Context, api *confluence.API, ref Ref, recursive, dryRun bool, out io.Writer) error {
+func Delete(ctx context.Context, api *confluence.API, ref Ref, options DeleteOptions, out io.Writer) error {
 	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
@@ -304,7 +321,7 @@ func Delete(ctx context.Context, api *confluence.API, ref Ref, recursive, dryRun
 	if err != nil {
 		return err
 	}
-	if len(children) > 0 && !recursive {
+	if len(children) > 0 && !options.Recursive {
 		return fmt.Errorf("%s has %d child page(s): pass --recursive to trash them too, or move them first",
 			describe(target), len(children))
 	}
@@ -321,7 +338,7 @@ func Delete(ctx context.Context, api *confluence.API, ref Ref, recursive, dryRun
 
 	for i := range doomed {
 		page := &doomed[i]
-		if dryRun {
+		if options.DryRun {
 			fmt.Fprintf(out, "would trash %s\n", describe(page))
 			continue
 		}
@@ -410,22 +427,39 @@ func describe(page *confluence.PageInfo) string {
 	return fmt.Sprintf("%q (%s)", page.Title, page.ID)
 }
 
-// Watch makes users watch a page, or stop watching it when watch is false,
-// so that Confluence notifies them of its changes; recursive does the same
-// for every page beneath it, from the top down. No users means the
+// WatchOptions are the settings of Watch and Unwatch. No Users means the
 // authenticated one; anyone else is named as restrictions name a user, and
-// takes space administration.
-func Watch(ctx context.Context, api *confluence.API, ref Ref, users []string, watch, recursive, dryRun bool, out io.Writer) error {
+// takes space administration. Recursive does the same for every page beneath
+// the page, from the top down.
+type WatchOptions struct {
+	Users     []string
+	Recursive bool
+	DryRun    bool
+}
+
+// Watch makes users watch a page, so that Confluence notifies them of its
+// changes.
+func Watch(ctx context.Context, api *confluence.API, ref Ref, options WatchOptions, out io.Writer) error {
+	return setWatching(ctx, api, ref, true, options, out)
+}
+
+// Unwatch makes users stop watching a page.
+func Unwatch(ctx context.Context, api *confluence.API, ref Ref, options WatchOptions, out io.Writer) error {
+	return setWatching(ctx, api, ref, false, options, out)
+}
+
+func setWatching(ctx context.Context, api *confluence.API, ref Ref, watch bool, options WatchOptions, out io.Writer) error {
 	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
+	users := options.Users
 	if len(users) == 0 {
 		users = []string{""}
 	}
 
 	pages := []confluence.PageInfo{*target}
-	if recursive {
+	if options.Recursive {
 		// The whole tree is read before anything changes, so a folder deep
 		// inside it refuses the run rather than stopping it halfway.
 		pages, err = subtree(ctx, api, *target, "a recursive watch does not reach into folders")
@@ -457,7 +491,7 @@ func Watch(ctx context.Context, api *confluence.API, ref Ref, users []string, wa
 				continue
 			}
 
-			if dryRun {
+			if options.DryRun {
 				fmt.Fprintf(out, "would %s %s for %s\n", verb, describe(page), subject)
 				continue
 			}
