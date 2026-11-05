@@ -1,5 +1,7 @@
 package renderer
 
+import "strings"
+
 // AdmonitionType is a Confluence call-out macro: the box every admonition
 // syntax mark understands is published as. Its String is the macro's ac:name.
 //
@@ -39,20 +41,19 @@ func (t AdmonitionType) String() string {
 // admonitionTypes maps every admonition word to its macro, in the colour
 // GitHub gives the word, or MkDocs Material for a word GitHub does not have:
 // blue for information, green for advice, yellow for a warning, red for
-// danger. Confluence's note macro is the
-// yellow one, so "note" is info and "warning" is note.
+// danger. Confluence's note macro is the yellow one, so "note" is info and
+// "warning" is note.
 //
-// Each syntax reads its own vocabulary from it: the colon syntax every word
-// (syntax.AdmonitionWords), GitHub its five alert types, and MkDocs every word
-// but "warn", which is not one of its types.
+// The colon syntax reads every word here (syntax.AdmonitionWords), GitHub its
+// five alert types, and MkDocs every word but "warn", which is not one of its
+// types, and mkDocsOnlyTypes besides.
 var admonitionTypes = map[string]AdmonitionType{
 	"note":      AdmonitionInfo,
 	"info":      AdmonitionInfo,
 	"important": AdmonitionInfo,
 
-	"tip":     AdmonitionTip,
-	"hint":    AdmonitionTip,
-	"success": AdmonitionTip,
+	"tip":  AdmonitionTip,
+	"hint": AdmonitionTip,
 
 	"warning":   AdmonitionNote,
 	"warn":      AdmonitionNote,
@@ -60,7 +61,28 @@ var admonitionTypes = map[string]AdmonitionType{
 
 	"caution": AdmonitionWarning,
 	"danger":  AdmonitionWarning,
+}
+
+// mkDocsOnlyTypes are the MkDocs Material types, and their aliases, that are
+// not markers in the colon syntax: too many quoted lines open with "Error:",
+// "Done:" or "Bug:" that are not meant as a box. Material's question, example
+// and quote types have no box: Confluence has no purple one for example, and
+// a quote is a quotation.
+var mkDocsOnlyTypes = map[string]AdmonitionType{
+	"abstract": AdmonitionInfo,
+	"summary":  AdmonitionInfo,
+	"tldr":     AdmonitionInfo,
+	"todo":     AdmonitionInfo,
+
+	"success": AdmonitionTip,
+	"check":   AdmonitionTip,
+	"done":    AdmonitionTip,
+
 	"error":   AdmonitionWarning,
+	"failure": AdmonitionWarning,
+	"fail":    AdmonitionWarning,
+	"missing": AdmonitionWarning,
+	"bug":     AdmonitionWarning,
 }
 
 // admonitionType looks word up in admonitionTypes, answering AdmonitionNone
@@ -82,10 +104,14 @@ func ghAlertType(alertType string) AdmonitionType {
 	return AdmonitionInfo
 }
 
-// mkDocsAdmonitionType returns the macro of an MkDocs admonition class. A class
-// MkDocs has that is not an admonition word -- abstract, question, quote and
-// the rest -- is AdmonitionNone, and so is "warn", which MkDocs does not have.
+// mkDocsAdmonitionType returns the macro of an MkDocs admonition class, in any
+// case, as Python-Markdown lower-cases it. Any other class -- question,
+// example, quote, or "warn", which MkDocs does not have -- is AdmonitionNone.
 func mkDocsAdmonitionType(class string) AdmonitionType {
+	class = strings.ToLower(class)
+	if t, ok := mkDocsOnlyTypes[class]; ok {
+		return t
+	}
 	if class == "warn" {
 		return AdmonitionNone
 	}

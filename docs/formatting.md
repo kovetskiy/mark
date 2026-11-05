@@ -139,18 +139,28 @@ word "note" is the blue info box and "warning" is Confluence's note.
 | note | `Note:` | `[!NOTE]` | `!!! note` | Info (blue) |
 | info | `Info:` | | `!!! info` | Info (blue) |
 | important | `Important:` | `[!IMPORTANT]` | `!!! important` | Info (blue) |
+| abstract, summary, tldr | | | `!!! abstract`, `!!! summary`, `!!! tldr` | Info (blue) |
+| todo | | | `!!! todo` | Info (blue) |
 | tip | `Tip:` | `[!TIP]` | `!!! tip` | Tip (green) |
 | hint | `Hint:` | | `!!! hint` | Tip (green) |
-| success | `Success:` | | `!!! success` | Tip (green) |
+| success, check, done | | | `!!! success`, `!!! check`, `!!! done` | Tip (green) |
 | warning | `Warning:` | `[!WARNING]` | `!!! warning` | Note (yellow) |
 | warn | `Warn:` | | | Note (yellow) |
 | attention | `Attention:` | | `!!! attention` | Note (yellow) |
 | caution | `Caution:` | `[!CAUTION]` | `!!! caution` | Warning (red) |
 | danger | `Danger:` | | `!!! danger` | Warning (red) |
-| error | `Error:` | | `!!! error` | Warning (red) |
+| error | | | `!!! error` | Warning (red) |
+| failure, fail, missing | | | `!!! failure`, `!!! fail`, `!!! missing` | Warning (red) |
+| bug | | | `!!! bug` | Warning (red) |
 
-A GitHub alert of any other type, `[!DANGER]` say, and an MkDocs admonition of
-any other type, such as `!!! question` or `!!! warn`, stay quotations.
+The words only MkDocs reads are not colon markers: too many quoted lines open
+with `Error:`, `Done:` or `Summary:` without being meant as a box. MkDocs reads
+its types in any case, so `!!! Note` is the blue box too.
+
+A GitHub alert of any other type, `[!DANGER]` say, stays a quotation, and so
+does an MkDocs admonition of any other type: `!!! warn`; `!!! question`,
+`!!! help` and `!!! faq`; `!!! example`, whose purple Confluence has no box for;
+and `!!! quote` and `!!! cite`, which are quotations.
 
 ### GitHub Alerts Support
 
@@ -178,7 +188,7 @@ the box's title:
 
 A blockquote whose first line opens with one of the
 [admonition words](#admonition-words) and a colon is published as that word's
-box. Each word may also be written as a plural: `Notes:`, `Successes:`.
+box. Each word may also be written as a plural: `Notes:`, `Hints:`.
 
 ```markdown
 > Note: the build runs nightly.
@@ -207,9 +217,10 @@ Anything else stays a quotation: `> Note that this is a quote.` and
 `> Tips are welcome.` are published as `<blockquote>`. The marker stays in the
 text of the macro; only GitHub's `[!NOTE]` is taken out.
 
-A quoted line that happens to open with a word and a colon is a marker too:
-`> Error: connection refused` is a red box. Put such a line in a code block, or
-start the quote with something else.
+A quoted line that happens to open with one of these words and a colon is a
+marker too: `> Danger: high voltage` is a red box, though
+`> Error: connection refused` stays a quotation. Put such a line in a code
+block, or start the quote with something else.
 
 > **Upgrading to v17:** the colon was optional: any blockquote whose first word
 > was `Info`, `Note`, `Tip`, `Warn` or `Warning`, `Note that` and `Tips are`
@@ -222,15 +233,20 @@ start the quote with something else.
 > * `Note:` was Confluence's yellow note box; it is the blue info box, the one
 >   `[!NOTE]` gives.
 > * `Warn:` and `Warning:` were the red warning box; they are the yellow note
->   box, the one `[!WARNING]` gives. Write `Caution:`, `Danger:` or `Error:`
->   for the red one.
+>   box, the one `[!WARNING]` gives. Write `Caution:` or `Danger:` for the
+>   red one.
 > * With the `mkdocsadmonitions` feature, `!!! note` was the yellow note box and
 >   `!!! warning` the red warning box; they are blue info and yellow note. Write
 >   `!!! warning` or `!!! attention` for yellow, and `!!! danger` for red.
 >
-> The words `Important`, `Hint`, `Success`, `Attention`, `Caution`, `Danger`
-> and `Error` are new markers, so a quote that opens with one of them and a
-> colon becomes a box.
+> The words `Important`, `Hint`, `Attention`, `Caution` and `Danger` are new
+> markers, so a quote that opens with one of them and a colon becomes a box.
+>
+> With the `mkdocsadmonitions` feature, the types are read in any case, so
+> `!!! Note` is a box rather than a quotation, and these types are new boxes:
+> `important`, `abstract`, `summary`, `tldr` and `todo` (blue); `hint`,
+> `success`, `check` and `done` (green); `attention` (yellow); and `caution`,
+> `danger`, `error`, `failure`, `fail`, `missing` and `bug` (red).
 
 ## Definition Lists
 

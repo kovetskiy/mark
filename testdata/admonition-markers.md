@@ -49,26 +49,24 @@
 
 > Hint: green.
 
-> Success: green.
-
 > Attention: yellow.
 
 > Caution: red.
 
 > Danger: red.
 
-> Error: red.
-
-> **Errors:** a plural.
+> **Dangers:** a plural.
 
 > <!-- danger -->
 > A comment chooses red.
 
-## A quoted log line is a marker too
+## A quoted log line stays a quote
 
 > Error: connection refused
 
 > Success: 3 files written
+
+> **Errors:** 2
 
 ## GitHub alerts
 
@@ -125,3 +123,39 @@
 
 !!! error
     MkDocs' error.
+
+!!! abstract
+    MkDocs' abstract.
+
+!!! summary
+    MkDocs' summary.
+
+!!! tldr
+    MkDocs' tldr.
+
+!!! todo
+    MkDocs' todo.
+
+!!! check
+    MkDocs' check.
+
+!!! done
+    MkDocs' done.
+
+!!! failure
+    MkDocs' failure.
+
+!!! fail
+    MkDocs' fail.
+
+!!! missing
+    MkDocs' missing.
+
+!!! bug
+    MkDocs' bug.
+
+!!! Note
+    MkDocs reads the type in any case.
+
+!!! WARNING
+    In any case.

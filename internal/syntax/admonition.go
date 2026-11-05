@@ -3,12 +3,14 @@ package syntax
 import "strings"
 
 // AdmonitionWords are the words that name an admonition in the colon syntax,
-// lower-cased. Each may also be written as a plural: "Notes:", "Successes:".
+// lower-cased. Each may also be written as a plural, with an "s": "Notes:".
+// MkDocs types such as "error" and "success" are not markers: too many quoted
+// log lines open with them, "> Error: connection refused".
 var AdmonitionWords = []string{
 	"note", "info", "important",
-	"tip", "hint", "success",
+	"tip", "hint",
 	"warning", "warn", "attention",
-	"caution", "danger", "error",
+	"caution", "danger",
 }
 
 // AdmonitionWord returns the admonition word the first line of a blockquote
@@ -53,16 +55,12 @@ func AdmonitionWord(line string) string {
 // admonitionWord returns the word of AdmonitionWords that word spells, in any
 // case, singular or plural, or "".
 func admonitionWord(word string) string {
+	singular := word
+	if n := len(word) - 1; n > 0 && (word[n] == 's' || word[n] == 'S') {
+		singular = word[:n]
+	}
 	for _, w := range AdmonitionWords {
-		if strings.EqualFold(word, w) {
-			return w
-		}
-		plural := "s"
-		if strings.HasSuffix(w, "s") {
-			plural = "es"
-		}
-		if len(word) == len(w)+len(plural) &&
-			strings.EqualFold(word[:len(w)], w) && strings.EqualFold(word[len(w):], plural) {
+		if strings.EqualFold(word, w) || strings.EqualFold(singular, w) {
 			return w
 		}
 	}
