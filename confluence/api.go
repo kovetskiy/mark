@@ -2056,17 +2056,16 @@ func (api *API) restrictionUserServer(ctx context.Context, name string) (string,
 
 // restrictionUserCloud resolves the user a Cloud page is restricted to.
 //
-// Cloud restrictions take an accountId, so the name has to be looked up. The
-// authenticated user is checked first: --edit-lock passes the configured
-// username, which on Cloud is the account's email, and the user search matches
-// full names, so it would not find it. The login itself is matched against the
-// credential mark authenticated with rather than against the profile: Cloud's
-// profile-visibility settings can hide the email from /user/current, and an
-// alias login is not the address the profile reports, yet either way the login
-// names the current user. Anyone else goes through the search, and a name that
-// resolves to nobody is an error. It used to fall back to the authenticated
-// user, which quietly locked the page against the very person it was meant to
-// leave editable.
+// Cloud restrictions take an accountId, so the name has to be looked up. An
+// empty name is the authenticated user, and so is the login, which on Cloud is
+// the account's email: the user search matches full names and would not find
+// it. The login is matched against the credential mark authenticated with
+// rather than against the profile: Cloud's profile-visibility settings can
+// hide the email from /user/current, and an alias login is not the address the
+// profile reports, yet either way the login names the current user. Anyone
+// else goes through the search, and a name that resolves to nobody is an
+// error rather than the authenticated user, which would lock the page against
+// the very person it was meant to leave editable.
 func (api *API) restrictionUserCloud(ctx context.Context, name string) (*User, error) {
 	current, currentErr := api.GetCurrentUser(ctx)
 	isLogin := api.username != "" && strings.EqualFold(name, api.username)

@@ -315,7 +315,6 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 				CheckLinks:         cmd.StringSlice("check-links"),
 				CheckLinksWarnOnly: cmd.Bool("check-links-warn-only"),
 			},
-			Output: os.Stdout,
 			Rendering: mark.RenderingConfig{
 				DropH1:           cmd.Bool("drop-h1"),
 				StripLinebreaks:  cmd.Bool("strip-linebreaks"),
@@ -334,6 +333,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 				IncludePath:      cmd.String("include-path"),
 				PageHeader:       cmd.String("page-header"),
 			},
+			Output: os.Stdout,
 		},
 		Files: cmd.String("files"),
 		Connection: mark.ConnectionConfig{
