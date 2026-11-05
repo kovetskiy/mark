@@ -36,12 +36,23 @@ func SHA1(input string) string {
 // Pages that do carry one of the headers are republished once, which is the
 // price of finding out. Changing --content-appearance itself is, as before,
 // not something --changes-only notices.
-func Content(html, appearance, defaultAppearance, emoji string) string {
-	if emoji == "" && (appearance == "" || appearance == defaultAppearance) {
+func Content(html string, properties Properties) string {
+	appearance, emoji := properties.Appearance, properties.Emoji
+	if emoji == "" && (appearance == "" || appearance == properties.DefaultAppearance) {
 		return SHA1(html)
 	}
 
 	return SHA1(html + "\x00mark:content-appearance=" + appearance + "\x00mark:emoji=" + emoji)
+}
+
+// Properties are the page properties Content folds into a fingerprint.
+type Properties struct {
+	// Appearance is the page's width, as published.
+	Appearance string
+	// DefaultAppearance is the width a page without the header gets.
+	DefaultAppearance string
+	// Emoji is the page's title emoji.
+	Emoji string
 }
 
 var (
