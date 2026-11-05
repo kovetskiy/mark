@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/mermaid"
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/renderer/html"
@@ -257,4 +258,33 @@ func TestFencedCodeBlockAlias(t *testing.T) {
 	actual = fencedCode(t, "{.sh}")
 	assertWellFormed(t, actual)
 	assert.Contains(t, actual, `<ac:parameter ac:name="language">bash</ac:parameter>`)
+}
+
+// TestFencedCodeBlockNormalisesTheMacroName: the renderer is where a
+// DiagramConfig is consumed, so a caller that builds it directly -- without
+// CompileMarkdown -- still gets the default name and loses surrounding space.
+func TestFencedCodeBlockNormalisesTheMacroName(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{"", "mermaid-macro"},
+		{"  my-macro  ", "my-macro"},
+	} {
+		t.Run(tt.want, func(t *testing.T) {
+			actual := render(t, "```mermaid\nflowchart TD\nA --> B\n```\n", []html.Extension{
+				crenderer.NewConfluenceFencedCodeBlockRenderer(
+					t.Context(), newStdlib(t), &collectingAttacher{},
+					crenderer.DiagramConfig{
+						Features:         []string{"mermaid"},
+						MermaidOutput:    mermaid.OutputMacro,
+						MermaidMacroName: tt.name,
+					},
+					"",
+				),
+			})
+
+			assert.Contains(t, actual, `ac:name="`+tt.want+`"`)
+		})
+	}
 }
