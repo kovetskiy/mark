@@ -298,7 +298,7 @@ func (e *Engine) discard(engine mermaid.Renderer, err error) error {
 // sentinel errors whether the engine survived the failure and whether another
 // attempt is worth making. What to render with it is left to the caller, since
 // a PNG and an SVG differ in nothing else.
-func (e *Engine) render(title string, once func(ctx context.Context, engine mermaid.Renderer) error) error {
+func (e *Engine) render(ctx context.Context, title string, once func(ctx context.Context, engine mermaid.Renderer) error) error {
 	for attempt := 1; ; attempt++ {
 		engine, err := e.get()
 		if err != nil {
@@ -308,13 +308,18 @@ func (e *Engine) render(title string, once func(ctx context.Context, engine merm
 		// The context bounds the wait for a turn on the engine's page as well as
 		// the render, which the engine's own timeout does not: that clock only
 		// starts once the render begins.
-		ctx, cancel := context.WithTimeout(context.Background(), renderTimeout)
-		err = once(ctx, engine)
+		renderCtx, cancel := context.WithTimeout(ctx, renderTimeout)
+		err = once(renderCtx, engine)
 		cancel()
 
 		switch {
 		case err == nil:
 			return nil
+
+		case ctx.Err() != nil:
+			// The caller stopped the render, which aborts only its in-flight
+			// commands, so the engine is kept, as it is after a timeout.
+			return fmt.Errorf("mermaid rendering stopped: %w", err)
 
 		case errors.Is(err, mermaid.ErrTargetCrashed), errors.Is(err, mermaid.ErrEngineClosed):
 			// Every later render on this engine fails the same way, so it is
@@ -354,13 +359,13 @@ func (e *Engine) render(title string, once func(ctx context.Context, engine merm
 	}
 }
 
-func (e *Engine) renderPNG(title, diagram string, scale float64) ([]byte, *mermaid.BoxModel, error) {
+func (e *Engine) renderPNG(ctx context.Context, title, diagram string, scale float64) ([]byte, *mermaid.BoxModel, error) {
 	var (
 		pngBytes []byte
 		boxModel *mermaid.BoxModel
 	)
 
-	err := e.render(title, func(ctx context.Context, engine mermaid.Renderer) error {
+	err := e.render(ctx, title, func(ctx context.Context, engine mermaid.Renderer) error {
 		// Measured before it is captured, as chrome.Browser.PNGFromSVG does for d2 and
 		// math: a diagram's size comes from the document and is then multiplied
 		// by the scale, so a large diagram at a large scale asks the browser for
@@ -395,10 +400,10 @@ func (e *Engine) renderPNG(title, diagram string, scale float64) ([]byte, *merma
 // renderSVG renders one diagram as the SVG the browser drew, rather than a
 // picture of it. bundle keeps the diagram's own source in the SVG's <desc>
 // element, which is what makes the drawing editable again from the attachment.
-func (e *Engine) renderSVG(title, diagram string, bundle bool) (string, error) {
+func (e *Engine) renderSVG(ctx context.Context, title, diagram string, bundle bool) (string, error) {
 	var svg string
 
-	err := e.render(title, func(ctx context.Context, engine mermaid.Renderer) error {
+	err := e.render(ctx, title, func(ctx context.Context, engine mermaid.Renderer) error {
 		var err error
 		if bundle {
 			svg, err = engine.RenderContext(ctx, diagram, mermaid.WithBundle())
@@ -443,7 +448,36 @@ func normaliseScale(scale float64) (float64, error) {
 	return scale, nil
 }
 
-func (e *Engine) ProcessMermaidLocally(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
+// Options say how Render draws a diagram.
+type Options struct {
+	// Format is "png", the default when empty, or "svg".
+	Format string
+
+	// Scale multiplies a PNG's pixels, or the size the page displays an SVG
+	// at, leaving the file itself alone. Zero is the default.
+	Scale float64
+
+	// Bundle keeps an SVG diagram's source inside it, in its <desc> element,
+	// so that what was published can be opened and edited again without the
+	// document it came from. A PNG ignores it.
+	Bundle bool
+}
+
+// Render draws a diagram as an attachment named after title, or after its
+// checksum when title is empty. An SVG is one file at every zoom, and text
+// that stays text.
+func (e *Engine) Render(ctx context.Context, title string, diagram []byte, options Options) (attachment.Attachment, error) {
+	switch options.Format {
+	case "png", "":
+		return e.renderPNGAttachment(ctx, title, diagram, options.Scale)
+	case "svg":
+		return e.renderSVGAttachment(ctx, title, diagram, options.Bundle, options.Scale)
+	default:
+		return attachment.Attachment{}, fmt.Errorf("unknown mermaid format %q: expected png or svg", options.Format)
+	}
+}
+
+func (e *Engine) renderPNGAttachment(ctx context.Context, title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
 	log.Debug().Msgf("Rendering: %q", title)
 
 	scale, err := normaliseScale(scale)
@@ -451,7 +485,7 @@ func (e *Engine) ProcessMermaidLocally(title string, mermaidDiagram []byte, scal
 		return attachment.Attachment{}, err
 	}
 
-	pngBytes, boxModel, err := e.renderPNG(title, string(mermaidDiagram), scale)
+	pngBytes, boxModel, err := e.renderPNG(ctx, title, string(mermaidDiagram), scale)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -486,21 +520,7 @@ func (e *Engine) ProcessMermaidLocally(title string, mermaidDiagram []byte, scal
 	}, nil
 }
 
-// ProcessMermaidSVG publishes a diagram as the SVG it was drawn as: one file at
-// every zoom, and text that stays text. The scale multiplies the size the page
-// displays it at, and leaves the file itself alone.
-func (e *Engine) ProcessMermaidSVG(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
-	return e.processMermaidSVG(title, mermaidDiagram, false, scale)
-}
-
-// ProcessMermaidWithBundle does the same and keeps the diagram's source inside
-// the SVG, in its <desc> element, so that what was published can be opened and
-// edited again without the document it came from.
-func (e *Engine) ProcessMermaidWithBundle(title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
-	return e.processMermaidSVG(title, mermaidDiagram, true, scale)
-}
-
-func (e *Engine) processMermaidSVG(title string, mermaidDiagram []byte, bundle bool, scale float64) (attachment.Attachment, error) {
+func (e *Engine) renderSVGAttachment(ctx context.Context, title string, mermaidDiagram []byte, bundle bool, scale float64) (attachment.Attachment, error) {
 	log.Debug().Msgf("Rendering SVG (bundle=%v): %q", bundle, title)
 
 	scale, err := normaliseScale(scale)
@@ -508,7 +528,7 @@ func (e *Engine) processMermaidSVG(title string, mermaidDiagram []byte, bundle b
 		return attachment.Attachment{}, err
 	}
 
-	svg, err := e.renderSVG(title, string(mermaidDiagram), bundle)
+	svg, err := e.renderSVG(ctx, title, string(mermaidDiagram), bundle)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}

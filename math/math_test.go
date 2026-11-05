@@ -2,6 +2,7 @@ package math
 
 import (
 	"bytes"
+	"context"
 	"image/png"
 	gomath "math"
 	"strings"
@@ -17,7 +18,7 @@ import (
 // Anything that depended on a stylesheet or a font file would render as
 // nothing, because a Confluence page loads neither.
 func TestProcessRendersSelfContainedSVG(t *testing.T) {
-	rendered, err := Process(browser, `E = mc^2`, false, FormatSVG, 0)
+	rendered, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
 	svg := string(rendered.FileBytes)
@@ -32,7 +33,7 @@ func TestProcessRendersSelfContainedSVG(t *testing.T) {
 // sizes its output in ex, which ac:image has no notion of; a formula published
 // without pixel dimensions is left to whatever default the renderer picks.
 func TestProcessSizesInPixels(t *testing.T) {
-	rendered, err := Process(browser, `E = mc^2`, false, FormatSVG, 0)
+	rendered, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
 	assert.Equal(t, "70", rendered.Width)
@@ -44,10 +45,10 @@ func TestProcessSizesInPixels(t *testing.T) {
 // images and must not collapse onto one name -- the second would overwrite the
 // first and both occurrences would show the same rendering.
 func TestProcessDisplayAndInlineDiffer(t *testing.T) {
-	inline, err := Process(browser, `\sum_{i=1}^{n} i`, false, FormatSVG, 0)
+	inline, err := Process(context.Background(), `\sum_{i=1}^{n} i`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
-	display, err := Process(browser, `\sum_{i=1}^{n} i`, true, FormatSVG, 0)
+	display, err := Process(context.Background(), `\sum_{i=1}^{n} i`, Options{Display: true, Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, inline.Filename, display.Filename)
@@ -59,10 +60,10 @@ func TestProcessDisplayAndInlineDiffer(t *testing.T) {
 // its source at all: the same input renders to the same bytes, so a page that
 // has not changed does not re-upload its formulas.
 func TestProcessIsDeterministic(t *testing.T) {
-	first, err := Process(browser, `\frac{a}{b}`, false, FormatSVG, 0)
+	first, err := Process(context.Background(), `\frac{a}{b}`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
-	second, err := Process(browser, `\frac{a}{b}`, false, FormatSVG, 0)
+	second, err := Process(context.Background(), `\frac{a}{b}`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
 	assert.Equal(t, first.Filename, second.Filename)
@@ -74,10 +75,10 @@ func TestProcessIsDeterministic(t *testing.T) {
 // formulas the way they name diagrams, so the name comes from the content, and
 // two different formulas must not land on one file.
 func TestProcessNamesTheFileAfterTheFormula(t *testing.T) {
-	one, err := Process(browser, `a + b`, false, FormatSVG, 0)
+	one, err := Process(context.Background(), `a + b`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
-	other, err := Process(browser, `a - b`, false, FormatSVG, 0)
+	other, err := Process(context.Background(), `a - b`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 
 	assert.True(t, strings.HasPrefix(one.Filename, "math-"))
@@ -104,7 +105,7 @@ func TestProcessRejectsBrokenTeX(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Process(browser, tt.tex, false, FormatSVG, 0)
+			_, err := Process(context.Background(), tt.tex, Options{Format: FormatSVG, Browser: browser})
 			require.Error(t, err)
 
 			assert.Contains(t, err.Error(), tt.tex, "the error has to name the formula")
@@ -117,7 +118,7 @@ func TestProcessRejectsBrokenTeX(t *testing.T) {
 // display an SVG attachment, and it is the only part of the math feature that
 // needs a browser -- the same one the diagram renderers use.
 func TestProcessPNG(t *testing.T) {
-	rendered, err := Process(browser, `E = mc^2`, false, FormatPNG, 2)
+	rendered, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatPNG, Scale: 2, Browser: browser})
 	require.NoError(t, err)
 
 	assert.True(t, strings.HasSuffix(rendered.Filename, ".png"))
@@ -140,20 +141,20 @@ func TestProcessPNG(t *testing.T) {
 // The bytes change, so the name has to, or the page keeps the attachment it
 // already had and the setting appears to do nothing.
 func TestProcessScaleChangesTheName(t *testing.T) {
-	one, err := Process(browser, `E = mc^2`, false, FormatPNG, 1)
+	one, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatPNG, Scale: 1, Browser: browser})
 	require.NoError(t, err)
 
-	two, err := Process(browser, `E = mc^2`, false, FormatPNG, 2)
+	two, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatPNG, Scale: 2, Browser: browser})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, one.Filename, two.Filename)
 
 	// An SVG is the same file at any scale, so there the setting is ignored
 	// rather than allowed to churn the attachment.
-	vectorOne, err := Process(browser, `E = mc^2`, false, FormatSVG, 1)
+	vectorOne, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatSVG, Scale: 1, Browser: browser})
 	require.NoError(t, err)
 
-	vectorTwo, err := Process(browser, `E = mc^2`, false, FormatSVG, 4)
+	vectorTwo, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatSVG, Scale: 4, Browser: browser})
 	require.NoError(t, err)
 
 	assert.Equal(t, vectorOne.Filename, vectorTwo.Filename)
@@ -163,17 +164,17 @@ func TestProcessScaleChangesTheName(t *testing.T) {
 // not: an unknown format has to be an error rather than a silent fallback,
 // which would publish something other than what was asked for.
 func TestProcessFormats(t *testing.T) {
-	svg, err := Process(browser, `x`, false, FormatSVG, 0)
+	svg, err := Process(context.Background(), `x`, Options{Format: FormatSVG, Browser: browser})
 	require.NoError(t, err)
 	assert.True(t, strings.HasSuffix(svg.Filename, ".svg"))
 
 	// Unset means PNG, which is what Confluence certainly displays. A caller
 	// that wants the vector picture has to ask for it.
-	unset, err := Process(browser, `x`, false, "", 0)
+	unset, err := Process(context.Background(), `x`, Options{Browser: browser})
 	require.NoError(t, err)
 	assert.True(t, strings.HasSuffix(unset.Filename, ".png"))
 
-	_, err = Process(browser, `x`, false, "jpeg", 0)
+	_, err = Process(context.Background(), `x`, Options{Format: "jpeg", Browser: browser})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "jpeg")
 }
@@ -182,10 +183,10 @@ func TestProcessFormats(t *testing.T) {
 // default of 2, which is what a zero has always meant here -- and the same
 // picture, under the same name, as asking for 2 outright.
 func TestProcessScaleZeroIsTheDefault(t *testing.T) {
-	unset, err := Process(browser, `E = mc^2`, false, FormatPNG, 0)
+	unset, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatPNG, Browser: browser})
 	require.NoError(t, err)
 
-	two, err := Process(browser, `E = mc^2`, false, FormatPNG, 2)
+	two, err := Process(context.Background(), `E = mc^2`, Options{Format: FormatPNG, Scale: 2, Browser: browser})
 	require.NoError(t, err)
 
 	assert.Equal(t, two.Filename, unset.Filename)
@@ -198,7 +199,7 @@ func TestProcessScaleZeroIsTheDefault(t *testing.T) {
 func TestProcessRefusesWhatIsNotAScale(t *testing.T) {
 	for _, scale := range []float64{-1, gomath.NaN(), gomath.Inf(1), gomath.Inf(-1)} {
 		for _, format := range []string{FormatPNG, FormatSVG} {
-			_, err := Process(browser, `x`, false, format, scale)
+			_, err := Process(context.Background(), `x`, Options{Format: format, Scale: scale, Browser: browser})
 			require.Error(t, err, "a scale of %v is not one, for %s either", scale, format)
 			assert.Contains(t, err.Error(), "invalid math scale")
 		}
@@ -208,9 +209,9 @@ func TestProcessRefusesWhatIsNotAScale(t *testing.T) {
 // A PNG with no browser to draw it in is refused before the formula is
 // typeset; an SVG needs none.
 func TestProcessWithoutABrowser(t *testing.T) {
-	_, err := Process(nil, "x^2", false, FormatPNG, 0)
+	_, err := Process(context.Background(), "x^2", Options{Format: FormatPNG})
 	require.ErrorIs(t, err, chrome.ErrNoBrowser)
 
-	_, err = Process(nil, "x^2", false, FormatSVG, 0)
+	_, err = Process(context.Background(), "x^2", Options{Format: FormatSVG})
 	assert.NoError(t, err)
 }

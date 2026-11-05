@@ -153,18 +153,19 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		)
 
 		switch r.Diagrams.D2Output {
-		case "svg":
+		case "svg", "png", "":
 			// The document's own path, empty and all: a diagram that came from
 			// nowhere on disk has nothing for a relative reference to be
 			// relative to, and d2 resolves one against the working directory
-			// rather than refusing it. ProcessD2SVG reads an empty path and
-			// d2's own "-" alike, so neither reaches the bundler.
-			attachment, err = d2.ProcessD2SVG(
-				title, lval, r.Path, r.Diagrams.D2Scale, r.Diagrams.D2BundleRemote,
-			)
-
-		case "png", "":
-			attachment, err = d2.ProcessD2(r.Diagrams.Browser, title, lval, r.Diagrams.D2Scale)
+			// rather than refusing it. d2.Render reads an empty path and d2's
+			// own "-" alike, so neither reaches the bundler.
+			attachment, err = d2.Render(renderContext(), title, lval, d2.Options{
+				Format:       r.Diagrams.D2Output,
+				Scale:        r.Diagrams.D2Scale,
+				Browser:      r.Diagrams.Browser,
+				InputPath:    r.Path,
+				BundleRemote: r.Diagrams.D2BundleRemote,
+			})
 
 		default:
 			// Run checks this, but CompileMarkdown takes its options
@@ -211,7 +212,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				displayWidth,
 				"",
 				// The display title, not the attachment name: when the author gave
-				// no "title" in the info string, ProcessD2/ProcessMermaid fall back
+				// no "title" in the info string, d2.Render and mermaid's Render fall back
 				// to the content checksum for the filename, and passing that here
 				// made Confluence render a 64-character hash as a caption under the
 				// diagram. The attachment keeps its checksum-derived name.
@@ -232,15 +233,13 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			err error
 		)
 
-		switch {
-		case r.Diagrams.MermaidOutput == "svg" && r.Diagrams.MermaidBundle:
-			att, err = r.Diagrams.Mermaid.ProcessMermaidWithBundle(title, lval, r.Diagrams.MermaidScale)
-
-		case r.Diagrams.MermaidOutput == "svg":
-			att, err = r.Diagrams.Mermaid.ProcessMermaidSVG(title, lval, r.Diagrams.MermaidScale)
-
-		case r.Diagrams.MermaidOutput == "png", r.Diagrams.MermaidOutput == "":
-			att, err = r.Diagrams.Mermaid.ProcessMermaidLocally(title, lval, r.Diagrams.MermaidScale)
+		switch r.Diagrams.MermaidOutput {
+		case "svg", "png", "":
+			att, err = r.Diagrams.Mermaid.Render(renderContext(), title, lval, mermaid.Options{
+				Format: r.Diagrams.MermaidOutput,
+				Scale:  r.Diagrams.MermaidScale,
+				Bundle: r.Diagrams.MermaidBundle,
+			})
 
 		default:
 			// Run checks this, but CompileMarkdown takes its options
@@ -288,7 +287,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 				displayWidth,
 				"",
 				// The display title, not the attachment name: when the author gave
-				// no "title" in the info string, ProcessD2/ProcessMermaid fall back
+				// no "title" in the info string, d2.Render and mermaid's Render fall back
 				// to the content checksum for the filename, and passing that here
 				// made Confluence render a 64-character hash as a caption under the
 				// diagram. The attachment keeps its checksum-derived name.

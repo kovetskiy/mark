@@ -92,7 +92,12 @@ func (r *ConfluenceMathRenderer) writeFormula(writer util.BufWriter, equation []
 	// which locates it better than a line number would: a formula has no
 	// position of its own in the AST, and a document usually has few enough
 	// formulas that the source is the clearer identifier.
-	rendered, err := cmath.Process(r.Math.Browser, string(equation), display, r.Math.Format, r.Math.Scale)
+	rendered, err := cmath.Process(renderContext(), string(equation), cmath.Options{
+		Display: display,
+		Format:  r.Math.Format,
+		Scale:   r.Math.Scale,
+		Browser: r.Math.Browser,
+	})
 	if err != nil {
 		return ast.WalkStop, err
 	}

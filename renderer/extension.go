@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"context"
 	"io"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -15,6 +16,12 @@ import (
 // CommonMark renderers first, so an extension given to it afterwards replaces
 // them for the kinds it names, and of two extensions naming one kind the later
 // one wins.
+
+// renderContext is what a diagram or formula is drawn under. CompileMarkdown
+// is given no context, so there is no caller's to hand on.
+func renderContext() context.Context {
+	return context.TODO()
+}
 
 // renderFunc is a node renderer as this package writes them, given the
 // util.BufWriter html.Renderer always hands a node renderer.

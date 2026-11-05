@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ProcessD2/ProcessMermaid fall back to the content checksum when the author
+// d2.Render and mermaid's Render fall back to the content checksum when the author
 // supplies no title, so the attachment gets a stable content-derived filename.
 // That value was also passed to the ac:image template's Title field, and
 // Confluence renders ac:title as a caption -- so an untitled diagram published
