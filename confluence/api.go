@@ -352,9 +352,9 @@ type PageInfo struct {
 	Links struct {
 		Full string `json:"webui"`
 		// Base is the canonical site URL from the response's `_links.base`
-		// (e.g. https://tenant.atlassian.net/wiki). CreatePage used to skip
-		// this field (`json:"-"`), so same-run tiny links fell back to
-		// api.baseURL and became dead api.atlassian.com URLs.
+		// (e.g. https://tenant.atlassian.net/wiki). Links are built on it
+		// rather than on api.baseURL, which through the API gateway is an
+		// api.atlassian.com URL nobody can open.
 		Base string `json:"base,omitempty"`
 	} `json:"_links"`
 }
@@ -565,8 +565,8 @@ type Options struct {
 	// client's own -- proxy, TLS, redirects, and timeouts. NewAPI's client
 	// bounds the dial, the TLS handshake and the wait for response headers,
 	// and sets no Timeout, which would cap a large upload. A Timeout here
-	// caps each request together with its retries, as a context deadline
-	// does.
+	// caps each request together with its retries and, unlike a context's
+	// end, gives a write already sent no grace to answer.
 	HTTPClient *http.Client
 
 	// KeepConcurrentEdits stops UpdatePage from overwriting a page someone
@@ -1913,7 +1913,7 @@ func (api *API) LookupUser(ctx context.Context, name string) (*User, error) {
 	}
 
 	user, err := api.GetUserByName(ctx, name)
-	if err != nil || user == nil {
+	if err != nil {
 		return nil, err
 	}
 

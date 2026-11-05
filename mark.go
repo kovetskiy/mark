@@ -290,10 +290,7 @@ func (r RenderingConfig) validate() error {
 
 	// Checked here so that a format math does not know fails the run at its
 	// start rather than at its first formula.
-	switch r.MathFormat {
-	case "", markmath.FormatSVG, markmath.FormatPNG:
-		// ok
-	default:
+	if r.MathFormat != "" && !rendercheck.IsImageFormat(string(r.MathFormat)) {
 		return fmt.Errorf(
 			"invalid MathFormat %q: expected \"svg\", \"png\", or \"\" for the default",
 			r.MathFormat,

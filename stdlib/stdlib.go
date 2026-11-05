@@ -49,17 +49,13 @@ func templates(ctx context.Context, users UserLookup) (*template.Template, error
 
 	templates := template.New(`stdlib`).Funcs(
 		template.FuncMap{
-			"user": func(name string) any {
+			"user": func(name string) *confluence.User {
 				if users == nil {
 					return nil
 				}
 				user, err := users.LookupUser(ctx, name)
 				if err != nil {
 					log.Error().Err(err).Str("user", name).Msg("unable to look up user")
-					return nil
-				}
-				if user == nil {
-					// An untyped nil, so that a template's "with" and "if" see nobody.
 					return nil
 				}
 
