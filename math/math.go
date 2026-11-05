@@ -1,12 +1,13 @@
-// Package math renders LaTeX formulas to SVG images that Confluence can show.
+// Package math renders LaTeX formulas to images that Confluence can show:
+// PNG unless SVG is asked for.
 //
 // Confluence has no math of its own, and the usual answer for Markdown tools --
 // KaTeX or MathJax HTML -- does not survive the trip. That markup is a pile of
 // positioned <span>s whose layout lives entirely in a stylesheet the page never
 // loads, published alongside a MathML twin and the LaTeX source, so a reader
-// sees the formula spelled out three times and laid out none of them. An SVG
-// carries its own geometry and its glyphs as outlines: it needs no stylesheet,
-// no fonts, and no plugin on the instance.
+// sees the formula spelled out three times and laid out none of them. So
+// MathJax draws it as SVG, which carries its own geometry and its glyphs as
+// outlines: it needs no stylesheet, no fonts, and no plugin on the instance.
 package math
 
 import (

@@ -19,11 +19,10 @@ func extract(t *testing.T, document string) (*Meta, string, error) {
 	return meta, string(body), nil
 }
 
-// TestHeadersSurviveBlankLines pins the class of bug where a document that
-// groups its headers loses every one below the first gap. Each comment is its
-// own HTML block and the run used to end at the first byte that was not the
-// previous block's last, so a blank line meant the Label was neither applied
-// nor removed: it did nothing and was published as page text.
+// TestHeadersSurviveBlankLines: a document that groups its headers must keep
+// every one below a gap. Each comment is its own HTML block; if a blank line
+// ended the run, the Label would be neither applied nor removed, and would be
+// published as page text.
 func TestHeadersSurviveBlankLines(t *testing.T) {
 	meta, body, err := extract(t, `<!-- Space: TEST -->
 <!-- Title: Grouped -->
@@ -62,10 +61,10 @@ Some prose.
 		"a comment mark did not consume has to stay where the author put it")
 }
 
-// TestIncludeAmongHeadersStaysInBody pins the fix for an Include written inside
-// the header block. Includes are expanded later, from the body, but the header
-// run was cut out in one piece -- so the directive was deleted before anything
-// could expand it and the page went up missing a whole section, with a zero
+// TestIncludeAmongHeadersStaysInBody covers an Include written inside the
+// header block. Includes are expanded later, from the body, so cutting the
+// header run out in one piece would delete the directive before anything could
+// expand it, and the page would go up missing a whole section, with a zero
 // exit code.
 func TestIncludeAmongHeadersStaysInBody(t *testing.T) {
 	meta, body, err := extract(t, `<!-- Space: TEST -->

@@ -28,8 +28,9 @@ type MathConfig struct {
 // ConfluenceMathRenderer publishes a LaTeX formula as an image.
 //
 // Confluence has no math of its own and no way to load the stylesheet that
-// KaTeX or MathJax HTML would need, so a formula is rendered to SVG and
-// uploaded beside the page, the way a mermaid or d2 diagram is. The formula's
+// KaTeX or MathJax HTML would need, so a formula is drawn as an image --
+// PNG unless SVG is asked for -- and uploaded beside the page, the way a
+// mermaid or d2 diagram is. The formula's
 // source is kept as the image's alt text, which is what makes it findable by
 // search and readable to a screen reader.
 type ConfluenceMathRenderer struct {

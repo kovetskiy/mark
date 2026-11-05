@@ -16,10 +16,10 @@ func extractFrontMatterDocument(t *testing.T, document string) (*Meta, string, e
 }
 
 // TestFrontMatterOpensOnTheFirstLineOnly covers a document whose second line
-// is a dash rule. The goldmark extension front matter used to be read with
-// accepted one there, so a page opening with a heading and a horizontal rule failed with
-// "unterminated YAML front matter", and one that happened to repeat its first
-// line further down lost everything above that repeat.
+// is a dash rule. Front matter opens only on the first line: accepting a
+// delimiter anywhere else fails a page that opens with a heading and a
+// horizontal rule with "unterminated YAML front matter", and loses everything
+// above a repeat of the first line further down.
 func TestFrontMatterOpensOnTheFirstLineOnly(t *testing.T) {
 	for name, document := range map[string]string{
 		"heading then rule":  "# Heading\n---\n\nBody.\n",
@@ -41,8 +41,8 @@ func TestFrontMatterOpensOnTheFirstLineOnly(t *testing.T) {
 }
 
 // TestFrontMatterClosingLineMayEndInBlanks covers a closing delimiter with
-// trailing blanks. The body was cut there, but the YAML went on being read
-// past it, so the page's own text was taken for metadata.
+// trailing blanks. The YAML has to end where the body is cut, or the page's
+// own text is taken for metadata.
 func TestFrontMatterClosingLineMayEndInBlanks(t *testing.T) {
 	meta, body, err := extractFrontMatterDocument(t,
 		"---\nspace: DOCS\ntitle: Doc\n--- \t\ntitle: Not metadata\n",
