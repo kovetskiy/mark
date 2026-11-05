@@ -426,14 +426,20 @@ on a page is uploaded once.
 
 ### Choosing the image format
 
-| `--math-format` | What you get | What it costs |
+| `--math-output` | What you get | What it costs |
 | --- | --- | --- |
 | `png` (default) | What Confluence certainly displays, and what the diagram renderers have always produced | Rasterised through the same headless Chrome mermaid uses |
 | `svg` | Vector: sharp at any zoom, a few kilobytes | Nothing — no browser at all — where the instance displays an SVG attachment |
 
 ```bash
-mark publish --features=math --math-format=svg -f document.md
+mark publish --features=math --math-output=svg -f document.md
 ```
+
+`--math-output` is set like `--mermaid-output` and `--d2-output`: `png` or
+`svg`, in any case and with any spaces around it, from the flag,
+`MARK_MATH_OUTPUT` or `math-output` in the configuration file. Before v17 it
+was `--math-format`, `MARK_MATH_FORMAT` and `math-format`; those names are no
+longer read, and the configuration file refuses the old key.
 
 `--math-scale` (2 by default) applies to PNG only, and multiplies the pixels
 rather than the size: the image still occupies the space the formula asked for,

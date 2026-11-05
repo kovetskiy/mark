@@ -9,13 +9,6 @@ import (
 	"strings"
 )
 
-// IsImageFormat reports whether format is one a d2 diagram, a mermaid diagram
-// or a formula can be published as. Compared as written, as the renderers
-// compare it.
-func IsImageFormat(format string) bool {
-	return format == "png" || format == "svg"
-}
-
 // IsScale reports whether scale is a number a diagram can be multiplied by.
 // Written as "> 0" rather than "not <= 0" on purpose: NaN fails every
 // comparison it is given, so a check phrased the other way round lets it

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -85,7 +86,7 @@ func TestUnsafeLinksAreRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			diagram := []byte("a: click me\na.link: " + link + "\n")
 
-			_, err := Render(context.Background(), "probe", diagram, Options{Format: "svg", Scale: 1.0})
+			_, err := Render(context.Background(), "probe", diagram, Options{Output: imageformat.SVG, Scale: 1.0})
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrUnsafeDiagram)
 
@@ -108,7 +109,7 @@ func TestLabelsThatOnlyDrawAreStillPublished(t *testing.T) {
 		"a list and code": "a: |md\n  - one\n  - `two`\n|\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := Render(context.Background(), "probe", []byte(label), Options{Format: "svg", Scale: 1.0})
+			got, err := Render(context.Background(), "probe", []byte(label), Options{Output: imageformat.SVG, Scale: 1.0})
 			require.NoError(t, err)
 			assert.NotEmpty(t, got.FileBytes)
 		})
@@ -141,7 +142,7 @@ func publishable(t *testing.T, diagram []byte) [][]byte {
 		drawings = append(drawings, png.FileBytes)
 	}
 
-	if svg, err := Render(context.Background(), "svg", diagram, Options{Format: "svg", Scale: 1.0}); err == nil {
+	if svg, err := Render(context.Background(), "svg", diagram, Options{Output: imageformat.SVG, Scale: 1.0}); err == nil {
 		require.True(t, strings.Contains(string(svg.FileBytes), "<svg"),
 			"a diagram that was published should be a drawing")
 

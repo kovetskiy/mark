@@ -18,6 +18,7 @@ import (
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/mod/semver"
 )
@@ -458,8 +459,8 @@ func normaliseScale(scale float64) (float64, error) {
 
 // Options say how Render draws a diagram.
 type Options struct {
-	// Format is "png", the default when empty, or "svg".
-	Format string
+	// Output is imageformat.PNG, the default when empty, or imageformat.SVG.
+	Output imageformat.Format
 
 	// Scale multiplies a PNG's pixels, or the size the page displays an SVG
 	// at, leaving the file itself alone. Zero is the default.
@@ -475,13 +476,13 @@ type Options struct {
 // checksum when title is empty. An SVG is one file at every zoom, and text
 // that stays text.
 func (e *Engine) Render(ctx context.Context, title string, diagram []byte, options Options) (attachment.Attachment, error) {
-	switch options.Format {
-	case "png", "":
+	switch options.Output {
+	case imageformat.PNG, "":
 		return e.renderPNGAttachment(ctx, title, diagram, options.Scale)
-	case "svg":
+	case imageformat.SVG:
 		return e.renderSVGAttachment(ctx, title, diagram, options.Bundle, options.Scale)
 	default:
-		return attachment.Attachment{}, fmt.Errorf("unknown mermaid format %q: expected png or svg", options.Format)
+		return attachment.Attachment{}, fmt.Errorf("unknown mermaid output %q: expected png or svg", options.Output)
 	}
 }
 

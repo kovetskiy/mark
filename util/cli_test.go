@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,6 +28,7 @@ func runWithArgs(args []string) error {
 			&cli.StringFlag{Name: "mermaid-output", Value: "png"},
 			&cli.BoolFlag{Name: "mermaid-bundle"},
 			&cli.FloatFlag{Name: "mermaid-scale", Value: 1.0},
+			&cli.StringFlag{Name: "math-output", Value: "png"},
 			&cli.FloatFlag{Name: "math-scale", Value: 2.0},
 		},
 		Before: checkPublishFlags,
@@ -163,12 +165,9 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", ""}))
 	})
 
-	// What is checked has to be what is used. Trimmed for the check and passed
-	// on whole, " svg " was accepted here and then compared literally by the
-	// renderer, which knows no such format and publishes a PNG -- taking a
-	// bundle asked for alongside it down with it.
-	t.Run("a padded value is not the value it is padding", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", " svg "}))
+	// The bundle is checked against the normalised value, the one published.
+	t.Run("a padded svg takes a bundle", func(t *testing.T) {
+		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", " SVG ", "--mermaid-bundle"}))
 	})
 
 	// The scale applies to both formats now: it multiplies the pixels of a PNG
@@ -213,12 +212,26 @@ func TestD2OutputFlagValidation(t *testing.T) {
 	t.Run("emptied on purpose is rejected", func(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", ""}))
 	})
+}
 
-	// The value goes into the configuration whole and the renderer compares it
-	// literally, so what is checked has to be what is used.
-	t.Run("a padded value is not the value it is padding", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", " svg "}))
-	})
+// TestImageOutputFlagsShareOneRule: the three --X-output flags take the same
+// values, padded or not, and refuse the rest in the same words.
+func TestImageOutputFlagsShareOneRule(t *testing.T) {
+	for _, name := range imageOutputFlags {
+		for _, value := range []string{"png", "svg", " SVG ", "Png\t"} {
+			t.Run(name+" accepts "+value, func(t *testing.T) {
+				assert.NoError(t, runWithArgs([]string{"cmd", "--" + name, value}))
+			})
+		}
+
+		for _, value := range []string{"jpeg", "", " "} {
+			t.Run(name+" refuses "+value, func(t *testing.T) {
+				err := runWithArgs([]string{"cmd", "--" + name, value})
+				require.Error(t, err)
+				assert.Equal(t, fmt.Sprintf("invalid value for --%s: %q (expected: svg or png)", name, value), err.Error())
+			})
+		}
+	}
 }
 
 // TestD2ScaleFlagValidation covers the numbers that are not a scale. Zero

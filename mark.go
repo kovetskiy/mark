@@ -19,12 +19,12 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/header"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/markdown"
-	markmath "github.com/kovetskiy/mark/v17/math"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
@@ -156,16 +156,18 @@ type TrackingConfig struct {
 // RenderingConfig is how a document becomes storage format: diagrams,
 // formulas, features, images and the page header.
 type RenderingConfig struct {
-	DropH1           bool
-	StripLinebreaks  bool
-	MermaidEngine    mermaid.EngineKind
-	MermaidScale     float64
-	MermaidOutput    string
+	DropH1          bool
+	StripLinebreaks bool
+	MermaidEngine   mermaid.EngineKind
+	MermaidScale    float64
+	// MermaidOutput, D2Output and MathOutput are the image each kind of
+	// picture is published as; the zero value is PNG.
+	MermaidOutput    imageformat.Format
 	MermaidBundle    bool
-	D2Output         string
+	D2Output         imageformat.Format
 	D2Scale          float64
 	D2BundleRemote   bool
-	MathFormat       markmath.Format
+	MathOutput       imageformat.Format
 	MathScale        float64
 	Features         []string
 	ImageAlign       string
@@ -263,14 +265,14 @@ func (r RenderingConfig) validate() error {
 	// format publishes a PNG without a word -- taking a bundle asked for
 	// alongside it down with it. An empty value is not that: it is a caller
 	// that never set the field, and it means the PNG mark has always published.
-	if r.MermaidOutput != "" && !rendercheck.IsImageFormat(r.MermaidOutput) {
+	if r.MermaidOutput != "" && !r.MermaidOutput.Valid() {
 		return fmt.Errorf(
 			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
 			r.MermaidOutput,
 		)
 	}
 
-	if r.MermaidBundle && r.MermaidOutput != "svg" {
+	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {
 		return errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
 				"there is nowhere in a PNG to keep the diagram's source",
@@ -281,7 +283,7 @@ func (r RenderingConfig) validate() error {
 	// the renderer's PNG branch, publishing one without a word about the SVG
 	// that was asked for. An empty value is a caller that never set the field,
 	// and means the PNG mark has always published.
-	if r.D2Output != "" && !rendercheck.IsImageFormat(r.D2Output) {
+	if r.D2Output != "" && !r.D2Output.Valid() {
 		return fmt.Errorf(
 			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
 			r.D2Output,
@@ -290,10 +292,10 @@ func (r RenderingConfig) validate() error {
 
 	// Checked here so that a format math does not know fails the run at its
 	// start rather than at its first formula.
-	if r.MathFormat != "" && !rendercheck.IsImageFormat(string(r.MathFormat)) {
+	if r.MathOutput != "" && !r.MathOutput.Valid() {
 		return fmt.Errorf(
-			"invalid MathFormat %q: expected \"svg\", \"png\", or \"\" for the default",
-			r.MathFormat,
+			"invalid MathOutput %q: expected \"png\", \"svg\", or \"\" for the default",
+			r.MathOutput,
 		)
 	}
 
@@ -2257,7 +2259,7 @@ func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 		D2Output:         c.D2Output,
 		D2Scale:          c.D2Scale,
 		D2BundleRemote:   c.D2BundleRemote,
-		MathFormat:       c.MathFormat,
+		MathOutput:       c.MathOutput,
 		MathScale:        c.MathScale,
 		StripLinebreaks:  c.StripLinebreaks,
 		Features:         c.Features,

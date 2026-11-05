@@ -14,6 +14,7 @@ import (
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,7 +170,7 @@ func TestScaleRefusesWhatIsNotAScale(t *testing.T) {
 		require.Error(t, err, "a scale of %v is not one", scale)
 		assert.Contains(t, err.Error(), "invalid mermaid scale")
 
-		_, err = engine.Render(context.Background(), "svg", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: scale})
+		_, err = engine.Render(context.Background(), "svg", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: scale})
 		require.Error(t, err, "a scale of %v is not one for an SVG either", scale)
 		assert.Contains(t, err.Error(), "invalid mermaid scale")
 	}
@@ -225,14 +226,14 @@ func TestRenderStoppedByTheCallerKeepsEngine(t *testing.T) {
 }
 
 func TestRenderRefusesAnUnknownFormat(t *testing.T) {
-	_, err := engine.Render(t.Context(), "gif", []byte("graph TD;\n A-->B;"), Options{Format: "gif"})
-	require.ErrorContains(t, err, `unknown mermaid format "gif"`)
+	_, err := engine.Render(t.Context(), "gif", []byte("graph TD;\n A-->B;"), Options{Output: "gif"})
+	require.ErrorContains(t, err, `unknown mermaid output "gif"`)
 }
 
 // TestRenderSVG covers the other thing a diagram can be published as:
 // the drawing itself rather than a picture of it.
 func TestRenderSVG(t *testing.T) {
-	got, err := engine.Render(context.Background(), "svgtest", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
+	got, err := engine.Render(context.Background(), "svgtest", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, "svgtest.svg", got.Filename)
@@ -247,7 +248,7 @@ func TestRenderSVG(t *testing.T) {
 // diagram's own source kept in it, so that what was published can be opened and
 // edited again without the document it came from.
 func TestRenderBundledSVG(t *testing.T) {
-	got, err := engine.Render(context.Background(), "bundletest", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0, Bundle: true})
+	got, err := engine.Render(context.Background(), "bundletest", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: 1.0, Bundle: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, "bundletest.svg", got.Filename)
@@ -267,10 +268,10 @@ func TestRenderBundledSVG(t *testing.T) {
 func TestSVGChecksumsDifferByBundle(t *testing.T) {
 	diagram := []byte("graph TD;\n A-->B;")
 
-	plain, err := engine.Render(context.Background(), "chk", diagram, Options{Format: "svg", Scale: 1.0})
+	plain, err := engine.Render(context.Background(), "chk", diagram, Options{Output: imageformat.SVG, Scale: 1.0})
 	require.NoError(t, err)
 
-	bundled, err := engine.Render(context.Background(), "chk", diagram, Options{Format: "svg", Scale: 1.0, Bundle: true})
+	bundled, err := engine.Render(context.Background(), "chk", diagram, Options{Output: imageformat.SVG, Scale: 1.0, Bundle: true})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, plain.Checksum, bundled.Checksum)
@@ -439,7 +440,7 @@ func descContent(document string) (string, bool) {
 // cap then overrides -- and the file states no size of its own for mark to ask
 // with.
 func TestSVGStatesItsOwnSizeUncapped(t *testing.T) {
-	got, err := engine.Render(context.Background(), "uncapped", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
+	got, err := engine.Render(context.Background(), "uncapped", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: 1.0})
 	require.NoError(t, err)
 
 	// The root element, not the whole file: mermaid ships a stylesheet inside
@@ -467,7 +468,7 @@ func TestSVGIsUncappedForEveryKindOfDiagram(t *testing.T) {
 
 	for name, source := range diagrams {
 		t.Run(name, func(t *testing.T) {
-			got, err := engine.Render(context.Background(), name, []byte(source), Options{Format: "svg", Scale: 1.0})
+			got, err := engine.Render(context.Background(), name, []byte(source), Options{Output: imageformat.SVG, Scale: 1.0})
 			require.NoError(t, err)
 
 			assert.NotContains(t, svgRootElement(t, got.FileBytes), "max-width")
@@ -483,10 +484,10 @@ func TestSVGIsUncappedForEveryKindOfDiagram(t *testing.T) {
 func TestSVGScaleMultipliesWhatThePageShowsAndNotTheFile(t *testing.T) {
 	diagram := []byte("graph TD;\n A-->B;")
 
-	plain, err := engine.Render(context.Background(), "scaled", diagram, Options{Format: "svg", Scale: 1.0})
+	plain, err := engine.Render(context.Background(), "scaled", diagram, Options{Output: imageformat.SVG, Scale: 1.0})
 	require.NoError(t, err)
 
-	scaled, err := engine.Render(context.Background(), "scaled", diagram, Options{Format: "svg", Scale: 2.0})
+	scaled, err := engine.Render(context.Background(), "scaled", diagram, Options{Output: imageformat.SVG, Scale: 2.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, plain.Checksum, scaled.Checksum, "the drawing did not change")
@@ -571,7 +572,7 @@ func svgRootElement(t *testing.T, document []byte) string {
 // by its filename with any "/" flattened, so the file has to be uploaded under
 // that name too, or a diagram titled Auth/Login is a broken image.
 func TestRenderFlattensASlashInTheTitle(t *testing.T) {
-	svg, err := engine.Render(context.Background(), "Auth/Login", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
+	svg, err := engine.Render(context.Background(), "Auth/Login", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: 1.0})
 	require.NoError(t, err)
 	assert.Equal(t, "Auth_Login.svg", svg.Filename)
 

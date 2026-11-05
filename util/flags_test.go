@@ -354,7 +354,7 @@ func TestSplitParentsDropsEmptyFields(t *testing.T) {
 }
 
 // TestImageAlignIsCheckedBeforeAnythingIsCreated: --content-appearance and
-// --math-format are both checked here, and --image-align was not -- it was
+// --math-output are both checked here, and --image-align was not -- it was
 // validated inside the publish, after CreatePage and after attachments had
 // gone up. A misspelling therefore left an empty page in Confluence and then
 // failed the run.

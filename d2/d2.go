@@ -20,6 +20,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/rs/zerolog/log"
 
 	"github.com/d2lang/d2/d2graph"
@@ -98,8 +99,8 @@ func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height
 
 // Options say how Render draws a diagram.
 type Options struct {
-	// Format is "png", the default when empty, or "svg".
-	Format string
+	// Output is imageformat.PNG, the default when empty, or imageformat.SVG.
+	Output imageformat.Format
 
 	// Scale multiplies a PNG's pixels, or the size the page displays an SVG
 	// at.
@@ -119,13 +120,13 @@ type Options struct {
 // Render draws a diagram as an attachment named after title, or after its
 // checksum when title is empty.
 func Render(ctx context.Context, title string, d2Diagram []byte, options Options) (attachment.Attachment, error) {
-	switch options.Format {
-	case "png", "":
+	switch options.Output {
+	case imageformat.PNG, "":
 		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.Scale)
-	case "svg":
+	case imageformat.SVG:
 		return renderSVGAttachment(ctx, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
 	default:
-		return attachment.Attachment{}, fmt.Errorf("unknown d2 format %q: expected png or svg", options.Format)
+		return attachment.Attachment{}, fmt.Errorf("unknown d2 output %q: expected png or svg", options.Output)
 	}
 }
 

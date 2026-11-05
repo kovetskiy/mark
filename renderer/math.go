@@ -5,6 +5,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	cmath "github.com/kovetskiy/mark/v17/math"
 	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/kovetskiy/mark/v17/stdlib"
@@ -19,9 +20,9 @@ type MathConfig struct {
 	// Browser rasterises formulas published as PNG. It belongs to whoever
 	// created it, who closes it; nil fails the first PNG formula.
 	Browser *chrome.Browser
-	// Format is the image a formula is published as, "png" (the default) or
-	// "svg". Scale multiplies the pixels of a PNG one, and is ignored for SVG.
-	Format cmath.Format
+	// Output is the image a formula is published as, PNG (the default) or
+	// SVG. Scale multiplies the pixels of a PNG one, and is ignored for SVG.
+	Output imageformat.Format
 	Scale  float64
 }
 
@@ -101,7 +102,7 @@ func (r *ConfluenceMathRenderer) writeFormula(writer util.BufWriter, equation []
 	// formulas that the source is the clearer identifier.
 	rendered, err := cmath.Process(orBackground(r.ctx), string(equation), cmath.Options{
 		Display: display,
-		Format:  r.Math.Format,
+		Output:  r.Math.Output,
 		Scale:   r.Math.Scale,
 		Browser: r.Math.Browser,
 	})

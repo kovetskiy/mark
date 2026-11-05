@@ -23,7 +23,7 @@ func compileMath(t *testing.T, source string, features ...string) (string, []att
 
 	return markdown.CompileMarkdown(t.Context(), []byte(source), lib, "testdata/test.md", markdown.Options{
 		Features:   features,
-		MathFormat: "svg",
+		MathOutput: "svg",
 	})
 }
 
@@ -147,7 +147,7 @@ func TestMathRejectsAnUnknownFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = markdown.CompileMarkdown(t.Context(), []byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
-		markdown.Options{Features: []string{"math"}, MathFormat: "jpeg"})
+		markdown.Options{Features: []string{"math"}, MathOutput: "jpeg"})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "jpeg")

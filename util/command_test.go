@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -535,24 +537,65 @@ func TestShortFlagsMeanOneThing(t *testing.T) {
 	walk("mark", newCommand(readmeVersion))
 }
 
-// TestMathFormatIsPublishedAsChecked: the check trims --math-format, so a
-// padded value from any source has to reach the renderer trimmed as well, or
-// the run fails at its first formula with "unknown math format".
-func TestMathFormatIsPublishedAsChecked(t *testing.T) {
+// TestImageOutputsArePublishedAsChecked: each --X-output flag is trimmed and
+// lowercased once, so a padded value from any source reaches the
+// configuration as the value the check accepted.
+func TestImageOutputsArePublishedAsChecked(t *testing.T) {
+	for _, name := range imageOutputFlags {
+		env := "MARK_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+
+		for _, tc := range []struct {
+			source string
+			config string
+			env    string
+			args   []string
+		}{
+			{source: "flag", args: []string{"--" + name, " SVG "}},
+			{source: "environment", env: " SVG "},
+			{source: "configuration file", config: name + " = \" SVG \"\n"},
+		} {
+			t.Run(name+" from the "+tc.source, func(t *testing.T) {
+				noDefaultConfig(t)
+				if tc.env != "" {
+					t.Setenv(env, tc.env)
+				}
+
+				config := writeConfig(t, t.TempDir(), "mark.toml", tc.config)
+
+				var got map[string]imageformat.Format
+				cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
+					var err error
+					got, err = imageOutputs(c)
+					return err
+				}, nil)
+				cmd.Writer, cmd.ErrWriter = io.Discard, io.Discard
+
+				args := append([]string{"mark", "publish", "--config", config, "--files", "a.md"}, tc.args...)
+				require.NoError(t, cmd.Run(context.Background(), args))
+				assert.Equal(t, imageformat.SVG, got[name])
+			})
+		}
+	}
+}
+
+// TestMathOutputReachesTheRenderer follows a padded --math-output from each
+// source to the formula it draws, which a value math does not know would fail
+// with "unknown math output".
+func TestMathOutputReachesTheRenderer(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		config string
 		env    string
 		args   []string
 	}{
-		{name: "flag", args: []string{"--math-format", " svg "}},
+		{name: "flag", args: []string{"--math-output", " svg "}},
 		{name: "environment", env: " svg "},
-		{name: "configuration file", config: "math-format = \" svg \"\n"},
+		{name: "configuration file", config: "math-output = \" svg \"\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			noDefaultConfig(t)
 			if tc.env != "" {
-				t.Setenv("MARK_MATH_FORMAT", tc.env)
+				t.Setenv("MARK_MATH_OUTPUT", tc.env)
 			}
 
 			dir := t.TempDir()
@@ -569,4 +612,24 @@ func TestMathFormatIsPublishedAsChecked(t *testing.T) {
 			assert.Regexp(t, `ri:filename="math-[0-9a-f]+\.svg"`, out)
 		})
 	}
+}
+
+// TestMathFormatIsGone: --math-output replaced --math-format outright, so the
+// old flag and configuration key are refused rather than quietly ignored.
+func TestMathFormatIsGone(t *testing.T) {
+	noDefaultConfig(t)
+
+	t.Run("flag", func(t *testing.T) {
+		config := writeConfig(t, t.TempDir(), "mark.toml", "")
+		_, _, err := dispatch(t, "publish", "--config", config, "--files", "a.md", "--math-format", "svg")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "flag provided but not defined: -math-format")
+	})
+
+	t.Run("configuration file", func(t *testing.T) {
+		config := writeConfig(t, t.TempDir(), "mark.toml", "math-format = \"svg\"\n")
+		_, _, err := dispatch(t, "publish", "--config", config, "--files", "a.md")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `unknown key "math-format"`)
+	})
 }

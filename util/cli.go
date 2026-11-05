@@ -12,7 +12,6 @@ import (
 	mark "github.com/kovetskiy/mark/v17"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/export"
-	"github.com/kovetskiy/mark/v17/math"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
@@ -304,6 +303,11 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
+	outputs, err := imageOutputs(cmd)
+	if err != nil {
+		return err
+	}
+
 	config := mark.Config{
 		PublishConfig: mark.PublishConfig{
 			Page: mark.PageConfig{
@@ -337,12 +341,12 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 				StripLinebreaks:  cmd.Bool("strip-linebreaks"),
 				MermaidEngine:    mermaid.EngineKind(cmd.String("mermaid-engine")),
 				MermaidScale:     cmd.Float("mermaid-scale"),
-				MermaidOutput:    cmd.String("mermaid-output"),
+				MermaidOutput:    outputs["mermaid-output"],
 				MermaidBundle:    cmd.Bool("mermaid-bundle"),
-				D2Output:         cmd.String("d2-output"),
+				D2Output:         outputs["d2-output"],
 				D2BundleRemote:   cmd.Bool("d2-bundle-remote"),
 				D2Scale:          cmd.Float("d2-scale"),
-				MathFormat:       math.Format(mathFormat(cmd)),
+				MathOutput:       outputs["math-output"],
 				MathScale:        cmd.Float("math-scale"),
 				Features:         EnabledFeatures(cmd),
 				ImageAlign:       cmd.String("image-align"),

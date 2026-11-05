@@ -42,6 +42,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |
 | `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
 | `chrome/` | `Browser`, a run's headless browser, its options, and SVG → PNG for `d2/` and `math/` |
+| `imageformat/` | `Format`, the png or svg a d2 diagram, a mermaid diagram or a formula is published as, and `Parse`, the one reading of the `--X-output` flags; imports nothing of mark's |
 | `renderer/` | goldmark node renderers → storage format; the diagram and math renderers take their slice of `markdown.Options` as `DiagramConfig` and `MathConfig`, since `markdown` imports `renderer` |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file, or with `--format okf` an Open Knowledge Format concept, and a tree a bundle (`okf.go`) |
 | `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
@@ -53,7 +54,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
-| `internal/rendercheck` | the rendering settings' rules (image formats, scales, image alignment) that `mark.Config` validation and the publish flag checks share |
+| `internal/rendercheck` | the rendering settings' rules (scales, image alignment) that `mark.Config` validation and the publish flag checks share |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
 Pipeline in `publishRun.processFile`: read → normalise CRLF → extract metadata → resolve relative

@@ -7,15 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsImageFormat(t *testing.T) {
-	assert.True(t, IsImageFormat("png"))
-	assert.True(t, IsImageFormat("svg"))
-
-	for _, format := range []string{"", " svg", "SVG", "jpeg"} {
-		assert.False(t, IsImageFormat(format), format)
-	}
-}
-
 func TestIsScale(t *testing.T) {
 	assert.True(t, IsScale(0.5))
 	assert.True(t, IsScale(3))
