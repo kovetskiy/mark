@@ -209,7 +209,8 @@ func checkMove(target, destination *confluence.PageInfo) error {
 	return nil
 }
 
-// RenameOptions are Rename's settings.
+// RenameOptions are Rename's settings. DryRun reports the rename and makes
+// none.
 type RenameOptions struct {
 	DryRun bool
 }
@@ -258,7 +259,8 @@ func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, opt
 	return nil
 }
 
-// ArchiveOptions are Archive's settings.
+// ArchiveOptions are Archive's settings. DryRun reports the archive and makes
+// none.
 type ArchiveOptions struct {
 	DryRun bool
 }

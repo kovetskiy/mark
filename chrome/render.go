@@ -191,6 +191,11 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 	if b == nil {
 		return nil, 0, 0, ErrNoBrowser
 	}
+	// A render that has already ended neither starts a browser nor discards
+	// one.
+	if err := ctx.Err(); err != nil {
+		return nil, 0, 0, err
+	}
 
 	b.render.Lock()
 	defer b.render.Unlock()
