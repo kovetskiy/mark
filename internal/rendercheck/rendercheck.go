@@ -10,9 +10,8 @@ import (
 )
 
 // IsImageFormat reports whether format is one a d2 diagram, a mermaid diagram
-// or a formula can be published as. Compared as written: the renderers compare
-// it literally, so a padded " svg " would pass a trimmed check and publish a
-// PNG.
+// or a formula can be published as. Compared as written, as the renderers
+// compare it.
 func IsImageFormat(format string) bool {
 	return format == "png" || format == "svg"
 }

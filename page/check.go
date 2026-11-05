@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -150,21 +151,12 @@ func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]st
 	// is a request to Confluence, does not hold up NotePage on another
 	// goroutine.
 	c.mu.Lock()
-	type entry struct {
-		key  string
-		link pendingPage
-	}
-	entries := make([]entry, 0, len(c.pending))
-	for key, link := range c.pending {
-		entries = append(entries, entry{key, link})
-	}
+	pending := maps.Clone(c.pending)
 	c.mu.Unlock()
 
-	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
-
 	var missing []string
-	for _, e := range entries {
-		link := e.link
+	for _, key := range slices.Sorted(maps.Keys(pending)) {
+		link := pending[key]
 
 		found, err := finder.FindPage(ctx, link.space, link.title, "page")
 		if err != nil {

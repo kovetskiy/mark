@@ -17,11 +17,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// KnownFeatures are the values --features accepts, as markdown.KnownFeatures
-// returns them. Every one of them is read with a plain slices.Contains at the
-// point it takes effect, so a name that is not on this list is
-// indistinguishable from one deliberately left off: the feature is simply never
-// switched on, and nothing is said about it.
+// KnownFeatures are the feature names --features accepts besides "none".
 //
 // Deprecated: markdown owns the list, and the command line reads it from there;
 // use markdown.KnownFeatures. Changing this copy changes nothing.
