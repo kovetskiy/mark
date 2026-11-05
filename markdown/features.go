@@ -8,7 +8,6 @@ import (
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
-	"github.com/kovetskiy/mark/v17/types"
 	emoji "github.com/yuin/goldmark-emoji/v2"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"
@@ -19,7 +18,7 @@ import (
 type featureDeps struct {
 	stdlib      *stdlib.Lib
 	attachments attachment.Attacher
-	cfg         types.MarkConfig
+	opts        Options
 }
 
 // markdownFeature is the part of the goldmark assembly a --features name
@@ -98,7 +97,7 @@ var markdownFeatures = map[string]markdownFeature{
 			}
 		},
 		renderer: func(deps featureDeps) html.Extension {
-			return crenderer.NewConfluenceMathRenderer(deps.stdlib, deps.attachments, deps.cfg)
+			return crenderer.NewConfluenceMathRenderer(deps.stdlib, deps.attachments, deps.opts.mathConfig())
 		},
 	},
 	// Renders auto-detected bare URLs with the data-card-appearance="inline"

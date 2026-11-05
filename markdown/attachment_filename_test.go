@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,7 @@ func TestAttachmentFilenameAttributeIsEscaped(t *testing.T) {
 
 			out, _, err := CompileMarkdown(
 				[]byte("```d2 title "+tt.title+"\na -> b\n```\n"),
-				std, "test.md", types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
+				std, "test.md", Options{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 			)
 			require.NoError(t, err)
 

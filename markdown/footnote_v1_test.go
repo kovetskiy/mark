@@ -6,7 +6,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,7 +35,7 @@ func assertFootnotesAsV1(t *testing.T, cases []footnoteV1Case) {
 	for _, tc := range cases {
 		for _, featureSet := range featureSets {
 			t.Run(tc.name+"/"+featureSet.name, func(t *testing.T) {
-				actual, _, err := markdown.CompileMarkdown([]byte(tc.markdown), lib, "testdata/test.md", types.MarkConfig{
+				actual, _, err := markdown.CompileMarkdown([]byte(tc.markdown), lib, "testdata/test.md", markdown.Options{
 					Features: featureSet.features,
 				})
 				assert.NoError(t, err)

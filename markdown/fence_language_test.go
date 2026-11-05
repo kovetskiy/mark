@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +28,7 @@ func TestFenceLanguageWithNonWordCharacters(t *testing.T) {
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown(
-				[]byte("```"+tt.info+"\nx\n```\n"), std, "test.md", types.MarkConfig{})
+				[]byte("```"+tt.info+"\nx\n```\n"), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, `<ac:parameter ac:name="language">`+tt.lang+`</ac:parameter>`)
@@ -57,7 +56,7 @@ func TestFenceOptionsStillParse(t *testing.T) {
 			require.NoError(t, err)
 
 			out, _, err := CompileMarkdown(
-				[]byte("```"+tt.info+"\nx\n```\n"), std, "test.md", types.MarkConfig{})
+				[]byte("```"+tt.info+"\nx\n```\n"), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, tt.want)

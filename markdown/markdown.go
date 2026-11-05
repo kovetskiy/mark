@@ -19,7 +19,6 @@ import (
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
@@ -153,7 +152,7 @@ const maxIncludePasses = 10
 // invariant 3 in AGENTS.md says should be true.
 func expandDirectives(
 	path string,
-	cfg types.MarkConfig,
+	opts Options,
 	markdown []byte,
 	tmpl *template.Template,
 ) (*template.Template, []byte, []string, error) {
@@ -166,14 +165,14 @@ func expandDirectives(
 
 		var err error
 
-		tmpl, markdown, err = expandIncludes(path, cfg.IncludePath, markdown, tmpl)
+		tmpl, markdown, err = expandIncludes(path, opts.IncludePath, markdown, tmpl)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
 		var macros []macro.Macro
 
-		macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), cfg.IncludePath, markdown, tmpl)
+		macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), opts.IncludePath, markdown, tmpl)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to extract macros: %w", err)
 		}
@@ -324,11 +323,11 @@ var imageTitle = regexp.MustCompile(
 // gets here. A file the page declared is skipped, and counted as used by the
 // lookup. A file that is not there is only warned about, as it may already be on
 // the page; one outside the project fails, as it does anywhere else.
-func attachMacroFiles(path string, cfg types.MarkConfig, names []string) ([]attachment.Attachment, error) {
+func attachMacroFiles(path string, opts Options, names []string) ([]attachment.Attachment, error) {
 	var attached []attachment.Attachment
 
 	for _, name := range names {
-		if cfg.ResolveAttachment != nil && cfg.ResolveAttachment(name) != "" {
+		if opts.ResolveAttachment != nil && opts.ResolveAttachment(name) != "" {
 			continue
 		}
 
@@ -388,10 +387,10 @@ func expandIncludes(
 
 // CompileMarkdown compiles a document to Confluence storage format, and
 // returns the attachments its diagrams and formulas were drawn as.
-// cfg.Browser and cfg.Mermaid are supplied, and closed, by whoever creates
-// cfg: a zero-value cfg compiles a document with no pictures, but fails at the
+// opts.Browser and opts.Mermaid are supplied, and closed, by whoever creates
+// opts: the zero value compiles a document with no pictures, but fails at the
 // first mermaid diagram, or d2 diagram or formula published as PNG.
-func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, opts Options) (string, []attachment.Attachment, error) {
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
 		return "", nil, err
@@ -400,17 +399,17 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 	// The page's set is handed on to the AST include and macro transformers,
 	// so that they see what the page's own fragments defined. The renderers
 	// keep drawing on the stdlib itself.
-	_, markdown, macroFiles, err := expandDirectives(path, cfg, markdown, tmpl)
+	_, markdown, macroFiles, err := expandDirectives(path, opts, markdown, tmpl)
 	if err != nil {
 		return "", nil, err
 	}
 
-	macroAttachments, err := attachMacroFiles(path, cfg, macroFiles)
+	macroAttachments, err := attachMacroFiles(path, opts, macroFiles)
 	if err != nil {
 		return "", nil, err
 	}
 
-	ghAlertsExtension := newConfluenceExtension(stdlib, path, cfg, tmpl)
+	ghAlertsExtension := newConfluenceExtension(stdlib, path, opts, tmpl)
 	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
@@ -436,7 +435,7 @@ func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, cfg types
 type ConfluenceExtension struct {
 	Stdlib          *stdlib.Lib
 	Path            string
-	MarkConfig      types.MarkConfig
+	Options         Options
 	Attachments     []attachment.Attachment
 	Pipeline        *ctransformer.PipelineTransformer
 	Links           *ctransformer.LinkTransformer
@@ -446,7 +445,7 @@ type ConfluenceExtension struct {
 // NewConfluenceExtension creates a new instance of the ConfluenceExtension, the
 // extension with GitHub Alerts support.
 // It is the standalone version that does not depend on feature flags.
-func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig) *ConfluenceExtension {
+func NewConfluenceExtension(stdlib *stdlib.Lib, path string, opts Options) *ConfluenceExtension {
 	var tmpl *template.Template
 	if stdlib != nil {
 		// A page's own copy, for the reason pageTemplates gives. Cloning a
@@ -455,29 +454,29 @@ func NewConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfi
 		tmpl, _ = stdlib.Templates.Clone()
 	}
 
-	return newConfluenceExtension(stdlib, path, cfg, tmpl)
+	return newConfluenceExtension(stdlib, path, opts, tmpl)
 }
 
 // newConfluenceExtension is NewConfluenceExtension with the template set the
 // include and macro transformers parse into given by the caller.
-func newConfluenceExtension(stdlib *stdlib.Lib, path string, cfg types.MarkConfig, tmpl *template.Template) *ConfluenceExtension {
+func newConfluenceExtension(stdlib *stdlib.Lib, path string, opts Options, tmpl *template.Template) *ConfluenceExtension {
 	pipeline := ctransformer.NewPipelineTransformer(
 		// The base directory a template path is resolved against is the
 		// document's directory, not the document itself. Passing path for both
 		// made every relative Template: resolve under "doc.md/", which no
 		// filesystem has, so the AST macro and include transformers only ever
 		// worked when --include-path happened to cover the file.
-		ctransformer.NewMacroTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
-		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), cfg.IncludePath, tmpl),
+		ctransformer.NewMacroTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl),
+		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl),
 	)
 	return &ConfluenceExtension{
 		Stdlib:          stdlib,
 		Path:            path,
-		MarkConfig:      cfg,
+		Options:         opts,
 		Attachments:     []attachment.Attachment{},
 		Pipeline:        pipeline,
-		Links:           ctransformer.NewLinkTransformer(cfg.ResolveLink),
-		AttachmentLinks: ctransformer.NewAttachmentTransformer(cfg.ResolveAttachment),
+		Links:           ctransformer.NewLinkTransformer(opts.ResolveLink),
+		AttachmentLinks: ctransformer.NewAttachmentTransformer(opts.ResolveAttachment),
 	}
 }
 
@@ -498,18 +497,18 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 
 		// Core renderers (excluding blockquote and text which are replaced below)
 		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
-		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.MarkConfig, c.Path),
-		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.MarkConfig.DropFirstH1),
-		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.MarkConfig.ImageAlign),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(c.Stdlib, c, c.Options.diagramConfig(), c.Path),
+		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.Options.DropH1),
+		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.Options.ImageAlign),
 		crenderer.NewConfluenceParagraphRenderer(),
-		crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.MarkConfig.AttachReferenced),
+		crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.Options.AttachReferenced),
 		crenderer.NewConfluenceTaskListRenderer(),
 		crenderer.NewConfluenceDefinitionListRenderer(),
 
 		// GitHub Alerts specific renderers. These handle both GitHub Alerts
 		// and the "> Info:" blockquote syntax.
 		crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(),
-		crenderer.NewConfluenceTextRenderer(c.MarkConfig.StripNewlines),
+		crenderer.NewConfluenceTextRenderer(c.Options.StripLinebreaks),
 
 		// goldmark's footnote parser is always on, so `[^1]` is always parsed.
 		// The only question is what renders it, and the alternative is the HTML
@@ -518,7 +517,7 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 		// at all.
 		crenderer.NewConfluenceFootnoteRenderer(c.Stdlib),
 	}
-	renderers = append(renderers, featureRenderers(c.MarkConfig.Features, featureDeps{c.Stdlib, c, c.MarkConfig})...)
+	renderers = append(renderers, featureRenderers(c.Options.Features, featureDeps{c.Stdlib, c, c.Options})...)
 
 	return rendererOptions(cfg, renderers)
 }
@@ -570,7 +569,7 @@ func (c *ConfluenceExtension) ParserOptions(cfg *parser.Config) []parser.Option 
 		util.Prioritized[parser.ASTTransformer](ctransformer.NewHTMLImgTransformer(), 115),
 	))
 
-	opts = append(opts, featureParserOptions(c.MarkConfig.Features, cfg)...)
+	opts = append(opts, featureParserOptions(c.Options.Features, cfg)...)
 
 	opts = append(opts,
 		// Close the void elements, quote the attributes, escape the bare "&"s and

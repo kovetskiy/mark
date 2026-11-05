@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/stretchr/testify/assert"
@@ -105,7 +104,7 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 	// transformer replace the node the repair would otherwise have walked.
 	out, _, err := CompileMarkdown([]byte(
 		"<div>\n<!-- ac:layout-cell -->\na<br>b\n<!-- ac:layout-cell end -->\n</div>\n",
-	), std, "test.md", types.MarkConfig{})
+	), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "<br />")
@@ -127,7 +126,7 @@ func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
 		"attribute with no value": "<table><tr><td nowrap>x</td></tr></table>\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(src), std, "test.md", Options{})
 			require.NoError(t, err)
 			assert.NoError(t, CheckWellFormed(out), out)
 		})

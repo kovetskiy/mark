@@ -6,7 +6,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -74,10 +73,10 @@ func TestGHAlertsBecomeMacros(t *testing.T) {
 		t.Fatalf("Failed to create stdlib: %v", err)
 	}
 
-	cfg := types.MarkConfig{
-		Features:      []string{},
-		StripNewlines: false,
-		DropFirstH1:   false,
+	cfg := markdown.Options{
+		Features:        []string{},
+		StripLinebreaks: false,
+		DropH1:          false,
 	}
 
 	for _, tc := range testCases {

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +55,7 @@ func TestACLinkEscaping(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, tt.want)
@@ -70,7 +69,7 @@ func TestACLinkPlainTitleUnchanged(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("[t](ac:MyPage)\n"), std, "test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte("[t](ac:MyPage)\n"), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `ri:content-title="MyPage"`)

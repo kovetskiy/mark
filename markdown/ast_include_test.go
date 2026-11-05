@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +35,7 @@ func compileInDir(t *testing.T, dir string, doc string) string {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(doc), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte(doc), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	return out

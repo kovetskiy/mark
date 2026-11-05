@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +15,7 @@ func compileLinkDoc(t *testing.T, src string) string {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte(src), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	return out

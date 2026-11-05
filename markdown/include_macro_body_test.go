@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,13 +29,13 @@ func TestMacroDefinedInIncludeKeepsItsTemplateActions(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	direct, _, err := CompileMarkdown([]byte(defs+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	direct, _, err := CompileMarkdown([]byte(defs+use), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	std, err = stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	included, _, err := CompileMarkdown([]byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	included, _, err := CompileMarkdown([]byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	assert.NotContains(t, included, "no value")

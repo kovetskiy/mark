@@ -8,7 +8,6 @@ import (
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +21,7 @@ func compileMath(t *testing.T, source string, features ...string) (string, []att
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	return markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", types.MarkConfig{
+	return markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", markdown.Options{
 		Features:   features,
 		MathFormat: "svg",
 	})
@@ -128,7 +127,7 @@ func TestMathPNGFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	actual, attachments, err := markdown.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
-		types.MarkConfig{Browser: markdown.TestBrowser, Features: []string{"math"}, MathScale: 2})
+		markdown.Options{Browser: markdown.TestBrowser, Features: []string{"math"}, MathScale: 2})
 	require.NoError(t, err)
 	assertWellFormed(t, actual)
 
@@ -148,7 +147,7 @@ func TestMathRejectsAnUnknownFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = markdown.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
-		types.MarkConfig{Features: []string{"math"}, MathFormat: "jpeg"})
+		markdown.Options{Features: []string{"math"}, MathFormat: "jpeg"})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "jpeg")

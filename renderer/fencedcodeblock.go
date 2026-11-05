@@ -8,10 +8,11 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/d2"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
+	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
@@ -19,11 +20,44 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
+// DiagramConfig is how the fenced code block renderer draws the
+// diagrams it is switched on for.
+type DiagramConfig struct {
+	// Browser rasterises d2 diagrams published as PNG, and Mermaid draws
+	// mermaid diagrams. Both belong to whoever created them, who closes them;
+	// nil fails the first diagram that needs one.
+	Browser *chrome.Browser
+	Mermaid *mermaid.Engine
+
+	// Features names the diagram kinds handled: "d2", "mermaid" and
+	// "plantuml". A block in a kind not named is shown as code.
+	Features []string
+	// ImageAlign is where a diagram sits on the page: "left", "center",
+	// "right", or "" for Confluence's default.
+	ImageAlign string
+
+	// MermaidOutput is the image a diagram is published as, "png" or "svg".
+	// MermaidScale multiplies the pixels of a PNG one and the size the page
+	// displays an SVG one at. MermaidBundle keeps the diagram's source inside
+	// the SVG it is published as, and applies to nothing else.
+	MermaidOutput string
+	MermaidScale  float64
+	MermaidBundle bool
+
+	// D2Output is the image a diagram is published as, "png" or "svg".
+	// D2Scale multiplies the pixels of a PNG one and the size the page
+	// displays an SVG one at. D2BundleRemote allows a diagram to have mark
+	// fetch a URL it names and publish what comes back inside the drawing.
+	D2Output       string
+	D2Scale        float64
+	D2BundleRemote bool
+}
+
 type ConfluenceFencedCodeBlockRenderer struct {
 	htmlOptions
 
 	Stdlib      *stdlib.Lib
-	MarkConfig  types.MarkConfig
+	Diagrams    DiagramConfig
 	Attachments attachment.Attacher
 	// Path is the document the block was written in, which is what a local
 	// image referenced by a d2 diagram is relative to. Empty is allowed: d2
@@ -33,10 +67,10 @@ type ConfluenceFencedCodeBlockRenderer struct {
 }
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the ConfluenceFencedCodeBlockRenderer.
-func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig, path string, opts ...html.Option) html.Extension {
+func NewConfluenceFencedCodeBlockRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg DiagramConfig, path string, opts ...html.Option) html.Extension {
 	r := &ConfluenceFencedCodeBlockRenderer{
 		Stdlib:      stdlib,
-		MarkConfig:  cfg,
+		Diagrams:    cfg,
 		Attachments: attachments,
 		Path:        path,
 	}
@@ -111,13 +145,13 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 	lval := slices.Clip(nodeFencedCodeBlock.Value.Bytes(source))
 
-	if lang == "d2" && slices.Contains(r.MarkConfig.Features, "d2") {
+	if lang == "d2" && slices.Contains(r.Diagrams.Features, "d2") {
 		var (
 			attachment attachment.Attachment
 			err        error
 		)
 
-		switch r.MarkConfig.D2Output {
+		switch r.Diagrams.D2Output {
 		case "svg":
 			// The document's own path, empty and all: a diagram that came from
 			// nowhere on disk has nothing for a relative reference to be
@@ -125,14 +159,14 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			// rather than refusing it. ProcessD2SVG reads an empty path and
 			// d2's own "-" alike, so neither reaches the bundler.
 			attachment, err = d2.ProcessD2SVG(
-				title, lval, r.Path, r.MarkConfig.D2Scale, r.MarkConfig.D2BundleRemote,
+				title, lval, r.Path, r.Diagrams.D2Scale, r.Diagrams.D2BundleRemote,
 			)
 
 		case "png", "":
-			attachment, err = d2.ProcessD2(r.MarkConfig.Browser, title, lval, r.MarkConfig.D2Scale)
+			attachment, err = d2.ProcessD2(r.Diagrams.Browser, title, lval, r.Diagrams.D2Scale)
 
 		default:
-			// Run checks this, but CompileMarkdown takes a types.MarkConfig
+			// Run checks this, but CompileMarkdown takes its options
 			// straight from a caller and never passes through it. Publishing a
 			// PNG for a format nobody asked for is the one answer that says
 			// nothing, so it is refused here too.
@@ -140,7 +174,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 			return ast.WalkStop, fmt.Errorf(
 				"line %d, col %d: unknown d2-output %q: expected png or svg",
-				line, col, r.MarkConfig.D2Output,
+				line, col, r.Diagrams.D2Output,
 			)
 		}
 
@@ -150,7 +184,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 		r.Attachments.Attach(attachment)
 
-		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, attachment.Width)
+		effectiveAlign := calculateAlign(r.Diagrams.ImageAlign, attachment.Width)
 		effectiveLayout := calculateLayout(effectiveAlign, attachment.Width)
 		displayWidth := calculateDisplayWidth(attachment.Width, effectiveLayout)
 
@@ -191,24 +225,24 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 
-	} else if lang == "mermaid" && slices.Contains(r.MarkConfig.Features, "mermaid") {
+	} else if lang == "mermaid" && slices.Contains(r.Diagrams.Features, "mermaid") {
 		var (
 			att attachment.Attachment
 			err error
 		)
 
 		switch {
-		case r.MarkConfig.MermaidOutput == "svg" && r.MarkConfig.MermaidBundle:
-			att, err = r.MarkConfig.Mermaid.ProcessMermaidWithBundle(title, lval, r.MarkConfig.MermaidScale)
+		case r.Diagrams.MermaidOutput == "svg" && r.Diagrams.MermaidBundle:
+			att, err = r.Diagrams.Mermaid.ProcessMermaidWithBundle(title, lval, r.Diagrams.MermaidScale)
 
-		case r.MarkConfig.MermaidOutput == "svg":
-			att, err = r.MarkConfig.Mermaid.ProcessMermaidSVG(title, lval, r.MarkConfig.MermaidScale)
+		case r.Diagrams.MermaidOutput == "svg":
+			att, err = r.Diagrams.Mermaid.ProcessMermaidSVG(title, lval, r.Diagrams.MermaidScale)
 
-		case r.MarkConfig.MermaidOutput == "png", r.MarkConfig.MermaidOutput == "":
-			att, err = r.MarkConfig.Mermaid.ProcessMermaidLocally(title, lval, r.MarkConfig.MermaidScale)
+		case r.Diagrams.MermaidOutput == "png", r.Diagrams.MermaidOutput == "":
+			att, err = r.Diagrams.Mermaid.ProcessMermaidLocally(title, lval, r.Diagrams.MermaidScale)
 
 		default:
-			// Run checks this, but CompileMarkdown takes a types.MarkConfig
+			// Run checks this, but CompileMarkdown takes its options
 			// straight from a caller and never passes through it. Publishing a
 			// PNG for a format nobody asked for is the one answer that says
 			// nothing, so it is refused here too -- the same backstop the d2
@@ -217,7 +251,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 			return ast.WalkStop, fmt.Errorf(
 				"line %d, col %d: unknown mermaid-output %q: expected png or svg",
-				line, col, r.MarkConfig.MermaidOutput,
+				line, col, r.Diagrams.MermaidOutput,
 			)
 		}
 
@@ -227,7 +261,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 		r.Attachments.Attach(att)
 
-		effectiveAlign := calculateAlign(r.MarkConfig.ImageAlign, att.Width)
+		effectiveAlign := calculateAlign(r.Diagrams.ImageAlign, att.Width)
 		effectiveLayout := calculateLayout(effectiveAlign, att.Width)
 		displayWidth := calculateDisplayWidth(att.Width, effectiveLayout)
 
@@ -268,7 +302,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 			return ast.WalkStop, err
 		}
 
-	} else if lang == "plantuml" && slices.Contains(r.MarkConfig.Features, "plantuml") {
+	} else if lang == "plantuml" && slices.Contains(r.Diagrams.Features, "plantuml") {
 		err := r.Stdlib.Templates.ExecuteTemplate(
 			writer,
 			"ac:plantuml",

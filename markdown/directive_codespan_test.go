@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +26,7 @@ func compileBeside(t *testing.T, source string, files map[string]string) (string
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
-		[]byte(source), std, filepath.Join(dir, "doc.md"), types.MarkConfig{},
+		[]byte(source), std, filepath.Join(dir, "doc.md"), Options{},
 	)
 
 	return out, err

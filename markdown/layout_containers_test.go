@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +29,7 @@ func TestLayoutDirectiveInsideAContainerIsLeftAlone(t *testing.T) {
 		"paragraph":  "text <!-- ac:layout-cell --> more text\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(document), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(document), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.NotContains(t, out, "<ac:layout-cell>",
@@ -54,7 +53,7 @@ func TestLayoutDirectiveAtDocumentLevelStillConverts(t *testing.T) {
 		"<!-- ac:layout-section end -->\n" +
 		"<!-- ac:layout end -->\n"
 
-	out, _, err := CompileMarkdown([]byte(document), std, "test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte(document), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "<ac:layout>")

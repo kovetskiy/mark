@@ -17,7 +17,6 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -166,7 +165,7 @@ func TestMacroAttachmentIsReturnedByCompile(t *testing.T) {
 
 	source := widthMacro + "\n![Logo](logo.png)<!-- width=300 -->\n"
 
-	html, attached, err := markdown.CompileMarkdown([]byte(source), std, path, types.MarkConfig{})
+	html, attached, err := markdown.CompileMarkdown([]byte(source), std, path, markdown.Options{})
 	require.NoError(t, err)
 
 	require.Len(t, attached, 1)
@@ -209,7 +208,7 @@ func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
 
 			source := widthMacro + "\n![A](" + value + ")<!-- width=10 -->\n"
 
-			_, attached, err := markdown.CompileMarkdown([]byte(source), std, path, types.MarkConfig{})
+			_, attached, err := markdown.CompileMarkdown([]byte(source), std, path, markdown.Options{})
 			require.NoError(t, err)
 			assert.Empty(t, attached)
 		})
@@ -258,7 +257,7 @@ func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
 			source := widthMacro + "\n![A](" + tt.value + ")<!-- width=10 -->\n"
 
 			html, attached, err := markdown.CompileMarkdown(
-				[]byte(source), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+				[]byte(source), std, filepath.Join(dir, "doc.md"), markdown.Options{})
 			require.NoError(t, err)
 
 			if tt.want == "" {
@@ -311,7 +310,7 @@ func TestMacroAttachmentWithAColonIsUploaded(t *testing.T) {
 	source := widthMacro + "\n![A](shot:1.png)<!-- width=10 -->\n"
 
 	html, attached, err := markdown.CompileMarkdown(
-		[]byte(source), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+		[]byte(source), std, filepath.Join(dir, "doc.md"), markdown.Options{})
 	require.NoError(t, err)
 	require.Len(t, attached, 1)
 	assert.Equal(t, "shot:1.png", attached[0].Filename)

@@ -14,7 +14,6 @@ import (
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -71,12 +70,12 @@ func TestCompileMarkdown(t *testing.T) {
 			body = source
 		}
 
-		cfg := types.MarkConfig{
-			MermaidScale:  1.0,
-			D2Scale:       1.0,
-			DropFirstH1:   false,
-			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
+		cfg := markdown.Options{
+			MermaidScale:    1.0,
+			D2Scale:         1.0,
+			DropH1:          false,
+			StripLinebreaks: false,
+			Features:        []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
 		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
@@ -125,12 +124,12 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			body = source
 		}
 
-		cfg := types.MarkConfig{
-			MermaidScale:  1.0,
-			D2Scale:       1.0,
-			DropFirstH1:   true,
-			StripNewlines: false,
-			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
+		cfg := markdown.Options{
+			MermaidScale:    1.0,
+			D2Scale:         1.0,
+			DropH1:          true,
+			StripLinebreaks: false,
+			Features:        []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
 		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
@@ -139,7 +138,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 	}
 }
 
-func TestCompileMarkdownStripNewlines(t *testing.T) {
+func TestCompileMarkdownStripLinebreaks(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "..")
 	err := os.Chdir(dir)
@@ -181,12 +180,12 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			body = source
 		}
 
-		cfg := types.MarkConfig{
-			MermaidScale:  1.0,
-			D2Scale:       1.0,
-			DropFirstH1:   false,
-			StripNewlines: true,
-			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
+		cfg := markdown.Options{
+			MermaidScale:    1.0,
+			D2Scale:         1.0,
+			DropH1:          false,
+			StripLinebreaks: true,
+			Features:        []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
 		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
@@ -212,12 +211,12 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 
 	source, _, html := loadData(t, "testdata/plantuml.md", "-nofeature")
 
-	cfg := types.MarkConfig{
-		MermaidScale:  1.0,
-		D2Scale:       1.0,
-		DropFirstH1:   false,
-		StripNewlines: false,
-		Features:      []string{"mkdocsadmonitions", "mention"},
+	cfg := markdown.Options{
+		MermaidScale:    1.0,
+		D2Scale:         1.0,
+		DropH1:          false,
+		StripLinebreaks: false,
+		Features:        []string{"mkdocsadmonitions", "mention"},
 	}
 
 	actual, _, _ := markdown.CompileMarkdown(source, lib, "testdata/plantuml.md", cfg)
@@ -242,12 +241,12 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 	const fixture = "testdata/inline-link-card.md"
 	source, htmlname, html := loadData(t, fixture, "-inlinecard")
 
-	cfg := types.MarkConfig{
-		MermaidScale:  1.0,
-		D2Scale:       1.0,
-		DropFirstH1:   false,
-		StripNewlines: false,
-		Features:      []string{"mkdocsadmonitions", "mention", "inline-link-card"},
+	cfg := markdown.Options{
+		MermaidScale:    1.0,
+		D2Scale:         1.0,
+		DropH1:          false,
+		StripLinebreaks: false,
+		Features:        []string{"mkdocsadmonitions", "mention", "inline-link-card"},
 	}
 
 	actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
@@ -277,12 +276,12 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 	const fixture = "testdata/emoji.md"
 	source, htmlname, html := loadData(t, fixture, "-confluence")
 
-	cfg := types.MarkConfig{
-		MermaidScale:  1.0,
-		D2Scale:       1.0,
-		DropFirstH1:   false,
-		StripNewlines: false,
-		Features:      []string{"mkdocsadmonitions", "mention", "emoji"},
+	cfg := markdown.Options{
+		MermaidScale:    1.0,
+		D2Scale:         1.0,
+		DropH1:          false,
+		StripLinebreaks: false,
+		Features:        []string{"mkdocsadmonitions", "mention", "emoji"},
 	}
 
 	actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
@@ -330,15 +329,15 @@ func TestCompileMarkdownMath(t *testing.T) {
 			const fixture = "testdata/math.md"
 			source, htmlname, html := loadData(t, fixture, tt.variant)
 
-			cfg := types.MarkConfig{
-				MermaidScale:  1.0,
-				D2Scale:       1.0,
-				MathScale:     2.0,
-				MathFormat:    tt.format,
-				DropFirstH1:   false,
-				StripNewlines: false,
-				Browser:       markdown.TestBrowser,
-				Features:      []string{"mkdocsadmonitions", "mention", "math"},
+			cfg := markdown.Options{
+				MermaidScale:    1.0,
+				D2Scale:         1.0,
+				MathScale:       2.0,
+				MathFormat:      tt.format,
+				DropH1:          false,
+				StripLinebreaks: false,
+				Browser:         markdown.TestBrowser,
+				Features:        []string{"mkdocsadmonitions", "mention", "math"},
 			}
 
 			actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
@@ -363,7 +362,7 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 		assert.NoError(t, err)
 
 		actual, attachments, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/math.md",
-			types.MarkConfig{Browser: markdown.TestBrowser, Features: []string{"math"}})
+			markdown.Options{Browser: markdown.TestBrowser, Features: []string{"math"}})
 		assert.NoError(t, err)
 
 		if !assert.Len(t, attachments, 1) {
@@ -397,7 +396,7 @@ Some content
 
 	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"details"}} {
 		actual, _, err := markdown.CompileMarkdown(
-			source, lib, "testdata/test.md", types.MarkConfig{Features: features},
+			source, lib, "testdata/test.md", markdown.Options{Features: features},
 		)
 		assert.NoError(t, err)
 		assert.Contains(t, actual, `<ac:structured-macro ac:name="expand">`, features)
@@ -416,7 +415,7 @@ func TestHTMLImgTagIsNotOptional(t *testing.T) {
 
 	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"html-img-tag"}} {
 		actual, _, err := markdown.CompileMarkdown(
-			source, lib, "testdata/test.md", types.MarkConfig{Features: features},
+			source, lib, "testdata/test.md", markdown.Options{Features: features},
 		)
 		assert.NoError(t, err)
 		assert.Contains(t, actual, `<ac:image`, features)
@@ -431,7 +430,7 @@ func TestDateFeature(t *testing.T) {
 	source := []byte(`Release on @date(2026-07-27) or <time datetime="2026-12-31">Dec 31</time>.`)
 
 	// 1. With date feature enabled
-	cfgEnabled := types.MarkConfig{
+	cfgEnabled := markdown.Options{
 		Features: []string{"date"},
 	}
 	actualEnabled, _, err := markdown.CompileMarkdown(source, lib, "testdata/test.md", cfgEnabled)
@@ -440,7 +439,7 @@ func TestDateFeature(t *testing.T) {
 	assert.Contains(t, actualEnabled, `<time datetime="2026-12-31" />`)
 
 	// 2. Without date feature enabled
-	cfgDisabled := types.MarkConfig{
+	cfgDisabled := markdown.Options{
 		Features: []string{"mermaid", "mention"},
 	}
 	actualDisabled, _, err := markdown.CompileMarkdown(source, lib, "testdata/test.md", cfgDisabled)
@@ -463,7 +462,7 @@ func TestCompileMarkdownResolveLinkError(t *testing.T) {
 		panic(err)
 	}
 
-	cfg := types.MarkConfig{
+	cfg := markdown.Options{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
 		ResolveLink: func(target, text string) (string, error) {
@@ -490,7 +489,7 @@ func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 	}
 
 	var asked []string
-	cfg := types.MarkConfig{
+	cfg := markdown.Options{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
 		ResolveLink: func(target, text string) (string, error) {
@@ -522,7 +521,7 @@ func TestCompileMarkdownResolveLinkDecodesDestination(t *testing.T) {
 	}
 
 	var asked []string
-	cfg := types.MarkConfig{
+	cfg := markdown.Options{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
 		ResolveLink: func(target, text string) (string, error) {

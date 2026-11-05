@@ -10,7 +10,6 @@ import (
 	"github.com/kovetskiy/mark/v17/internal/goldmarktest"
 	"github.com/kovetskiy/mark/v17/markdown"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark/v2/parser"
@@ -58,7 +57,7 @@ func TestIncludeTransformerUnsafeHTML(t *testing.T) {
 
 	markdownInput := []byte("<!-- Include: raw_html.md -->")
 
-	output, _, err := markdown.CompileMarkdown(markdownInput, nil, filepath.Join(tempDir, "test.md"), types.MarkConfig{
+	output, _, err := markdown.CompileMarkdown(markdownInput, nil, filepath.Join(tempDir, "test.md"), markdown.Options{
 		IncludePath: tempDir,
 	})
 	require.NoError(t, err)

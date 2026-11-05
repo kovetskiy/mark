@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func compileLogged(t *testing.T, src, path string) (string, string) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), lib, path, types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte(src), lib, path, Options{})
 	require.NoError(t, err)
 
 	return out, logs.String()
