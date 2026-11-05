@@ -309,7 +309,9 @@ You can use the `--title-from-filename` flag to use the filename (without the ex
 
 For example, a file named `my_awesome-page.md` will have the title "My Awesome Page".
 
-These two options are mutually exclusive. If both flags are provided, `mark` will produce an error.
+These two options are mutually exclusive. If both are set, `mark` will produce an error -- unless one of
+them is given on the command line and the other comes from the environment or the configuration file,
+in which case the one on the command line is used.
 
 ### Title length
 

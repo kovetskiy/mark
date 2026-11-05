@@ -710,3 +710,58 @@ func TestTargetURLNamesItsReplacement(t *testing.T) {
 	require.EqualError(t, err,
 		fmt.Sprintf(`unknown key in configuration file %q: "target-url" (it is "url" now)`, path))
 }
+
+// TestATitleFlagOnTheCommandLineWins: --title-from-filename on the command line
+// sets aside a MARK_TITLE_FROM_H1 or title-from-h1 in the configuration file,
+// rather than colliding with it. Two from the same place are still refused.
+func TestATitleFlagOnTheCommandLineWins(t *testing.T) {
+	withH1 := writeConfig(t, t.TempDir(), "mark.toml", "title-from-h1 = true\n")
+
+	for _, test := range []struct {
+		name         string
+		env          map[string]string
+		args         []string
+		h1, filename bool
+		err          string
+	}{
+		{name: "over the environment", env: map[string]string{"MARK_TITLE_FROM_H1": "true"},
+			args: []string{"--title-from-filename"}, filename: true},
+		{name: "over the configuration file", args: []string{"-c", withH1, "publish", "--title-from-filename"}, filename: true},
+		{name: "the configuration file alone", args: []string{"-c", withH1, "publish"}, h1: true},
+		{name: "both on the command line", args: []string{"--title-from-h1", "--title-from-filename"},
+			err: "flags --title-from-h1 and --title-from-filename are mutually exclusive"},
+		{name: "one from each source", env: map[string]string{"MARK_TITLE_FROM_FILENAME": "true"},
+			args: []string{"-c", withH1, "publish"},
+			err:  `flags --title-from-h1 (from toml file`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			noDefaultConfig(t)
+			for name, value := range test.env {
+				t.Setenv(name, value)
+			}
+			args := test.args
+			if !slices.Contains(args, "publish") {
+				args = append([]string{"publish"}, args...)
+			}
+
+			var h1, filename bool
+			cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
+				h1, filename = titleFrom(c)
+				return nil
+			}, nil)
+			cmd.Writer, cmd.ErrWriter = &bytes.Buffer{}, &bytes.Buffer{}
+			_, _, err := captureOutput(t, func() error {
+				return cmd.Run(context.Background(), append([]string{"mark"}, append(args, "-f", "doc.md")...))
+			})
+
+			if test.err != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.h1, h1, "title-from-h1")
+			assert.Equal(t, test.filename, filename, "title-from-filename")
+		})
+	}
+}
