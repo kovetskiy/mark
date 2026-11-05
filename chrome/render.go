@@ -53,11 +53,14 @@ var errClosed = errors.New("the browser has been closed")
 // launches it at all.
 //
 // Whoever creates one closes it. It is safe for concurrent use: renders share
-// the browser's one tab, so they take turns in it.
+// the browser's one tab, so they take turns in it. The zero value is ready to
+// use, and the same as NewBrowser's.
 type Browser struct {
 	// render is held from navigating to capturing, so that no render sees the
 	// page another one loaded.
-	render  sync.Mutex
+	render sync.Mutex
+
+	once    sync.Once
 	session *lazy.Lazy[*session]
 }
 
@@ -70,9 +73,19 @@ type session struct {
 
 // NewBrowser returns a Browser that has not started yet.
 func NewBrowser() *Browser {
-	return &Browser{
-		session: lazy.New(startSession, func(s *session) { s.cancel() }, errClosed),
-	}
+	return &Browser{}
+}
+
+// sessions returns the browser's lazy session, making it on first use so that
+// the zero Browser works. One set beforehand, as tests do, is kept.
+func (b *Browser) sessions() *lazy.Lazy[*session] {
+	b.once.Do(func() {
+		if b.session == nil {
+			b.session = lazy.New(startSession, func(s *session) { s.cancel() }, errClosed)
+		}
+	})
+
+	return b.session
 }
 
 // startSession launches a browser that lives as long as life, which Close
@@ -83,15 +96,21 @@ func startSession(life context.Context) (*session, error) {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(life, opts...)
 	ctx, cancel := chromedp.NewContext(allocCtx)
 
+	// Bounded, but not by giving the browser a context that expires: the
+	// browser has to outlive its own startup.
+	var launch sync.WaitGroup
+
+	started := make(chan error, 1)
+
+	launch.Go(func() { started <- chromedp.Do(ctx) })
+
+	// stop also waits for the launch, since chromedp may still be reaping a
+	// Chrome it was starting and removing its profile.
 	stop := func() {
 		cancel()
 		allocCancel()
+		launch.Wait()
 	}
-
-	// Bounded, but not by giving the browser a context that expires: the
-	// browser has to outlive its own startup.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Do(ctx) }()
 
 	timer := time.NewTimer(startupTimeout)
 	defer timer.Stop()
@@ -127,7 +146,7 @@ func startSession(life context.Context) (*session, error) {
 // exported because every render navigates the one tab: only PNGFromSVG,
 // holding b.render, may use it.
 func (b *Browser) start(ctx context.Context) (*session, error) {
-	s, err := b.session.Get(ctx)
+	s, err := b.sessions().Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -140,9 +159,9 @@ func (b *Browser) start(ctx context.Context) (*session, error) {
 	// browser, so a context that is done means Chrome has died. Handed out
 	// again, every render after it would fail with a bare "context canceled"
 	// that names neither the browser nor the crash.
-	b.session.Discard(s)
+	_ = b.sessions().Discard(s, nil)
 
-	return b.session.Get(ctx)
+	return b.sessions().Get(ctx)
 }
 
 // failed discards the browser s, unless another render has already replaced
@@ -152,24 +171,18 @@ func (b *Browser) start(ctx context.Context) (*session, error) {
 // would fail the same way. A render Close interrupted is said to be Close's
 // doing, rather than a bare "context canceled".
 func (b *Browser) failed(s *session, err error) error {
-	b.session.Discard(s)
-
-	if b.session.Closed() {
-		return fmt.Errorf("%w: %w", errClosed, err)
-	}
-
-	return err
+	return b.sessions().Discard(s, err)
 }
 
-// Close shuts the browser down for good, and stops one still starting
-// without waiting for it. A Browser that never rendered anything has nothing
+// Close shuts the browser down for good, and cancels one still starting
+// rather than waiting out its launch. A Browser that never rendered anything has nothing
 // to shut down, and closing twice, or closing nil, is harmless.
 func (b *Browser) Close() {
 	if b == nil {
 		return
 	}
 
-	b.session.Close()
+	b.sessions().Close()
 }
 
 // PNGFromSVG rasterises an SVG by loading it in the browser and screenshotting

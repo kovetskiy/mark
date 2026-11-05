@@ -27,6 +27,7 @@ type resource struct {
 type fake struct {
 	starts  atomic.Int64
 	stops   atomic.Int64
+	doubled atomic.Int64
 	release chan struct{}
 	failing atomic.Bool
 	began   chan struct{}
@@ -62,6 +63,8 @@ func (f *fake) start(ctx context.Context) (*resource, error) {
 func (f *fake) stop(r *resource) {
 	if r.stopped.CompareAndSwap(false, true) {
 		f.stops.Add(1)
+	} else {
+		f.doubled.Add(1)
 	}
 }
 
@@ -177,7 +180,30 @@ func TestCloseTwice(t *testing.T) {
 	l.Close()
 
 	assert.Equal(t, int64(1), f.stops.Load())
-	assert.True(t, l.Closed())
+}
+
+// TestDiscardAfterCloseSaysSo: a use that failed once Close was called is
+// said to be Close's doing, and one that failed before it is returned as is.
+func TestDiscardAfterCloseSaysSo(t *testing.T) {
+	f := newFake()
+	l := f.lazy()
+
+	r, err := l.Get(t.Context())
+	require.NoError(t, err)
+
+	failure := errors.New("render failed")
+	assert.Equal(t, failure, l.Discard(r, failure))
+	require.NoError(t, l.Discard(r, nil))
+
+	r, err = l.Get(t.Context())
+	require.NoError(t, err)
+
+	l.Close()
+
+	err = l.Discard(r, context.Canceled)
+	require.ErrorIs(t, err, errTestClosed)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int64(2), f.stops.Load())
 }
 
 func TestGetAfterClose(t *testing.T) {
@@ -198,7 +224,7 @@ func TestDiscardStartsAnother(t *testing.T) {
 	first, err := l.Get(t.Context())
 	require.NoError(t, err)
 
-	l.Discard(first)
+	require.NoError(t, l.Discard(first, nil))
 	assert.True(t, first.stopped.Load())
 
 	_, has := l.Peek()
@@ -210,7 +236,7 @@ func TestDiscardStartsAnother(t *testing.T) {
 
 	// A second caller that failed on the first resource leaves the
 	// replacement alone.
-	l.Discard(first)
+	require.NoError(t, l.Discard(first, nil))
 	assert.False(t, second.stopped.Load())
 
 	current, has := l.Peek()
@@ -351,7 +377,7 @@ func TestConcurrentUse(t *testing.T) {
 					return
 				}
 
-				l.Discard(r)
+				_ = l.Discard(r, nil)
 			}
 		})
 	}
@@ -361,4 +387,5 @@ func TestConcurrentUse(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, f.starts.Load(), f.stops.Load(), "every resource started was stopped")
+	assert.Zero(t, f.doubled.Load(), "no resource was stopped twice")
 }

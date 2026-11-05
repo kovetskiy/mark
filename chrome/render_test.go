@@ -234,6 +234,17 @@ func TestRenderInterruptedByCloseSaysSo(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
+// TestZeroBrowser: a Browser made without NewBrowser works the same, and once
+// closed refuses to render rather than panicking.
+func TestZeroBrowser(t *testing.T) {
+	var browser Browser
+
+	browser.Close()
+
+	_, _, _, err := browser.PNGFromSVG(t.Context(), []byte("<svg/>"), "svg", 1)
+	require.ErrorIs(t, err, errClosed)
+}
+
 func TestNilBrowserSaysSo(t *testing.T) {
 	var browser *Browser
 
