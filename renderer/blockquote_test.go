@@ -97,7 +97,7 @@ func TestBlockQuoteMarkerForms(t *testing.T) {
 		{"mixed case", "> wArNiNgS: mixed.\n", `ac:name="note"`},
 		{"warning spelled out", "> Warning: this deletes data.\n", `ac:name="note"`},
 		{"danger", "> **Danger:** this deletes data.\n", `ac:name="warning"`},
-		{"success, its plural", "> Successes: all of them.\n", `ac:name="tip"`},
+		{"hint, its plural", "> Hints: all of them.\n", `ac:name="tip"`},
 		{"heading", "> ### Tip: a heading\n", `ac:name="tip"`},
 		{"comment", "> <!-- Tip -->\n> Text.\n", `ac:name="tip"`},
 		{"comment with a colon", "> <!-- Tip: -->\n> Text.\n", `ac:name="tip"`},

@@ -45,6 +45,18 @@ func TestAdmonitionMacroMapping(t *testing.T) {
 		{"caution", "warning"},
 		{"danger", "warning"},
 		{"error", "warning"},
+		{"abstract", "info"},
+		{"summary", "info"},
+		{"tldr", "info"},
+		{"todo", "info"},
+		{"check", "tip"},
+		{"done", "tip"},
+		{"failure", "warning"},
+		{"fail", "warning"},
+		{"missing", "warning"},
+		{"bug", "warning"},
+		{"Note", "info"},
+		{"WARNING", "note"},
 	}
 
 	for _, tt := range tests {
@@ -65,24 +77,26 @@ func TestAdmonitionMacroMapping(t *testing.T) {
 //
 // The quote keeps the class the admonition parser put on it.
 func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
-	actual := render(t, "!!! bug\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
+	actual := render(t, "!!! example\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, "<blockquote")
-	assert.Contains(t, actual, `class="admonition adm-bug"`)
+	assert.Contains(t, actual, `class="admonition adm-example"`)
 	assert.Contains(t, actual, "Mind the gap.")
 	assert.NotContains(t, actual, "ac:structured-macro")
 }
 
 // TestAdmonitionWarnIsNotAnMkDocsClass covers "warn": a marker word in the
 // colon syntax, but not an MkDocs type, so "!!! warn" stays a quote as any
-// other class MkDocs does not know does.
+// other class MkDocs does not know does, in any case.
 func TestAdmonitionWarnIsNotAnMkDocsClass(t *testing.T) {
-	actual := render(t, "!!! warn\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
-	assertWellFormed(t, actual)
+	for _, class := range []string{"warn", "Warn"} {
+		actual := render(t, "!!! "+class+"\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
+		assertWellFormed(t, actual)
 
-	assert.Contains(t, actual, `class="admonition adm-warn"`)
-	assert.NotContains(t, actual, "ac:structured-macro")
+		assert.Contains(t, actual, `class="admonition adm-`+class+`"`)
+		assert.NotContains(t, actual, "ac:structured-macro")
+	}
 }
 
 // TestAdmonitionUnknownClassIsDeterministic: the parser this one came from
@@ -91,7 +105,7 @@ func TestAdmonitionWarnIsNotAnMkDocsClass(t *testing.T) {
 // then differed, and --changes-only, which compares a hash of the body,
 // republished the page on every run.
 func TestAdmonitionUnknownClassIsDeterministic(t *testing.T) {
-	const doc = "!!! bug \"D\"\n    body\n"
+	const doc = "!!! example \"D\"\n    body\n"
 
 	first := render(t, doc, admonitionRenderers(), admonitionParserOptions()...)
 	second := render(t, doc, admonitionRenderers(), admonitionParserOptions()...)
@@ -99,7 +113,7 @@ func TestAdmonitionUnknownClassIsDeterministic(t *testing.T) {
 
 	assert.Equal(t, first, second)
 	assert.NotContains(t, first, "data-admonition")
-	assert.Contains(t, first, `class="admonition adm-bug"`)
+	assert.Contains(t, first, `class="admonition adm-example"`)
 }
 
 // TestAdmonitionTitle covers the quoted title, which Confluence's macros have
@@ -138,7 +152,7 @@ func TestAdmonitionNested(t *testing.T) {
 // as a number or a bool. The parser this one came from assumed every value was
 // text and panicked on {width=5}, taking the whole run down.
 func TestAdmonitionAttributesThatAreNotText(t *testing.T) {
-	actual := render(t, "!!! bug \"D\" {data-width=5 data-open=true data-list=[1,2]}\n    body\n", admonitionRenderers(), admonitionParserOptions()...)
+	actual := render(t, "!!! example \"D\" {data-width=5 data-open=true data-list=[1,2]}\n    body\n", admonitionRenderers(), admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `data-width="5"`)
