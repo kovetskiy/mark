@@ -53,6 +53,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
+| `internal/rendercheck` | the rendering settings' rules (image formats, scales, image alignment) that `mark.Config` validation and the publish flag checks share |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
@@ -174,11 +175,14 @@ through, skips checksum computation when `Checksum` is already set — preserve
 that.
 
 **7. `--features` replaces the defaults, it does not add to them.** Defaults are
-`mermaid,mention`, and `none` switches every optional feature off. When adding a feature:
-register its parser options and renderer in `markdownFeatures` in `markdown/features.go`
-and name it in `defaultFeatures`, add it to the `Usage` string of the `features` flag in
-`util/flags.go`, and document it under `docs/` (diagrams and other rendering in
-`docs/formatting.md`).
+`mermaid,mention`, and `none` switches every optional feature off. `markdown/features.go`
+is the one list: `KnownFeatures()` and `DefaultFeatures()` there feed the `--features` flag,
+its usage string and its check in `util/flags.go`. When adding a feature: name it in
+`knownFeatures`; if it touches goldmark, register its parser options and renderer in
+`markdownFeatures` and place it in `featureOrder`; and document it under `docs/`
+(diagrams and other rendering in `docs/formatting.md`). The usage string changes with the
+list, so regenerate the README help (`go test ./util -run TestREADMEUsageMatchesHelp -args
+-update-readme`).
 
 **8. Everything is sequential today, and some run state still relies on that.**
 State a run builds up is a value the run creates, passes down and closes, never a

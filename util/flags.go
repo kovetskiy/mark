@@ -4,41 +4,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"slices"
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/export"
+	"github.com/kovetskiy/mark/v17/internal/rendercheck"
+	markdown "github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
 
 	"github.com/urfave/cli/v3"
 )
 
-// KnownFeatures are the values --features accepts. Every one of them is read
-// with a plain slices.Contains at the point it takes effect, so a name that is
-// not on this list is indistinguishable from one deliberately left off: the
-// feature is simply never switched on, and nothing is said about it.
+// KnownFeatures are the values --features accepts, as markdown.KnownFeatures
+// returns them. Every one of them is read with a plain slices.Contains at the
+// point it takes effect, so a name that is not on this list is
+// indistinguishable from one deliberately left off: the feature is simply never
+// switched on, and nothing is said about it.
 //
-// The usage text is built from this list, so the two cannot drift.
-var KnownFeatures = []string{
-	"d2",
-	"date",
-	"emoji",
-	"frontmatter",
-	"inline-link-card",
-	"math",
-	"mention",
-	"mermaid",
-	"mkdocsadmonitions",
-	"plantuml",
-}
-
-// defaultFeatures are what --features replaces when it is given at all, which
-// is worth saying in the usage: enabling one feature silently turns the others
-// off.
-var defaultFeatures = []string{"mermaid", "mention"}
+// Deprecated: markdown owns the list, and the command line reads it from there;
+// use markdown.KnownFeatures. Changing this copy changes nothing.
+var KnownFeatures = markdown.KnownFeatures()
 
 // noFeatures is the --features value that switches off every optional
 // feature. An empty list cannot say that: urfave reads an empty
@@ -404,11 +391,11 @@ func publishFlags(config *configFile) []cli.Flag {
 		},
 		&cli.StringSliceFlag{
 			Name:  "features",
-			Value: []string{"mermaid", "mention"},
+			Value: markdown.DefaultFeatures(),
 			Usage: "Enables optional features, replacing the defaults (" +
-				strings.Join(defaultFeatures, ", ") + ") rather than adding to them; " +
+				strings.Join(markdown.DefaultFeatures(), ", ") + ") rather than adding to them; " +
 				noFeatures + " switches every one off. " +
-				"Current features: " + strings.Join(KnownFeatures, ", "),
+				"Current features: " + strings.Join(markdown.KnownFeatures(), ", "),
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FEATURES"), config.value("features")),
 		},
 		&cli.BoolFlag{
@@ -634,7 +621,7 @@ func checkEmptyWatch(command *cli.Command) error {
 func emptyFeatures(source string) error {
 	return fmt.Errorf(
 		"%s is empty: use %q to switch off every optional feature, or leave it out for the defaults (%s)",
-		source, noFeatures, strings.Join(defaultFeatures, ", "),
+		source, noFeatures, strings.Join(markdown.DefaultFeatures(), ", "),
 	)
 }
 
@@ -672,6 +659,7 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		return context, fmt.Errorf("--features %s switches every optional feature off, so it cannot be combined with others", noFeatures)
 	}
 
+	known := markdown.KnownFeatures()
 	for _, feature := range features {
 		if feature == "" {
 			return context, emptyFeatures("--features")
@@ -681,20 +669,17 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		// read where it takes effect: --features "math, mermaid" hands the
 		// second one over with its leading space still on, and it would go
 		// unrecognised there just as surely.
-		if feature != noFeatures && !slices.Contains(KnownFeatures, feature) {
+		if feature != noFeatures && !slices.Contains(known, feature) {
 			return context, fmt.Errorf(
 				"invalid value for --features: %q (expected any of: %s, or %s)",
-				feature, strings.Join(KnownFeatures, ", "), noFeatures,
+				feature, strings.Join(known, ", "), noFeatures,
 			)
 		}
 	}
 
 	imageAlign := strings.TrimSpace(command.String("image-align"))
 	if imageAlign != "" {
-		switch strings.ToLower(imageAlign) {
-		case "left", "center", "right":
-			// ok
-		default:
+		if _, ok := rendercheck.ImageAlign(imageAlign); !ok {
 			return context, fmt.Errorf(
 				"invalid value for --image-align: %q (expected: left, center, or right)",
 				imageAlign,
@@ -716,16 +701,11 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	// otherwise fall through and publish a PNG without a word. A command that
 	// does not carry the flag at all has neither, and is left alone.
 	d2Output := command.String("d2-output")
-	if d2Output != "" || command.IsSet("d2-output") {
-		switch d2Output {
-		case "png", "svg":
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --d2-output: %q (expected: png or svg)",
-				d2Output,
-			)
-		}
+	if (d2Output != "" || command.IsSet("d2-output")) && !rendercheck.IsImageFormat(d2Output) {
+		return context, fmt.Errorf(
+			"invalid value for --d2-output: %q (expected: png or svg)",
+			d2Output,
+		)
 	}
 
 	// A scale of zero renders nothing and a negative one renders nonsense, and
@@ -738,8 +718,7 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	// though a library Config reads it as the default: a flag nobody set never
 	// reaches here, so a zero is one somebody typed, and it is no scale.
 	for _, name := range []string{"d2-scale", "mermaid-scale", "math-scale"} {
-		if scale := command.Float(name); command.IsSet(name) &&
-			(!(scale > 0) || math.IsInf(scale, 0)) {
+		if scale := command.Float(name); command.IsSet(name) && !rendercheck.IsScale(scale) {
 			return context, fmt.Errorf(
 				"invalid value for --%s: %v (expected: a finite number greater than 0)",
 				name, scale,
@@ -748,16 +727,11 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	}
 
 	mermaidOutput := command.String("mermaid-output")
-	if mermaidOutput != "" || command.IsSet("mermaid-output") {
-		switch mermaidOutput {
-		case "png", "svg":
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --mermaid-output: %q (expected: png or svg)",
-				mermaidOutput,
-			)
-		}
+	if (mermaidOutput != "" || command.IsSet("mermaid-output")) && !rendercheck.IsImageFormat(mermaidOutput) {
+		return context, fmt.Errorf(
+			"invalid value for --mermaid-output: %q (expected: png or svg)",
+			mermaidOutput,
+		)
 	}
 
 	// A bundle that goes nowhere is worth saying out loud rather than dropping:
@@ -785,16 +759,11 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	}
 
 	mathFormat := strings.TrimSpace(command.String("math-format"))
-	if mathFormat != "" {
-		switch mathFormat {
-		case "svg", "png":
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --math-format: %q (expected: svg or png)",
-				mathFormat,
-			)
-		}
+	if mathFormat != "" && !rendercheck.IsImageFormat(mathFormat) {
+		return context, fmt.Errorf(
+			"invalid value for --math-format: %q (expected: svg or png)",
+			mathFormat,
+		)
 	}
 
 	return context, nil

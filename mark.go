@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,6 +21,7 @@ import (
 	"github.com/kovetskiy/mark/v17/header"
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
 	markmd "github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/mermaid"
@@ -171,18 +171,10 @@ func (r ReportConfig) output() io.Writer {
 	return io.Discard
 }
 
-// isPositiveScale reports whether scale is a number a diagram can be multiplied
-// by. Written as "> 0" rather than "not <= 0" on purpose: NaN fails every
-// comparison it is given, so a check phrased the other way round lets it
-// through, and an infinite scale passes one outright.
-func isPositiveScale(scale float64) bool {
-	return scale > 0 && !math.IsInf(scale, 0)
-}
-
-// isScaleOrDefault is isPositiveScale for a field whose zero value means the
-// renderer's default.
+// isScaleOrDefault is rendercheck.IsScale for a field whose zero value means
+// the renderer's default.
 func isScaleOrDefault(scale float64) bool {
-	return scale == 0 || isPositiveScale(scale)
+	return scale == 0 || rendercheck.IsScale(scale)
 }
 
 // resources are what one run starts and shuts down again: the browser and
@@ -251,10 +243,7 @@ func (r RenderingConfig) validate() error {
 	// format publishes a PNG without a word -- taking a bundle asked for
 	// alongside it down with it. An empty value is not that: it is a caller
 	// that never set the field, and it means the PNG mark has always published.
-	switch r.MermaidOutput {
-	case "", "png", "svg":
-		// ok
-	default:
+	if r.MermaidOutput != "" && !rendercheck.IsImageFormat(r.MermaidOutput) {
 		return fmt.Errorf(
 			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
 			r.MermaidOutput,
@@ -272,10 +261,7 @@ func (r RenderingConfig) validate() error {
 	// the renderer's PNG branch, publishing one without a word about the SVG
 	// that was asked for. An empty value is a caller that never set the field,
 	// and means the PNG mark has always published.
-	switch r.D2Output {
-	case "", "png", "svg":
-		// ok
-	default:
+	if r.D2Output != "" && !rendercheck.IsImageFormat(r.D2Output) {
 		return fmt.Errorf(
 			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
 			r.D2Output,
@@ -286,7 +272,7 @@ func (r RenderingConfig) validate() error {
 	// but a diagram rendered at nothing. Only checked where diagrams are drawn
 	// at all, since a configuration that never turns d2 on carries the field
 	// past every code path that reads it.
-	if r.enabled("d2") && !isPositiveScale(r.D2Scale) {
+	if r.enabled("d2") && !rendercheck.IsScale(r.D2Scale) {
 		return fmt.Errorf(
 			"invalid D2Scale %v: expected a finite number greater than 0 with the d2 feature enabled",
 			r.D2Scale,
@@ -2126,14 +2112,14 @@ func getImageAlign(align string, meta *metadata.Meta) (string, error) {
 	}
 
 	if align != "" {
-		align = strings.ToLower(strings.TrimSpace(align))
-		if align != "left" && align != "center" && align != "right" {
+		normalised, ok := rendercheck.ImageAlign(align)
+		if !ok {
 			return "", fmt.Errorf(
 				`unknown image-align %q, expected one of: left, center, right`,
-				align,
+				normalised,
 			)
 		}
-		return align, nil
+		return normalised, nil
 	}
 
 	return "", nil
