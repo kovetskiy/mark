@@ -52,8 +52,8 @@ tests, which take minutes. There is currently no `-short` skip.
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
-| `internal/rendercheck` | the rendering settings' rules (image formats, scales, image alignment) that `mark.Config` validation and the publish flag checks share |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
+| `internal/rendercheck` | the rendering settings' rules (image formats, scales, image alignment) that `mark.Config` validation and the publish flag checks share |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
 Pipeline in `publishRun.processFile`: read → normalise CRLF → extract metadata → resolve relative
