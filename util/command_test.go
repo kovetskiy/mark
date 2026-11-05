@@ -728,6 +728,8 @@ func TestATitleFlagOnTheCommandLineWins(t *testing.T) {
 			args: []string{"--title-from-filename"}, filename: true},
 		{name: "over the configuration file", args: []string{"-c", withH1, "publish", "--title-from-filename"}, filename: true},
 		{name: "the configuration file alone", args: []string{"-c", withH1, "publish"}, h1: true},
+		{name: "false on the command line", env: map[string]string{"MARK_TITLE_FROM_FILENAME": "true"},
+			args: []string{"-c", withH1, "publish", "--title-from-h1=false"}, filename: true},
 		{name: "both on the command line", args: []string{"--title-from-h1", "--title-from-filename"},
 			err: "flags --title-from-h1 and --title-from-filename are mutually exclusive"},
 		{name: "one from each source", env: map[string]string{"MARK_TITLE_FROM_FILENAME": "true"},
