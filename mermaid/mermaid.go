@@ -302,6 +302,11 @@ func (e *Engine) discard(engine mermaid.Renderer, err error) error {
 // attempt is worth making. What to render with it is left to the caller, since
 // a PNG and an SVG differ in nothing else.
 func (e *Engine) render(ctx context.Context, title string, once func(ctx context.Context, engine mermaid.Renderer) error) error {
+	// Before an engine is started, which launches a browser.
+	if ctx.Err() != nil {
+		return fmt.Errorf("mermaid rendering stopped: %w", context.Cause(ctx))
+	}
+
 	for attempt := 1; ; attempt++ {
 		engine, err := e.get()
 		if err != nil {
