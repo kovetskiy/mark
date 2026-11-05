@@ -39,18 +39,15 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) RendererOptions(cfg *html.Config) [
 }
 
 // ParseMkDocsAdmonitionType returns the macro an admonition node is published
-// as, or AdmonitionNone for a class Confluence has no macro for, or a node that
-// is not an admonition.
+// as, or AdmonitionNone for a class that is not an admonition word, or a node
+// that is not an admonition.
 func ParseMkDocsAdmonitionType(node ast.Node) AdmonitionType {
 	n, ok := node.(*parser.Admonition)
 	if !ok {
 		return AdmonitionNone
 	}
 
-	if t, ok := mkDocsAdmonitionTypes[string(n.AdmonitionClass)]; ok {
-		return t
-	}
-	return AdmonitionNone
+	return mkDocsAdmonitionType(string(n.AdmonitionClass))
 }
 
 // renderMkDocsAdmonition renders an admonition node as a Confluence structured macro.

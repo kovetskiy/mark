@@ -28,7 +28,7 @@ func BenchmarkParseBlockQuoteType(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if crenderer.ParseBlockQuoteType(quote, source) != crenderer.AdmonitionWarning {
+		if crenderer.ParseBlockQuoteType(quote, source) != crenderer.AdmonitionNote {
 			b.Fatal("misclassified")
 		}
 	}

@@ -26,19 +26,25 @@ func admonitionParserOptions() []parser.Option {
 	}
 }
 
-// TestAdmonitionMacroMapping covers the four MkDocs classes that have a
-// Confluence macro. Unlike GitHub Alerts, the names line up one to one here --
-// except that MkDocs "warning" is Confluence's warning, where GitHub's
-// "warning" is Confluence's note.
+// TestAdmonitionMacroMapping covers the MkDocs classes that have a Confluence
+// macro, in the colours MkDocs Material and GitHub give them: "note" is the
+// blue info macro, "warning" the yellow note macro.
 func TestAdmonitionMacroMapping(t *testing.T) {
 	tests := []struct {
 		class string
 		want  string
 	}{
+		{"note", "info"},
 		{"info", "info"},
-		{"note", "note"},
-		{"warning", "warning"},
+		{"important", "info"},
 		{"tip", "tip"},
+		{"hint", "tip"},
+		{"success", "tip"},
+		{"warning", "note"},
+		{"attention", "note"},
+		{"caution", "warning"},
+		{"danger", "warning"},
+		{"error", "warning"},
 	}
 
 	for _, tt := range tests {
@@ -53,18 +59,29 @@ func TestAdmonitionMacroMapping(t *testing.T) {
 	}
 }
 
-// TestAdmonitionUnknownClassStaysAQuote covers a class Confluence has no macro
-// for -- MkDocs has a dozen of them. It has to degrade to a blockquote rather
+// TestAdmonitionUnknownClassStaysAQuote covers a class that is not an
+// admonition word -- MkDocs has a dozen of them. It has to degrade to a blockquote rather
 // than pick a macro at random or drop the content.
 //
 // The quote keeps the class the admonition parser put on it.
 func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
-	actual := render(t, "!!! danger\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
+	actual := render(t, "!!! bug\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, "<blockquote")
-	assert.Contains(t, actual, `class="admonition adm-danger"`)
+	assert.Contains(t, actual, `class="admonition adm-bug"`)
 	assert.Contains(t, actual, "Mind the gap.")
+	assert.NotContains(t, actual, "ac:structured-macro")
+}
+
+// TestAdmonitionWarnIsNotAnMkDocsClass covers "warn": a marker word in the
+// colon syntax, but not an MkDocs type, so "!!! warn" stays a quote as any
+// other class MkDocs does not know does.
+func TestAdmonitionWarnIsNotAnMkDocsClass(t *testing.T) {
+	actual := render(t, "!!! warn\n    Mind the gap.\n", admonitionRenderers(), admonitionParserOptions()...)
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, `class="admonition adm-warn"`)
 	assert.NotContains(t, actual, "ac:structured-macro")
 }
 
@@ -74,7 +91,7 @@ func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
 // then differed, and --changes-only, which compares a hash of the body,
 // republished the page on every run.
 func TestAdmonitionUnknownClassIsDeterministic(t *testing.T) {
-	const doc = "!!! danger \"D\"\n    body\n"
+	const doc = "!!! bug \"D\"\n    body\n"
 
 	first := render(t, doc, admonitionRenderers(), admonitionParserOptions()...)
 	second := render(t, doc, admonitionRenderers(), admonitionParserOptions()...)
@@ -82,7 +99,7 @@ func TestAdmonitionUnknownClassIsDeterministic(t *testing.T) {
 
 	assert.Equal(t, first, second)
 	assert.NotContains(t, first, "data-admonition")
-	assert.Contains(t, first, `class="admonition adm-danger"`)
+	assert.Contains(t, first, `class="admonition adm-bug"`)
 }
 
 // TestAdmonitionTitle covers the quoted title, which Confluence's macros have
@@ -121,7 +138,7 @@ func TestAdmonitionNested(t *testing.T) {
 // as a number or a bool. The parser this one came from assumed every value was
 // text and panicked on {width=5}, taking the whole run down.
 func TestAdmonitionAttributesThatAreNotText(t *testing.T) {
-	actual := render(t, "!!! danger \"D\" {data-width=5 data-open=true data-list=[1,2]}\n    body\n", admonitionRenderers(), admonitionParserOptions()...)
+	actual := render(t, "!!! bug \"D\" {data-width=5 data-open=true data-list=[1,2]}\n    body\n", admonitionRenderers(), admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 
 	assert.Contains(t, actual, `data-width="5"`)
@@ -137,7 +154,7 @@ func TestAdmonitionInsideABlockquote(t *testing.T) {
 	actual := render(t, "> !!! note \"In a quote\"\n>     body\n", renderers, admonitionParserOptions()...)
 	assertWellFormed(t, actual)
 
-	assert.Contains(t, actual, `<ac:structured-macro ac:name="note">`)
+	assert.Contains(t, actual, `<ac:structured-macro ac:name="info">`)
 	assert.Contains(t, actual, "<p><strong>In a quote</strong></p>")
 	assert.Contains(t, actual, "body")
 }

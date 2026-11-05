@@ -118,9 +118,41 @@ the other name.
 
 ## Block Quotes
 
+A blockquote at the top level of the document is published as one of
+Confluence's info, tip, note or warning boxes when its first line opens with a
+marker: a [GitHub alert](#github-alerts-support) or a
+[colon marker](#colon-markers). With the `mkdocsadmonitions` feature,
+[MkDocs admonitions](#mkdocs-admonitions) are published the same way. Any other
+blockquote, and a quote nested in another, stays an HTML `<blockquote>`.
+
+### Admonition Words
+
+Each word is published as one box whichever syntax names it, in the colour
+GitHub and MkDocs Material give it. Confluence's note box is the yellow one, so
+the word "note" is the blue info box and "warning" is Confluence's note.
+
+| Word | Colon marker | GitHub alert | MkDocs | Confluence |
+| --- | --- | --- | --- | --- |
+| note | `Note:` | `[!NOTE]` | `!!! note` | Info (blue) |
+| info | `Info:` | | `!!! info` | Info (blue) |
+| important | `Important:` | `[!IMPORTANT]` | `!!! important` | Info (blue) |
+| tip | `Tip:` | `[!TIP]` | `!!! tip` | Tip (green) |
+| hint | `Hint:` | | `!!! hint` | Tip (green) |
+| success | `Success:` | | `!!! success` | Tip (green) |
+| warning | `Warning:` | `[!WARNING]` | `!!! warning` | Note (yellow) |
+| warn | `Warn:` | | | Note (yellow) |
+| attention | `Attention:` | | `!!! attention` | Note (yellow) |
+| caution | `Caution:` | `[!CAUTION]` | `!!! caution` | Warning (red) |
+| danger | `Danger:` | | `!!! danger` | Warning (red) |
+| error | `Error:` | | `!!! error` | Warning (red) |
+
+A GitHub alert of any other type, `[!DANGER]` say, and an MkDocs admonition of
+any other type, such as `!!! question` or `!!! warn`, stay quotations.
+
 ### GitHub Alerts Support
 
-You can now use GitHub-style alert syntax in your markdown, and Mark will automatically convert them to Confluence macros:
+GitHub's alert syntax is published as the box of its type, with the type as
+the box's title:
 
 ```markdown
 > [!NOTE]
@@ -133,7 +165,7 @@ You can now use GitHub-style alert syntax in your markdown, and Mark will automa
 > This creates a blue info box - ideal for critical information!
 
 > [!WARNING]
-> This creates a yellow warning box - use for important warnings!
+> This creates a yellow note box - use for important warnings!
 
 > [!CAUTION]
 > This creates a red warning box - perfect for dangerous situations!
@@ -141,15 +173,9 @@ You can now use GitHub-style alert syntax in your markdown, and Mark will automa
 
 ### Colon Markers
 
-A blockquote whose first line opens with one of these words and a colon is
-published as the macro beside it:
-
-| Marker | Confluence |
-| --- | --- |
-| `Info:`, `Infos:` | Info (blue) |
-| `Note:`, `Notes:` | Info (blue), as `[!NOTE]` is |
-| `Tip:`, `Tips:` | Tip (green) |
-| `Warn:`, `Warns:`, `Warning:`, `Warnings:` | Warning (red) |
+A blockquote whose first line opens with one of the
+[admonition words](#admonition-words) and a colon is published as that word's
+box. Each word may also be written as a plural: `Notes:`, `Successes:`.
 
 ```markdown
 > Note: the build runs nightly.
@@ -178,33 +204,30 @@ Anything else stays a quotation: `> Note that this is a quote.` and
 `> Tips are welcome.` are published as `<blockquote>`. The marker stays in the
 text of the macro; only GitHub's `[!NOTE]` is taken out.
 
-#### Upgrading from v16
+A quoted line that happens to open with a word and a colon is a marker too:
+`> Error: connection refused` is a red box. Put such a line in a code block, or
+start the quote with something else.
 
-Before v17 the colon was optional: any blockquote whose first word was one of
-these words, `Note that` and `Tips are` included, became a macro, and a bare
-`> **Warn**` was a marker. Add the colon to each quote that is meant as an
-admonition (`> **Warn:**`), or write it as a GitHub alert.
-
-`Note:` was Confluence's yellow note macro; it is now the blue info macro, the
-one `[!NOTE]` gives. For the yellow box, write `> [!WARNING]`, or `!!! note`
-with the `mkdocsadmonitions` feature.
-
-### Technical Details
-
-Block Quotes are converted to Confluence Info/Tip/Note/Warning boxes when the following conditions are met:
-
-1. The BlockQuote is on the root level of the document (not nested)
-2. The first line of the BlockQuote opens with a [colon marker](#colon-markers) or a [GitHub MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) marker `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
-
-| GitHub Alerts | Confluence | Description |
-| --------------- | ------------ | ------------- |
-| `[!TIP]` (green lightbulb) | Tip (green checkmark in circle) | Helpful suggestions and best practices |
-| `[!NOTE]` (blue I in circle) | Info (blue I in circle) | General information and notes |
-| `[!IMPORTANT]` (purple exclamation mark in speech bubble) | Info (blue I in circle) | Critical information that needs attention |
-| `[!WARNING]` (yellow exclamation mark in triangle) | Note (yellow exclamation mark in triangle) | Important warnings and cautions |
-| `[!CAUTION]` (red exclamation mark in hexagon) | Warning (red exclamation mark in hexagon) | Dangerous situations requiring immediate attention |
-
-In any other case the default behaviour will be resumed and html `<blockquote>` tag will be used
+> **Upgrading to v17:** the colon was optional: any blockquote whose first word
+> was `Info`, `Note`, `Tip`, `Warn` or `Warning`, `Note that` and `Tips are`
+> included, became a box, and a bare `> **Warn**` was a marker. Add the colon
+> to each quote that is meant as an admonition (`> **Warn:**`), or write it as
+> a GitHub alert.
+>
+> Each word now has one colour in every syntax, so three of them change:
+>
+> * `Note:` was Confluence's yellow note box; it is the blue info box, the one
+>   `[!NOTE]` gives.
+> * `Warn:` and `Warning:` were the red warning box; they are the yellow note
+>   box, the one `[!WARNING]` gives. Write `Caution:`, `Danger:` or `Error:`
+>   for the red one.
+> * With the `mkdocsadmonitions` feature, `!!! note` was the yellow note box and
+>   `!!! warning` the red warning box; they are blue info and yellow note. Write
+>   `!!! warning` or `!!! attention` for yellow, and `!!! danger` for red.
+>
+> The words `Important`, `Hint`, `Success`, `Attention`, `Caution`, `Danger`
+> and `Error` are new markers, so a quote that opens with one of them and a
+> colon becomes a box.
 
 ## Definition Lists
 
@@ -384,14 +407,17 @@ Bob --> Alice: Authentication Response
 @enduml
 ```
 
-## MkDocs' Admonitions
+## MkDocs Admonitions
 
 Optionally you can enable mkdocs-style [Admonitions](https://squidfunk.github.io/mkdocs-material/reference/admonitions/) via `--features="mkdocsadmonitions"`.
 
-When enabled, this renders note, warning, tip, info admonitions as Confluence alerts.
+When enabled, an admonition whose type is one of the
+[admonition words](#admonition-words) is published as that word's box, with its
+title, if it has one, in bold at the top. Any other type stays a quotation.
 
 ```markdown
-!!! note
+!!! warning "Mind the gap"
+    A yellow box titled "Mind the gap".
 ```
 
 ## HTML Details/Summary Macro

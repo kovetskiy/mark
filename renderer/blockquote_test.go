@@ -75,7 +75,7 @@ func TestBlockQuoteProseStaysAQuote(t *testing.T) {
 // alone in a comment.
 //
 // The words are not interchangeable with the macros they produce: "warn"
-// selects Confluence's warning macro, and "note" selects info, as GitHub's
+// selects Confluence's yellow note macro, and "note" selects info, as GitHub's
 // [!NOTE] does, so a mapping slip shows up as the wrong colour and icon on the
 // page rather than as an error anywhere.
 func TestBlockQuoteMarkerForms(t *testing.T) {
@@ -86,16 +86,18 @@ func TestBlockQuoteMarkerForms(t *testing.T) {
 	}{
 		{"marker with a colon and text", "> Info: the build is nightly.\n", `ac:name="info"`},
 		{"note is info", "> Note: this is worth knowing.\n", `ac:name="info"`},
-		{"warning from warn", "> Warn: this deletes data.\n", `ac:name="warning"`},
+		{"note from warn", "> Warn: this deletes data.\n", `ac:name="note"`},
 		{"tip", "> Tip: use the cache.\n", `ac:name="tip"`},
-		{"marker alone with its colon", "> Warn:\n>\n> Text.\n", `ac:name="warning"`},
+		{"marker alone with its colon", "> Warn:\n>\n> Text.\n", `ac:name="note"`},
 		{"plural with a colon", "> **NOTES:**\n>\n> One.\n", `ac:name="info"`},
 		{"emphasised marker", "> **Tip:** use the cache.\n", `ac:name="tip"`},
 		{"colon outside the emphasis", "> **Tip**: use the cache.\n", `ac:name="tip"`},
-		{"italic marker", "> *Warning:* hot.\n", `ac:name="warning"`},
+		{"italic marker", "> *Caution:* hot.\n", `ac:name="warning"`},
 		{"shouting", "> NOTE: shouting.\n", `ac:name="info"`},
-		{"mixed case", "> wArNiNgS: mixed.\n", `ac:name="warning"`},
-		{"warning spelled out", "> Warning: this deletes data.\n", `ac:name="warning"`},
+		{"mixed case", "> wArNiNgS: mixed.\n", `ac:name="note"`},
+		{"warning spelled out", "> Warning: this deletes data.\n", `ac:name="note"`},
+		{"danger", "> **Danger:** this deletes data.\n", `ac:name="warning"`},
+		{"success, its plural", "> Successes: all of them.\n", `ac:name="tip"`},
 		{"heading", "> ### Tip: a heading\n", `ac:name="tip"`},
 		{"comment", "> <!-- Tip -->\n> Text.\n", `ac:name="tip"`},
 		{"comment with a colon", "> <!-- Tip: -->\n> Text.\n", `ac:name="tip"`},
