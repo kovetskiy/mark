@@ -86,6 +86,9 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 			OnUsageError: renamedFlagHint,
 		}, line.pageCommand(), line.doctorCommand()},
 	}
+	for _, command := range root.Commands {
+		trackSources(command)
+	}
 
 	return root
 }
@@ -443,12 +446,12 @@ func portOf(u *url.URL) string {
 
 // RunExport is the action of "mark export".
 func RunExport(ctx context.Context, cmd *cli.Command) error {
-	pageID := cmd.String("page-id")
+	page := exportPage(cmd)
+	pageID, title := page["page-id"], page["title"]
 	space := cmd.String("space")
-	title := cmd.String("title")
 	baseURL := cmd.String("base-url")
 
-	if address := cmd.String("url"); address != "" {
+	if address := page["url"]; address != "" {
 		ref, err := export.ParsePageURL(address)
 		if err != nil {
 			return err
@@ -507,6 +510,9 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.Bool("recursive") {
+		// CheckExportFlags refused one given on the command line; one from
+		// the environment or the configuration file is for a single page.
+		config.AttachmentsDir = ""
 		results, err := mark.ExportTree(ctx, config, export.TreeOptions{
 			Depth:         cmd.Int("depth"),
 			RelativeLinks: cmd.Bool("relative-links"),

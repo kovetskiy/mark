@@ -22,6 +22,11 @@ mark export -b https://confluence.example.com --space DOCS --title "Release proc
 ```
 
 A page is named one way: `--page-id`, `--url`, or `--space` with `--title`.
+A page named on the command line sets aside a `MARK_PAGE_ID`, `MARK_PAGE_URL`
+or `MARK_TITLE`, and a `page-id`, `url` or `title` in the configuration file,
+so a job that sets `MARK_PAGE_URL` for publishing can still export another
+page. `--space` on the command line sets aside a page id or URL from them too,
+since those ignore the space; a title from them is looked up in that space.
 `--url` understands `/spaces/KEY/pages/ID/...` and
 `/spaces/KEY/blog/.../ID/...` on Cloud, and `/display/KEY/Title` and
 `/pages/viewpage.action?pageId=ID` on Server and Data Center, and a short
@@ -188,8 +193,9 @@ The whole tree is read, and every document's path checked, before anything is
 written: a document already there stops the export unless `--overwrite` is
 given, and so does a folder anywhere in the tree, since the export does not
 list a folder's pages. Content that is not a page, such as a whiteboard, is skipped with a
-warning. `--attachments-dir` does not apply, and the Markdown cannot go to
-standard output.
+warning. `--attachments-dir` does not apply: on the command line it is an
+error, and from `MARK_ATTACHMENTS_DIR` or the configuration file it is
+ignored. The Markdown cannot go to standard output.
 
 ## What becomes Markdown
 

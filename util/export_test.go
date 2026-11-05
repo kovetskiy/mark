@@ -1,6 +1,8 @@
 package util
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
 )
 
 // TestExportResolvesFlags: the export flags come from the command line, the
@@ -199,4 +202,177 @@ func TestAPublishFlagBeforeExportIsRefused(t *testing.T) {
 	_, _, err := dispatch(t, "-f", "doc.md", "export", "--page-id", "1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `-f: it is a flag of "publish"`)
+}
+
+// TestExportCommandLineWins: a page named on the command line sets aside one
+// that the environment or the configuration file names -- a MARK_PAGE_URL a CI
+// job sets for publishing, say -- rather than colliding with it.
+func TestExportCommandLineWins(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	page := server.AddPage("DOCS", "Exported page", "page", home.ID)
+	server.EditPage(page.ID, `<p>Wanted.</p>`)
+	other := server.AddPage("DOCS", "Other page", "page", home.ID)
+	server.EditPage(other.ID, `<p>Not wanted.</p>`)
+
+	address := server.URL + "/pages/viewpage.action?pageId="
+	empty := writeConfig(t, t.TempDir(), "mark.toml", "")
+	withURL := writeConfig(t, t.TempDir(), "mark.toml", "url = \""+address+other.ID+"\"\n")
+
+	for _, test := range []struct {
+		name string
+		env  map[string]string
+		args []string
+	}{
+		{"--page-id over MARK_PAGE_URL", map[string]string{"MARK_PAGE_URL": address + other.ID},
+			[]string{"-c", empty, "export", "-b", server.URL, "--page-id", page.ID}},
+		{"--page-id over url in the file", nil,
+			[]string{"-c", withURL, "export", "-b", server.URL, "--page-id", page.ID}},
+		{"--space and --title over MARK_PAGE_URL", map[string]string{"MARK_PAGE_URL": address + other.ID},
+			[]string{"-c", empty, "export", "-b", server.URL, "--space", "DOCS", "--title", "Exported page"}},
+		{"--url over MARK_PAGE_ID", map[string]string{"MARK_PAGE_ID": other.ID},
+			[]string{"-c", empty, "export", "--url", address + page.ID}},
+		{"--page-id over MARK_TITLE", map[string]string{"MARK_TITLE": "Other page", "MARK_SPACE": "DOCS"},
+			[]string{"-c", empty, "export", "-b", server.URL, "--page-id", page.ID}},
+		{"--title over MARK_PAGE_ID", map[string]string{"MARK_PAGE_ID": other.ID},
+			[]string{"-c", empty, "export", "-b", server.URL, "--space", "DOCS", "--title", "Exported page"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			noDefaultConfig(t)
+			for name, value := range test.env {
+				t.Setenv(name, value)
+			}
+
+			stdout, _, err := runMark(t, append([]string{"--color", "never", "-u", "user", "-p", "token"}, test.args...)...)
+			require.NoError(t, err)
+			assert.Contains(t, stdout, "Wanted.")
+		})
+	}
+}
+
+// exported runs "mark export" with exporting swapped out, and says which page
+// it would have exported, and into which attachments directory.
+func exported(t *testing.T, args ...string) (map[string]string, error) {
+	t.Helper()
+
+	var got map[string]string
+	cmd := buildCommand("test", nil, func(_ context.Context, c *cli.Command) error {
+		got = exportPage(c)
+		got["space"] = c.String("space")
+		return nil
+	})
+	cmd.Writer, cmd.ErrWriter = &bytes.Buffer{}, &bytes.Buffer{}
+
+	_, _, err := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), append([]string{"mark", "export"}, args...))
+	})
+
+	return got, err
+}
+
+// TestExportSettingSources: the page named on the command line is the one
+// exported; the environment and the configuration file name it only when the
+// command line does not. Two names from the same place are still refused,
+// and the refusal says where each came from.
+func TestExportSettingSources(t *testing.T) {
+	const address = "https://example.invalid/wiki/spaces/DOCS/pages/2/Other"
+	withURL := writeConfig(t, t.TempDir(), "mark.toml", "url = \""+address+"\"\nspace = \"CFG\"\n")
+	withTitle := writeConfig(t, t.TempDir(), "mark.toml", "title = \"From config\"\n")
+
+	for _, test := range []struct {
+		name string
+		env  map[string]string
+		args []string
+		want map[string]string
+		err  string
+	}{
+		{
+			name: "the whole space over MARK_PAGE_URL",
+			env:  map[string]string{"MARK_PAGE_URL": address},
+			args: []string{"--space", "DOCS", "-r", "-o", "out"},
+			want: map[string]string{"space": "DOCS"},
+		},
+		{
+			name: "the whole space over MARK_PAGE_ID",
+			env:  map[string]string{"MARK_PAGE_ID": "2"},
+			args: []string{"--space", "DOCS", "-r", "-o", "out"},
+			want: map[string]string{"space": "DOCS"},
+		},
+		{
+			name: "--space keeps a title from the file",
+			args: []string{"-c", withTitle, "--space", "DOCS"},
+			want: map[string]string{"title": "From config", "space": "DOCS"},
+		},
+		{
+			name: "the file's url when the command line names no page",
+			args: []string{"-c", withURL},
+			want: map[string]string{"url": address, "space": "CFG"},
+		},
+		{
+			name: "--url over the file's url and MARK_PAGE_ID",
+			env:  map[string]string{"MARK_PAGE_ID": "2"},
+			args: []string{"-c", withURL, "--url", "https://example.invalid/wiki/spaces/DOCS/pages/1/Page"},
+			want: map[string]string{"url": "https://example.invalid/wiki/spaces/DOCS/pages/1/Page", "space": "CFG"},
+		},
+		{
+			name: "an empty --url clears MARK_PAGE_URL",
+			env:  map[string]string{"MARK_PAGE_URL": address},
+			args: []string{"--url", "", "--page-id", "1"},
+			want: map[string]string{"page-id": "1"},
+		},
+		{
+			name: "MARK_ATTACHMENTS_DIR leaves --recursive alone",
+			env:  map[string]string{"MARK_ATTACHMENTS_DIR": "files"},
+			args: []string{"--page-id", "1", "-r", "-o", "out"},
+			want: map[string]string{"page-id": "1"},
+		},
+		{
+			name: "two on the command line",
+			env:  map[string]string{"MARK_PAGE_URL": address},
+			args: []string{"--page-id", "1", "--title", "T", "--space", "DOCS"},
+			err:  "--page-id and --title each name a page",
+		},
+		{
+			name: "--url on the command line as MARK_PAGE_URL has it",
+			env:  map[string]string{"MARK_PAGE_URL": address},
+			args: []string{"--url", address, "--page-id", "1"},
+			err:  "--page-id and --url each name a page",
+		},
+		{
+			name: "two from the environment",
+			env:  map[string]string{"MARK_PAGE_URL": address, "MARK_PAGE_ID": "1"},
+			err:  `--page-id (from environment variable "MARK_PAGE_ID") and --url (from environment variable "MARK_PAGE_URL") each name a page`,
+		},
+		{
+			name: "one from each",
+			env:  map[string]string{"MARK_PAGE_ID": "1"},
+			args: []string{"-c", withURL},
+			err:  `--page-id (from environment variable "MARK_PAGE_ID") and --url (from toml file`,
+		},
+		{
+			name: "--attachments-dir with --recursive on the command line",
+			args: []string{"--page-id", "1", "-r", "-o", "out", "--attachments-dir", "files"},
+			err:  "does not apply",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			noDefaultConfig(t)
+			for name, value := range test.env {
+				t.Setenv(name, value)
+			}
+
+			got, err := exported(t, test.args...)
+			if test.err != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.err)
+				return
+			}
+			require.NoError(t, err)
+			if _, ok := test.want["space"]; !ok {
+				test.want["space"] = ""
+			}
+			assert.Equal(t, test.want, got)
+		})
+	}
 }

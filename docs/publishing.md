@@ -248,8 +248,8 @@ done
 Mark reads the credentials and the instance from the job's `MARK_USERNAME`,
 `MARK_PASSWORD` and `MARK_BASE_URL` variables, which keeps the password off the
 command line. Keep the page address out of a variable a job shares:
-`MARK_PAGE_URL` sends every `mark publish` and `mark export` of the job to
-that one page.
+`MARK_PAGE_URL` sends every `mark publish` of the job to that one page, and
+every `mark export` that names no other page on its command line.
 
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid
