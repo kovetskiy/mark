@@ -534,3 +534,39 @@ func TestShortFlagsMeanOneThing(t *testing.T) {
 	}
 	walk("mark", newCommand(readmeVersion))
 }
+
+// TestMathFormatIsPublishedAsChecked: the check trims --math-format, so a
+// padded value from any source has to reach the renderer trimmed as well, or
+// the run fails at its first formula with "unknown math format".
+func TestMathFormatIsPublishedAsChecked(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config string
+		env    string
+		args   []string
+	}{
+		{name: "flag", args: []string{"--math-format", " svg "}},
+		{name: "environment", env: " svg "},
+		{name: "configuration file", config: "math-format = \" svg \"\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			noDefaultConfig(t)
+			if tc.env != "" {
+				t.Setenv("MARK_MATH_FORMAT", tc.env)
+			}
+
+			dir := t.TempDir()
+			config := writeConfig(t, dir, "mark.toml", tc.config)
+			document := filepath.Join(dir, "page.md")
+			require.NoError(t, os.WriteFile(document,
+				[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\n$$x^2$$\n"), 0o600))
+
+			args := append([]string{"publish", "--config", config, "--color", "never",
+				"--compile-only", "--features", "math", "--files", document}, tc.args...)
+			out, _, err := runMark(t, args...)
+
+			require.NoError(t, err)
+			assert.Regexp(t, `ri:filename="math-[0-9a-f]+\.svg"`, out)
+		})
+	}
+}

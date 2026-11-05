@@ -754,13 +754,18 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		)
 	}
 
-	mathFormat := strings.TrimSpace(command.String("math-format"))
-	if mathFormat != "" && !rendercheck.IsImageFormat(mathFormat) {
+	if format := mathFormat(command); format != "" && !rendercheck.IsImageFormat(format) {
 		return context, fmt.Errorf(
 			"invalid value for --math-format: %q (expected: svg or png)",
-			mathFormat,
+			format,
 		)
 	}
 
 	return context, nil
+}
+
+// mathFormat is --math-format as checked and as published: trimmed, so that a
+// padded value accepted by the check is not refused later by math.Process.
+func mathFormat(command *cli.Command) string {
+	return strings.TrimSpace(command.String("math-format"))
 }
