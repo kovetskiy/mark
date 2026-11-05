@@ -30,7 +30,7 @@ func handleOrphans(
 	tracker *manifest.Store,
 	api *confluence.API,
 	config Config,
-	action string,
+	action report.OnOrphan,
 	hadErrors bool,
 	results *report.Report,
 ) error {

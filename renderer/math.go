@@ -19,7 +19,7 @@ type MathConfig struct {
 	Browser *chrome.Browser
 	// Format is the image a formula is published as, "png" (the default) or
 	// "svg". Scale multiplies the pixels of a PNG one, and is ignored for SVG.
-	Format string
+	Format cmath.Format
 	Scale  float64
 }
 

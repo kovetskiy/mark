@@ -379,7 +379,7 @@ func findPage(ctx context.Context, api *confluence.API, cfg Config) (*confluence
 		}
 
 		var found *confluence.PageInfo
-		for _, pageType := range []string{"page", "blogpost"} {
+		for _, pageType := range []confluence.ContentType{confluence.ContentPage, confluence.ContentBlogPost} {
 			var err error
 			found, err = api.FindPage(ctx, cfg.Space, cfg.Title, pageType)
 			if err != nil {
@@ -418,7 +418,7 @@ func headers(
 	h := pageHeaders{Space: space, Title: page.Title, Labels: labels, Attachments: declared}
 
 	var err error
-	if page.Type == "blogpost" {
+	if page.Type == confluence.ContentBlogPost {
 		h.Type = "blogpost"
 	} else {
 		h.Parents, h.Folders, err = parents(ctx, api, page, space)
@@ -478,7 +478,7 @@ func pageURLs(ctx context.Context, api *confluence.API, space string, failed *er
 			return "", false
 		}
 		in = cmp.Or(in, space)
-		page, err := api.FindPage(ctx, in, title, "page")
+		page, err := api.FindPage(ctx, in, title, confluence.ContentPage)
 		if errors.Is(err, confluence.ErrNotFound) {
 			return "", false
 		}
@@ -516,7 +516,7 @@ func parents(ctx context.Context, api *confluence.API, page *confluence.PageInfo
 	belowHome := home != nil && chain[0].ID == home.ID
 	if belowHome {
 		chain = chain[1:]
-	} else if chain[0].Type != "folder" {
+	} else if chain[0].Type != confluence.ContentFolder {
 		log.Warn().Msgf(
 			"page %q is not below the home page of space %s; publishing it back puts it there",
 			page.Title, space,
@@ -524,7 +524,7 @@ func parents(ctx context.Context, api *confluence.API, page *confluence.PageInfo
 	}
 
 	for _, ancestor := range chain {
-		if ancestor.Type == "folder" {
+		if ancestor.Type == confluence.ContentFolder {
 			folders = append(folders, ancestor.Title)
 			continue
 		}
@@ -552,7 +552,7 @@ func parents(ctx context.Context, api *confluence.API, page *confluence.PageInfo
 func pageTitles(chain []confluence.Ancestor) []string {
 	var titles []string
 	for _, ancestor := range chain {
-		if ancestor.Type != "folder" {
+		if ancestor.Type != confluence.ContentFolder {
 			titles = append(titles, ancestor.Title)
 		}
 	}
@@ -566,7 +566,7 @@ func pageTitles(chain []confluence.Ancestor) []string {
 func ancestry(ctx context.Context, api *confluence.API, page *confluence.PageInfo) []confluence.Ancestor {
 	v1 := make([]confluence.Ancestor, 0, len(page.Ancestors))
 	for _, ancestor := range page.Ancestors {
-		v1 = append(v1, confluence.Ancestor{ID: ancestor.ID, Title: ancestor.Title, Type: "page"})
+		v1 = append(v1, confluence.Ancestor{ID: ancestor.ID, Title: ancestor.Title, Type: confluence.ContentPage})
 	}
 
 	if isCloud, err := api.Cloud(ctx); err == nil && !isCloud {
@@ -588,7 +588,7 @@ func ancestry(ctx context.Context, api *confluence.API, page *confluence.PageInf
 // which Confluence keeps as content properties. Neither is worth failing the
 // export over: a token that may not read properties exports the page without
 // them, and says so.
-func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (appearance, emoji string) {
+func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (appearance metadata.Appearance, emoji string) {
 	properties, err := api.ContentProperties(ctx, page.ID)
 	if err != nil {
 		log.Warn().Msgf("unable to read the content appearance and emoji of page %s: %s", page.ID, err)
@@ -604,7 +604,7 @@ func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.Pag
 
 		switch property.Key {
 		case "content-appearance-published":
-			appearance = value
+			appearance = metadata.Appearance(value)
 		case "emoji-title-published":
 			emoji = emojiFromHex(value)
 		}
@@ -618,7 +618,7 @@ func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.Pag
 		// mark publishes full width unless told otherwise.
 		appearance = ""
 	default:
-		if _, err := metadata.ParseContentAppearance(appearance); err != nil {
+		if _, err := metadata.ParseContentAppearance(string(appearance)); err != nil {
 			log.Warn().Msgf("page %q has the content appearance %q, which mark does not know; publishing it back gives it the default width",
 				page.Title, appearance)
 			appearance = ""

@@ -29,7 +29,7 @@ func TestFindPage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, page)
 	assert.Equal(t, "Getting Started", page.Title)
-	assert.Equal(t, "page", page.Type)
+	assert.Equal(t, confluence.ContentPage, page.Type)
 }
 
 func TestFindPageNotFoundReturnsNilWithoutError(t *testing.T) {

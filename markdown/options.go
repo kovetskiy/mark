@@ -2,6 +2,7 @@ package markdown
 
 import (
 	"github.com/kovetskiy/mark/v17/chrome"
+	cmath "github.com/kovetskiy/mark/v17/math"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
 )
@@ -43,7 +44,7 @@ type Options struct {
 	// MathFormat is the image a formula is published as, "png" (the default)
 	// or "svg". MathScale multiplies the pixels of a PNG one, and is ignored
 	// for SVG.
-	MathFormat string
+	MathFormat cmath.Format
 	MathScale  float64
 
 	// Features names the optional features switched on; see --features.

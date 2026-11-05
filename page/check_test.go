@@ -75,7 +75,7 @@ func TestLinkCheckerAsksOnce(t *testing.T) {
 // unreachableFinder fails the test that asks it for a page.
 type unreachableFinder struct{ t *testing.T }
 
-func (f unreachableFinder) FindPage(context.Context, string, string, string) (*confluence.PageInfo, error) {
+func (f unreachableFinder) FindPage(context.Context, string, string, confluence.ContentType) (*confluence.PageInfo, error) {
 	f.t.Error("a forgotten page was looked up")
 	return nil, nil
 }
@@ -263,7 +263,7 @@ func TestCheckExternalKeepsAFailureThatCameAsTheRunStopped(t *testing.T) {
 // missingFinder knows no page at all, and may be asked from several goroutines.
 type missingFinder struct{}
 
-func (missingFinder) FindPage(context.Context, string, string, string) (*confluence.PageInfo, error) {
+func (missingFinder) FindPage(context.Context, string, string, confluence.ContentType) (*confluence.PageInfo, error) {
 	return nil, nil
 }
 

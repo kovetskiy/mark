@@ -60,7 +60,7 @@ type pageHeaders struct {
 	Labels            []string
 	Sidebar           string
 	Layout            string
-	ContentAppearance string
+	ContentAppearance metadata.Appearance
 	Emoji             string
 	Attachments       []string
 }
@@ -91,7 +91,7 @@ func (h *pageHeaders) fields() []headerField {
 		many(metadata.HeaderLabel, "labels", h.Labels),
 		one(metadata.HeaderSidebar, "sidebar", h.Sidebar),
 		one(metadata.HeaderLayout, "layout", h.Layout),
-		one(metadata.ContentAppearance, "content-appearance", h.ContentAppearance),
+		one(metadata.ContentAppearance, "content-appearance", string(h.ContentAppearance)),
 		one(metadata.HeaderEmoji, "emoji", h.Emoji),
 		many(metadata.HeaderAttachment, "attachments", h.Attachments),
 	}

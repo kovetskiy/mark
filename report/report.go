@@ -14,23 +14,26 @@ import (
 	"sync"
 )
 
+// Format is a shape a run's outcome can be written in.
+type Format string
+
 // The shapes a run's outcome can be written in.
 const (
 	// FormatURL prints the address of each published page and nothing else,
 	// which is what mark has always printed.
-	FormatURL = "url"
+	FormatURL Format = "url"
 
 	// FormatJSON prints one object describing the whole run.
-	FormatJSON = "json"
+	FormatJSON Format = "json"
 
 	// FormatGitHub prints GitHub Actions workflow commands, which appear
 	// against the file they name in a pull request.
-	FormatGitHub = "github"
+	FormatGitHub Format = "github"
 )
 
 // ParseFormat reads the value given to --output-format.
-func ParseFormat(value string) (string, error) {
-	switch format := strings.ToLower(strings.TrimSpace(value)); format {
+func ParseFormat(value string) (Format, error) {
+	switch Format(strings.ToLower(strings.TrimSpace(value))) {
 	case "", FormatURL:
 		return FormatURL, nil
 	case FormatJSON:
@@ -45,23 +48,26 @@ func ParseFormat(value string) (string, error) {
 	}
 }
 
+// Status is what became of one document.
+type Status string
+
 // What became of one document.
 const (
-	StatusPublished = "published"
-	StatusUnchanged = "unchanged"
-	StatusSkipped   = "skipped"
-	StatusFailed    = "failed"
+	StatusPublished Status = "published"
+	StatusUnchanged Status = "unchanged"
+	StatusSkipped   Status = "skipped"
+	StatusFailed    Status = "failed"
 
 	// What a dry run that was also given --changes-only says a real run would
 	// do. A page it would leave alone is StatusUnchanged, as it is on a real run.
-	StatusWouldCreate = "would-create"
-	StatusWouldUpdate = "would-update"
+	StatusWouldCreate Status = "would-create"
+	StatusWouldUpdate Status = "would-update"
 )
 
 // Page is one document's outcome.
 type Page struct {
 	File   string `json:"file"`
-	Status string `json:"status"`
+	Status Status `json:"status"`
 	Space  string `json:"space,omitempty"`
 	Title  string `json:"title,omitempty"`
 	PageID string `json:"pageId,omitempty"`
@@ -91,25 +97,28 @@ type Orphan struct {
 
 	// Action is the --on-orphan action taken, one of the OnOrphan values;
 	// OnOrphanReport means the page was left where it is.
-	Action string `json:"action"`
+	Action OnOrphan `json:"action"`
 }
+
+// OnOrphan is what to do about a page whose source file is gone.
+type OnOrphan string
 
 // What to do about a page whose source file is gone.
 const (
 	// OnOrphanReport says so and does nothing. It is the default.
-	OnOrphanReport = "report"
+	OnOrphanReport OnOrphan = "report"
 
 	// OnOrphanArchive archives the page. Cloud only.
-	OnOrphanArchive = "archive"
+	OnOrphanArchive OnOrphan = "archive"
 
 	// OnOrphanDelete moves the page to the trash, where a person can still
 	// change their mind.
-	OnOrphanDelete = "delete"
+	OnOrphanDelete OnOrphan = "delete"
 )
 
 // ParseOnOrphan reads the value given to --on-orphan.
-func ParseOnOrphan(value string) (string, error) {
-	switch action := strings.ToLower(strings.TrimSpace(value)); action {
+func ParseOnOrphan(value string) (OnOrphan, error) {
+	switch OnOrphan(strings.ToLower(strings.TrimSpace(value))) {
 	case "", OnOrphanReport:
 		return OnOrphanReport, nil
 	case OnOrphanArchive:
@@ -163,7 +172,7 @@ func (r *Report) AddPage(page Page) {
 
 // StatusOf reports what the run last recorded for a document, or "" if it
 // recorded nothing about it.
-func (r *Report) StatusOf(file string) string {
+func (r *Report) StatusOf(file string) Status {
 	if r == nil {
 		return ""
 	}
@@ -209,7 +218,7 @@ func (r *Report) AddError(message string) {
 // The url form writes as each page publishes rather than at the end, so it is
 // not written again here: repeating it would double every line of the output
 // mark has always produced.
-func (r *Report) Write(w io.Writer, format string) error {
+func (r *Report) Write(w io.Writer, format Format) error {
 	if r == nil {
 		return nil
 	}
@@ -253,7 +262,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 
 		case StatusWouldCreate, StatusWouldUpdate:
 			if err := command(w, "notice", page.File,
-				fmt.Sprintf("would %s %q", strings.TrimPrefix(page.Status, "would-"), page.Title)); err != nil {
+				fmt.Sprintf("would %s %q", strings.TrimPrefix(string(page.Status), "would-"), page.Title)); err != nil {
 				return err
 			}
 		}

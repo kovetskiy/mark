@@ -158,7 +158,7 @@ func writeAt(t *testing.T, dir, name, content string) {
 
 // previewOf runs config as a dry run with the given output format and returns
 // what it wrote.
-func previewOf(t *testing.T, config Config, format string) string {
+func previewOf(t *testing.T, config Config, format report.Format) string {
 	t.Helper()
 	var out bytes.Buffer
 	config.Mode.DryRun = true

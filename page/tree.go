@@ -19,7 +19,7 @@ type Node struct {
 // ReadTree reads what is beneath root, depth levels down; 0 is no limit.
 func ReadTree(ctx context.Context, api *confluence.API, root confluence.Child, depth int) (*Node, error) {
 	node := &Node{Child: root}
-	if depth == 1 || (root.Type != "page" && root.Type != "folder") {
+	if depth == 1 || (root.Type != confluence.ContentPage && root.Type != confluence.ContentFolder) {
 		return node, nil
 	}
 
@@ -76,7 +76,7 @@ func printChildren(out io.Writer, node *Node, indent string) {
 // label is a line of the tree: the title and id, and the type when it is not
 // a page.
 func label(child confluence.Child) string {
-	if child.Type == "page" {
+	if child.Type == confluence.ContentPage {
 		return fmt.Sprintf("%s (%s)", child.Title, child.ID)
 	}
 	return fmt.Sprintf("%s [%s] (%s)", child.Title, child.Type, child.ID)
@@ -97,7 +97,7 @@ func resolveChild(ctx context.Context, api *confluence.API, ref Ref) (confluence
 		return confluence.Child{}, err
 	}
 
-	return confluence.Child{ID: folder.ID, Type: "folder", Title: folder.Title}, nil
+	return confluence.Child{ID: folder.ID, Type: confluence.ContentFolder, Title: folder.Title}, nil
 }
 
 // CopyOptions says where Copy puts the copy and what it is called. Title
@@ -123,7 +123,7 @@ func Copy(ctx context.Context, api *confluence.API, ref Ref, options CopyOptions
 	if err != nil {
 		return err
 	}
-	if source.Type == "blogpost" {
+	if source.Type == confluence.ContentBlogPost {
 		return fmt.Errorf("%s is a blog post, and blog posts have no place in the page tree", describe(source))
 	}
 
@@ -131,7 +131,7 @@ func Copy(ctx context.Context, api *confluence.API, ref Ref, options CopyOptions
 	if err != nil {
 		return err
 	}
-	if parent.Type == "blogpost" {
+	if parent.Type == confluence.ContentBlogPost {
 		return fmt.Errorf("%s is a blog post, and a page cannot go beneath one", describe(parent))
 	}
 
@@ -167,7 +167,7 @@ func Copy(ctx context.Context, api *confluence.API, ref Ref, options CopyOptions
 
 // planTitles works out the title of each copy.
 func planTitles(node *Node, options CopyOptions, titles map[*Node]string, top bool) error {
-	if node.Type != "page" {
+	if node.Type != confluence.ContentPage {
 		return fmt.Errorf("%s is beneath the page, and copy copies pages only", label(node.Child))
 	}
 
@@ -199,7 +199,7 @@ func checkTitles(ctx context.Context, api *confluence.API, space string, titles 
 		}
 		seen[key] = true
 
-		existing, err := api.FindPage(ctx, space, title, "page")
+		existing, err := api.FindPage(ctx, space, title, confluence.ContentPage)
 		if err != nil {
 			return fmt.Errorf("unable to look for a page titled %q in space %s: %w", title, space, err)
 		}

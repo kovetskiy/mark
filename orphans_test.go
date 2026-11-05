@@ -13,6 +13,7 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +22,7 @@ import (
 
 // orphanFixture publishes two documents under Parent and then removes one of
 // them from disk, which is what makes its page an orphan.
-func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server, string, string) {
+func orphanFixture(t *testing.T, onOrphan report.OnOrphan, under string) (*confluencetest.Server, string, string) {
 	t.Helper()
 
 	server := confluencetest.New(t)

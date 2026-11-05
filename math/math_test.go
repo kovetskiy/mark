@@ -198,7 +198,7 @@ func TestProcessScaleZeroIsTheDefault(t *testing.T) {
 // needed to see it.
 func TestProcessRefusesWhatIsNotAScale(t *testing.T) {
 	for _, scale := range []float64{-1, gomath.NaN(), gomath.Inf(1), gomath.Inf(-1)} {
-		for _, format := range []string{FormatPNG, FormatSVG} {
+		for _, format := range []Format{FormatPNG, FormatSVG} {
 			_, err := Process(context.Background(), `x`, Options{Format: format, Scale: scale, Browser: browser})
 			require.Error(t, err, "a scale of %v is not one, for %s either", scale, format)
 			assert.Contains(t, err.Error(), "invalid math scale")

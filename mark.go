@@ -24,6 +24,7 @@ import (
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/markdown"
+	markmath "github.com/kovetskiy/mark/v17/math"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
@@ -117,7 +118,7 @@ type PageConfig struct {
 	TitleFromH1              bool
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
-	ContentAppearance        string
+	ContentAppearance        metadata.Appearance
 }
 
 // UpdateConfig is how a page is written once it is found.
@@ -144,7 +145,7 @@ type TrackingConfig struct {
 	TrackPages     bool
 	ManifestPage   string
 	ManifestPrefix string
-	OnOrphan       string // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
+	OnOrphan       report.OnOrphan // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
 	OrphanUnder    string
 
 	// NoOverwrite leaves alone a page edited in Confluence since mark last
@@ -157,14 +158,14 @@ type TrackingConfig struct {
 type RenderingConfig struct {
 	DropH1           bool
 	StripLinebreaks  bool
-	MermaidEngine    string
+	MermaidEngine    mermaid.EngineKind
 	MermaidScale     float64
 	MermaidOutput    string
 	MermaidBundle    bool
 	D2Output         string
 	D2Scale          float64
 	D2BundleRemote   bool
-	MathFormat       string
+	MathFormat       markmath.Format
 	MathScale        float64
 	Features         []string
 	ImageAlign       string
@@ -178,7 +179,7 @@ type RenderingConfig struct {
 // ReportConfig is what a run says about itself. It is written to
 // PublishConfig.Output.
 type ReportConfig struct {
-	OutputFormat string
+	OutputFormat report.Format
 }
 
 // output returns the configured writer, falling back to io.Discard so that
@@ -206,7 +207,7 @@ type resources struct {
 
 // newResources creates them for the mermaid engine kind names, starting
 // nothing yet.
-func newResources(kind string) (*resources, error) {
+func newResources(kind mermaid.EngineKind) (*resources, error) {
 	engine, err := mermaid.NewEngine(kind)
 	if err != nil {
 		return nil, err
@@ -229,7 +230,7 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 
 	// A page with no Content-Appearance of its own takes this one, and one
 	// that does not parse would fail every such page in turn.
-	if _, err := metadata.ParseContentAppearance(c.Page.ContentAppearance); err != nil {
+	if _, err := metadata.ParseContentAppearance(string(c.Page.ContentAppearance)); err != nil {
 		return page.LinkChecks{}, fmt.Errorf("invalid ContentAppearance: %w", err)
 	}
 
@@ -284,6 +285,18 @@ func (r RenderingConfig) validate() error {
 		return fmt.Errorf(
 			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
 			r.D2Output,
+		)
+	}
+
+	// Checked here so that a format math does not know fails the run at its
+	// start rather than at its first formula.
+	switch r.MathFormat {
+	case "", markmath.FormatSVG, markmath.FormatPNG:
+		// ok
+	default:
+		return fmt.Errorf(
+			"invalid MathFormat %q: expected \"svg\", \"png\", or \"\" for the default",
+			r.MathFormat,
 		)
 	}
 
@@ -373,12 +386,12 @@ func Run(ctx context.Context, config Config) (err error) {
 	// The rest is about the run as a whole -- the report written at the end of
 	// it and the manifest kept across runs -- so a Publisher, which has
 	// neither, does not ask.
-	outputFormat, err := report.ParseFormat(config.Report.OutputFormat)
+	outputFormat, err := report.ParseFormat(string(config.Report.OutputFormat))
 	if err != nil {
 		return err
 	}
 
-	onOrphan, err := report.ParseOnOrphan(config.Tracking.OnOrphan)
+	onOrphan, err := report.ParseOnOrphan(string(config.Tracking.OnOrphan))
 	if err != nil {
 		return err
 	}
@@ -1126,7 +1139,7 @@ type publishRun struct {
 	noOverwrite bool
 	// outputFormat is the run report's format, which decides whether a
 	// --changes-only dry run prints the bodies it compiles.
-	outputFormat string
+	outputFormat report.Format
 
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
@@ -1572,7 +1585,8 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	// Only a dry run asked to tell changed pages from unchanged ones.
 	compare := config.Mode.DryRun && !config.Mode.CompileOnly && config.Update.ChangesOnly
 
-	status, reason := "", ""
+	var status report.Status
+	var reason string
 	if compare && r.noOverwrite && previewed != nil && r.tracker != nil && meta != nil {
 		// Ahead of compiling, as on a real run: a page edited in Confluence
 		// is left alone whatever the source says, and whatever it would fail on.
@@ -1658,7 +1672,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 func (r *publishRun) previewBody(
 	ctx context.Context,
 	doc *document, found pagePreview, cfg markdown.Options, compare bool,
-) (html, status, reason string, err error) {
+) (html string, status report.Status, reason string, err error) {
 	meta, file, previewed := doc.meta, doc.file, found.page
 
 	// Read once, for the preview and for the clash check below.
@@ -1763,9 +1777,9 @@ func (r *publishRun) resolveDestination(ctx context.Context, doc *document) (*de
 
 	if target := dest.page; target != nil && target.Type == "" {
 		if doc.meta != nil && doc.meta.Type != "" {
-			target.Type = doc.meta.Type
+			target.Type = confluence.ContentType(doc.meta.Type)
 		} else {
-			target.Type = "page"
+			target.Type = confluence.ContentPage
 		}
 	}
 
@@ -1818,9 +1832,9 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 
 	if pg == nil {
 		if parent != nil && parent.Type == "folder-parent" {
-			pg, err = api.CreatePageWithFolderParent(ctx, meta.Space, meta.Type, parent.ID, meta.Title, ``)
+			pg, err = api.CreatePageWithFolderParent(ctx, meta.Space, confluence.ContentType(meta.Type), parent.ID, meta.Title, ``)
 		} else {
-			pg, err = api.CreatePage(ctx, meta.Space, meta.Type, parent, meta.Title, ``)
+			pg, err = api.CreatePage(ctx, meta.Space, confluence.ContentType(meta.Type), parent, meta.Title, ``)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("can't create %s %q: %w", meta.Type, meta.Title, err)
@@ -2198,7 +2212,7 @@ func appearanceOf(meta *metadata.Meta) (string, string) {
 		return "", ""
 	}
 
-	return meta.ContentAppearance, meta.Emoji
+	return string(meta.ContentAppearance), meta.Emoji
 }
 
 // renderHeader renders the page header for one document, naming it by its

@@ -63,7 +63,7 @@ func resolvePage(
 			return nil, nil, false, fmt.Errorf("folder support is currently only available on Confluence Cloud")
 		}
 	}
-	page, err := api.FindPage(ctx, meta.Space, meta.Title, meta.Type)
+	page, err := api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}

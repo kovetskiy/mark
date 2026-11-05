@@ -15,7 +15,7 @@ import (
 type ParentInfo struct {
 	ID    string
 	Title string
-	Type  string // "page" or "folder"
+	Type  confluence.ContentType // confluence.ContentPage or ContentFolder
 }
 
 // FolderCache remembers the folders a run has created or found, so that files
@@ -90,11 +90,11 @@ func resolveFolder(
 	case underID == "":
 		folder, err = api.FindRootFolder(ctx, space, title)
 	case underAnchor:
-		folder, err = api.FindChildFolder(ctx, underID, "page", title)
+		folder, err = api.FindChildFolder(ctx, underID, confluence.ContentPage, title)
 	default:
 		// Anything else beneath which a folder is looked for is a folder
 		// this resolution has already walked through.
-		folder, err = api.FindChildFolder(ctx, underID, "folder", title)
+		folder, err = api.FindChildFolder(ctx, underID, confluence.ContentFolder, title)
 	}
 	if err != nil || folder != nil {
 		return folder, err
@@ -306,7 +306,7 @@ func EnsureFolderAncestry(
 		parent = &ParentInfo{
 			ID:    folder.ID,
 			Title: folder.Title,
-			Type:  "folder",
+			Type:  confluence.ContentFolder,
 		}
 	}
 
@@ -338,10 +338,10 @@ func EnsureFolderAncestry(
 						title,
 					)
 				}
-				folder, err = api.CreateFolder(ctx, spaceID, title, anchorPageID, "page")
+				folder, err = api.CreateFolder(ctx, spaceID, title, anchorPageID, confluence.ContentPage)
 			} else {
 				pid := parent.ID
-				folder, err = api.CreateFolder(ctx, spaceID, title, &pid, "folder")
+				folder, err = api.CreateFolder(ctx, spaceID, title, &pid, confluence.ContentFolder)
 			}
 			if err != nil {
 				createErr := err
@@ -398,7 +398,7 @@ func EnsureFolderAncestry(
 			parent = &ParentInfo{
 				ID:    folder.ID,
 				Title: folder.Title,
-				Type:  "folder",
+				Type:  confluence.ContentFolder,
 			}
 		}
 	} else {
@@ -413,7 +413,7 @@ func EnsureFolderAncestry(
 			parent = &ParentInfo{
 				ID:    dryRunFolderID,
 				Title: finalTitle,
-				Type:  "folder",
+				Type:  confluence.ContentFolder,
 			}
 		}
 	}
@@ -502,7 +502,7 @@ func EnsureAncestry(
 	rest := ancestry
 
 	for i, title := range ancestry {
-		page, err := api.FindPage(ctx, space, title, "page")
+		page, err := api.FindPage(ctx, space, title, confluence.ContentPage)
 		if err != nil {
 			return nil, fmt.Errorf("error during finding parent page with title %q: %w", title, err)
 		}
@@ -549,7 +549,7 @@ func EnsureAncestry(
 		// within ancestry is what makes a recorded key match on the next run.
 		firstNew := len(ancestry) - len(rest)
 		for offset, title := range rest {
-			page, err := api.CreatePage(ctx, space, "page", parent, title, ``)
+			page, err := api.CreatePage(ctx, space, confluence.ContentPage, parent, title, ``)
 			if err != nil {
 				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
 			}
@@ -592,7 +592,7 @@ func ValidateAncestry(
 	space string,
 	ancestry []string,
 ) (*confluence.PageInfo, error) {
-	page, err := api.FindPage(ctx, space, ancestry[len(ancestry)-1], "page")
+	page, err := api.FindPage(ctx, space, ancestry[len(ancestry)-1], confluence.ContentPage)
 	if err != nil {
 		return nil, err
 	}

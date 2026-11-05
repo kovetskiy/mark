@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/math"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
@@ -310,7 +311,7 @@ func TestCompileMarkdownMath(t *testing.T) {
 	tests := []struct {
 		name    string
 		variant string
-		format  string
+		format  math.Format
 	}{
 		// The default, which needs the same browser mermaid does.
 		{name: "png", variant: "-png", format: ""},

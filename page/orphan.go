@@ -42,7 +42,7 @@ func ResolveScope(ctx context.Context, api *confluence.API, spaceKey, under stri
 		}
 	}
 
-	found, err := api.FindPage(ctx, spaceKey, under, "page")
+	found, err := api.FindPage(ctx, spaceKey, under, confluence.ContentPage)
 	if err != nil {
 		return "", fmt.Errorf("unable to find %q in space %q: %w", under, spaceKey, err)
 	}
@@ -128,7 +128,7 @@ func InScope(ctx context.Context, api *confluence.API, scopeID string, orphan Or
 func HandleOrphans(
 	ctx context.Context,
 	api *confluence.API,
-	action string,
+	action report.OnOrphan,
 	orphans []Orphan,
 	dryRun bool,
 ) ([]string, error) {

@@ -12,6 +12,10 @@ import (
 	mark "github.com/kovetskiy/mark/v17"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/export"
+	"github.com/kovetskiy/mark/v17/math"
+	"github.com/kovetskiy/mark/v17/mermaid"
+	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
@@ -309,7 +313,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 				TitleFromH1:              cmd.Bool("title-from-h1"),
 				TitleFromFilename:        cmd.Bool("title-from-filename"),
 				TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
-				ContentAppearance:        cmd.String("content-appearance"),
+				ContentAppearance:        metadata.Appearance(cmd.String("content-appearance")),
 			},
 			Mode: mark.ModeConfig{
 				CompileOnly: cmd.Bool("compile-only"),
@@ -331,14 +335,14 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 			Rendering: mark.RenderingConfig{
 				DropH1:           cmd.Bool("drop-h1"),
 				StripLinebreaks:  cmd.Bool("strip-linebreaks"),
-				MermaidEngine:    cmd.String("mermaid-engine"),
+				MermaidEngine:    mermaid.EngineKind(cmd.String("mermaid-engine")),
 				MermaidScale:     cmd.Float("mermaid-scale"),
 				MermaidOutput:    cmd.String("mermaid-output"),
 				MermaidBundle:    cmd.Bool("mermaid-bundle"),
 				D2Output:         cmd.String("d2-output"),
 				D2BundleRemote:   cmd.Bool("d2-bundle-remote"),
 				D2Scale:          cmd.Float("d2-scale"),
-				MathFormat:       cmd.String("math-format"),
+				MathFormat:       math.Format(cmd.String("math-format")),
 				MathScale:        cmd.Float("math-scale"),
 				Features:         EnabledFeatures(cmd),
 				ImageAlign:       cmd.String("image-align"),
@@ -364,12 +368,12 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 			TrackPages:     cmd.Bool("track-pages"),
 			ManifestPage:   cmd.String("manifest-page"),
 			ManifestPrefix: cmd.String("manifest-prefix"),
-			OnOrphan:       cmd.String("on-orphan"),
+			OnOrphan:       report.OnOrphan(cmd.String("on-orphan")),
 			OrphanUnder:    cmd.String("orphan-under"),
 			NoOverwrite:    cmd.Bool("no-overwrite"),
 		},
 		Report: mark.ReportConfig{
-			OutputFormat: cmd.String("output-format"),
+			OutputFormat: report.Format(cmd.String("output-format")),
 		},
 	}
 

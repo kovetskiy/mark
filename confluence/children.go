@@ -12,7 +12,7 @@ import (
 // on Cloud whatever else the v2 API lists there, such as a whiteboard.
 type Child struct {
 	ID    string
-	Type  string
+	Type  ContentType
 	Title string
 }
 
@@ -22,11 +22,11 @@ type Child struct {
 // On Cloud this is the v2 listing, which is the only one that shows folders.
 // Elsewhere it is the v1 page listing: Server and Data Center have no folders,
 // so it misses nothing there, and a folder has no children to list.
-func (api *API) Children(ctx context.Context, parentID, parentType string) ([]Child, error) {
+func (api *API) Children(ctx context.Context, parentID string, parentType ContentType) ([]Child, error) {
 	if isCloud, err := api.Cloud(ctx); err == nil && isCloud {
 		var children []Child
 		err := api.eachDirectChild(ctx, parentID, parentType, "list the children of "+parentID,
-			func(id, typ, title string) bool {
+			func(id string, typ ContentType, title string) bool {
 				children = append(children, Child{ID: id, Type: typ, Title: title})
 				return false
 			},
@@ -34,7 +34,7 @@ func (api *API) Children(ctx context.Context, parentID, parentType string) ([]Ch
 		return children, err
 	}
 
-	if parentType == "folder" {
+	if parentType == ContentFolder {
 		return nil, nil
 	}
 
@@ -45,7 +45,7 @@ func (api *API) Children(ctx context.Context, parentID, parentType string) ([]Ch
 
 	children := make([]Child, len(pages))
 	for i, page := range pages {
-		children[i] = Child{ID: page.ID, Type: "page", Title: page.Title}
+		children[i] = Child{ID: page.ID, Type: ContentPage, Title: page.Title}
 	}
 
 	return children, nil
@@ -104,7 +104,7 @@ func (api *API) RootPages(ctx context.Context, space string) ([]Child, error) {
 
 	children := make([]Child, len(pages))
 	for i, page := range pages {
-		children[i] = Child{ID: page.ID, Type: "page", Title: page.Title}
+		children[i] = Child{ID: page.ID, Type: ContentPage, Title: page.Title}
 	}
 
 	return children, nil

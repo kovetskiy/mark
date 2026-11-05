@@ -90,7 +90,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 			failWhen(server, tc.gateway, nil)
 			stored := server.AddPage("DOCS", "Target", tc.pageType, "")
 
-			page, err := api.FindPage(context.Background(), "DOCS", "Target", tc.pageType)
+			page, err := api.FindPage(context.Background(), "DOCS", "Target", ContentType(tc.pageType))
 			require.NoError(t, err)
 			require.NotNil(t, page)
 			require.EqualValues(t, 1, page.Version.Number)
@@ -108,7 +108,7 @@ func TestUpdatePageRetriesAStaleVersion(t *testing.T) {
 				"the caller has to hold the version that was actually written")
 			assert.Equal(t, 2, countContentPuts(server, stored.ID), "one retry, no more")
 
-			cached, err := api.FindPage(context.Background(), "DOCS", "Target", tc.pageType)
+			cached, err := api.FindPage(context.Background(), "DOCS", "Target", ContentType(tc.pageType))
 			require.NoError(t, err)
 			require.NotNil(t, cached)
 			assert.EqualValues(t, 4, cached.Version.Number,

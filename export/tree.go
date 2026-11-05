@@ -209,11 +209,11 @@ func planPage(ctx context.Context, api *confluence.API, l layout, cfg Config, de
 	if err != nil {
 		return nil, err
 	}
-	if root.Type == "blogpost" {
+	if root.Type == confluence.ContentBlogPost {
 		return nil, fmt.Errorf("%q (%s) is a blog post, and a blog post has no pages beneath it", root.Title, root.ID)
 	}
 
-	page := confluence.Child{ID: root.ID, Type: "page", Title: root.Title}
+	page := confluence.Child{ID: root.ID, Type: confluence.ContentPage, Title: root.Title}
 
 	var plan []planned
 	if l.okf {
@@ -252,7 +252,7 @@ func planSpace(ctx context.Context, api *confluence.API, l layout, space, dir st
 	if home != nil && !l.okf {
 		plan = append(plan, planned{id: home.ID, title: home.Title, output: filepath.Join(dir, TreeDocument)})
 		if depth != 1 {
-			children, err := children(ctx, api, confluence.Child{ID: home.ID, Type: "page", Title: home.Title})
+			children, err := children(ctx, api, confluence.Child{ID: home.ID, Type: confluence.ContentPage, Title: home.Title})
 			if err != nil {
 				return nil, err
 			}
@@ -284,7 +284,7 @@ func planSpace(ctx context.Context, api *confluence.API, l layout, space, dir st
 	// is a top-level page like the others: where Confluence lists it, or last
 	// when it is beneath another page and the export does not reach it there.
 	if home != nil && l.okf && !slices.ContainsFunc(plan, func(p planned) bool { return p.id == home.ID }) {
-		homeBranch := []branch{{Child: confluence.Child{ID: home.ID, Type: "page", Title: home.Title}, depth: depth}}
+		homeBranch := []branch{{Child: confluence.Child{ID: home.ID, Type: confluence.ContentPage, Title: home.Title}, depth: depth}}
 		if err := planBranches(ctx, api, l, homeBranch, dir, taken, &plan); err != nil {
 			return nil, err
 		}
@@ -357,7 +357,7 @@ func checkPageID(id string) error {
 // children lists the pages beneath page, refusing a folder and skipping
 // anything else that is not a page.
 func children(ctx context.Context, api *confluence.API, page confluence.Child) ([]confluence.Child, error) {
-	listed, err := api.Children(ctx, page.ID, "page")
+	listed, err := api.Children(ctx, page.ID, confluence.ContentPage)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list the children of %q (%s): %w", page.Title, page.ID, err)
 	}
@@ -365,9 +365,9 @@ func children(ctx context.Context, api *confluence.API, page confluence.Child) (
 	var pages []confluence.Child
 	for _, child := range listed {
 		switch child.Type {
-		case "page":
+		case confluence.ContentPage:
 			pages = append(pages, child)
-		case "folder":
+		case confluence.ContentFolder:
 			return nil, fmt.Errorf(
 				"folder %q (%s) is beneath %q (%s), and a recursive export does not reach into folders",
 				child.Title, child.ID, page.Title, page.ID,

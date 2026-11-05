@@ -955,6 +955,18 @@ func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	assert.Contains(t, err.Error(), "D2Output")
 }
 
+// TestMathFormatRejectsAFormatMarkCannotPublish: a format math does not know
+// fails the run before it publishes anything, not at the first formula.
+func TestMathFormatRejectsAFormatMarkCannotPublish(t *testing.T) {
+	config := mermaidFixture(t)
+	config.Rendering.MathFormat = "jpeg"
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "MathFormat")
+}
+
 // TestD2DefaultsPublishAsBefore is its control: a caller that never heard of
 // the field leaves it zero, and has always got a PNG.
 func TestD2DefaultsPublishAsBefore(t *testing.T) {

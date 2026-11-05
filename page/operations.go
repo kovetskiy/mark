@@ -36,7 +36,7 @@ func Resolve(ctx context.Context, api *confluence.API, ref Ref, expand ...string
 		}
 
 		var found *confluence.PageInfo
-		for _, pageType := range []string{"page", "blogpost"} {
+		for _, pageType := range []confluence.ContentType{confluence.ContentPage, confluence.ContentBlogPost} {
 			var err error
 			found, err = api.FindPage(ctx, ref.Space, ref.Title, pageType)
 			if err != nil {
@@ -81,7 +81,7 @@ func Move(ctx context.Context, api *confluence.API, ref Ref, options MoveOptions
 	if err != nil {
 		return err
 	}
-	if target.Type == "blogpost" {
+	if target.Type == confluence.ContentBlogPost {
 		return fmt.Errorf("%s is a blog post, and blog posts have no place in the page tree", describe(target))
 	}
 
@@ -396,7 +396,7 @@ func directChildren(ctx context.Context, api *confluence.API, page *confluence.P
 
 // checkRemovable refuses the space homepage, which holds the whole tree.
 func checkRemovable(ctx context.Context, api *confluence.API, page *confluence.PageInfo) error {
-	if page.Type == "blogpost" {
+	if page.Type == confluence.ContentBlogPost {
 		return nil
 	}
 

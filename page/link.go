@@ -407,14 +407,14 @@ func getConfluenceLink(
 	space, title string,
 ) (string, error) {
 	// Try to find as a page first
-	page, err := api.FindPage(ctx, space, title, "page")
+	page, err := api.FindPage(ctx, space, title, confluence.ContentPage)
 	if err != nil {
 		return "", fmt.Errorf("api: find page %q in space %q: %w", title, space, err)
 	}
 
 	// If not found as a page, try to find as a blog post
 	if page == nil {
-		page, err = api.FindPage(ctx, space, title, "blogpost")
+		page, err = api.FindPage(ctx, space, title, confluence.ContentBlogPost)
 		if err != nil {
 			return "", fmt.Errorf("api: find blogpost %q in space %q: %w", title, space, err)
 		}
