@@ -179,7 +179,7 @@ and name it in `defaultFeatures`, add it to the `Usage` string of the `features`
 `util/flags.go`, and document it under `docs/` (diagrams and other rendering in
 `docs/formatting.md`).
 
-**8. Everything is sequential today, and one thing still relies on that.**
+**8. Everything is sequential today, and some run state still relies on that.**
 State a run builds up is a value the run creates, passes down and closes, never a
 package global. `page.FolderCache` is created per run (or per `mark.Publisher`) and
 handed to the ancestry functions: it is keyed with no notion of which Confluence it came
@@ -192,10 +192,12 @@ picture that needs them, and are closed by whoever created them.
 holds no context: every `confluence.API` method that makes a request takes `ctx context.Context` first, and so
 does everything above it that makes one later (`manifest.Store`,
 `page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
-What is genuinely single-threaded is `page.LinkChecker`: `MissingPages` reads
-`len(c.pending)` before taking the mutex and then reads the map itself after releasing it
-(`page/check.go`). Anything that introduces concurrency across files has to fix that
-first.
+`page.LinkChecker` keeps its pending links and answers behind a mutex and copies
+what `MissingPages` looks up before making a request (`TestLinkCheckerConcurrentAccess`
+in `page/check_test.go` races it). What still assumes one file at a time is the rest of
+`publishRun` in `mark.go`: `runUsers` swaps its `ctx` for each file, and `runTitles` and
+`pageFile` carry no lock. Anything that introduces concurrency across files has to make
+those safe first.
 
 **9. The Confluence client answers in errors, not statuses.** `confluence/client.go`
 turns every non-2xx answer into a `*confluence.StatusError` (`errors.Is` matches

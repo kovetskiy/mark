@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -256,4 +258,56 @@ func TestCheckExternalKeepsAFailureThatCameAsTheRunStopped(t *testing.T) {
 	_, remembered := checker.seen["https://example.test/gone"]
 	checker.mu.Unlock()
 	assert.True(t, remembered)
+}
+
+// missingFinder knows no page at all, and may be asked from several goroutines.
+type missingFinder struct{}
+
+func (missingFinder) FindPage(context.Context, string, string, string) (*confluence.PageInfo, error) {
+	return nil, nil
+}
+
+// TestLinkCheckerConcurrentAccess races NotePage, MissingPages and ForgetPages
+// on one checker; run under -race, it fails if any of them touches the pending
+// links outside the lock.
+func TestLinkCheckerConcurrentAccess(t *testing.T) {
+	const (
+		goroutines = 8
+		perRoutine = 100
+	)
+
+	checker := NewLinkChecker(LinkChecks{Confluence: true})
+
+	var wg sync.WaitGroup
+	for g := range goroutines {
+		wg.Add(2)
+		go func(g int) {
+			defer wg.Done()
+			for i := range perRoutine {
+				checker.NotePage("DOCS", "page-"+strconv.Itoa(g)+"-"+strconv.Itoa(i), "a.md")
+				checker.NotePage("DOCS", "shared", "b.md")
+				if i%25 == 0 {
+					checker.ForgetPages()
+				}
+			}
+		}(g)
+		go func() {
+			defer wg.Done()
+			for range perRoutine / 10 {
+				_, err := checker.MissingPages(context.Background(), missingFinder{})
+				assert.NoError(t, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	checker.ForgetPages()
+	checker.NotePage("DOCS", "b", "b.md")
+	checker.NotePage("DOCS", "a", "a.md")
+	missing, err := checker.MissingPages(context.Background(), missingFinder{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		`a.md: link "ac:a" does not resolve: there is no page "a" in space "DOCS"`,
+		`b.md: link "ac:b" does not resolve: there is no page "b" in space "DOCS"`,
+	}, missing)
 }

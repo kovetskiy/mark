@@ -142,23 +142,29 @@ func (c *LinkChecker) NotePage(space, title, source string) {
 // MissingPages reports the ac: links that named no page, once everything that
 // was going to be published has been.
 func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]string, error) {
-	if c == nil || len(c.pending) == 0 {
+	if c == nil {
 		return nil, nil
 	}
 
+	// Copied under the lock and looked up without it, so that a lookup, which
+	// is a request to Confluence, does not hold up NotePage on another
+	// goroutine.
 	c.mu.Lock()
-	keys := make([]string, 0, len(c.pending))
-	for key := range c.pending {
-		keys = append(keys, key)
+	type entry struct {
+		key  string
+		link pendingPage
 	}
-	pending := c.pending
+	entries := make([]entry, 0, len(c.pending))
+	for key, link := range c.pending {
+		entries = append(entries, entry{key, link})
+	}
 	c.mu.Unlock()
 
-	sort.Strings(keys)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
 
 	var missing []string
-	for _, key := range keys {
-		link := pending[key]
+	for _, e := range entries {
+		link := e.link
 
 		found, err := finder.FindPage(ctx, link.space, link.title, "page")
 		if err != nil {
