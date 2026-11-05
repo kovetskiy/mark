@@ -26,27 +26,12 @@ var colonAdmonitionTypes = map[string]AdmonitionType{
 	"tip":     AdmonitionTip,
 }
 
-// BlockQuoteClassifier reads the admonition type off the first line of a
-// blockquote written in the colon syntax: "> Info: text". It holds no state,
-// so its zero value is ready to use.
-type BlockQuoteClassifier struct{}
-
-// ColonBlockQuoteClassifier returns the classifier for the colon syntax.
-func ColonBlockQuoteClassifier() BlockQuoteClassifier {
-	return BlockQuoteClassifier{}
-}
-
-// ClassifyingBlockQuote returns the AdmonitionType of a blockquote's first
-// line: an admonition word and a colon, or a comment holding only the word.
-// GitHub Alerts ([!NOTE], [!TIP], etc.) are handled by the GitHub Alerts
-// transformer instead.
-func (BlockQuoteClassifier) ClassifyingBlockQuote(literal string) AdmonitionType {
-	marker := syntax.AdmonitionMarker(literal)
-	if marker == "" {
-		return AdmonitionNone
-	}
-
-	if t, ok := colonAdmonitionTypes[syntax.AdmonitionWord(marker)]; ok {
+// ClassifyBlockQuote returns the AdmonitionType of a blockquote's first line
+// in the colon syntax: an admonition word and a colon, "Info: text", or a
+// comment holding only the word. GitHub Alerts ([!NOTE], [!TIP], etc.) are
+// handled by the GitHub Alerts transformer instead.
+func ClassifyBlockQuote(line string) AdmonitionType {
+	if t, ok := colonAdmonitionTypes[syntax.AdmonitionWord(line)]; ok {
 		return t
 	}
 	return AdmonitionNone
@@ -58,8 +43,6 @@ func (BlockQuoteClassifier) ClassifyingBlockQuote(literal string) AdmonitionType
 // GitHub alerts ("> [!NOTE]") are recognised by the GitHub Alerts transformer
 // instead.
 func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
-	var classifier BlockQuoteClassifier
-
 	switch first := node.FirstChild().(type) {
 	case nil:
 		return AdmonitionNone
@@ -68,34 +51,40 @@ func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
 		if len(lines) == 0 {
 			return AdmonitionNone
 		}
-		return classifier.ClassifyingBlockQuote(lines[0].Str(source))
+		return ClassifyBlockQuote(lines[0].Str(source))
 	default:
 		switch first.Kind() {
 		case ast.KindParagraph, ast.KindHeading, ctransformer.KindTextBlock:
 			var line strings.Builder
 			firstLine(first, source, &line)
-			return classifier.ClassifyingBlockQuote(line.String())
+			return ClassifyBlockQuote(line.String())
 		}
 	}
 
 	return AdmonitionNone
 }
 
+// opaque stands in the first line for inline content whose text is not read
+// as words -- code, an image's alt text, storage format -- so that a marker
+// after it does not open the line.
+const opaque = "\uFFFC"
+
 // firstLine writes the text of node's inline content up to its first line
-// break, and reports whether it reached one. Code is left out: it is not a
-// marker.
+// break, and reports whether it reached one.
 func firstLine(node ast.Node, source []byte, line *strings.Builder) bool {
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch n := child.(type) {
-		case *ast.CodeSpan:
-			continue
+		case *ast.CodeSpan, *ast.Image:
+			line.WriteString(opaque)
 		case *ast.Text:
 			line.WriteString(n.Value.Str(source))
 			if n.SoftLineBreak() || n.HardLineBreak() {
 				return true
 			}
 		case *ctransformer.String:
-			if !n.Code {
+			if n.Code {
+				line.WriteString(opaque)
+			} else {
 				line.Write(n.Value)
 			}
 		default:

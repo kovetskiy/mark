@@ -517,8 +517,8 @@ func listItem(marker, content string) string {
 // blockquote renders a blockquote -- as HTML when it opens with a marker mark
 // would publish it as a macro for, a colon marker or a GitHub alert's.
 func (c *converter) blockquote(n *node) string {
-	text := strings.TrimSpace(n.textContent())
-	if syntax.AdmonitionMarker(text) != "" || strings.HasPrefix(text, "[!") {
+	text := strings.TrimSpace(lineText(n))
+	if syntax.AdmonitionWord(text) != "" || strings.HasPrefix(text, "[!") {
 		return c.htmlBlock(n)
 	}
 
@@ -528,6 +528,28 @@ func (c *converter) blockquote(n *node) string {
 	}
 
 	return quote(inner)
+}
+
+// lineText is the node's text with a line break wherever the page breaks the
+// line, at a <br> or the end of a block. A colon marker is read off the first
+// line, and "Note:" alone above a list is one.
+func lineText(n *node) string {
+	if n.kind == textNode {
+		return n.text
+	}
+	if n.is("br") {
+		return "\n"
+	}
+
+	var b strings.Builder
+	for _, c := range n.children {
+		b.WriteString(lineText(c))
+	}
+	if isBlock(n) {
+		b.WriteString("\n")
+	}
+
+	return b.String()
 }
 
 func quote(text string) string {

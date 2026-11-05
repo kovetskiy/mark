@@ -109,10 +109,13 @@ func TestConvertBlockquoteMarkdownOnlyWithoutAMarker(t *testing.T) {
 	// a quote, so it is written as one.
 	assert.Equal(t, "> Note that this is a quote.\n", convert(t, "<blockquote><p>Note that this is a quote.</p></blockquote>"))
 
-	// With the colon, mark would publish a macro, so the quote stays HTML.
+	// With the colon, mark would publish a macro, so the quote stays HTML --
+	// also when the marker ends its line, at a <br> or the end of a paragraph.
 	for _, storage := range []string{
 		"<blockquote><p>Note: a marker</p></blockquote>",
 		"<blockquote><p><strong>Tip</strong>: a marker</p></blockquote>",
+		"<blockquote><p>Note:<br/>on its own line</p></blockquote>",
+		"<blockquote><p><strong>Notes:</strong></p><ul><li>one</li></ul></blockquote>",
 	} {
 		assert.Equal(t, storage+"\n", convert(t, storage))
 	}

@@ -164,8 +164,9 @@ The rule, exactly:
 * The word is matched in any case: `NOTE:` and `note:` are markers too.
 * The colon follows the word directly, and a space, a tab or the end of the
   line follows the colon. `Note : text` and `Note:text` are not markers.
-* Emphasis around the word does not matter: `**Note:**`, `**Note**:` and
-  `*Note:*` are all markers. Code does: `` `Note:` `` is not.
+* Emphasis or a link around the word does not matter: `**Note:**`,
+  `**Note**:` and `*Note:*` are all markers. Code does: `` `Note:` `` is
+  not.
 * The marker opens the first line of the blockquote's first paragraph or
   heading. A marker on a later line, or in a list inside the quote, does not
   count.
