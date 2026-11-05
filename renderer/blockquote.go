@@ -31,8 +31,8 @@ var colonAdmonitionTypes = map[string]AdmonitionType{
 // so its zero value is ready to use.
 type BlockQuoteClassifier struct{}
 
-// LegacyBlockQuoteClassifier returns the classifier for the colon syntax.
-func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
+// ColonBlockQuoteClassifier returns the classifier for the colon syntax.
+func ColonBlockQuoteClassifier() BlockQuoteClassifier {
 	return BlockQuoteClassifier{}
 }
 
