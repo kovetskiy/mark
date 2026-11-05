@@ -48,14 +48,14 @@ type Config struct {
 
 	// Format is FormatMark, or "", for a document mark publishes back, or
 	// FormatOKF for an Open Knowledge Format concept.
-	Format string
+	Format Format
 
 	// Metadata is how a FormatMark document spells the metadata that names
 	// its page: MetadataComments, or "", for HTML comment headers, or
 	// MetadataFrontMatter for YAML front matter, which mark publishes only
 	// with the frontmatter feature. FormatOKF writes front matter of its own
 	// and ignores it.
-	Metadata string
+	Metadata Metadata
 
 	// Generator is who an OKF concept says generated it, as
 	// <producer>/<version>; empty is "mark/unknown".
@@ -413,7 +413,7 @@ func headers(
 	space string,
 	doc *Document,
 	labels, declared []string,
-	spelling string,
+	spelling Metadata,
 ) (string, error) {
 	h := pageHeaders{Space: space, Title: page.Title, Labels: labels, Attachments: declared}
 

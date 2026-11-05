@@ -448,6 +448,15 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 
 	logFlags(cmd)
 
+	format, err := export.ParseFormat(cmd.String("format"))
+	if err != nil {
+		return fmt.Errorf("--format: %w", err)
+	}
+	spelling, err := export.ParseMetadata(cmd.String("metadata"))
+	if err != nil {
+		return fmt.Errorf("--metadata: %w", err)
+	}
+
 	config := mark.ExportConfig{
 		Connection: mark.ConnectionConfig{
 			BaseURL:               creds.BaseURL,
@@ -464,8 +473,8 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		AttachmentsDir: cmd.String("attachments-dir"),
 		Overwrite:      cmd.Bool("overwrite"),
 		NoAttachments:  cmd.Bool("no-attachments"),
-		Format:         cmd.String("format"),
-		Metadata:       cmd.String("metadata"),
+		Format:         format,
+		Metadata:       spelling,
 		Generator:      generator(cmd.Root().Version),
 
 		Stdout: os.Stdout,

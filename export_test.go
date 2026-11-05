@@ -869,11 +869,11 @@ func TestExportTreeWritesNothingItCannotFinish(t *testing.T) {
 // the parent it had, with no new pages and no attachment uploaded under a new
 // name.
 func TestExportTreeRoundTrip(t *testing.T) {
-	for spelling, features := range map[string][]string{
+	for spelling, features := range map[export.Metadata][]string{
 		export.MetadataComments:    {"mention"},
 		export.MetadataFrontMatter: {"mention", "frontmatter"},
 	} {
-		t.Run(spelling, func(t *testing.T) {
+		t.Run(string(spelling), func(t *testing.T) {
 			server, pages := exportTreeSpace(t)
 			out := filepath.Join(t.TempDir(), "guide")
 			_, err := ExportTree(context.Background(), ExportConfig{

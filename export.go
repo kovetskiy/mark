@@ -32,13 +32,13 @@ type ExportConfig struct {
 
 	// Format is export.FormatMark, or "", for documents mark publishes back,
 	// or export.FormatOKF for an Open Knowledge Format concept or bundle.
-	Format string
+	Format export.Format
 
 	// Metadata is how documents of export.FormatMark spell the metadata that
 	// names their page: export.MetadataComments, or "", for HTML comment
 	// headers, or export.MetadataFrontMatter for YAML front matter, which
 	// mark publishes only with the frontmatter feature.
-	Metadata string
+	Metadata export.Metadata
 
 	// Generator is who an OKF concept says generated it, as
 	// <producer>/<version>; empty is "mark/unknown".

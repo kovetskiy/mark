@@ -493,13 +493,13 @@ func exportFlags(config *configFile) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "format",
-			Value:   export.FormatMark,
+			Value:   string(export.FormatMark),
 			Usage:   "what to write: \"mark\", a document mark publishes back to the page, or \"okf\", an Open Knowledge Format concept, and with --recursive a bundle of them, for agents and knowledge catalogs to read.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FORMAT"), config.value("format")),
 		},
 		&cli.StringFlag{
 			Name:    "metadata",
-			Value:   export.MetadataComments,
+			Value:   string(export.MetadataComments),
 			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, or \"frontmatter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter). --format okf ignores it.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_METADATA"), config.value("metadata")),
 		},
