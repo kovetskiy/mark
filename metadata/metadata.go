@@ -654,8 +654,8 @@ type ExtractOptions struct {
 	// Space is the space for a document that names none itself.
 	Space string
 
-	// TitleFromH1 titles a document with no title header after its leading
-	// level-one heading.
+	// TitleFromH1 titles a document with no title of its own after its
+	// leading level-one heading.
 	TitleFromH1 bool
 
 	// TitleFromFilename titles a document with no title from either its
@@ -682,7 +682,9 @@ type ExtractOptions struct {
 
 // ExtractMeta reads a document's metadata from its headers or front matter,
 // filled in as opts asks, and returns it with the document's body. The
-// metadata is nil when the document has none and opts adds none.
+// metadata is nil when the document declares none and Space, TitleFromH1 and
+// TitleFromFilename are all unset; Parents, TitleAppendGeneratedHash and
+// ContentAppearance apply only to metadata that exists.
 func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	var meta *Meta
 
