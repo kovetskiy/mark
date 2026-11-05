@@ -10,8 +10,9 @@ import (
 // unset, so a go install or plain go build still names its release. A
 // pseudo-version already ends in the commit, so the commit is not repeated.
 func buildVersion(version, commit string, info *debug.BuildInfo) string {
-	// The Makefile passes "+dirty" on the commit, and an empty version or
-	// commit when git cannot name them, as in a source archive.
+	// The Makefile passes "+dirty" on the commit. An empty value, as
+	// "-X main.version=$(git describe)" gives where git names nothing, is
+	// taken as unset.
 	commit, flagDirty := strings.CutSuffix(commit, "+dirty")
 	if version == "" {
 		version = "dev"

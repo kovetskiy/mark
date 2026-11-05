@@ -3,8 +3,8 @@
 # bust the `COPY / .` layer whenever it changed.
 
 # Kept on purpose: without the VERSION and COMMIT build args, the Makefile
-# stamps the binary with `git describe --tags` and `git rev-parse HEAD`, which
-# need the repository.
+# stamps the binary with `git describe --tags --exact-match` and
+# `git rev-parse HEAD`, which need the repository.
 # .git
 
 # Build output and test leftovers.
