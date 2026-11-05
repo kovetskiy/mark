@@ -388,8 +388,8 @@ func expandIncludes(
 // CompileMarkdown compiles a document to Confluence storage format, and
 // returns the attachments its diagrams and formulas were drawn as.
 // opts.Browser and opts.Mermaid are supplied, and closed, by whoever creates
-// opts: the zero value compiles a document with no pictures, but fails at the
-// first mermaid diagram, or d2 diagram or formula published as PNG.
+// opts; left nil, compiling fails at the first mermaid diagram, or d2 diagram
+// or formula published as PNG.
 func CompileMarkdown(markdown []byte, stdlib *stdlib.Lib, path string, opts Options) (string, []attachment.Attachment, error) {
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
