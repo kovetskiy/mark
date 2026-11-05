@@ -18,15 +18,19 @@ type BlockQuoteClassifier struct {
 	patternMap map[string]*regexp.Regexp
 }
 
+// legacyPatterns is shared by every classifier LegacyBlockQuoteClassifier
+// returns: it is only read, and a Regexp is safe for concurrent use.
+var legacyPatterns = map[string]*regexp.Regexp{
+	"info": regexp.MustCompile(`(?i)^info`),
+	"note": regexp.MustCompile(`(?i)^note`),
+	"warn": regexp.MustCompile(`(?i)^warn`),
+	"tip":  regexp.MustCompile(`(?i)^tip`),
+}
+
+var legacyClassifier = LegacyBlockQuoteClassifier()
+
 func LegacyBlockQuoteClassifier() BlockQuoteClassifier {
-	return BlockQuoteClassifier{
-		patternMap: map[string]*regexp.Regexp{
-			"info": regexp.MustCompile(`(?i)^info`),
-			"note": regexp.MustCompile(`(?i)^note`),
-			"warn": regexp.MustCompile(`(?i)^warn`),
-			"tip":  regexp.MustCompile(`(?i)^tip`),
-		},
-	}
+	return BlockQuoteClassifier{patternMap: legacyPatterns}
 }
 
 // ClassifyingBlockQuote compares a string against a set of patterns and returns its AdmonitionType.
@@ -57,7 +61,6 @@ func (classifier BlockQuoteClassifier) ClassifyingBlockQuote(literal string) Adm
 // the GitHub Alerts transformer instead.
 func ParseBlockQuoteType(node ast.Node, source []byte) AdmonitionType {
 	var t = AdmonitionNone
-	var legacyClassifier = LegacyBlockQuoteClassifier()
 
 	countParagraphs := 0
 	_ = ast.Walk(node, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
