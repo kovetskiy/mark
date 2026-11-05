@@ -257,14 +257,20 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "mermaid-output",
 			Value:   "png",
-			Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
+			Usage:   "image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale), svg (vector and sharp at any zoom, where the instance displays an SVG attachment, and the one --mermaid-bundle applies to), or macro (the diagram's source is published as a Confluence macro the instance's own Mermaid plugin draws; --mermaid-engine and --mermaid-scale have no effect with it, and --mermaid-bundle is refused).",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_OUTPUT"), config.value("mermaid-output")),
 		},
 		&cli.BoolFlag{
 			Name:    "mermaid-bundle",
 			Value:   false,
-			Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg.",
+			Usage:   "keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg, and is refused with png or macro.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), config.value("mermaid-bundle")),
+		},
+		&cli.StringFlag{
+			Name:    "mermaid-macro-name",
+			Value:   mermaid.DefaultMacroName,
+			Usage:   "the ac:name of the Confluence macro a diagram is published as with --mermaid-output=macro. Only meaningful with that output, where it names the macro: surrounding space is ignored, and a blank name is refused.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_MACRO_NAME"), config.value("mermaid-macro-name")),
 		},
 		&cli.StringFlag{
 			Name:    "math-output",
@@ -722,10 +728,15 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		}
 	}
 
-	outputs, err := imageOutputs(command)
+	if _, err := imageOutputs(command); err != nil {
+		return context, err
+	}
+
+	output, err := mermaidOutput(command)
 	if err != nil {
 		return context, err
 	}
+	draws := output.Draws()
 
 	// A scale of zero renders nothing and a negative one renders nonsense, and
 	// both reach Chrome as a screenshot request that fails somewhere further in
@@ -735,8 +746,12 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	//
 	// The same for mermaid and math. Zero is refused on the command line even
 	// though a library Config reads it as the default: a flag nobody set never
-	// reaches here, so a zero is one somebody typed, and it is no scale.
+	// reaches here, so a zero is one somebody typed, and it is no scale. With
+	// the macro output nothing is drawn, so a mermaid scale is unused.
 	for _, name := range []string{"d2-scale", "mermaid-scale", "math-scale"} {
+		if name == "mermaid-scale" && !draws {
+			continue
+		}
 		if scale := command.Float(name); command.IsSet(name) && !rendercheck.IsScale(scale) {
 			return context, fmt.Errorf(
 				"invalid value for --%s: %v (expected: a finite number greater than 0)",
@@ -753,27 +768,65 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	//
 	// The scale is not checked against the format: it applies to both,
 	// multiplying the pixels of a PNG and the size the page shows an SVG at.
-	if outputs["mermaid-output"] == imageformat.PNG && command.Bool("mermaid-bundle") {
-		return context, errors.New(
-			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
-		)
+	if command.Bool("mermaid-bundle") {
+		switch output {
+		case mermaid.OutputSVG:
+			// ok
+		case mermaid.OutputMacro:
+			return context, errors.New(
+				"--mermaid-bundle needs --mermaid-output=svg: the macro publishes the diagram's source itself",
+			)
+		default:
+			return context, errors.New(
+				"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
+			)
+		}
 	}
 
-	// Checked as written, and asked of IsSet as well, so that a value somebody
-	// emptied is not read as one nobody set.
-	mermaidEngine := command.String("mermaid-engine")
-	if mermaid.CheckEngine(mermaid.EngineKind(mermaidEngine)) != nil || (mermaidEngine == "" && command.IsSet("mermaid-engine")) {
-		return context, fmt.Errorf(
-			"invalid value for --mermaid-engine: %q (expected: %s or %s)",
-			mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
-		)
+	// With the macro output nothing is drawn, so an engine's value is unused.
+	// Asked of IsSet as well, so that a value somebody emptied is not read as
+	// one nobody set.
+	if draws {
+		mermaidEngine := command.String("mermaid-engine")
+		if mermaid.CheckEngine(mermaid.EngineKind(mermaidEngine)) != nil || (mermaidEngine == "" && command.IsSet("mermaid-engine")) {
+			return context, fmt.Errorf(
+				"invalid value for --mermaid-engine: %q (expected: %s or %s)",
+				mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
+			)
+		}
+	}
+
+	// A blank name is refused only where the macro output would use it.
+	if !draws && command.IsSet("mermaid-macro-name") && strings.TrimSpace(command.String("mermaid-macro-name")) == "" {
+		return context, errors.New("--mermaid-macro-name must not be blank")
 	}
 
 	return context, nil
 }
 
-// imageOutputFlags pick the image each kind of picture is published as.
-var imageOutputFlags = []string{"mermaid-output", "d2-output", "math-output"}
+// mermaidOutput reads --mermaid-output once, so that the value the check
+// accepts is the value published. The empty string a command without the flag
+// carries means the zero value, and PNG.
+func mermaidOutput(command *cli.Command) (mermaid.Output, error) {
+	value := command.String("mermaid-output")
+	if value == "" && !command.IsSet("mermaid-output") {
+		return "", nil
+	}
+
+	output, err := mermaid.ParseOutput(value)
+	if err != nil {
+		return "", fmt.Errorf(
+			"invalid value for --mermaid-output: %q (expected: png, svg or macro)",
+			value,
+		)
+	}
+
+	return output, nil
+}
+
+// imageOutputFlags pick the image each kind of picture is published as, apart
+// from mermaid, whose output may be the macro as well.
+var imageOutputFlags = []string{"d2-output", "math-output"}
 
 // imageOutputs reads each of imageOutputFlags once, trimmed and lowercased, so
 // that the value the check accepts is the value published.
