@@ -175,14 +175,27 @@ func publishFlagHint(flags []cli.Flag) cli.OnUsageErrorFunc {
 
 // closestCommand is the name of root's command that name is a typo of, or "".
 func closestCommand(root *cli.Command, name string) string {
+	var names []string
 	for _, command := range root.VisibleCommands() {
-		for _, candidate := range command.Names() {
-			if len(candidate) >= 3 && editDistance(name, candidate) <= max(1, len(candidate)/3) {
-				return candidate
-			}
+		names = append(names, command.Names()...)
+	}
+	return closest(name, names)
+}
+
+// closest is the candidate that name is a typo of, or "": the nearest one
+// within a third of its length, the first of those equally near.
+func closest(name string, candidates []string) string {
+	best, distance := "", 0
+	for _, candidate := range candidates {
+		if len(candidate) < 3 {
+			continue
+		}
+		d := editDistance(name, candidate)
+		if d <= max(1, len(candidate)/3) && (best == "" || d < distance) {
+			best, distance = candidate, d
 		}
 	}
-	return ""
+	return best
 }
 
 // editDistance is the Levenshtein distance between a and b.
