@@ -12,13 +12,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/imageformat"
+	"github.com/kovetskiy/mark/v17/internal/lazy"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/mod/semver"
 )
@@ -49,10 +49,8 @@ const (
 // Whoever creates one closes it. It is safe for concurrent use; a nil Engine
 // refuses to draw.
 type Engine struct {
-	mu       sync.Mutex
 	kind     EngineKind
-	renderer mermaid.Renderer
-	closed   bool
+	renderer *lazy.Lazy[mermaid.Renderer]
 }
 
 // ErrNoEngine is what drawing asks of a nil *Engine: the caller drew a diagram
@@ -77,7 +75,10 @@ func NewEngine(kind EngineKind) (*Engine, error) {
 		)
 	}
 
-	return &Engine{kind: kind}, nil
+	e := &Engine{kind: kind}
+	e.renderer = lazy.New(e.start, mermaid.Renderer.Cancel, errClosed)
+
+	return e, nil
 }
 
 // CheckEngine refuses an engine kind NewEngine would not know, without making
@@ -100,15 +101,7 @@ func (e *Engine) Close() {
 		return
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.renderer != nil {
-		e.renderer.Cancel()
-		e.renderer = nil
-	}
-
-	e.closed = true
+	e.renderer.Close()
 }
 
 // renderTimeout bounds a single diagram: the wait for any render already
@@ -141,24 +134,11 @@ const uncapDiagramWidth = `mermaid.initialize(Object.assign({startOnLoad: false}
 		.filter(([, section]) => section && typeof section === "object" && "useMaxWidth" in section)
 		.map(([name]) => [name, {useMaxWidth: false}]))))`
 
-func (e *Engine) get() (mermaid.Renderer, error) {
-	if e == nil {
-		return nil, ErrNoEngine
-	}
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.closed {
-		return nil, errClosed
-	}
-
-	if e.renderer != nil {
-		return e.renderer, nil
-	}
-
+// start launches the renderer of e's kind, to live as long as life, which
+// Close cancels.
+func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 	if e.kind == EngineMerman {
-		return e.startMerman()
+		return startMerman(life)
 	}
 
 	log.Debug().Msg("Setting up Mermaid renderer")
@@ -171,7 +151,7 @@ func (e *Engine) get() (mermaid.Renderer, error) {
 	// startup, so it deliberately carries no deadline: mermaid.go bounds loading
 	// the embedded bundle with DefaultStartupTimeout by itself, whereas a
 	// deadline here would close the browser mid-run.
-	engine, err := mermaid.NewRenderEngine(context.Background(), []string{uncapDiagramWidth}, chrome.AllocatorOptions()...)
+	engine, err := mermaid.NewRenderEngine(life, []string{uncapDiagramWidth}, chrome.AllocatorOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +170,7 @@ func (e *Engine) get() (mermaid.Renderer, error) {
 		log.Error().Err(err).Msg("Chrome crashed while rendering Mermaid diagrams")
 	})
 
-	e.renderer = engine
-	return e.renderer, nil
+	return engine, nil
 }
 
 // minimumMermanVersion is merman-version.txt as the binary carries it. Read
@@ -245,15 +224,15 @@ func checkMermanVersion(version string) error {
 	return nil
 }
 
-// startMerman builds the CLI-backed engine. Called with e.mu held.
+// startMerman builds the CLI-backed engine, to live as long as life.
 //
 // The binary is looked for and asked what it is while the engine is being
 // built, so a merman that is missing or too old is reported here -- naming the
 // setting that asked for it -- rather than as a diagram that would not draw.
-func (e *Engine) startMerman() (mermaid.Renderer, error) {
+func startMerman(life context.Context) (mermaid.Renderer, error) {
 	log.Debug().Msg("Setting up Mermaid renderer (merman)")
 
-	engine, err := mermaid.NewMermanEngine(context.Background())
+	engine, err := mermaid.NewMermanEngine(life)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"unable to start the merman render engine asked for by --mermaid-engine: %w", err,
@@ -270,28 +249,16 @@ func (e *Engine) startMerman() (mermaid.Renderer, error) {
 
 	engine.SetRenderTimeout(renderTimeout)
 
-	e.renderer = engine
-
-	return e.renderer, nil
+	return engine, nil
 }
 
 // discard drops engine from e and closes it, so that the next diagram launches
-// a new one. It leaves e alone when e has already moved on, so that a second
-// diagram failing against the same dead engine cannot tear down the
-// replacement the first one built. It returns err, marked with errClosed when
-// e has been closed, since then the failure was Close cancelling the render,
-// not a crash.
+// a new one, and returns err, marked with errClosed when e has been closed,
+// since then the failure was Close cancelling the render, not a crash.
 func (e *Engine) discard(engine mermaid.Renderer, err error) error {
-	e.mu.Lock()
-	if e.renderer == engine {
-		e.renderer = nil
-	}
-	closed := e.closed
-	e.mu.Unlock()
+	e.renderer.Discard(engine)
 
-	engine.Cancel()
-
-	if closed {
+	if e.renderer.Closed() {
 		return fmt.Errorf("%w: %w", errClosed, err)
 	}
 
@@ -302,15 +269,28 @@ func (e *Engine) discard(engine mermaid.Renderer, err error) error {
 // sentinel errors whether the engine survived the failure and whether another
 // attempt is worth making. What to render with it is left to the caller, since
 // a PNG and an SVG differ in nothing else.
+//
+// Unlike chrome.Browser, which discards its browser on any failed render, the
+// engine is kept when the render is cancelled or times out, since that aborts
+// only the render's own commands, and when the diagram is at fault. It is
+// discarded on a crash, or on a failure nothing explains.
 func (e *Engine) render(ctx context.Context, title string, once func(ctx context.Context, engine mermaid.Renderer) error) error {
+	if e == nil {
+		return ErrNoEngine
+	}
+
 	// Before an engine is started, which launches a browser.
 	if ctx.Err() != nil {
 		return fmt.Errorf("mermaid rendering stopped: %w", context.Cause(ctx))
 	}
 
 	for attempt := 1; ; attempt++ {
-		engine, err := e.get()
+		engine, err := e.renderer.Get(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("mermaid rendering stopped: %w", err)
+			}
+
 			return err
 		}
 

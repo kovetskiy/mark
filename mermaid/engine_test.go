@@ -10,6 +10,7 @@ import (
 
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v17/imageformat"
+	"github.com/kovetskiy/mark/v17/internal/lazy"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +78,8 @@ func TestChoosingChromeSaysNothing(t *testing.T) {
 func TestEngineStartsOnlyWhenUsed(t *testing.T) {
 	engine, _ := useEngine(t, EngineChrome)
 
-	assert.Nil(t, engine.renderer)
+	_, started := engine.renderer.Peek()
+	assert.False(t, started)
 }
 
 // TestEndedRenderStartsNoEngine: a render whose context has already ended
@@ -90,7 +92,9 @@ func TestEndedRenderStartsNoEngine(t *testing.T) {
 
 	_, err := engine.Render(ctx, "d", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Nil(t, engine.renderer)
+
+	_, started := engine.renderer.Peek()
+	assert.False(t, started)
 }
 
 // TestNilEngineSaysSo covers a caller that turned diagrams on without giving
@@ -126,7 +130,9 @@ func (r *closingRenderer) Cancel() {}
 func TestCloseDuringARenderIsNotACrash(t *testing.T) {
 	engine, _ := useEngine(t, EngineChrome)
 	renderer := &closingRenderer{engine: engine}
-	engine.renderer = renderer
+	engine.renderer = lazy.New(func(context.Context) (mermaid.Renderer, error) {
+		return renderer, nil
+	}, mermaid.Renderer.Cancel, errClosed)
 
 	var logged bytes.Buffer
 

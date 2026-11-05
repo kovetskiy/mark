@@ -67,14 +67,14 @@ func TestExtractMermaidImage(t *testing.T) {
 // therefore kept: before mermaid.go classified its failures, every bad diagram
 // in a run tore Chrome down and made the next one pay a relaunch.
 func TestInvalidDiagramKeepsEngine(t *testing.T) {
-	before, err := engine.get()
+	before, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 
 	_, err = engine.Render(context.Background(), "invalid", []byte("this is not a mermaid diagram"), Options{Scale: 1.0})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, mermaid.ErrRenderException)
 
-	after, err := engine.get()
+	after, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 	assert.Same(t, before, after)
 }
@@ -131,7 +131,7 @@ func TestPNGBoundsMeasureWhatIsCaptured(t *testing.T) {
 // for the next diagram. A small diagram at a large scale is the cheapest way to
 // ask for far too much.
 func TestOversizedPNGIsRefusedAndKeepsEngine(t *testing.T) {
-	before, err := engine.get()
+	before, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 
 	_, err = engine.Render(context.Background(), "huge", []byte("graph TD;\n A-->B;"), Options{Scale: 1000})
@@ -139,7 +139,7 @@ func TestOversizedPNGIsRefusedAndKeepsEngine(t *testing.T) {
 	assert.ErrorIs(t, err, chrome.ErrRasterRefused)
 	assert.Contains(t, err.Error(), "lower the scale")
 
-	after, err := engine.get()
+	after, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 	assert.Same(t, before, after)
 }
@@ -181,7 +181,7 @@ func TestScaleRefusesWhatIsNotAScale(t *testing.T) {
 // here: the context one bounds the wait for a turn on the page, the engine one
 // bounds the render itself.
 func TestRenderTimeoutKeepsEngine(t *testing.T) {
-	before, err := engine.get()
+	before, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 
 	original := renderTimeout
@@ -199,7 +199,7 @@ func TestRenderTimeoutKeepsEngine(t *testing.T) {
 	renderTimeout = original
 	before.SetRenderTimeout(original)
 
-	after, err := engine.get()
+	after, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 	assert.Same(t, before, after)
 
@@ -211,7 +211,7 @@ func TestRenderTimeoutKeepsEngine(t *testing.T) {
 // TestRenderStoppedByTheCallerKeepsEngine: a render whose context the caller
 // ended fails with that, and leaves the engine for the next diagram.
 func TestRenderStoppedByTheCallerKeepsEngine(t *testing.T) {
-	before, err := engine.get()
+	before, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -220,7 +220,7 @@ func TestRenderStoppedByTheCallerKeepsEngine(t *testing.T) {
 	_, err = engine.Render(ctx, "stopped", []byte("graph TD;\n A-->B;"), Options{})
 	require.ErrorIs(t, err, context.Canceled)
 
-	after, err := engine.get()
+	after, err := engine.renderer.Get(t.Context())
 	require.NoError(t, err)
 	assert.Same(t, before, after)
 }

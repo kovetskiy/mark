@@ -11,6 +11,7 @@ import (
 
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/chromedp"
+	"github.com/kovetskiy/mark/v17/internal/lazy"
 )
 
 // renderTimeout bounds one screenshot. Starting the browser is not part of it:
@@ -55,65 +56,56 @@ var errClosed = errors.New("the browser has been closed")
 // the browser's one tab, so they take turns in it.
 type Browser struct {
 	// render is held from navigating to capturing, so that no render sees the
-	// page another one loaded. It is taken before mu, never while holding it.
-	render sync.Mutex
-	mu     sync.Mutex
+	// page another one loaded.
+	render  sync.Mutex
+	session *lazy.Lazy[*session]
+}
+
+// session is one running browser: the context chromedp drives it through, and
+// what shuts it down.
+type session struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	closed bool
 }
 
 // NewBrowser returns a Browser that has not started yet.
 func NewBrowser() *Browser {
-	return &Browser{}
+	return &Browser{
+		session: lazy.New(startSession, func(s *session) { s.cancel() }, errClosed),
+	}
 }
 
-// start returns the browser's context, starting it on first use. It is not
-// exported because every render navigates the one tab: only PNGFromSVG, holding
-// b.render, may use it.
-func (b *Browser) start() (context.Context, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if b.closed {
-		return nil, errClosed
-	}
-
-	if b.ctx != nil {
-		if b.ctx.Err() == nil {
-			return b.ctx, nil
-		}
-
-		// chromedp cancels this exact context when it loses the connection to
-		// the browser, so a context that is done means Chrome has died. Handed
-		// out again, every render after it would fail with a bare "context
-		// canceled" that names neither the browser nor the crash, so it is
-		// replaced instead, as the mermaid engine does for itself.
-		b.discard()
-	}
-
+// startSession launches a browser that lives as long as life, which Close
+// cancels.
+func startSession(life context.Context) (*session, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:], AllocatorOptions()...)
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(life, opts...)
 	ctx, cancel := chromedp.NewContext(allocCtx)
+
+	stop := func() {
+		cancel()
+		allocCancel()
+	}
 
 	// Bounded, but not by giving the browser a context that expires: the
 	// browser has to outlive its own startup.
 	started := make(chan error, 1)
 	go func() { started <- chromedp.Do(ctx) }()
 
+	timer := time.NewTimer(startupTimeout)
+	defer timer.Stop()
+
 	select {
 	case err := <-started:
 		if err != nil {
-			cancel()
-			allocCancel()
+			stop()
 
 			return nil, err
 		}
 
-	case <-time.After(startupTimeout):
-		cancel()
-		allocCancel()
+	case <-timer.C:
+		stop()
 
 		return nil, fmt.Errorf(
 			"the browser did not finish starting within %s; "+
@@ -123,57 +115,55 @@ func (b *Browser) start() (context.Context, error) {
 		)
 	}
 
-	b.ctx = ctx
-	b.cancel = func() {
-		cancel()
-		allocCancel()
-	}
-
-	return b.ctx, nil
+	return &session{ctx: ctx, cancel: stop}, nil
 }
 
-// discard shuts the current browser down, leaving the next render to start
-// another. The caller holds b.mu.
-func (b *Browser) discard() {
-	if b.cancel != nil {
-		b.cancel()
-		b.ctx = nil
-		b.cancel = nil
+// start returns a running browser, starting one if there is none. It is not
+// exported because every render navigates the one tab: only PNGFromSVG,
+// holding b.render, may use it.
+func (b *Browser) start(ctx context.Context) (*session, error) {
+	s, err := b.session.Get(ctx)
+	if err != nil {
+		return nil, err
 	}
+
+	if s.ctx.Err() == nil {
+		return s, nil
+	}
+
+	// chromedp cancels this exact context when it loses the connection to the
+	// browser, so a context that is done means Chrome has died. Handed out
+	// again, every render after it would fail with a bare "context canceled"
+	// that names neither the browser nor the crash.
+	b.session.Discard(s)
+
+	return b.session.Get(ctx)
 }
 
-// failed discards the browser ctx belongs to, unless another render has
-// already replaced it, and returns the render's err. A render Close
-// interrupted is said to be Close's doing, rather than a bare "context
-// canceled".
-func (b *Browser) failed(ctx context.Context, err error) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// failed discards the browser s, unless another render has already replaced
+// it, and returns the render's err. Unlike the mermaid engine, which keeps its
+// engine through a timeout, a browser that failed any render is not trusted
+// for the next one: the usual cause is that it died, and every later render
+// would fail the same way. A render Close interrupted is said to be Close's
+// doing, rather than a bare "context canceled".
+func (b *Browser) failed(s *session, err error) error {
+	b.session.Discard(s)
 
-	if b.ctx == ctx {
-		b.discard()
-	}
-
-	if b.closed {
+	if b.session.Closed() {
 		return fmt.Errorf("%w: %w", errClosed, err)
 	}
 
 	return err
 }
 
-// Close shuts the browser down for good. A Browser that never rendered
-// anything has nothing to shut down, and closing twice, or closing nil, is
-// harmless.
+// Close shuts the browser down for good. A Browser that never rendered anything has nothing
+// to shut down, and closing twice, or closing nil, is harmless.
 func (b *Browser) Close() {
 	if b == nil {
 		return
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.discard()
-	b.closed = true
+	b.session.Close()
 }
 
 // PNGFromSVG rasterises an SVG by loading it in the browser and screenshotting
@@ -200,14 +190,14 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 	b.render.Lock()
 	defer b.render.Unlock()
 
-	browserCtx, err := b.start()
+	browser, err := b.start(ctx)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
 	// Derived from the browser's context, since chromedp runs in the one it
 	// is given, and ended with the caller's too.
-	runCtx, cancel := context.WithTimeout(browserCtx, renderTimeout)
+	runCtx, cancel := context.WithTimeout(browser.ctx, renderTimeout)
 	defer cancel()
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
@@ -226,10 +216,7 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 	}
 
 	if err != nil {
-		// A browser that failed a run is not trusted for the next one: the
-		// usual cause is that it died, and every later render would fail the
-		// same way until something restarted it.
-		return nil, 0, 0, b.failed(browserCtx, stoppedBy(ctx, err))
+		return nil, 0, 0, b.failed(browser, stoppedBy(ctx, err))
 	}
 
 	// Not a browser fault, so the browser is kept: the next diagram in the
@@ -240,7 +227,7 @@ func (b *Browser) PNGFromSVG(ctx context.Context, svg []byte, selector string, s
 
 	result, err := chromedp.Run(runCtx, chromedp.ScreenshotScale(chromedp.JSPath(selector), scale))
 	if err != nil {
-		return nil, 0, 0, b.failed(browserCtx, stoppedBy(ctx, err))
+		return nil, 0, 0, b.failed(browser, stoppedBy(ctx, err))
 	}
 
 	return result, model.Width, model.Height, nil

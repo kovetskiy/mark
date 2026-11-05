@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovetskiy/mark/v17/internal/lazy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,23 +128,21 @@ func TestStartReplacesADeadBrowser(t *testing.T) {
 	browser := NewBrowser()
 	t.Cleanup(browser.Close)
 
-	first, err := browser.start()
+	first, err := browser.start(t.Context())
 	require.NoError(t, err)
-	require.NoError(t, first.Err())
+	require.NoError(t, first.ctx.Err())
 
 	// What losing the browser looks like from in here: the context is
 	// cancelled, and nothing tidies the Browser up, because whatever died did
 	// not go through Close.
-	browser.mu.Lock()
-	browser.cancel()
-	browser.mu.Unlock()
+	first.cancel()
 
-	require.Error(t, first.Err(), "the shared context is done")
+	require.Error(t, first.ctx.Err(), "the shared context is done")
 
-	second, err := browser.start()
+	second, err := browser.start(t.Context())
 	require.NoError(t, err)
 
-	assert.NoError(t, second.Err(), "a live browser rather than the dead one")
+	assert.NoError(t, second.ctx.Err(), "a live browser rather than the dead one")
 	assert.NotSame(t, first, second)
 }
 
@@ -153,10 +152,10 @@ func TestStartReturnsTheSameLiveBrowser(t *testing.T) {
 	browser := NewBrowser()
 	t.Cleanup(browser.Close)
 
-	first, err := browser.start()
+	first, err := browser.start(t.Context())
 	require.NoError(t, err)
 
-	second, err := browser.start()
+	second, err := browser.start(t.Context())
 	require.NoError(t, err)
 
 	assert.Same(t, first, second)
@@ -166,32 +165,38 @@ func TestBrowserStartsOnlyWhenUsed(t *testing.T) {
 	browser := NewBrowser()
 	browser.Close()
 
-	assert.Nil(t, browser.ctx, "closing a browser nothing used starts nothing")
+	_, started := browser.session.Peek()
+	assert.False(t, started, "closing a browser nothing used starts nothing")
 }
 
 func TestClosedBrowserRefusesToRender(t *testing.T) {
 	browser := NewBrowser()
 	browser.Close()
 
-	_, err := browser.start()
-	assert.Error(t, err)
+	_, err := browser.start(t.Context())
+	assert.ErrorIs(t, err, errClosed)
 }
 
 // TestRenderInterruptedByCloseSaysSo: Close cancels the context a render in
 // flight is using, and the failure that render returns should name Close
 // rather than read as a bare "context canceled".
 func TestRenderInterruptedByCloseSaysSo(t *testing.T) {
-	browser := NewBrowser()
 	ctx, cancel := context.WithCancel(context.Background())
-	browser.ctx, browser.cancel = ctx, cancel
+	running := &session{ctx: ctx, cancel: cancel}
 
-	assert.Equal(t, context.DeadlineExceeded, browser.failed(ctx, context.DeadlineExceeded),
+	browser := &Browser{session: lazy.New(func(context.Context) (*session, error) {
+		return running, nil
+	}, func(s *session) { s.cancel() }, errClosed)}
+
+	s, err := browser.start(t.Context())
+	require.NoError(t, err)
+
+	assert.Equal(t, context.DeadlineExceeded, browser.failed(s, context.DeadlineExceeded),
 		"a failure Close had no part in is returned as it is")
 
-	browser.ctx, browser.cancel = ctx, cancel
 	browser.Close()
 
-	err := browser.failed(ctx, context.Canceled)
+	err = browser.failed(s, context.Canceled)
 	require.ErrorIs(t, err, errClosed)
 	assert.ErrorIs(t, err, context.Canceled)
 }
