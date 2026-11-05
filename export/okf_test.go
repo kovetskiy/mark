@@ -1,7 +1,9 @@
 package export
 
 import (
+	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -94,5 +96,45 @@ func TestOKFFrontMatterReadsBack(t *testing.T) {
 			}
 			assert.Equal(t, want, got, out)
 		})
+	}
+}
+
+// okfConcept.frontMatter writes what yaml.v3 writes for every field of the
+// struct, filled and empty, so that a field added to it and not to the writer
+// fails here.
+func TestOKFFrontMatterMatchesYAMLEncoder(t *testing.T) {
+	var full okfConcept
+	fill(reflect.ValueOf(&full).Elem())
+	for name, concept := range map[string]okfConcept{"full": full, "empty": {}} {
+		t.Run(name, func(t *testing.T) {
+			var want bytes.Buffer
+			encoder := yaml.NewEncoder(&want)
+			encoder.SetIndent(2)
+			require.NoError(t, encoder.Encode(concept))
+			require.NoError(t, encoder.Close())
+
+			got, err := concept.frontMatter()
+			require.NoError(t, err)
+			assert.Equal(t, "---\n"+want.String()+"---\n", got)
+		})
+	}
+}
+
+// fill gives every string under v a value and every slice two elements.
+func fill(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString("value")
+	case reflect.Slice:
+		v.Set(reflect.MakeSlice(v.Type(), 2, 2))
+		for i := range v.Len() {
+			fill(v.Index(i))
+		}
+	case reflect.Struct:
+		for i := range v.NumField() {
+			fill(v.Field(i))
+		}
+	default:
+		panic("fill: no value for " + v.Type().String())
 	}
 }
