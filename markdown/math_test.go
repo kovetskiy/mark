@@ -1,4 +1,4 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/attachment"
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
@@ -16,13 +16,13 @@ import (
 // compileMath compiles with the vector format, which every test that is not
 // about the format itself should use: it is the same storage format either way,
 // and it does not start a browser.
-func compileMath(t *testing.T, markdown string, features ...string) (string, []attachment.Attachment, error) {
+func compileMath(t *testing.T, source string, features ...string) (string, []attachment.Attachment, error) {
 	t.Helper()
 
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	return mark.CompileMarkdown([]byte(markdown), lib, "testdata/test.md", types.MarkConfig{
+	return markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", types.MarkConfig{
 		Features:   features,
 		MathFormat: "svg",
 	})
@@ -127,8 +127,8 @@ func TestMathPNGFormat(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	actual, attachments, err := mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
-		types.MarkConfig{Browser: mark.TestBrowser, Features: []string{"math"}, MathScale: 2})
+	actual, attachments, err := markdown.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
+		types.MarkConfig{Browser: markdown.TestBrowser, Features: []string{"math"}, MathScale: 2})
 	require.NoError(t, err)
 	assertWellFormed(t, actual)
 
@@ -147,7 +147,7 @@ func TestMathRejectsAnUnknownFormat(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	_, _, err = mark.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
+	_, _, err = markdown.CompileMarkdown([]byte("An $E = mc^2$ formula.\n"), lib, "testdata/test.md",
 		types.MarkConfig{Features: []string{"math"}, MathFormat: "jpeg"})
 	require.Error(t, err)
 

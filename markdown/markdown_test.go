@@ -1,4 +1,4 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
@@ -24,7 +24,7 @@ func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
 	testname := strings.TrimSuffix(basename, ".md")
 	htmlname := filepath.Join(filepath.Dir(filename), testname+variant+".html")
 
-	markdown, err := os.ReadFile(filename)
+	source, err := os.ReadFile(filename)
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +33,7 @@ func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
 		panic(err)
 	}
 
-	return markdown, htmlname, html
+	return source, htmlname, html
 }
 
 func TestCompileMarkdown(t *testing.T) {
@@ -58,17 +58,17 @@ func TestCompileMarkdown(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		markdown, htmlname, html := loadData(t, filename, "")
+		source, htmlname, html := loadData(t, filename, "")
 
 		var body []byte
 		if filename == "testdata/frontmatter.md" {
 			var err error
-			_, body, err = metadata.ExtractMeta(markdown, metadata.ExtractOptions{FrontMatter: true})
+			_, body, err = metadata.ExtractMeta(source, metadata.ExtractOptions{FrontMatter: true})
 			if err != nil {
 				panic(err)
 			}
 		} else {
-			body = markdown
+			body = source
 		}
 
 		cfg := types.MarkConfig{
@@ -79,7 +79,7 @@ func TestCompileMarkdown(t *testing.T) {
 			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := mark.CompileMarkdown(body, lib, filename, cfg)
+		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 	}
 }
@@ -112,17 +112,17 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		default:
 			variant = ""
 		}
-		markdown, htmlname, html := loadData(t, filename, variant)
+		source, htmlname, html := loadData(t, filename, variant)
 
 		var body []byte
 		if filename == "testdata/frontmatter.md" {
 			var err error
-			_, body, err = metadata.ExtractMeta(markdown, metadata.ExtractOptions{FrontMatter: true})
+			_, body, err = metadata.ExtractMeta(source, metadata.ExtractOptions{FrontMatter: true})
 			if err != nil {
 				panic(err)
 			}
 		} else {
-			body = markdown
+			body = source
 		}
 
 		cfg := types.MarkConfig{
@@ -133,7 +133,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := mark.CompileMarkdown(body, lib, filename, cfg)
+		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
@@ -168,17 +168,17 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			variant = ""
 		}
 
-		markdown, htmlname, html := loadData(t, filename, variant)
+		source, htmlname, html := loadData(t, filename, variant)
 
 		var body []byte
 		if filename == "testdata/frontmatter.md" {
 			var err error
-			_, body, err = metadata.ExtractMeta(markdown, metadata.ExtractOptions{FrontMatter: true})
+			_, body, err = metadata.ExtractMeta(source, metadata.ExtractOptions{FrontMatter: true})
 			if err != nil {
 				panic(err)
 			}
 		} else {
-			body = markdown
+			body = source
 		}
 
 		cfg := types.MarkConfig{
@@ -189,7 +189,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 			Features:      []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := mark.CompileMarkdown(body, lib, filename, cfg)
+		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
@@ -210,7 +210,7 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 		panic(err)
 	}
 
-	markdown, _, html := loadData(t, "testdata/plantuml.md", "-nofeature")
+	source, _, html := loadData(t, "testdata/plantuml.md", "-nofeature")
 
 	cfg := types.MarkConfig{
 		MermaidScale:  1.0,
@@ -220,7 +220,7 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 		Features:      []string{"mkdocsadmonitions", "mention"},
 	}
 
-	actual, _, _ := mark.CompileMarkdown(markdown, lib, "testdata/plantuml.md", cfg)
+	actual, _, _ := markdown.CompileMarkdown(source, lib, "testdata/plantuml.md", cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
 }
 
@@ -240,7 +240,7 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 	}
 
 	const fixture = "testdata/inline-link-card.md"
-	markdown, htmlname, html := loadData(t, fixture, "-inlinecard")
+	source, htmlname, html := loadData(t, fixture, "-inlinecard")
 
 	cfg := types.MarkConfig{
 		MermaidScale:  1.0,
@@ -250,7 +250,7 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 		Features:      []string{"mkdocsadmonitions", "mention", "inline-link-card"},
 	}
 
-	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
@@ -275,7 +275,7 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 	}
 
 	const fixture = "testdata/emoji.md"
-	markdown, htmlname, html := loadData(t, fixture, "-confluence")
+	source, htmlname, html := loadData(t, fixture, "-confluence")
 
 	cfg := types.MarkConfig{
 		MermaidScale:  1.0,
@@ -285,7 +285,7 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 		Features:      []string{"mkdocsadmonitions", "mention", "emoji"},
 	}
 
-	actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+	actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
@@ -328,7 +328,7 @@ func TestCompileMarkdownMath(t *testing.T) {
 			}
 
 			const fixture = "testdata/math.md"
-			markdown, htmlname, html := loadData(t, fixture, tt.variant)
+			source, htmlname, html := loadData(t, fixture, tt.variant)
 
 			cfg := types.MarkConfig{
 				MermaidScale:  1.0,
@@ -337,11 +337,11 @@ func TestCompileMarkdownMath(t *testing.T) {
 				MathFormat:    tt.format,
 				DropFirstH1:   false,
 				StripNewlines: false,
-				Browser:       mark.TestBrowser,
+				Browser:       markdown.TestBrowser,
 				Features:      []string{"mkdocsadmonitions", "mention", "math"},
 			}
 
-			actual, _, _ := mark.CompileMarkdown(markdown, lib, fixture, cfg)
+			actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
 			test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 		})
 	}
@@ -356,14 +356,14 @@ func TestCompileMarkdownMath(t *testing.T) {
 // The check is the rendered height. A two-row matrix is taller than a one-row
 // matrix; if the separator had been eaten, the two would render alike.
 func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
-	render := func(t *testing.T, markdown string) (string, int) {
+	render := func(t *testing.T, source string) (string, int) {
 		t.Helper()
 
 		lib, err := stdlib.New(context.Background(), nil)
 		assert.NoError(t, err)
 
-		actual, attachments, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/math.md",
-			types.MarkConfig{Browser: mark.TestBrowser, Features: []string{"math"}})
+		actual, attachments, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/math.md",
+			types.MarkConfig{Browser: markdown.TestBrowser, Features: []string{"math"}})
 		assert.NoError(t, err)
 
 		if !assert.Len(t, attachments, 1) {
@@ -390,14 +390,14 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 func TestDetailsIsNotOptional(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	markdown := []byte(`<details>
+	source := []byte(`<details>
 <summary>Summary Text</summary>
 Some content
 </details>`)
 
 	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"details"}} {
-		actual, _, err := mark.CompileMarkdown(
-			markdown, lib, "testdata/test.md", types.MarkConfig{Features: features},
+		actual, _, err := markdown.CompileMarkdown(
+			source, lib, "testdata/test.md", types.MarkConfig{Features: features},
 		)
 		assert.NoError(t, err)
 		assert.Contains(t, actual, `<ac:structured-macro ac:name="expand">`, features)
@@ -412,11 +412,11 @@ Some content
 func TestHTMLImgTagIsNotOptional(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	markdown := []byte(`<img src="https://example.com/image.png" width="300" alt="Test Image">`)
+	source := []byte(`<img src="https://example.com/image.png" width="300" alt="Test Image">`)
 
 	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"html-img-tag"}} {
-		actual, _, err := mark.CompileMarkdown(
-			markdown, lib, "testdata/test.md", types.MarkConfig{Features: features},
+		actual, _, err := markdown.CompileMarkdown(
+			source, lib, "testdata/test.md", types.MarkConfig{Features: features},
 		)
 		assert.NoError(t, err)
 		assert.Contains(t, actual, `<ac:image`, features)
@@ -428,13 +428,13 @@ func TestHTMLImgTagIsNotOptional(t *testing.T) {
 func TestDateFeature(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	markdown := []byte(`Release on @date(2026-07-27) or <time datetime="2026-12-31">Dec 31</time>.`)
+	source := []byte(`Release on @date(2026-07-27) or <time datetime="2026-12-31">Dec 31</time>.`)
 
 	// 1. With date feature enabled
 	cfgEnabled := types.MarkConfig{
 		Features: []string{"date"},
 	}
-	actualEnabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgEnabled)
+	actualEnabled, _, err := markdown.CompileMarkdown(source, lib, "testdata/test.md", cfgEnabled)
 	assert.NoError(t, err)
 	assert.Contains(t, actualEnabled, `<time datetime="2026-07-27" />`)
 	assert.Contains(t, actualEnabled, `<time datetime="2026-12-31" />`)
@@ -443,7 +443,7 @@ func TestDateFeature(t *testing.T) {
 	cfgDisabled := types.MarkConfig{
 		Features: []string{"mermaid", "mention"},
 	}
-	actualDisabled, _, err := mark.CompileMarkdown(markdown, lib, "testdata/test.md", cfgDisabled)
+	actualDisabled, _, err := markdown.CompileMarkdown(source, lib, "testdata/test.md", cfgDisabled)
 	assert.NoError(t, err)
 	assert.NotContains(t, actualDisabled, `<time datetime="2026-07-27" />`)
 }
@@ -471,7 +471,7 @@ func TestCompileMarkdownResolveLinkError(t *testing.T) {
 		},
 	}
 
-	_, _, err = mark.CompileMarkdown(
+	_, _, err = markdown.CompileMarkdown(
 		[]byte("[a link](./other.md)\n"), lib, "testdata/x.md", cfg,
 	)
 	test.Error(err)
@@ -499,14 +499,14 @@ func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 		},
 	}
 
-	markdown := []byte("" +
+	source := []byte("" +
 		"[real](./real.md)\n\n" +
 		"`[code span](./span.md)`\n\n" +
 		"```\n[fenced](./fenced.md)\n```\n\n" +
 		"    [indented](./indented.md)\n",
 	)
 
-	_, _, err = mark.CompileMarkdown(markdown, lib, "testdata/x.md", cfg)
+	_, _, err = markdown.CompileMarkdown(source, lib, "testdata/x.md", cfg)
 	test.NoError(err)
 	test.Equal([]string{"./real.md"}, asked)
 }
@@ -531,10 +531,10 @@ func TestCompileMarkdownResolveLinkDecodesDestination(t *testing.T) {
 		},
 	}
 
-	markdown := []byte("[a](other%20page.md) [b](other\\_page.md) " +
+	source := []byte("[a](other%20page.md) [b](other\\_page.md) " +
 		"[c](<other page.md>) [d](a&amp;b.md) [e](ac:AT&amp;T)\n")
 
-	_, _, err = mark.CompileMarkdown(markdown, lib, "testdata/x.md", cfg)
+	_, _, err = markdown.CompileMarkdown(source, lib, "testdata/x.md", cfg)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{
 		"other%20page.md", "other_page.md", "other page.md", "a&b.md", "ac:AT&amp;T",

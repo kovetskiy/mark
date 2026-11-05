@@ -1,4 +1,4 @@
-package mark
+package markdown
 
 import (
 	"github.com/kovetskiy/mark/v17/stdlib"

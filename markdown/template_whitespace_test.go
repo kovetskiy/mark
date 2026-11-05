@@ -1,4 +1,4 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
@@ -25,7 +25,7 @@ func compileWithTemplate(t *testing.T, name, template, document string) string {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := mark.CompileMarkdown([]byte(document), lib, "testdata/x.md",
+	out, _, err := markdown.CompileMarkdown([]byte(document), lib, "testdata/x.md",
 		types.MarkConfig{MermaidScale: 1, D2Scale: 1, IncludePath: dir})
 	require.NoError(t, err)
 
@@ -77,7 +77,7 @@ func TestBodyWhitespaceIsPreserved(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := mark.CompileMarkdown([]byte(
+	out, _, err := markdown.CompileMarkdown([]byte(
 		"<!-- Macro: :m:\n     Template: ac:box\n     Name: info\n"+
 			"     Body: \"- one\\n- two\" -->\n\n:m:\n"),
 		lib, "testdata/x.md", types.MarkConfig{MermaidScale: 1, D2Scale: 1})
@@ -94,7 +94,7 @@ func TestBuiltinTemplateStillMatches(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := mark.CompileMarkdown(
+	out, _, err := markdown.CompileMarkdown(
 		[]byte("<!-- Include: ac:view-file\n     Name: diagram.drawio -->\n"),
 		lib, "testdata/x.md", types.MarkConfig{MermaidScale: 1, D2Scale: 1})
 	require.NoError(t, err)

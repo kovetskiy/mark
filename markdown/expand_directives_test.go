@@ -1,4 +1,4 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +34,7 @@ func compileFile(t *testing.T, path string) (string, error) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := mark.CompileMarkdown(source, lib, path, types.MarkConfig{})
+	out, _, err := markdown.CompileMarkdown(source, lib, path, types.MarkConfig{})
 
 	return out, err
 }
