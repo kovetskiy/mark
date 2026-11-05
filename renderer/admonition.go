@@ -69,33 +69,3 @@ func ghAlertType(alertType string) AdmonitionType {
 	}
 	return AdmonitionInfo
 }
-
-// BlockQuoteType is the type of a legacy "Info:" blockquote.
-//
-// Deprecated: use AdmonitionType, which the blockquote and MkDocs renderers
-// now share.
-type BlockQuoteType = AdmonitionType
-
-// Deprecated: use the Admonition-prefixed constants.
-const (
-	Info = AdmonitionInfo
-	Note = AdmonitionNote
-	Warn = AdmonitionWarning
-	Tip  = AdmonitionTip
-	None = AdmonitionNone
-)
-
-// MkDocsAdmonitionType is the type of an MkDocs "!!!" admonition.
-//
-// Deprecated: use AdmonitionType, which the blockquote and MkDocs renderers
-// now share.
-type MkDocsAdmonitionType = AdmonitionType
-
-// Deprecated: use the Admonition-prefixed constants.
-const (
-	AInfo = AdmonitionInfo
-	ANote = AdmonitionNote
-	AWarn = AdmonitionWarning
-	ATip  = AdmonitionTip
-	ANone = AdmonitionNone
-)
