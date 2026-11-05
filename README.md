@@ -314,13 +314,15 @@ drop-h1 = true
 image-align = "center"
 ```
 
-A key is the long name of a flag, without the dashes. One file serves every
-command, so it may hold the keys of `publish`, `export`, `doctor` and `page`
-together, and each command reads the ones it has. A key that no command has is
-an error, naming each such key and the one it is probably a typo of:
+A key is the long name of a flag, without the dashes: every flag that lists an
+environment variable in the help, except `--config`, can be set in the file
+too. One file serves every command, so it may hold the keys of `publish`,
+`export`, `doctor` and `page` together, and each command reads the ones it has.
+A key that no command has is an error, naming each such key and the one it is
+probably a typo of:
 
 ```text
-unknown key "tittle-from-h1" in configuration file "/home/jane/.config/mark.toml": did you mean "title-from-h1"?
+unknown key in configuration file "/home/jane/.config/mark.toml": "tittle-from-h1" (did you mean "title-from-h1"?)
 ```
 
 Before v17 such a key was ignored, so a misspelt setting did nothing and said

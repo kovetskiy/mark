@@ -52,7 +52,7 @@ func TestConfigFileRefusesAnUnknownKey(t *testing.T) {
 			ran, err := runCommands(t, args...)
 			require.Error(t, err)
 			assert.Equal(t, fmt.Sprintf(
-				`unknown key "tittle-from-h1" in configuration file %q: did you mean "title-from-h1"?`, path),
+				`unknown key in configuration file %q: "tittle-from-h1" (did you mean "title-from-h1"?)`, path),
 				err.Error())
 			assert.Empty(t, ran, "nothing runs")
 		})
@@ -68,11 +68,9 @@ func TestConfigFileListsEveryUnknownKey(t *testing.T) {
 
 	_, err := runCommands(t, "publish", "--config", path, "-f", "doc.md")
 	require.Error(t, err)
-	assert.Equal(t, strings.Join([]string{
-		fmt.Sprintf(`unknown key "base-ulr" in configuration file %q: did you mean "base-url"?`, path),
-		fmt.Sprintf(`unknown key "table" in configuration file %q`, path),
-		fmt.Sprintf(`unknown key "zzz" in configuration file %q`, path),
-	}, "\n"), err.Error())
+	assert.Equal(t, fmt.Sprintf(
+		`unknown keys in configuration file %q: "base-ulr" (did you mean "base-url"?), "table", "zzz"`, path),
+		err.Error())
 }
 
 // TestConfigFileAcceptsAnotherCommandsKey: one file serves every command.
@@ -124,14 +122,12 @@ func TestEveryFlagsConfigKeyIsKnown(t *testing.T) {
 
 	require.NotNil(t, file)
 	assert.Equal(t, slices.Sorted(maps.Keys(declared)), slices.Sorted(maps.Keys(file.keys)))
+}
 
-	var content strings.Builder
-	for key := range declared {
-		fmt.Fprintf(&content, "%s = \"x\"\n", key)
-	}
-	path := writeConfig(t, t.TempDir(), "mark.toml", content.String())
-	*file.path = path
-	assert.NoError(t, file.check())
+// TestClosestIsTheNearest: a farther candidate listed first does not win.
+func TestClosestIsTheNearest(t *testing.T) {
+	assert.Equal(t, "parents", closest("parent", []string{"parent-id", "parents"}))
+	assert.Empty(t, closest("zzz", []string{"page", "space"}))
 }
 
 // flagSources are the value sources flag reads, after the command line.
