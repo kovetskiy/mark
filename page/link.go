@@ -163,8 +163,14 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 		ctx,
 		r.API, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
-		r.SpaceForLinks, r.TitleFromH1, r.TitleFromFilename,
-		r.Parents, r.TitleAppendGeneratedHash, r.FrontMatterEnabled,
+		metadata.ExtractOptions{
+			Space:                    r.SpaceForLinks,
+			TitleFromH1:              r.TitleFromH1,
+			TitleFromFilename:        r.TitleFromFilename,
+			Parents:                  r.Parents,
+			TitleAppendGeneratedHash: r.TitleAppendGeneratedHash,
+			FrontMatter:              r.FrontMatterEnabled,
+		},
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
@@ -262,12 +268,7 @@ func resolveLink(
 	api *confluence.API,
 	bases []string,
 	link markdownLink,
-	spaceForLinks string,
-	titleFromH1 bool,
-	titleFromFilename bool,
-	parents []string,
-	titleAppendGeneratedHash bool,
-	frontMatterEnabled bool,
+	opts metadata.ExtractOptions,
 ) (string, *unresolved, error) {
 	var result string
 
@@ -295,15 +296,8 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, linkBody, err := metadata.ExtractMeta(linkContents, metadata.ExtractOptions{
-			Filename:                 filepath,
-			Space:                    spaceForLinks,
-			TitleFromH1:              titleFromH1,
-			TitleFromFilename:        titleFromFilename,
-			Parents:                  parents,
-			TitleAppendGeneratedHash: titleAppendGeneratedHash,
-			FrontMatter:              frontMatterEnabled,
-		})
+		opts.Filename = filepath
+		linkMeta, linkBody, err := metadata.ExtractMeta(linkContents, opts)
 		if err != nil {
 			log.Error().
 				Err(err).
@@ -361,7 +355,7 @@ func resolveLink(
 		//
 		// Only within one space: an ri:page with no ri:space-key means this
 		// space, while the URL carries its own space in it.
-		if link.hash != "" && linkMeta.Space == spaceForLinks {
+		if link.hash != "" && linkMeta.Space == opts.Space {
 			if anchor := headingAnchor(linkBody, link.hash); anchor != "" {
 				return "ac:" + linkMeta.Title + "#" + anchor, nil, nil
 			}
