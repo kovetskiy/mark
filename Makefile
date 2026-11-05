@@ -13,6 +13,8 @@ COMMIT = $(shell git rev-parse HEAD 2>/dev/null)$(DIRTY)
 GO111MODULE = on
 
 REMOTE = kovetskiy
+# The Git remote make release pushes its tag to.
+GIT_REMOTE = origin
 
 version:
 	@echo $(RELEASE)
@@ -46,9 +48,13 @@ push:
 	@docker tag $(NAME):$(RELEASE) $(REMOTE)/$(NAME):latest
 	@docker push $(REMOTE)/$(NAME):latest
 
-release: image push
-	git tag -f $(RELEASE)
-	git push --tags
+# Tags HEAD and pushes that one tag; CI builds the images and GoReleaser the
+# release from it. Neither git tag nor git push without -f moves a tag that
+# exists, so a release cannot rewrite one already out.
+release:
+	$(if $(and $(filter command line,$(origin RELEASE)),$(RELEASE)),,$(error name the new tag: make release RELEASE=vX.Y.Z))
+	git tag $(RELEASE)
+	git push $(GIT_REMOTE) refs/tags/$(RELEASE)
 
 clean:
 	rm -rf $(NAME)
