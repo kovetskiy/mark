@@ -39,8 +39,8 @@ func TestOrdinaryCommentIsNotAHeader(t *testing.T) {
 }
 
 // TestCommentAmongHeadersDoesNotStrandThemBelowIt: a comment that ended the
-// header run would take every header after it out of scope -- the same failure
-// a blank line used to cause, arriving by a different route.
+// header run would take every header after it out of scope, as a blank line
+// would.
 func TestCommentAmongHeadersDoesNotStrandThemBelowIt(t *testing.T) {
 	meta, _, err := extract(t, `<!-- Space: DOCS -->
 <!-- TODO: rewrite -->
@@ -70,11 +70,10 @@ func TestCommentAboveHeadersLeavesThemAlone(t *testing.T) {
 	assert.Equal(t, "Above", meta.Title)
 }
 
-// TestMisspelledHeaderIsStillRefused: the point of refusing an unknown header
-// was that a typo silently changed what was published -- the line is taken out
-// of the body either way, so the page went up without whatever it asked for and
-// the run still exited zero. That has to survive being made lenient about
-// ordinary comments.
+// TestMisspelledHeaderIsStillRefused: a misspelled header is refused because
+// the line is taken out of the body either way, so the page would go up without
+// whatever it asked for and the run would still exit zero. Being lenient about
+// ordinary comments must not change that.
 func TestMisspelledHeaderIsStillRefused(t *testing.T) {
 	typos := map[string]string{
 		"Titel":  "Title", // transposed
@@ -95,9 +94,9 @@ func TestMisspelledHeaderIsStillRefused(t *testing.T) {
 	}
 }
 
-// TestHeaderNamesAreMatchedWithoutCase pins what canonicalHeader replaced: the
-// old code title-cased the key, which is how any comment became a header name.
-// Matching against the list has to keep accepting the spellings documents use.
+// TestHeaderNamesAreMatchedWithoutCase: canonicalHeader matches against the
+// list rather than title-casing the key, which would make any comment a header
+// name, and it has to accept the spellings documents use.
 func TestHeaderNamesAreMatchedWithoutCase(t *testing.T) {
 	meta, _, err := extract(t, "<!-- space: DOCS -->\n<!-- TITLE: Shouted -->\n\nBody.\n")
 

@@ -643,8 +643,8 @@ func TestParseHeaderCommentOverlappingDelimiters(t *testing.T) {
 }
 
 // TestExtractMetaOverlappingCommentDoesNotPanic is the end-to-end version:
-// a document whose first line is "<!-->" previously crashed mark before it
-// reached Confluence at all.
+// a document whose first line is "<!-->" must not crash mark before it
+// reaches Confluence.
 func TestExtractMetaOverlappingCommentDoesNotPanic(t *testing.T) {
 	meta, body, err := ExtractMeta([]byte("<!-->\n\n# Title\n\nbody\n"), ExtractOptions{
 		Filename:    "doc.md",
@@ -672,10 +672,9 @@ func TestParseHeaderCommentStillParsesValidHeaders(t *testing.T) {
 	assert.Empty(t, value)
 }
 
-// TestExtractMetaYAMLFrontMatterOrder: Meta.Order exists and the HTML-comment
-// path has always read it, but the front matter switch had no case for it -- so
-// a document written that way could not position itself among its siblings at
-// all, and said nothing about why.
+// TestExtractMetaYAMLFrontMatterOrder: front matter reads order as the
+// HTML-comment headers do, or a document written that way cannot position
+// itself among its siblings, and nothing says why.
 func TestExtractMetaYAMLFrontMatterOrder(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test Page\norder: 3\n---\n# Content\n"
 
@@ -722,12 +721,12 @@ func TestExtractMetaYAMLFrontMatterOrderRejectsNonNumbers(t *testing.T) {
 	}
 }
 
-// TestCLIParentsAreNotShared: the --parents prefix was prepended with
-// append(parents, meta.Parents...), which writes into the caller's slice when
-// it has spare capacity -- and the flag is split with append, so three parents
+// TestCLIParentsAreNotShared: prepending the --parents prefix with
+// append(parents, meta.Parents...) would write into the caller's slice when it
+// has spare capacity -- and the flag is split with append, so three parents
 // come with room for a fourth. Every document in a run, and every linked
-// document resolved while publishing one, shared that one array: the second
-// document's own Parent header overwrote the first's.
+// document resolved while publishing one, would share that array, and the
+// second document's own Parent header would overwrite the first's.
 func TestCLIParentsAreNotShared(t *testing.T) {
 	// The capacity splitParents leaves three parents with.
 	parents := append(make([]string, 0, 4), "A", "B", "C")
@@ -758,9 +757,9 @@ func TestCLIParentsAreNotShared(t *testing.T) {
 }
 
 // TestAppendGeneratedHashNeedsATitle: with no Title header, no H1 and no
-// filename to take one from, the hash was appended to nothing and the page
-// was published as "- a159f529" -- a title, as far as the check for a missing
-// one could tell.
+// filename to take one from, the hash must not be appended to nothing: the
+// page would be published as "- a159f529" -- a title, as far as the check for
+// a missing one can tell.
 func TestAppendGeneratedHashNeedsATitle(t *testing.T) {
 	meta, _, err := ExtractMeta([]byte("<!-- Space: DOCS -->\n\nbody\n"), ExtractOptions{Filename: "doc.md", TitleAppendGeneratedHash: true})
 	require.NoError(t, err)

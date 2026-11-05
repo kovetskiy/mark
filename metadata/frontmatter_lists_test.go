@@ -7,10 +7,10 @@ import (
 )
 
 // TestFrontMatterListKeysAcceptASingleValue covers a list key written with one
-// value rather than a list of one. "parents: Engineering" was read as no
-// parents at all, so the page was published at the root of the space -- and
-// "labels: release" as no labels, so label sync removed the page's existing
-// ones -- with nothing logged.
+// value rather than a list of one. Read as no parents at all, "parents:
+// Engineering" would publish the page at the root of the space -- and
+// "labels: release" read as no labels would have label sync remove the page's
+// existing ones -- with nothing logged.
 func TestFrontMatterListKeysAcceptASingleValue(t *testing.T) {
 	meta, logged := extractWithFrontMatter(t,
 		"parents: Engineering\nfolders: ' Specs '\nlabels: release\nattachments: diagram.png\n",
