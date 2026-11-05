@@ -659,10 +659,19 @@ func isEmptyValue(value any) bool {
 	return false
 }
 
+// titleFrom is whether the title comes from a leading H1 and whether from the
+// file's name. One given on the command line sets aside the other from the
+// environment or the configuration file.
+func titleFrom(command *cli.Command) (h1, filename bool) {
+	from := commandLineFirst(command, []string{"title-from-h1", "title-from-filename"}, command.Bool)
+	return slices.Contains(from, "title-from-h1"), slices.Contains(from, "title-from-filename")
+}
+
 // checkPublishFlags validates combinations and values of the publish flags.
 func checkPublishFlags(context context.Context, command *cli.Command) (context.Context, error) {
-	if command.Bool("title-from-h1") && command.Bool("title-from-filename") {
-		return context, errors.New("flags --title-from-h1 and --title-from-filename are mutually exclusive. Please specify only one")
+	if h1, filename := titleFrom(command); h1 && filename {
+		return context, fmt.Errorf("flags %s and %s are mutually exclusive. Please specify only one",
+			flagName(command, "title-from-h1"), flagName(command, "title-from-filename"))
 	}
 
 	if _, err := metadata.ParseContentAppearance(command.String("content-appearance")); err != nil {

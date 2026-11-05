@@ -338,6 +338,13 @@ unknown key in configuration file "/home/jane/.config/mark.toml": "tittle-from-h
 Before v17 such a key was ignored, so a misspelt setting did nothing and said
 nothing. A file that still holds one has to lose it, or correct it, to run.
 
+A flag on the command line wins over its environment variable, and that over
+the file. Where two settings exclude each other -- `--title-from-h1` and
+`--title-from-filename`, or the ways `mark export` names a page -- one given on
+the command line sets aside the other when that came from the environment or
+the file. Two from the command line, or two from the environment and the
+file, are still an error, which names where each came from.
+
 **NOTE**: `password-command` keeps the token out of both the configuration file and the environment.
 A password manager or keychain helper supplies it per run.
 

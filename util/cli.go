@@ -316,6 +316,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 
 	logFlags(cmd)
 
+	titleFromH1, titleFromFilename := titleFrom(cmd)
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
 	outputs, err := imageOutputs(cmd)
@@ -329,8 +330,8 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 				PageID:                   creds.PageID,
 				Space:                    cmd.String("space"),
 				Parents:                  parents,
-				TitleFromH1:              cmd.Bool("title-from-h1"),
-				TitleFromFilename:        cmd.Bool("title-from-filename"),
+				TitleFromH1:              titleFromH1,
+				TitleFromFilename:        titleFromFilename,
 				TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
 				ContentAppearance:        metadata.Appearance(cmd.String("content-appearance")),
 			},
