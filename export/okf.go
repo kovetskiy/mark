@@ -1,7 +1,6 @@
 package export
 
 import (
-	"bytes"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"go.yaml.in/yaml/v3"
 )
 
 // Format is what an export writes. The zero value is FormatMark.
@@ -113,18 +111,57 @@ func okfFrontMatter(page *confluence.PageInfo, resource, generator string, label
 		concept.Sources = nil
 	}
 
-	var b bytes.Buffer
-	b.WriteString("---\n")
-	encoder := yaml.NewEncoder(&b)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(concept); err != nil {
+	out, err := concept.frontMatter()
+	if err != nil {
 		return "", fmt.Errorf("unable to write the front matter of page %s: %w", page.ID, err)
 	}
-	if err := encoder.Close(); err != nil {
-		return "", fmt.Errorf("unable to write the front matter of page %s: %w", page.ID, err)
+	return out, nil
+}
+
+// frontMatter is the concept as a YAML document between --- lines, laid out
+// as yaml.v3 would with an indent of 2 but with every scalar written by
+// yamlScalar, which keeps emoji as they are where yaml.v3 escapes them.
+func (c okfConcept) frontMatter() (string, error) {
+	var b strings.Builder
+	var err error
+	// field writes value after prefix, which holds the indent and the key,
+	// unless it is empty and omitEmpty says to leave it out.
+	field := func(prefix, value string, omitEmpty bool) {
+		if err != nil || (omitEmpty && value == "") {
+			return
+		}
+		var scalar string
+		scalar, err = yamlScalar(value)
+		b.WriteString(prefix + scalar + "\n")
+	}
+
+	b.WriteString("---\n")
+	field("type: ", c.Type, false)
+	field("title: ", c.Title, true)
+	field("resource: ", c.Resource, true)
+	if len(c.Tags) > 0 {
+		b.WriteString("tags:\n")
+		for _, tag := range c.Tags {
+			field("  - ", tag, false)
+		}
+	}
+	b.WriteString("generated:\n")
+	field("  by: ", c.Generated.By, false)
+	if len(c.Sources) > 0 {
+		b.WriteString("sources:\n")
+		for _, source := range c.Sources {
+			field("  - id: ", source.ID, false)
+			field("    resource: ", source.Resource, false)
+			field("    title: ", source.Title, true)
+			field("    author: ", source.Author, true)
+			field("    last_modified: ", source.LastModified, true)
+		}
 	}
 	b.WriteString("---\n")
 
+	if err != nil {
+		return "", err
+	}
 	return b.String(), nil
 }
 

@@ -2,11 +2,13 @@ package export
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 // A version's author is a person, human:, unless Cloud says the account is an
@@ -32,4 +34,65 @@ func TestOKFActor(t *testing.T) {
 		})
 	}
 	assert.Empty(t, okfActor(nil))
+}
+
+// OKF front matter writes emoji as they are, where yaml.v3 escapes them.
+func TestOKFFrontMatterWritesEmojiAsThemselves(t *testing.T) {
+	page := &confluence.PageInfo{ID: "1", Title: "🚀 Launch"}
+	out, err := okfFrontMatter(page, "https://x/1", "mark/v1", []string{"🔥"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "\ntitle: \"🚀 Launch\"\n")
+	assert.Contains(t, out, "\n  - \"🔥\"\n")
+	assert.Contains(t, out, "\n    title: \"🚀 Launch\"\n")
+	assert.NotContains(t, out, `\U`)
+}
+
+// Every value in OKF front matter reads back as the string it was, each on
+// one line.
+func TestOKFFrontMatterReadsBack(t *testing.T) {
+	values := []string{
+		"🚀 Launch", "👩‍💻 Dev", "🇩🇪 Flag", "Plain", "",
+		`say "hi"`, "it's", `back\slash`, "a # b", "#hash", "a: b", "ends:",
+		"- item", "yes", "No", "on", "null", "~", "12", "1.5", "0x1F",
+		"2026-05-01", "line\nbreak", "cr\rlf", "tab\there", "para\u2028sep",
+		"next\u0085line", "\ufeffbom", " leading", "trailing ", "[a]", "{b}",
+		"&anchor", "*alias", "!tag", "|pipe", ">fold", "@at", "`tick", "%p",
+	}
+	for _, value := range values {
+		t.Run(value, func(t *testing.T) {
+			page := &confluence.PageInfo{ID: "1", Title: value}
+			page.Version.When = "2026-05-01T10:30:00Z"
+			page.Version.By = &confluence.User{Username: value}
+			out, err := okfFrontMatter(page, value, value, []string{value, "🏷️ " + value})
+			require.NoError(t, err)
+
+			body, ok := strings.CutPrefix(out, "---\n")
+			require.True(t, ok)
+			body, ok = strings.CutSuffix(body, "---\n")
+			require.True(t, ok)
+			for _, line := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
+				assert.Regexp(t, `^(\S| {2}\S| {2}- \S| {4}\S)`, line, "a value on a line of its own")
+			}
+
+			var got okfConcept
+			require.NoError(t, yaml.Unmarshal([]byte(body), &got), out)
+			want := okfConcept{
+				Type:      "Confluence Page",
+				Title:     value,
+				Resource:  value,
+				Tags:      []string{value, "🏷️ " + value},
+				Generated: okfGenerated{By: value},
+			}
+			if value != "" {
+				want.Sources = []okfSource{{
+					ID:           "confluence",
+					Resource:     value,
+					Title:        value,
+					Author:       "human:" + value,
+					LastModified: "2026-05-01T10:30:00Z",
+				}}
+			}
+			assert.Equal(t, want, got, out)
+		})
+	}
 }
