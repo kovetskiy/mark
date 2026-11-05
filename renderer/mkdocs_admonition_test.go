@@ -27,8 +27,8 @@ func admonitionParserOptions() []parser.Option {
 }
 
 // TestAdmonitionMacroMapping covers the MkDocs classes that have a Confluence
-// macro, in the colours MkDocs Material and GitHub give them: "note" is the
-// blue info macro, "warning" the yellow note macro.
+// macro, in the colours GitHub gives the words: "note" is the blue info macro,
+// "warning" the yellow note macro.
 func TestAdmonitionMacroMapping(t *testing.T) {
 	tests := []struct {
 		class string
@@ -60,8 +60,8 @@ func TestAdmonitionMacroMapping(t *testing.T) {
 }
 
 // TestAdmonitionUnknownClassStaysAQuote covers a class that is not an
-// admonition word -- MkDocs has a dozen of them. It has to degrade to a blockquote rather
-// than pick a macro at random or drop the content.
+// admonition word -- MkDocs has a dozen of them. It has to degrade to a
+// blockquote rather than pick a macro at random or drop the content.
 //
 // The quote keeps the class the admonition parser put on it.
 func TestAdmonitionUnknownClassStaysAQuote(t *testing.T) {
