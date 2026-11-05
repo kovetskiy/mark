@@ -7,7 +7,8 @@ import "strings"
 //
 // Three syntaxes produce one -- a colon blockquote ("> Info:"), a GitHub
 // alert and an MkDocs "!!!" admonition -- and a word means the same macro in
-// each of them: admonitionTypes.
+// each of them: admonitionTypes, and mkDocsOnlyTypes for the words only MkDocs
+// reads.
 type AdmonitionType int
 
 const (
@@ -38,11 +39,11 @@ func (t AdmonitionType) String() string {
 	return admonitionMacros[t]
 }
 
-// admonitionTypes maps every admonition word to its macro, in the colour
-// GitHub gives the word, or MkDocs Material for a word GitHub does not have:
-// blue for information, green for advice, yellow for a warning, red for
-// danger. Confluence's note macro is the yellow one, so "note" is info and
-// "warning" is note.
+// admonitionTypes maps the admonition words the syntaxes share to their
+// macros, in the colour GitHub gives the word, or MkDocs Material for a word
+// GitHub does not have: blue for information, green for advice, yellow for a
+// warning, red for danger. Confluence's note macro is the yellow one, so
+// "note" is info and "warning" is note.
 //
 // The colon syntax reads every word here (syntax.AdmonitionWords), GitHub its
 // five alert types, and MkDocs every word but "warn", which is not one of its
