@@ -390,7 +390,7 @@ func TestExportLongAttachmentNames(t *testing.T) {
 		`<p><ac:link><ri:attachment ri:filename="`+linked+`"/><ac:plain-text-link-body><![CDATA[report]]></ac:plain-text-link-body></ac:link></p>`+
 		`<table><tbody><tr><td colspan="2"><ac:image><ri:attachment ri:filename="`+raw+`"/></ac:image></td></tr></tbody></table>`)
 	for _, name := range []string{image, other, linked, raw} {
-		server.AddAttachmentData(page.ID, name, []byte(name[len(name)-8:]))
+		server.AddAttachmentData(page.ID, name, []byte(name))
 	}
 
 	dir := t.TempDir()
@@ -421,10 +421,10 @@ func TestExportLongAttachmentNames(t *testing.T) {
 		written[string(data)] = name
 	}
 	for _, name := range []string{image, other, linked, raw} {
-		assert.Contains(t, written, name[len(name)-8:], "%q is written", name)
+		assert.Contains(t, written, name, "%q is written", name)
 	}
 
-	rawName := written[raw[len(raw)-8:]]
+	rawName := written[raw]
 	assert.Equal(t, []string{"files/" + rawName}, result.DeclaredAttachments)
 	assert.Contains(t, document, "<!-- Attachment: files/"+rawName+" -->")
 	assert.Contains(t, document, `ri:filename="files_`+rawName+`"`)
