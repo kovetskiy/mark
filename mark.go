@@ -2069,11 +2069,12 @@ func (r *publishRun) applySettings(ctx context.Context, doc *document, dest *des
 
 	if r.config.Update.EditLock {
 		log.Info().Msgf(
-			`edit locked on page %q by user %q to prevent manual edits`,
+			`edit locked on page %q by the authenticated user to prevent manual edits`,
 			target.Title,
-			r.config.Connection.Username,
 		)
-		if err := r.api.RestrictPageUpdates(ctx, target, r.config.Connection.Username); err != nil {
+		// The user r.api logs in as, which is not necessarily the one
+		// Connection names: a Publisher is handed its api.
+		if err := r.api.RestrictPageUpdates(ctx, target, ""); err != nil {
 			return nil, fmt.Errorf("unable to restrict page updates: %w", err)
 		}
 	}
