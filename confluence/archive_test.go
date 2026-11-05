@@ -35,7 +35,7 @@ func TestArchivePageSendsANumericID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	require.NoError(t, api.ArchivePage(context.Background(), "1004"))
 
 	assert.Equal(t, http.MethodPost, method)
@@ -53,7 +53,7 @@ func TestArchivePageSendsANumericID(t *testing.T) {
 }
 
 func TestArchivePageRejectsSomethingThatIsNotAnID(t *testing.T) {
-	api := confluence.NewAPI("http://127.0.0.1:1", "user", "token", false)
+	api := confluence.NewAPI("http://127.0.0.1:1", confluence.Options{Username: "user", Password: "token"})
 
 	err := api.ArchivePage(context.Background(), "not-a-page")
 	require.Error(t, err)
@@ -69,7 +69,7 @@ func TestArchivePageReportsRefusal(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	err := api.ArchivePage(context.Background(), "1004")
 	require.Error(t, err)

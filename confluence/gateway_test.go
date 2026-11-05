@@ -29,7 +29,7 @@ func newGatewayAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 		}
 		return 0, "", false
 	})
-	return confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false), server
+	return confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"}), server
 }
 
 func TestGatewayFindPage(t *testing.T) {
@@ -210,7 +210,7 @@ func TestGatewayLinksFallBackToTheBaseURL(t *testing.T) {
 	found, err := api.FindPage(context.Background(), "DOCS", "Home", "page")
 	require.NoError(t, err)
 	require.NotNil(t, found)
-	assert.Equal(t, api.BaseURL, found.Links.Base)
+	assert.Equal(t, api.BaseURL(), found.Links.Base)
 }
 
 // requestsUnder counts the requests of any method whose path contains substr.
@@ -379,7 +379,7 @@ func TestGatewayPageReadSurvivesTheSpaceKey(t *testing.T) {
 			return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`,
 				strings.Contains(r.URL.Path, "/rest/api/") || strings.Contains(r.URL.Path, "/api/v2/spaces/")
 		})
-		api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
+		api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
 
 		read, err := api.GetPageByIDExpanded(context.Background(), page.ID, "body.storage,version,space")
 		require.NoError(t, err)

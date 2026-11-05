@@ -374,7 +374,7 @@ func TestNoOverwriteKeepsAnEditOnTheRunADocumentMoves(t *testing.T) {
 func publishOnce(t *testing.T, server *confluencetest.Server, file string) {
 	t.Helper()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	_, err := publishOne(context.Background(), file, api, PublishConfig{
 		Output: io.Discard,
 	})
@@ -483,7 +483,7 @@ func TestATrackedPageIsMovedWhenItsFirstParentIsTheHomePage(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	published, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", "Doc", "page")
+	published, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
@@ -528,7 +528,7 @@ func TestRenamedParentIsFollowedNotRecreated(t *testing.T) {
 	assert.Equal(t, 0, countPagesTitled(t, server, "Guide"),
 		"no empty page should have been created under the old title")
 
-	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+	child, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
@@ -571,7 +571,7 @@ func TestRenamedHandMadeParentIsFollowedNotRecreated(t *testing.T) {
 	assert.Equal(t, 0, countPagesTitled(t, server, "Guide"),
 		"no empty page should have been created under the old title")
 
-	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+	child, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
@@ -598,7 +598,7 @@ func TestRenamedHandMadeParentDuplicatesWithoutTracking(t *testing.T) {
 	assert.Equal(t, 1, countPagesTitled(t, server, "Guide"),
 		"without tracking an empty page appears under the old title")
 
-	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+	child, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
@@ -616,7 +616,7 @@ func TestParentCreatedByMarkIsFollowedAfterRename(t *testing.T) {
 	file := writeFile(t, dir, "child.md", markdownUnder("Brand New Parent", "Child"))
 	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 
-	created, err := confluence.NewAPI(server.URL, "user", "token", false).
+	created, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Brand New Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, created)
@@ -637,7 +637,7 @@ func TestRenamedParentChainIsFollowedAtEveryLevel(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
 
-	top, err := confluence.NewAPI(server.URL, "user", "token", false).
+	top, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	guide := handMadeParent(t, server, "Guide")
@@ -654,7 +654,7 @@ func TestRenamedParentChainIsFollowedAtEveryLevel(t *testing.T) {
 	assert.Equal(t, 0, countPagesTitled(t, server, "Guide"),
 		"and so should the level below it, whose key is unaffected by the rewrite above")
 
-	child, err := confluence.NewAPI(server.URL, "user", "token", false).
+	child, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Child", "page")
 	require.NoError(t, err)
 	require.NotNil(t, child)
@@ -678,7 +678,7 @@ Body.
 // reporter said plainly that they expected the page to be moved.
 func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -720,7 +720,7 @@ func TestChangingTheParentHeaderMovesThePage(t *testing.T) {
 // hierarchies nobody asked to change.
 func TestDeeperNestingThanDeclaredIsLeftAlone(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	parent := server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -752,7 +752,7 @@ func TestDeeperNestingThanDeclaredIsLeftAlone(t *testing.T) {
 // TestDryRunDoesNotMoveThePage: a dry run reports, it does not rearrange.
 func TestDryRunDoesNotMoveThePage(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	parent := server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -791,7 +791,7 @@ func TestDryRunDoesNotMoveThePage(t *testing.T) {
 // and quietly leave it where it was.
 func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -837,7 +837,7 @@ func TestTitleAndParentChangingTogetherMovesThePage(t *testing.T) {
 // contradicts nothing and must not be rearranged.
 func TestTrackedPageDeeperThanDeclaredIsLeftAlone(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	parent := server.AddPage("DOCS", "Parent", "page", home.ID)

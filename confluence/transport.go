@@ -39,12 +39,29 @@ const (
 	idleConnTimeout       = 90 * time.Second
 )
 
-// newHTTPClient builds the client used for every Confluence call.
+// newHTTPClient builds the client used for every Confluence call: base, when
+// it is given, with mark's retries wrapped around its transport, or else a
+// client of mark's own.
 //
 // A cookie jar is always installed, --insecure-skip-tls-verify or not.
 // Confluence Server hands out a session cookie on the first authenticated
 // call and expects it back.
-func newHTTPClient(insecureSkipVerify bool) *http.Client {
+func newHTTPClient(insecureSkipVerify bool, base *http.Client) *http.Client {
+	if base != nil {
+		// A copy, so that the caller's client goes on working as it did.
+		client := *base
+		transport := client.Transport
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		client.Transport = &retryTransport{base: transport}
+		if client.Jar == nil {
+			client.Jar = newCookieJar()
+		}
+
+		return &client
+	}
+
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -68,17 +85,24 @@ func newHTTPClient(insecureSkipVerify bool) *http.Client {
 		}
 	}
 
+	return &http.Client{
+		Jar:       newCookieJar(),
+		Transport: &retryTransport{base: transport},
+	}
+}
+
+// newCookieJar returns a jar for Confluence Server's session cookie, or nil
+// if one cannot be made.
+func newCookieJar() http.CookieJar {
 	// cookiejar.New never returns an error for a nil options value, but a jar
 	// is not worth failing construction over if that ever changes.
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Warn().Err(err).Msg("unable to create cookie jar; session cookies will not be retained")
+		return nil
 	}
 
-	return &http.Client{
-		Jar:       jar,
-		Transport: &retryTransport{base: transport},
-	}
+	return jar
 }
 
 // retryTransport retries requests that Confluence rejected without acting on

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/export"
 )
 
@@ -53,7 +54,7 @@ type ExportConfig struct {
 // publish back to the same page. See the export package for what is converted
 // and what is kept as storage format.
 func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
-	api := config.Connection.api()
+	api := config.Connection.api(confluence.Options{})
 
 	stdout := config.Stdout
 	if stdout == nil {
@@ -67,7 +68,7 @@ func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 // no page the whole of config.Space, into the directory config.Output names.
 // See export.Tree for the layout.
 func ExportTree(ctx context.Context, config ExportConfig, options export.TreeOptions) ([]*export.Result, error) {
-	api := config.Connection.api()
+	api := config.Connection.api(confluence.Options{})
 
 	stdout := config.Stdout
 	if stdout == nil {

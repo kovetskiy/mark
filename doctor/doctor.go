@@ -79,7 +79,7 @@ func Run(ctx context.Context, api *confluence.API, spaces []string, out io.Write
 
 func run(ctx context.Context, api *confluence.API, spaces []string) []Check {
 	host := ""
-	if u, err := url.Parse(api.BaseURL); err == nil {
+	if u, err := url.Parse(api.BaseURL()); err == nil {
 		host = strings.ToLower(u.Hostname())
 	}
 

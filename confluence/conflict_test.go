@@ -29,7 +29,7 @@ func newConflictAPI(t *testing.T, gateway bool) (*API, *confluencetest.Server) {
 		base += "/ex/confluence/cloud-id"
 	}
 
-	api := NewAPI(base, "user", "token", false)
+	api := NewAPI(base, Options{Username: "user", Password: "token"})
 	api.conflictRetryDelay = 0
 	return api, server
 }
@@ -190,7 +190,7 @@ func TestUpdatePageRetriesATransientConflict(t *testing.T) {
 	for _, keep := range []bool{false, true} {
 		t.Run(map[bool]string{false: "overwrite", true: "keep concurrent edits"}[keep], func(t *testing.T) {
 			api, server := newConflictAPI(t, false)
-			api.KeepConcurrentEdits = keep
+			api.keepConcurrentEdits = keep
 			server.AddSpace("DOCS")
 
 			page, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "Fresh", "")
@@ -250,7 +250,7 @@ func TestUpdatePagePersistentConflictFails(t *testing.T) {
 // is exactly what the flag protects, so the conflict is not retried over it.
 func TestUpdatePageKeepConcurrentEditsRefusesToOverwrite(t *testing.T) {
 	api, server := newConflictAPI(t, false)
-	api.KeepConcurrentEdits = true
+	api.keepConcurrentEdits = true
 	stored := server.AddPage("DOCS", "Guarded", "page", "")
 
 	page, err := api.GetPageByID(context.Background(), stored.ID)
@@ -309,7 +309,7 @@ func TestReparentConflictKeepsTheConcurrentEdit(t *testing.T) {
 				}
 				return 0, "", false
 			})
-			api.KeepConcurrentEdits = keep
+			api.keepConcurrentEdits = keep
 
 			oldParent := server.AddPage("DOCS", "Old Parent", "page", "")
 			newParent := server.AddPage("DOCS", "New Parent", "page", "")

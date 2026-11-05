@@ -35,7 +35,7 @@ func TestAttachmentURL(t *testing.T) {
 			attachment("", "https://example.com:443/download/attachments/1/a.png"), "https://example.com:443/download/attachments/1/a.png"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := NewAPI(test.base, "u", "p", false).AttachmentURL("1", test.info)
+			got, err := NewAPI(test.base, Options{Username: "u", Password: "p"}).AttachmentURL("1", test.info)
 			require.NoError(t, err)
 			assert.Equal(t, test.want, got)
 		})
@@ -47,7 +47,7 @@ func TestAttachmentURL(t *testing.T) {
 		"another port": "https://example.com:8443/download/attachments/1/a.png",
 	} {
 		t.Run("an absolute link to "+name+" is refused", func(t *testing.T) {
-			_, err := NewAPI("https://example.com", "u", "p", false).
+			_, err := NewAPI("https://example.com", Options{Username: "u", Password: "p"}).
 				AttachmentURL("1", attachment("", link))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "refusing to send credentials")
@@ -57,7 +57,7 @@ func TestAttachmentURL(t *testing.T) {
 	t.Run("through the gateway, the REST download endpoint", func(t *testing.T) {
 		info := attachment("/wiki", "/download/attachments/1/a.png")
 		info.ID = "att2"
-		got, err := NewAPI("https://api.atlassian.com/ex/confluence/cloud", "", "token", false).AttachmentURL("1", info)
+		got, err := NewAPI("https://api.atlassian.com/ex/confluence/cloud", Options{Password: "token"}).AttachmentURL("1", info)
 		require.NoError(t, err)
 		assert.Equal(t, "https://api.atlassian.com/ex/confluence/cloud/rest/api/content/1/child/attachment/att2/download", got)
 	})
@@ -68,7 +68,7 @@ func TestDownloadAttachment(t *testing.T) {
 	page := server.AddPage("DOCS", "Page", "page", "")
 	server.AddAttachmentData(page.ID, "a b#1.png", []byte("content"))
 
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 	attachments, err := api.GetAttachments(context.Background(), page.ID)
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)

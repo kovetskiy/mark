@@ -30,7 +30,7 @@ import (
 // issue its own paginated fetch of the same remote list.
 func TestPublisherFetchesAttachmentsOnce(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	// A parentless page is only valid as the space homepage, so build a
 	// realistic tree: Home is the homepage, Parent sits under it.
@@ -93,7 +93,7 @@ func TestPublisherFetchesAttachmentsOnce(t *testing.T) {
 // creation, body upload and labels in one run.
 func TestPublisherCreatesAndUpdatesPage(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	// A parentless page is only valid as the space homepage, so build a
 	// realistic tree: Home is the homepage, Parent sits under it.
@@ -145,7 +145,7 @@ Some **content**.
 
 func TestPublisherAppliesFrontMatterRestrictions(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -194,7 +194,7 @@ restrictions:
 // parent it ought to have is exactly what produces the state being refused.
 func TestRootLevelPageIsAdoptedRatherThanRefused(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
@@ -267,7 +267,7 @@ func TestHomepageItselfIsStillPublishable(t *testing.T) {
 // file and out of the page.
 func TestIgnoredRegionIsNotPublished(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -319,7 +319,7 @@ Also published.
 // it, so it would sit there as an orphan.
 func TestIgnoredRegionTakesItsAttachmentsWithIt(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -374,7 +374,7 @@ Body.
 // include.
 func TestIgnoredRegionInsideAnIncludeIsNotPublished(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -446,7 +446,7 @@ func publisherFixture(t *testing.T, body string) (*confluencetest.Server, *confl
 		},
 	}
 
-	return server, confluence.NewAPI(server.URL, "user", "token", false), file, config
+	return server, confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), file, config
 }
 
 // TestPublisherRefusesWhatRunRefuses: a Publisher is the library's other way
@@ -681,7 +681,7 @@ func TestContinueOnErrorDoesNotSwallowACancellation(t *testing.T) {
 func findPageTitled(t *testing.T, server *confluencetest.Server, title string) *confluence.PageInfo {
 	t.Helper()
 
-	page, err := confluence.NewAPI(server.URL, "user", "token", false).FindPage(context.Background(), "DOCS", title, "page")
+	page, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, page, "no page titled %q", title)
 

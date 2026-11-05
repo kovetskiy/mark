@@ -60,7 +60,7 @@ func newUnavailableAPI(
 		base += "/ex/confluence/cloud-id"
 	}
 
-	api := NewAPI(base, "user", "token", false)
+	api := NewAPI(base, Options{Username: "user", Password: "token"})
 	api.conflictRetryDelay = 0
 	api.unavailableWait = func(context.Context, int, string) {}
 	return api, server
@@ -196,7 +196,7 @@ func TestUpdatePageThatDidNotLandIsSentAgain(t *testing.T) {
 // refuses to write over it as it does over any other.
 func TestUpdatePageUnavailableThenEditedIsAConflict(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 0, nil)
-	api.KeepConcurrentEdits = true
+	api.keepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
 	page, err := api.GetPageByID(context.Background(), id)
@@ -327,7 +327,7 @@ func TestCreatePageDoesNotAdoptAPageUnderAnotherParent(t *testing.T) {
 // --no-overwrite has to protect.
 func TestUpdatePageThatLandedLateIsNotAConflict(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 0, nil)
-	api.KeepConcurrentEdits = true
+	api.keepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 	inFlight(server, func(r *http.Request) bool { return isContentPut(r, id) }, func() {
 		server.WritePage(id, "<p>from mark</p>")
@@ -364,7 +364,7 @@ func TestATimeoutIsUnavailable(t *testing.T) {
 // update would have made, but it is not mark's.
 func TestUpdatePageUnavailableThenEditedOnceIsAConflict(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 0, nil)
-	api.KeepConcurrentEdits = true
+	api.keepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
 	page, err := api.GetPageByID(context.Background(), id)
@@ -439,7 +439,7 @@ func TestUnavailableWriteWaitsForRetryAfter(t *testing.T) {
 
 func TestUpdatePageUnavailableThenEditedOnceIsAConflictThroughTheGateway(t *testing.T) {
 	api, server := newUnavailableAPI(t, true, 0, nil)
-	api.KeepConcurrentEdits = true
+	api.keepConcurrentEdits = true
 	id := server.AddPage("DOCS", "Target", "page", "").ID
 
 	page, err := api.GetPageByID(context.Background(), id)
@@ -535,7 +535,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 	t.Run("refused", func(t *testing.T) {
 		api, server := newUnavailableAPI(t, false, 0, nil)
 		server.SetWatchOnWrite()
-		api.Unwatch = true
+		api.unwatch = true
 		stored := server.AddPage("DOCS", "Page", "page", "")
 
 		var refused atomic.Int32
@@ -558,7 +558,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 	t.Run("landed", func(t *testing.T) {
 		api, server := newUnavailableAPI(t, false, 1, isUnwatch)
 		server.SetWatchOnWrite()
-		api.Unwatch = true
+		api.unwatch = true
 		stored := server.AddPage("DOCS", "Page", "page", "")
 
 		page, err := api.GetPageByID(context.Background(), stored.ID)
@@ -580,7 +580,7 @@ func TestUnwatchWrittenRetriesAnUnavailableUnwatch(t *testing.T) {
 func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 0, nil)
 	server.SetWatchOnWrite()
-	api.Unwatch = true
+	api.unwatch = true
 
 	var ids []string
 	for _, title := range []string{"One", "Two", "Three"} {
@@ -616,7 +616,7 @@ func TestUnwatchWrittenStopsWhileConfluenceIsUnavailable(t *testing.T) {
 func TestUnwatchWrittenStopsWaitingWhenInterrupted(t *testing.T) {
 	api, server := newUnavailableAPI(t, false, 0, nil)
 	server.SetWatchOnWrite()
-	api.Unwatch = true
+	api.unwatch = true
 
 	var ids []string
 	for _, title := range []string{"One", "Two"} {
@@ -660,7 +660,7 @@ func TestWaitUnavailableReturnsWhenTheContextIsDone(t *testing.T) {
 // Two first writes to one page can race, and the later read can see the watch
 // the earlier write made: the state recorded first is the one kept.
 func TestRememberWatchKeepsTheFirstState(t *testing.T) {
-	api := NewAPI("http://127.0.0.1:1", "user", "token", false)
+	api := NewAPI("http://127.0.0.1:1", Options{Username: "user", Password: "token"})
 	api.rememberWatch("1", wasUnwatched, nil)
 	api.rememberWatch("1", wasWatched, nil)
 

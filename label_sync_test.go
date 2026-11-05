@@ -45,7 +45,7 @@ func labelFixture(t *testing.T, appendLabels bool, labels string) (*confluencete
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)

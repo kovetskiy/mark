@@ -31,7 +31,7 @@ func newStore(t *testing.T) (*manifest.Store, *confluencetest.Server) {
 // deliberately silent about entries whose scope is unknown.
 func newStoreOn(t *testing.T, server *confluencetest.Server) *manifest.Store {
 	t.Helper()
-	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	store.SetRunFiles("*.md", nil)
 	return store
 }
@@ -40,7 +40,7 @@ func newStoreOn(t *testing.T, server *confluencetest.Server) *manifest.Store {
 // the property up by the same id.
 func spaceID(t *testing.T, server *confluencetest.Server, key string) string {
 	t.Helper()
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	id, err := api.GetSpaceID(context.Background(), key)
 	require.NoError(t, err)
 	return id
@@ -314,7 +314,7 @@ func serverInstance(t *testing.T) (*manifest.Store, *confluencetest.Server, *con
 		}
 		return 0, "", false
 	})
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	return manifest.NewStore(api), server, api
 }
 
@@ -1028,14 +1028,14 @@ func TestPrefixKeepsTwoProjectsApart(t *testing.T) {
 	docsWithHomepage(t, server)
 	id := spaceID(t, server, "DOCS")
 
-	api := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	api := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	require.NoError(t, api.SetPropertyKeyPrefix("mark.manifest.api"))
 	api.SetRunFiles("api/*.md", []string{"api/a.md"})
 	require.NoError(t, api.Record(ctx, "DOCS", "api/a.md", "1", "A", ""))
 	require.NoError(t, api.RecordFolder(ctx, "DOCS", "API Folder", "f1"))
 	require.NoError(t, api.Save(ctx))
 
-	sdk := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	sdk := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	require.NoError(t, sdk.SetPropertyKeyPrefix("mark.manifest.sdk"))
 	sdk.SetRunFiles("sdk/*.md", []string{"sdk/b.md"})
 	require.NoError(t, sdk.Record(ctx, "DOCS", "sdk/b.md", "2", "B", ""))
@@ -1049,7 +1049,7 @@ func TestPrefixKeepsTwoProjectsApart(t *testing.T) {
 		"nothing under the default prefix")
 
 	// The SDK's next run knows nothing of the API's files.
-	next := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	next := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	require.NoError(t, next.SetPropertyKeyPrefix("mark.manifest.sdk"))
 	next.SetRunFiles("sdk/*.md", []string{"sdk/b.md"})
 	_, ok, err := next.Lookup(ctx, "DOCS", "api/a.md")
@@ -1089,7 +1089,7 @@ func captureLog(t *testing.T) *bytes.Buffer {
 // runStore is the store of a later run of "*.md" publishing exactly files.
 func runStore(t *testing.T, server *confluencetest.Server, files ...string) *manifest.Store {
 	t.Helper()
-	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	store.SetRunFiles("*.md", files)
 	return store
 }
@@ -1166,7 +1166,7 @@ func TestRecordDoesNotFollowAnotherPatternsDocument(t *testing.T) {
 	ctx := t.Context()
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
-	other := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	other := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	other.SetRunFiles("other/*.md", []string{"other/doc.md"})
 	require.NoError(t, other.Record(ctx, "DOCS", "other/doc.md", "1", "Doc", "h"))
 	require.NoError(t, other.RecordVersion(ctx, "DOCS", "other/doc.md", 7))
@@ -1310,12 +1310,12 @@ func TestRecordDoesNotFollowAnEntryWithNoPattern(t *testing.T) {
 	ctx := t.Context()
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
-	legacy := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	legacy := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	require.NoError(t, legacy.Record(ctx, "DOCS", "doc.md", "1", "Doc", "h"))
 	require.NoError(t, legacy.Save(ctx))
 
 	logged := captureLog(t)
-	next := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	next := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	_, ok, err := next.LookupMoved(ctx, "DOCS", "sub/doc.md", "1")
 	require.NoError(t, err)
 	assert.False(t, ok, "an entry with no pattern has not moved")

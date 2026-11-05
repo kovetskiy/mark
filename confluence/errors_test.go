@@ -34,7 +34,7 @@ func TestNonJSONSuccessSaysWhatFailed(t *testing.T) {
 	server := ssoLoginPage()
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := api.FindPage(context.Background(), "DOCS", "Getting Started", "page")
 	require.Error(t, err)
@@ -53,7 +53,7 @@ func TestNonJSONSuccessIsExplainedOnEveryVerb(t *testing.T) {
 	server := ssoLoginPage()
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New Page", "<p/>")
 	require.Error(t, err)
@@ -84,7 +84,7 @@ func TestStatusErrorsCarryTheURL(t *testing.T) {
 			}))
 			defer server.Close()
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 			_, err := api.GetPageByID(context.Background(), "1004")
 			require.Error(t, err)
@@ -104,7 +104,7 @@ func TestNotFoundStaysASentinel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := api.GetPageByID(context.Background(), "1004")
 	require.Error(t, err)
@@ -240,7 +240,7 @@ func TestNonJSONSuccessIsExplainedEverywhere(t *testing.T) {
 				server := proxy()
 				defer server.Close()
 
-				api := confluence.NewAPI(server.URL, "user", "token", false)
+				api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 				err := tc.call(api)
 				require.Error(t, err)
@@ -269,7 +269,7 @@ func TestStatusErrorBodyIsBounded(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	err := api.DeletePage(context.Background(), "1004")
 	require.Error(t, err)

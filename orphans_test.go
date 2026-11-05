@@ -55,7 +55,7 @@ func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
@@ -172,7 +172,7 @@ func TestOnOrphanDryRunActsOnNothing(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
@@ -228,7 +228,7 @@ func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
@@ -281,7 +281,7 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	one, err := api.FindPage(context.Background(), "DOCS", "One", "page")
 	require.NoError(t, err)
 	require.NotNil(t, one)
@@ -334,7 +334,7 @@ func TestOrphanUnderLimitsScope(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	in, err := api.FindPage(context.Background(), "DOCS", "In", "page")
 	require.NoError(t, err)
 	require.NotNil(t, in)
@@ -392,7 +392,7 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	out, err := api.FindPage(context.Background(), "DOCS", "Out", "page")
 	require.NoError(t, err)
 	require.NotNil(t, out)
@@ -449,7 +449,7 @@ func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	_, known, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "gone.md"))
 	require.NoError(t, err)
 	assert.False(t, known, "reported once and then forgotten, as before")
@@ -495,7 +495,7 @@ func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
@@ -546,7 +546,7 @@ func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)
@@ -614,7 +614,7 @@ func TestOrphanScopeIsCheckedOnce(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)

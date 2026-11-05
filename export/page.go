@@ -242,7 +242,7 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 
 		// Confluence's idea of its own address and the one mark was given can
 		// differ, behind a proxy or on a custom domain; a URL may be on either.
-		instances := []string{api.BaseURL}
+		instances := []string{api.BaseURL()}
 		if strings.HasPrefix(page.Links.Base, "http") {
 			instances = append(instances, page.Links.Base)
 		}

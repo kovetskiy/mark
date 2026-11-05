@@ -173,7 +173,7 @@ func writeWithBOM(t *testing.T, dir, name, content string) string {
 // storedBody returns what is actually stored on the page carrying a title.
 func storedBody(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
-	found, err := confluence.NewAPI(server.URL, "user", "token", false).
+	found, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if found == nil {

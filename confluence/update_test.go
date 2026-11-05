@@ -32,7 +32,7 @@ func TestUpdateOmitsAncestorsWhenThereAreNone(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	page := &confluence.PageInfo{ID: "1001", Title: "Orphan", Type: "page"}
 	require.NoError(t, api.UpdatePage(context.Background(), page, "<p/>", confluence.UpdateOptions{Appearance: "full-width"}))
@@ -60,7 +60,7 @@ func TestUpdateKeepsTheAncestorItHas(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	page := &confluence.PageInfo{ID: "1001", Title: "Child", Type: "page"}
 	page.Ancestors = append(page.Ancestors, struct {

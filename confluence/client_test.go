@@ -443,7 +443,7 @@ func TestClientIsAbortedByItsContext(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := newClient(server.URL+"/rest/api", newHTTPClient(false), "user", "token", "")
+	c := newClient(server.URL+"/rest/api", newHTTPClient(false, nil), "user", "token", "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -877,7 +877,7 @@ func TestClientCutsShortAWriteBackoff(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := newClient(server.URL+"/rest/api", newHTTPClient(false), "user", "token", "")
+	c := newClient(server.URL+"/rest/api", newHTTPClient(false, nil), "user", "token", "")
 
 	started := time.Now()
 	_, err := c.do(ctx, nil, http.MethodDelete, []string{"content", "1"}, nil, nil, &struct{}{})

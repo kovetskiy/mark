@@ -57,7 +57,7 @@ func TestUpdatePageTakesAnUpdateAppliedBehindAnHTMLAnswer(t *testing.T) {
 	fake := confluencetest.New(t)
 	fake.AddSpace("DOCS")
 	stored := fake.AddPage("DOCS", "Doc", "page", "")
-	api := NewAPI(rewriteWrites(t, fake, true), "user", "token", false)
+	api := NewAPI(rewriteWrites(t, fake, true), Options{Username: "user", Password: "token"})
 
 	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestUpdatePageRefusesAnHTMLAnswerToAnUpdateNotApplied(t *testing.T) {
 	fake := confluencetest.New(t)
 	fake.AddSpace("DOCS")
 	stored := fake.AddPage("DOCS", "Doc", "page", "")
-	api := NewAPI(rewriteWrites(t, fake, false), "user", "token", false)
+	api := NewAPI(rewriteWrites(t, fake, false), Options{Username: "user", Password: "token"})
 
 	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestConfirmVersionLeavesARefusalAlone(t *testing.T) {
 	fake := confluencetest.New(t)
 	fake.AddSpace("DOCS")
 	stored := fake.AddPage("DOCS", "Doc", "page", "")
-	api := NewAPI(fake.URL, "user", "token", false)
+	api := NewAPI(fake.URL, Options{Username: "user", Password: "token"})
 	page := &PageInfo{ID: stored.ID, Type: "page"}
 
 	cancelled, cancel := context.WithCancel(context.Background())

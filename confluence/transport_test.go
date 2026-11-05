@@ -438,13 +438,13 @@ func TestRoundTripDoesNotRetryTransportErrorOnPost(t *testing.T) {
 // cookies just as the default does.
 func TestNewHTTPClientHasCookieJar(t *testing.T) {
 	for _, insecure := range []bool{false, true} {
-		client := newHTTPClient(insecure)
+		client := newHTTPClient(insecure, nil)
 		assert.NotNil(t, client.Jar, "insecure=%v should still retain session cookies", insecure)
 	}
 }
 
 func TestNewHTTPClientSetsTimeouts(t *testing.T) {
-	client := newHTTPClient(false)
+	client := newHTTPClient(false, nil)
 
 	retry, ok := client.Transport.(*retryTransport)
 	require.True(t, ok)
@@ -455,6 +455,51 @@ func TestNewHTTPClientSetsTimeouts(t *testing.T) {
 	assert.Equal(t, tlsHandshakeTimeout, transport.TLSHandshakeTimeout)
 	assert.Zero(t, client.Timeout,
 		"a whole-exchange timeout would cut off large attachment uploads")
+}
+
+// A client handed to NewAPI carries the requests through its own transport,
+// with mark's retries around it, and is itself left as it was.
+func TestNewHTTPClientWrapsAGivenClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	var calls atomic.Int32
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	given := &http.Client{Transport: transport, Timeout: time.Minute}
+
+	client := newHTTPClient(true, given)
+
+	retry, ok := client.Transport.(*retryTransport)
+	require.True(t, ok, "mark's retries go around the given transport")
+	assert.NotNil(t, retry.base)
+	assert.NotNil(t, client.Jar, "Confluence Server's session cookie needs a jar")
+	assert.Equal(t, time.Minute, client.Timeout, "the given client's own settings are kept")
+	assert.Nil(t, given.Jar, "the given client is not changed")
+	assert.NotNil(t, given.Transport)
+	_, wrapped := given.Transport.(*retryTransport)
+	assert.False(t, wrapped, "the given client is not changed")
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+	response, err := client.Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+// A given client without a transport goes through http.DefaultTransport, as
+// it would on its own.
+func TestNewHTTPClientDefaultsAGivenClientsTransport(t *testing.T) {
+	client := newHTTPClient(false, &http.Client{})
+
+	retry, ok := client.Transport.(*retryTransport)
+	require.True(t, ok)
+	assert.Equal(t, http.DefaultTransport, retry.base)
 }
 
 // TestRetryBackoffStopsWhenTheRequestIsCancelled: the backoff slept

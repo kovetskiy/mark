@@ -21,7 +21,7 @@ import (
 func TestInScopeTreatsADeletedPageAsGone(t *testing.T) {
 	ctx := t.Context()
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	inScope, err := InScope(ctx, api, "2000", Orphan{
 		Path: "gone.md", PageID: "9999", Title: "Gone",
@@ -48,7 +48,7 @@ func TestInScopeReportsARealFailure(t *testing.T) {
 		return 0, "", false
 	})
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := InScope(ctx, api, home.ID, Orphan{
 		Path: "doc.md", PageID: page.ID, Title: "Doc",

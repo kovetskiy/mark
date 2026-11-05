@@ -45,7 +45,7 @@ func TestHasChildFoldersOutsideCloudAsksNothing(t *testing.T) {
 	server.SetDataCenter()
 	page := server.AddPage("DOCS", "Gone", "page", "")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	require.False(t, api.IsCloud(context.Background()), "the fixture has to be identified as Data Center for this to mean anything")
 
 	has, err := api.HasChildFolders(context.Background(), page.ID)
@@ -63,7 +63,7 @@ func TestFindChildFolderOutsideCloudAsksNothing(t *testing.T) {
 	server.SetDataCenter()
 	page := server.AddPage("DOCS", "Parent", "page", "")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	require.False(t, api.IsCloud(context.Background()), "the fixture has to be identified as Data Center for this to mean anything")
 
 	folder, err := api.FindChildFolder(context.Background(), page.ID, "page", "Manuals")
@@ -86,7 +86,7 @@ func TestHasChildFoldersAsksWhenThePlatformIsUnidentified(t *testing.T) {
 			page := server.AddPage("DOCS", "Gone", "page", "")
 			server.AddFolder("DOCS", "Manuals", page.ID, "page")
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 			require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
 
 			has, err := api.HasChildFolders(context.Background(), page.ID)
@@ -104,7 +104,7 @@ func TestFindChildFolderAsksWhenThePlatformIsUnidentified(t *testing.T) {
 	page := server.AddPage("DOCS", "Parent", "page", "")
 	server.AddFolder("DOCS", "Manuals", page.ID, "page")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	require.False(t, api.IsCloud(context.Background()), "the platform has to go unidentified for this to mean anything")
 
 	folder, err := api.FindChildFolder(context.Background(), page.ID, "page", "Manuals")

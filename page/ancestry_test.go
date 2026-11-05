@@ -135,7 +135,7 @@ func TestFolderAncestryReportsAFailedRead(t *testing.T) {
 		return 0, "", false
 	})
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := EnsureFolderAncestry(ctx, api, "DOCS", folders, &anchorID, AncestryOptions{FolderCache: NewFolderCache(), Folders: tracker})
 
@@ -164,7 +164,7 @@ func TestFolderAncestryRecreatesAFolderThatIsReallyGone(t *testing.T) {
 		recorded: map[string]string{},
 	}
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	parent, err := EnsureFolderAncestry(ctx, api, "DOCS", folders, &anchorID, AncestryOptions{FolderCache: NewFolderCache(), Folders: tracker})
 

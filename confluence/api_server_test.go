@@ -18,7 +18,7 @@ import (
 func newAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
 	server := confluencetest.New(t)
-	return confluence.NewAPI(server.URL, "user", "token", false), server
+	return confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), server
 }
 
 func TestFindPage(t *testing.T) {
@@ -125,7 +125,7 @@ func TestCreatePage(t *testing.T) {
 // TestCreatePageReadsLinksBaseFromResponse is the #1019 property: a page
 // created through the api.atlassian.com gateway still gets the tenant wiki
 // URL from the create response's `_links.base`, so same-run tiny links are
-// browsable. Falling back to api.BaseURL is what produced dead
+// browsable. Falling back to api.BaseURL() is what produced dead
 // api.atlassian.com/ex/confluence/.../x/... URLs.
 func TestCreatePageReadsLinksBaseFromResponse(t *testing.T) {
 	const site = "https://tenant.atlassian.net/wiki"
@@ -137,7 +137,7 @@ func TestCreatePageReadsLinksBaseFromResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	assert.Equal(t, site, created.Links.Base)
-	assert.NotEqual(t, api.BaseURL, created.Links.Base)
+	assert.NotEqual(t, api.BaseURL(), created.Links.Base)
 
 	// Same-run lookup is served from the cache populated by CreatePage, so
 	// it must keep the tenant URL rather than the gateway.
@@ -154,7 +154,7 @@ func TestCreatePageFallsBackToAPIBaseURL(t *testing.T) {
 	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "No Base", "<p/>")
 	require.NoError(t, err)
 	require.NotNil(t, created)
-	assert.Equal(t, api.BaseURL, created.Links.Base)
+	assert.Equal(t, api.BaseURL(), created.Links.Base)
 }
 
 func TestCreatePageDuplicateTitleIsAnError(t *testing.T) {

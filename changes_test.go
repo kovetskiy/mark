@@ -105,7 +105,7 @@ func TestDryRunChangesOnlyNewPageWouldBeCreated(t *testing.T) {
 	assert.Equal(t, report.StatusWouldCreate, decodeReport(t, []byte(previewOf(t, config, "json"))).Pages[0].Status)
 	assert.Contains(t, previewOf(t, config, ""), "fresh")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	pg, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	assert.Nil(t, pg, "a dry run must not create the page")
@@ -249,7 +249,7 @@ func TestDryRunChangesOnlyStopsWhenTheRecordedPageCannotBeLoaded(t *testing.T) {
 	config.Update.ChangesOnly = true
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	first, err := api.FindPage(context.Background(), "DOCS", "First", "page")
 	require.NoError(t, err)
 	require.NotNil(t, first)
@@ -627,26 +627,26 @@ func TestChangesOnlySeesPagePropertyHeaders(t *testing.T) {
 					Password: "token",
 				},
 			}
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 			target, err := publishOne(context.Background(), file, api, config.PublishConfig)
 			require.NoError(t, err)
 			published := server.Page(target.ID).Version
 
 			// Unchanged: skipped, which is the point of the flag.
-			_, err = publishOne(context.Background(), file, confluence.NewAPI(server.URL, "user", "token", false), config.PublishConfig)
+			_, err = publishOne(context.Background(), file, confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), config.PublishConfig)
 			require.NoError(t, err)
 			require.Equal(t, published, server.Page(target.ID).Version)
 
 			writeFile(t, dir, "doc.md", header+tt.extra+"\nbody\n")
-			_, err = publishOne(context.Background(), file, confluence.NewAPI(server.URL, "user", "token", false), config.PublishConfig)
+			_, err = publishOne(context.Background(), file, confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), config.PublishConfig)
 			require.NoError(t, err)
 			assert.Greater(t, server.Page(target.ID).Version, published,
 				"a changed %s header must update the page", tt.name)
 
 			// And having been published, it is up to date again.
 			updated := server.Page(target.ID).Version
-			_, err = publishOne(context.Background(), file, confluence.NewAPI(server.URL, "user", "token", false), config.PublishConfig)
+			_, err = publishOne(context.Background(), file, confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), config.PublishConfig)
 			require.NoError(t, err)
 			assert.Equal(t, updated, server.Page(target.ID).Version)
 		})
@@ -864,7 +864,7 @@ func dataCenterMoveFixtureWith(
 
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)

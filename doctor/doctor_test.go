@@ -33,7 +33,7 @@ func doctor(t *testing.T, server *confluencetest.Server, base string, spaces ...
 		base = server.URL
 	}
 	var out bytes.Buffer
-	api := confluence.NewAPI(base, "user", "token", false)
+	api := confluence.NewAPI(base, confluence.Options{Username: "user", Password: "token"})
 	err := Run(context.Background(), api, spaces, &out)
 	return out.String(), err
 }

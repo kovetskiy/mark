@@ -69,7 +69,7 @@ func runHierarchy(t *testing.T, dir string, extra func(*Config)) *confluence.API
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	return confluence.NewAPI(server.URL, "user", "token", false)
+	return confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 }
 
 const space = "<!-- Space: DOCS -->\n"
@@ -157,7 +157,7 @@ func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 	config.Page.Parents = parents
 	require.NoError(t, Run(context.Background(), config))
 
-	chapter, err := confluence.NewAPI(server.URL, "user", "token", false).
+	chapter, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Chapter", "page")
 	require.NoError(t, err)
 	require.NotNil(t, chapter)
@@ -168,7 +168,7 @@ func TestParentsFlagIsNotWrittenThrough(t *testing.T) {
 	assert.Equal(t, []string{"Root", "Section", "Chapter"}, parents,
 		"the caller's --parents must come back as it was given")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	for _, name := range []string{"One", "Two", "Three"} {
 		assert.Equal(t, []string{"Home", "Root", "Section", "Chapter Renamed"}, ancestryOf(t, api, name),
 			"%s still sits under the renamed parent", name)
@@ -232,7 +232,7 @@ func TestTitleCollisionIsRefused(t *testing.T) {
 
 	// The document that got there first keeps the page it published, with its
 	// own content and under its own parents.
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	assert.Equal(t, []string{"Home", "Api"}, ancestryOf(t, api, "Overview"))
 
 	page, err := api.FindPage(context.Background(), "DOCS", "Overview", "page")
@@ -305,7 +305,7 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guides, "mark created a page for the directory")
@@ -356,7 +356,7 @@ func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	guides, err := api.FindPage(context.Background(), "DOCS", "Guides", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guides)
@@ -401,7 +401,7 @@ func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	_, ok, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "guides"))
 	require.NoError(t, err)
 	assert.False(t, ok, "a parent mark did not derive from the path is not its to track")

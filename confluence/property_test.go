@@ -154,7 +154,7 @@ func TestListingContinuesPastAShortPageWithANextLink(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	properties, err := api.ListContentProperties(context.Background(), "1")
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ func TestListingStopsWithoutANextLink(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	properties, err := api.ListContentProperties(context.Background(), "1")
 	require.NoError(t, err)

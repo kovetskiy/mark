@@ -251,7 +251,7 @@ func TestSpaceLookupsWordABodyThatIsNotJSON(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.Error(t, err)
