@@ -332,7 +332,7 @@ func TestServerBackendRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	store, server, api := serverInstance(t)
 	homeID := docsWithHomepage(t, server)
-	require.False(t, api.IsCloud(context.Background()), "the fake must look like Server for this test")
+	require.False(t, mustCloud(t, api), "the fake must look like Server for this test")
 
 	require.NoError(t, store.Record(ctx, "DOCS", "docs/intro.md", "1234", "T", ""))
 	require.NoError(t, store.Save(ctx))
@@ -1007,7 +1007,7 @@ func TestManifestPageOnServer(t *testing.T) {
 	store, server, api := serverInstance(t)
 	homeID := docsWithHomepage(t, server)
 	handbook := server.AddPage("DOCS", "Team Handbook", "page", homeID)
-	require.False(t, api.IsCloud(context.Background()))
+	require.False(t, mustCloud(t, api))
 	store.SetManifestPage("Team Handbook")
 
 	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "T", ""))
@@ -1328,4 +1328,14 @@ func TestRecordDoesNotFollowAnEntryWithNoPattern(t *testing.T) {
 	assert.Equal(t, map[string]string{"doc.md": "1", "sub/doc.md": "1"},
 		manifestPages(t, server, spaceID(t, server, "DOCS")),
 		"the legacy entry is kept")
+}
+
+// mustCloud is api.Cloud for a target that has to be identified.
+func mustCloud(t *testing.T, api *confluence.API) bool {
+	t.Helper()
+
+	cloud, err := api.Cloud(context.Background())
+	require.NoError(t, err)
+
+	return cloud
 }

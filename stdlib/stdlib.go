@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/rs/zerolog/log"
 )
 
@@ -15,13 +16,13 @@ type Lib struct {
 }
 
 // UserLookup resolves a user name for the "user" template func.
-// *confluence.API implements it, returning a *confluence.User.
+// *confluence.API implements it.
 //
 // The user is handed to the templates as it is, so a template reads whichever
-// fields it has: the built-in ones read AccountID and UserKey. A nil user is
+// fields it needs: the built-in ones read AccountID and UserKey. A nil user is
 // nobody.
 type UserLookup interface {
-	LookupUser(ctx context.Context, name string) (any, error)
+	LookupUser(ctx context.Context, name string) (*confluence.User, error)
 }
 
 // New builds the standard library. The "user" template func resolves names
@@ -55,6 +56,10 @@ func templates(ctx context.Context, users UserLookup) (*template.Template, error
 				user, err := users.LookupUser(ctx, name)
 				if err != nil {
 					log.Error().Err(err).Str("user", name).Msg("unable to look up user")
+					return nil
+				}
+				if user == nil {
+					// An untyped nil, so that a template's "with" and "if" see nobody.
 					return nil
 				}
 

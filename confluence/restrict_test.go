@@ -25,7 +25,7 @@ func newCloudRestrictAPI(t *testing.T) (*confluence.API, *confluencetest.Server,
 		Email:     "me@example.com",
 		FullName:  "Mark Bot",
 	})
-	require.True(t, api.IsCloud(context.Background()), "the fixture has to look like Cloud for this to mean anything")
+	require.True(t, mustCloud(t, api), "the fixture has to look like Cloud for this to mean anything")
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -70,7 +70,7 @@ func newCloudRestrictAPIWithoutCurrentUser(t *testing.T) (*confluence.API, *conf
 		return 0, "", false
 	})
 	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
-	require.True(t, api.IsCloud(context.Background()))
+	require.True(t, mustCloud(t, api))
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
@@ -98,7 +98,7 @@ func newCloudLoginAPI(t *testing.T, login, email string) (*confluence.API, *conf
 		Email:     email,
 		FullName:  "Mark Bot",
 	})
-	require.True(t, api.IsCloud(context.Background()), "the fixture has to look like Cloud for this to mean anything")
+	require.True(t, mustCloud(t, api), "the fixture has to look like Cloud for this to mean anything")
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
 

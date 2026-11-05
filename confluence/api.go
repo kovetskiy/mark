@@ -1895,10 +1895,9 @@ func (api *API) GetUserByName(ctx context.Context, name string) (*User, error) {
 	return user, err
 }
 
-// LookupUser is GetUserByName for stdlib's "user" template func, which takes
-// it through an interface so that the Markdown pipeline does not depend on
-// this package. A nil api, or a name that finds nobody, gives a nil user.
-func (api *API) LookupUser(ctx context.Context, name string) (any, error) {
+// LookupUser is GetUserByName for stdlib's "user" template func. A nil api, or
+// a name that finds nobody, gives a nil user.
+func (api *API) LookupUser(ctx context.Context, name string) (*User, error) {
 	if api == nil {
 		return nil, nil
 	}
@@ -2019,14 +2018,6 @@ func IsCloudHost(host string) bool {
 	}
 
 	return false
-}
-
-// IsCloud reports whether the target is Confluence Cloud, as Cloud decided it.
-// A target that could not be identified is reported as not Cloud.
-func (api *API) IsCloud(ctx context.Context) bool {
-	isCloud, _ := api.Cloud(ctx)
-
-	return isCloud
 }
 
 // Cloud identifies the target: a known Cloud host answers without a request,
@@ -2165,7 +2156,12 @@ func (api *API) RestrictPageUpdates(
 		"type": "known",
 	}
 
-	if api.IsCloud(ctx) {
+	cloud, err := api.Cloud(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
+	}
+
+	if cloud {
 		user, err := api.restrictionUserCloud(ctx, allowedUser)
 		if err != nil {
 			return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
@@ -2187,7 +2183,7 @@ func (api *API) RestrictPageUpdates(
 	// Center answers this one with 204 and no body, which send -- asked for a
 	// value -- would take for a failure of a restriction already applied.
 	var answer any
-	_, err := api.v1.do(
+	_, err = api.v1.do(
 		ctx, nil, http.MethodPost, []string{"content", page.ID, "restriction"}, nil,
 		[]map[string]any{
 			{
@@ -2367,9 +2363,8 @@ func (api *API) FindChildFolder(ctx context.Context, parentID, parentType, title
 // failure, since the listing it interrupts is already known partial.
 //
 // Skipped entirely once the target is identified as Server or Data Center:
-// folders are Cloud-only. Not on !IsCloud, which is also false when
-// identification failed -- skipping then reads a page holding folders as
-// childless.
+// folders are Cloud-only. Not when identification failed: skipping then
+// would read a page holding folders as childless.
 func (api *API) eachDirectChild(
 	ctx context.Context,
 	parentID, parentType, operation string,

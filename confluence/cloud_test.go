@@ -39,8 +39,8 @@ func TestIdentifyCloud(t *testing.T) {
 }
 
 // TestCloudKeepsItsFirstAnswer: the platform is decided once, so a lookup that
-// failed is not asked again, and IsCloud reports the same "not Cloud" a run
-// was stopped by rather than switching paths partway through.
+// failed is not asked again, and every later call reports the same failure a
+// run was stopped by rather than switching paths partway through.
 func TestCloudKeepsItsFirstAnswer(t *testing.T) {
 	var refuse atomic.Bool
 	refuse.Store(true)
@@ -64,7 +64,6 @@ func TestCloudKeepsItsFirstAnswer(t *testing.T) {
 	cloud, err = api.Cloud(context.Background())
 	assert.False(t, cloud)
 	require.Error(t, err)
-	assert.False(t, api.IsCloud(context.Background()))
 	assert.Equal(t, 1, server.CountRequests("GET", "/rest/api/user/current"))
 }
 

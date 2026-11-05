@@ -1141,7 +1141,7 @@ type runUsers struct {
 	ctx context.Context
 }
 
-func (u *runUsers) LookupUser(_ context.Context, name string) (any, error) {
+func (u *runUsers) LookupUser(_ context.Context, name string) (*confluence.User, error) {
 	return u.api.LookupUser(u.ctx, name)
 }
 

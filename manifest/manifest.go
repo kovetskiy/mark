@@ -680,7 +680,11 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 		state.shards[i].pages = map[string]Entry{}
 	}
 
-	var err error
+	cloud, err := s.api.Cloud(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to tell where the manifest of space %q is kept: %w", spaceKey, err)
+	}
+
 	switch {
 	case s.manifestPage != "":
 		state.contentID, err = s.resolveManifestPage(ctx, spaceKey)
@@ -688,7 +692,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			return nil, err
 		}
 		state.backend = contentProperties
-		if s.api.IsCloud(ctx) {
+		if cloud {
 			state.backend = pageProperties
 		}
 
@@ -696,7 +700,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			return nil, err
 		}
 
-	case s.api.IsCloud(ctx):
+	case cloud:
 		state.backend = spaceProperties
 		state.spaceID, err = s.api.GetSpaceID(ctx, spaceKey)
 		if err != nil {
