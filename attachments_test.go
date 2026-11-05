@@ -17,6 +17,7 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -915,7 +916,7 @@ func mermaidFixture(t *testing.T) Config {
 // fields are compared as written, so "SVG" is refused too.
 func TestImageOutputsRejectAFormatMarkCannotPublish(t *testing.T) {
 	for field, set := range map[string]func(*RenderingConfig, imageformat.Format){
-		"MermaidOutput": func(r *RenderingConfig, f imageformat.Format) { r.MermaidOutput = f },
+		"MermaidOutput": func(r *RenderingConfig, f imageformat.Format) { r.MermaidOutput = mermaid.Output(f) },
 		"D2Output":      func(r *RenderingConfig, f imageformat.Format) { r.D2Output = f },
 		"MathOutput":    func(r *RenderingConfig, f imageformat.Format) { r.MathOutput = f },
 	} {
@@ -948,6 +949,95 @@ func TestMermaidBundleNeedsAnSVGToGoIn(t *testing.T) {
 // never heard of these fields leaves them zero, and has always got a PNG.
 func TestMermaidDefaultsPublishAsBefore(t *testing.T) {
 	require.NoError(t, Run(context.Background(), mermaidFixture(t)))
+}
+
+// TestMermaidMacroIgnoresDrawingSettings: with the macro output nothing is
+// drawn, so an engine and a scale that drive drawing are ignored -- including
+// the values a configuration file carries for the image outputs.
+func TestMermaidMacroIgnoresDrawingSettings(t *testing.T) {
+	config := mermaidFixture(t)
+	config.Rendering.MermaidOutput = mermaid.OutputMacro
+	config.Rendering.MermaidEngine = "bogus"
+	config.Rendering.MermaidScale = -1
+	config.Rendering.Features = []string{"mermaid"}
+
+	require.NoError(t, Run(context.Background(), config))
+}
+
+// TestMermaidMacroBlankNameIsRefused: a library caller reaching Config directly
+// gets the same refusal as the command line for a name that is only space.
+func TestMermaidMacroBlankNameIsRefused(t *testing.T) {
+	config := mermaidFixture(t)
+	config.Rendering.MermaidOutput = mermaid.OutputMacro
+	config.Rendering.MermaidMacroName = "  "
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "blank")
+}
+
+// TestMarkdownOptionsNormalisesTheMacroName: markdownOptions is where the
+// published configuration gets the default name and loses surrounding space.
+func TestMarkdownOptionsNormalisesTheMacroName(t *testing.T) {
+	assert.Equal(t, "mermaid-macro", (RenderingConfig{}).markdownOptions(&resources{}).MermaidMacroName)
+	assert.Equal(t, "my-macro", (RenderingConfig{MermaidMacroName: "  my-macro  "}).markdownOptions(&resources{}).MermaidMacroName)
+}
+
+// TestMermaidMacroNameIsPublished: the name reaches ac:name trimmed, and an
+// unset name publishes under the default -- the one thing the empty-name rules
+// leave for a library caller.
+func TestMermaidMacroNameIsPublished(t *testing.T) {
+	tests := map[string]string{
+		"":             "mermaid-macro",
+		"  my-macro  ": "my-macro",
+	}
+
+	for name, want := range tests {
+		t.Run(want, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+
+			dir := t.TempDir()
+			file := writeFile(t, dir, "doc.md",
+				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n```mermaid\nflowchart TD\nA --> B\n```\n")
+
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+			config := Config{PublishConfig: PublishConfig{
+				Output: io.Discard,
+				Rendering: RenderingConfig{
+					Features:         []string{"mermaid"},
+					MermaidOutput:    mermaid.OutputMacro,
+					MermaidMacroName: name,
+				},
+			}}
+
+			publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
+			require.NoError(t, err)
+			defer publisher.Close()
+
+			target, err := publisher.Publish(context.Background(), file)
+			require.NoError(t, err)
+			require.NotNil(t, target)
+
+			body := server.Page(target.ID).Body
+			assert.Contains(t, body, `ac:name="`+want+`"`)
+			assert.NotContains(t, body, "<ac:image", "the macro output attaches no image")
+		})
+	}
+}
+
+// TestMermaidMacroRefusesABundle: the macro carries the diagram's source
+// itself, so there is nothing for a bundle to add.
+func TestMermaidMacroRefusesABundle(t *testing.T) {
+	config := mermaidFixture(t)
+	config.Rendering.MermaidOutput = mermaid.OutputMacro
+	config.Rendering.MermaidBundle = true
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "the macro publishes the diagram's source itself")
 }
 
 // TestD2DefaultsPublishAsBefore is its control: a caller that never heard of
