@@ -29,13 +29,13 @@ func TestMacroDefinedInIncludeKeepsItsTemplateActions(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	direct, _, err := CompileMarkdown([]byte(defs+use), std, filepath.Join(dir, "doc.md"), Options{})
+	direct, _, err := CompileMarkdown(t.Context(), []byte(defs+use), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	std, err = stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	included, _, err := CompileMarkdown([]byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), Options{})
+	included, _, err := CompileMarkdown(t.Context(), []byte("<!-- Include: box.md -->\n"+use), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	assert.NotContains(t, included, "no value")

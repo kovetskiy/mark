@@ -17,10 +17,14 @@ import (
 // them for the kinds it names, and of two extensions naming one kind the later
 // one wins.
 
-// renderContext is what a diagram or formula is drawn under. CompileMarkdown
-// is given no context, so there is no caller's to hand on.
-func renderContext() context.Context {
-	return context.TODO()
+// orBackground is ctx, or context.Background for a renderer built as a struct
+// literal rather than by its constructor.
+func orBackground(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+
+	return ctx
 }
 
 // renderFunc is a node renderer as this package writes them, given the

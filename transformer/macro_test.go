@@ -94,7 +94,7 @@ inline: "<ac:structured-macro ac:name=\"status\"><ac:parameter ac:name=\"title\"
 | --- | --- |
 | :accept: | Approved |`)
 
-	output, _, err := markdown.CompileMarkdown(markdownInput, nil, "test.md", markdown.Options{})
+	output, _, err := markdown.CompileMarkdown(t.Context(), markdownInput, nil, "test.md", markdown.Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, output, "<ac:structured-macro ac:name=\"status\">")

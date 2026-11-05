@@ -19,7 +19,7 @@ func compileFootnotes(t *testing.T, source string, features ...string) string {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 
-	actual, _, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", markdown.Options{
+	actual, _, err := markdown.CompileMarkdown(t.Context(), []byte(source), lib, "testdata/test.md", markdown.Options{
 		Features: features,
 	})
 	assert.NoError(t, err)

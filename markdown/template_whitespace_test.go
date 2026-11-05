@@ -24,7 +24,7 @@ func compileWithTemplate(t *testing.T, name, template, document string) string {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := markdown.CompileMarkdown([]byte(document), lib, "testdata/x.md",
+	out, _, err := markdown.CompileMarkdown(t.Context(), []byte(document), lib, "testdata/x.md",
 		markdown.Options{MermaidScale: 1, D2Scale: 1, IncludePath: dir})
 	require.NoError(t, err)
 
@@ -76,7 +76,7 @@ func TestBodyWhitespaceIsPreserved(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := markdown.CompileMarkdown([]byte(
+	out, _, err := markdown.CompileMarkdown(t.Context(), []byte(
 		"<!-- Macro: :m:\n     Template: ac:box\n     Name: info\n"+
 			"     Body: \"- one\\n- two\" -->\n\n:m:\n"),
 		lib, "testdata/x.md", markdown.Options{MermaidScale: 1, D2Scale: 1})
@@ -94,6 +94,7 @@ func TestBuiltinTemplateStillMatches(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := markdown.CompileMarkdown(
+		t.Context(),
 		[]byte("<!-- Include: ac:view-file\n     Name: diagram.drawio -->\n"),
 		lib, "testdata/x.md", markdown.Options{MermaidScale: 1, D2Scale: 1})
 	require.NoError(t, err)

@@ -947,7 +947,7 @@ func newPublishRun(
 		return nil, err
 	}
 
-	pageHeader, err := header.Load(config.Rendering.PageHeader, std, config.Rendering.markdownOptions(res))
+	pageHeader, err := header.Load(ctx, config.Rendering.PageHeader, std, config.Rendering.markdownOptions(res))
 	if err != nil {
 		return nil, err
 	}
@@ -1676,7 +1676,7 @@ func (r *publishRun) previewBody(
 		}
 	}
 
-	html, inline, err := markdown.CompileMarkdown(doc.markdown, r.std, file, cfg)
+	html, inline, err := markdown.CompileMarkdown(ctx, doc.markdown, r.std, file, cfg)
 	if err != nil {
 		return "", "", "", fmt.Errorf("unable to compile markdown: %w", err)
 	}
@@ -1686,7 +1686,7 @@ func (r *publishRun) previewBody(
 		previewedTitle = previewed.Title
 	}
 
-	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, previewedTitle, r.config.Page.Space, cfg)
+	headerHTML, headerAttachments, err := renderHeader(ctx, r.pageHeader, file, meta, previewedTitle, r.config.Page.Space, cfg)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -1907,7 +1907,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		targetTitle = target.Title
 	}
 
-	headerHTML, headerAttachments, err := renderHeader(r.pageHeader, file, meta, targetTitle, r.config.Page.Space, cfg)
+	headerHTML, headerAttachments, err := renderHeader(ctx, r.pageHeader, file, meta, targetTitle, r.config.Page.Space, cfg)
 	if err != nil {
 		return "", nil, err
 	}
@@ -1939,7 +1939,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	cfg.ResolveAttachment = attachmentLinks.Resolve
 
-	html, inlineAttachments, err := markdown.CompileMarkdown(doc.markdown, r.std, file, cfg)
+	html, inlineAttachments, err := markdown.CompileMarkdown(ctx, doc.markdown, r.std, file, cfg)
 	if err != nil {
 		return "", nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
@@ -2201,9 +2201,9 @@ func appearanceOf(meta *metadata.Meta) (string, string) {
 // renderHeader renders the page header for one document, naming it by its
 // metadata where it has some and by fallbackTitle and fallbackSpace where not.
 func renderHeader(
-	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg markdown.Options,
+	ctx context.Context, pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg markdown.Options,
 ) (string, []attachment.Attachment, error) {
-	return pageHeader.Render(file, cmp.Or(titleOf(meta), fallbackTitle), cmp.Or(spaceOf(meta), fallbackSpace), cfg)
+	return pageHeader.Render(ctx, file, cmp.Or(titleOf(meta), fallbackTitle), cmp.Or(spaceOf(meta), fallbackSpace), cfg)
 }
 
 // documentConfig is the compile configuration for one document: the run's,

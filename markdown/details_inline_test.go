@@ -47,7 +47,7 @@ func TestDetailsInlineContextsLiftSummaryToTitle(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", Options{
+			out, _, err := CompileMarkdown(t.Context(), []byte(tt.input), std, "test.md", Options{
 				Features: []string{"details"},
 			})
 			require.NoError(t, err)
@@ -68,6 +68,7 @@ func TestDetailsInlineWithoutSummary(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
+		t.Context(),
 		[]byte("| A |\n|---|\n| before <details>body</details> after |\n"),
 		std, "test.md", Options{Features: []string{"details"}},
 	)

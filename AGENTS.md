@@ -196,6 +196,8 @@ picture that needs them, and are closed by whoever created them.
 holds no context: every `confluence.API` method that makes a request takes `ctx context.Context` first, and so
 does everything above it that makes one later (`manifest.Store`,
 `page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
+`markdown.CompileMarkdown` takes one for the diagrams and formulas it draws; goldmark
+renders without one, so the renderers that draw them are given it when built.
 `page.LinkChecker` keeps its pending links and answers behind a mutex and copies
 what `MissingPages` looks up before making a request (`TestLinkCheckerConcurrentAccess`
 in `page/check_test.go` races it). What still assumes one file at a time is the rest of

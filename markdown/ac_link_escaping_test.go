@@ -55,7 +55,7 @@ func TestACLinkEscaping(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", Options{})
+			out, _, err := CompileMarkdown(t.Context(), []byte(tt.input), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, tt.want)
@@ -69,7 +69,7 @@ func TestACLinkPlainTitleUnchanged(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("[t](ac:MyPage)\n"), std, "test.md", Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte("[t](ac:MyPage)\n"), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `ri:content-title="MyPage"`)

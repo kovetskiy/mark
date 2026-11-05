@@ -157,7 +157,7 @@ func TestMacroAttachmentIsReturnedByCompile(t *testing.T) {
 
 	source := widthMacro + "\n![Logo](logo.png)<!-- width=300 -->\n"
 
-	html, attached, err := markdown.CompileMarkdown([]byte(source), std, path, markdown.Options{})
+	html, attached, err := markdown.CompileMarkdown(t.Context(), []byte(source), std, path, markdown.Options{})
 	require.NoError(t, err)
 
 	require.Len(t, attached, 1)
@@ -200,7 +200,7 @@ func TestMacroAttachmentThatIsNotBesideTheDocumentIsNotRead(t *testing.T) {
 
 			source := widthMacro + "\n![A](" + value + ")<!-- width=10 -->\n"
 
-			_, attached, err := markdown.CompileMarkdown([]byte(source), std, path, markdown.Options{})
+			_, attached, err := markdown.CompileMarkdown(t.Context(), []byte(source), std, path, markdown.Options{})
 			require.NoError(t, err)
 			assert.Empty(t, attached)
 		})
@@ -249,6 +249,7 @@ func TestMacroAttachmentIsReadLikeAnImageDestination(t *testing.T) {
 			source := widthMacro + "\n![A](" + tt.value + ")<!-- width=10 -->\n"
 
 			html, attached, err := markdown.CompileMarkdown(
+				t.Context(),
 				[]byte(source), std, filepath.Join(dir, "doc.md"), markdown.Options{})
 			require.NoError(t, err)
 
@@ -302,6 +303,7 @@ func TestMacroAttachmentWithAColonIsUploaded(t *testing.T) {
 	source := widthMacro + "\n![A](shot:1.png)<!-- width=10 -->\n"
 
 	html, attached, err := markdown.CompileMarkdown(
+		t.Context(),
 		[]byte(source), std, filepath.Join(dir, "doc.md"), markdown.Options{})
 	require.NoError(t, err)
 	require.Len(t, attached, 1)

@@ -22,7 +22,7 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 	constructors := map[string]html.Extension{
 		"codeblock":         crenderer.NewConfluenceCodeBlockRenderer(lib, opts...),
 		"definitionlist":    crenderer.NewConfluenceDefinitionListRenderer(opts...),
-		"fencedcodeblock":   crenderer.NewConfluenceFencedCodeBlockRenderer(lib, &collectingAttacher{}, crenderer.DiagramConfig{}, "", opts...),
+		"fencedcodeblock":   crenderer.NewConfluenceFencedCodeBlockRenderer(t.Context(), lib, &collectingAttacher{}, crenderer.DiagramConfig{}, "", opts...),
 		"gh alerts":         crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(opts...),
 		"heading":           crenderer.NewConfluenceHeadingRenderer(lib, false, opts...),
 		"image":             crenderer.NewConfluenceImageRenderer(lib, &collectingAttacher{}, "", "", opts...),

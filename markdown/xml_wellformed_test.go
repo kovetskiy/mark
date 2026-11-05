@@ -102,7 +102,7 @@ func TestVoidElementsAreClosedInALayoutBlock(t *testing.T) {
 	// One HTML block: it opens with a tag, so it runs to the blank line and
 	// takes the directive and the <br> together. That is what makes the layout
 	// transformer replace the node the repair would otherwise have walked.
-	out, _, err := CompileMarkdown([]byte(
+	out, _, err := CompileMarkdown(t.Context(), []byte(
 		"<div>\n<!-- ac:layout-cell -->\na<br>b\n<!-- ac:layout-cell end -->\n</div>\n",
 	), std, "test.md", Options{})
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestRawHTMLValidOnlyAsHTMLIsRepaired(t *testing.T) {
 		"attribute with no value": "<table><tr><td nowrap>x</td></tr></table>\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(src), std, "test.md", Options{})
+			out, _, err := CompileMarkdown(t.Context(), []byte(src), std, "test.md", Options{})
 			require.NoError(t, err)
 			assert.NoError(t, CheckWellFormed(out), out)
 		})

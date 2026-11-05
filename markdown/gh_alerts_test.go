@@ -83,7 +83,7 @@ func TestGHAlertsBecomeMacros(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Testing: %s", tc.description)
 
-			result, attachments, err := markdown.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", cfg)
+			result, attachments, err := markdown.CompileMarkdown(t.Context(), []byte(tc.markdown), stdlib, "/test", cfg)
 			assert.NoError(t, err)
 
 			assert.NotEmpty(t, result)

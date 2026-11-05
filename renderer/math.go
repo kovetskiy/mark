@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"context"
+
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
 	cmath "github.com/kovetskiy/mark/v17/math"
@@ -31,6 +33,7 @@ type MathConfig struct {
 // source is kept as the image's alt text, which is what makes it findable by
 // search and readable to a screen reader.
 type ConfluenceMathRenderer struct {
+	ctx         context.Context
 	Stdlib      *stdlib.Lib
 	Attachments attachment.Attacher
 	Math        MathConfig
@@ -41,9 +44,12 @@ type ConfluenceMathRenderer struct {
 	attached map[string]bool
 }
 
-// NewConfluenceMathRenderer creates a new instance of the ConfluenceMathRenderer.
-func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg MathConfig) html.Extension {
+// NewConfluenceMathRenderer creates a new instance of the
+// ConfluenceMathRenderer. ctx bounds the formulas it draws, as it does for
+// NewConfluenceFencedCodeBlockRenderer.
+func NewConfluenceMathRenderer(ctx context.Context, stdlib *stdlib.Lib, attachments attachment.Attacher, cfg MathConfig) html.Extension {
 	return &ConfluenceMathRenderer{
+		ctx:         ctx,
 		Stdlib:      stdlib,
 		Attachments: attachments,
 		Math:        cfg,
@@ -92,7 +98,7 @@ func (r *ConfluenceMathRenderer) writeFormula(writer util.BufWriter, equation []
 	// which locates it better than a line number would: a formula has no
 	// position of its own in the AST, and a document usually has few enough
 	// formulas that the source is the clearer identifier.
-	rendered, err := cmath.Process(renderContext(), string(equation), cmath.Options{
+	rendered, err := cmath.Process(orBackground(r.ctx), string(equation), cmath.Options{
 		Display: display,
 		Format:  r.Math.Format,
 		Scale:   r.Math.Scale,

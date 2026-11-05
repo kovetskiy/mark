@@ -35,7 +35,7 @@ func assertFootnotesAsV1(t *testing.T, cases []footnoteV1Case) {
 	for _, tc := range cases {
 		for _, featureSet := range featureSets {
 			t.Run(tc.name+"/"+featureSet.name, func(t *testing.T) {
-				actual, _, err := markdown.CompileMarkdown([]byte(tc.markdown), lib, "testdata/test.md", markdown.Options{
+				actual, _, err := markdown.CompileMarkdown(t.Context(), []byte(tc.markdown), lib, "testdata/test.md", markdown.Options{
 					Features: featureSet.features,
 				})
 				assert.NoError(t, err)

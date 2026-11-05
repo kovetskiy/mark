@@ -49,7 +49,7 @@ func TestLocalImageDestinationIsDecoded(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, attachments, err := CompileMarkdown([]byte(tc.markdown), std, doc, Options{})
+			out, attachments, err := CompileMarkdown(t.Context(), []byte(tc.markdown), std, doc, Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, `<ri:attachment ri:filename="`+tc.filename+`"/>`)
@@ -69,7 +69,7 @@ func TestLocalImageWithALiteralPercentIsStillFound(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("![a](100%25.png)\n"), std, doc, Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte("![a](100%25.png)\n"), std, doc, Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `<ri:attachment ri:filename="100%25.png"/>`)
@@ -80,7 +80,7 @@ func TestRemoteImageDestinationKeepsItsEncoding(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("![a](https://example.com/my%20file.png)\n"), std, "test.md", Options{})
+	out, _, err := CompileMarkdown(t.Context(), []byte("![a](https://example.com/my%20file.png)\n"), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `<ri:url ri:value="https://example.com/my%20file.png"/>`)
@@ -94,6 +94,7 @@ func TestImageTitleAndAltAreUnescapedOnce(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
+		t.Context(),
 		[]byte(`![a \"b\" &amp; c](https://example.com/x.png "T \"q\" &amp; z")`+"\n"),
 		std, "test.md", Options{},
 	)
@@ -130,7 +131,7 @@ func TestDeclaredAttachmentMatchesADecodedImageDestination(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("![a](my%20file.png)\n"), std, "test.md",
+	out, _, err := CompileMarkdown(t.Context(), []byte("![a](my%20file.png)\n"), std, "test.md",
 		Options{ResolveAttachment: resolve})
 	require.NoError(t, err)
 

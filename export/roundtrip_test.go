@@ -94,7 +94,7 @@ func compileWith(t *testing.T, md, path string, features ...string) string {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := markdown.CompileMarkdown([]byte(md), lib, path, markdown.Options{
+	out, _, err := markdown.CompileMarkdown(t.Context(), []byte(md), lib, path, markdown.Options{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
 		MathScale:    1.0,

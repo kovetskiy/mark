@@ -19,6 +19,7 @@ func TestLayoutCommentInInlineCodeIsLiteral(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
+		t.Context(),
 		[]byte("Write `<!-- ac:layout -->` to open a layout.\n"),
 		std, "test.md", Options{},
 	)
@@ -36,6 +37,7 @@ func TestLayoutCommentOutsideCodeSpanStillConverts(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown(
+		t.Context(),
 		[]byte("<!-- ac:layout -->\n\nBody.\n\n<!-- ac:layout end -->\n"),
 		std, "test.md", Options{},
 	)

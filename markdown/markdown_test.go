@@ -78,7 +78,7 @@ func TestCompileMarkdown(t *testing.T) {
 			Features:        []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
+		actual, _, _ := markdown.CompileMarkdown(t.Context(), body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 	}
 }
@@ -132,7 +132,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 			Features:        []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
+		actual, _, _ := markdown.CompileMarkdown(t.Context(), body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
@@ -188,7 +188,7 @@ func TestCompileMarkdownStripLinebreaks(t *testing.T) {
 			Features:        []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
 		}
 
-		actual, _, _ := markdown.CompileMarkdown(body, lib, filename, cfg)
+		actual, _, _ := markdown.CompileMarkdown(t.Context(), body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
 	}
@@ -219,7 +219,7 @@ func TestCompileMarkdownPlantumlOptIn(t *testing.T) {
 		Features:        []string{"mkdocsadmonitions", "mention"},
 	}
 
-	actual, _, _ := markdown.CompileMarkdown(source, lib, "testdata/plantuml.md", cfg)
+	actual, _, _ := markdown.CompileMarkdown(t.Context(), source, lib, "testdata/plantuml.md", cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), "plantuml without feature should render as regular code block")
 }
 
@@ -249,7 +249,7 @@ func TestCompileMarkdownInlineLinkCard(t *testing.T) {
 		Features:        []string{"mkdocsadmonitions", "mention", "inline-link-card"},
 	}
 
-	actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
+	actual, _, _ := markdown.CompileMarkdown(t.Context(), source, lib, fixture, cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
@@ -284,7 +284,7 @@ func TestCompileMarkdownEmoji(t *testing.T) {
 		Features:        []string{"mkdocsadmonitions", "mention", "emoji"},
 	}
 
-	actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
+	actual, _, _ := markdown.CompileMarkdown(t.Context(), source, lib, fixture, cfg)
 	test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 }
 
@@ -340,7 +340,7 @@ func TestCompileMarkdownMath(t *testing.T) {
 				Features:        []string{"mkdocsadmonitions", "mention", "math"},
 			}
 
-			actual, _, _ := markdown.CompileMarkdown(source, lib, fixture, cfg)
+			actual, _, _ := markdown.CompileMarkdown(t.Context(), source, lib, fixture, cfg)
 			test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), fixture+" vs "+htmlname)
 		})
 	}
@@ -361,7 +361,7 @@ func TestCompileMarkdownMathPreservesEscapes(t *testing.T) {
 		lib, err := stdlib.New(context.Background(), nil)
 		assert.NoError(t, err)
 
-		actual, attachments, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/math.md",
+		actual, attachments, err := markdown.CompileMarkdown(t.Context(), []byte(source), lib, "testdata/math.md",
 			markdown.Options{Browser: markdown.TestBrowser, Features: []string{"math"}})
 		assert.NoError(t, err)
 
@@ -396,6 +396,7 @@ Some content
 
 	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"details"}} {
 		actual, _, err := markdown.CompileMarkdown(
+			t.Context(),
 			source, lib, "testdata/test.md", markdown.Options{Features: features},
 		)
 		assert.NoError(t, err)
@@ -415,6 +416,7 @@ func TestHTMLImgTagIsNotOptional(t *testing.T) {
 
 	for _, features := range [][]string{nil, {"mermaid", "mention"}, {"html-img-tag"}} {
 		actual, _, err := markdown.CompileMarkdown(
+			t.Context(),
 			source, lib, "testdata/test.md", markdown.Options{Features: features},
 		)
 		assert.NoError(t, err)
@@ -433,7 +435,7 @@ func TestDateFeature(t *testing.T) {
 	cfgEnabled := markdown.Options{
 		Features: []string{"date"},
 	}
-	actualEnabled, _, err := markdown.CompileMarkdown(source, lib, "testdata/test.md", cfgEnabled)
+	actualEnabled, _, err := markdown.CompileMarkdown(t.Context(), source, lib, "testdata/test.md", cfgEnabled)
 	assert.NoError(t, err)
 	assert.Contains(t, actualEnabled, `<time datetime="2026-07-27" />`)
 	assert.Contains(t, actualEnabled, `<time datetime="2026-12-31" />`)
@@ -442,7 +444,7 @@ func TestDateFeature(t *testing.T) {
 	cfgDisabled := markdown.Options{
 		Features: []string{"mermaid", "mention"},
 	}
-	actualDisabled, _, err := markdown.CompileMarkdown(source, lib, "testdata/test.md", cfgDisabled)
+	actualDisabled, _, err := markdown.CompileMarkdown(t.Context(), source, lib, "testdata/test.md", cfgDisabled)
 	assert.NoError(t, err)
 	assert.NotContains(t, actualDisabled, `<time datetime="2026-07-27" />`)
 }
@@ -471,6 +473,7 @@ func TestCompileMarkdownResolveLinkError(t *testing.T) {
 	}
 
 	_, _, err = markdown.CompileMarkdown(
+		t.Context(),
 		[]byte("[a link](./other.md)\n"), lib, "testdata/x.md", cfg,
 	)
 	test.Error(err)
@@ -505,7 +508,7 @@ func TestCompileMarkdownResolveLinkSkipsCode(t *testing.T) {
 		"    [indented](./indented.md)\n",
 	)
 
-	_, _, err = markdown.CompileMarkdown(source, lib, "testdata/x.md", cfg)
+	_, _, err = markdown.CompileMarkdown(t.Context(), source, lib, "testdata/x.md", cfg)
 	test.NoError(err)
 	test.Equal([]string{"./real.md"}, asked)
 }
@@ -533,7 +536,7 @@ func TestCompileMarkdownResolveLinkDecodesDestination(t *testing.T) {
 	source := []byte("[a](other%20page.md) [b](other\\_page.md) " +
 		"[c](<other page.md>) [d](a&amp;b.md) [e](ac:AT&amp;T)\n")
 
-	_, _, err = markdown.CompileMarkdown(source, lib, "testdata/x.md", cfg)
+	_, _, err = markdown.CompileMarkdown(t.Context(), source, lib, "testdata/x.md", cfg)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{
 		"other%20page.md", "other_page.md", "other page.md", "a&b.md", "ac:AT&amp;T",

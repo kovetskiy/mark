@@ -4,6 +4,7 @@ package header
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -51,8 +52,8 @@ type Data struct {
 //
 // The template is executed here, so that a broken template or malformed
 // markup fails the run before any page is published. cfg is the run's
-// compile configuration, which a Markdown header is compiled with.
-func Load(path string, std *stdlib.Lib, cfg markdown.Options) (*Header, error) {
+// compile configuration, which a Markdown header is compiled with, under ctx.
+func Load(ctx context.Context, path string, std *stdlib.Lib, cfg markdown.Options) (*Header, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -106,7 +107,7 @@ func Load(path string, std *stdlib.Lib, cfg markdown.Options) (*Header, error) {
 		}
 
 		if header.markdown {
-			rendered, _, err = header.compile(rendered, cfg)
+			rendered, _, err = header.compile(ctx, rendered, cfg)
 			if err != nil {
 				return nil, err
 			}
@@ -123,7 +124,7 @@ func Load(path string, std *stdlib.Lib, cfg markdown.Options) (*Header, error) {
 // Render returns the header for one document as storage format, and any
 // attachments a Markdown header references. cfg is the document's compile
 // configuration; links in the header are left as written.
-func (h *Header) Render(file, title, space string, cfg markdown.Options) (string, []attachment.Attachment, error) {
+func (h *Header) Render(ctx context.Context, file, title, space string, cfg markdown.Options) (string, []attachment.Attachment, error) {
 	if h == nil {
 		return "", nil, nil
 	}
@@ -144,14 +145,14 @@ func (h *Header) Render(file, title, space string, cfg markdown.Options) (string
 		return rendered, nil, nil
 	}
 
-	return h.compile(rendered, cfg)
+	return h.compile(ctx, rendered, cfg)
 }
 
 // compile compiles the executed Markdown header, or returns what the previous
 // call compiled from the same text and configuration. The attachments are a
 // fresh slice each time, so that a caller appending to or editing them does
 // not change what the next page is given.
-func (h *Header) compile(rendered string, cfg markdown.Options) (string, []attachment.Attachment, error) {
+func (h *Header) compile(ctx context.Context, rendered string, cfg markdown.Options) (string, []attachment.Attachment, error) {
 	cfg = compileConfig(cfg)
 
 	// The configuration is part of the key because Render is handed each
@@ -165,7 +166,7 @@ func (h *Header) compile(rendered string, cfg markdown.Options) (string, []attac
 	if key != h.lastKey {
 		h.compiles++
 
-		html, attachments, err := markdown.CompileMarkdown([]byte(rendered), h.std, h.path, cfg)
+		html, attachments, err := markdown.CompileMarkdown(ctx, []byte(rendered), h.std, h.path, cfg)
 		if err != nil {
 			return "", nil, fmt.Errorf("unable to compile page header %q: %w", h.path, err)
 		}
