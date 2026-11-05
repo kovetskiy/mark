@@ -29,11 +29,11 @@ A page is named one way: `--page-id`, `--url`, or `--space` with `--title`.
 configuration file that names a space for publishing serves `--title` too.
 `--url` is publish's setting too, `MARK_PAGE_URL` and `url` in the
 configuration file included, so a file that names a page for export sends
-publish to it as well. `--url` gives the base URL as well. A base URL set by `--base-url`,
-`MARK_BASE_URL` or the configuration file is used instead when it is on the
-same host, or is the `api.atlassian.com` gateway and the URL a Cloud site's;
-one on another host is refused, since a page id names a page of one instance
-only.
+publish to it as well. `--url` also gives the base URL. A base URL set by
+`--base-url`, `MARK_BASE_URL` or the configuration file is used instead when
+it is on the same host, or is the `api.atlassian.com` gateway and the URL a
+Cloud site's; one on another host is refused, since a page id names a page of
+one instance only.
 
 The document starts with the headers that name the page, followed by its body:
 
