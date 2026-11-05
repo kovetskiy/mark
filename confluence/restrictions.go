@@ -436,10 +436,9 @@ func (api *API) restrictionError(ctx context.Context, operation string, err erro
 		return nil
 	}
 	if status := statusOf(err); status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
-		if cloud, cloudErr := api.Cloud(ctx); cloudErr != nil || cloud {
-			return requestError(operation, err)
+		if cloud, cloudErr := api.Cloud(ctx); cloudErr == nil && !cloud {
+			return fmt.Errorf("confluence server/datacenter version is too old to support page restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", status)
 		}
-		return fmt.Errorf("confluence server/datacenter version is too old to support page restrictions via REST API (requires Confluence 8.8.0 or newer; status: %d)", status)
 	}
 
 	return requestError(operation, err)

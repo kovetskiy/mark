@@ -106,7 +106,7 @@ func run(ctx context.Context, api *confluence.API, spaces []string) []Check {
 				"so mark assumes Confluence Server or Data Center",
 		})
 	} else if cloud, err := api.Cloud(ctx); err != nil {
-		checks = append(checks, Check{Status: Fail, Name: "platform", Detail: "unable to identify the platform: " + err.Error()})
+		checks = append(checks, Check{Status: Fail, Name: "platform", Detail: err.Error()})
 	} else {
 		checks = append(checks, Check{Status: OK, Name: "platform", Detail: describePlatform(cloud, host)})
 	}

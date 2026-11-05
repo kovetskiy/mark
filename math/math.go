@@ -99,7 +99,7 @@ func Process(ctx context.Context, tex string, options Options) (attachment.Attac
 	}
 
 	// Before the formula is typeset rather than after.
-	if Format(format) == FormatPNG && browser == nil {
+	if format == FormatPNG && browser == nil {
 		return attachment.Attachment{}, chrome.ErrNoBrowser
 	}
 
@@ -135,7 +135,7 @@ func Process(ctx context.Context, tex string, options Options) (attachment.Attac
 	// part of it because the same formula set both ways is two images; scale is
 	// only part of it for a PNG, since an SVG is the same file at any scale.
 	seed := fmt.Sprintf("%s:%v:%s", format, display, tex)
-	if Format(format) == FormatPNG {
+	if format == FormatPNG {
 		seed = fmt.Sprintf("%s:%v:%v:%s", format, display, scale, tex)
 	}
 
