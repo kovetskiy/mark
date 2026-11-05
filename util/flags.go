@@ -201,11 +201,11 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_VERSION_MESSAGE"), config.value("version-message")),
 		},
 		&cli.StringFlag{
-			Name:    "target-url",
+			Name:    "url",
 			Aliases: []string{"l"},
 			Value:   "",
 			Usage:   "edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TARGET_URL"), config.value("target-url")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_URL"), config.value("url")),
 		},
 		&cli.BoolFlag{
 			Name:    "ci",
@@ -438,7 +438,7 @@ func exportFlags(config *configFile) []cli.Flag {
 			Aliases: []string{"l"},
 			Value:   "",
 			Usage:   "export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set.",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_URL"), config.value("url")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_URL"), config.value("url")),
 		},
 		&cli.StringFlag{
 			Name:    "space",

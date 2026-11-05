@@ -66,6 +66,10 @@ func (c *configFile) check() error {
 	return c.unknownKeys()
 }
 
+// renamed maps a removed flag, which is also its configuration key, to the
+// one that replaced it. Too far apart to be suggested as a typo.
+var renamed = map[string]string{"target-url": "url"}
+
 // unknownKeys refuses every key of the file that no command's flag reads, each
 // with the key it is a typo of when there is one. One file serves every
 // command, so a key of another command is known too. The keys are listed on
@@ -85,7 +89,9 @@ func (c *configFile) unknownKeys() error {
 	known := slices.Sorted(maps.Keys(c.keys))
 	for i, key := range unknown {
 		unknown[i] = strconv.Quote(key)
-		if meant := closest(key, known); meant != "" {
+		if now, ok := renamed[key]; ok {
+			unknown[i] += fmt.Sprintf(" (it is %q now)", now)
+		} else if meant := closest(key, known); meant != "" {
 			unknown[i] += fmt.Sprintf(" (did you mean %q?)", meant)
 		}
 	}

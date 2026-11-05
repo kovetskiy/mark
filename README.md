@@ -199,7 +199,7 @@ OPTIONS:
    --minor-edit                                   don't send notifications while updating Confluence page. [$MARK_MINOR_EDIT]
    --watch                                        let the publishing account watch the pages mark creates or edits, as Confluence makes it (default: true, which leaves Confluence's own behaviour alone); --watch=false stops it watching them, though pages it watched already stay watched. [$MARK_WATCH]
    --version-message string                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
-   --target-url string, -l string                 edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_TARGET_URL]
+   --url string, -l string                        edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless --base-url names it. Without it, each file must name its page with Space and Title metadata headers. [$MARK_PAGE_URL]
    --ci                                           run on CI mode. It won't fail if files are not found. [$MARK_CI]
    --space string, -s string                      use specified space key. If the space key is not specified, it must be set in the page metadata. [$MARK_SPACE]
    --parents string                               A list containing the parents of the document separated by parents-delimiter (default: '/'). These will be prepended to the ones defined in the document itself. [$MARK_PARENTS]
@@ -259,7 +259,7 @@ DESCRIPTION:
 
 OPTIONS:
    --page-id string            export the page or blog post with this id. [$MARK_PAGE_ID]
-   --url string, -l string     export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set. [$MARK_URL]
+   --url string, -l string     export the page at this address, as a browser shows it: /spaces/KEY/pages/ID/... on Cloud, /display/KEY/Title or /pages/viewpage.action?pageId=ID on Server and Data Center, or a short /x/... link on either. Also gives the base URL when --base-url is not set. [$MARK_PAGE_URL]
    --space string, -s string   the space key --title looks the page up in. [$MARK_SPACE]
    --title string, -t string   export the page or blog post with this title in --space. [$MARK_TITLE]
    --output string, -o string  write the Markdown to this file rather than to standard output ("-"). [$MARK_OUTPUT]

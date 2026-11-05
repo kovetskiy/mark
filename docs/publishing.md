@@ -2,19 +2,26 @@
 
 ## Publishing to a page by its URL
 
-`--target-url` publishes to the page a browser shows at that URL, whatever the
-document's headers say. It takes `.../pages/viewpage.action?pageId=ID` or
+`--url` (`-l`, `MARK_PAGE_URL`, `url` in the configuration file) publishes to
+the page a browser shows at that URL, whatever the document's headers say. It takes `.../pages/viewpage.action?pageId=ID` or
 `.../spaces/KEY/pages/ID/Title`, and the instance comes from it too, context
 path included, unless `--base-url` names it:
 
 ```bash
-mark publish --target-url "https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Setup" --files setup.md
+mark publish --url "https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Setup" --files setup.md
 ```
 
 The page is found by its id, so the document needs no `Space` or `Title`
 header. Any headers it has are ignored, with a warning, and so is
 `--track-pages`, whose record is kept per space and per file. Name one file:
 every file of the run would be published to the same page.
+
+`mark export --url` takes the same address, under the same names.
+
+> **Upgrading to v17:** `--target-url`, `MARK_TARGET_URL` and the configuration
+> key `target-url` are now `--url`, `MARK_PAGE_URL` and `url`, which
+> `mark export` reads too; export's `MARK_URL` is now `MARK_PAGE_URL`. The old
+> flag and key are refused, naming the new one; the old variables are ignored.
 
 ## A header on every page
 
@@ -219,7 +226,7 @@ Sync documentation:
   commands:
     - for file in $(find -type f -name '*.md'); do
         echo "> Sync $file";
-        mark publish -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
+        mark publish -u $MARK_USERNAME -p $MARK_PASSWORD -b $MARK_BASE_URL -f $file || exit 1;
         echo;
       done
 ```
@@ -230,10 +237,15 @@ repository with documentation will be cloned to. The following command finds all
 ```bash
 for file in $(find -type f -name '*.md'); do
     echo "> Sync $file";
-    mark publish -u $MARK_USER -p $MARK_PASS -b $MARK_URL -f $file || exit 1;
+    mark publish -u $MARK_USERNAME -p $MARK_PASSWORD -b $MARK_BASE_URL -f $file || exit 1;
     echo;
 done
 ```
+
+`MARK_USERNAME`, `MARK_PASSWORD` and `MARK_BASE_URL` are the names mark reads
+those settings from itself, so the flags can be left out. Keep the page address
+out of a variable a job shares: `MARK_PAGE_URL` sends every `mark publish` and
+`mark export` of the job to that one page.
 
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid

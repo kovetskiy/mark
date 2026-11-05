@@ -27,7 +27,9 @@ A page is named one way: `--page-id`, `--url`, or `--space` with `--title`.
 `/pages/viewpage.action?pageId=ID` on Server and Data Center, and a short
 `/x/...` link on either, which carries the page id. `--space` is the same setting publish uses, so a
 configuration file that names a space for publishing serves `--title` too.
-`--url` gives the base URL as well. A base URL set by `--base-url`,
+`--url` is publish's setting too, `MARK_PAGE_URL` and `url` in the
+configuration file included, so a file that names a page for export sends
+publish to it as well. `--url` gives the base URL as well. A base URL set by `--base-url`,
 `MARK_BASE_URL` or the configuration file is used instead when it is on the
 same host, or is the `api.atlassian.com` gateway and the URL a Cloud site's;
 one on another host is refused, since a page id names a page of one instance

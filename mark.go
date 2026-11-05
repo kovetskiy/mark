@@ -447,7 +447,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			named = append(slices.Clone(named[:3]), "...")
 		}
 		return fmt.Errorf(
-			"--target-url names one page, but --files matched %d files (%s): name the one file to publish there",
+			"--url names one page, but --files matched %d files (%s): name the one file to publish there",
 			len(files), strings.Join(named, ", "),
 		)
 	}

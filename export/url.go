@@ -46,7 +46,7 @@ var (
 
 // ParsePageURL reads the page a Confluence URL points at: the address a
 // browser shows for a page on Cloud or on Server and Data Center. The base URL
-// is read as --target-url reads it. A short link (/x/...) names the page by
+// is read as mark publish --url reads it. A short link (/x/...) names the page by
 // its id, encoded, and is read without asking Confluence.
 func ParsePageURL(raw string) (PageRef, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))

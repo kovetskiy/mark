@@ -38,7 +38,7 @@ func GetCredentials(
 	username string,
 	password string,
 	passwordCommand string,
-	targetURL string,
+	pageURL string,
 	baseURL string,
 	compileOnly bool,
 
@@ -62,13 +62,13 @@ func GetCredentials(
 	// anywhere for want of a base URL has no business asking a keyring for a
 	// token it will never send: putting somebody through a pinentry dialog and
 	// then failing on the configuration is a strange order to do things in.
-	if compileOnly && targetURL == "" {
-		targetURL = "http://localhost"
+	if compileOnly && pageURL == "" {
+		pageURL = "http://localhost"
 	}
 
-	url, err := url.Parse(targetURL)
+	url, err := url.Parse(pageURL)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse %q as url: %w", targetURL, err)
+		return nil, fmt.Errorf("unable to parse %q as url: %w", pageURL, err)
 	}
 
 	if url.Host == "" && baseURL == "" {

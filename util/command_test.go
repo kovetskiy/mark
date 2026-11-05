@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -495,16 +497,6 @@ func TestAHeldSourceOpensAtSettle(t *testing.T) {
 // TestShortFlagsMeanOneThing: a letter learned in one command should work, and
 // mean the same, in every other that takes the argument.
 func TestShortFlagsMeanOneThing(t *testing.T) {
-	// Different names for one argument: a page given by its address.
-	sameArgument := map[string]string{"url": "target-url"}
-	argument := func(name string) string {
-		if same, ok := sameArgument[name]; ok {
-			return same
-		}
-
-		return name
-	}
-
 	shorts := map[string]string{} // long name -> its short flags, as first seen
 	longs := map[string]string{}  // short flag -> the argument it stands for
 	where := map[string]string{}  // long name -> the command it was first seen in
@@ -523,9 +515,9 @@ func TestShortFlagsMeanOneThing(t *testing.T) {
 
 			for _, short := range names[1:] {
 				if other, ok := longs[short]; ok {
-					assert.Equal(t, other, argument(long), "-%s stands for --%s and --%s", short, other, long)
+					assert.Equal(t, other, long, "-%s stands for --%s and --%s", short, other, long)
 				} else {
-					longs[short] = argument(long)
+					longs[short] = long
 				}
 			}
 		}
@@ -632,4 +624,89 @@ func TestMathFormatIsGone(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `unknown key "math-format"`)
 	})
+}
+
+// pageURL runs mark's command line with publish and export swapped out, and
+// says the page URL the command that ran was given.
+func pageURL(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+
+	var got string
+	action := func(_ context.Context, c *cli.Command) error {
+		got = c.String("url")
+		return nil
+	}
+	cmd := buildCommand("test", action, action)
+	cmd.Writer, cmd.ErrWriter = &bytes.Buffer{}, &bytes.Buffer{}
+
+	_, _, err := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), append([]string{"mark"}, args...))
+	})
+
+	return got, err
+}
+
+// TestPageURLIsOneSetting: publish and export take a page's address under one
+// name, from the command line, the environment or the configuration file.
+func TestPageURLIsOneSetting(t *testing.T) {
+	const address = "https://example.invalid/wiki/spaces/DOCS/pages/1/Page"
+	path := writeConfig(t, t.TempDir(), "mark.toml", "url = \""+address+"\"\n")
+
+	for _, command := range [][]string{{"publish", "-f", "doc.md"}, {"export"}} {
+		for _, test := range []struct {
+			name string
+			env  string
+			args []string
+		}{
+			{"--url", "", []string{"--url", address}},
+			{"-l", "", []string{"-l", address}},
+			{"MARK_PAGE_URL", address, nil},
+			{"configuration file", "", []string{"--config", path}},
+		} {
+			t.Run(command[0]+" "+test.name, func(t *testing.T) {
+				noDefaultConfig(t)
+				t.Setenv("MARK_PAGE_URL", test.env)
+				if test.env == "" {
+					require.NoError(t, os.Unsetenv("MARK_PAGE_URL"))
+				}
+
+				got, err := pageURL(t, append(slices.Clone(command), test.args...)...)
+				require.NoError(t, err)
+				assert.Equal(t, address, got)
+			})
+		}
+	}
+}
+
+// TestMarkURLIsNotThePageURL: MARK_URL is a common name for the Confluence
+// base URL in CI, and must not name the page to export alongside --page-id.
+func TestMarkURLIsNotThePageURL(t *testing.T) {
+	noDefaultConfig(t)
+	t.Setenv("MARK_URL", "https://example.invalid/wiki")
+
+	got, err := pageURL(t, "export", "--page-id", "1")
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+// TestTargetURLNamesItsReplacement: the publish flag and configuration key
+// target-url are url now, too far apart to be suggested as a typo.
+func TestTargetURLNamesItsReplacement(t *testing.T) {
+	noDefaultConfig(t)
+
+	for _, args := range [][]string{
+		{"publish", "--target-url", "x", "-f", "doc.md"},
+		{"--target-url", "x", "publish", "-f", "doc.md"},
+		{"export", "--target-url", "x"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, err := pageURL(t, args...)
+			require.EqualError(t, err, "flag provided but not defined: -target-url: it is --url now")
+		})
+	}
+
+	path := writeConfig(t, t.TempDir(), "mark.toml", "target-url = \"x\"\n")
+	_, err := pageURL(t, "publish", "--config", path, "-f", "doc.md")
+	require.EqualError(t, err,
+		fmt.Sprintf(`unknown key in configuration file %q: "target-url" (it is "url" now)`, path))
 }

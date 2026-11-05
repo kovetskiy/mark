@@ -749,9 +749,9 @@ func TestACancelledExplicitManifestSaveIsNotReportedOnceSaved(t *testing.T) {
 		"the manifest saved by the cancelled run found the page it made")
 }
 
-// TestTargetURLTakesOneFile: a page id names one page, so a pattern matching
+// TestPageURLTakesOneFile: a page id names one page, so a pattern matching
 // several files is refused before anything is published over it.
-func TestTargetURLTakesOneFile(t *testing.T) {
+func TestPageURLTakesOneFile(t *testing.T) {
 	server, _ := docsSpace(t)
 	target := server.AddPage("DOCS", "Target", "page", "")
 	dir := t.TempDir()
