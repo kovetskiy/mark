@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +24,7 @@ func TestInlineMacro(t *testing.T) {
 
 	input := []byte(doc)
 
-	out, _, err := CompileMarkdown(input, std, filepath.Join(t.TempDir(), "doc.md"), types.MarkConfig{})
+	out, _, err := CompileMarkdown(input, std, filepath.Join(t.TempDir(), "doc.md"), Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "<p>helm uses {{ .Values.x }} &amp; more</p>")

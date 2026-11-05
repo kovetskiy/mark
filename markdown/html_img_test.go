@@ -8,7 +8,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +17,7 @@ func compileWithImgTag(t *testing.T, src string) string {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte(src), std, "test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte(src), std, "test.md", Options{})
 	require.NoError(t, err)
 	return out
 }
@@ -106,7 +105,7 @@ func TestHTMLImgInsideMarkupBlockIsAttached(t *testing.T) {
 		"  <img src=\"https://example.com/remote.png\">\n" +
 		"</p>\n"
 
-	out, attachments, err := CompileMarkdown([]byte(src), std, doc, types.MarkConfig{})
+	out, attachments, err := CompileMarkdown([]byte(src), std, doc, Options{})
 	require.NoError(t, err)
 	require.NoError(t, CheckWellFormed(out))
 
@@ -169,7 +168,7 @@ func TestHTMLImgInsideMarkupBlockOutsideProjectIsRefused(t *testing.T) {
 
 	_, _, err = CompileMarkdown(
 		[]byte("<p align=\"center\">\n  <img src=\"../secret.png\">\n</p>\n"),
-		std, filepath.Join(docs, "doc.md"), types.MarkConfig{},
+		std, filepath.Join(docs, "doc.md"), Options{},
 	)
 	require.ErrorIs(t, err, attachment.ErrOutsideProject)
 }

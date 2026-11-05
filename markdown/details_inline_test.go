@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +47,7 @@ func TestDetailsInlineContextsLiftSummaryToTitle(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", types.MarkConfig{
+			out, _, err := CompileMarkdown([]byte(tt.input), std, "test.md", Options{
 				Features: []string{"details"},
 			})
 			require.NoError(t, err)
@@ -70,7 +69,7 @@ func TestDetailsInlineWithoutSummary(t *testing.T) {
 
 	out, _, err := CompileMarkdown(
 		[]byte("| A |\n|---|\n| before <details>body</details> after |\n"),
-		std, "test.md", types.MarkConfig{Features: []string{"details"}},
+		std, "test.md", Options{Features: []string{"details"}},
 	)
 	require.NoError(t, err)
 

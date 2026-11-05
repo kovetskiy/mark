@@ -9,7 +9,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +25,7 @@ func compileWithTemplate(t *testing.T, name, template, document string) string {
 	require.NoError(t, err)
 
 	out, _, err := markdown.CompileMarkdown([]byte(document), lib, "testdata/x.md",
-		types.MarkConfig{MermaidScale: 1, D2Scale: 1, IncludePath: dir})
+		markdown.Options{MermaidScale: 1, D2Scale: 1, IncludePath: dir})
 	require.NoError(t, err)
 
 	return out
@@ -80,7 +79,7 @@ func TestBodyWhitespaceIsPreserved(t *testing.T) {
 	out, _, err := markdown.CompileMarkdown([]byte(
 		"<!-- Macro: :m:\n     Template: ac:box\n     Name: info\n"+
 			"     Body: \"- one\\n- two\" -->\n\n:m:\n"),
-		lib, "testdata/x.md", types.MarkConfig{MermaidScale: 1, D2Scale: 1})
+		lib, "testdata/x.md", markdown.Options{MermaidScale: 1, D2Scale: 1})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "<li>one</li>", "the body must still be read as Markdown")
@@ -96,7 +95,7 @@ func TestBuiltinTemplateStillMatches(t *testing.T) {
 
 	out, _, err := markdown.CompileMarkdown(
 		[]byte("<!-- Include: ac:view-file\n     Name: diagram.drawio -->\n"),
-		lib, "testdata/x.md", types.MarkConfig{MermaidScale: 1, D2Scale: 1})
+		lib, "testdata/x.md", markdown.Options{MermaidScale: 1, D2Scale: 1})
 	require.NoError(t, err)
 
 	assert.Contains(t, out,

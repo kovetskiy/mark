@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,7 +44,7 @@ func TestControlCharactersDoNotBreakThePage(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, _, err := CompileMarkdown([]byte(tc.markdown), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tc.markdown), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			require.NoError(t, CheckWellFormed(out), out)
@@ -60,7 +59,7 @@ func TestControlCharacterReferencesAreLeftInCDATAAndComments(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("```\necho '&#1;'\n```\n\n<!-- &#27; -->\n"), std, "test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte("```\necho '&#1;'\n```\n\n<!-- &#27; -->\n"), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	require.NoError(t, CheckWellFormed(out), out)

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +21,7 @@ func TestDiagramWithoutTitleHasNoCaption(t *testing.T) {
 
 	out, attachments, err := CompileMarkdown(
 		[]byte("```d2\na -> b\n```\n"),
-		std, "test.md", types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
+		std, "test.md", Options{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 	)
 	require.NoError(t, err)
 
@@ -46,7 +45,7 @@ func TestDiagramWithTitleKeepsCaption(t *testing.T) {
 
 	out, attachments, err := CompileMarkdown(
 		[]byte("```d2 title My Diagram\na -> b\n```\n"),
-		std, "test.md", types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
+		std, "test.md", Options{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 	)
 	require.NoError(t, err)
 
@@ -61,15 +60,15 @@ func TestDiagramWithTitleKeepsCaption(t *testing.T) {
 func TestDiagramLeavesTheTextAfterItAlone(t *testing.T) {
 	for name, test := range map[string]struct {
 		source string
-		config types.MarkConfig
+		config Options
 	}{
 		"d2": {
 			"```d2\na -> b\n```\n\nNext paragraph here.\n",
-			types.MarkConfig{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
+			Options{Browser: testBrowser, Features: []string{"d2"}, D2Scale: 1.0},
 		},
 		"mermaid": {
 			"```mermaid\ngraph LR; A-->B\n```\n\nNext paragraph here.\n",
-			types.MarkConfig{Mermaid: testMermaid, Features: []string{"mermaid"}, MermaidScale: 1.0},
+			Options{Mermaid: testMermaid, Features: []string{"mermaid"}, MermaidScale: 1.0},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

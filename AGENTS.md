@@ -37,18 +37,17 @@ tests, which take minutes. There is currently no `-short` skip.
 | `attachment/` | the `Attachment` type, checksums, upload names, local resolution and path containment, link rewriting; no Confluence client (uploading is `attachments.go` in the root package) |
 | `comments/` | `--preserve-comments`: re-places the page's inline-comment markers in the new body |
 | `fingerprint/` | the `--changes-only` content fingerprint, and the tag that carries it in a page's version message |
-| `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point |
+| `markdown/` | goldmark assembly; `CompileMarkdown` is the entry point and `Options` its rendering options (diagram output and scale, features, image alignment, include path, link and attachment resolution), with the `chrome.Browser` and `mermaid.Engine` diagrams are drawn in, which its creator supplies and closes: without them mermaid diagrams, and d2 diagrams and formulas published as PNG, fail to render |
 | `parser/` | goldmark inline/block parsers (`<ac:*/>` tags, mentions, dates) |
 | `transformer/` | goldmark AST transformers (macros, includes, GH alerts, details, layout, `<img>`) |
 | `math/` | LaTeX → image for the `math` feature; PNG through `chrome/`, or SVG with no browser |
 | `chrome/` | `Browser`, a run's headless browser, its options, and SVG → PNG for `d2/` and `math/` |
-| `renderer/` | goldmark node renderers → storage format |
+| `renderer/` | goldmark node renderers → storage format; the diagram and math renderers take their slice of `markdown.Options` as `DiagramConfig` and `MathConfig`, since `markdown` imports `renderer` |
 | `export/` | the other direction, for `mark export`: storage format → Markdown, and a page with its headers and attachments → a file, or with `--format okf` an Open Knowledge Format concept, and a tree a bundle (`okf.go`) |
 | `doctor/` | `mark doctor`: the login, platform and per-space permission checks |
 | `manifest/` | the `--track-pages` record of which page each source file publishes to, kept in Confluence |
 | `header/` | the `--page-header` template placed at the top of every published page |
 | `report/` | what a run did, for `--output-format` and the run's summary, and the `--on-orphan` actions |
-| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers, and the `chrome.Browser` and `mermaid.Engine` diagrams are drawn in, which its creator supplies and closes: without them mermaid diagrams, and d2 diagrams and formulas published as PNG, fail to render |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
@@ -186,7 +185,7 @@ package global. `page.FolderCache` is created per run (or per `mark.Publisher`) 
 handed to the ancestry functions: it is keyed with no notion of which Confluence it came
 from, so it must not outlive the run. It sits behind an `RWMutex`
 (`TestFolderCacheConcurrentAccess` in `page/ancestry_test.go` races it on purpose).
-`chrome.Browser` and `mermaid.Engine` travel in `types.MarkConfig`, start on the first
+`chrome.Browser` and `mermaid.Engine` travel in `markdown.Options`, start on the first
 picture that needs them, and are closed by whoever created them.
 
 `confluence.API`'s Cloud probe runs under a mutex held for the whole probe, and the API
@@ -220,8 +219,8 @@ endpoint is missing" flag, the platform -- must not remember one `IsCancellation
 Golden-file tests drive most rendering coverage. `testdata/<name>.md` is compiled and
 compared against `testdata/<name>.html`; variant suffixes cover flag combinations:
 
-- `<name>-droph1.html` — `DropFirstH1`
-- `<name>-stripnewlines.html` — `StripNewlines`
+- `<name>-droph1.html` — `DropH1`
+- `<name>-stripnewlines.html` — `StripLinebreaks`
 - feature-specific variants, e.g. `plantuml-nofeature.html`, `inline-link-card-inlinecard.html`
 
 Adding a `.md` fixture without its matching `.html` panics the test — the loader reads

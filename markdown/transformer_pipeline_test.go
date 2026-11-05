@@ -8,7 +8,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +33,7 @@ This is the main body text.`)
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	cfg := types.MarkConfig{
+	cfg := Options{
 		IncludePath: tempDir,
 	}
 
@@ -90,7 +89,7 @@ inline: "<!-- Include: inc3.md\ntext: ${1} -->" -->
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	cfg := types.MarkConfig{
+	cfg := Options{
 		IncludePath: tempDir,
 	}
 
@@ -128,7 +127,7 @@ func TestCircularIncludeLoopError(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	cfg := types.MarkConfig{
+	cfg := Options{
 		IncludePath: tempDir,
 	}
 

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,7 +68,7 @@ func TestDetailsMacroClosesOutsideBody(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			htmlOutput, _, err := CompileMarkdown(detailsMacroDoc(tt.body), std, "test.md", types.MarkConfig{})
+			htmlOutput, _, err := CompileMarkdown(detailsMacroDoc(tt.body), std, "test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, htmlOutput, `ac:name="details"`, "the macro must expand")

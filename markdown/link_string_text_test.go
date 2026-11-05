@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,7 @@ func TestLinkTextIncludesStringNodes(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", Options{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, out)
 
@@ -72,7 +71,7 @@ func TestLinkTextKeepsV1LineBreaks(t *testing.T) {
 		{"code span in a blockquote", "> [`a\n> b`](ac:)\n", link("a\nb", "a\nb")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", Options{})
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
 		})

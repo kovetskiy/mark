@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,7 @@ func TestBlockQuoteTypeIgnoresAClosingLine(t *testing.T) {
 		{"one-line comment marker", "> <!-- Info -->\n> text\n", info, "<blockquote>"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tc.input), std, "test.md", Options{})
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
 			assert.NotContains(t, out, tc.not)

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/renderer/html"
 )
@@ -23,7 +22,7 @@ func TestConstructorsHonourHTMLOptions(t *testing.T) {
 	constructors := map[string]html.Extension{
 		"codeblock":         crenderer.NewConfluenceCodeBlockRenderer(lib, opts...),
 		"definitionlist":    crenderer.NewConfluenceDefinitionListRenderer(opts...),
-		"fencedcodeblock":   crenderer.NewConfluenceFencedCodeBlockRenderer(lib, &collectingAttacher{}, types.MarkConfig{}, "", opts...),
+		"fencedcodeblock":   crenderer.NewConfluenceFencedCodeBlockRenderer(lib, &collectingAttacher{}, crenderer.DiagramConfig{}, "", opts...),
 		"gh alerts":         crenderer.NewConfluenceGHAlertsBlockQuoteRenderer(opts...),
 		"heading":           crenderer.NewConfluenceHeadingRenderer(lib, false, opts...),
 		"image":             crenderer.NewConfluenceImageRenderer(lib, &collectingAttacher{}, "", "", opts...),

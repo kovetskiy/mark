@@ -1,11 +1,14 @@
-package types
+package markdown
 
 import (
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/mermaid"
+	crenderer "github.com/kovetskiy/mark/v17/renderer"
 )
 
-type MarkConfig struct {
+// Options is how CompileMarkdown turns a document into storage format. The
+// zero value compiles a document with no pictures and the default rendering.
+type Options struct {
 	// Browser rasterises d2 diagrams and math formulas published as PNG, and
 	// Mermaid draws mermaid diagrams. Both start on first use and belong to
 	// whoever created them, who closes them; nil fails the first picture that
@@ -13,12 +16,19 @@ type MarkConfig struct {
 	Browser *chrome.Browser
 	Mermaid *mermaid.Engine
 
-	MermaidScale float64
+	// DropH1 leaves the document's first H1 out of the page, for a page
+	// whose title already says it.
+	DropH1 bool
+	// StripLinebreaks writes a paragraph's soft line breaks as spaces
+	// rather than newlines.
+	StripLinebreaks bool
+
 	// MermaidOutput is the image a diagram is published as, "png" or "svg".
 	// MermaidScale multiplies the pixels of a PNG one and the size the page
 	// displays an SVG one at. MermaidBundle keeps the diagram's source inside
 	// the SVG it is published as, and applies to nothing else.
 	MermaidOutput string
+	MermaidScale  float64
 	MermaidBundle bool
 	// D2Output is the image a diagram is published as, "png" or "svg".
 	// D2Scale multiplies the pixels of a PNG one and the size the page
@@ -30,19 +40,23 @@ type MarkConfig struct {
 	D2BundleRemote bool
 	// MathFormat is the image a formula is published as, "svg" or "png".
 	// MathScale multiplies the pixels of a PNG one, and is ignored for SVG.
-	MathFormat    string
-	MathScale     float64
-	DropFirstH1   bool
-	StripNewlines bool
-	Features      []string
-	ImageAlign    string
+	MathFormat string
+	MathScale  float64
+
+	// Features names the optional features switched on; see --features.
+	Features []string
+	// ImageAlign is where images and diagrams sit on the page: "left",
+	// "center", "right", or "" for Confluence's default.
+	ImageAlign string
 
 	// AttachReferenced uploads a file a link points at, rather than leaving the
 	// link pointing at a path that means nothing once the page is published.
 	// Images are attached whether this is set or not, since an image left as a
 	// path is visibly broken where a link merely leads nowhere.
 	AttachReferenced bool
-	IncludePath      string
+	// IncludePath is where includes and macros not found beside the
+	// document are looked for.
+	IncludePath string
 
 	// ResolveLink turns a link target written in the document -- a relative
 	// path, optionally with a #fragment -- into the Confluence link it should
@@ -59,4 +73,29 @@ type MarkConfig struct {
 	// attachment uploaded for it, or "" to leave it as written. Nil disables
 	// the rewriting.
 	ResolveAttachment func(target string) string
+}
+
+// diagramConfig is the part of o the fenced code block renderer draws with.
+func (o Options) diagramConfig() crenderer.DiagramConfig {
+	return crenderer.DiagramConfig{
+		Browser:        o.Browser,
+		Mermaid:        o.Mermaid,
+		Features:       o.Features,
+		ImageAlign:     o.ImageAlign,
+		MermaidOutput:  o.MermaidOutput,
+		MermaidScale:   o.MermaidScale,
+		MermaidBundle:  o.MermaidBundle,
+		D2Output:       o.D2Output,
+		D2Scale:        o.D2Scale,
+		D2BundleRemote: o.D2BundleRemote,
+	}
+}
+
+// mathConfig is the part of o the math renderer draws with.
+func (o Options) mathConfig() crenderer.MathConfig {
+	return crenderer.MathConfig{
+		Browser: o.Browser,
+		Format:  o.MathFormat,
+		Scale:   o.MathScale,
+	}
 }

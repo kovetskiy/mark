@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +20,7 @@ func TestLayoutCommentInInlineCodeIsLiteral(t *testing.T) {
 
 	out, _, err := CompileMarkdown(
 		[]byte("Write `<!-- ac:layout -->` to open a layout.\n"),
-		std, "test.md", types.MarkConfig{},
+		std, "test.md", Options{},
 	)
 	require.NoError(t, err)
 
@@ -38,7 +37,7 @@ func TestLayoutCommentOutsideCodeSpanStillConverts(t *testing.T) {
 
 	out, _, err := CompileMarkdown(
 		[]byte("<!-- ac:layout -->\n\nBody.\n\n<!-- ac:layout end -->\n"),
-		std, "test.md", types.MarkConfig{},
+		std, "test.md", Options{},
 	)
 	require.NoError(t, err)
 

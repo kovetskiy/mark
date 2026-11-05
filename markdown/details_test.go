@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +61,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,7 +79,7 @@ func TestConvertDetailsToExpand(t *testing.T) {
 func TestDetailsWithFencedCodeBlock(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	markdown := []byte("```xml\n<![CDATA[hello world]]>\n```\n\n<details>\n<summary>Details</summary>\n<p>Some content</p>\n</details>")
 
@@ -96,7 +95,7 @@ func TestDetailsWithFencedCodeBlock(t *testing.T) {
 func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	tests := []string{
 		"`<details>` maps to the native expand macro.\n",
@@ -122,7 +121,7 @@ func TestDetailsInCodeSpanIsNotConverted(t *testing.T) {
 func TestDetailsWithBlankLines(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	tests := []struct {
 		name  string
@@ -166,7 +165,7 @@ func TestDetailsWithBlankLines(t *testing.T) {
 func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	markdown := []byte("<details>\n<summary>S</summary>\n\nBody with **bold** text.\n\n</details>\n")
 
@@ -183,7 +182,7 @@ func TestDetailsBodyMarkdownIsRendered(t *testing.T) {
 func TestDetailsMalformedStaysBalanced(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	tests := []struct {
 		name  string
@@ -216,7 +215,7 @@ func TestDetailsMalformedStaysBalanced(t *testing.T) {
 func TestDetailsInFencedCodeBlockIsLiteral(t *testing.T) {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
-	cfg := types.MarkConfig{}
+	cfg := Options{}
 
 	markdown := []byte("```html\n<details>\n<summary>S</summary>\n</details>\n```\n")
 
@@ -243,7 +242,7 @@ func TestCDATAInsideDetailsSurvivesUnaltered(t *testing.T) {
 		`<ac:structured-macro ac:name="code"><ac:plain-text-body>` + sample +
 		"</ac:plain-text-body></ac:structured-macro>\n</details>\n"
 
-	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, actual, sample, "the sample reaches the page as written")
@@ -265,7 +264,7 @@ func TestCDATAWithoutAngleBracketStillWorks(t *testing.T) {
 		`<ac:structured-macro ac:name="code"><ac:plain-text-body>` + sample +
 		"</ac:plain-text-body></ac:structured-macro>\n</details>\n"
 
-	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+	actual, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, actual, sample)

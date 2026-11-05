@@ -6,7 +6,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,7 +15,7 @@ func compileEmoji(t *testing.T, source string, features ...string) string {
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 
-	actual, _, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", types.MarkConfig{
+	actual, _, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", markdown.Options{
 		Features: features,
 	})
 	assert.NoError(t, err)

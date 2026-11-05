@@ -8,7 +8,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +33,7 @@ func compileFile(t *testing.T, path string) (string, error) {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := markdown.CompileMarkdown(source, lib, path, types.MarkConfig{})
+	out, _, err := markdown.CompileMarkdown(source, lib, path, markdown.Options{})
 
 	return out, err
 }

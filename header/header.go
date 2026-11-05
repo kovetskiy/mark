@@ -15,7 +15,6 @@ import (
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 )
 
 // Header is a loaded page header template. A nil *Header renders nothing.
@@ -53,7 +52,7 @@ type Data struct {
 // The template is executed here, so that a broken template or malformed
 // markup fails the run before any page is published. cfg is the run's
 // compile configuration, which a Markdown header is compiled with.
-func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
+func Load(path string, std *stdlib.Lib, cfg markdown.Options) (*Header, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -124,7 +123,7 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 // Render returns the header for one document as storage format, and any
 // attachments a Markdown header references. cfg is the document's compile
 // configuration; links in the header are left as written.
-func (h *Header) Render(file, title, space string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+func (h *Header) Render(file, title, space string, cfg markdown.Options) (string, []attachment.Attachment, error) {
 	if h == nil {
 		return "", nil, nil
 	}
@@ -152,7 +151,7 @@ func (h *Header) Render(file, title, space string, cfg types.MarkConfig) (string
 // call compiled from the same text and configuration. The attachments are a
 // fresh slice each time, so that a caller appending to or editing them does
 // not change what the next page is given.
-func (h *Header) compile(rendered string, cfg types.MarkConfig) (string, []attachment.Attachment, error) {
+func (h *Header) compile(rendered string, cfg markdown.Options) (string, []attachment.Attachment, error) {
 	cfg = compileConfig(cfg)
 
 	// The configuration is part of the key because Render is handed each
@@ -180,8 +179,8 @@ func (h *Header) compile(rendered string, cfg types.MarkConfig) (string, []attac
 // compileConfig adapts a document's configuration to the header, which is not
 // the document: its first H1 is not the one to drop, and its relative links do
 // not name the document's neighbours.
-func compileConfig(cfg types.MarkConfig) types.MarkConfig {
-	cfg.DropFirstH1 = false
+func compileConfig(cfg markdown.Options) markdown.Options {
+	cfg.DropH1 = false
 	cfg.ResolveLink = nil
 	cfg.ResolveAttachment = nil
 

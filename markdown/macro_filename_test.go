@@ -10,7 +10,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -219,7 +218,7 @@ func compileWidthMacro(t *testing.T, dir, value string) (string, []attachment.At
 
 	source := widthMacroForTest + "\n![A](" + value + ")<!-- width=10 -->\n"
 
-	html, attached, err := CompileMarkdown([]byte(source), std, filepath.Join(dir, "doc.md"), types.MarkConfig{})
+	html, attached, err := CompileMarkdown([]byte(source), std, filepath.Join(dir, "doc.md"), Options{})
 	require.NoError(t, err)
 
 	return html, attached, logged.String()

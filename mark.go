@@ -29,7 +29,6 @@ import (
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/rs/zerolog/log"
 )
 
@@ -964,7 +963,7 @@ func newPublishRun(
 		return nil, err
 	}
 
-	pageHeader, err := header.Load(config.Rendering.PageHeader, std, config.Rendering.markConfig(res))
+	pageHeader, err := header.Load(config.Rendering.PageHeader, std, config.Rendering.markdownOptions(res))
 	if err != nil {
 		return nil, err
 	}
@@ -1656,7 +1655,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 // whether a real run would change it.
 func (r *publishRun) previewBody(
 	ctx context.Context,
-	doc *document, found pagePreview, cfg types.MarkConfig, compare bool,
+	doc *document, found pagePreview, cfg markdown.Options, compare bool,
 ) (html, status, reason string, err error) {
 	meta, file, previewed := doc.meta, doc.file, found.page
 
@@ -2200,39 +2199,39 @@ func appearanceOf(meta *metadata.Meta) (string, string) {
 // renderHeader renders the page header for one document, naming it by its
 // metadata where it has some and by fallbackTitle and fallbackSpace where not.
 func renderHeader(
-	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg types.MarkConfig,
+	pageHeader *header.Header, file string, meta *metadata.Meta, fallbackTitle, fallbackSpace string, cfg markdown.Options,
 ) (string, []attachment.Attachment, error) {
 	return pageHeader.Render(file, cmp.Or(titleOf(meta), fallbackTitle), cmp.Or(spaceOf(meta), fallbackSpace), cfg)
 }
 
 // documentConfig is the compile configuration for one document: the run's,
 // with what its metadata and link resolution add.
-func (c RenderingConfig) documentConfig(res *resources, meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (types.MarkConfig, error) {
+func (c RenderingConfig) documentConfig(res *resources, meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (markdown.Options, error) {
 	if c.DropH1 {
 		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
 
 	imageAlign, err := getImageAlign(c.ImageAlign, meta)
 	if err != nil {
-		return types.MarkConfig{}, fmt.Errorf("unable to determine image-align: %w", err)
+		return markdown.Options{}, fmt.Errorf("unable to determine image-align: %w", err)
 	}
 
-	cfg := c.markConfig(res)
-	cfg.DropFirstH1 = c.DropH1
+	cfg := c.markdownOptions(res)
+	cfg.DropH1 = c.DropH1
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = resolveLink
 
 	return cfg, nil
 }
 
-// markConfig is the compile configuration the run's flags give every
+// markdownOptions is the compile configuration the run's flags give every
 // document, drawing in the run's browsers; the per-document fields are left
 // for the caller to fill in.
-func (c RenderingConfig) markConfig(res *resources) types.MarkConfig {
+func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 	// An invalid value is reported by documentConfig, which every page passes.
 	imageAlign, _ := getImageAlign(c.ImageAlign, nil)
 
-	return types.MarkConfig{
+	return markdown.Options{
 		Browser:          res.browser,
 		Mermaid:          res.mermaid,
 		ImageAlign:       imageAlign,
@@ -2244,7 +2243,7 @@ func (c RenderingConfig) markConfig(res *resources) types.MarkConfig {
 		D2BundleRemote:   c.D2BundleRemote,
 		MathFormat:       c.MathFormat,
 		MathScale:        c.MathScale,
-		StripNewlines:    c.StripLinebreaks,
+		StripLinebreaks:  c.StripLinebreaks,
 		Features:         c.Features,
 		AttachReferenced: c.AttachReferenced,
 		IncludePath:      c.IncludePath,

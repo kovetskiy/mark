@@ -10,7 +10,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,7 +94,7 @@ func compileWith(t *testing.T, md, path string, features ...string) string {
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := markdown.CompileMarkdown([]byte(md), lib, path, types.MarkConfig{
+	out, _, err := markdown.CompileMarkdown([]byte(md), lib, path, markdown.Options{
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
 		MathScale:    1.0,

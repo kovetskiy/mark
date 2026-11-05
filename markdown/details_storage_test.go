@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +52,7 @@ func TestDetailsKeepsStorageFormatBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`)
@@ -73,7 +72,7 @@ func TestDetailsSummaryAfterContent(t *testing.T) {
 
 	out, _, err := CompileMarkdown(
 		[]byte("<details>\n<p>pre</p><summary>Late</summary>\n<p>x</p>\n</details>\n"),
-		lib, "testdata/test.md", types.MarkConfig{},
+		lib, "testdata/test.md", Options{},
 	)
 	require.NoError(t, err)
 
@@ -96,7 +95,7 @@ func TestDetailsBodyWithHTMLOnlyMarkupIsRepaired(t *testing.T) {
 		`<p>AT&T <a href="?a=1&b=2">x</a> &NotEqualTilde;</p><table><tr><td colspan=2>x</td></tr></table>` +
 		"\n</details>\n"
 
-	out, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte(input), lib, "testdata/test.md", Options{})
 	require.NoError(t, err)
 	require.NoError(t, CheckWellFormed(out))
 }
@@ -142,7 +141,7 @@ func TestDetailsClosesOmittedEndTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", types.MarkConfig{})
+			out, _, err := CompileMarkdown([]byte(tt.input), lib, "testdata/test.md", Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">S</ac:parameter><ac:rich-text-body>`)

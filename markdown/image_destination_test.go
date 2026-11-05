@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +49,7 @@ func TestLocalImageDestinationIsDecoded(t *testing.T) {
 			std, err := stdlib.New(context.Background(), nil)
 			require.NoError(t, err)
 
-			out, attachments, err := CompileMarkdown([]byte(tc.markdown), std, doc, types.MarkConfig{})
+			out, attachments, err := CompileMarkdown([]byte(tc.markdown), std, doc, Options{})
 			require.NoError(t, err)
 
 			assert.Contains(t, out, `<ri:attachment ri:filename="`+tc.filename+`"/>`)
@@ -70,7 +69,7 @@ func TestLocalImageWithALiteralPercentIsStillFound(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("![a](100%25.png)\n"), std, doc, types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte("![a](100%25.png)\n"), std, doc, Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `<ri:attachment ri:filename="100%25.png"/>`)
@@ -81,7 +80,7 @@ func TestRemoteImageDestinationKeepsItsEncoding(t *testing.T) {
 	std, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := CompileMarkdown([]byte("![a](https://example.com/my%20file.png)\n"), std, "test.md", types.MarkConfig{})
+	out, _, err := CompileMarkdown([]byte("![a](https://example.com/my%20file.png)\n"), std, "test.md", Options{})
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `<ri:url ri:value="https://example.com/my%20file.png"/>`)
@@ -96,7 +95,7 @@ func TestImageTitleAndAltAreUnescapedOnce(t *testing.T) {
 
 	out, _, err := CompileMarkdown(
 		[]byte(`![a \"b\" &amp; c](https://example.com/x.png "T \"q\" &amp; z")`+"\n"),
-		std, "test.md", types.MarkConfig{},
+		std, "test.md", Options{},
 	)
 	require.NoError(t, err)
 
@@ -132,7 +131,7 @@ func TestDeclaredAttachmentMatchesADecodedImageDestination(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := CompileMarkdown([]byte("![a](my%20file.png)\n"), std, "test.md",
-		types.MarkConfig{ResolveAttachment: resolve})
+		Options{ResolveAttachment: resolve})
 	require.NoError(t, err)
 
 	assert.Contains(t, asked, "my file.png")

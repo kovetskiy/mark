@@ -5,7 +5,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/renderer/html"
 )
@@ -28,7 +27,7 @@ func fencedCode(t *testing.T, info string) string {
 	t.Helper()
 
 	return render(t, "```"+info+"\nsample\n```\n", []html.Extension{
-		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}, ""),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, crenderer.DiagramConfig{}, ""),
 	})
 }
 
@@ -218,7 +217,7 @@ func TestFencedCodeBlockBraceInATitleIsKept(t *testing.T) {
 // the one sequence CDATA cannot hold.
 func TestFencedCodeBlockEscapesTheCDATATerminator(t *testing.T) {
 	actual := render(t, "```xml\n<![CDATA[x]]>\n```\n", []html.Extension{
-		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, types.MarkConfig{}, ""),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(newStdlib(t), &collectingAttacher{}, crenderer.DiagramConfig{}, ""),
 	})
 	assertWellFormed(t, actual)
 

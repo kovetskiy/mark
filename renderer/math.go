@@ -2,15 +2,26 @@ package renderer
 
 import (
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/chrome"
 	cmath "github.com/kovetskiy/mark/v17/math"
 	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/kovetskiy/mark/v17/types"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/renderer"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
 )
+
+// MathConfig is how a math renderer draws formulas.
+type MathConfig struct {
+	// Browser rasterises formulas published as PNG. It belongs to whoever
+	// created it, who closes it; nil fails the first PNG formula.
+	Browser *chrome.Browser
+	// Format is the image a formula is published as, "svg" or "png". Scale
+	// multiplies the pixels of a PNG one, and is ignored for SVG.
+	Format string
+	Scale  float64
+}
 
 // ConfluenceMathRenderer publishes a LaTeX formula as an image.
 //
@@ -22,7 +33,7 @@ import (
 type ConfluenceMathRenderer struct {
 	Stdlib      *stdlib.Lib
 	Attachments attachment.Attacher
-	MarkConfig  types.MarkConfig
+	Math        MathConfig
 	// attached remembers the formulas already queued for upload. The same
 	// formula written twice on a page renders to the same file, and a renderer
 	// lives for one document, so this keeps that one upload rather than one per
@@ -31,11 +42,11 @@ type ConfluenceMathRenderer struct {
 }
 
 // NewConfluenceMathRenderer creates a new instance of the ConfluenceMathRenderer.
-func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg types.MarkConfig) html.Extension {
+func NewConfluenceMathRenderer(stdlib *stdlib.Lib, attachments attachment.Attacher, cfg MathConfig) html.Extension {
 	return &ConfluenceMathRenderer{
 		Stdlib:      stdlib,
 		Attachments: attachments,
-		MarkConfig:  cfg,
+		Math:        cfg,
 		attached:    map[string]bool{},
 	}
 }
@@ -81,7 +92,7 @@ func (r *ConfluenceMathRenderer) writeFormula(writer util.BufWriter, equation []
 	// which locates it better than a line number would: a formula has no
 	// position of its own in the AST, and a document usually has few enough
 	// formulas that the source is the clearer identifier.
-	rendered, err := cmath.Process(r.MarkConfig.Browser, string(equation), display, r.MarkConfig.MathFormat, r.MarkConfig.MathScale)
+	rendered, err := cmath.Process(r.Math.Browser, string(equation), display, r.Math.Format, r.Math.Scale)
 	if err != nil {
 		return ast.WalkStop, err
 	}
