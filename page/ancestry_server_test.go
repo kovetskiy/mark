@@ -38,7 +38,7 @@ func TestEnsureAncestryAllParentsExist(t *testing.T) {
 	team := server.AddPage("DOCS", "Team", "page", root.ID)
 	server.AddPage("DOCS", "Guides", "page", team.ID)
 
-	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
+	parent, err := page.EnsureAncestry(ctx, api, "DOCS", []string{"Root", "Team", "Guides"}, page.AncestryOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -52,7 +52,7 @@ func TestEnsureAncestryCreatesMissingParents(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
+	parent, err := page.EnsureAncestry(ctx, api, "DOCS", []string{"Root", "Team", "Guides"}, page.AncestryOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -76,7 +76,7 @@ func TestEnsureAncestryDryRunCreatesNothing(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddPage("DOCS", "Root", "page", "")
 
-	_, err := page.EnsureAncestry(ctx, true, api, "DOCS", []string{"Root", "Team", "Guides"}, nil)
+	_, err := page.EnsureAncestry(ctx, api, "DOCS", []string{"Root", "Team", "Guides"}, page.AncestryOptions{DryRun: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, server.CountRequests("POST", "/rest/api/content"),
@@ -93,7 +93,7 @@ func TestEnsureAncestryFallsBackToRootPage(t *testing.T) {
 	api, server := newAPI(t)
 	existing := server.AddPage("DOCS", "Existing", "page", "")
 
-	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Brand New"}, nil)
+	parent, err := page.EnsureAncestry(ctx, api, "DOCS", []string{"Brand New"}, page.AncestryOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Brand New", parent.Title)
@@ -123,7 +123,7 @@ func TestEnsureAncestryCreatesMissingParentsUnderTheHomePage(t *testing.T) {
 	require.Equal(t, other.ID, first.ID,
 		"the test needs the other root page listed first to mean anything")
 
-	parent, err := page.EnsureAncestry(ctx, false, api, "DOCS", []string{"Team", "Guides"}, nil)
+	parent, err := page.EnsureAncestry(ctx, api, "DOCS", []string{"Team", "Guides"}, page.AncestryOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Guides", parent.Title)
@@ -297,7 +297,7 @@ func TestDryRunDoesNotMoveAFolder(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := page.EnsureFolderAncestry(ctx, true, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	_, err := page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals"}, &anchor.ID, page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache()})
 	require.NoError(t, err)
 
 	assert.False(t, moved.Load(), "a dry run must not move anything")
@@ -329,7 +329,7 @@ func TestARealRunStillAsksToMoveTheFolder(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, _ = page.EnsureFolderAncestry(ctx, false, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	_, _ = page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals"}, &anchor.ID, page.AncestryOptions{FolderCache: page.NewFolderCache()})
 
 	assert.True(t, moved.Load(), "a real run asks to move the folder")
 }
@@ -343,7 +343,7 @@ func TestDryRunMixedAncestryIgnoresCaseOfAnchorTitle(t *testing.T) {
 	anchor := server.AddPage("DOCS", "My Parent", "page", "")
 	folder := server.AddFolder("DOCS", "Manuals", anchor.ID, "page")
 
-	parent, err := page.EnsureMixedAncestry(t.Context(), true, api, page.NewFolderCache(), nil, "DOCS", []string{"Manuals"}, []string{"my parent"})
+	parent, err := page.EnsureMixedAncestry(t.Context(), api, "DOCS", []string{"Manuals"}, []string{"my parent"}, page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache()})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 
@@ -383,7 +383,7 @@ func TestFolderCreateConflictDoesNotDependOnWording(t *testing.T) {
 		return 0, "", false
 	})
 
-	parent, err := page.EnsureFolderAncestry(ctx, false, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &root.ID, nil)
+	parent, err := page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals"}, &root.ID, page.AncestryOptions{FolderCache: page.NewFolderCache()})
 	require.NoError(t, err, "a folder that already exists is not a failure")
 	require.NotNil(t, parent)
 	assert.Equal(t, "Manuals", parent.Title)
@@ -407,7 +407,7 @@ func TestFolderCreateFailureIsStillReported(t *testing.T) {
 		return 0, "", false
 	})
 
-	_, err := page.EnsureFolderAncestry(ctx, false, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &root.ID, nil)
+	_, err := page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals"}, &root.ID, page.AncestryOptions{FolderCache: page.NewFolderCache()})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `error creating folder with title "Manuals"`)
 	assert.Contains(t, err.Error(), "403", "the reason the create was refused has to survive")
@@ -437,8 +437,8 @@ func TestFolderLookupIgnoresASameTitledFolderFurtherDown(t *testing.T) {
 	before := len(server.Folders())
 
 	parent, err := page.EnsureFolderAncestry(
-		ctx,
-		false, api, page.NewFolderCache(), "DOCS", []string{"Manuals", "Guides"}, &root.ID, nil,
+		ctx, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID,
+		page.AncestryOptions{FolderCache: page.NewFolderCache()},
 	)
 	require.NoError(t, err)
 	require.NotNil(t, parent)
@@ -462,7 +462,7 @@ func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 
 	// A dry run, because the fake does not move folders; it reports the move
 	// and hands back the folder it would have moved.
-	parent, err := page.EnsureFolderAncestry(ctx, true, api, page.NewFolderCache(), "DOCS", []string{"Manuals"}, &anchor.ID, nil)
+	parent, err := page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals"}, &anchor.ID, page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache()})
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, atRoot.ID, parent.ID)

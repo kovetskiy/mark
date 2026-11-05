@@ -313,21 +313,33 @@ func runPageMove(ctx context.Context, run pageRun, cmd *cli.Command) error {
 }
 
 func runPageRename(ctx context.Context, run pageRun, cmd *cli.Command) error {
-	return page.Rename(ctx, run.api, run.refs[cmd.Args().First()], cmd.Args().Get(1), cmd.Bool("dry-run"), run.out)
+	return page.Rename(ctx, run.api, run.refs[cmd.Args().First()], cmd.Args().Get(1),
+		page.RenameOptions{DryRun: cmd.Bool("dry-run")}, run.out)
 }
 
 func runPageArchive(ctx context.Context, run pageRun, cmd *cli.Command) error {
-	return page.Archive(ctx, run.api, run.refs[cmd.Args().First()], cmd.Bool("dry-run"), run.out)
+	return page.Archive(ctx, run.api, run.refs[cmd.Args().First()], page.ArchiveOptions{DryRun: cmd.Bool("dry-run")}, run.out)
 }
 
 func runPageDelete(ctx context.Context, run pageRun, cmd *cli.Command) error {
-	return page.Delete(ctx, run.api, run.refs[cmd.Args().First()], cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
+	return page.Delete(ctx, run.api, run.refs[cmd.Args().First()], page.DeleteOptions{
+		Recursive: cmd.Bool("recursive"),
+		DryRun:    cmd.Bool("dry-run"),
+	}, run.out)
 }
 
 func runPageWatch(ctx context.Context, run pageRun, cmd *cli.Command) error {
-	return page.Watch(ctx, run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), true, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
+	return page.Watch(ctx, run.api, run.refs[cmd.Args().First()], watchOptions(cmd), run.out)
 }
 
 func runPageUnwatch(ctx context.Context, run pageRun, cmd *cli.Command) error {
-	return page.Watch(ctx, run.api, run.refs[cmd.Args().First()], cmd.StringSlice("user"), false, cmd.Bool("recursive"), cmd.Bool("dry-run"), run.out)
+	return page.Unwatch(ctx, run.api, run.refs[cmd.Args().First()], watchOptions(cmd), run.out)
+}
+
+func watchOptions(cmd *cli.Command) page.WatchOptions {
+	return page.WatchOptions{
+		Users:     cmd.StringSlice("user"),
+		Recursive: cmd.Bool("recursive"),
+		DryRun:    cmd.Bool("dry-run"),
+	}
 }

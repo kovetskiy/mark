@@ -12,15 +12,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// ResolvePage finds the page meta describes and its parent, creating the
+// parent's ancestry unless options.DryRun is set.
 func ResolvePage(
 	ctx context.Context,
-	dryRun bool,
 	api *confluence.API,
-	folders *FolderCache,
 	meta *metadata.Meta,
-	tracker AncestryTracker,
+	options AncestryOptions,
 ) (*confluence.PageInfo, *confluence.PageInfo, error) {
-	parent, page, _, err := resolvePage(ctx, dryRun, api, folders, meta, tracker)
+	parent, page, _, err := resolvePage(ctx, api, meta, options)
 
 	return parent, page, err
 }
@@ -28,24 +28,24 @@ func ResolvePage(
 // PreviewPage is ResolvePage for a dry run that also has to say whether a real
 // run would move the page. Misplaced reports that the page found by title
 // failed the ancestry check, which is what has a real run move it from inside
-// ResolvePage; WouldMove takes it from there.
+// ResolvePage; WouldMove takes it from there. It is always a dry run, whatever
+// options.DryRun says.
 func PreviewPage(
 	ctx context.Context,
 	api *confluence.API,
-	folders *FolderCache,
 	meta *metadata.Meta,
-	tracker AncestryTracker,
+	options AncestryOptions,
 ) (parent, page *confluence.PageInfo, misplaced bool, err error) {
-	return resolvePage(ctx, true, api, folders, meta, tracker)
+	options.DryRun = true
+
+	return resolvePage(ctx, api, meta, options)
 }
 
 func resolvePage(
 	ctx context.Context,
-	dryRun bool,
 	api *confluence.API,
-	folders *FolderCache,
 	meta *metadata.Meta,
-	tracker AncestryTracker,
+	options AncestryOptions,
 ) (*confluence.PageInfo, *confluence.PageInfo, bool, error) {
 	if meta == nil {
 		return nil, nil, false, fmt.Errorf("metadata is empty")
@@ -145,13 +145,11 @@ func resolvePage(
 
 		parent, err = EnsureMixedAncestry(
 			ctx,
-			dryRun,
 			api,
-			folders,
-			tracker,
 			meta.Space,
 			meta.Folders,
 			meta.Parents,
+			options,
 		)
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("can't create mixed folder/page ancestry tree: folders=%s, pages=%s: %w",
@@ -215,11 +213,10 @@ func resolvePage(
 
 		parent, err = EnsureAncestry(
 			ctx,
-			dryRun,
 			api,
 			meta.Space,
 			meta.Parents,
-			tracker,
+			options,
 		)
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("can't create ancestry tree %q: %w", strings.Join(meta.Parents, ` > `), err)
@@ -229,7 +226,7 @@ func resolvePage(
 		// than its headers declare passes validation today -- every declared
 		// parent is somewhere in its ancestry -- and moving those would tear up
 		// hierarchies nobody asked to change.
-		if misplaced && !dryRun && page != nil && parent != nil {
+		if misplaced && !options.DryRun && page != nil && parent != nil {
 			if err := EnsurePageUnderParent(ctx, api, page, parent.ID); err != nil {
 				return nil, nil, false, err
 			}

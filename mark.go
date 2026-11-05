@@ -1424,12 +1424,14 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 		r.api,
 		doc.meta,
 		filepath.Dir(file),
-		config.Page.Space,
-		config.Page.TitleFromH1,
-		config.Page.TitleFromFilename,
-		config.Page.Parents,
-		config.Page.TitleAppendGeneratedHash,
-		config.Rendering.enabled("frontmatter"),
+		metadata.ExtractOptions{
+			Space:                    config.Page.Space,
+			TitleFromH1:              config.Page.TitleFromH1,
+			TitleFromFilename:        config.Page.TitleFromFilename,
+			Parents:                  config.Page.Parents,
+			TitleAppendGeneratedHash: config.Page.TitleAppendGeneratedHash,
+			FrontMatter:              config.Rendering.enabled("frontmatter"),
+		},
 		r.checker,
 		searchDirs,
 	)
@@ -1467,6 +1469,16 @@ func (r *publishRun) resolveRestrictions(ctx context.Context, doc *document) err
 
 // previewLocation finds, without changing anything, the page a dry run's
 // document would publish to.
+// ancestryOptions are the run's settings for resolving a page's ancestry.
+// DryRun stays unset: PreviewPage is a dry run whatever it is given.
+func (r *publishRun) ancestryOptions() page.AncestryOptions {
+	return page.AncestryOptions{
+		FolderCache: r.folders,
+		Parents:     r.ancestryTracker,
+		Folders:     r.ancestryTracker,
+	}
+}
+
 func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePreview, error) {
 	var found pagePreview
 	meta, file := doc.meta, doc.file
@@ -1491,7 +1503,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, err
 	}
 
-	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, r.folders, meta, r.ancestryTracker)
+	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, meta, r.ancestryOptions())
 	if err != nil {
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
@@ -1771,7 +1783,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 		return nil, err
 	}
 
-	parent, pg, err := page.ResolvePage(ctx, false, api, r.folders, meta, r.ancestryTracker)
+	parent, pg, err := page.ResolvePage(ctx, api, meta, r.ancestryOptions())
 	if err != nil {
 		return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 	}

@@ -27,14 +27,13 @@ type markdownLink struct {
 // LinkResolver resolves one link target at a time, for a caller walking a
 // parsed document rather than scanning its text.
 type LinkResolver struct {
-	API                      *confluence.API
-	Base                     string
-	SpaceForLinks            string
-	TitleFromH1              bool
-	TitleFromFilename        bool
-	Parents                  []string
-	TitleAppendGeneratedHash bool
-	FrontMatterEnabled       bool
+	API  *confluence.API
+	Base string
+
+	// Extract reads a linked document's metadata, so that it is titled and
+	// placed as publishing it would. Its Space is where a link to a document
+	// that names no space looks; Filename is the linked file's own.
+	Extract metadata.ExtractOptions
 
 	// SearchDirs are tried after Base, and exist for links written inside an
 	// included fragment. Such a link is written from where the fragment lives,
@@ -79,39 +78,30 @@ func (r *LinkResolver) note(format string, args ...any) {
 	r.broken = append(r.broken, fmt.Sprintf(format, args...))
 }
 
-// NewLinkResolver builds a resolver for the document at base.
+// NewLinkResolver builds a resolver for the document at base, reading linked
+// documents with extract.
 //
-// A link with no space of its own is resolved in the document's own space,
-// which is what a relative link between two files in one repository means.
+// With no extract.Space, a link with no space of its own is resolved in the
+// document's own space, which is what a relative link between two files in
+// one repository means.
 func NewLinkResolver(
 	api *confluence.API,
 	meta *metadata.Meta,
 	base string,
-	spaceFromCli string,
-	titleFromH1 bool,
-	titleFromFilename bool,
-	parents []string,
-	titleAppendGeneratedHash bool,
-	frontMatterEnabled bool,
+	extract metadata.ExtractOptions,
 	checker *LinkChecker,
 	searchDirs []string,
 ) *LinkResolver {
-	spaceForLinks := spaceFromCli
-	if spaceForLinks == "" && meta != nil {
-		spaceForLinks = meta.Space
+	if extract.Space == "" && meta != nil {
+		extract.Space = meta.Space
 	}
 
 	return &LinkResolver{
-		API:                      api,
-		Base:                     base,
-		SpaceForLinks:            spaceForLinks,
-		TitleFromH1:              titleFromH1,
-		TitleFromFilename:        titleFromFilename,
-		Parents:                  parents,
-		TitleAppendGeneratedHash: titleAppendGeneratedHash,
-		FrontMatterEnabled:       frontMatterEnabled,
-		Checker:                  checker,
-		SearchDirs:               searchDirs,
+		API:        api,
+		Base:       base,
+		Extract:    extract,
+		Checker:    checker,
+		SearchDirs: searchDirs,
 	}
 }
 
@@ -163,14 +153,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 		ctx,
 		r.API, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
-		metadata.ExtractOptions{
-			Space:                    r.SpaceForLinks,
-			TitleFromH1:              r.TitleFromH1,
-			TitleFromFilename:        r.TitleFromFilename,
-			Parents:                  r.Parents,
-			TitleAppendGeneratedHash: r.TitleAppendGeneratedHash,
-			FrontMatter:              r.FrontMatterEnabled,
-		},
+		r.Extract,
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
@@ -240,7 +223,7 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 		source = r.Base
 	}
 
-	r.Checker.NotePage(r.SpaceForLinks, title, source)
+	r.Checker.NotePage(r.Extract.Space, title, source)
 
 	return nil
 }
