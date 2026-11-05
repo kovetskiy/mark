@@ -305,7 +305,9 @@ SVG share a name: `--math-format` is now `--math-output`, alongside
 the configuration file, which otherwise refuses it as an unknown key, and
 `MARK_MATH_FORMAT` to `MARK_MATH_OUTPUT` in the environment, where the old name
 is no longer read. Library callers rename `RenderingConfig.MathFormat` and
-`markdown.Options.MathFormat` to `MathOutput`.
+`markdown.Options.MathFormat` to `MathOutput`. It and `MermaidOutput` and
+`D2Output` are an `imageformat.Format`: `imageformat.PNG` or
+`imageformat.SVG`, or `imageformat.Parse` for a value a person wrote.
 
 You can store user credentials in the configuration file, which should be
 located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):

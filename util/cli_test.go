@@ -142,35 +142,16 @@ func Test_setLogLevel(t *testing.T) {
 	}
 }
 
-// TestMermaidOutputFlagValidation covers the two settings that only mean
-// anything in one of the two output formats, and the format itself.
+// TestMermaidOutputFlagValidation covers the settings that only mean anything
+// in one of the two output formats; the format itself is
+// TestImageOutputFlagsShareOneRule's.
 func TestMermaidOutputFlagValidation(t *testing.T) {
-	t.Run("png is accepted", func(t *testing.T) {
-		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "png"}))
-	})
-
-	t.Run("svg is accepted", func(t *testing.T) {
-		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg"}))
-	})
-
-	t.Run("anything else is rejected", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "jpeg"}))
-	})
-
-	// A flag carrying a default is never empty unless somebody emptied it, so
-	// an empty value is somebody's doing and not the absence of one. Left to
-	// fall through it would publish a PNG without a word, which is the one
-	// thing a value set on purpose should not do.
-	t.Run("emptied on purpose is rejected", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", ""}))
-	})
-
 	// The bundle is checked against the normalised value, the one published.
 	t.Run("a padded svg takes a bundle", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", " SVG ", "--mermaid-bundle"}))
 	})
 
-	// The scale applies to both formats now: it multiplies the pixels of a PNG
+	// The scale applies to both formats: it multiplies the pixels of a PNG
 	// and the size the page shows an SVG at.
 	t.Run("a scale applies to an svg too", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-scale", "2"}))
@@ -180,37 +161,14 @@ func TestMermaidOutputFlagValidation(t *testing.T) {
 		assert.Error(t, runWithArgs([]string{"cmd", "--mermaid-output", "png", "--mermaid-bundle"}))
 	})
 
-	// Switching a bundle off is not asking for one. Read as "the flag was
-	// mentioned" rather than as its value, mermaid-bundle = false left beside
-	// the default PNG output failed a run that had asked for nothing.
+	// Switching a bundle off is not asking for one, so the bundle is read by
+	// its value rather than by whether the flag was mentioned.
 	t.Run("but switching one off asks for nothing", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "png", "--mermaid-bundle=false"}))
 	})
 
 	t.Run("and a bundle in an svg is the point", func(t *testing.T) {
 		assert.NoError(t, runWithArgs([]string{"cmd", "--mermaid-output", "svg", "--mermaid-bundle"}))
-	})
-}
-
-// TestD2OutputFlagValidation covers the format a d2 diagram is published as.
-// The renderer knows two, and anything else falls to its PNG branch: a diagram
-// published as the wrong thing, with nothing said about the SVG that was asked
-// for.
-func TestD2OutputFlagValidation(t *testing.T) {
-	t.Run("png is accepted", func(t *testing.T) {
-		assert.NoError(t, runWithArgs([]string{"cmd", "--d2-output", "png"}))
-	})
-
-	t.Run("svg is accepted", func(t *testing.T) {
-		assert.NoError(t, runWithArgs([]string{"cmd", "--d2-output", "svg"}))
-	})
-
-	t.Run("anything else is rejected", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", "jpeg"}))
-	})
-
-	t.Run("emptied on purpose is rejected", func(t *testing.T) {
-		assert.Error(t, runWithArgs([]string{"cmd", "--d2-output", ""}))
 	})
 }
 

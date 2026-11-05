@@ -259,43 +259,30 @@ func (r RenderingConfig) validate() error {
 		return err
 	}
 
-	// Checked here as well as in the CLI, because Config is a public API and a
-	// library caller reaches this without passing a flag at all. A value the
-	// renderer does not know falls to its default branch, so an unrecognised
-	// format publishes a PNG without a word -- taking a bundle asked for
-	// alongside it down with it. An empty value is not that: it is a caller
-	// that never set the field, and it means the PNG mark has always published.
-	if r.MermaidOutput != "" && !r.MermaidOutput.Valid() {
-		return fmt.Errorf(
-			"invalid MermaidOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			r.MermaidOutput,
-		)
+	// Checked here as well as by the renderers, so that a value they do not
+	// know fails the run before anything is published rather than at its
+	// first picture. Compared as written: imageformat.Parse is for what a
+	// person typed. Empty is a field nobody set, and means PNG.
+	for _, output := range []struct {
+		field string
+		value imageformat.Format
+	}{
+		{"MermaidOutput", r.MermaidOutput},
+		{"D2Output", r.D2Output},
+		{"MathOutput", r.MathOutput},
+	} {
+		if output.value != "" && !output.value.Valid() {
+			return fmt.Errorf(
+				"invalid %s %q: expected \"png\", \"svg\", or \"\" for the default",
+				output.field, output.value,
+			)
+		}
 	}
 
 	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {
 		return errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
 				"there is nowhere in a PNG to keep the diagram's source",
-		)
-	}
-
-	// The same for d2, and for the same reason: an unrecognised format falls to
-	// the renderer's PNG branch, publishing one without a word about the SVG
-	// that was asked for. An empty value is a caller that never set the field,
-	// and means the PNG mark has always published.
-	if r.D2Output != "" && !r.D2Output.Valid() {
-		return fmt.Errorf(
-			"invalid D2Output %q: expected \"png\", \"svg\", or \"\" for the default",
-			r.D2Output,
-		)
-	}
-
-	// Checked here so that a format math does not know fails the run at its
-	// start rather than at its first formula.
-	if r.MathOutput != "" && !r.MathOutput.Valid() {
-		return fmt.Errorf(
-			"invalid MathOutput %q: expected \"png\", \"svg\", or \"\" for the default",
-			r.MathOutput,
 		)
 	}
 

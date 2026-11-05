@@ -9,7 +9,8 @@ import (
 	"strings"
 )
 
-// Format is an image a picture is published as. The zero value means PNG.
+// Format is an image a picture is published as. mark's settings read the zero
+// value as PNG.
 type Format string
 
 const (
