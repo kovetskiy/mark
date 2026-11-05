@@ -58,8 +58,12 @@ var ErrNoEngine = errors.New("no mermaid engine to render with")
 // NewEngine returns an Engine of the kind named, EngineChrome when empty,
 // without starting it.
 func NewEngine(kind string) (*Engine, error) {
+	if err := CheckEngine(kind); err != nil {
+		return nil, err
+	}
+
 	switch kind {
-	case "", EngineChrome:
+	case "":
 		kind = EngineChrome
 
 	case EngineMerman:
@@ -67,14 +71,22 @@ func NewEngine(kind string) (*Engine, error) {
 			"the merman render engine is experimental: it is not mermaid.js, " +
 				"so a diagram may be drawn differently or not at all",
 		)
-
-	default:
-		return nil, fmt.Errorf(
-			"unknown mermaid engine %q: expected %q or %q", kind, EngineChrome, EngineMerman,
-		)
 	}
 
 	return &Engine{kind: kind}, nil
+}
+
+// CheckEngine refuses an engine kind NewEngine would not know, without making
+// an Engine.
+func CheckEngine(kind string) error {
+	switch kind {
+	case "", EngineChrome, EngineMerman:
+		return nil
+	default:
+		return fmt.Errorf(
+			"unknown mermaid engine %q: expected %q or %q", kind, EngineChrome, EngineMerman,
+		)
+	}
 }
 
 // Close shuts the renderer down for good, if one was started. Closing twice,

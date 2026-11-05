@@ -501,6 +501,17 @@ func TestProcessFileRefusesWhatRunRefuses(t *testing.T) {
 	}
 }
 
+// TestRunRefusesAnUnknownEngineBeforeTheGlob: a mermaid engine mark does not
+// know is a setting like any other, said before a glob that matches nothing.
+func TestRunRefusesAnUnknownEngineBeforeTheGlob(t *testing.T) {
+	_, _, file, config := processFileFixture(t, "Body.\n")
+	config.Files = filepath.Join(filepath.Dir(file), "missing-*.md")
+	config.Rendering.MermaidEngine = "graphviz"
+
+	err := Run(context.Background(), config)
+	require.ErrorContains(t, err, "unknown mermaid engine")
+}
+
 // TestProcessFileUsesTheMermaidEngine: a library caller asking ProcessFile for
 // merman gets merman, not whichever engine some earlier run chose.
 func TestProcessFileUsesTheMermaidEngine(t *testing.T) {
@@ -989,4 +1000,55 @@ func TestPublisherPublishesOneFileToAPageID(t *testing.T) {
 
 	_, err = publisher.Publish(context.Background(), first)
 	require.NoError(t, err, "publishing the same file again is not a second file")
+
+	abs, err := filepath.Abs(first)
+	require.NoError(t, err)
+
+	_, err = publisher.Publish(context.Background(), abs)
+	require.NoError(t, err, "the same file spelled absolutely is not a second file")
+}
+
+// TestPublisherLeavesAPageIDToAFileThatReachesIt: a file that fails before
+// the page is reached has published nothing there, so the next file may.
+func TestPublisherLeavesAPageIDToAFileThatReachesIt(t *testing.T) {
+	server, api, first, config := processFileFixture(t, "First.\n")
+	target := server.AddPage("DOCS", "Target", "page", "")
+	config.Page.PageID = target.ID
+
+	publisher, err := NewPublisher(context.Background(), api, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(context.Background(), first+".typo")
+	require.Error(t, err)
+
+	_, err = publisher.Publish(context.Background(), first)
+	require.NoError(t, err)
+	assert.Contains(t, server.Page(target.ID).Body, "First.")
+}
+
+// TestPublisherKeepsAPageIDForAFileThatReachedIt: a file that fails once the
+// page is found may have put something of itself on it, so the page stays
+// its own; a dry run refuses the next file just as a real run would.
+func TestPublisherKeepsAPageIDForAFileThatReachedIt(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dry run %v", dryRun), func(t *testing.T) {
+			server, api, first, config := processFileFixture(t, "<!-- Include: missing.md -->\n")
+			target := server.AddPage("DOCS", "Target", "page", "")
+			config.Page.PageID = target.ID
+			config.Mode.DryRun = dryRun
+			second := writeFile(t, filepath.Dir(first), "other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nSecond.\n")
+
+			publisher, err := NewPublisher(context.Background(), api, config)
+			require.NoError(t, err)
+			defer publisher.Close()
+
+			_, err = publisher.Publish(context.Background(), first)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "Page.PageID")
+
+			_, err = publisher.Publish(context.Background(), second)
+			require.ErrorContains(t, err, "Page.PageID names one page")
+		})
+	}
 }

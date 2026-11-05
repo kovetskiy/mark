@@ -800,16 +800,11 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	// Checked as written, and asked of IsSet as well, so that a value somebody
 	// emptied is not read as one nobody set.
 	mermaidEngine := command.String("mermaid-engine")
-	if mermaidEngine != "" || command.IsSet("mermaid-engine") {
-		switch mermaidEngine {
-		case mermaid.EngineChrome, mermaid.EngineMerman:
-			// ok
-		default:
-			return context, fmt.Errorf(
-				"invalid value for --mermaid-engine: %q (expected: %s or %s)",
-				mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
-			)
-		}
+	if mermaid.CheckEngine(mermaidEngine) != nil || (mermaidEngine == "" && command.IsSet("mermaid-engine")) {
+		return context, fmt.Errorf(
+			"invalid value for --mermaid-engine: %q (expected: %s or %s)",
+			mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,
+		)
 	}
 
 	mathFormat := strings.TrimSpace(command.String("math-format"))
