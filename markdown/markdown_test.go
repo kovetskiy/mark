@@ -63,7 +63,7 @@ func TestCompileMarkdown(t *testing.T) {
 		var body []byte
 		if filename == "testdata/frontmatter.md" {
 			var err error
-			_, body, err = metadata.ExtractMeta(markdown, "", false, false, "", nil, false, "", true)
+			_, body, err = metadata.ExtractMeta(markdown, metadata.ExtractOptions{FrontMatter: true})
 			if err != nil {
 				panic(err)
 			}
@@ -117,7 +117,7 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		var body []byte
 		if filename == "testdata/frontmatter.md" {
 			var err error
-			_, body, err = metadata.ExtractMeta(markdown, "", false, false, "", nil, false, "", true)
+			_, body, err = metadata.ExtractMeta(markdown, metadata.ExtractOptions{FrontMatter: true})
 			if err != nil {
 				panic(err)
 			}
@@ -173,7 +173,7 @@ func TestCompileMarkdownStripNewlines(t *testing.T) {
 		var body []byte
 		if filename == "testdata/frontmatter.md" {
 			var err error
-			_, body, err = metadata.ExtractMeta(markdown, "", false, false, "", nil, false, "", true)
+			_, body, err = metadata.ExtractMeta(markdown, metadata.ExtractOptions{FrontMatter: true})
 			if err != nil {
 				panic(err)
 			}

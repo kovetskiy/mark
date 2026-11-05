@@ -100,7 +100,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 				data = "---\ncontent-appearance: " + test.frontMatter + "\n---\n" + data
 			}
 
-			_, _, err := ExtractMeta([]byte(data+"\nbody\n"), "", false, false, "", nil, false, test.fallback, true)
+			_, _, err := ExtractMeta([]byte(data+"\nbody\n"), ExtractOptions{ContentAppearance: test.fallback, FrontMatter: true})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.error)
 		})
@@ -109,7 +109,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("default fills missing content appearance", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, DefaultContentAppearance, false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{ContentAppearance: DefaultContentAppearance})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
@@ -118,7 +118,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("header takes precedence over default", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: full-width -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, DefaultContentAppearance, false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{ContentAppearance: DefaultContentAppearance})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
@@ -127,7 +127,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("falls back to full-width when default isn't set", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, "", false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, FullWidthContentAppearance, meta.ContentAppearance)
@@ -136,7 +136,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("default appearance via cli flag", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, DefaultContentAppearance, false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{ContentAppearance: DefaultContentAppearance})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
@@ -145,7 +145,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("default appearance via header", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: default -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, "", false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, DefaultContentAppearance, meta.ContentAppearance)
@@ -154,7 +154,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("max appearance via cli flag", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, MaxContentAppearance, false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{ContentAppearance: MaxContentAppearance})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, MaxContentAppearance, meta.ContentAppearance)
@@ -163,7 +163,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 	t.Run("max appearance via header", func(t *testing.T) {
 		data := []byte("<!-- Space: DOC -->\n<!-- Title: Example -->\n<!-- Content-Appearance: max -->\n\nbody\n")
 
-		meta, _, err := ExtractMeta(data, "", false, false, "", nil, false, "", false)
+		meta, _, err := ExtractMeta(data, ExtractOptions{})
 		assert.NoError(t, err)
 		assert.NotNil(t, meta)
 		assert.Equal(t, MaxContentAppearance, meta.ContentAppearance)
@@ -178,7 +178,7 @@ title: Test Page
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{})
 	assert.NoError(t, err)
 	assert.Nil(t, meta)
 	assert.Equal(t, markdown, string(body))
@@ -192,7 +192,7 @@ title = "Test Page"
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Nil(t, meta)
 	assert.Equal(t, markdown, string(body))
@@ -230,7 +230,7 @@ image-align: center
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, &Meta{
 		Parents:     []string{"Parent 1", "Parent 2"},
@@ -261,7 +261,7 @@ image-align: center
 func TestExtractMetaYAMLFrontMatterRejectsInvalidRestrictions(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  write:\n    users: [Jane Doe]\n---\n"
 
-	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	_, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	require.EqualError(t, err, `restrictions supports only read and update, got "write"`)
 }
 
@@ -271,7 +271,7 @@ func TestExtractMetaYAMLFrontMatterRejectsInvalidRestrictions(t *testing.T) {
 func TestExtractMetaYAMLFrontMatterEmptyRestrictions(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n  update:\n    users:\n---\n"
 
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	require.NoError(t, err)
 	assert.Equal(t, &Restrictions{Read: &RestrictionSubjects{}, Update: &RestrictionSubjects{Users: []string{}}}, meta.Restrictions)
 }
@@ -281,7 +281,7 @@ func TestExtractMetaYAMLFrontMatterEmptyRestrictions(t *testing.T) {
 func TestExtractMetaYAMLFrontMatterRestrictionSingleName(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test\nrestrictions:\n  read:\n    groups: docs-readers\n---\n"
 
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"docs-readers"}, meta.Restrictions.Read.Groups)
 }
@@ -292,10 +292,10 @@ func TestExtractMetaYAMLFrontMatterRestrictionSingleName(t *testing.T) {
 func TestExtractMetaRefusesRestrictionsFrontMatterItDoesNotRead(t *testing.T) {
 	markdown := "---\nrestrictions:\n  read:\n    groups: [secret]\n---\n<!-- Space: DOCS -->\n<!-- Title: Test -->\n"
 
-	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	_, _, err := ExtractMeta([]byte(markdown), ExtractOptions{})
 	require.ErrorContains(t, err, "only read with the frontmatter feature")
 
-	_, _, err = ExtractMeta([]byte("---\nauthor: me\n---\n<!-- Space: DOCS -->\n<!-- Title: Test -->\n"), "", false, false, "", nil, false, "", false)
+	_, _, err = ExtractMeta([]byte("---\nauthor: me\n---\n<!-- Space: DOCS -->\n<!-- Title: Test -->\n"), ExtractOptions{})
 	require.NoError(t, err, "other front matter is still passed over")
 }
 
@@ -309,7 +309,7 @@ func TestExtractMetaYAMLFrontMatterRestrictionKeysGivenTwice(t *testing.T) {
 		"restrictions.read.users is given twice": "restrictions:\n  read:\n    users: [a]\n    Users: [b]\n",
 	} {
 		markdown := "---\nspace: DOCS\ntitle: Test\n" + restrictions + "---\n"
-		_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+		_, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 		assert.EqualError(t, err, want)
 	}
 }
@@ -326,7 +326,7 @@ func TestExtractMetaRestrictionHeadersAreAdditive(t *testing.T) {
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, &Restrictions{
 		Read: &RestrictionSubjects{
@@ -344,7 +344,7 @@ func TestExtractMetaRestrictionHeadersAreAdditive(t *testing.T) {
 func TestExtractMetaRestrictionHeaderRejectsInvalidPath(t *testing.T) {
 	markdown := "<!-- Space: DOCS -->\n<!-- Title: Test -->\n<!-- Restriction: write.user=Jane Doe -->\n"
 
-	_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	_, _, err := ExtractMeta([]byte(markdown), ExtractOptions{})
 	require.EqualError(t, err, `Restriction header has unsupported operation "write"`)
 }
 
@@ -362,7 +362,7 @@ image_align: right
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"Parent"}, meta.Parents)
 	assert.Equal(t, []string{"Folder"}, meta.Folders)
@@ -383,7 +383,7 @@ sidebar: <p>Side</p>
 # Content
 `
 
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, "article", meta.Layout)
 	assert.Equal(t, "<p>Side</p>", meta.Sidebar)
@@ -402,7 +402,11 @@ labels:
 # Title From H1
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "DOCS", true, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{
+		Space:       "DOCS",
+		TitleFromH1: true,
+		FrontMatter: true,
+	})
 	assert.NoError(t, err)
 	assert.Equal(t, "DOCS", meta.Space)
 	assert.Equal(t, "Title From H1", meta.Title)
@@ -426,7 +430,7 @@ labels:
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"expected-label"}, meta.Labels)
 	assert.Equal(t, "# Content\n", string(body))
@@ -446,7 +450,7 @@ labels:
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, "HTML", meta.Space)
 	assert.Equal(t, "HTML Title", meta.Title)
@@ -466,7 +470,7 @@ Image-Align: center
 # Content
 `
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, "DOCS", meta.Space)
 	assert.Equal(t, []string{"A Single Parent"}, meta.Parents)
@@ -479,7 +483,7 @@ Image-Align: center
 func TestExtractMetaYAMLFrontMatterWithoutTrailingNewline(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test Page\n---"
 
-	meta, body, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, body, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	assert.NoError(t, err)
 	assert.Equal(t, "DOCS", meta.Space)
 	assert.Equal(t, "Test Page", meta.Title)
@@ -579,7 +583,7 @@ func TestExtractMeta_FolderHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			meta, _, err := ExtractMeta([]byte(tt.markdown), "", false, false, "", nil, false, "", false)
+			meta, _, err := ExtractMeta([]byte(tt.markdown), ExtractOptions{})
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, meta)
 		})
@@ -595,7 +599,7 @@ func TestExtractMeta_FolderHeadersOrder(t *testing.T) {
 
 # Content`
 
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", false)
+	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"First", "Second", "Third"}, meta.Folders)
 }
@@ -608,7 +612,7 @@ func TestExtractMeta_FolderHeadersWithCliParents(t *testing.T) {
 # Content`
 
 	cliParents := []string{"CLI Parent 1", "CLI Parent 2"}
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", cliParents, false, "", false)
+	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{Parents: cliParents})
 	assert.NoError(t, err)
 
 	// CLI parents should be prepended to any parents in the markdown, not folders
@@ -642,10 +646,11 @@ func TestParseHeaderCommentOverlappingDelimiters(t *testing.T) {
 // a document whose first line is "<!-->" previously crashed mark before it
 // reached Confluence at all.
 func TestExtractMetaOverlappingCommentDoesNotPanic(t *testing.T) {
-	meta, body, err := ExtractMeta(
-		[]byte("<!-->\n\n# Title\n\nbody\n"),
-		"TEST", true, false, "doc.md", nil, false, "", false,
-	)
+	meta, body, err := ExtractMeta([]byte("<!-->\n\n# Title\n\nbody\n"), ExtractOptions{
+		Filename:    "doc.md",
+		Space:       "TEST",
+		TitleFromH1: true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 	assert.Equal(t, "Title", meta.Title)
@@ -674,7 +679,7 @@ func TestParseHeaderCommentStillParsesValidHeaders(t *testing.T) {
 func TestExtractMetaYAMLFrontMatterOrder(t *testing.T) {
 	markdown := "---\nspace: DOCS\ntitle: Test Page\norder: 3\n---\n# Content\n"
 
-	meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 	require.NoError(t, err)
 	require.NotNil(t, meta.Order)
 	assert.Equal(t, 3, *meta.Order)
@@ -695,7 +700,7 @@ func TestExtractMetaYAMLFrontMatterOrderAccepts(t *testing.T) {
 		t.Run(test.written, func(t *testing.T) {
 			markdown := "---\nspace: DOCS\norder: " + test.written + "\n---\nBody\n"
 
-			meta, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+			meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 			require.NoError(t, err)
 			require.NotNil(t, meta.Order)
 			assert.Equal(t, test.expected, *meta.Order)
@@ -710,7 +715,7 @@ func TestExtractMetaYAMLFrontMatterOrderRejectsNonNumbers(t *testing.T) {
 		t.Run(written, func(t *testing.T) {
 			markdown := "---\nspace: DOCS\norder: " + written + "\n---\nBody\n"
 
-			_, _, err := ExtractMeta([]byte(markdown), "", false, false, "", nil, false, "", true)
+			_, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "order")
 		})
@@ -730,7 +735,7 @@ func TestCLIParentsAreNotShared(t *testing.T) {
 	extract := func(parent string) *Meta {
 		t.Helper()
 		document := "<!-- Space: TEST -->\n<!-- Parent: " + parent + " -->\n<!-- Title: " + parent + " child -->\n\nBody.\n"
-		meta, _, err := ExtractMeta([]byte(document), "", false, false, "", parents, false, "", false)
+		meta, _, err := ExtractMeta([]byte(document), ExtractOptions{Parents: parents})
 		require.NoError(t, err)
 		require.NotNil(t, meta)
 
@@ -757,13 +762,13 @@ func TestCLIParentsAreNotShared(t *testing.T) {
 // was published as "- a159f529" -- a title, as far as the check for a missing
 // one could tell.
 func TestAppendGeneratedHashNeedsATitle(t *testing.T) {
-	meta, _, err := ExtractMeta([]byte("<!-- Space: DOCS -->\n\nbody\n"), "", false, false, "doc.md", nil, true, "", false)
+	meta, _, err := ExtractMeta([]byte("<!-- Space: DOCS -->\n\nbody\n"), ExtractOptions{Filename: "doc.md", TitleAppendGeneratedHash: true})
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 	assert.Empty(t, meta.Title)
 
 	// A title still gets its hash.
-	meta, _, err = ExtractMeta([]byte("<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nbody\n"), "", false, false, "doc.md", nil, true, "", false)
+	meta, _, err = ExtractMeta([]byte("<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nbody\n"), ExtractOptions{Filename: "doc.md", TitleAppendGeneratedHash: true})
 	require.NoError(t, err)
 	assert.Regexp(t, `^Doc - [0-9a-f]{8}$`, meta.Title)
 }

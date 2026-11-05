@@ -25,7 +25,7 @@ func extractWithFrontMatter(t *testing.T, frontMatter string) (*Meta, string) {
 
 	document := "---\nspace: DOCS\ntitle: Doc\n" + frontMatter + "---\n\nBody.\n"
 
-	meta, _, err := ExtractMeta([]byte(document), "", false, false, "doc.md", nil, false, "", true)
+	meta, _, err := ExtractMeta([]byte(document), ExtractOptions{Filename: "doc.md", FrontMatter: true})
 	require.NoError(t, err)
 
 	return meta, logged.String()
@@ -128,7 +128,7 @@ func TestFrontMatterWarningNamesTheDocument(t *testing.T) {
 
 	_, _, err := ExtractMeta(
 		[]byte("---\nspace: DOCS\ntitle: Doc\ndraft: true\n---\n\nBody.\n"),
-		"", false, false, "", nil, false, "", true,
+		ExtractOptions{FrontMatter: true},
 	)
 	require.NoError(t, err)
 

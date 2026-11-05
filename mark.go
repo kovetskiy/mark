@@ -1055,19 +1055,18 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 // The run's index of titles reads documents through it too, so that the title
 // a child looks for and the title its parent publishes cannot disagree.
 func documentMeta(config Config, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
-	meta, markdown, err := metadata.ExtractMeta(
-		markdown,
-		config.Page.Space,
-		config.Page.TitleFromH1,
-		config.Page.TitleFromFilename,
-		file,
-		config.Page.Parents,
+	meta, markdown, err := metadata.ExtractMeta(markdown, metadata.ExtractOptions{
+		Filename:          file,
+		Space:             config.Page.Space,
+		TitleFromH1:       config.Page.TitleFromH1,
+		TitleFromFilename: config.Page.TitleFromFilename,
+		Parents:           config.Page.Parents,
 		// Deferred until the path has had its say about the parents, when it
 		// has one; see below.
-		config.Page.TitleAppendGeneratedHash && hierarchy == nil,
-		config.Page.ContentAppearance,
-		config.Rendering.enabled("frontmatter"),
-	)
+		TitleAppendGeneratedHash: config.Page.TitleAppendGeneratedHash && hierarchy == nil,
+		ContentAppearance:        config.Page.ContentAppearance,
+		FrontMatter:              config.Rendering.enabled("frontmatter"),
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}

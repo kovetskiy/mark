@@ -11,7 +11,7 @@ import (
 // behaviour off, so that a test says only what the headers said.
 func extract(t *testing.T, document string) (*Meta, string, error) {
 	t.Helper()
-	meta, body, err := ExtractMeta([]byte(document), "", false, false, "", nil, false, "", false)
+	meta, body, err := ExtractMeta([]byte(document), ExtractOptions{})
 	if err != nil {
 		return nil, "", err
 	}
@@ -185,7 +185,7 @@ func TestColumnWidthsDirectiveIsNotAHeader(t *testing.T) {
 
 	for name, doc := range cases {
 		t.Run(name, func(t *testing.T) {
-			meta, body, err := ExtractMeta([]byte(doc), "", false, false, "", nil, false, "", false)
+			meta, body, err := ExtractMeta([]byte(doc), ExtractOptions{})
 			require.NoError(t, err)
 
 			assert.Contains(t, string(body), directive)
