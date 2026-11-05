@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -66,7 +68,8 @@ func (c *configFile) check() error {
 
 // unknownKeys refuses every key of the file that no command's flag reads, each
 // with the key it is a typo of when there is one. One file serves every
-// command, so a key of another command is known too.
+// command, so a key of another command is known too. The keys are listed on
+// one line, since the error is printed before logging is set up, as JSON.
 func (c *configFile) unknownKeys() error {
 	var unknown []string
 	for key := range c.values {
@@ -79,21 +82,20 @@ func (c *configFile) unknownKeys() error {
 	}
 	slices.Sort(unknown)
 
-	known := make([]string, 0, len(c.keys))
-	for key := range c.keys {
-		known = append(known, key)
-	}
-	slices.Sort(known)
-
-	errs := make([]error, len(unknown))
+	known := slices.Sorted(maps.Keys(c.keys))
 	for i, key := range unknown {
-		errs[i] = fmt.Errorf("unknown key %q in configuration file %q", key, c.loadedPath)
+		unknown[i] = strconv.Quote(key)
 		if meant := closest(key, known); meant != "" {
-			errs[i] = fmt.Errorf("%w: did you mean %q?", errs[i], meant)
+			unknown[i] += fmt.Sprintf(" (did you mean %q?)", meant)
 		}
 	}
 
-	return errors.Join(errs...)
+	noun := "key"
+	if len(unknown) > 1 {
+		noun = "keys"
+	}
+
+	return fmt.Errorf("unknown %s in configuration file %q: %s", noun, c.loadedPath, strings.Join(unknown, ", "))
 }
 
 // settle opens the held sources and resolves every flag of root that the
