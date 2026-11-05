@@ -210,7 +210,7 @@ func (r *resources) close() {
 }
 
 // prepare checks the settings that decide how a document is rendered and what
-// is done about its links; newPublisher calls it for Run and NewPublisher alike.
+// is done about its links, for Run and NewPublisher alike.
 func (c Config) prepare() (page.LinkChecks, error) {
 	if err := c.Rendering.validate(); err != nil {
 		return page.LinkChecks{}, err
@@ -239,6 +239,12 @@ func (c Config) prepare() (page.LinkChecks, error) {
 
 // validate refuses rendering settings the renderers cannot act on.
 func (r RenderingConfig) validate() error {
+	// Checked whether or not mermaid is enabled: the engine is made for every
+	// run, and refuses a name it does not know.
+	if err := mermaid.CheckEngine(r.MermaidEngine); err != nil {
+		return err
+	}
+
 	// Checked here as well as in the CLI, because Config is a public API and a
 	// library caller reaches this without passing a flag at all. A value the
 	// renderer does not know falls to its default branch, so an unrecognised
@@ -354,9 +360,8 @@ func Run(ctx context.Context, config Config) (err error) {
 	// combination that merely does nothing, and that nobody would read anything
 	// into, is a warning.
 
-	// newPublisher checks these again; asked here too so that a bad setting is
-	// reported before the glob is.
-	if _, err := config.prepare(); err != nil {
+	checks, err := config.prepare()
+	if err != nil {
 		return err
 	}
 
@@ -442,7 +447,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	publisher, err := newPublisher(ctx, api, config)
+	publisher, err := newPublisher(ctx, api, config, checks)
 	if err != nil {
 		return err
 	}
@@ -843,8 +848,9 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 // to the caller; see UpdateConfig.
 //
 // With Page.PageID set, every file would publish over the one page, so a
-// Publisher publishes only the first file it is given, as Run refuses more
-// than one.
+// Publisher publishes only the first file that reaches the page, as Run
+// refuses more than one. A file that fails before then, one that cannot be
+// read for instance, leaves the page to the next.
 type Publisher struct {
 	run *publishRun
 }
@@ -859,17 +865,19 @@ func NewPublisher(ctx context.Context, api *confluence.API, config Config) (*Pub
 		return nil, err
 	}
 
-	return newPublisher(ctx, api, config)
-}
-
-// newPublisher checks config and builds what Run and NewPublisher both publish
-// with, closing anything it started if that fails.
-func newPublisher(ctx context.Context, api *confluence.API, config Config) (*Publisher, error) {
 	checks, err := config.prepare()
 	if err != nil {
 		return nil, err
 	}
 
+	return newPublisher(ctx, api, config, checks)
+}
+
+// newPublisher builds what Run and NewPublisher both publish with, from
+// a config prepare has passed, closing anything it started if that fails.
+func newPublisher(
+	ctx context.Context, api *confluence.API, config Config, checks page.LinkChecks,
+) (*Publisher, error) {
 	res, err := newResources(config.Rendering.MermaidEngine)
 	if err != nil {
 		return nil, err
@@ -1185,14 +1193,11 @@ type pagePreview struct {
 }
 
 func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.PageInfo, *page.Ordered, error) {
-	if r.config.Page.PageID != "" {
-		if r.pageFile != "" && filepath.Clean(r.pageFile) != filepath.Clean(file) {
-			return nil, nil, fmt.Errorf(
-				"Page.PageID names one page, which %s publishes to: refusing to publish %s over it",
-				r.pageFile, file,
-			)
-		}
-		r.pageFile = file
+	if r.pageFile != "" && r.pageFile != absPath(file) {
+		return nil, nil, fmt.Errorf(
+			"Page.PageID names one page, which %s publishes to: refusing to publish %s over it",
+			r.pageFile, file,
+		)
 	}
 
 	r.users.ctx = ctx
@@ -1227,6 +1232,10 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// From here on the page may be written to, so a file failing later has
+	// still put something of itself on it.
+	r.claimPage(file)
 
 	// Checked here, before anything is written: there is no point uploading
 	// attachments for a page that is about to be left alone.
@@ -1295,6 +1304,26 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 	})
 
 	return target, placement, nil
+}
+
+// claimPage records file as the one publishing to Page.PageID, once it has
+// reached the page. A file that failed before then leaves the page to the next
+// one; a dry run claims at the same point a real run does.
+func (r *publishRun) claimPage(file string) {
+	if r.config.Page.PageID != "" && r.pageFile == "" {
+		r.pageFile = absPath(file)
+	}
+}
+
+// absPath is file as an absolute path, so that one file is one name however
+// it was spelled; a name that cannot be made absolute is only cleaned.
+func absPath(file string) string {
+	abs, err := filepath.Abs(file)
+	if err != nil {
+		return filepath.Clean(file)
+	}
+
+	return abs
 }
 
 // readDocument reads a file and settles the metadata it publishes under.
@@ -1529,6 +1558,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		}
 	}
 	previewed := found.page
+	r.claimPage(file)
 
 	cfg, err := config.Rendering.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
 	if err != nil {

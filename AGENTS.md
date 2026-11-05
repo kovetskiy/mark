@@ -48,7 +48,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `manifest/` | the `--track-pages` record of which page each source file publishes to, kept in Confluence |
 | `header/` | the `--page-header` template placed at the top of every published page |
 | `report/` | what a run did, for `--output-format` and the run's summary, and the `--on-orphan` actions |
-| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers, and the `chrome.Browser` and `mermaid.Engine` diagrams are drawn in, which its creator supplies and closes: a zero value draws no diagrams |
+| `types/` | `MarkConfig`, the rendering options (diagram output and scale, features, image alignment, include path) handed to the renderers and transformers, and the `chrome.Browser` and `mermaid.Engine` diagrams are drawn in, which its creator supplies and closes: without them mermaid diagrams, and d2 diagrams and formulas published as PNG, fail to render |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
