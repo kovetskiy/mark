@@ -322,6 +322,12 @@ func TestExportSettingSources(t *testing.T) {
 			want: map[string]string{"page-id": "1"},
 		},
 		{
+			name: "--page-id=1 over MARK_PAGE_URL",
+			env:  map[string]string{"MARK_PAGE_URL": address},
+			args: []string{"--page-id=1"},
+			want: map[string]string{"page-id": "1"},
+		},
+		{
 			name: "MARK_ATTACHMENTS_DIR leaves --recursive alone",
 			env:  map[string]string{"MARK_ATTACHMENTS_DIR": "files"},
 			args: []string{"--page-id", "1", "-r", "-o", "out"},
