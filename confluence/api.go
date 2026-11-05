@@ -188,8 +188,8 @@ type spaceIDCacheEntry struct {
 
 // pageCacheKey lowercases the title, so every spelling of it shares one
 // entry, as it shares one page in Confluence.
-func pageCacheKey(space, title, pageType string) string {
-	return space + "\x00" + strings.ToLower(title) + "\x00" + pageType
+func pageCacheKey(space, title string, pageType ContentType) string {
+	return space + "\x00" + strings.ToLower(title) + "\x00" + string(pageType)
 }
 
 func clonePageInfo(page *PageInfo) *PageInfo {
@@ -243,7 +243,7 @@ func (api *API) setCacheEntry(key string, page *PageInfo) {
 	}
 }
 
-func (api *API) invalidatePage(space, title, pageType string) {
+func (api *API) invalidatePage(space, title string, pageType ContentType) {
 	api.lazyInit()
 	key := pageCacheKey(space, title, pageType)
 	api.pageCacheMutex.Lock()
@@ -300,10 +300,20 @@ type SpaceInfo struct {
 	} `json:"_links"`
 }
 
+// ContentType is what kind of content an id names, as Confluence calls it.
+type ContentType string
+
+// The content types mark reads and writes.
+const (
+	ContentPage     ContentType = "page"
+	ContentBlogPost ContentType = "blogpost"
+	ContentFolder   ContentType = "folder"
+)
+
 type PageInfo struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Type  string `json:"type"`
+	ID    string      `json:"id"`
+	Title string      `json:"title"`
+	Type  ContentType `json:"type"`
 
 	// Status is "current", "archived", "trashed" or "draft".
 	//
@@ -324,8 +334,8 @@ type PageInfo struct {
 	// cannot show: a folder is not a page, so it is never among them, and a
 	// page in a folder looks parentless there. Never sent: v1 has no such
 	// fields to read or write.
-	ParentID   string `json:"-"`
-	ParentType string `json:"-"`
+	ParentID   string      `json:"-"`
+	ParentType ContentType `json:"-"`
 
 	Body struct {
 		Storage struct {
@@ -403,12 +413,12 @@ type InlineComments struct {
 
 type FolderInfo struct {
 	ID         string      `json:"id"`
-	Type       string      `json:"type"`
+	Type       ContentType `json:"type"`
 	Status     string      `json:"status"`
 	Title      string      `json:"title"`
 	SpaceID    string      `json:"spaceId,omitempty"`
 	ParentID   string      `json:"parentId,omitempty"`
-	ParentType string      `json:"parentType,omitempty"`
+	ParentType ContentType `json:"parentType,omitempty"`
 	Position   int         `json:"position,omitempty"`
 	AuthorID   string      `json:"authorId,omitempty"`
 	OwnerID    string      `json:"ownerId,omitempty"`
@@ -659,7 +669,7 @@ func (api *API) FindRootPage(ctx context.Context, space string) (*PageInfo, erro
 // firstRootPage is FindRootPage's answer for a space without a home page: the
 // outermost ancestor of whichever page the space listing returns first.
 func (api *API) firstRootPage(ctx context.Context, space string) (*PageInfo, error) {
-	page, err := api.FindPage(ctx, space, ``, "page")
+	page, err := api.FindPage(ctx, space, ``, ContentPage)
 	if err != nil {
 		return nil, fmt.Errorf("can't obtain first page from space %q: %w", space, err)
 	}
@@ -847,7 +857,7 @@ func (api *API) FindPage(
 	ctx context.Context,
 	space string,
 	title string,
-	pageType string,
+	pageType ContentType,
 ) (*PageInfo, error) {
 	api.lazyInit()
 	key := pageCacheKey(space, title, pageType)
@@ -906,11 +916,11 @@ func (api *API) FindPage(
 }
 
 // findPageV1 is the lookup behind FindPage: a live page by title, or nil.
-func (api *API) findPageV1(ctx context.Context, space, title, pageType string) (*PageInfo, error) {
+func (api *API) findPageV1(ctx context.Context, space, title string, pageType ContentType) (*PageInfo, error) {
 	query := url.Values{
 		"spaceKey": {space},
 		"expand":   {"ancestors,version"},
-		"type":     {pageType},
+		"type":     {string(pageType)},
 		// Stated rather than left to the default, because the default is the
 		// whole subtlety here: this lookup deliberately sees live content only,
 		// and pageHoldingTitle is the one place that asks about the rest.
@@ -963,7 +973,7 @@ var statusesHoldingTitle = []string{"archived", "trashed"}
 // archived page under the key a live one will want would be worse than not
 // caching at all. This is made only after a create has failed, so paying for it
 // each time is fine.
-func (api *API) findPageWithStatus(ctx context.Context, space, title, pageType, status string) (*PageInfo, error) {
+func (api *API) findPageWithStatus(ctx context.Context, space, title string, pageType ContentType, status string) (*PageInfo, error) {
 	if api.gateway {
 		return api.findPageV2(ctx, space, title, pageType, status)
 	}
@@ -971,7 +981,7 @@ func (api *API) findPageWithStatus(ctx context.Context, space, title, pageType, 
 	query := url.Values{
 		"spaceKey": {space},
 		"expand":   {"ancestors,version"},
-		"type":     {pageType},
+		"type":     {string(pageType)},
 		"status":   {status},
 	}
 
@@ -1006,7 +1016,7 @@ func (api *API) findPageWithStatus(ctx context.Context, space, title, pageType, 
 // page, the source file comes back, FindPage returns nil because v1 hides
 // archived content, and the create that follows fails with a bare
 // 400 Bad Request naming nothing.
-func (api *API) pageHoldingTitle(ctx context.Context, space, title, pageType string) *PageInfo {
+func (api *API) pageHoldingTitle(ctx context.Context, space, title string, pageType ContentType) *PageInfo {
 	for _, status := range statusesHoldingTitle {
 		page, err := api.findPageWithStatus(ctx, space, title, pageType, status)
 		if err != nil || page == nil {
@@ -1026,7 +1036,7 @@ func (api *API) pageHoldingTitle(ctx context.Context, space, title, pageType str
 // It reports rather than acts: restoring or purging somebody's page is a
 // decision for a person, and mark has already shown it cannot see the whole
 // picture here.
-func (api *API) explainCreateFailure(ctx context.Context, space, title, pageType string, err error) error {
+func (api *API) explainCreateFailure(ctx context.Context, space, title string, pageType ContentType, err error) error {
 	// Only a refusal can be a title some other page holds.
 	if isUnavailable(err) {
 		return err
@@ -1288,7 +1298,7 @@ func (api *API) GetInlineComments(ctx context.Context, pageID string) (*InlineCo
 func (api *API) CreatePage(
 	ctx context.Context,
 	space string,
-	pageType string,
+	pageType ContentType,
 	parent *PageInfo,
 	title string,
 	body string,
@@ -1375,7 +1385,7 @@ func (api *API) createLanded(ctx context.Context, find func() (*PageInfo, error)
 
 // rememberCreatedPage puts a page just created into the page cache, so the
 // lookups later in the run find it without asking.
-func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInfo) {
+func (api *API) rememberCreatedPage(space string, pageType ContentType, title string, page *PageInfo) {
 	if api.unwatch {
 		// Nobody watched a page before it was created.
 		api.rememberWatch(page.ID, wasUnwatched, nil)
@@ -1402,7 +1412,7 @@ func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInf
 }
 
 // createPageV1 is the request behind CreatePage.
-func (api *API) createPageV1(ctx context.Context, space, pageType string, parent *PageInfo, title, body string) (*PageInfo, error) {
+func (api *API) createPageV1(ctx context.Context, space string, pageType ContentType, parent *PageInfo, title, body string) (*PageInfo, error) {
 	payload := map[string]any{
 		"type":  pageType,
 		"title": title,
@@ -1731,7 +1741,7 @@ func (api *API) updatePageV1(
 	// not ancestors -- and the update a moment later used to send
 	// "ancestors": [], which is at best ignored and at worst read as a request
 	// to reparent the page to the space root.
-	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
+	if page.Type != ContentBlogPost && len(page.Ancestors) > 0 {
 		// picking only the last one, which is required by confluence
 		payload["ancestors"] = []map[string]any{
 			{"id": page.Ancestors[len(page.Ancestors)-1].ID},
@@ -1792,7 +1802,7 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 // answer. The space is not part of the match because PageInfo does not carry
 // one; over-invalidating costs a lookup, and under-invalidating costs a failed
 // publish.
-func (api *API) forgetMissesForTitle(title, pageType string) {
+func (api *API) forgetMissesForTitle(title string, pageType ContentType) {
 	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
@@ -2205,15 +2215,15 @@ func (api *API) RestrictPageUpdates(
 // parentID when one is given. parentType names what parentID is and defaults
 // to "folder"; under a folder parent, the folder goes in that parent's space
 // rather than spaceID's.
-func (api *API) CreateFolder(ctx context.Context, spaceID, title string, parentID *string, parentType string) (*FolderInfo, error) {
+func (api *API) CreateFolder(ctx context.Context, spaceID, title string, parentID *string, parentType ContentType) (*FolderInfo, error) {
 	actualSpaceID := spaceID
 
 	if parentType == "" {
-		parentType = "folder"
+		parentType = ContentFolder
 	}
 
 	// If we have a folder parent, use the parent's space ID to avoid cross-space conflicts.
-	if parentID != nil && parentType == "folder" {
+	if parentID != nil && parentType == ContentFolder {
 		parentFolder, err := api.GetFolderByID(ctx, *parentID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get parent folder info for space consistency: %w", err)
@@ -2261,9 +2271,9 @@ func folderCQL(spaceKey, title string) string {
 // searchHit is one result of a CQL search.
 type searchHit struct {
 	Content struct {
-		ID    string `json:"id"`
-		Type  string `json:"type"`
-		Title string `json:"title"`
+		ID    string      `json:"id"`
+		Type  ContentType `json:"type"`
+		Title string      `json:"title"`
 	} `json:"content"`
 }
 
@@ -2296,7 +2306,7 @@ func (api *API) FindFolder(ctx context.Context, spaceKey, title, underAncestorID
 	}
 
 	item := result.Results[0].Content
-	if item.Type != "folder" {
+	if item.Type != ContentFolder {
 		return nil, nil
 	}
 
@@ -2320,13 +2330,13 @@ func (api *API) FindFolder(ctx context.Context, spaceKey, title, underAncestorID
 //
 // A 404 on the first page is read as "none", and the listing is skipped once
 // Cloud is ruled out; see eachDirectChild.
-func (api *API) FindChildFolder(ctx context.Context, parentID, parentType, title string) (*FolderInfo, error) {
+func (api *API) FindChildFolder(ctx context.Context, parentID string, parentType ContentType, title string) (*FolderInfo, error) {
 	var exact, folded string
 	err := api.eachDirectChild(ctx,
 		parentID, parentType,
 		fmt.Sprintf("look for folder %q under %s", title, parentID),
-		func(id, typ, childTitle string) bool {
-			if typ != "folder" {
+		func(id string, typ ContentType, childTitle string) bool {
+			if typ != ContentFolder {
 				return false
 			}
 			if childTitle == title {
@@ -2367,8 +2377,8 @@ func (api *API) FindChildFolder(ctx context.Context, parentID, parentType, title
 // would read a page holding folders as childless.
 func (api *API) eachDirectChild(
 	ctx context.Context,
-	parentID, parentType, operation string,
-	visit func(id, typ, title string) (stop bool),
+	parentID string, parentType ContentType, operation string,
+	visit func(id string, typ ContentType, title string) (stop bool),
 ) error {
 	if isCloud, err := api.Cloud(ctx); err == nil && !isCloud {
 		log.Debug().Msgf(
@@ -2380,14 +2390,14 @@ func (api *API) eachDirectChild(
 	}
 
 	collection := "pages"
-	if parentType == "folder" {
+	if parentType == ContentFolder {
 		collection = "folders"
 	}
 
 	type child struct {
-		ID    string `json:"id"`
-		Type  string `json:"type"`
-		Title string `json:"title"`
+		ID    string      `json:"id"`
+		Type  ContentType `json:"type"`
+		Title string      `json:"title"`
 	}
 
 	return eachV2(
@@ -2412,7 +2422,7 @@ func (api *API) FindRootFolder(ctx context.Context, spaceKey, title string) (*Fo
 		if err != nil {
 			return false, err
 		}
-		if folder == nil || folder.ParentType == "folder" || folder.ParentType == "page" {
+		if folder == nil || folder.ParentType == ContentFolder || folder.ParentType == ContentPage {
 			return false, nil
 		}
 		found = folder
@@ -2442,7 +2452,7 @@ func (api *API) searchFolders(ctx context.Context, spaceKey, title string, visit
 		}
 
 		for _, item := range result.Results {
-			if item.Content.ID == "" || item.Content.Type != "folder" {
+			if item.Content.ID == "" || item.Content.Type != ContentFolder {
 				continue
 			}
 
@@ -2582,13 +2592,13 @@ func (api *API) fetchSpaceID(ctx context.Context, spaceKey string) (string, erro
 func (api *API) CreatePageWithFolderParent(
 	ctx context.Context,
 	space string,
-	pageType string,
+	pageType ContentType,
 	folderID string,
 	title string,
 	body string,
 ) (*PageInfo, error) {
 	create := func() (*PageInfo, error) {
-		return api.createPageV2(ctx, space, pageType, folderID, "folder", title, body)
+		return api.createPageV2(ctx, space, pageType, folderID, ContentFolder, title, body)
 	}
 	// Through v2 as well: v1 does not show a folder among the ancestors.
 	landed := api.createLanded(ctx, func() (*PageInfo, error) {
@@ -2634,9 +2644,9 @@ func (api *API) GetChildPages(ctx context.Context, parentID string) ([]PageInfo,
 func (api *API) HasChildFolders(ctx context.Context, parentID string) (bool, error) {
 	found := false
 	err := api.eachDirectChild(ctx,
-		parentID, "page", "list direct children of "+parentID,
-		func(_, typ, _ string) bool {
-			found = typ == "folder"
+		parentID, ContentPage, "list direct children of "+parentID,
+		func(_ string, typ ContentType, _ string) bool {
+			found = typ == ContentFolder
 			return found
 		},
 	)
@@ -3183,7 +3193,7 @@ func (api *API) readForReparent(ctx context.Context, contentID, parentID string)
 func (api *API) reparentContentV1(ctx context.Context, page *PageInfo, parentID string, nextVersion int64) error {
 	pageType := page.Type
 	if pageType == "" {
-		pageType = "page"
+		pageType = ContentPage
 	}
 
 	payload := map[string]any{

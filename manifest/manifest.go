@@ -541,7 +541,7 @@ func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (strin
 		}
 	}
 
-	found, err := s.api.FindPage(ctx, spaceKey, s.manifestPage, "page")
+	found, err := s.api.FindPage(ctx, spaceKey, s.manifestPage, confluence.ContentPage)
 	if err != nil {
 		return "", fmt.Errorf("unable to find the manifest page %q in space %q: %w", s.manifestPage, spaceKey, err)
 	}

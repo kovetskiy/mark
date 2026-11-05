@@ -33,7 +33,7 @@ func previewChange(
 	config PublishConfig,
 	meta *metadata.Meta,
 	std *stdlib.Lib,
-) (string, string, error) {
+) (report.Status, string, error) {
 	if existing == nil {
 		log.Info().Msgf("%s: page would be created", file)
 
@@ -42,7 +42,7 @@ func previewChange(
 
 	var layout, sidebar, appearance, emoji, title string
 	if meta != nil {
-		layout, sidebar, appearance, emoji, title = meta.Layout, meta.Sidebar, meta.ContentAppearance, meta.Emoji, meta.Title
+		layout, sidebar, appearance, emoji, title = meta.Layout, meta.Sidebar, string(meta.ContentAppearance), meta.Emoji, meta.Title
 	}
 
 	wrapped, err := wrapLayout(std, layout, sidebar, body)
@@ -251,8 +251,8 @@ func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, f
 
 // defaultAppearance is the appearance a page with no Content-Appearance of its
 // own takes. Config's checks have refused a value that does not parse.
-func defaultAppearance(value string) string {
-	appearance, _ := metadata.ResolveContentAppearance(value)
+func defaultAppearance(value metadata.Appearance) string {
+	appearance, _ := metadata.ResolveContentAppearance(string(value))
 
-	return appearance
+	return string(appearance)
 }

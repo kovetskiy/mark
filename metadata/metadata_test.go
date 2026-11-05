@@ -100,7 +100,7 @@ func TestExtractMetaContentAppearance(t *testing.T) {
 				data = "---\ncontent-appearance: " + test.frontMatter + "\n---\n" + data
 			}
 
-			_, _, err := ExtractMeta([]byte(data+"\nbody\n"), ExtractOptions{ContentAppearance: test.fallback, FrontMatter: true})
+			_, _, err := ExtractMeta([]byte(data+"\nbody\n"), ExtractOptions{ContentAppearance: Appearance(test.fallback), FrontMatter: true})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.error)
 		})

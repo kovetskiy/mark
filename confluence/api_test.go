@@ -59,7 +59,7 @@ func TestPageCache(t *testing.T) {
 
 	space := "TEST"
 	title := "My Page"
-	pageType := "page"
+	pageType := ContentPage
 
 	// 1. Cache Hit returns cached page without network request
 	cachedPage := &PageInfo{
@@ -151,7 +151,7 @@ func TestPageCacheFindPageMissAndHit(t *testing.T) {
 
 	space := "TEST"
 	title := "My Page"
-	pageType := "page"
+	pageType := ContentPage
 
 	// First call: cache miss, triggers HTTP request to server
 	res1, err := api.FindPage(context.Background(), space, title, pageType)
@@ -183,7 +183,7 @@ func TestPageCacheFindPageNegativeCache(t *testing.T) {
 
 	space := "TEST"
 	title := "Missing Page"
-	pageType := "page"
+	pageType := ContentPage
 
 	// First call: cache miss, returns nil
 	res1, err := api.FindPage(context.Background(), space, title, pageType)

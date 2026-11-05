@@ -25,17 +25,20 @@ import (
 // errClosed is what an Engine answers once it has been closed.
 var errClosed = errors.New("the mermaid engine has been closed")
 
+// EngineKind names an engine a diagram can be drawn by.
+type EngineKind string
+
 // The engines a diagram can be drawn by.
 const (
 	// EngineChrome renders in a headless browser, which is what mark has always
 	// done and what mermaid.js itself is built for.
-	EngineChrome = "chrome"
+	EngineChrome EngineKind = "chrome"
 
 	// EngineMerman shells out to the merman CLI, which lays a diagram out
 	// natively and needs no browser at all. Experimental: it is a reimplementation
 	// rather than mermaid.js, so a diagram may come out differently or not at
 	// all, and the ones it cannot draw are not the ones anybody has written down.
-	EngineMerman = "merman"
+	EngineMerman EngineKind = "merman"
 )
 
 // Engine draws a run's diagrams, with the engine kind it was created for. The
@@ -46,7 +49,7 @@ const (
 // refuses to draw.
 type Engine struct {
 	mu       sync.Mutex
-	kind     string
+	kind     EngineKind
 	renderer mermaid.Renderer
 	closed   bool
 }
@@ -57,7 +60,7 @@ var ErrNoEngine = errors.New("no mermaid engine to render with")
 
 // NewEngine returns an Engine of the kind named, EngineChrome when empty,
 // without starting it.
-func NewEngine(kind string) (*Engine, error) {
+func NewEngine(kind EngineKind) (*Engine, error) {
 	if err := CheckEngine(kind); err != nil {
 		return nil, err
 	}
@@ -78,7 +81,7 @@ func NewEngine(kind string) (*Engine, error) {
 
 // CheckEngine refuses an engine kind NewEngine would not know, without making
 // an Engine.
-func CheckEngine(kind string) error {
+func CheckEngine(kind EngineKind) error {
 	switch kind {
 	case "", EngineChrome, EngineMerman:
 		return nil

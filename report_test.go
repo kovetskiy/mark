@@ -30,7 +30,7 @@ func outputServer(t *testing.T) *confluencetest.Server {
 	return s
 }
 
-func runWithFormat(t *testing.T, format string, files map[string]string) (string, error) {
+func runWithFormat(t *testing.T, format report.Format, files map[string]string) (string, error) {
 	t.Helper()
 
 	server := outputServer(t)
@@ -185,7 +185,7 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 
 // orphanReport publishes keep.md and gone.md, removes gone.md, and returns what
 // the second run wrote in format together with the id of Gone's page.
-func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
+func orphanReport(t *testing.T, onOrphan report.OnOrphan, format report.Format) (string, string) {
 	t.Helper()
 
 	server := outputServer(t)
@@ -234,8 +234,8 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 // action only, so the report said a page had been deleted without saying which,
 // and a run that only reported orphans -- the default -- recorded none at all.
 func TestOutputFormatJSONNamesOrphans(t *testing.T) {
-	for _, action := range []string{report.OnOrphanReport, report.OnOrphanDelete, report.OnOrphanArchive} {
-		t.Run(action, func(t *testing.T) {
+	for _, action := range []report.OnOrphan{report.OnOrphanReport, report.OnOrphanDelete, report.OnOrphanArchive} {
+		t.Run(string(action), func(t *testing.T) {
 			out, id := orphanReport(t, action, report.FormatJSON)
 
 			var parsed report.Report
@@ -255,14 +255,14 @@ func TestOutputFormatJSONNamesOrphans(t *testing.T) {
 // deleted`, and the line meant for an orphan that was only reported could not
 // be reached.
 func TestOutputFormatGitHubNamesOrphans(t *testing.T) {
-	cases := map[string]string{
+	cases := map[report.OnOrphan]string{
 		report.OnOrphanReport:  `page "Gone" has no source file`,
 		report.OnOrphanDelete:  `page "Gone" was deleted: its source file is gone`,
 		report.OnOrphanArchive: `page "Gone" was archived: its source file is gone`,
 	}
 
 	for action, want := range cases {
-		t.Run(action, func(t *testing.T) {
+		t.Run(string(action), func(t *testing.T) {
 			out, _ := orphanReport(t, action, report.FormatGitHub)
 
 			var line string
@@ -622,7 +622,7 @@ func TestReportWriteFailureDoesNotDisplaceTheRunsOwnError(t *testing.T) {
 
 // runReport runs over files in a fresh space with the given format, letting
 // adjust change the config first, and returns what the run wrote and returned.
-func runReport(t *testing.T, format string, files map[string]string, adjust func(*Config)) (string, error) {
+func runReport(t *testing.T, format report.Format, files map[string]string, adjust func(*Config)) (string, error) {
 	t.Helper()
 
 	server := outputServer(t)
@@ -761,8 +761,8 @@ func TestReportCarriesAFailedManifestSave(t *testing.T) {
 
 	refuseManifestWrites(server)
 
-	for _, format := range []string{report.FormatJSON, report.FormatGitHub} {
-		t.Run(format, func(t *testing.T) {
+	for _, format := range []report.Format{report.FormatJSON, report.FormatGitHub} {
+		t.Run(string(format), func(t *testing.T) {
 			var out bytes.Buffer
 			err := Run(context.Background(), Config{
 				PublishConfig: PublishConfig{

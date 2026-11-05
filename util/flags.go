@@ -747,7 +747,7 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	// Checked as written, and asked of IsSet as well, so that a value somebody
 	// emptied is not read as one nobody set.
 	mermaidEngine := command.String("mermaid-engine")
-	if mermaid.CheckEngine(mermaidEngine) != nil || (mermaidEngine == "" && command.IsSet("mermaid-engine")) {
+	if mermaid.CheckEngine(mermaid.EngineKind(mermaidEngine)) != nil || (mermaidEngine == "" && command.IsSet("mermaid-engine")) {
 		return context, fmt.Errorf(
 			"invalid value for --mermaid-engine: %q (expected: %s or %s)",
 			mermaidEngine, mermaid.EngineChrome, mermaid.EngineMerman,

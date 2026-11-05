@@ -172,7 +172,7 @@ type Meta struct {
 	Emoji             string
 	Attachments       []string
 	Labels            []string
-	ContentAppearance string
+	ContentAppearance Appearance
 	Restrictions      *Restrictions
 
 	// DeclaredParents records that the document named its own parents, as
@@ -217,16 +217,19 @@ type RestrictionSubjects struct {
 	Groups []string
 }
 
+// Appearance is the width a page is laid out at.
+type Appearance string
+
 const (
 	// Confluence Cloud's editor shows three widths: Narrow, Wide and Max.
 	// They are stored as "default", "full-width" and "max" respectively.
 	// "fixed" is an older editor's narrow page, which a page in Confluence may
 	// still carry but mark does not publish: under it the title and the body
 	// are laid out at different widths.
-	FullWidthContentAppearance = "full-width"
-	FixedContentAppearance     = "fixed"
-	DefaultContentAppearance   = "default"
-	MaxContentAppearance       = "max"
+	FullWidthContentAppearance Appearance = "full-width"
+	FixedContentAppearance     Appearance = "fixed"
+	DefaultContentAppearance   Appearance = "default"
+	MaxContentAppearance       Appearance = "max"
 )
 
 // toStringSlice reads a front matter key that holds a list of strings.
@@ -526,8 +529,8 @@ func setContentAppearance(meta *Meta, key, value string) error {
 // ParseContentAppearance is the appearance a Content-Appearance value, or the
 // --content-appearance default, names: full-width, default or max, or "" when
 // it is empty. Anything else is refused rather than published full width.
-func ParseContentAppearance(value string) (string, error) {
-	switch appearance := strings.TrimSpace(value); appearance {
+func ParseContentAppearance(value string) (Appearance, error) {
+	switch appearance := Appearance(strings.TrimSpace(value)); appearance {
 	case "", FullWidthContentAppearance, DefaultContentAppearance, MaxContentAppearance:
 		return appearance, nil
 	case FixedContentAppearance:
@@ -541,7 +544,7 @@ func ParseContentAppearance(value string) (string, error) {
 // ResolveContentAppearance is the appearance a --content-appearance value gives
 // a page with no Content-Appearance of its own: what it names, and full width
 // when it is empty.
-func ResolveContentAppearance(value string) (string, error) {
+func ResolveContentAppearance(value string) (Appearance, error) {
 	appearance, err := ParseContentAppearance(value)
 
 	return cmp.Or(appearance, FullWidthContentAppearance), err
@@ -673,7 +676,7 @@ type ExtractOptions struct {
 
 	// ContentAppearance is the appearance of a page that declares none:
 	// one of the *ContentAppearance constants, or empty for full width.
-	ContentAppearance string
+	ContentAppearance Appearance
 
 	// FrontMatter reads YAML front matter. Without it, front matter is body
 	// text, and one that declares restrictions is refused.
@@ -1046,7 +1049,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	}
 
 	if meta != nil && meta.ContentAppearance == "" {
-		appearance, err := ResolveContentAppearance(opts.ContentAppearance)
+		appearance, err := ResolveContentAppearance(string(opts.ContentAppearance))
 		if err != nil {
 			return nil, nil, fmt.Errorf("default content appearance: %w", err)
 		}

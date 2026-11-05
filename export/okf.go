@@ -89,7 +89,7 @@ type okfSource struct {
 // page as the concept's one source, with who last edited it and when.
 func okfFrontMatter(page *confluence.PageInfo, resource, generator string, labels []string) (string, error) {
 	kind := "Confluence Page"
-	if page.Type == "blogpost" {
+	if page.Type == confluence.ContentBlogPost {
 		kind = "Confluence Blog Post"
 	}
 

@@ -18,7 +18,7 @@ import (
 
 // useEngine creates an engine of kind for one test, closed when it ends, and
 // returns it with what creating it logged.
-func useEngine(t *testing.T, kind string) (*Engine, string) {
+func useEngine(t *testing.T, kind EngineKind) (*Engine, string) {
 	t.Helper()
 
 	var logged bytes.Buffer
@@ -189,8 +189,8 @@ func TestBothEnginesDrawTheSameDiagram(t *testing.T) {
 
 	diagram := []byte("graph TD;\n A-->B;")
 
-	for _, kind := range []string{EngineChrome, EngineMerman} {
-		t.Run(kind, func(t *testing.T) {
+	for _, kind := range []EngineKind{EngineChrome, EngineMerman} {
+		t.Run(string(kind), func(t *testing.T) {
 			engine, _ := useEngine(t, kind)
 
 			png, err := engine.Render(context.Background(), "both", diagram, Options{Scale: 1.0})

@@ -43,7 +43,7 @@ func TestGatewayFindPage(t *testing.T) {
 	require.NotNil(t, page)
 	assert.Equal(t, leaf.ID, page.ID)
 	assert.Equal(t, "Leaf", page.Title)
-	assert.Equal(t, "page", page.Type)
+	assert.Equal(t, confluence.ContentPage, page.Type)
 	assert.Equal(t, int64(1), page.Version.Number)
 
 	// v2 names only the immediate parent; mark places pages by the whole
@@ -332,7 +332,7 @@ func TestGatewayGetBlogpostByID(t *testing.T) {
 	require.NotNil(t, page)
 	assert.Equal(t, post.ID, page.ID)
 	assert.Equal(t, "Post", page.Title)
-	assert.Equal(t, "blogpost", page.Type)
+	assert.Equal(t, confluence.ContentBlogPost, page.Type)
 	assert.Equal(t, int64(2), page.Version.Number)
 	assert.Equal(t, "<p>stored</p>", page.Body.Storage.Value)
 	assert.Empty(t, page.Ancestors)

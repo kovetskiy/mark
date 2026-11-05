@@ -55,12 +55,12 @@ const maxAncestorDepth = 100
 // contentV2 is a page or blogpost as v2 returns it: the parent is a single id
 // rather than an ancestor chain, and the body only comes when asked for.
 type contentV2 struct {
-	ID         string `json:"id"`
-	Status     string `json:"status"`
-	Title      string `json:"title"`
-	ParentID   string `json:"parentId"`
-	ParentType string `json:"parentType"`
-	SpaceID    string `json:"spaceId"`
+	ID         string      `json:"id"`
+	Status     string      `json:"status"`
+	Title      string      `json:"title"`
+	ParentID   string      `json:"parentId"`
+	ParentType ContentType `json:"parentType"`
+	SpaceID    string      `json:"spaceId"`
 
 	Version struct {
 		Number    int64  `json:"number"`
@@ -83,7 +83,7 @@ type contentV2 struct {
 
 // pageInfoV2 converts a v2 object into the shape the rest of mark reads. The
 // type comes from the caller: v2 tells pages and blogposts apart by collection.
-func (api *API) pageInfoV2(content contentV2, pageType string) *PageInfo {
+func (api *API) pageInfoV2(content contentV2, pageType ContentType) *PageInfo {
 	page := &PageInfo{
 		ID:         content.ID,
 		Title:      content.Title,
@@ -138,8 +138,8 @@ func (api *API) siteBaseURL() string {
 }
 
 // v2Collection names the v2 collection holding a v1 content type.
-func v2Collection(pageType string) string {
-	if pageType == "blogpost" {
+func v2Collection(pageType ContentType) string {
+	if pageType == ContentBlogPost {
 		return "blogposts"
 	}
 
@@ -271,7 +271,7 @@ func eachV2[T any](
 
 // findPageV2 is FindPage and findPageWithStatus against v2: a title within a
 // space, in one status. v2 filters by space id where v1 filters by key.
-func (api *API) findPageV2(ctx context.Context, space, title, pageType, status string) (*PageInfo, error) {
+func (api *API) findPageV2(ctx context.Context, space, title string, pageType ContentType, status string) (*PageInfo, error) {
 	spaceID, err := api.GetSpaceID(ctx, space)
 	if err != nil {
 		return nil, err
@@ -336,9 +336,9 @@ func (api *API) readContentV2(ctx context.Context, collection, id string, withBo
 // token minted with the page scopes and not the blogpost ones is refused
 // /blogposts outright, and that says nothing about the page that was not found
 // -- which callers act on as gone rather than as a failure.
-func (api *API) lookupContentV2(ctx context.Context, id string, withBody bool) (*contentV2, string, error) {
-	first, second := "page", "blogpost"
-	if known, ok := api.contentTypesV2.Load(id); ok && known == "blogpost" {
+func (api *API) lookupContentV2(ctx context.Context, id string, withBody bool) (*contentV2, ContentType, error) {
+	first, second := ContentPage, ContentBlogPost
+	if known, ok := api.contentTypesV2.Load(id); ok && known == ContentBlogPost {
 		first, second = second, first
 	}
 
@@ -368,7 +368,7 @@ func (api *API) lookupContentV2(ctx context.Context, id string, withBody bool) (
 // normally already known and costs nothing; otherwise it costs a read.
 func (api *API) collectionOfV2(ctx context.Context, id string) (string, error) {
 	if known, ok := api.contentTypesV2.Load(id); ok {
-		return v2Collection(known.(string)), nil
+		return v2Collection(known.(ContentType)), nil
 	}
 
 	_, pageType, err := api.lookupContentV2(ctx, id, false)
@@ -419,7 +419,7 @@ func (api *API) getPageByIDV2(ctx context.Context, pageID, expand string) (*Page
 //
 // It is the one way to see a folder parent from a page read through v1, whose
 // ancestors leave folders out. Cloud only: Server and Data Center serve no v2.
-func (api *API) ParentOfV2(ctx context.Context, id string) (string, string, error) {
+func (api *API) ParentOfV2(ctx context.Context, id string) (string, ContentType, error) {
 	content, pageType, err := api.lookupContentV2(ctx, id, false)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to read the parent of %s: %w", id, err)
@@ -432,7 +432,8 @@ func (api *API) ParentOfV2(ctx context.Context, id string) (string, string, erro
 // Ancestor is a page or folder above another, as AncestryV2 lists it. Type is
 // "page" or "folder".
 type Ancestor struct {
-	ID, Title, Type string
+	ID, Title string
+	Type      ContentType
 }
 
 // AncestryV2 is the chain of pages and folders above a page or blogpost, root
@@ -449,7 +450,7 @@ func (api *API) AncestryV2(ctx context.Context, id string) ([]Ancestor, error) {
 	parentID, parentType := content.ParentID, content.ParentType
 	for parentID != "" && len(chain) < maxAncestorDepth {
 		switch parentType {
-		case "folder":
+		case ContentFolder:
 			folder, err := api.GetFolderByID(ctx, parentID)
 			if err != nil {
 				return nil, fmt.Errorf("unable to read folder %s above %s: %w", parentID, id, err)
@@ -457,14 +458,14 @@ func (api *API) AncestryV2(ctx context.Context, id string) ([]Ancestor, error) {
 			if folder == nil {
 				return nil, fmt.Errorf("folder %s above %s is not there", parentID, id)
 			}
-			chain = append(chain, Ancestor{ID: folder.ID, Title: folder.Title, Type: "folder"})
+			chain = append(chain, Ancestor{ID: folder.ID, Title: folder.Title, Type: ContentFolder})
 			parentID, parentType = folder.ParentID, folder.ParentType
-		case "", "page":
+		case "", ContentPage:
 			parent, err := api.readContentV2(ctx, "pages", parentID, false)
 			if err != nil {
 				return nil, fmt.Errorf("unable to read page %s above %s: %w", parentID, id, err)
 			}
-			chain = append(chain, Ancestor{ID: parent.ID, Title: parent.Title, Type: "page"})
+			chain = append(chain, Ancestor{ID: parent.ID, Title: parent.Title, Type: ContentPage})
 			parentID, parentType = parent.ParentID, parent.ParentType
 		default:
 			return nil, fmt.Errorf("%s %s above %s is neither a page nor a folder", parentType, parentID, id)
@@ -510,7 +511,7 @@ func (api *API) ancestorsV2(ctx context.Context, content contentV2) ([]ancestor,
 	var chain []ancestor
 
 	parentID, parentType := content.ParentID, content.ParentType
-	for parentID != "" && (parentType == "" || parentType == "page") && len(chain) < maxAncestorDepth {
+	for parentID != "" && (parentType == "" || parentType == ContentPage) && len(chain) < maxAncestorDepth {
 		parent, err := api.readContentV2(ctx, "pages", parentID, false)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read ancestor %s of page %s: %w", parentID, content.ID, err)
@@ -539,7 +540,7 @@ type ancestor = struct {
 // parentType is sent only when given: "folder" for a folder parent, which is
 // what CreatePageWithFolderParent has always named, and nothing for a page,
 // v2's default.
-func (api *API) createPageV2(ctx context.Context, space, pageType, parentID, parentType, title, body string) (*PageInfo, error) {
+func (api *API) createPageV2(ctx context.Context, space string, pageType ContentType, parentID string, parentType ContentType, title, body string) (*PageInfo, error) {
 	spaceID, err := api.GetSpaceID(ctx, space)
 	if err != nil {
 		return nil, err
@@ -556,7 +557,7 @@ func (api *API) createPageV2(ctx context.Context, space, pageType, parentID, par
 	}
 
 	// A blogpost has no parent, and naming one is rejected rather than ignored.
-	if parentID != "" && pageType != "blogpost" {
+	if parentID != "" && pageType != ContentBlogPost {
 		payload["parentId"] = parentID
 		if parentType != "" {
 			payload["parentType"] = parentType
@@ -604,7 +605,7 @@ func (api *API) updatePageV2(
 
 	// As on v1, the parent goes in only when there is one to name: naming none
 	// is how v2 is asked to move a page to the root of its space.
-	if page.Type != "blogpost" && len(page.Ancestors) > 0 {
+	if page.Type != ContentBlogPost && len(page.Ancestors) > 0 {
 		payload["parentId"] = page.Ancestors[len(page.Ancestors)-1].ID
 	}
 

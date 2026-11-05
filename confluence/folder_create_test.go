@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,7 +60,7 @@ func TestCreatePageWithFolderParentIsTheV2Create(t *testing.T) {
 	assert.NotContains(t, body, "type", "v2 has no content type field; the collection is the type")
 
 	assert.Equal(t, folder.ID, server.Page(page.ID).ParentID)
-	assert.Equal(t, "page", page.Type)
+	assert.Equal(t, confluence.ContentPage, page.Type)
 	assert.Equal(t, "/display/DOCS/"+page.ID, page.Links.Full, "the web UI link v2 returned")
 	assert.Equal(t, "https://tenant.example.net/wiki", page.Links.Base)
 
@@ -90,6 +91,6 @@ func TestCreateBlogpostWithFolderParentGoesToBlogposts(t *testing.T) {
 	assert.NotContains(t, body, "parentId")
 	assert.NotContains(t, body, "parentType")
 
-	assert.Equal(t, "blogpost", post.Type)
+	assert.Equal(t, confluence.ContentBlogPost, post.Type)
 	assert.Equal(t, "blogpost", server.Page(post.ID).Type)
 }

@@ -23,6 +23,10 @@ import (
 	"github.com/kovetskiy/mark/v17/chrome"
 )
 
+// Format is a shape a formula can be published as. The zero value is
+// FormatPNG.
+type Format string
+
 // The two shapes a formula can be published as.
 //
 // PNG is the default: it is what Confluence certainly displays, and it is what
@@ -33,8 +37,8 @@ import (
 // SVG is the better picture where an instance displays it: vector, sharp at any
 // zoom, a few kilobytes, and rendered without a browser at all.
 const (
-	FormatSVG = "svg"
-	FormatPNG = "png"
+	FormatSVG Format = "svg"
+	FormatPNG Format = "png"
 )
 
 // pixelsPerEx converts the ex units MathJax sizes its output in into the pixels
@@ -69,7 +73,7 @@ type Options struct {
 	Display bool
 
 	// Format is FormatPNG, the default when empty, or FormatSVG.
-	Format string
+	Format Format
 
 	// Scale multiplies a PNG's pixels; zero is the default.
 	Scale float64
@@ -95,7 +99,7 @@ func Process(ctx context.Context, tex string, options Options) (attachment.Attac
 	}
 
 	// Before the formula is typeset rather than after.
-	if format == FormatPNG && browser == nil {
+	if Format(format) == FormatPNG && browser == nil {
 		return attachment.Attachment{}, chrome.ErrNoBrowser
 	}
 
@@ -131,7 +135,7 @@ func Process(ctx context.Context, tex string, options Options) (attachment.Attac
 	// part of it because the same formula set both ways is two images; scale is
 	// only part of it for a PNG, since an SVG is the same file at any scale.
 	seed := fmt.Sprintf("%s:%v:%s", format, display, tex)
-	if format == FormatPNG {
+	if Format(format) == FormatPNG {
 		seed = fmt.Sprintf("%s:%v:%v:%s", format, display, scale, tex)
 	}
 
@@ -152,7 +156,7 @@ func Process(ctx context.Context, tex string, options Options) (attachment.Attac
 
 	return attachment.Attachment{
 		Name:      name,
-		Filename:  name + "." + format,
+		Filename:  name + "." + string(format),
 		FileBytes: contents,
 		// Addressed by the formula rather than by the rendered bytes, so that a
 		// later mathjax-go release changing its output by a hair does not

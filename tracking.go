@@ -166,7 +166,7 @@ func refreshStaleParents(ctx context.Context, tracker *manifest.Store, api *conf
 		// FindPage is memoised, and ancestry resolution is about to ask the
 		// same question, so this costs nothing on the common path where the
 		// parent is exactly where it says it is.
-		existing, err := api.FindPage(ctx, meta.Space, title, "page")
+		existing, err := api.FindPage(ctx, meta.Space, title, confluence.ContentPage)
 		if err != nil {
 			// A lookup that failed is not a parent that is missing. Reading it
 			// as one leaves the stale title in place, and a stale title is

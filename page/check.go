@@ -158,7 +158,7 @@ func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]st
 	for _, key := range slices.Sorted(maps.Keys(pending)) {
 		link := pending[key]
 
-		found, err := finder.FindPage(ctx, link.space, link.title, "page")
+		found, err := finder.FindPage(ctx, link.space, link.title, confluence.ContentPage)
 		if err != nil {
 			return nil, fmt.Errorf("find confluence page %q: %w", link.title, err)
 		}
@@ -191,7 +191,7 @@ func (c *LinkChecker) ForgetPages() {
 // PageFinder is the part of the Confluence API this needs, kept narrow so the
 // check can be exercised without one.
 type PageFinder interface {
-	FindPage(ctx context.Context, space, title, pageType string) (*confluence.PageInfo, error)
+	FindPage(ctx context.Context, space, title string, pageType confluence.ContentType) (*confluence.PageInfo, error)
 }
 
 // CheckExternal reports whether url answers, or nil if it was not asked.

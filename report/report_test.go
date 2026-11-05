@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseFormat(t *testing.T) {
-	for value, expected := range map[string]string{
+	for value, expected := range map[string]Format{
 		"": FormatURL, "url": FormatURL, "json": FormatJSON,
 		"github": FormatGitHub, " GitHub ": FormatGitHub,
 	} {

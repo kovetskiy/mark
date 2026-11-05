@@ -209,7 +209,7 @@ func currentParentID(
 	api *confluence.API,
 	pg *confluence.PageInfo,
 	folderID string,
-) (string, string, error) {
+) (string, confluence.ContentType, error) {
 	if pg.ParentID != "" || ImmediateParentID(pg) == folderID {
 		return pg.ParentID, pg.ParentType, nil
 	}
@@ -261,7 +261,7 @@ func EnsurePageUnderParent(
 		if pageType != "" {
 			pg.Type = pageType
 		} else {
-			pg.Type = "page"
+			pg.Type = confluence.ContentPage
 		}
 	}
 	return nil
