@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -132,9 +131,30 @@ func TestClosestIsTheNearest(t *testing.T) {
 
 // flagSources are the value sources flag reads, after the command line.
 func flagSources(flag cli.Flag) []cli.ValueSource {
-	field := reflect.ValueOf(flag).Elem().FieldByName("Sources")
-	if !field.IsValid() {
-		return nil
+	if chain := sourcesOf(flag); chain != nil {
+		return chain.Chain
 	}
-	return field.Interface().(cli.ValueSourceChain).Chain
+	return nil
+}
+
+// TestTrackSourcesReachesOnlyLeafCommands: a command with subcommands reads
+// its flags' sources before a subcommand's command line can set them, so only
+// the flags of a command without subcommands carry a probe.
+func TestTrackSourcesReachesOnlyLeafCommands(t *testing.T) {
+	var walk func(*cli.Command)
+	walk = func(cmd *cli.Command) {
+		for _, flag := range cmd.Flags {
+			sources := flagSources(flag)
+			probed := len(sources) > 0
+			if probed {
+				_, probed = sources[0].(*sourceProbe)
+			}
+			assert.Equal(t, len(cmd.Commands) == 0 && sourcesOf(flag) != nil, probed,
+				"--%s of %q", flag.Names()[0], cmd.Name)
+		}
+		for _, sub := range cmd.Commands {
+			walk(sub)
+		}
+	}
+	walk(newCommand("test"))
 }
