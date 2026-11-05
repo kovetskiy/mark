@@ -607,7 +607,7 @@ func multiGlobConfig(server *confluencetest.Server, glob string) Config {
 // run.
 func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -650,7 +650,7 @@ func TestRenameDoesNotReachAcrossGlobs(t *testing.T) {
 // feature its point.
 func TestRenameStillWorksWithinOneGlob(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -715,7 +715,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(baseURL, "user", "token", false)
+	api := confluence.NewAPI(baseURL, confluence.Options{Username: "user", Password: "token"})
 	guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, guide)
@@ -779,7 +779,7 @@ func TestManifestPageByIDAcrossTwoSpaces(t *testing.T) {
 	assert.Contains(t, err.Error(), "--manifest-page")
 	assert.Contains(t, err.Error(), `"OPS"`)
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	runbook, err := api.FindPage(context.Background(), "OPS", "Runbook", "page")
 	require.NoError(t, err)
 	assert.Nil(t, runbook, "refused before anything was published to the second space")
@@ -877,7 +877,7 @@ func TestManifestIsSavedWhenAFileFailsHard(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, published, "the good file published")
 
-	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	entry, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "a-good.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the page that published must still be in the manifest")
@@ -936,7 +936,7 @@ func TestManifestSaveOnTheWayOutOutlastsASignal(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, published, "the good file published")
 
-	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	entry, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "a-good.md"))
 	require.NoError(t, err)
 	require.True(t, ok, "the save went on to the end despite the signal")
@@ -964,7 +964,7 @@ Text with an <span>unclosed tag.
 
 	require.Error(t, Run(context.Background(), trackingConfig(server, file)))
 
-	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	_, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "doc.md"))
 	require.NoError(t, err)
 	assert.False(t, ok,
@@ -985,7 +985,7 @@ func TestRecordedTitleIsTheOneThePageCarries(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, published)
 
-	store := manifest.NewStore(confluence.NewAPI(server.URL, "user", "token", false))
+	store := manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 	entry, ok, err := store.Lookup(context.Background(), "DOCS", filepath.Join(dir, "doc.md"))
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -1012,7 +1012,7 @@ func TestPreserveCommentsKeepsARetitle(t *testing.T) {
 	config.Update.PreserveComments = true
 	require.NoError(t, Run(context.Background(), config))
 
-	original, err := confluence.NewAPI(server.URL, "user", "token", false).
+	original, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Original Title", "page")
 	require.NoError(t, err)
 	require.NotNil(t, original)

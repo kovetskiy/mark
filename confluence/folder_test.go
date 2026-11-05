@@ -22,7 +22,7 @@ import (
 // survive, so this crashed on the recovery path.
 func TestCreateFolderUnderAVanishedParent(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	space := server.AddSpace("DOCS")
 	home := server.AddPage("DOCS", "Home", "page", "")
@@ -40,7 +40,7 @@ func TestCreateFolderUnderAVanishedParent(t *testing.T) {
 // a parent's children, behind any number of pages.
 func TestFindChildFolderReadsEveryPage(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 	for i := range 150 {
@@ -62,7 +62,7 @@ func TestFindChildFolderReadsEveryPage(t *testing.T) {
 // and only the folder's own children.
 func TestFindChildFolderUnderAFolder(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	top := server.AddFolder("DOCS", "Top", "", "")
 	middle := server.AddFolder("DOCS", "Middle", top.ID, "folder")
@@ -84,7 +84,7 @@ func TestFindChildFolderUnderAFolder(t *testing.T) {
 // search results.
 func TestFindRootFolderFollowsTheSearch(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 	for range 30 {

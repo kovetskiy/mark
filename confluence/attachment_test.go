@@ -48,7 +48,7 @@ func TestAttachmentUploadAnswers(t *testing.T) {
 			}))
 			defer server.Close()
 
-			info, err := upload[tc.op](confluence.NewAPI(server.URL, "user", "token", false))
+			info, err := upload[tc.op](confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
 			if tc.wantID == "" {
 				require.Error(t, err)
 				assert.Empty(t, info.ID)

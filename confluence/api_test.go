@@ -35,7 +35,7 @@ func TestPutPageRestrictionsServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := NewAPI(server.URL, "username", "password", true)
+	api := NewAPI(server.URL, Options{Username: "username", Password: "password", InsecureSkipVerify: true})
 	resolved, err := api.ResolveRestrictions(context.Background(), []PageRestriction{
 		{Operation: "read", Groups: []string{"docs-readers"}},
 		{Operation: "update", Users: []string{"jdoe", "JDoe", "Mark"}},
@@ -147,7 +147,7 @@ func TestPageCacheFindPageMissAndHit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := NewAPI(server.URL, "username", "password", true)
+	api := NewAPI(server.URL, Options{Username: "username", Password: "password", InsecureSkipVerify: true})
 
 	space := "TEST"
 	title := "My Page"
@@ -179,7 +179,7 @@ func TestPageCacheFindPageNegativeCache(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := NewAPI(server.URL, "username", "password", true)
+	api := NewAPI(server.URL, Options{Username: "username", Password: "password", InsecureSkipVerify: true})
 
 	space := "TEST"
 	title := "Missing Page"

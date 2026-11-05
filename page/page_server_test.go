@@ -21,7 +21,7 @@ import (
 func TestResolvePageWithoutAHomePage(t *testing.T) {
 	ctx := t.Context()
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
@@ -62,7 +62,7 @@ func TestResolvePageLeavesMetadataSlicesAlone(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			server := confluencetest.New(t)
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 			home := server.AddPage("DOCS", "Home", "page", "")
 			server.SetHomepage("DOCS", home.ID)

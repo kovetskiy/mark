@@ -426,10 +426,10 @@ func getConfluenceLink(
 
 	// Prefer the base URL from the API response (_links.base) as it contains
 	// the canonical user-facing wiki URL (e.g., https://tenant.atlassian.net/wiki).
-	// Fall back to api.BaseURL if _links.base is not available.
+	// Fall back to api.BaseURL() if _links.base is not available.
 	baseURL := page.Links.Base
 	if baseURL == "" {
-		baseURL = api.BaseURL
+		baseURL = api.BaseURL()
 	}
 
 	tiny, err := confluence.GenerateTinyLink(baseURL, page.ID)

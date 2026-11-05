@@ -45,7 +45,7 @@ func (api *API) ContentProperties(ctx context.Context, contentID string) ([]Prop
 // download does.
 func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error) {
 	if api.gateway && info.ID != "" {
-		return strings.TrimSuffix(api.BaseURL, "/") + "/rest/api/content/" + url.PathEscape(pageID) +
+		return strings.TrimSuffix(api.baseURL, "/") + "/rest/api/content/" + url.PathEscape(pageID) +
 			"/child/attachment/" + url.PathEscape(info.ID) + "/download", nil
 	}
 
@@ -54,9 +54,9 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 		return "", fmt.Errorf("attachment %q has no download link", info.Filename)
 	}
 
-	base, err := url.Parse(api.BaseURL)
+	base, err := url.Parse(api.baseURL)
 	if err != nil {
-		return "", fmt.Errorf("unable to parse base URL %q: %w", api.BaseURL, err)
+		return "", fmt.Errorf("unable to parse base URL %q: %w", api.baseURL, err)
 	}
 
 	target, err := url.Parse(link)
@@ -75,7 +75,7 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 		return target.String(), nil
 	}
 
-	prefix := strings.TrimSuffix(api.BaseURL, "/")
+	prefix := strings.TrimSuffix(api.baseURL, "/")
 	if context := strings.TrimSuffix(info.Links.Context, "/"); context != "" && !strings.HasSuffix(prefix, context) {
 		prefix += context
 	}

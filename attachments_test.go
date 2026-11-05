@@ -110,7 +110,7 @@ func TestMacroAttachmentOutsideProjectFails(t *testing.T) {
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n"+widthMacro+"\n# Doc\n\n![S](../../../secret.png)<!-- width=1 -->\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	t.Chdir(dir)
 
@@ -376,7 +376,7 @@ func TestAnImageEmbeddedTwiceIsAttachedOnce(t *testing.T) {
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\n![logo](logo.png)\n\n![again](logo.png)\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Output: io.Discard,
@@ -428,7 +428,7 @@ func TestALinkToAnotherDocumentIsNotAnAttachment(t *testing.T) {
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\nSee [other](other.md).\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
@@ -457,7 +457,7 @@ func TestAnImageIsAttachedWithoutTheFlag(t *testing.T) {
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\n![logo](logo.png)\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Output: io.Discard,
@@ -489,7 +489,7 @@ func TestLinkedFileOutsideTheProjectIsRefused(t *testing.T) {
 	file := writeFile(t, docs, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\nSee ["+"key"+"]("+reference+").\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	_, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
@@ -535,7 +535,7 @@ func TestAFilenameWithBracketsIsNotAPattern(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\n"+
 			"See [the report](<files/report[2024].pdf>).\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
@@ -570,7 +570,7 @@ func TestALinkedFileWithAColonIsAttached(t *testing.T) {
 	file := writeFile(t, dir, "doc.md",
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\n# Doc\n\nSee [the spec](notes:v2.pdf).\n")
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
@@ -617,7 +617,7 @@ func publishBeside(t *testing.T, files map[string][]byte, header, body string, c
 	cfg.Connection.BaseURL, cfg.Connection.Username, cfg.Connection.Password = server.URL, "user", "token"
 	cfg.Files, cfg.Output = file, io.Discard
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	var target *confluence.PageInfo
 	var err error
 	logged := captureLog(t, func() { target, err = publishOne(context.Background(), file, api, cfg.PublishConfig) })
@@ -1086,7 +1086,7 @@ func TestPendingRefusesWhatARealRunRefuses(t *testing.T) {
 func TestUploadAttachmentsKeepsWhatThePageHolds(t *testing.T) {
 	server := confluencetest.New(t)
 	pg := server.AddPage("SPACE", "Page", "page", "")
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	info := &confluence.PageInfo{ID: pg.ID}
 
 	upload := func() []attachment.Attachment {

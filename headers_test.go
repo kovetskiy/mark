@@ -268,7 +268,7 @@ func propertiesFixture(t *testing.T, doc string, config func(*Config)) (*conflue
 	}
 	require.NoError(t, Run(context.Background(), cfg))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
@@ -548,7 +548,7 @@ func TestSynchronizedFalseHeaderSkipsTheFile(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
@@ -577,7 +577,7 @@ func TestSynchronizedFalseFrontMatterSkipsTheFile(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	page, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	assert.Nil(t, page, "an unsynchronized document must not be published")
@@ -613,7 +613,7 @@ func TestSynchronizedTrueAndAbsentBothPublish(t *testing.T) {
 				},
 			}))
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 			page, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 			require.NoError(t, err)
 			assert.NotNil(t, page)
@@ -658,7 +658,7 @@ func TestSynchronizedFalseKeepsTheMapping(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	published, err := api.FindPage(context.Background(), "DOCS", "Draft", "page")
 	require.NoError(t, err)
 	require.NotNil(t, published)

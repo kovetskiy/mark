@@ -48,7 +48,7 @@ func TestResponseHeadersDoNotLeakIntoLaterRequests(t *testing.T) {
 
 	// A Personal Access Token: no username, which is the setup that used to
 	// install a long-lived header map on the root resource.
-	api := confluence.NewAPI(server.URL, "", "pat-token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Password: "pat-token"})
 
 	page, err := api.FindPage(context.Background(), "DOCS", "Leaky", "page")
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestAuthorizationIsSentOnEveryRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "", "pat-token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Password: "pat-token"})
 
 	_, err := api.FindPage(context.Background(), "DOCS", "Anything", "page")
 	require.NoError(t, err)

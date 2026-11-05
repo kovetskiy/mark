@@ -117,7 +117,7 @@ const (
 // has made them a watcher. Once a read is refused the credentials, the rest
 // are recorded unread without asking.
 func (api *API) watchBeforeWrite(ctx context.Context, pageID string) {
-	if !api.Unwatch {
+	if !api.unwatch {
 		return
 	}
 

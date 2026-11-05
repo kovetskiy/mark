@@ -21,7 +21,7 @@ func TestWatchCloud(t *testing.T) {
 	server.AddUser(confluencetest.User{AccountID: "acct-jane", FullName: "Jane Doe"})
 	server.AddUser(confluencetest.User{AccountID: "acct-jane2", FullName: "Jane Doe-Smith"})
 	p := server.AddPage("DOCS", "Page", "page", "")
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	require.NoError(t, api.WatchPage(context.Background(), p.ID, ""))
 	require.NoError(t, api.WatchPage(context.Background(), p.ID, "Jane Doe"))
@@ -46,7 +46,7 @@ func TestWatchDataCenter(t *testing.T) {
 	server := confluencetest.New(t)
 	server.SetDataCenter()
 	p := server.AddPage("DOCS", "Page", "page", "")
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	require.NoError(t, api.WatchPage(context.Background(), p.ID, ""))
 	require.NoError(t, api.WatchPage(context.Background(), p.ID, "jane"))
@@ -70,12 +70,11 @@ func newUnwatchAPIAt(t *testing.T, dataCenter, gateway bool) (*confluence.API, *
 	if gateway {
 		base += "/ex/confluence/cloud-id"
 	}
-	api := confluence.NewAPI(base, "user", "token", false)
+	api := confluence.NewAPI(base, confluence.Options{Username: "user", Password: "token", Unwatch: true})
 	if dataCenter {
 		server.SetDataCenter()
 	}
 	server.SetWatchOnWrite()
-	api.Unwatch = true
 	return api, server
 }
 
@@ -126,7 +125,7 @@ func TestUnwatchLeavesAWatchedPageWatched(t *testing.T) {
 	api, server := newUnwatchAPI(t, false)
 	stored := server.AddPage("DOCS", "Watched", "page", "")
 
-	plain := confluence.NewAPI(server.URL, "user", "token", false)
+	plain := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	require.NoError(t, plain.WatchPage(context.Background(), stored.ID, ""))
 
 	page, err := api.GetPageByID(context.Background(), stored.ID)
@@ -144,8 +143,9 @@ func TestUnwatchLeavesAWatchedPageWatched(t *testing.T) {
 }
 
 func TestWithoutUnwatchPagesStayWatched(t *testing.T) {
-	api, server := newUnwatchAPI(t, false)
-	api.Unwatch = false
+	server := confluencetest.New(t)
+	server.SetWatchOnWrite()
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	server.AddSpace("DOCS")
 
 	created, err := api.CreatePage(context.Background(), "DOCS", "page", nil, "New", "")
@@ -328,9 +328,8 @@ func TestUnwatchAsksAgainAfterAnotherReadFailure(t *testing.T) {
 // user watch the page: the page is recorded before it, so the watch that move
 // made is not taken for the user's own.
 func TestUnwatchAfterAMoveByUpdate(t *testing.T) {
-	api, server := newDataCenterAPIWithoutMoveAction(t)
+	api, server := newDataCenterAPIWithOptions(t, confluence.Options{Unwatch: true}, noMoveAction)
 	server.SetWatchOnWrite()
-	api.Unwatch = true
 
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 	moved := server.AddPage("DOCS", "Moved and updated", "page", "")
@@ -363,9 +362,8 @@ func TestUnwatchAfterMoves(t *testing.T) {
 			return newUnwatchAPI(t, false)
 		}, "PUT", "/move/"},
 		{"movepage.action", func(t *testing.T) (*confluence.API, *confluencetest.Server) {
-			api, server := newDataCenterAPI(t)
+			api, server := newDataCenterAPIWithOptions(t, confluence.Options{Unwatch: true}, nil)
 			server.SetWatchOnWrite()
-			api.Unwatch = true
 			return api, server
 		}, "POST", "/pages/movepage.action"},
 	} {
@@ -398,9 +396,8 @@ func TestUnwatchAfterMoves(t *testing.T) {
 // A page already under the parent it is appended to is not moved on Data
 // Center, so it is not recorded either.
 func TestUnwatchSkipsAPageAlreadyInPlace(t *testing.T) {
-	api, server := newDataCenterAPI(t)
+	api, server := newDataCenterAPIWithOptions(t, confluence.Options{Unwatch: true}, nil)
 	server.SetWatchOnWrite()
-	api.Unwatch = true
 	parent := server.AddPage("DOCS", "Parent", "page", "")
 	moved := server.AddPage("DOCS", "Moved", "page", "")
 	placed := server.AddPage("DOCS", "Placed", "page", parent.ID)

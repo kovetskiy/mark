@@ -100,7 +100,7 @@ func exportFixture(t *testing.T) (*confluencetest.Server, string, string) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	page, err := api.FindPage(context.Background(), "DOCS", "Installing", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)
@@ -133,7 +133,7 @@ func TestExportRoundTrip(t *testing.T) {
 	server, id, source := exportFixture(t)
 	published := server.Page(id).Body
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	setContentProperty(t, api, id, "content-appearance-published", `"fixed"`)
 	setContentProperty(t, api, id, "emoji-title-published", `"1f680"`)
 
@@ -220,7 +220,7 @@ func TestExportRoundTripFrontMatter(t *testing.T) {
 	server, id, _ := exportFixture(t)
 	published := server.Page(id).Body
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	setContentProperty(t, api, id, "content-appearance-published", `"fixed"`)
 	setContentProperty(t, api, id, "emoji-title-published", `"1f680"`)
 
@@ -723,7 +723,7 @@ func TestAFailedDownloadWritesNothing(t *testing.T) {
 // back, so that publishing the export does not make the page full width.
 func TestExportKeepsTheMaxAppearance(t *testing.T) {
 	server, id := exportPage(t, `<p>Body.</p>`)
-	setContentProperty(t, confluence.NewAPI(server.URL, "user", "token", false), id,
+	setContentProperty(t, confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), id,
 		"content-appearance-published", `"max"`)
 
 	var stdout bytes.Buffer

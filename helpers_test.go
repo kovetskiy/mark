@@ -62,7 +62,7 @@ func trackingConfig(server *confluencetest.Server, files string) Config {
 func docsSpace(t *testing.T) (*confluencetest.Server, *confluence.API) {
 	t.Helper()
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	server.AddPage("DOCS", "Parent", "page", home.ID)
@@ -78,7 +78,7 @@ func docsSpace(t *testing.T) (*confluencetest.Server, *confluence.API) {
 // renamed out from under it.
 func pageIDTitled(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
-	fresh := confluence.NewAPI(server.URL, "user", "token", false)
+	fresh := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	page, err := fresh.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if page == nil {
@@ -115,7 +115,7 @@ Body.
 // which is what a parent usually is and what the title index cannot know about.
 func handMadeParent(t *testing.T, server *confluencetest.Server, title string) *confluencetest.Page {
 	t.Helper()
-	under, err := confluence.NewAPI(server.URL, "user", "token", false).
+	under, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
 		FindPage(context.Background(), "DOCS", "Parent", "page")
 	require.NoError(t, err)
 	require.NotNil(t, under)
@@ -171,7 +171,7 @@ func previewOf(t *testing.T, config Config, format string) string {
 // mustFind returns the id of the page titled title in DOCS.
 func mustFind(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	pg, err := api.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	require.NotNil(t, pg)
@@ -213,7 +213,7 @@ func noOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
 
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
@@ -262,7 +262,7 @@ func publishConfig(url, files string) Config {
 // title, or "" if no page carries it.
 func bodyOfPageTitled(t *testing.T, server *confluencetest.Server, title string) string {
 	t.Helper()
-	fresh := confluence.NewAPI(server.URL, "user", "token", false)
+	fresh := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	found, err := fresh.FindPage(context.Background(), "DOCS", title, "page")
 	require.NoError(t, err)
 	if found == nil {

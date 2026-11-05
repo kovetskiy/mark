@@ -48,7 +48,7 @@ func flakyFront(
 	}))
 	t.Cleanup(front.Close)
 
-	return confluence.NewAPI(front.URL, "user", "token", false), failing
+	return confluence.NewAPI(front.URL, confluence.Options{Username: "user", Password: "token"}), failing
 }
 
 // TestGetUserByNameDoesNotCacheTransientFailures: the user lookup is memoised

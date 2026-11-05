@@ -31,12 +31,15 @@ func newDataCenterAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 func newDataCenterAPIWithoutMoveAction(t *testing.T) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
 
-	return newDataCenterAPIWith(t, func(r *http.Request) (int, string, bool) {
-		if r.URL.Path == "/pages/movepage.action" {
-			return http.StatusNotFound, `{"message":"no such action"}`, true
-		}
-		return 0, "", false
-	})
+	return newDataCenterAPIWith(t, noMoveAction)
+}
+
+// noMoveAction refuses movepage.action.
+func noMoveAction(r *http.Request) (int, string, bool) {
+	if r.URL.Path == "/pages/movepage.action" {
+		return http.StatusNotFound, `{"message":"no such action"}`, true
+	}
+	return 0, "", false
 }
 
 // newDataCenterAPIWith is newDataCenterAPI with f consulted on every request
@@ -46,7 +49,19 @@ func newDataCenterAPIWith(
 ) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
 
-	api, server := newAPI(t)
+	return newDataCenterAPIWithOptions(t, confluence.Options{}, f)
+}
+
+// newDataCenterAPIWithOptions is newDataCenterAPIWith with the API built from
+// opts, its credentials aside.
+func newDataCenterAPIWithOptions(
+	t *testing.T, opts confluence.Options, f confluencetest.FailFunc,
+) (*confluence.API, *confluencetest.Server) {
+	t.Helper()
+
+	server := confluencetest.New(t)
+	opts.Username, opts.Password = "user", "token"
+	api := confluence.NewAPI(server.URL, opts)
 	server.SetDataCenter()
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if strings.Contains(r.URL.Path, "/move/") {
@@ -174,7 +189,7 @@ func TestOrderingNamesThePageByTitleWhenItCan(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	page, err := api.FindPage(context.Background(), "DOCS", "Release Notes", "page")
 	require.NoError(t, err)

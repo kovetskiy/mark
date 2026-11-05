@@ -17,7 +17,7 @@ import (
 func newAPI(t *testing.T) (*confluence.API, *confluencetest.Server) {
 	t.Helper()
 	server := confluencetest.New(t)
-	return confluence.NewAPI(server.URL, "user", "token", false), server
+	return confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}), server
 }
 
 // titles collects the stored titles of every page in a space, for asserting on

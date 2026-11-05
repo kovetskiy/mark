@@ -263,7 +263,7 @@ func TestAPageAlreadyInItsFolderIsNotMovedAgain(t *testing.T) {
 func TestAPageAlreadyInItsFolderIsNotMovedAgainThroughTheGateway(t *testing.T) {
 	ctx := t.Context()
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
+	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
 	require.True(t, api.IsCloud(context.Background()))
 
 	folder, first := folderWithTwoPages(t, server)

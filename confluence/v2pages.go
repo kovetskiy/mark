@@ -134,7 +134,7 @@ func (api *API) siteBaseURL() string {
 		return api.siteBase
 	}
 
-	return api.BaseURL
+	return api.baseURL
 }
 
 // v2Collection names the v2 collection holding a v1 content type.

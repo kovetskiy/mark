@@ -52,7 +52,7 @@ func TestCloudKeepsItsFirstAnswer(t *testing.T) {
 		}
 		return 0, "", false
 	})
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	cloud, err := api.Cloud(context.Background())
 	assert.False(t, cloud)
@@ -78,7 +78,7 @@ func TestCloudTakesAUserWithNoPlatformForServer(t *testing.T) {
 		}
 		return 0, "", false
 	})
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	cloud, err := api.Cloud(context.Background())
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestGetCurrentUserIsAskedOnce(t *testing.T) {
 		}
 		return 0, "", false
 	})
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	_, err := api.GetCurrentUser(context.Background())
 	require.Error(t, err)

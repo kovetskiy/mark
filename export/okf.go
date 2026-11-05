@@ -168,7 +168,7 @@ func pageURL(api *confluence.API, page *confluence.PageInfo) string {
 
 	base := page.Links.Base
 	if !strings.HasPrefix(base, "http") {
-		base = api.BaseURL
+		base = api.BaseURL()
 	}
 	return strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(webui, "/")
 }

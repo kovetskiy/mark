@@ -105,7 +105,7 @@ func TestPublishThroughTheGateway(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA revised guide.\n")
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(baseURL, "user", "token", false)
+	api := confluence.NewAPI(baseURL, confluence.Options{Username: "user", Password: "token"})
 	page, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
 	require.NoError(t, err)
 	require.NotNil(t, page)

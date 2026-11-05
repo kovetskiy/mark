@@ -216,7 +216,7 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
 	require.NoError(t, err)
 	require.NotNil(t, gone)

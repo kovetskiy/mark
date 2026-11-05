@@ -269,7 +269,7 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 			},
 		}))
 
-		api := confluence.NewAPI(server.URL, "user", "token", false)
+		api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 		doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 		require.NoError(t, err)
 		require.NotNil(t, doc)
@@ -622,7 +622,7 @@ func TestRelativeLinkDestinationIsDecoded(t *testing.T) {
 			file := writeFile(t, dir, "doc.md",
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee "+link+".\n")
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 			target, err := publishOne(context.Background(), file, api, PublishConfig{
 				Output: io.Discard,
 			})
@@ -659,7 +659,7 @@ func TestEscapedLinkFindsItsDeclaredAttachment(t *testing.T) {
 			file := writeFile(t, dir, "doc.md",
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\nSee "+link+".\n")
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 			target, err := publishOne(context.Background(), file, api, PublishConfig{
 				Output: io.Discard,
 			})
@@ -693,7 +693,7 @@ func TestEscapedLinkedFileIsAttached(t *testing.T) {
 			file := writeFile(t, dir, "doc.md",
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee "+link+".\n")
 
-			api := confluence.NewAPI(server.URL, "user", "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 			target, err := publishOne(context.Background(), file, api, PublishConfig{
 				Rendering: RenderingConfig{
 					AttachReferenced: true,
@@ -787,7 +787,7 @@ func TestLinkInsideAnIncludedFragment(t *testing.T) {
 	require.NoError(t, Run(context.Background(), config))
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
@@ -832,7 +832,7 @@ func TestOwnDirectoryWinsOverAnIncludedOne(t *testing.T) {
 	require.NoError(t, Run(context.Background(), config))
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	right, err := api.FindPage(context.Background(), "DOCS", "Right", "page")
 	require.NoError(t, err)
 	require.NotNil(t, right)
@@ -878,7 +878,7 @@ func TestMacroDefinedAboveTheHeaders(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc, "the headers below the macro must still be read")
@@ -925,7 +925,7 @@ func TestLinksResolveOnTheFirstRun(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, a)
@@ -960,7 +960,7 @@ func TestSecondPassOnlyRepublishesWhatWaited(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	b, err := api.FindPage(context.Background(), "DOCS", "B", "page")
@@ -996,7 +996,7 @@ func TestSecondRunDoesNothingExtra(t *testing.T) {
 	}
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	before := server.Page(a.ID).Version
@@ -1039,7 +1039,7 @@ func TestCheckLinksSeesResolvedLinksForPagesThisRunCreates(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	require.NotNil(t, a)
@@ -1076,7 +1076,7 @@ func TestDryRunDoesNotWaitForPages(t *testing.T) {
 		},
 	}))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	a, err := api.FindPage(context.Background(), "DOCS", "A", "page")
 	require.NoError(t, err)
 	assert.Nil(t, a, "a dry run publishes nothing")
@@ -1115,7 +1115,7 @@ func linkedPair(t *testing.T, body string) (string, *confluencetest.Server) {
 	require.NoError(t, Run(context.Background(), config))
 	require.NoError(t, Run(context.Background(), config))
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", "page")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
@@ -1169,7 +1169,7 @@ func TestLinkInsideCodeSpanIsLeftAlone(t *testing.T) {
 // to an attachment had its own example turned into a download URL.
 func TestAttachmentLinkInsideCodeBlockIsLeftAlone(t *testing.T) {
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)

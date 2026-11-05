@@ -61,7 +61,7 @@ type API struct {
 	v1      *client
 	v2      *client
 	site    *client
-	BaseURL string
+	baseURL string
 
 	// username is the login mark authenticates with, empty for a Personal
 	// Access Token. Whoever it names is the current user by definition, which
@@ -127,17 +127,17 @@ type API struct {
 	spaceIDCache    map[string]spaceIDCacheEntry
 	spaceCacheMutex sync.RWMutex
 
-	// KeepConcurrentEdits stops UpdatePage from overwriting a page that was
+	// keepConcurrentEdits stops UpdatePage from overwriting a page that was
 	// written by someone else after mark read it. An update refused as a
 	// conflict is then retried only when the page is still at the version mark
 	// read, and fails otherwise. --no-overwrite sets it: that flag promises
 	// an edit made in Confluence is not silently replaced, and the window
 	// between its check and the update is where one could land.
-	KeepConcurrentEdits bool
+	keepConcurrentEdits bool
 
-	// Unwatch makes the writes record the pages they touch, for UnwatchWritten
+	// unwatch makes the writes record the pages they touch, for UnwatchWritten
 	// to unwatch once the last write is done. --watch=false sets it.
-	Unwatch bool
+	unwatch bool
 
 	// watchedBefore records, by page id, every page mark wrote to and whether
 	// the user watched it before the first of those writes; see
@@ -344,7 +344,7 @@ type PageInfo struct {
 		// Base is the canonical site URL from the response's `_links.base`
 		// (e.g. https://tenant.atlassian.net/wiki). CreatePage used to skip
 		// this field (`json:"-"`), so same-run tiny links fell back to
-		// api.BaseURL and became dead api.atlassian.com URLs.
+		// api.baseURL and became dead api.atlassian.com URLs.
 		Base string `json:"base,omitempty"`
 	} `json:"_links"`
 }
@@ -536,13 +536,46 @@ func (api *API) Username() string {
 	return api.username
 }
 
-func NewAPI(baseURL string, username string, password string, insecureSkipVerify bool) *API {
+// Options are an API's settings, fixed when NewAPI builds it.
+type Options struct {
+	// Username and Password are sent as basic auth when Username is set;
+	// otherwise Password is a Personal Access Token, sent as a bearer token.
+	Username string
+	Password string
+
+	// InsecureSkipVerify turns off TLS certificate verification. It applies
+	// only to the client NewAPI builds itself, not to HTTPClient.
+	InsecureSkipVerify bool
+
+	// HTTPClient, when set, carries every request in place of the client
+	// NewAPI would build. NewAPI wraps a copy of it, leaving it unchanged:
+	// mark's retries go around its Transport (http.DefaultTransport when
+	// nil), and a cookie jar is added when it has none, since Confluence
+	// Server expects its session cookie back. Everything else is the
+	// client's own -- proxy, TLS, redirects, and timeouts. NewAPI's client
+	// bounds the dial, the TLS handshake and the wait for response headers,
+	// and sets no Timeout, which would cap a large upload. A Timeout here
+	// caps each request together with its retries, as a context deadline
+	// does.
+	HTTPClient *http.Client
+
+	// KeepConcurrentEdits stops UpdatePage from overwriting a page someone
+	// else wrote after mark read it; see UpdatePage.
+	KeepConcurrentEdits bool
+
+	// Unwatch makes the writes record the pages they touch, for
+	// UnwatchWritten to unwatch once the last write is done.
+	Unwatch bool
+}
+
+// NewAPI returns an API for the Confluence at baseURL.
+func NewAPI(baseURL string, opts Options) *API {
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	// Retries happen in the client's retryTransport and nowhere else; see
 	// newHTTPClient.
-	httpClient := newHTTPClient(insecureSkipVerify)
+	httpClient := newHTTPClient(opts.InsecureSkipVerify, opts.HTTPClient)
 
 	trace := func(prefix string) string {
 		if zerolog.GlobalLevel() == zerolog.TraceLevel {
@@ -551,20 +584,30 @@ func NewAPI(baseURL string, username string, password string, insecureSkipVerify
 		return ""
 	}
 
+	username, password := opts.Username, opts.Password
+
 	return &API{
 		v1:            newClient(baseURL+"/rest/api", httpClient, username, password, trace("rest:")),
 		v2:            newClient(baseURL+"/api/v2", httpClient, username, password, trace("rest-v2:")),
 		site:          newClient(baseURL, httpClient, username, password, trace("site:")),
-		BaseURL:       baseURL,
+		baseURL:       baseURL,
 		username:      username,
 		gateway:       isGatewayURL(baseURL),
 		pageCache:     make(map[string]*PageInfo),
 		pageCacheByID: make(map[string]*PageInfo),
 
+		keepConcurrentEdits: opts.KeepConcurrentEdits,
+		unwatch:             opts.Unwatch,
+
 		conflictRetryDelay: time.Second,
 		moveSettleDelay:    250 * time.Millisecond,
 		unavailableWait:    waitUnavailable,
 	}
+}
+
+// BaseURL is the base URL the API was built with, without a trailing slash.
+func (api *API) BaseURL() string {
+	return api.baseURL
 }
 
 // wait sits out d -- the delay before a conflicting write is retried, or
@@ -893,11 +936,11 @@ func (api *API) findPageV1(ctx context.Context, space, title, pageType string) (
 	}
 
 	page := result.Results[0]
-	// Populate the base URL from the response _links.base or fallback to BaseURL
+	// Populate the base URL from the response _links.base or fallback to baseURL
 	if result.Links.Base != "" {
 		page.Links.Base = result.Links.Base
 	} else if page.Links.Base == "" {
-		page.Links.Base = api.BaseURL
+		page.Links.Base = api.baseURL
 	}
 
 	return &page, nil
@@ -1333,7 +1376,7 @@ func (api *API) createLanded(ctx context.Context, find func() (*PageInfo, error)
 // rememberCreatedPage puts a page just created into the page cache, so the
 // lookups later in the run find it without asking.
 func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInfo) {
-	if api.Unwatch {
+	if api.unwatch {
 		// Nobody watched a page before it was created.
 		api.rememberWatch(page.ID, wasUnwatched, nil)
 	}
@@ -1349,7 +1392,7 @@ func (api *API) rememberCreatedPage(space, pageType, title string, page *PageInf
 	key := pageCacheKey(space, cacheTitle, cacheType)
 
 	if page.Links.Base == "" {
-		page.Links.Base = api.BaseURL
+		page.Links.Base = api.baseURL
 	}
 
 	api.lazyInit()
@@ -1547,7 +1590,7 @@ func (api *API) putUnavailable(ctx context.Context, page *PageInfo, read, versio
 // way: wait a moment, read the version the page has now, and send once more.
 //
 // mark's content is authoritative for the pages it publishes, so the retry
-// overwrites whatever the other writer left, unless KeepConcurrentEdits says
+// overwrites whatever the other writer left, unless keepConcurrentEdits says
 // otherwise. There is exactly one retry: a page that conflicts twice is being
 // written to by something else continuously, and racing it is not a fix.
 //
@@ -1574,7 +1617,7 @@ func (api *API) retryConflictingUpdate(
 		)
 	}
 
-	if api.KeepConcurrentEdits && current != page.Version.Number {
+	if api.keepConcurrentEdits && current != page.Version.Number {
 		return 0, fmt.Errorf(
 			"page %q (%s) was edited in Confluence while mark was "+
 				"publishing it (now at version %d, mark read version %d), and "+
@@ -3028,7 +3071,7 @@ func (api *API) reparentContent(ctx context.Context, contentID, parentID string)
 		// point -- would put back what the page said before the edit and undo
 		// it. Here the body is only a passenger, so the whole page is read
 		// again and the move rebuilt from that. Nothing is overwritten this
-		// way, which is also why KeepConcurrentEdits has nothing to refuse.
+		// way, which is also why keepConcurrentEdits has nothing to refuse.
 		attempted := page.Version.Number + 1
 
 		if err := api.wait(ctx, api.conflictRetryDelay); err != nil {

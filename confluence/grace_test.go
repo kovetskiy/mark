@@ -67,7 +67,7 @@ func TestUpdatePageIsCutShortWhenItStallsAfterTheRunStops(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
 	stored := server.AddPage("DOCS", "Doc", "page", "")
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	page, err := api.GetPageByID(context.Background(), stored.ID)
 	require.NoError(t, err)

@@ -86,9 +86,11 @@ type ConnectionConfig struct {
 	InsecureSkipTLSVerify bool
 }
 
-// api is a client for this Confluence.
-func (c ConnectionConfig) api() *confluence.API {
-	return confluence.NewAPI(c.BaseURL, c.Username, c.Password, c.InsecureSkipTLSVerify)
+// api is a client for this Confluence, with the rest of its settings in opts.
+func (c ConnectionConfig) api(opts confluence.Options) *confluence.API {
+	opts.Username, opts.Password, opts.InsecureSkipVerify = c.Username, c.Password, c.InsecureSkipTLSVerify
+
+	return confluence.NewAPI(c.BaseURL, opts)
 }
 
 // ModeConfig is how far publishing goes.
@@ -412,13 +414,14 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	api := config.Connection.api()
-	// An update refused as a conflict is retried against the page's current
-	// version, which overwrites whatever changed it. --no-overwrite exists to
-	// stop exactly that, so under it the retry goes ahead only when nobody else
-	// has written to the page.
-	api.KeepConcurrentEdits = config.Tracking.NoOverwrite
-	api.Unwatch = config.Unwatch
+	api := config.Connection.api(confluence.Options{
+		// An update refused as a conflict is retried against the page's
+		// current version, which overwrites whatever changed it.
+		// --no-overwrite exists to stop exactly that, so under it the retry
+		// goes ahead only when nobody else has written to the page.
+		KeepConcurrentEdits: config.Tracking.NoOverwrite,
+		Unwatch:             config.Unwatch,
+	})
 	// Deferred, so that a run that fails partway still unwatches what it wrote.
 	// An interrupted run does not: it warns which pages stay watched.
 	defer api.UnwatchWritten(ctx)
@@ -646,7 +649,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 
 		if target != nil {
-			url := api.BaseURL + target.Links.Full
+			url := api.BaseURL() + target.Links.Full
 
 			// What the report says rather than "there is a page here". A page
 			// held back by --no-overwrite is one this run deliberately did not
@@ -826,8 +829,8 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 // of it: a page's Position is not applied among its siblings, a document
 // linking to a page published after it is not published again once that page
 // exists, no page manifest is kept, and no run report is written. To unwatch
-// the pages it wrote, set the API's Unwatch, and call its UnwatchWritten after
-// the last file, with a context that is not done yet.
+// the pages it wrote, build the API with confluence.Options.Unwatch, and call
+// its UnwatchWritten after the last file, with a context that is not done yet.
 //
 // With Page.PageID set, every file would publish over the one page, so a
 // Publisher publishes only the first file that reaches the page, as Run
@@ -1288,7 +1291,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 	r.results.AddPage(report.Page{
 		File: doc.file, Status: status,
 		Space: spaceOf(doc.meta), Title: target.Title,
-		PageID: target.ID, URL: r.api.BaseURL + target.Links.Full,
+		PageID: target.ID, URL: r.api.BaseURL() + target.Links.Full,
 		Warnings: brokenLinks,
 	})
 
@@ -1633,7 +1636,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		if previewed != nil {
 			target = *previewed
 			// Built as a real run builds it, so CI can link the page.
-			url = r.api.BaseURL + target.Links.Full
+			url = r.api.BaseURL() + target.Links.Full
 		}
 		title := target.Title
 		if meta != nil {

@@ -29,7 +29,7 @@ func TestARequestCarriesTheContextItIsGiven(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
 	stored := server.AddPage("DOCS", "Existing", "page", "")
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -70,7 +70,7 @@ func TestARequestCarriesTheContextItIsGiven(t *testing.T) {
 func TestCancellingTheContextAbortsARequestInFlight(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -94,7 +94,7 @@ func TestCancellingTheContextCutsTheBackoffShort(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
 	server.SetFailHeaders(http.Header{"Retry-After": {"30"}})
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -118,7 +118,7 @@ func TestCancellingTheContextCutsTheBackoffShort(t *testing.T) {
 func TestACancelledLookupIsNotRemembered(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
-	api := NewAPI(server.URL, "user", "token", false)
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	server.SetFail(func(r *http.Request) (int, string, bool) {

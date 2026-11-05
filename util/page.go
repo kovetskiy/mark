@@ -227,7 +227,10 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 		logFlags(cmd)
 
 		return run(ctx, pageRun{
-			api:  confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password, cmd.Bool("insecure-skip-tls-verify")),
+			api: confluence.NewAPI(creds.BaseURL, confluence.Options{
+				Username: creds.Username, Password: creds.Password,
+				InsecureSkipVerify: cmd.Bool("insecure-skip-tls-verify"),
+			}),
 			refs: refs,
 			out:  os.Stdout,
 		}, cmd)

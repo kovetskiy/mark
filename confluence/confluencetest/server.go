@@ -179,7 +179,7 @@ type Server struct {
 
 	// SiteBase is echoed as `_links.base` on content create/search responses
 	// when set. Empty omits the field so tests can still exercise the client's
-	// api.BaseURL fallback. Real Confluence Cloud puts the tenant wiki URL
+	// api.BaseURL() fallback. Real Confluence Cloud puts the tenant wiki URL
 	// here even when the request went through api.atlassian.com.
 	SiteBase string
 }

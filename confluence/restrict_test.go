@@ -69,7 +69,7 @@ func newCloudRestrictAPIWithoutCurrentUser(t *testing.T) (*confluence.API, *conf
 		}
 		return 0, "", false
 	})
-	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", "user", "token", false)
+	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
 	require.True(t, api.IsCloud(context.Background()))
 	return api, server, &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 }
@@ -90,7 +90,7 @@ func TestRestrictPageUpdatesNamedUser(t *testing.T) {
 func newCloudLoginAPI(t *testing.T, login, email string) (*confluence.API, *confluencetest.Server, *confluence.PageInfo) {
 	t.Helper()
 	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL, login, "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: login, Password: "token"})
 	server.AddSpace("DOCS")
 	stored := server.AddPage("DOCS", "Locked", "page", "")
 	server.SetCurrentUser(confluencetest.User{
@@ -175,7 +175,7 @@ func TestRestrictPageUpdatesTakesNoContent(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	api := confluence.NewAPI(server.URL, "user", "token", false)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	require.NoError(t, api.RestrictPageUpdates(context.Background(), &confluence.PageInfo{ID: "1"}, "user"))
 	assert.True(t, restricted)
 }
@@ -194,7 +194,7 @@ func TestRestrictPageUpdatesServerCurrentUser(t *testing.T) {
 			server := confluencetest.New(t)
 			server.SetDataCenter()
 			stored := server.AddPage("DOCS", "Locked", "page", "")
-			api := confluence.NewAPI(server.URL, tc.login, "token", false)
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: tc.login, Password: "token"})
 			page := &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
 
 			require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
