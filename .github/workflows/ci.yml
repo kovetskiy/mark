@@ -141,9 +141,10 @@ jobs:
       with:
         push: false
         tags: kovetskiy/mark:latest
-        # The Git context carries no .git for the Makefile to read them from.
+        # The Git context carries no .git for the Makefile to read the commit
+        # from. No VERSION: a branch or pull request is not a release, so the
+        # binary names itself dev@<commit>, as any off-tag build does.
         build-args: |
-          VERSION=${{ github.ref_name }}
           COMMIT=${{ github.sha }}
 
     - name: Login to Docker Hub
