@@ -466,6 +466,14 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
+	// A page URL the command line set aside still names the instance, so its
+	// host serves when no base URL is configured.
+	if baseURL == "" && page["url"] == "" {
+		if ref, err := export.ParsePageURL(cmd.String("url")); err == nil {
+			baseURL = ref.BaseURL
+		}
+	}
+
 	if baseURL == "" {
 		return errors.New("confluence base URL should be specified using --base-url, or come with --url")
 	}

@@ -237,6 +237,10 @@ func TestExportCommandLineWins(t *testing.T) {
 			[]string{"-c", empty, "export", "-b", server.URL, "--page-id", page.ID}},
 		{"--title over MARK_PAGE_ID", map[string]string{"MARK_PAGE_ID": other.ID},
 			[]string{"-c", empty, "export", "-b", server.URL, "--space", "DOCS", "--title", "Exported page"}},
+		{"--page-id on the host of MARK_PAGE_URL", map[string]string{"MARK_PAGE_URL": address + other.ID},
+			[]string{"-c", empty, "export", "--page-id", page.ID}},
+		{"--space and --title on the host of url in the file", nil,
+			[]string{"-c", withURL, "export", "--space", "DOCS", "--title", "Exported page"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			noDefaultConfig(t)

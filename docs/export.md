@@ -27,6 +27,7 @@ or `MARK_TITLE`, and a `page-id`, `url` or `title` in the configuration file,
 so a job that sets `MARK_PAGE_URL` for publishing can still export another
 page. `--space` on the command line sets aside a page id or URL from them too,
 since those ignore the space; a title from them is looked up in that space.
+A URL set aside still gives the base URL when none is set otherwise.
 `--url` understands `/spaces/KEY/pages/ID/...` and
 `/spaces/KEY/blog/.../ID/...` on Cloud, and `/display/KEY/Title` and
 `/pages/viewpage.action?pageId=ID` on Server and Data Center, and a short
