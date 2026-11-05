@@ -4,8 +4,8 @@ package renderer
 // syntax mark understands is published as. Its String is the macro's ac:name.
 //
 // Three syntaxes produce one -- a legacy "Info:" blockquote, a GitHub alert and
-// an MkDocs "!!!" admonition -- and each has its own vocabulary, looked up in
-// the per-syntax tables below. The tables do not agree on what a word means:
+// an MkDocs "!!!" admonition -- and each has its own vocabulary: the tables
+// below, and LegacyBlockQuoteClassifier. They do not agree on what a word means:
 // `!!! note` is the note macro, but `> [!NOTE]` is the info macro, and a GitHub
 // "warning" is Confluence's note where an MkDocs one is Confluence's warning.
 // That divergence is published behaviour, kept as it is; unifying it would
