@@ -139,12 +139,61 @@ You can now use GitHub-style alert syntax in your markdown, and Mark will automa
 > This creates a red warning box - perfect for dangerous situations!
 ```
 
+### Colon Markers
+
+A blockquote whose first line opens with one of these words and a colon is
+published as the macro beside it:
+
+| Marker | Confluence |
+| --- | --- |
+| `Info:`, `Infos:` | Info (blue) |
+| `Note:`, `Notes:` | Info (blue), as `[!NOTE]` is |
+| `Tip:`, `Tips:` | Tip (green) |
+| `Warn:`, `Warns:`, `Warning:`, `Warnings:` | Warning (red) |
+
+```markdown
+> Note: the build runs nightly.
+
+> **Warning:** this deletes data.
+
+> **Tip**: use the cache.
+```
+
+The rule, exactly:
+
+* The word is matched in any case: `NOTE:` and `note:` are markers too.
+* The colon follows the word directly, and a space, a tab or the end of the
+  line follows the colon. `Note : text` and `Note:text` are not markers.
+* Emphasis around the word does not matter: `**Note:**`, `**Note**:` and
+  `*Note:*` are all markers. Code does: `` `Note:` `` is not.
+* The marker opens the first line of the blockquote's first paragraph or
+  heading. A marker on a later line, or in a list inside the quote, does not
+  count.
+* A first line that is an HTML comment holding only the word, with or without
+  the colon, is a marker too, and keeps the word off the page:
+  `> <!-- Info -->`.
+
+Anything else stays a quotation: `> Note that this is a quote.` and
+`> Tips are welcome.` are published as `<blockquote>`. The marker stays in the
+text of the macro; only GitHub's `[!NOTE]` is taken out.
+
+#### Upgrading from v16
+
+Before v17 the colon was optional: any blockquote whose first word was one of
+these words, `Note that` and `Tips are` included, became a macro, and a bare
+`> **Warn**` was a marker. Add the colon to each quote that is meant as an
+admonition (`> **Warn:**`), or write it as a GitHub alert.
+
+`Note:` was Confluence's yellow note macro; it is now the blue info macro, the
+one `[!NOTE]` gives. For the yellow box, write `> [!WARNING]`, or `!!! note`
+with the `mkdocsadmonitions` feature.
+
 ### Technical Details
 
-Block Quotes are converted to Confluence Info/Warn/Note box when the following conditions are met:
+Block Quotes are converted to Confluence Info/Tip/Note/Warning boxes when the following conditions are met:
 
 1. The BlockQuote is on the root level of the document (not nested)
-2. The first line of the BlockQuote contains one of the following patterns `Info/Warn/Note` or [GitHub MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
+2. The first line of the BlockQuote opens with a [colon marker](#colon-markers) or a [GitHub MD Alerts style](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) marker `[!NOTE]/[!TIP]/[!IMPORTANT]/[!WARNING]/[!CAUTION]`
 
 | GitHub Alerts | Confluence | Description |
 | --------------- | ------------ | ------------- |

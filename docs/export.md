@@ -224,7 +224,9 @@ it was: other macros (a table of contents, Jira, status, anchors), user
 mentions, emoticons, dates, links to pages in other spaces, tables with merged
 cells or with lists or macros in them, headings and cells with an alignment or
 a colour, `<pre>` blocks, and HTML that Markdown has no syntax for (`<u>`,
-`<sub>`, a coloured `<span>`). An info, tip, note or warning macro
+`<sub>`, a coloured `<span>`), and a blockquote that opens with a
+[colon marker](formatting.md#colon-markers), which would come back as a macro.
+An info, tip, note or warning macro
 without mark's title -- the way Confluence's editor inserts them -- keeps its
 tags, with its body in Markdown between them, since as an alert it would come
 back with a title it did not have. A newline inside kept storage format is

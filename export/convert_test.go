@@ -104,6 +104,20 @@ func TestConvertAlertNeedsItsOwnTitle(t *testing.T) {
 		"<ac:rich-text-body>\n\nHot.\n\n</ac:rich-text-body></ac:structured-macro>\n", convert(t, custom))
 }
 
+func TestConvertBlockquoteMarkdownOnlyWithoutAMarker(t *testing.T) {
+	// Prose that opens with an admonition word but no colon publishes back as
+	// a quote, so it is written as one.
+	assert.Equal(t, "> Note that this is a quote.\n", convert(t, "<blockquote><p>Note that this is a quote.</p></blockquote>"))
+
+	// With the colon, mark would publish a macro, so the quote stays HTML.
+	for _, storage := range []string{
+		"<blockquote><p>Note: a marker</p></blockquote>",
+		"<blockquote><p><strong>Tip</strong>: a marker</p></blockquote>",
+	} {
+		assert.Equal(t, storage+"\n", convert(t, storage))
+	}
+}
+
 func TestConvertDiagramCodeStaysAMacro(t *testing.T) {
 	// A mermaid fence would be drawn on publish, not shown as code.
 	storage := `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">mermaid</ac:parameter>` +

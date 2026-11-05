@@ -83,7 +83,7 @@ The transformer works by:
 
 ## Backward Compatibility
 
-- Legacy `info:`, `tip:`, `warning:` syntax continues to work
+- The colon syntax (`> Info:`, `> Tip:`, `> Warning:`) continues to work
 - Regular blockquotes remain unchanged
 - Full compatibility with existing Mark features
 
@@ -93,7 +93,7 @@ The transformer is thoroughly tested with:
 - All GitHub Alert types (`[!NOTE]`, `[!TIP]`, `[!WARNING]`, `[!CAUTION]`, `[!IMPORTANT]`)
 - Nested markdown formatting (bold, italic, lists, etc.)
 - Mixed content scenarios
-- Backward compatibility with legacy syntax
+- The colon syntax
 - Edge cases and error conditions
 
 See `../markdown/gh_alerts_test.go` for comprehensive test coverage.
