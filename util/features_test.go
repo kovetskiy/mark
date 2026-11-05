@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	markdown "github.com/kovetskiy/mark/v17/markdown"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -121,7 +122,7 @@ func TestFeaturesNoneStandsAlone(t *testing.T) {
 func TestFeaturesKeepsTheDefaultsWhenNotGiven(t *testing.T) {
 	features, errText := checkFeatures(t, nil)
 	require.Empty(t, errText)
-	assert.Equal(t, defaultFeatures, features)
+	assert.Equal(t, markdown.DefaultFeatures(), features)
 }
 
 // TestFeaturesRejectsAnEmptyValue: each way of writing an empty list was

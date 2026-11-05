@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	markdown "github.com/kovetskiy/mark/v17/markdown"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -310,7 +311,7 @@ func TestFeaturesRejectsAnUntrimmedName(t *testing.T) {
 // TestFeaturesAcceptsEveryKnownName guards the list against drifting from the
 // names the code actually looks for.
 func TestFeaturesAcceptsEveryKnownName(t *testing.T) {
-	for _, feature := range KnownFeatures {
+	for _, feature := range markdown.KnownFeatures() {
 		t.Run(feature, func(t *testing.T) {
 			cmd := &cli.Command{Flags: publishFlags(newConfigFile(new(string)))}
 			_, err := checkPublishFlags(mustParseArgs(t, cmd, "mark", "--features", feature))

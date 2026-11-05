@@ -114,15 +114,47 @@ var markdownFeatures = map[string]markdownFeature{
 	},
 }
 
-// defaultFeatures is the features CompileMarkdown supports, in the order it
-// registers them.
-var defaultFeatures = []string{"date", "emoji", "mkdocsadmonitions", "mention", "math", "inline-link-card"}
+// knownFeatures are the feature names mark understands: the goldmark ones in
+// markdownFeatures, and those read where they take effect (d2, mermaid and
+// plantuml by the fenced code renderer, frontmatter by the metadata reader).
+var knownFeatures = []string{
+	"d2",
+	"date",
+	"emoji",
+	"frontmatter",
+	"inline-link-card",
+	"math",
+	"mention",
+	"mermaid",
+	"mkdocsadmonitions",
+	"plantuml",
+}
+
+// defaultFeatures are the features mark's command line enables when
+// --features is not given.
+var defaultFeatures = []string{"mermaid", "mention"}
+
+// KnownFeatures returns the feature names mark understands, sorted. A name
+// not on it is never switched on, and nothing is said about it.
+func KnownFeatures() []string {
+	return slices.Clone(knownFeatures)
+}
+
+// DefaultFeatures returns the features mark's command line enables when
+// --features is not given.
+func DefaultFeatures() []string {
+	return slices.Clone(defaultFeatures)
+}
+
+// featureOrder is the features in markdownFeatures, in the order
+// CompileMarkdown registers them.
+var featureOrder = []string{"date", "emoji", "mkdocsadmonitions", "mention", "math", "inline-link-card"}
 
 // featureParserOptions is the parser options of the features that enabled
 // switches on.
 func featureParserOptions(enabled []string, cfg *parser.Config) []parser.Option {
 	var opts []parser.Option
-	for _, name := range defaultFeatures {
+	for _, name := range featureOrder {
 		if f := markdownFeatures[name]; f.parserOptions != nil && slices.Contains(enabled, name) {
 			opts = append(opts, f.parserOptions(cfg)...)
 		}
@@ -134,7 +166,7 @@ func featureParserOptions(enabled []string, cfg *parser.Config) []parser.Option 
 // featureRenderers is the renderers of the features that enabled switches on.
 func featureRenderers(enabled []string, deps featureDeps) []html.Extension {
 	var renderers []html.Extension
-	for _, name := range defaultFeatures {
+	for _, name := range featureOrder {
 		if f := markdownFeatures[name]; f.renderer != nil && slices.Contains(enabled, name) {
 			renderers = append(renderers, f.renderer(deps))
 		}
