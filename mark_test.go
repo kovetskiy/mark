@@ -457,10 +457,14 @@ func TestPublisherRefusesWhatRunRefuses(t *testing.T) {
 		"an unknown mermaid engine": func(c *Config) { c.Rendering.MermaidEngine = "graphviz" },
 		"an unknown mermaid output": func(c *Config) { c.Rendering.MermaidOutput = "jpeg" },
 		"a bundle inside a png":     func(c *Config) { c.Rendering.MermaidBundle = true },
-		"an unknown d2 output":      func(c *Config) { c.Rendering.D2Output = "jpeg" },
-		"an unknown math output":    func(c *Config) { c.Rendering.MathOutput = "jpeg" },
-		"an unknown appearance":     func(c *Config) { c.Page.ContentAppearance = "wide" },
-		"a fixed appearance":        func(c *Config) { c.Page.ContentAppearance = "fixed" },
+		"a bundle inside a macro": func(c *Config) {
+			c.Rendering.MermaidOutput = mermaid.OutputMacro
+			c.Rendering.MermaidBundle = true
+		},
+		"an unknown d2 output":   func(c *Config) { c.Rendering.D2Output = "jpeg" },
+		"an unknown math output": func(c *Config) { c.Rendering.MathOutput = "jpeg" },
+		"an unknown appearance":  func(c *Config) { c.Page.ContentAppearance = "wide" },
+		"a fixed appearance":     func(c *Config) { c.Page.ContentAppearance = "fixed" },
 		"a d2 scale of nothing": func(c *Config) {
 			c.Rendering.Features = []string{"d2"}
 			c.Rendering.D2Scale = math.NaN()

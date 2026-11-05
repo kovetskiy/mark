@@ -38,14 +38,17 @@ type DiagramConfig struct {
 	// "right", or "" for Confluence's default.
 	ImageAlign string
 
-	// MermaidOutput is the image a diagram is published as, PNG (the
-	// default) or SVG. MermaidScale multiplies the pixels of a PNG one and
-	// the size the page displays an SVG one at. MermaidBundle keeps the
-	// diagram's source inside the SVG it is published as, and applies to
-	// nothing else.
-	MermaidOutput imageformat.Format
-	MermaidScale  float64
-	MermaidBundle bool
+	// MermaidOutput is how a diagram is published: PNG (the default) or SVG
+	// drawn by mark, or Macro, where the source is published as the instance's
+	// own macro. MermaidScale multiplies the pixels of a PNG one and the size
+	// the page displays an SVG one at, and applies to neither with Macro.
+	// MermaidBundle keeps the diagram's source inside the SVG it is published
+	// as, and applies to nothing else. MermaidMacroName is the ac:name a
+	// diagram is published under with Macro.
+	MermaidOutput    mermaid.Output
+	MermaidScale     float64
+	MermaidBundle    bool
+	MermaidMacroName string
 
 	// D2Output is the image a diagram is published as, PNG (the default)
 	// or SVG. D2Scale multiplies the pixels of a PNG one and the size the
@@ -77,6 +80,10 @@ type ConfluenceFencedCodeBlockRenderer struct {
 // ConfluenceFencedCodeBlockRenderer. ctx bounds the diagrams it draws: goldmark
 // renders without a context, and a renderer lives for one document.
 func NewConfluenceFencedCodeBlockRenderer(ctx context.Context, stdlib *stdlib.Lib, attachments attachment.Attacher, cfg DiagramConfig, path string, opts ...html.Option) html.Extension {
+	// A DiagramConfig is consumed here, so the macro name is normalised here for
+	// every caller -- the exported extensions and a direct renderer alike.
+	cfg.MermaidMacroName = mermaid.MacroNameOrDefault(cfg.MermaidMacroName)
+
 	r := &ConfluenceFencedCodeBlockRenderer{
 		ctx:         ctx,
 		Stdlib:      stdlib,
@@ -218,9 +225,17 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "mermaid" && slices.Contains(r.Diagrams.Features, "mermaid") {
+		if !r.Diagrams.MermaidOutput.Draws() {
+			if err := r.renderPlainTextMacro(writer, r.Diagrams.MermaidMacroName, lval); err != nil {
+				return ast.WalkStop, err
+			}
+
+			return ast.WalkContinue, nil
+		}
+
 		// Render refuses a format it does not know, as the d2 branch does.
 		att, err := r.Diagrams.Mermaid.Render(orBackground(r.ctx), title, lval, mermaid.Options{
-			Output: r.Diagrams.MermaidOutput,
+			Output: imageformat.Format(r.Diagrams.MermaidOutput),
 			Scale:  r.Diagrams.MermaidScale,
 			Bundle: r.Diagrams.MermaidBundle,
 		})
@@ -272,17 +287,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "plantuml" && slices.Contains(r.Diagrams.Features, "plantuml") {
-		err := r.Stdlib.Templates.ExecuteTemplate(
-			writer,
-			"ac:plantuml",
-			struct {
-				Text string
-			}{
-				strings.TrimSuffix(string(lval), "\n"),
-			},
-		)
-
-		if err != nil {
+		if err := r.renderPlainTextMacro(writer, "plantuml", lval); err != nil {
 			return ast.WalkStop, err
 		}
 
@@ -315,4 +320,21 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	}
 
 	return ast.WalkContinue, nil
+}
+
+// renderPlainTextMacro writes lval as the plain-text body of the Confluence
+// macro called name, for a diagram the instance draws itself (plantuml, or
+// mermaid with OutputMacro).
+func (r *ConfluenceFencedCodeBlockRenderer) renderPlainTextMacro(writer util.BufWriter, name string, lval []byte) error {
+	return r.Stdlib.Templates.ExecuteTemplate(
+		writer,
+		"ac:plain-text-macro",
+		struct {
+			Name string
+			Text string
+		}{
+			name,
+			strings.TrimSuffix(string(lval), "\n"),
+		},
+	)
 }
