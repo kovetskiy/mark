@@ -68,7 +68,7 @@ func (c *configFile) check() error {
 
 // renamed maps a removed flag, which is also its configuration key, to the
 // one that replaced it. Too far apart to be suggested as a typo.
-var renamed = map[string]string{"target-url": "url"}
+var renamed = map[string]string{"target-url": "url", "math-format": "math-output"}
 
 // unknownKeys refuses every key of the file that no command's flag reads, each
 // with the key it is a typo of when there is one. One file serves every

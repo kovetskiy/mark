@@ -615,14 +615,14 @@ func TestMathFormatIsGone(t *testing.T) {
 		config := writeConfig(t, t.TempDir(), "mark.toml", "")
 		_, _, err := dispatch(t, "publish", "--config", config, "--files", "a.md", "--math-format", "svg")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "flag provided but not defined: -math-format")
+		assert.Contains(t, err.Error(), "flag provided but not defined: -math-format: it is --math-output now")
 	})
 
 	t.Run("configuration file", func(t *testing.T) {
 		config := writeConfig(t, t.TempDir(), "mark.toml", "math-format = \"svg\"\n")
 		_, _, err := dispatch(t, "publish", "--config", config, "--files", "a.md")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), `unknown key "math-format"`)
+		assert.Contains(t, err.Error(), `"math-format" (it is "math-output" now)`)
 	})
 }
 
