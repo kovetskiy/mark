@@ -136,11 +136,13 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 		return attachment.Attachment{}, chrome.ErrNoBrowser
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
-	ctx = d2log.WithDefault(ctx)
+	// The layout's own budget: the browser times its capture itself, so the
+	// capture is given the caller's context rather than what is left of this.
+	layoutCtx, cancel := context.WithTimeout(ctx, renderTimeout)
+	layoutCtx = d2log.WithDefault(layoutCtx)
 	defer cancel()
 
-	out, _, _, err := renderSVG(ctx, d2Diagram)
+	out, _, _, err := renderSVG(layoutCtx, d2Diagram)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}

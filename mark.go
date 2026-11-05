@@ -1472,8 +1472,6 @@ func (r *publishRun) resolveRestrictions(ctx context.Context, doc *document) err
 	return nil
 }
 
-// previewLocation finds, without changing anything, the page a dry run's
-// document would publish to.
 // ancestryOptions are the run's settings for resolving a page's ancestry.
 // DryRun stays unset: PreviewPage is a dry run whatever it is given.
 func (r *publishRun) ancestryOptions() page.AncestryOptions {
@@ -1484,6 +1482,8 @@ func (r *publishRun) ancestryOptions() page.AncestryOptions {
 	}
 }
 
+// previewLocation finds, without changing anything, the page a dry run's
+// document would publish to.
 func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePreview, error) {
 	var found pagePreview
 	meta, file := doc.meta, doc.file

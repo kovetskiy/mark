@@ -147,39 +147,20 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	lval := slices.Clip(nodeFencedCodeBlock.Value.Bytes(source))
 
 	if lang == "d2" && slices.Contains(r.Diagrams.Features, "d2") {
-		var (
-			attachment attachment.Attachment
-			err        error
-		)
-
-		switch r.Diagrams.D2Output {
-		case "svg", "png", "":
-			// The document's own path, empty and all: a diagram that came from
-			// nowhere on disk has nothing for a relative reference to be
-			// relative to, and d2 resolves one against the working directory
-			// rather than refusing it. d2.Render reads an empty path and d2's
-			// own "-" alike, so neither reaches the bundler.
-			attachment, err = d2.Render(renderContext(), title, lval, d2.Options{
-				Format:       r.Diagrams.D2Output,
-				Scale:        r.Diagrams.D2Scale,
-				Browser:      r.Diagrams.Browser,
-				InputPath:    r.Path,
-				BundleRemote: r.Diagrams.D2BundleRemote,
-			})
-
-		default:
-			// Run checks this, but CompileMarkdown takes its options
-			// straight from a caller and never passes through it. Publishing a
-			// PNG for a format nobody asked for is the one answer that says
-			// nothing, so it is refused here too.
-			line, col := GetLineCol(source, node.Pos())
-
-			return ast.WalkStop, fmt.Errorf(
-				"line %d, col %d: unknown d2-output %q: expected png or svg",
-				line, col, r.Diagrams.D2Output,
-			)
-		}
-
+		// The document's own path, empty and all: a diagram that came from
+		// nowhere on disk has nothing for a relative reference to be relative
+		// to, and d2 resolves one against the working directory rather than
+		// refusing it. d2.Render reads an empty path and d2's own "-" alike, so
+		// neither reaches the bundler. Render also refuses a format it does not
+		// know, which Run checks but options handed straight to
+		// CompileMarkdown never pass through.
+		attachment, err := d2.Render(renderContext(), title, lval, d2.Options{
+			Format:       r.Diagrams.D2Output,
+			Scale:        r.Diagrams.D2Scale,
+			Browser:      r.Diagrams.Browser,
+			InputPath:    r.Path,
+			BundleRemote: r.Diagrams.D2BundleRemote,
+		})
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: d2 rendering failed: %w", line, col, err)
@@ -228,33 +209,12 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		}
 
 	} else if lang == "mermaid" && slices.Contains(r.Diagrams.Features, "mermaid") {
-		var (
-			att attachment.Attachment
-			err error
-		)
-
-		switch r.Diagrams.MermaidOutput {
-		case "svg", "png", "":
-			att, err = r.Diagrams.Mermaid.Render(renderContext(), title, lval, mermaid.Options{
-				Format: r.Diagrams.MermaidOutput,
-				Scale:  r.Diagrams.MermaidScale,
-				Bundle: r.Diagrams.MermaidBundle,
-			})
-
-		default:
-			// Run checks this, but CompileMarkdown takes its options
-			// straight from a caller and never passes through it. Publishing a
-			// PNG for a format nobody asked for is the one answer that says
-			// nothing, so it is refused here too -- the same backstop the d2
-			// branch above keeps.
-			line, col := GetLineCol(source, node.Pos())
-
-			return ast.WalkStop, fmt.Errorf(
-				"line %d, col %d: unknown mermaid-output %q: expected png or svg",
-				line, col, r.Diagrams.MermaidOutput,
-			)
-		}
-
+		// Render refuses a format it does not know, as the d2 branch does.
+		att, err := r.Diagrams.Mermaid.Render(renderContext(), title, lval, mermaid.Options{
+			Format: r.Diagrams.MermaidOutput,
+			Scale:  r.Diagrams.MermaidScale,
+			Bundle: r.Diagrams.MermaidBundle,
+		})
 		if err != nil {
 			line, col := GetLineCol(source, node.Pos())
 			return ast.WalkStop, fmt.Errorf("line %d, col %d: mermaid rendering failed: %w", line, col, err)
