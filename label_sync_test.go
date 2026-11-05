@@ -27,20 +27,20 @@ func labelFixture(t *testing.T, appendLabels bool, labels string) (*confluencete
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n"+labels+"\nBody.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Update: UpdateConfig{
+				AppendLabels: appendLabels,
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Update: UpdateConfig{
-			AppendLabels: appendLabels,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))

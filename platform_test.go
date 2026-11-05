@@ -86,17 +86,17 @@ func TestPublishThroughTheGateway(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  baseURL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -123,7 +123,7 @@ func TestPublishThroughTheGateway(t *testing.T) {
 // itself Cloud, a file with folders asks the server which platform it is. A
 // cancellation that cuts that question short is not "not Cloud": failing the
 // file saying folders need Cloud would be wrong, and not an error errors.Is
-// recognises as the cancellation ProcessFile promises.
+// recognises as the cancellation Publish promises.
 func TestCancellingTheCloudProbeIsNotAFolderRefusal(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
@@ -152,7 +152,7 @@ func TestCancellingTheCloudProbeIsNotAFolderRefusal(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := ProcessFile(ctx, file, api, publishConfig(server.URL, file))
+	_, err := publishOne(ctx, file, api, publishConfig(server.URL, file).PublishConfig)
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.NotContains(t, err.Error(), "only available on Confluence Cloud")

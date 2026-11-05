@@ -35,22 +35,22 @@ func orphanFixture(t *testing.T, onOrphan, under string) (*confluencetest.Server
 	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages:  true,
 			OnOrphan:    onOrphan,
 			OrphanUnder: under,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -103,6 +103,9 @@ func TestOnOrphanRequiresTrackPages(t *testing.T) {
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
@@ -112,9 +115,6 @@ func TestOnOrphanRequiresTrackPages(t *testing.T) {
 		Tracking: TrackingConfig{
 			OnOrphan: "delete",
 		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--track-pages")
@@ -122,6 +122,9 @@ func TestOnOrphanRequiresTrackPages(t *testing.T) {
 
 func TestOnOrphanRejectsAnUnknownAction(t *testing.T) {
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: "none",
 		Connection: ConnectionConfig{
 			BaseURL:  "http://127.0.0.1:1",
@@ -131,9 +134,6 @@ func TestOnOrphanRejectsAnUnknownAction(t *testing.T) {
 		Tracking: TrackingConfig{
 			OnOrphan:   "incinerate",
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -153,21 +153,21 @@ func TestOnOrphanDryRunActsOnNothing(t *testing.T) {
 	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 			OnOrphan:   "delete",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -209,21 +209,21 @@ func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
 	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 			OnOrphan:   "delete",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -262,21 +262,21 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 	writeFile(t, dir, "two.md", header+"<!-- Title: Two -->\n\nTwo.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 			OnOrphan:   "delete",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -290,7 +290,7 @@ func TestOnOrphanLeavesEverythingWhenNothingPublished(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "one.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "two.md")))
 
-	config.Mode.CI = true // so that no files matched is not itself an error
+	config.CI = true // so that no files matched is not itself an error
 	require.NoError(t, Run(context.Background(), config))
 
 	assert.False(t, server.Page(one.ID).Trashed,
@@ -314,22 +314,22 @@ func TestOrphanUnderLimitsScope(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: Keep -->\n\nKeep.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages:  true,
 			OnOrphan:    "delete",
 			OrphanUnder: "Inside",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -372,22 +372,22 @@ func TestOrphanUnderScopesReportingToo(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: Keep -->\n\nKeep.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages:  true,
 			OnOrphan:    "report",
 			OrphanUnder: "Inside",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -429,20 +429,20 @@ func TestOrphanUnderWithoutScopeIsUnchanged(t *testing.T) {
 	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -476,21 +476,21 @@ func TestOnOrphanCompileOnlyActsOnNothing(t *testing.T) {
 	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 			OnOrphan:   "delete",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -527,21 +527,21 @@ func TestOnOrphanLeavesAPageWithChildFolders(t *testing.T) {
 	writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 			OnOrphan:   "delete",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -594,22 +594,22 @@ func TestOrphanScopeIsCheckedOnce(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Inside -->\n<!-- Title: Keep -->\n\nKeep.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages:  true,
 			OnOrphan:    "delete",
 			OrphanUnder: "Inside",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -785,7 +785,7 @@ func TestTrackingSuppressesOrphanReportOnFailedRuns(t *testing.T) {
 	defer func() { log.Logger = restore }()
 
 	config := trackingConfig(server, filepath.Join(dir, "*.md"))
-	config.Mode.ContinueOnError = true
+	config.ContinueOnError = true
 	require.Error(t, Run(context.Background(), config))
 
 	assert.NotContains(t, logged.String(), "had no matching source file",

@@ -41,22 +41,22 @@ func runWithFormat(t *testing.T, format string, files map[string]string) (string
 
 	var out strings.Builder
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Report: ReportConfig{
 			OutputFormat: format,
-			Output:       &out,
 		},
-		Mode: ModeConfig{
-			ContinueOnError: true,
-		},
+		ContinueOnError: true,
 	})
 
 	return out.String(), err
@@ -151,14 +151,17 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 
 	var first strings.Builder
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: &first,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
 		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
@@ -166,7 +169,6 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 		},
 		Report: ReportConfig{
 			OutputFormat: "github",
-			Output:       &first,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -174,7 +176,7 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 
 	var second strings.Builder
-	config.Report.Output = &second
+	config.Output = &second
 	require.NoError(t, Run(context.Background(), config))
 
 	assert.Contains(t, second.String(), "::warning")
@@ -192,14 +194,17 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 	writeFile(t, dir, "gone.md", outHeader+"<!-- Title: Gone -->\n\nGone.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
 		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
@@ -207,7 +212,6 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 		},
 		Report: ReportConfig{
 			OutputFormat: format,
-			Output:       io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -220,7 +224,7 @@ func orphanReport(t *testing.T, onOrphan, format string) (string, string) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
 
 	var out strings.Builder
-	config.Report.Output = &out
+	config.Output = &out
 	require.NoError(t, Run(context.Background(), config))
 
 	return out.String(), gone.ID
@@ -282,7 +286,7 @@ func reportedPages(t *testing.T, config Config) (map[string][]report.Page, error
 
 	var out strings.Builder
 	config.Report.OutputFormat = report.FormatJSON
-	config.Report.Output = &out
+	config.Output = &out
 	runErr := Run(context.Background(), config)
 
 	var parsed report.Report
@@ -333,18 +337,18 @@ func TestReportDoesNotCallAFailedUpdatePublished(t *testing.T) {
 	})
 
 	byFile, err := reportedPages(t, Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Mode: ModeConfig{
-			ContinueOnError: true,
-		},
+		ContinueOnError: true,
 	})
 	require.Error(t, err)
 
@@ -378,14 +382,16 @@ func TestReportRecordsAFailureInTheSecondPass(t *testing.T) {
 	})
 
 	byFile, err := reportedPages(t, Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
 		},
 	})
 	require.Error(t, err)
@@ -413,7 +419,7 @@ func TestNoOverwriteDoesNotPrintTheURLOfAPageItLeftAlone(t *testing.T) {
 
 	var out bytes.Buffer
 	config.Report.OutputFormat = report.FormatURL
-	config.Report.Output = &out
+	config.Output = &out
 
 	require.NoError(t, Run(context.Background(), config))
 
@@ -430,7 +436,7 @@ func TestNoOverwriteStillReportsTheSkip(t *testing.T) {
 
 	var out bytes.Buffer
 	config.Report.OutputFormat = report.FormatJSON
-	config.Report.Output = &out
+	config.Output = &out
 
 	require.NoError(t, Run(context.Background(), config))
 
@@ -459,21 +465,23 @@ func TestReportIsWrittenWhenTheRunFails(t *testing.T) {
 	var out bytes.Buffer
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"confluence"},
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"confluence"},
-		},
 		Report: ReportConfig{
 			OutputFormat: report.FormatJSON,
-			Output:       &out,
 		},
 	})
 
@@ -502,20 +510,20 @@ func TestUnresolvedLinkNamesTheDocument(t *testing.T) {
 	writeFile(t, dir, "guilty.md", header+"<!-- Title: Guilty -->\n\nSee [it](ac:Nowhere).\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"confluence"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"confluence"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 
@@ -543,18 +551,20 @@ func TestReportWriteFailureFailsTheRun(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\nFine.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: failingWriter{},
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Report: ReportConfig{
 			OutputFormat: report.FormatJSON,
-			Output:       failingWriter{},
 		},
 	})
 
@@ -582,21 +592,23 @@ func TestReportWriteFailureDoesNotDisplaceTheRunsOwnError(t *testing.T) {
 	defer func() { log.Logger = restore }()
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"confluence"},
+			},
+			Output: failingWriter{},
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"confluence"},
-		},
 		Report: ReportConfig{
 			OutputFormat: report.FormatJSON,
-			Output:       failingWriter{},
 		},
 	})
 
@@ -621,18 +633,20 @@ func runReport(t *testing.T, format string, files map[string]string, adjust func
 
 	var out bytes.Buffer
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Report: ReportConfig{
 			OutputFormat: format,
-			Output:       &out,
 		},
 	}
 	if adjust != nil {
@@ -705,7 +719,7 @@ func TestReportDoesNotRepeatAFailedDocument(t *testing.T) {
 
 	for _, continueOnError := range []bool{false, true} {
 		out, err := runReport(t, report.FormatJSON, files, func(config *Config) {
-			config.Mode.ContinueOnError = continueOnError
+			config.ContinueOnError = continueOnError
 		})
 		require.Error(t, err)
 
@@ -751,21 +765,23 @@ func TestReportCarriesAFailedManifestSave(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			var out bytes.Buffer
 			err := Run(context.Background(), Config{
+				PublishConfig: PublishConfig{
+					Rendering: RenderingConfig{
+						Features: []string{"mention"},
+					},
+					Output: &out,
+				},
 				Files: filepath.Join(dir, "*.md"),
 				Connection: ConnectionConfig{
 					BaseURL:  server.URL,
 					Username: "user",
 					Password: "token",
 				},
-				Rendering: RenderingConfig{
-					Features: []string{"mention"},
-				},
 				Tracking: TrackingConfig{
 					TrackPages: true,
 				},
 				Report: ReportConfig{
 					OutputFormat: format,
-					Output:       &out,
 				},
 			})
 			require.Error(t, err)
@@ -802,24 +818,26 @@ func TestReportCarriesAFailedSaveBesideAnUnresolvedLink(t *testing.T) {
 
 	var out bytes.Buffer
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"confluence"},
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"confluence"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 		},
 		Report: ReportConfig{
 			OutputFormat: report.FormatJSON,
-			Output:       &out,
 		},
 	})
 	require.Error(t, err)
@@ -845,21 +863,23 @@ func TestReportCarriesASaveThatFailedOnTheWayOut(t *testing.T) {
 
 	var out bytes.Buffer
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
 		},
 		Report: ReportConfig{
 			OutputFormat: report.FormatJSON,
-			Output:       &out,
 		},
 	})
 	require.Error(t, err)

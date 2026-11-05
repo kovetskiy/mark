@@ -45,7 +45,7 @@ type ExportConfig struct {
 	Generator string
 
 	// Stdout receives the Markdown when Output names no file. Nil discards
-	// it, as Config.Report.Output does for a library caller that sets nothing.
+	// it, as PublishConfig.Output does for a library caller that sets nothing.
 	Stdout io.Writer
 }
 

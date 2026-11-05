@@ -11,7 +11,7 @@ func TestRunTitlesDeclaredBy(t *testing.T) {
 	one := writeFile(t, dir, "one.md", parentDoc("Shared"))
 	two := writeFile(t, dir, "two.md", parentDoc("shared"))
 	other := writeFile(t, dir, "other.md", parentDoc("Other"))
-	titles := &runTitles{config: Config{}, files: []string{one, two, other}}
+	titles := &runTitles{config: PublishConfig{}, files: []string{one, two, other}}
 
 	file, ok := titles.declaredBy("DOCS", "page", "Other")
 	assert.True(t, ok)

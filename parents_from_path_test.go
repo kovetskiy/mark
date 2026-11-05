@@ -49,22 +49,20 @@ func runHierarchy(t *testing.T, dir string, extra func(*Config)) *confluence.API
 
 	server := hierarchyServer(t)
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 	}
 	if extra != nil {
 		extra(&config)
@@ -182,7 +180,7 @@ func TestWithoutTheFlagNothingChanges(t *testing.T) {
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.Page.ParentsFromPath = false })
+	api := runHierarchy(t, dir, func(c *Config) { c.ParentsFromPath = false })
 
 	assert.Equal(t, []string{"Home"}, ancestryOf(t, api, "Setup"),
 		"without the flag the path says nothing")
@@ -193,7 +191,7 @@ func TestRootIsTakenFromThePattern(t *testing.T) {
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	api := runHierarchy(t, dir, func(c *Config) { c.Page.ParentsFromPathRoot = "" })
+	api := runHierarchy(t, dir, func(c *Config) { c.ParentsFromPathRoot = "" })
 
 	assert.Equal(t, []string{"Home", "Guides"}, ancestryOf(t, api, "Setup"))
 }
@@ -212,22 +210,20 @@ func TestTitleCollisionIsRefused(t *testing.T) {
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: Overview -->\n\nSDK overview.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 	})
 
 	require.Error(t, err)
@@ -260,22 +256,20 @@ func TestSameTitleInDifferentSpacesIsFine(t *testing.T) {
 		"<!-- Space: OTHER -->\n<!-- Title: Overview -->\n\nTwo.\n")
 
 	assert.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 	}))
 }
 
@@ -290,25 +284,23 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 		Tracking: TrackingConfig{
 			TrackPages: true,
 			OnOrphan:   "delete",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -344,24 +336,22 @@ func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -394,20 +384,20 @@ func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 		space+"<!-- Title: Setup -->\n<!-- Parent: Guides -->\n\nSetup.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
 		Tracking: TrackingConfig{
 			TrackPages: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -522,22 +512,20 @@ func TestUnreadablePagesFileIsAnError(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), ".pages")
@@ -611,22 +599,20 @@ func TestTitleCollisionIgnoresCase(t *testing.T) {
 	writeAt(t, dir, "sdk/overview.md", space+"<!-- Title: overview -->\n\nTwo.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: dir,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already publishes")
@@ -640,22 +626,20 @@ func TestRootCoveringNothingIsRefused(t *testing.T) {
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Page: PageConfig{
-			ParentsFromPath:     true,
-			ParentsFromPathRoot: filepath.Join(dir, "elsewhere"),
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: filepath.Join(dir, "elsewhere"),
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "covers none of the files")

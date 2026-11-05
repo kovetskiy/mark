@@ -30,7 +30,7 @@ func previewChange(
 	relinked bool,
 	others []string,
 	file string,
-	config Config,
+	config PublishConfig,
 	meta *metadata.Meta,
 	std *stdlib.Lib,
 ) (string, string, error) {
@@ -144,7 +144,7 @@ func hasDrifted(
 // keeps: one edited in Confluence since mark last published it.
 func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *destination) (bool, error) {
 	meta, file, target := doc.meta, doc.file, dest.page
-	if !r.config.Update.NoOverwrite || dest.created || r.tracker == nil || meta == nil || target == nil {
+	if !r.noOverwrite || dest.created || r.tracker == nil || meta == nil || target == nil {
 		return false, nil
 	}
 

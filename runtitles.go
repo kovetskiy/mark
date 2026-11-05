@@ -11,7 +11,7 @@ import (
 // parent retitled in this run can be found before its own turn. Read lazily:
 // most runs never miss a parent.
 type runTitles struct {
-	config    Config
+	config    PublishConfig
 	files     []string
 	hierarchy *page.Hierarchy
 

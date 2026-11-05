@@ -32,20 +32,50 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Config holds all configuration options for running Mark, grouped by what
-// they are about.
+// Config is everything Run needs: the publish settings each document is
+// published with, and the settings about the run as a whole -- which files,
+// the connection, the page manifest and the run report -- that only Run, which
+// sees every file, can act on.
 type Config struct {
+	PublishConfig
+
 	// Files is the glob naming the documents to publish.
 	Files string
 
 	Connection ConnectionConfig
-	Mode       ModeConfig
-	Page       PageConfig
-	Update     UpdateConfig
-	Links      LinkConfig
-	Tracking   TrackingConfig
-	Rendering  RenderingConfig
-	Report     ReportConfig
+
+	// ParentsFromPath places each page under pages standing for the
+	// directories between ParentsFromPathRoot and its file, laid out from the
+	// whole file set.
+	ParentsFromPath     bool
+	ParentsFromPathRoot string
+
+	// ContinueOnError goes on to the next file after one fails, and fails the
+	// run at the end.
+	ContinueOnError bool
+	// CI makes a glob that matches no files a warning rather than an error.
+	CI bool
+
+	// Unwatch stops watching every page the run wrote, once it ends.
+	Unwatch bool
+
+	Tracking TrackingConfig
+	Report   ReportConfig
+}
+
+// PublishConfig is how each document is published: what Run and a Publisher
+// both act on, file by file.
+type PublishConfig struct {
+	Mode      ModeConfig
+	Page      PageConfig
+	Update    UpdateConfig
+	Links     LinkConfig
+	Rendering RenderingConfig
+
+	// Output is where a compile-only or dry run prints the compiled body, and
+	// where Run writes its report and page URLs. If nil, output is discarded;
+	// the CLI sets this to os.Stdout.
+	Output io.Writer
 }
 
 // ConnectionConfig is where Confluence is and who to be there.
@@ -61,12 +91,10 @@ func (c ConnectionConfig) api() *confluence.API {
 	return confluence.NewAPI(c.BaseURL, c.Username, c.Password, c.InsecureSkipTLSVerify)
 }
 
-// ModeConfig is how far a run goes and what it does about a failure.
+// ModeConfig is how far publishing goes.
 type ModeConfig struct {
-	CompileOnly     bool
-	DryRun          bool
-	ContinueOnError bool
-	CI              bool
+	CompileOnly bool
+	DryRun      bool
 }
 
 // readOnly reports whether a run in this mode must leave Confluence untouched. A compile
@@ -87,8 +115,6 @@ type PageConfig struct {
 	TitleFromH1              bool
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
-	ParentsFromPath          bool
-	ParentsFromPathRoot      string
 	ContentAppearance        string
 }
 
@@ -99,16 +125,8 @@ type UpdateConfig struct {
 	EditLock         bool
 	ChangesOnly      bool
 	PreserveComments bool
-	NoOverwrite      bool
 	AppendLabels     bool
 	GlobalProperties string
-
-	// Unwatch is read by Run, which unwatches as the run ends. A Publisher,
-	// and so ProcessFile, leaves it to the caller: set the API's Unwatch, and
-	// call its
-	// UnwatchWritten after the last file, with a context that is not done yet,
-	// or nothing is unwatched.
-	Unwatch bool
 }
 
 // LinkConfig is which links are checked, and whether one that does not
@@ -126,6 +144,10 @@ type TrackingConfig struct {
 	ManifestPrefix string
 	OnOrphan       string // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
 	OrphanUnder    string
+
+	// NoOverwrite leaves alone a page edited in Confluence since mark last
+	// published it, which only the manifest remembers.
+	NoOverwrite bool
 }
 
 // RenderingConfig is how a document becomes storage format: diagrams,
@@ -151,21 +173,17 @@ type RenderingConfig struct {
 	PageHeader string
 }
 
-// ReportConfig is what a run says about itself, and where.
+// ReportConfig is what a run says about itself. It is written to
+// PublishConfig.Output.
 type ReportConfig struct {
 	OutputFormat string
-
-	// Output is the writer used for result output (e.g. published page URLs,
-	// compiled HTML). If nil, output is discarded; the CLI sets this to
-	// os.Stdout.
-	Output io.Writer
 }
 
 // output returns the configured writer, falling back to io.Discard so that
 // library callers that do not set Output receive no implicit stdout writes.
-func (r ReportConfig) output() io.Writer {
-	if r.Output != nil {
-		return r.Output
+func (c PublishConfig) output() io.Writer {
+	if c.Output != nil {
+		return c.Output
 	}
 	return io.Discard
 }
@@ -202,7 +220,7 @@ func (r *resources) close() {
 
 // prepare checks the settings that decide how a document is rendered and what
 // is done about its links, for Run and NewPublisher alike.
-func (c Config) prepare() (page.LinkChecks, error) {
+func (c PublishConfig) prepare() (page.LinkChecks, error) {
 	if err := c.Rendering.validate(); err != nil {
 		return page.LinkChecks{}, err
 	}
@@ -374,7 +392,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	if config.Update.NoOverwrite && !config.Tracking.TrackPages {
+	if config.Tracking.NoOverwrite && !config.Tracking.TrackPages {
 		return fmt.Errorf("--no-overwrite requires --track-pages: " +
 			"the version mark last published is remembered in the page manifest")
 	}
@@ -399,8 +417,8 @@ func Run(ctx context.Context, config Config) (err error) {
 	// version, which overwrites whatever changed it. --no-overwrite exists to
 	// stop exactly that, so under it the retry goes ahead only when nobody else
 	// has written to the page.
-	api.KeepConcurrentEdits = config.Update.NoOverwrite
-	api.Unwatch = config.Update.Unwatch
+	api.KeepConcurrentEdits = config.Tracking.NoOverwrite
+	api.Unwatch = config.Unwatch
 	// Deferred, so that a run that fails partway still unwatches what it wrote.
 	// An interrupted run does not: it warns which pages stay watched.
 	defer api.UnwatchWritten(ctx)
@@ -412,7 +430,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	if len(files) == 0 {
 		msg := "no files matched"
-		if config.Mode.CI {
+		if config.CI {
 			log.Warn().Msg(msg)
 		} else {
 			return errors.New(msg)
@@ -432,7 +450,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	publisher, err := newPublisher(ctx, api, config, checks)
+	publisher, err := newPublisher(ctx, api, config.PublishConfig, checks)
 	if err != nil {
 		return err
 	}
@@ -466,7 +484,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			results.AddError(err.Error())
 		}
 
-		if writeErr := results.Write(config.Report.output(), outputFormat); writeErr != nil {
+		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
 			if err == nil {
 				err = fmt.Errorf("unable to write the run report: %w", writeErr)
 
@@ -573,13 +591,13 @@ func Run(ctx context.Context, config Config) (err error) {
 	// from the run's own files, so that every document's parents, a directory's
 	// title and the pages standing for directories all come from the one list.
 	var hierarchy *page.Hierarchy
-	if config.Page.ParentsFromPath {
+	if config.ParentsFromPath {
 		directoryTitles := page.DirectoryTitleReader(func(file string) ([]byte, error) {
 			_, markdown, err := readSource(file)
 			return markdown, err
 		}, config.Page.TitleFromH1, config.Rendering.enabled("frontmatter"))
 
-		hierarchy, err = page.BuildHierarchy(config.Page.ParentsFromPathRoot, config.Files, files, directoryTitles)
+		hierarchy, err = page.BuildHierarchy(config.ParentsFromPathRoot, config.Files, files, directoryTitles)
 		if err != nil {
 			return err
 		}
@@ -590,8 +608,10 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.deferrals = deferrals
 	pub.results = results
 	pub.hierarchy = hierarchy
+	pub.noOverwrite = config.Tracking.NoOverwrite
+	pub.outputFormat = outputFormat
 	// Read only once a parent is missing.
-	pub.titles = &runTitles{config: config, files: files, hierarchy: hierarchy}
+	pub.titles = &runTitles{config: config.PublishConfig, files: files, hierarchy: hierarchy}
 
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
@@ -615,7 +635,7 @@ func Run(ctx context.Context, config Config) (err error) {
 				File: file, Status: report.StatusFailed, Reason: err.Error(),
 			})
 
-			if stepPast(ctx, config.Mode, file, err) {
+			if stepPast(ctx, config.ContinueOnError, file, err) {
 				hasErrors = true
 				continue
 			}
@@ -651,7 +671,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			// not one this run put there, so it is not named among the URLs of
 			// the pages it did.
 			if outputFormat == report.FormatURL && status != report.StatusSkipped {
-				if _, err := fmt.Fprintln(config.Report.output(), url); err != nil {
+				if _, err := fmt.Fprintln(config.output(), url); err != nil {
 					return err
 				}
 			}
@@ -685,7 +705,7 @@ func Run(ctx context.Context, config Config) (err error) {
 					File: file, Status: report.StatusFailed, Reason: err.Error(),
 				})
 
-				if stepPast(ctx, config.Mode, file, err) {
+				if stepPast(ctx, config.ContinueOnError, file, err) {
 					hasErrors = true
 
 					continue
@@ -780,37 +800,14 @@ func Run(ctx context.Context, config Config) (err error) {
 //
 // A file that failed because the run was cancelled is not a file failure to
 // step past: the run stops, so that it reports the cancellation.
-func stepPast(ctx context.Context, mode ModeConfig, file string, err error) bool {
-	if !mode.ContinueOnError || ctx.Err() != nil {
+func stepPast(ctx context.Context, continueOnError bool, file string, err error) bool {
+	if !continueOnError || ctx.Err() != nil {
 		return false
 	}
 
 	log.Error().Err(err).Msgf("processing %s", file)
 
 	return true
-}
-
-// ProcessFile publishes one markdown file, as a Publisher made for it alone
-// would. Returns nil for the page info when compile-only or dry-run mode is
-// active.
-//
-// Every Confluence request made for the file carries ctx, so cancelling it
-// stops the file at its next request, or during the one in flight, with an
-// error errors.Is recognises as ctx.Err(); see Run for what that can leave
-// behind.
-//
-// Everything is started afresh and shut down again for the one file: the
-// browser, the mermaid engine and the folder cache. A caller publishing
-// several files should use a Publisher, which keeps them across files.
-// ProcessFile leaves out what a Publisher leaves out of a run; see Publisher.
-func ProcessFile(ctx context.Context, file string, api *confluence.API, config Config) (*confluence.PageInfo, error) {
-	publisher, err := NewPublisher(ctx, api, config)
-	if err != nil {
-		return nil, err
-	}
-	defer publisher.Close()
-
-	return publisher.Publish(ctx, file)
 }
 
 // Publisher publishes files one at a time for a library caller, keeping
@@ -825,12 +822,12 @@ func ProcessFile(ctx context.Context, file string, api *confluence.API, config C
 // new one for each batch rather than holding one open.
 //
 // A Publisher sees one file at a time, never the run's whole list, so it does
-// none of what Run does across files. These settings are accepted and do
-// nothing: ParentsFromPath, TrackPages and what depends on it (NoOverwrite,
-// OnOrphan, the manifest). A page's Position is not applied among its
-// siblings, a document linking to a page published after it is not published
-// again once that page exists, and no run report is written. Unwatch is left
-// to the caller; see UpdateConfig.
+// none of what Run does across files, and PublishConfig has no setting for any
+// of it: a page's Position is not applied among its siblings, a document
+// linking to a page published after it is not published again once that page
+// exists, no page manifest is kept, and no run report is written. To unwatch
+// the pages it wrote, set the API's Unwatch, and call its UnwatchWritten after
+// the last file, with a context that is not done yet.
 //
 // With Page.PageID set, every file would publish over the one page, so a
 // Publisher publishes only the first file that reaches the page, as Run
@@ -845,7 +842,8 @@ type Publisher struct {
 var errNoPublisher = errors.New("mark: Publisher is closed, or was not made by NewPublisher")
 
 // NewPublisher checks config as Run does and prepares to publish with api.
-func NewPublisher(ctx context.Context, api *confluence.API, config Config) (*Publisher, error) {
+// An edit lock leaves the page editable by the user api authenticates as.
+func NewPublisher(ctx context.Context, api *confluence.API, config PublishConfig) (*Publisher, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -861,7 +859,7 @@ func NewPublisher(ctx context.Context, api *confluence.API, config Config) (*Pub
 // newPublisher builds what Run and NewPublisher both publish with, from
 // a config prepare has passed, closing anything it started if that fails.
 func newPublisher(
-	ctx context.Context, api *confluence.API, config Config, checks page.LinkChecks,
+	ctx context.Context, api *confluence.API, config PublishConfig, checks page.LinkChecks,
 ) (*Publisher, error) {
 	res, err := newResources(config.Rendering.MermaidEngine)
 	if err != nil {
@@ -930,7 +928,7 @@ func (p *Publisher) Close() {
 // the files: the templates, the global properties and the page header. It also
 // settles which platform api is, before anything is published.
 func newPublishRun(
-	ctx context.Context, api *confluence.API, config Config, res *resources, checks page.LinkChecks,
+	ctx context.Context, api *confluence.API, config PublishConfig, res *resources, checks page.LinkChecks,
 ) (*publishRun, error) {
 	// Building the templates cannot reach the network: the "user" template
 	// func is only invoked during rendering, and then under the context of the
@@ -968,6 +966,7 @@ func newPublishRun(
 		pageHeader:       pageHeader,
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
+		outputFormat:     report.FormatURL,
 	}, nil
 }
 
@@ -1039,7 +1038,7 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 // it publishes under, which with a path hierarchy are partly the path's to say.
 // The run's index of titles reads documents through it too, so that the title
 // a child looks for and the title its parent publishes cannot disagree.
-func documentMeta(config Config, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
+func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
 	meta, markdown, err := metadata.ExtractMeta(markdown, metadata.ExtractOptions{
 		Filename:          file,
 		Space:             config.Page.Space,
@@ -1105,7 +1104,7 @@ func documentMeta(config Config, file string, markdown []byte, hierarchy *page.H
 // checked where it is used.
 type publishRun struct {
 	api              *confluence.API
-	config           Config
+	config           PublishConfig
 	res              *resources
 	folders          *page.FolderCache
 	users            *runUsers
@@ -1119,6 +1118,12 @@ type publishRun struct {
 	results          *report.Report
 	hierarchy        *page.Hierarchy
 	titles           *runTitles
+
+	// noOverwrite is Tracking.NoOverwrite, which needs tracker.
+	noOverwrite bool
+	// outputFormat is the run report's format, which decides whether a
+	// --changes-only dry run prints the bodies it compiles.
+	outputFormat string
 
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
@@ -1553,7 +1558,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	compare := config.Mode.DryRun && !config.Mode.CompileOnly && config.Update.ChangesOnly
 
 	status, reason := "", ""
-	if compare && config.Update.NoOverwrite && previewed != nil && r.tracker != nil && meta != nil {
+	if compare && r.noOverwrite && previewed != nil && r.tracker != nil && meta != nil {
 		// Ahead of compiling, as on a real run: a page edited in Confluence
 		// is left alone whatever the source says, and whatever it would fail on.
 		drift, err := hasDrifted(ctx, r.api, r.tracker, meta.Space, file, previewed)
@@ -1580,15 +1585,11 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	if compare {
 		// A json or github report goes to the same stream, for a CI step to
 		// parse; HTML written ahead of it would make it unparseable.
-		format, err := report.ParseFormat(config.Report.OutputFormat)
-		if err != nil {
-			return err
-		}
-		printHTML = printHTML && format == report.FormatURL
+		printHTML = printHTML && r.outputFormat == report.FormatURL
 	}
 
 	if printHTML {
-		if _, err := fmt.Fprintln(config.Report.output(), html); err != nil {
+		if _, err := fmt.Fprintln(config.output(), html); err != nil {
 			return err
 		}
 	}

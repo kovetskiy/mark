@@ -45,21 +45,21 @@ func checkLinksRunWith(t *testing.T, modes []string, warnOnly bool, body string,
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+body)
 
 	return Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks:         modes,
+				CheckLinksWarnOnly: warnOnly,
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks:         modes,
-			CheckLinksWarnOnly: warnOnly,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 }
@@ -251,21 +251,21 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 				"Body here. [a](./missing.md)\n")
 
 		require.NoError(t, Run(context.Background(), Config{
+			PublishConfig: PublishConfig{
+				Rendering: RenderingConfig{
+					Features: []string{"mention"},
+				},
+				Links: LinkConfig{
+					CheckLinks:         []string{"internal"},
+					CheckLinksWarnOnly: true,
+				},
+				Output: io.Discard,
+			},
 			Files: filepath.Join(dir, "doc.md"),
 			Connection: ConnectionConfig{
 				BaseURL:  server.URL,
 				Username: "user",
 				Password: "token",
-			},
-			Rendering: RenderingConfig{
-				Features: []string{"mention"},
-			},
-			Links: LinkConfig{
-				CheckLinks:         []string{"internal"},
-				CheckLinksWarnOnly: true,
-			},
-			Report: ReportConfig{
-				Output: io.Discard,
 			},
 		}))
 
@@ -288,17 +288,17 @@ func TestCheckLinksWarnOnly(t *testing.T) {
 // fine. That reading is what makes this a refusal rather than a warning.
 func TestCheckLinksWarnOnlyRequiresCheckLinks(t *testing.T) {
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Links: LinkConfig{
+				CheckLinksWarnOnly: true,
+			},
+			Output: io.Discard,
+		},
 		Files: "none",
 		Connection: ConnectionConfig{
 			BaseURL:  "http://127.0.0.1:1",
 			Username: "user",
 			Password: "token",
-		},
-		Links: LinkConfig{
-			CheckLinksWarnOnly: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 
@@ -325,19 +325,21 @@ func TestCheckLinksWarnOnlyIsAnnotated(t *testing.T) {
 	var out bytes.Buffer
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Links: LinkConfig{
+				CheckLinks:         []string{"internal"},
+				CheckLinksWarnOnly: true,
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Links: LinkConfig{
-			CheckLinks:         []string{"internal"},
-			CheckLinksWarnOnly: true,
-		},
 		Report: ReportConfig{
 			OutputFormat: "github",
-			Output:       &out,
 		},
 	})
 	require.NoError(t, err, "warn-only must not fail the run")
@@ -362,18 +364,20 @@ func TestCheckLinksFailureIsAnnotatedAsAnError(t *testing.T) {
 	var out bytes.Buffer
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Links: LinkConfig{
+				CheckLinks: []string{"internal"},
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Links: LinkConfig{
-			CheckLinks: []string{"internal"},
-		},
 		Report: ReportConfig{
 			OutputFormat: "github",
-			Output:       &out,
 		},
 	})
 	require.Error(t, err)
@@ -396,20 +400,20 @@ func TestCheckLinksUnderCompileOnly(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Mode: ModeConfig{
+				CompileOnly: true,
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"internal"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  "https://confluence.example.invalid",
 			Username: "user",
 			Password: "token",
-		},
-		Mode: ModeConfig{
-			CompileOnly: true,
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"internal"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -429,20 +433,20 @@ func TestCheckLinksUnderDryRunReportsToo(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
 	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Mode: ModeConfig{
+				DryRun: true,
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"internal"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Mode: ModeConfig{
-			DryRun: true,
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"internal"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	})
 	require.Error(t, err)
@@ -458,17 +462,17 @@ func TestCompileOnlyWithoutCheckLinksIsSilent(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Mode: ModeConfig{
+				CompileOnly: true,
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  "https://confluence.example.invalid",
 			Username: "user",
 			Password: "token",
-		},
-		Mode: ModeConfig{
-			CompileOnly: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 }
@@ -481,21 +485,21 @@ func TestCompileOnlyWarnOnlyDoesNotFail(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [other](./missing.md).\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Mode: ModeConfig{
+				CompileOnly: true,
+			},
+			Links: LinkConfig{
+				CheckLinks:         []string{"internal"},
+				CheckLinksWarnOnly: true,
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "doc.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  "https://confluence.example.invalid",
 			Username: "user",
 			Password: "token",
-		},
-		Mode: ModeConfig{
-			CompileOnly: true,
-		},
-		Links: LinkConfig{
-			CheckLinks:         []string{"internal"},
-			CheckLinksWarnOnly: true,
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 }
@@ -619,16 +623,8 @@ func TestRelativeLinkDestinationIsDecoded(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee "+link+".\n")
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(context.Background(), file, api, Config{
-				Files: file,
-				Connection: ConnectionConfig{
-					BaseURL:  server.URL,
-					Username: "user",
-					Password: "token",
-				},
-				Report: ReportConfig{
-					Output: io.Discard,
-				},
+			target, err := publishOne(context.Background(), file, api, PublishConfig{
+				Output: io.Discard,
 			})
 			require.NoError(t, err)
 
@@ -664,16 +660,8 @@ func TestEscapedLinkFindsItsDeclaredAttachment(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\nSee "+link+".\n")
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(context.Background(), file, api, Config{
-				Files: file,
-				Connection: ConnectionConfig{
-					BaseURL:  server.URL,
-					Username: "user",
-					Password: "token",
-				},
-				Report: ReportConfig{
-					Output: io.Discard,
-				},
+			target, err := publishOne(context.Background(), file, api, PublishConfig{
+				Output: io.Discard,
 			})
 			require.NoError(t, err)
 
@@ -706,19 +694,11 @@ func TestEscapedLinkedFileIsAttached(t *testing.T) {
 				"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee "+link+".\n")
 
 			api := confluence.NewAPI(server.URL, "user", "token", false)
-			target, err := ProcessFile(context.Background(), file, api, Config{
-				Files: file,
-				Connection: ConnectionConfig{
-					BaseURL:  server.URL,
-					Username: "user",
-					Password: "token",
-				},
+			target, err := publishOne(context.Background(), file, api, PublishConfig{
 				Rendering: RenderingConfig{
 					AttachReferenced: true,
 				},
-				Report: ReportConfig{
-					Output: io.Discard,
-				},
+				Output: io.Discard,
 			})
 			require.NoError(t, err)
 
@@ -751,20 +731,20 @@ func TestConfluenceLinkToAPagePublishedLaterInTheRun(t *testing.T) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: B -->\n\nB.\n")
 
 	assert.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"confluence"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"confluence"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 }
@@ -787,20 +767,20 @@ func TestLinkInsideAnIncludedFragment(t *testing.T) {
 			"<!-- Include: frag/part.inc -->\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"internal"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "**", "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"internal"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	// Twice, so the target exists by the time the link is resolved.
@@ -836,17 +816,17 @@ func TestOwnDirectoryWinsOverAnIncludedOne(t *testing.T) {
 			"<!-- Include: frag/part.inc -->\n\nSee [it](./target.md).\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -884,17 +864,17 @@ func TestMacroDefinedAboveTheHeaders(t *testing.T) {
 			"See MYJIRA-123.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -931,17 +911,17 @@ func TestLinksResolveOnTheFirstRun(t *testing.T) {
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -966,17 +946,17 @@ func TestSecondPassOnlyRepublishesWhatWaited(t *testing.T) {
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB, linking nowhere.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -1001,17 +981,17 @@ func TestSecondRunDoesNothingExtra(t *testing.T) {
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB.\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	require.NoError(t, Run(context.Background(), config))
@@ -1042,20 +1022,20 @@ func TestCheckLinksSeesResolvedLinksForPagesThisRunCreates(t *testing.T) {
 	writeFile(t, dir, "b-doc.md", header+"<!-- Title: B -->\n\nB.\n")
 
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Links: LinkConfig{
+				CheckLinks: []string{"internal"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Links: LinkConfig{
-			CheckLinks: []string{"internal"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}))
 
@@ -1079,20 +1059,20 @@ func TestDryRunDoesNotWaitForPages(t *testing.T) {
 
 	var out strings.Builder
 	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Mode: ModeConfig{
+				DryRun: true,
+			},
+			Output: &out,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Mode: ModeConfig{
-			DryRun: true,
-		},
-		Report: ReportConfig{
-			Output: &out,
 		},
 	}))
 
@@ -1118,17 +1098,17 @@ func linkedPair(t *testing.T, body string) (string, *confluencetest.Server) {
 		"<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Doc -->\n\n"+body)
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 	// Twice, so the target exists by the time the link is resolved.
@@ -1214,21 +1194,21 @@ func TestAttachmentLinkInsideCodeBlockIsLeftAlone(t *testing.T) {
 		"And here it is for real: ![logo](logo.png)\n")
 
 	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
 		Files: file,
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
 		},
-		Rendering: RenderingConfig{
-			Features: []string{"mention"},
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
 	}
 
-	target, err := ProcessFile(context.Background(), file, api, config)
+	target, err := publishOne(context.Background(), file, api, config.PublishConfig)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 

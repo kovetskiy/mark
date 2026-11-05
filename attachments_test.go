@@ -114,16 +114,8 @@ func TestMacroAttachmentOutsideProjectFails(t *testing.T) {
 
 	t.Chdir(dir)
 
-	_, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+	_, err := publishOne(context.Background(), file, api, PublishConfig{
+		Output: io.Discard,
 	})
 	require.Error(t, err)
 	assert.Zero(t, server.CountRequests("POST", "/child/attachment"))
@@ -323,7 +315,13 @@ func attachFixture(t *testing.T, body string, attachReferenced bool) (*confluenc
 	t.Helper()
 
 	p := publishBeside(t, map[string][]byte{"files/report.pdf": []byte("a report\n")}, "", body,
-		Config{Rendering: RenderingConfig{AttachReferenced: attachReferenced}})
+		Config{
+			PublishConfig: PublishConfig{
+				Rendering: RenderingConfig{
+					AttachReferenced: attachReferenced,
+				},
+			},
+		})
 	require.NoError(t, p.err)
 
 	return p.server, p.id, p.body
@@ -380,16 +378,8 @@ func TestAnImageEmbeddedTwiceIsAttachedOnce(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+	target, err := publishOne(context.Background(), file, api, PublishConfig{
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 
@@ -440,19 +430,11 @@ func TestALinkToAnotherDocumentIsNotAnAttachment(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
+	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
 			AttachReferenced: true,
 		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 
@@ -477,16 +459,8 @@ func TestAnImageIsAttachedWithoutTheFlag(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+	target, err := publishOne(context.Background(), file, api, PublishConfig{
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 
@@ -517,19 +491,11 @@ func TestLinkedFileOutsideTheProjectIsRefused(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	_, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
+	_, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
 			AttachReferenced: true,
 		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		Output: io.Discard,
 	})
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "outside the project")
@@ -571,19 +537,11 @@ func TestAFilenameWithBracketsIsNotAPattern(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
+	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
 			AttachReferenced: true,
 		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 
@@ -614,19 +572,11 @@ func TestALinkedFileWithAColonIsAttached(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 
-	target, err := ProcessFile(context.Background(), file, api, Config{
-		Files: file,
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
+	target, err := publishOne(context.Background(), file, api, PublishConfig{
 		Rendering: RenderingConfig{
 			AttachReferenced: true,
 		},
-		Report: ReportConfig{
-			Output: io.Discard,
-		},
+		Output: io.Discard,
 	})
 	require.NoError(t, err)
 
@@ -665,12 +615,12 @@ func publishBeside(t *testing.T, files map[string][]byte, header, body string, c
 		"<!-- Space: DOCS -->\n<!-- Title: Doc -->\n"+header+"\n# Doc\n\n"+body)
 
 	cfg.Connection.BaseURL, cfg.Connection.Username, cfg.Connection.Password = server.URL, "user", "token"
-	cfg.Files, cfg.Report.Output = file, io.Discard
+	cfg.Files, cfg.Output = file, io.Discard
 
 	api := confluence.NewAPI(server.URL, "user", "token", false)
 	var target *confluence.PageInfo
 	var err error
-	logged := captureLog(t, func() { target, err = ProcessFile(context.Background(), file, api, cfg) })
+	logged := captureLog(t, func() { target, err = publishOne(context.Background(), file, api, cfg.PublishConfig) })
 
 	result := published{server: server, logged: logged, err: err}
 	if target != nil {
@@ -721,7 +671,13 @@ func TestEverySpellingOfAFileIsOneAttachment(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			p := publishBeside(t, spellingFiles(), "", tc.body, Config{Rendering: RenderingConfig{AttachReferenced: true}})
+			p := publishBeside(t, spellingFiles(), "", tc.body, Config{
+				PublishConfig: PublishConfig{
+					Rendering: RenderingConfig{
+						AttachReferenced: true,
+					},
+				},
+			})
 			require.NoError(t, p.err)
 
 			assert.Equal(t, []string{tc.name}, uploadedNames(p))
@@ -767,10 +723,31 @@ func TestDifferentFilesUnderOneNameAreRefused(t *testing.T) {
 		declared, body string
 		cfg            Config
 	}{
-		"a linked file":        {"a/./b.txt", "[x](a_b.txt)\n", Config{Rendering: RenderingConfig{AttachReferenced: true}}},
-		"an image":             {"a/b.png", "![x](a_b.png)\n", Config{}},
-		"an image, dry run":    {"a/b.png", "![x](a_b.png)\n", Config{Mode: ModeConfig{DryRun: true}}},
-		"a link, compile only": {"a//b.txt", "[x](a_b.txt)\n", Config{Rendering: RenderingConfig{AttachReferenced: true}, Mode: ModeConfig{CompileOnly: true}}},
+		"a linked file": {"a/./b.txt", "[x](a_b.txt)\n", Config{
+			PublishConfig: PublishConfig{
+				Rendering: RenderingConfig{
+					AttachReferenced: true,
+				},
+			},
+		}},
+		"an image": {"a/b.png", "![x](a_b.png)\n", Config{}},
+		"an image, dry run": {"a/b.png", "![x](a_b.png)\n", Config{
+			PublishConfig: PublishConfig{
+				Mode: ModeConfig{
+					DryRun: true,
+				},
+			},
+		}},
+		"a link, compile only": {"a//b.txt", "[x](a_b.txt)\n", Config{
+			PublishConfig: PublishConfig{
+				Rendering: RenderingConfig{
+					AttachReferenced: true,
+				},
+				Mode: ModeConfig{
+					CompileOnly: true,
+				},
+			},
+		}},
 	}
 
 	for name, tc := range cases {
@@ -838,7 +815,13 @@ func TestLiteralPercentNameWinsOverDecoded(t *testing.T) {
 func TestReferencedFileWithEscapedName(t *testing.T) {
 	p := publishBeside(t,
 		map[string][]byte{"q#1.pdf": []byte("report\n")},
-		"", "See [the report](q%231.pdf).\n", Config{Rendering: RenderingConfig{AttachReferenced: true}},
+		"", "See [the report](q%231.pdf).\n", Config{
+			PublishConfig: PublishConfig{
+				Rendering: RenderingConfig{
+					AttachReferenced: true,
+				},
+			},
+		},
 	)
 	require.NoError(t, p.err)
 
@@ -876,10 +859,12 @@ func TestDiagramTitledWithASlashIsUploadedUnderTheNameThePageUses(t *testing.T) 
 	} {
 		t.Run(title, func(t *testing.T) {
 			p := publishBeside(t, nil, "", "```d2 title "+title+"\na -> b\n```\n", Config{
-				Rendering: RenderingConfig{
-					Features: []string{"d2"},
-					D2Output: "svg",
-					D2Scale:  1,
+				PublishConfig: PublishConfig{
+					Rendering: RenderingConfig{
+						Features: []string{"d2"},
+						D2Output: "svg",
+						D2Scale:  1,
+					},
 				},
 			})
 			require.NoError(t, p.err)
@@ -909,14 +894,14 @@ func mermaidFixture(t *testing.T) Config {
 	writeFile(t, dir, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nBody.\n")
 
 	return Config{
+		PublishConfig: PublishConfig{
+			Output: io.Discard,
+		},
 		Files: filepath.Join(dir, "*.md"),
 		Connection: ConnectionConfig{
 			BaseURL:  server.URL,
 			Username: "user",
 			Password: "token",
-		},
-		Report: ReportConfig{
-			Output: io.Discard,
 		},
 	}
 }
