@@ -79,6 +79,19 @@ func TestEngineStartsOnlyWhenUsed(t *testing.T) {
 	assert.Nil(t, engine.renderer)
 }
 
+// TestEndedRenderStartsNoEngine: a render whose context has already ended
+// fails with that context's reason and launches no browser for it.
+func TestEndedRenderStartsNoEngine(t *testing.T) {
+	engine, _ := useEngine(t, EngineChrome)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := engine.Render(ctx, "d", []byte("graph TD;\n A-->B;"), Options{Scale: 1.0})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, engine.renderer)
+}
+
 // TestNilEngineSaysSo covers a caller that turned diagrams on without giving
 // the renderer an engine to draw them with.
 func TestNilEngineSaysSo(t *testing.T) {
