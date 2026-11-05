@@ -462,8 +462,8 @@ func TestExportTreeLongTitles(t *testing.T) {
 		server.EditPage(p.ID, "<p>"+p.ID+"</p>")
 	}
 
-	for _, format := range []string{export.FormatMark, export.FormatOKF} {
-		t.Run(format, func(t *testing.T) {
+	for _, format := range []export.Format{export.FormatMark, export.FormatOKF} {
+		t.Run(string(format), func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out")
 			_, err := ExportTree(context.Background(), ExportConfig{
 				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},

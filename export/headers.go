@@ -8,20 +8,24 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// Metadata is how a mark document spells the metadata that names its page.
+// The zero value is MetadataComments.
+type Metadata string
+
 // How a mark document spells its metadata.
 const (
 	// MetadataComments writes the metadata as HTML comment headers, which
 	// mark reads whatever features it publishes with.
-	MetadataComments = "comments"
+	MetadataComments Metadata = "comments"
 
 	// MetadataFrontMatter writes it as YAML front matter, which mark reads
 	// only with the frontmatter feature.
-	MetadataFrontMatter = "frontmatter"
+	MetadataFrontMatter Metadata = "frontmatter"
 )
 
 // ParseMetadata reads the value given to --metadata.
-func ParseMetadata(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
+func ParseMetadata(value string) (Metadata, error) {
+	switch Metadata(strings.ToLower(strings.TrimSpace(value))) {
 	case "", MetadataComments:
 		return MetadataComments, nil
 	case MetadataFrontMatter:
@@ -34,12 +38,12 @@ func ParseMetadata(value string) (string, error) {
 // parseOptions reads the format and the metadata. OKF writes front matter of
 // its own and has no use for the metadata, which is still checked, so that a
 // configuration file setting it for mark's documents serves OKF exports too.
-func parseOptions(cfg Config) (format, spelling string, err error) {
-	format, err = ParseFormat(cfg.Format)
+func parseOptions(cfg Config) (format Format, spelling Metadata, err error) {
+	format, err = ParseFormat(string(cfg.Format))
 	if err != nil {
 		return "", "", err
 	}
-	spelling, err = ParseMetadata(cfg.Metadata)
+	spelling, err = ParseMetadata(string(cfg.Metadata))
 	if err != nil {
 		return "", "", err
 	}

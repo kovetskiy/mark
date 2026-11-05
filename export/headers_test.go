@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseMetadata(t *testing.T) {
-	for value, want := range map[string]string{
+	for value, want := range map[string]Metadata{
 		"":              MetadataComments,
 		"comments":      MetadataComments,
 		" Frontmatter ": MetadataFrontMatter,

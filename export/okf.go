@@ -12,15 +12,18 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// Format is what an export writes. The zero value is FormatMark.
+type Format string
+
 // The formats an export writes.
 const (
 	// FormatMark is a document mark publishes back to the page it came from.
-	FormatMark = "mark"
+	FormatMark Format = "mark"
 
 	// FormatOKF is a concept of the Open Knowledge Format, and a tree a
 	// bundle of them, for agents and knowledge catalogs to read. mark does
 	// not publish it back.
-	FormatOKF = "okf"
+	FormatOKF Format = "okf"
 )
 
 // OKFVersion is the version of the Open Knowledge Format an OKF export
@@ -44,8 +47,8 @@ func okfReservedFile(name string) bool {
 }
 
 // ParseFormat reads the value given to --format.
-func ParseFormat(value string) (string, error) {
-	switch format := strings.ToLower(strings.TrimSpace(value)); format {
+func ParseFormat(value string) (Format, error) {
+	switch Format(strings.ToLower(strings.TrimSpace(value))) {
 	case "", FormatMark:
 		return FormatMark, nil
 	case FormatOKF:
