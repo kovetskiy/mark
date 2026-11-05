@@ -179,3 +179,26 @@ func TestRestrictPageUpdatesTakesNoContent(t *testing.T) {
 	require.NoError(t, api.RestrictPageUpdates(context.Background(), &confluence.PageInfo{ID: "1"}, "user"))
 	assert.True(t, restricted)
 }
+
+// TestRestrictPageUpdatesServerCurrentUser: on Server and Data Center an empty
+// name restricts the page to the login api authenticates with, or, for a
+// Personal Access Token, to the username the current user has.
+func TestRestrictPageUpdatesServerCurrentUser(t *testing.T) {
+	for _, tc := range []struct {
+		name, login, want string
+	}{
+		{name: "login", login: "alice", want: "alice"},
+		{name: "token", login: "", want: "current"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := confluencetest.New(t)
+			server.SetDataCenter()
+			stored := server.AddPage("DOCS", "Locked", "page", "")
+			api := confluence.NewAPI(server.URL, tc.login, "token", false)
+			page := &confluence.PageInfo{ID: stored.ID, Title: stored.Title}
+
+			require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
+			assert.Equal(t, []string{tc.want}, server.Page(page.ID).UpdateRestrictedTo)
+		})
+	}
+}

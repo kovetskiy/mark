@@ -2031,6 +2031,29 @@ func identifyCloud(user *User) (bool, error) {
 	}
 }
 
+// restrictionUserServer is the username a Server or Data Center page is
+// restricted to: name, or the authenticated user's when name is empty. The
+// login is that user's username; a Personal Access Token has no login, so the
+// user is looked up.
+func (api *API) restrictionUserServer(ctx context.Context, name string) (string, error) {
+	if name != "" {
+		return name, nil
+	}
+	if api.username != "" {
+		return api.username, nil
+	}
+
+	current, err := api.GetCurrentUser(ctx)
+	if err != nil {
+		return "", fmt.Errorf("unable to resolve the current user: %w", err)
+	}
+	if current.Username == "" {
+		return "", errors.New("the authenticated user has no username to restrict a page to")
+	}
+
+	return current.Username, nil
+}
+
 // restrictionUserCloud resolves the user a Cloud page is restricted to.
 //
 // Cloud restrictions take an accountId, so the name has to be looked up. The
@@ -2069,6 +2092,8 @@ func (api *API) restrictionUserCloud(ctx context.Context, name string) (*User, e
 	return user, nil
 }
 
+// RestrictPageUpdates restricts updates of page to allowedUser, or to the
+// user api authenticates as when allowedUser is empty.
 func (api *API) RestrictPageUpdates(
 	ctx context.Context,
 	page *PageInfo,
@@ -2089,7 +2114,11 @@ func (api *API) RestrictPageUpdates(
 		}
 		userMap["accountId"] = user.AccountID
 	} else {
-		userMap["username"] = allowedUser
+		name, err := api.restrictionUserServer(ctx, allowedUser)
+		if err != nil {
+			return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
+		}
+		userMap["username"] = name
 	}
 
 	// Through do rather than send: nothing in the answer is used, and Data
