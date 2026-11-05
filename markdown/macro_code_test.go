@@ -1,4 +1,4 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
@@ -18,14 +18,14 @@ const jiraMacro = "<!-- Macro: MYJIRA-\\d+\n" +
 	"     Template: ac:jira:ticket\n" +
 	"     Ticket: ${0} -->\n\n"
 
-func compile(t *testing.T, path string, markdown string) string {
+func compile(t *testing.T, path string, source string) string {
 	t.Helper()
 
 	lib, err := stdlib.New(context.Background(), nil)
 	require.NoError(t, err)
 
-	out, _, err := mark.CompileMarkdown(
-		[]byte(markdown), lib, path,
+	out, _, err := markdown.CompileMarkdown(
+		[]byte(source), lib, path,
 		types.MarkConfig{MermaidScale: 1.0, D2Scale: 1.0},
 	)
 	require.NoError(t, err)

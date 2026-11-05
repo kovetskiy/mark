@@ -1,4 +1,4 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
@@ -8,19 +8,19 @@ import (
 	"strings"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func compileFootnotes(t *testing.T, markdown string, features ...string) string {
+func compileFootnotes(t *testing.T, source string, features ...string) string {
 	t.Helper()
 
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 
-	actual, _, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/test.md", types.MarkConfig{
+	actual, _, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", types.MarkConfig{
 		Features: features,
 	})
 	assert.NoError(t, err)
@@ -51,9 +51,9 @@ func assertWellFormed(t *testing.T, body string) {
 }
 
 func TestFootnotesFeature(t *testing.T) {
-	markdown := "A claim[^src].\n\n[^src]: Where it came from.\n"
+	source := "A claim[^src].\n\n[^src]: Where it came from.\n"
 
-	enabled := compileFootnotes(t, markdown, "footnotes")
+	enabled := compileFootnotes(t, source, "footnotes")
 	assertWellFormed(t, enabled)
 
 	// The marker links down to the note, and the note carries the anchor that
@@ -76,7 +76,7 @@ func TestFootnotesFeature(t *testing.T) {
 	// survive a Confluence page, so there is no configuration that produces it.
 	// The feature name is still accepted, since nothing validates the list.
 	for _, features := range [][]string{nil, {"mermaid", "mention"}} {
-		actual := compileFootnotes(t, markdown, features...)
+		actual := compileFootnotes(t, source, features...)
 		assert.NotContains(t, actual, `id="fn:1"`, features)
 		assert.Contains(t, actual, `ac:name="anchor"`, features)
 	}

@@ -13,7 +13,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
-	markmd "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 )
@@ -113,7 +113,7 @@ func Load(path string, std *stdlib.Lib, cfg types.MarkConfig) (*Header, error) {
 			}
 		}
 
-		if err := markmd.CheckWellFormed(rendered); err != nil {
+		if err := markdown.CheckWellFormed(rendered); err != nil {
 			return nil, fmt.Errorf("page header %q: %w", path, err)
 		}
 	}
@@ -166,7 +166,7 @@ func (h *Header) compile(rendered string, cfg types.MarkConfig) (string, []attac
 	if key != h.lastKey {
 		h.compiles++
 
-		html, attachments, err := markmd.CompileMarkdown([]byte(rendered), h.std, h.path, cfg)
+		html, attachments, err := markdown.CompileMarkdown([]byte(rendered), h.std, h.path, cfg)
 		if err != nil {
 			return "", nil, fmt.Errorf("unable to compile page header %q: %w", h.path, err)
 		}

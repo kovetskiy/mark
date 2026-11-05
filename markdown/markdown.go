@@ -1,4 +1,5 @@
-package mark
+// Package markdown compiles Markdown to Confluence storage format.
+package markdown
 
 import (
 	"bytes"

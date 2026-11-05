@@ -23,7 +23,7 @@ import (
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/manifest"
-	markmd "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
@@ -1616,7 +1616,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	// The layout wrap and the comment merge are missing from this output,
 	// and neither introduces the errors this catches.
 	if status != report.StatusSkipped {
-		if err := markmd.CheckWellFormed(html); err != nil {
+		if err := markdown.CheckWellFormed(html); err != nil {
 			return err
 		}
 	}
@@ -1678,7 +1678,7 @@ func (r *publishRun) previewBody(
 		}
 	}
 
-	html, inline, err := markmd.CompileMarkdown(doc.markdown, r.std, file, cfg)
+	html, inline, err := markdown.CompileMarkdown(doc.markdown, r.std, file, cfg)
 	if err != nil {
 		return "", "", "", fmt.Errorf("unable to compile markdown: %w", err)
 	}
@@ -1941,7 +1941,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	cfg.ResolveAttachment = attachmentLinks.Resolve
 
-	html, inlineAttachments, err := markmd.CompileMarkdown(doc.markdown, r.std, file, cfg)
+	html, inlineAttachments, err := markdown.CompileMarkdown(doc.markdown, r.std, file, cfg)
 	if err != nil {
 		return "", nil, fmt.Errorf("unable to compile markdown: %w", err)
 	}
@@ -2023,7 +2023,7 @@ func (r *publishRun) writePage(ctx context.Context, doc *document, target *confl
 	// Checked here rather than anywhere earlier because this is the body
 	// that is actually sent: after the layout wrap, and after any inline
 	// comments have been merged back into it.
-	if err := markmd.CheckWellFormed(html); err != nil {
+	if err := markdown.CheckWellFormed(html); err != nil {
 		return err
 	}
 

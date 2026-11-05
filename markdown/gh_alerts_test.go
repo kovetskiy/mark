@@ -1,10 +1,10 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
@@ -84,7 +84,7 @@ func TestGHAlertsBecomeMacros(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Testing: %s", tc.description)
 
-			result, attachments, err := mark.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", cfg)
+			result, attachments, err := markdown.CompileMarkdown([]byte(tc.markdown), stdlib, "/test", cfg)
 			assert.NoError(t, err)
 
 			assert.NotEmpty(t, result)

@@ -6,7 +6,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/internal/goldmarktest"
-	cmarkdown "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
@@ -95,7 +95,7 @@ inline: "<ac:structured-macro ac:name=\"status\"><ac:parameter ac:name=\"title\"
 | --- | --- |
 | :accept: | Approved |`)
 
-	output, _, err := cmarkdown.CompileMarkdown(markdownInput, nil, "test.md", types.MarkConfig{})
+	output, _, err := markdown.CompileMarkdown(markdownInput, nil, "test.md", types.MarkConfig{})
 	require.NoError(t, err)
 
 	assert.Contains(t, output, "<ac:structured-macro ac:name=\"status\">")

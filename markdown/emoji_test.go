@@ -1,22 +1,22 @@
-package mark_test
+package markdown_test
 
 import (
 	"context"
 	"testing"
 
-	mark "github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/kovetskiy/mark/v17/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func compileEmoji(t *testing.T, markdown string, features ...string) string {
+func compileEmoji(t *testing.T, source string, features ...string) string {
 	t.Helper()
 
 	lib, err := stdlib.New(context.Background(), nil)
 	assert.NoError(t, err)
 
-	actual, _, err := mark.CompileMarkdown([]byte(markdown), lib, "testdata/test.md", types.MarkConfig{
+	actual, _, err := markdown.CompileMarkdown([]byte(source), lib, "testdata/test.md", types.MarkConfig{
 		Features: features,
 	})
 	assert.NoError(t, err)
