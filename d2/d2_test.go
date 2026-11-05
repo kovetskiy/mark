@@ -15,6 +15,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,7 +119,7 @@ func TestExtractD2Image(t *testing.T) {
 // TestRenderSVG covers the other thing a diagram can be published as: the
 // drawing itself rather than a picture of it.
 func TestRenderSVG(t *testing.T) {
-	got, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
+	got, err := Render(context.Background(), "example", []byte(diagram), Options{Output: imageformat.SVG, InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, "example.svg", got.Filename)
@@ -141,10 +142,10 @@ func TestRenderSVG(t *testing.T) {
 // checksum that identifies it do not move; the size the page displays it at
 // does.
 func TestRenderSVGScalesWhatThePageShowsAndNotTheFile(t *testing.T) {
-	plain, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
+	plain, err := Render(context.Background(), "example", []byte(diagram), Options{Output: imageformat.SVG, InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
-	scaled, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 2.0})
+	scaled, err := Render(context.Background(), "example", []byte(diagram), Options{Output: imageformat.SVG, InputPath: "-", Scale: 2.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, plain.Checksum, scaled.Checksum, "the drawing did not change")
@@ -162,7 +163,7 @@ func TestRenderSVGScalesWhatThePageShowsAndNotTheFile(t *testing.T) {
 // TestRenderSVGAndPNGAreDifferentAttachments pins that publishing the same
 // diagram both ways cannot be mistaken for publishing it once.
 func TestRenderSVGAndPNGAreDifferentAttachments(t *testing.T) {
-	svg, err := Render(context.Background(), "example", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
+	svg, err := Render(context.Background(), "example", []byte(diagram), Options{Output: imageformat.SVG, InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
 	png, err := Render(context.Background(), "example", []byte(diagram), Options{Browser: browser, Scale: 1.0})
@@ -187,7 +188,7 @@ func TestRenderSVGInlinesWhatTheDiagramReferences(t *testing.T) {
 
 	document := filepath.Join(dir, "doc.md")
 
-	got, err := Render(context.Background(), "icons", []byte("a: {icon: ./icon.png}\na -> b\n"), Options{Format: "svg", InputPath: document, Scale: 1.0})
+	got, err := Render(context.Background(), "icons", []byte("a: {icon: ./icon.png}\na -> b\n"), Options{Output: imageformat.SVG, InputPath: document, Scale: 1.0})
 	require.NoError(t, err)
 
 	published := string(got.FileBytes)
@@ -204,7 +205,7 @@ func TestRenderSVGRefusesAReferenceItCannotRead(t *testing.T) {
 	dir := t.TempDir()
 	document := filepath.Join(dir, "doc.md")
 
-	_, err := Render(context.Background(), "missing", []byte("a: {icon: ./nothing-here.png}\na -> b\n"), Options{Format: "svg", InputPath: document, Scale: 1.0})
+	_, err := Render(context.Background(), "missing", []byte("a: {icon: ./nothing-here.png}\na -> b\n"), Options{Output: imageformat.SVG, InputPath: document, Scale: 1.0})
 	require.Error(t, err)
 }
 
@@ -226,7 +227,7 @@ func TestRenderSVGWillNotReadFromTheWorkingDirectory(t *testing.T) {
 	// the value that makes the bundler read from the working directory rather
 	// than refuse.
 	for _, path := range []string{"", "-"} {
-		_, err := Render(context.Background(), "pathless", []byte("a: {icon: ./private.png}\na -> b\n"), Options{Format: "svg", InputPath: path, Scale: 1.0})
+		_, err := Render(context.Background(), "pathless", []byte("a: {icon: ./private.png}\na -> b\n"), Options{Output: imageformat.SVG, InputPath: path, Scale: 1.0})
 		require.Error(t, err, "path %q", path)
 
 		assert.Contains(t, err.Error(), "private.png")
@@ -238,7 +239,7 @@ func TestRenderSVGWillNotReadFromTheWorkingDirectory(t *testing.T) {
 // a diagram that actually points at something local needs a document, so the
 // ordinary pathless compile still works.
 func TestRenderSVGWithoutAPathIsFineWithNothingToResolve(t *testing.T) {
-	got, err := Render(context.Background(), "pathless", []byte("a -> b\n"), Options{Format: "svg", Scale: 1.0})
+	got, err := Render(context.Background(), "pathless", []byte("a -> b\n"), Options{Output: imageformat.SVG, Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, got.FileBytes)
@@ -278,7 +279,7 @@ func TestRenderSVGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
 
 	diagram := []byte("a: {icon: " + server.URL + "/latest/meta-data/creds}\na -> b\n")
 
-	_, err := Render(context.Background(), "remote", diagram, Options{Format: "svg", Scale: 1.0})
+	_, err := Render(context.Background(), "remote", diagram, Options{Output: imageformat.SVG, Scale: 1.0})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--d2-bundle-remote")
@@ -295,7 +296,7 @@ func TestRenderSVGFetchesWhenAskedTo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	got, err := Render(context.Background(), "remote", []byte("a: {icon: "+server.URL+"/icon.png}\na -> b\n"), Options{Format: "svg", Scale: 1.0, BundleRemote: true})
+	got, err := Render(context.Background(), "remote", []byte("a: {icon: "+server.URL+"/icon.png}\na -> b\n"), Options{Output: imageformat.SVG, Scale: 1.0, BundleRemote: true})
 	require.NoError(t, err)
 
 	assert.Contains(t, string(got.FileBytes), "data:image/png;base64",
@@ -329,7 +330,7 @@ func TestRenderSVGWillNotReadOutsideTheProject(t *testing.T) {
 			reference, refused = filepath.ToSlash(reference), "address"
 		}
 
-		_, err := Render(context.Background(), "outside", []byte("a: {icon: "+reference+"}\na -> b\n"), Options{Format: "svg", InputPath: document, Scale: 1.0})
+		_, err := Render(context.Background(), "outside", []byte("a: {icon: "+reference+"}\na -> b\n"), Options{Output: imageformat.SVG, InputPath: document, Scale: 1.0})
 		require.Error(t, err, "reference %q", reference)
 
 		assert.Contains(t, err.Error(), refused)
@@ -340,7 +341,7 @@ func TestRenderSVGWillNotReadOutsideTheProject(t *testing.T) {
 // its filename with any "/" flattened, so the file has to be uploaded under
 // that name too, or a diagram titled Auth/Login is a broken image.
 func TestRenderFlattensASlashInTheTitle(t *testing.T) {
-	got, err := Render(context.Background(), "Auth/Login", []byte(diagram), Options{Format: "svg", InputPath: "-", Scale: 1.0})
+	got, err := Render(context.Background(), "Auth/Login", []byte(diagram), Options{Output: imageformat.SVG, InputPath: "-", Scale: 1.0})
 	require.NoError(t, err)
 
 	assert.Equal(t, "Auth_Login.svg", got.Filename)
@@ -353,6 +354,6 @@ func TestRenderWithoutABrowser(t *testing.T) {
 }
 
 func TestRenderRefusesAnUnknownFormat(t *testing.T) {
-	_, err := Render(t.Context(), "gif", []byte("a -> b"), Options{Format: "gif"})
-	require.ErrorContains(t, err, `unknown d2 format "gif"`)
+	_, err := Render(t.Context(), "gif", []byte("a -> b"), Options{Output: "gif"})
+	require.ErrorContains(t, err, `unknown d2 output "gif"`)
 }

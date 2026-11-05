@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/export"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	markdown "github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/mermaid"
@@ -266,15 +267,15 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MERMAID_BUNDLE"), config.value("mermaid-bundle")),
 		},
 		&cli.StringFlag{
-			Name:    "math-format",
+			Name:    "math-output",
 			Value:   "png",
 			Usage:   "image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment).",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_FORMAT"), config.value("math-format")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_OUTPUT"), config.value("math-output")),
 		},
 		&cli.FloatFlag{
 			Name:    "math-scale",
 			Value:   2.0,
-			Usage:   "defines the scaling factor for PNG formula renderings; ignored when math-format is svg.",
+			Usage:   "defines the scaling factor for PNG formula renderings; ignored when --math-output is svg.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MATH_SCALE"), config.value("math-scale")),
 		},
 		&cli.StringFlag{
@@ -683,25 +684,9 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		}
 	}
 
-	// Both output formats are checked the same way, and for the same two
-	// reasons.
-	//
-	// As written, without trimming, because what is checked has to be what is
-	// used: the value goes into the configuration whole and the renderer
-	// compares it literally, so a trimmed " svg " would pass here and publish a
-	// PNG -- taking anything asked for alongside it down with it.
-	//
-	// And asked of IsSet as well as of the value, because a flag carrying a
-	// default is never empty unless somebody emptied it: d2-output = "" in the
-	// configuration file, or MARK_D2_OUTPUT exported with nothing in it, would
-	// otherwise fall through and publish a PNG without a word. A command that
-	// does not carry the flag at all has neither, and is left alone.
-	d2Output := command.String("d2-output")
-	if (d2Output != "" || command.IsSet("d2-output")) && !rendercheck.IsImageFormat(d2Output) {
-		return context, fmt.Errorf(
-			"invalid value for --d2-output: %q (expected: png or svg)",
-			d2Output,
-		)
+	outputs, err := imageOutputs(command)
+	if err != nil {
+		return context, err
 	}
 
 	// A scale of zero renders nothing and a negative one renders nonsense, and
@@ -722,23 +707,15 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		}
 	}
 
-	mermaidOutput := command.String("mermaid-output")
-	if (mermaidOutput != "" || command.IsSet("mermaid-output")) && !rendercheck.IsImageFormat(mermaidOutput) {
-		return context, fmt.Errorf(
-			"invalid value for --mermaid-output: %q (expected: png or svg)",
-			mermaidOutput,
-		)
-	}
-
 	// A bundle that goes nowhere is worth saying out loud rather than dropping:
 	// it was asked for on purpose, and it silently does not happen. Asked of its
 	// value rather than of IsSet, because false is exactly what a bundle nobody
 	// asked for looks like -- so mermaid-bundle = false contradicts a PNG in no
 	// way at all.
 	//
-	// The scale is not checked against the format any more: it applies to both,
+	// The scale is not checked against the format: it applies to both,
 	// multiplying the pixels of a PNG and the size the page shows an SVG at.
-	if mermaidOutput == "png" && command.Bool("mermaid-bundle") {
+	if outputs["mermaid-output"] == imageformat.PNG && command.Bool("mermaid-bundle") {
 		return context, errors.New(
 			"--mermaid-bundle needs --mermaid-output=svg: there is nowhere in a PNG to keep the diagram's source",
 		)
@@ -754,18 +731,36 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 		)
 	}
 
-	if format := mathFormat(command); format != "" && !rendercheck.IsImageFormat(format) {
-		return context, fmt.Errorf(
-			"invalid value for --math-format: %q (expected: svg or png)",
-			format,
-		)
-	}
-
 	return context, nil
 }
 
-// mathFormat is --math-format as checked and as published: trimmed, so that a
-// padded value accepted by the check is not refused later by math.Process.
-func mathFormat(command *cli.Command) string {
-	return strings.TrimSpace(command.String("math-format"))
+// imageOutputFlags pick the image each kind of picture is published as.
+var imageOutputFlags = []string{"mermaid-output", "d2-output", "math-output"}
+
+// imageOutputs reads each of imageOutputFlags once, trimmed and lowercased, so
+// that the value the check accepts is the value published.
+//
+// IsSet is asked as well as the value, because a flag carrying a default is
+// empty only when somebody emptied it -- d2-output = "" in the configuration
+// file, or MARK_D2_OUTPUT exported with nothing in it -- and that is no format.
+// A command that does not carry a flag has neither, and is left with the zero
+// value, which means PNG.
+func imageOutputs(command *cli.Command) (map[string]imageformat.Format, error) {
+	outputs := make(map[string]imageformat.Format, len(imageOutputFlags))
+
+	for _, name := range imageOutputFlags {
+		value := command.String(name)
+		if value == "" && !command.IsSet(name) {
+			continue
+		}
+
+		output, err := imageformat.Parse(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for --%s: %q (expected: svg or png)", name, value)
+		}
+
+		outputs[name] = output
+	}
+
+	return outputs, nil
 }

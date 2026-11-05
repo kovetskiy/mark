@@ -11,6 +11,7 @@ import (
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/d2"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/stdlib"
@@ -37,20 +38,20 @@ type DiagramConfig struct {
 	// "right", or "" for Confluence's default.
 	ImageAlign string
 
-	// MermaidOutput is the image a diagram is published as, "png" (the
-	// default) or "svg". MermaidScale multiplies the pixels of a PNG one and
+	// MermaidOutput is the image a diagram is published as, PNG (the
+	// default) or SVG. MermaidScale multiplies the pixels of a PNG one and
 	// the size the page displays an SVG one at. MermaidBundle keeps the
 	// diagram's source inside the SVG it is published as, and applies to
 	// nothing else.
-	MermaidOutput string
+	MermaidOutput imageformat.Format
 	MermaidScale  float64
 	MermaidBundle bool
 
-	// D2Output is the image a diagram is published as, "png" (the default)
-	// or "svg". D2Scale multiplies the pixels of a PNG one and the size the
+	// D2Output is the image a diagram is published as, PNG (the default)
+	// or SVG. D2Scale multiplies the pixels of a PNG one and the size the
 	// page displays an SVG one at. D2BundleRemote allows a diagram to have mark
 	// fetch a URL it names and publish what comes back inside the drawing.
-	D2Output       string
+	D2Output       imageformat.Format
 	D2Scale        float64
 	D2BundleRemote bool
 }
@@ -160,7 +161,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 		// know, which Run checks but options handed straight to
 		// CompileMarkdown never pass through.
 		attachment, err := d2.Render(orBackground(r.ctx), title, lval, d2.Options{
-			Format:       r.Diagrams.D2Output,
+			Output:       r.Diagrams.D2Output,
 			Scale:        r.Diagrams.D2Scale,
 			Browser:      r.Diagrams.Browser,
 			InputPath:    r.Path,
@@ -216,7 +217,7 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 	} else if lang == "mermaid" && slices.Contains(r.Diagrams.Features, "mermaid") {
 		// Render refuses a format it does not know, as the d2 branch does.
 		att, err := r.Diagrams.Mermaid.Render(orBackground(r.ctx), title, lval, mermaid.Options{
-			Format: r.Diagrams.MermaidOutput,
+			Output: r.Diagrams.MermaidOutput,
 			Scale:  r.Diagrams.MermaidScale,
 			Bundle: r.Diagrams.MermaidBundle,
 		})

@@ -209,8 +209,8 @@ OPTIONS:
    --mermaid-engine string                        what mermaid diagrams are drawn by: chrome (the default, a headless browser running mermaid.js) or merman (experimental, a native reimplementation that needs no browser and must be installed separately). (default: "chrome") [$MARK_MERMAID_ENGINE]
    --mermaid-output string                        image a mermaid diagram is published as: png (rasterised, and scaled by --mermaid-scale) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MERMAID_OUTPUT]
    --mermaid-bundle                               keep the diagram's own source inside the SVG published for it, in its <desc> element, so the drawing can be edited again from the attachment. Needs --mermaid-output=svg. [$MARK_MERMAID_BUNDLE]
-   --math-format string                           image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_FORMAT]
-   --math-scale float                             defines the scaling factor for PNG formula renderings; ignored when math-format is svg. (default: 2) [$MARK_MATH_SCALE]
+   --math-output string                           image a formula is published as with --features=math: png (rasterised through the same headless Chrome mermaid uses) or svg (vector and sharp at any zoom, where the instance displays an SVG attachment). (default: "png") [$MARK_MATH_OUTPUT]
+   --math-scale float                             defines the scaling factor for PNG formula renderings; ignored when --math-output is svg. (default: 2) [$MARK_MATH_SCALE]
    --include-path string                          Path for shared includes, used as a fallback if the include doesn't exist in the current directory. [$MARK_INCLUDE_PATH]
    --changes-only                                 Avoids re-uploading pages that haven't changed since the last run. [$MARK_CHANGES_ONLY]
    --output-format string                         how to report what the run did: "url" prints the address of each published page (the default), "json" prints one object describing the whole run, "github" prints GitHub Actions workflow commands so that failures appear against the file that caused them. (default: "url") [$MARK_OUTPUT_FORMAT]
@@ -298,6 +298,14 @@ mark -c ci.toml publish -f doc.md    # v17
 
 The global options can stay where they were, and the environment variables
 and the configuration file are read as before.
+
+One publish option was renamed, so that the three that pick between PNG and
+SVG share a name: `--math-format` is now `--math-output`, alongside
+`--mermaid-output` and `--d2-output`. Rename `math-format` to `math-output` in
+the configuration file, which otherwise refuses it as an unknown key, and
+`MARK_MATH_FORMAT` to `MARK_MATH_OUTPUT` in the environment, where the old name
+is no longer read. Library callers rename `RenderingConfig.MathFormat` and
+`markdown.Options.MathFormat` to `MathOutput`.
 
 You can store user credentials in the configuration file, which should be
 located in a system specific directory (or specified via `-c --config <path>`) with the following format (TOML):

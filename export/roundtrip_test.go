@@ -98,7 +98,7 @@ func compileWith(t *testing.T, md, path string, features ...string) string {
 		MermaidScale: 1.0,
 		D2Scale:      1.0,
 		MathScale:    1.0,
-		MathFormat:   "svg",
+		MathOutput:   "svg",
 		Features:     features,
 	})
 	require.NoError(t, err, "exported Markdown:\n%s", md)

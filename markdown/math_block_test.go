@@ -20,7 +20,7 @@ func compileMath(t *testing.T, src string) string {
 
 	out, _, err := CompileMarkdown(t.Context(), []byte(src), std, "test.md", Options{
 		Features:   []string{"math"},
-		MathFormat: "svg",
+		MathOutput: "svg",
 	})
 	require.NoError(t, err)
 

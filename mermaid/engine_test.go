@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	mermaid "github.com/dreampuf/mermaid.go"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -133,7 +134,7 @@ func TestCloseDuringARenderIsNotACrash(t *testing.T) {
 	log.Logger = zerolog.New(&logged)
 	t.Cleanup(func() { log.Logger = restore })
 
-	_, err := engine.Render(context.Background(), "d", []byte("graph TD;\n A-->B;"), Options{Format: "svg", Scale: 1.0})
+	_, err := engine.Render(context.Background(), "d", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: 1.0})
 
 	require.ErrorIs(t, err, errClosed)
 	assert.Equal(t, 1, renderer.renders)
@@ -217,7 +218,7 @@ func TestBothEnginesDrawTheSameDiagram(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, png.Checksum, again.Checksum, "the same diagram is the same attachment")
 
-			svg, err := engine.Render(context.Background(), "both", diagram, Options{Format: "svg", Scale: 1.0})
+			svg, err := engine.Render(context.Background(), "both", diagram, Options{Output: imageformat.SVG, Scale: 1.0})
 			require.NoError(t, err)
 
 			assert.True(t, hasSVGRoot(string(svg.FileBytes)))

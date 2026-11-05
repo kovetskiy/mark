@@ -2,7 +2,7 @@ package markdown
 
 import (
 	"github.com/kovetskiy/mark/v17/chrome"
-	cmath "github.com/kovetskiy/mark/v17/math"
+	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
 )
@@ -25,26 +25,26 @@ type Options struct {
 	// rather than newlines.
 	StripLinebreaks bool
 
-	// MermaidOutput is the image a diagram is published as, "png" (the
-	// default) or "svg". MermaidScale multiplies the pixels of a PNG one and
+	// MermaidOutput is the image a diagram is published as, PNG (the
+	// default) or SVG. MermaidScale multiplies the pixels of a PNG one and
 	// the size the page displays an SVG one at. MermaidBundle keeps the
 	// diagram's source inside the SVG it is published as, and applies to
 	// nothing else.
-	MermaidOutput string
+	MermaidOutput imageformat.Format
 	MermaidScale  float64
 	MermaidBundle bool
-	// D2Output is the image a diagram is published as, "png" (the default)
-	// or "svg". D2Scale multiplies the pixels of a PNG one and the size the
+	// D2Output is the image a diagram is published as, PNG (the default)
+	// or SVG. D2Scale multiplies the pixels of a PNG one and the size the
 	// page displays an SVG one at.
-	D2Output string
+	D2Output imageformat.Format
 	D2Scale  float64
 	// D2BundleRemote allows a diagram to have mark fetch a URL it names and
 	// publish what comes back inside the drawing.
 	D2BundleRemote bool
-	// MathFormat is the image a formula is published as, "png" (the default)
-	// or "svg". MathScale multiplies the pixels of a PNG one, and is ignored
+	// MathOutput is the image a formula is published as, PNG (the default)
+	// or SVG. MathScale multiplies the pixels of a PNG one, and is ignored
 	// for SVG.
-	MathFormat cmath.Format
+	MathOutput imageformat.Format
 	MathScale  float64
 
 	// Features names the optional features switched on; see --features.
@@ -99,7 +99,7 @@ func (o Options) diagramConfig() crenderer.DiagramConfig {
 func (o Options) mathConfig() crenderer.MathConfig {
 	return crenderer.MathConfig{
 		Browser: o.Browser,
-		Format:  o.MathFormat,
+		Output:  o.MathOutput,
 		Scale:   o.MathScale,
 	}
 }

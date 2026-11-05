@@ -957,16 +957,16 @@ func TestD2OutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	assert.Contains(t, err.Error(), "D2Output")
 }
 
-// TestMathFormatRejectsAFormatMarkCannotPublish: a format math does not know
+// TestMathOutputRejectsAFormatMarkCannotPublish: a format math does not know
 // fails the run before it publishes anything, not at the first formula.
-func TestMathFormatRejectsAFormatMarkCannotPublish(t *testing.T) {
+func TestMathOutputRejectsAFormatMarkCannotPublish(t *testing.T) {
 	config := mermaidFixture(t)
-	config.Rendering.MathFormat = "jpeg"
+	config.Rendering.MathOutput = "jpeg"
 
 	err := Run(context.Background(), config)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "MathFormat")
+	assert.Contains(t, err.Error(), "MathOutput")
 }
 
 // TestD2DefaultsPublishAsBefore is its control: a caller that never heard of

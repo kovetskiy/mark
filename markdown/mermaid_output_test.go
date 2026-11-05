@@ -29,6 +29,6 @@ func TestCompileMarkdownRefusesAnUnknownMermaidOutput(t *testing.T) {
 	})
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "unknown mermaid format")
+	assert.Contains(t, err.Error(), "unknown mermaid output")
 	assert.Contains(t, err.Error(), "jpeg")
 }
