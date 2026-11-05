@@ -149,19 +149,23 @@ func (h *heldSource) Lookup() (string, bool) {
 	return h.ValueSource.Lookup()
 }
 
-// trackSources lets fromCommandLine tell, for every flag of command and its
-// subcommands, a value given on the command line from one a source supplied:
-// it puts a sourceProbe first in each flag's sources. The root's flags are
-// left out, since urfave reads their sources before the command's own
-// command line, which may then set them anyway.
+// trackSources lets fromCommandLine tell, for the flags of command or of
+// the commands beneath it, a value given on the command line from one a
+// source supplied: it puts a sourceProbe first in each flag's sources. Only
+// a command without subcommands is tracked, since urfave reads the sources
+// of a command with them, the root's among them, before the subcommand's
+// command line, which may then set the flag anyway.
 func trackSources(command *cli.Command) {
+	if len(command.Commands) > 0 {
+		for _, subcommand := range command.Commands {
+			trackSources(subcommand)
+		}
+		return
+	}
 	for _, flag := range command.Flags {
 		if chain := sourcesOf(flag); chain != nil {
 			chain.Chain = slices.Insert(chain.Chain, 0, cli.ValueSource(&sourceProbe{flag: flag}))
 		}
-	}
-	for _, subcommand := range command.Commands {
-		trackSources(subcommand)
 	}
 }
 

@@ -86,9 +86,7 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 			OnUsageError: renamedFlagHint,
 		}, line.pageCommand(), line.doctorCommand()},
 	}
-	for _, command := range root.Commands {
-		trackSources(command)
-	}
+	trackSources(root)
 
 	return root
 }

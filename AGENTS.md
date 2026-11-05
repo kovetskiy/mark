@@ -76,8 +76,8 @@ refuses: `mark` alone, or an unknown command; a publish flag written before
 are resolved as it is parsed, before `mark publish --config X` names X, so
 their file and environment sources are held until a command's action settles
 them (`configFile.hold`). `IsSet` cannot tell the command line from a source,
-so `trackSources` lets `fromCommandLine` do it for every command's flags (not
-the root's); where two settings exclude each other, `commandLineFirst` lets
+so `trackSources` lets `fromCommandLine` do it for the flags of every command
+without subcommands (so not the root's); where two settings exclude each other, `commandLineFirst` lets
 one given on the command line set aside one from the environment or the file,
 as export's page flags and the two `--title-from-*` do.
 `util/command_test.go` fails when the help blocks in
