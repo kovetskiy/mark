@@ -3,13 +3,12 @@ package renderer
 // AdmonitionType is a Confluence call-out macro: the box every admonition
 // syntax mark understands is published as. Its String is the macro's ac:name.
 //
-// Three syntaxes produce one -- a legacy "Info:" blockquote, a GitHub alert and
-// an MkDocs "!!!" admonition -- and each has its own vocabulary: the tables
-// below, and LegacyBlockQuoteClassifier. They do not agree on what a word means:
-// `!!! note` is the note macro, but `> [!NOTE]` is the info macro, and a GitHub
-// "warning" is Confluence's note where an MkDocs one is Confluence's warning.
-// That divergence is published behaviour, kept as it is; unifying it would
-// change the pages people already have.
+// Three syntaxes produce one -- a colon blockquote ("> Info:"), a GitHub
+// alert and an MkDocs "!!!" admonition -- and each has its own vocabulary: the
+// tables below, and colonAdmonitionTypes. The colon syntax reads "note" as
+// GitHub does, as info. MkDocs does not: `!!! note` is the note macro, and an
+// MkDocs "warning" is Confluence's warning where a GitHub one is its note.
+// That divergence is published behaviour, kept as it is.
 type AdmonitionType int
 
 const (

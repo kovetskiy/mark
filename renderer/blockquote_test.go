@@ -17,13 +17,12 @@ func blockQuoteRenderers() []html.Extension {
 	}
 }
 
-// TestBlockQuoteClassification covers the legacy "> Info: ..." syntax, which is
-// what mark supported before GitHub Alerts and still supports.
+// TestBlockQuoteClassification covers the colon syntax, "> Info: text".
 //
-// The four names are not interchangeable with the macros they produce: "warn"
-// selects Confluence's warning macro, and "note" selects note, so a mapping
-// slip shows up as the wrong colour and icon on the page rather than as an
-// error anywhere.
+// The words are not interchangeable with the macros they produce: "warn"
+// selects Confluence's warning macro, and "note" selects info, as GitHub's
+// [!NOTE] does, so a mapping slip shows up as the wrong colour and icon on the
+// page rather than as an error anywhere.
 func TestBlockQuoteClassification(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -31,11 +30,11 @@ func TestBlockQuoteClassification(t *testing.T) {
 		want  string
 	}{
 		{"info", "> Info: the build is nightly.\n", `ac:name="info"`},
-		{"note", "> Note: this is worth knowing.\n", `ac:name="note"`},
+		{"note is info", "> Note: this is worth knowing.\n", `ac:name="info"`},
 		{"warning from warn", "> Warn: this deletes data.\n", `ac:name="warning"`},
 		{"tip", "> Tip: use the cache.\n", `ac:name="tip"`},
-		{"case insensitive", "> NOTE: shouting.\n", `ac:name="note"`},
-		{"markup around the word", "> **Note:** emphasised.\n", `ac:name="note"`},
+		{"case insensitive", "> NOTE: shouting.\n", `ac:name="info"`},
+		{"markup around the word", "> **Note:** emphasised.\n", `ac:name="info"`},
 	}
 
 	for _, tt := range tests {
@@ -63,13 +62,11 @@ func TestBlockQuoteUnclassifiedStaysAQuote(t *testing.T) {
 	assert.NotContains(t, actual, "ac:structured-macro")
 }
 
-// TestBlockQuoteMarkerMustOpenTheLine covers the trap this syntax used to set.
-// The classifier looked for the word anywhere in the first line, so a quotation
-// that merely mentioned one of four very common words became an admonition
-// macro -- and the author's only recourse was to reword the sentence. The
-// marker now has to open the line, which is where every documented form of it
-// is written anyway.
-func TestBlockQuoteMarkerMustOpenTheLine(t *testing.T) {
+// TestBlockQuoteProseStaysAQuote covers quotations that start with, or
+// mention, one of the words without the colon that makes it a marker. These
+// are ordinary sentences, and an author should not have to reword one to keep
+// it a quote.
+func TestBlockQuoteProseStaysAQuote(t *testing.T) {
 	prose := []struct {
 		name  string
 		input string
@@ -79,6 +76,16 @@ func TestBlockQuoteMarkerMustOpenTheLine(t *testing.T) {
 		{"note mid-sentence", "> Please note that the API changed.\n"},
 		{"tip inside multiple", "> There are multiple ways to do this.\n"},
 		{"warn inside a sentence", "> We should warn them first.\n"},
+		{"note opening a sentence", "> Note that this is a quote.\n"},
+		{"tips opening a sentence", "> Tips are welcome.\n"},
+		{"warning opening a sentence", "> Warning signs were everywhere.\n"},
+		{"word alone", "> Warn\n"},
+		{"emphasised word alone", "> **Note**\n>\n> Text.\n"},
+		{"space before the colon", "> Note : spaced.\n"},
+		{"no space after the colon", "> Note:spaced.\n"},
+		{"word in code", "> `Note:` in code.\n"},
+		{"word in a list", "> * Note: in a list.\n"},
+		{"word on the second line", "> Some text\n> Note: later.\n"},
 	}
 
 	for _, tt := range prose {
@@ -93,21 +100,27 @@ func TestBlockQuoteMarkerMustOpenTheLine(t *testing.T) {
 	}
 }
 
-// TestBlockQuoteMarkerFormsStillClassify is the other half: everything the
-// syntax has always accepted has to keep working, or the fix above would be a
-// removal rather than a repair.
-func TestBlockQuoteMarkerFormsStillClassify(t *testing.T) {
+// TestBlockQuoteMarkerForms covers every way of writing the marker: the word
+// and its colon, in any case, emphasised with the colon inside or outside, or
+// alone in a comment.
+func TestBlockQuoteMarkerForms(t *testing.T) {
 	forms := []struct {
 		name  string
 		input string
 		want  string
 	}{
 		{"marker with a colon and text", "> Info: the build is nightly.\n", `ac:name="info"`},
-		{"marker alone", "> Warn\n", `ac:name="warning"`},
-		{"plural with a colon", "> **NOTES:**\n>\n> One.\n", `ac:name="note"`},
+		{"marker alone with its colon", "> Warn:\n>\n> Text.\n", `ac:name="warning"`},
+		{"plural with a colon", "> **NOTES:**\n>\n> One.\n", `ac:name="info"`},
 		{"emphasised marker", "> **Tip:** use the cache.\n", `ac:name="tip"`},
-		{"shouting", "> NOTE: shouting.\n", `ac:name="note"`},
+		{"colon outside the emphasis", "> **Tip**: use the cache.\n", `ac:name="tip"`},
+		{"italic marker", "> *Warning:* hot.\n", `ac:name="warning"`},
+		{"shouting", "> NOTE: shouting.\n", `ac:name="info"`},
+		{"mixed case", "> wArNiNgS: mixed.\n", `ac:name="warning"`},
 		{"warning spelled out", "> Warning: this deletes data.\n", `ac:name="warning"`},
+		{"heading", "> ### Tip: a heading\n", `ac:name="tip"`},
+		{"comment", "> <!-- Tip -->\n> Text.\n", `ac:name="tip"`},
+		{"comment with a colon", "> <!-- Tip: -->\n> Text.\n", `ac:name="tip"`},
 	}
 
 	for _, tt := range forms {
@@ -118,6 +131,28 @@ func TestBlockQuoteMarkerFormsStillClassify(t *testing.T) {
 			assert.Contains(t, actual, tt.want)
 		})
 	}
+}
+
+// TestBlockQuoteCommentMustHoldOnlyTheWord covers the comment form: a comment
+// that says more than the word is a comment, not a marker.
+func TestBlockQuoteCommentMustHoldOnlyTheWord(t *testing.T) {
+	actual := render(t, "> <!-- Note that this is a draft -->\n> Text.\n", blockQuoteRenderers())
+	assertWellFormed(t, actual)
+
+	assert.Contains(t, actual, "<blockquote>")
+	assert.NotContains(t, actual, "ac:structured-macro")
+}
+
+// TestBlockQuoteClassifierZeroValue pins that the exported classifier cannot
+// be built in a broken state: its zero value classifies as the constructor's
+// does.
+func TestBlockQuoteClassifierZeroValue(t *testing.T) {
+	var zero crenderer.BlockQuoteClassifier
+
+	assert.NotPanics(t, func() { zero.ClassifyingBlockQuote("Note: x") })
+	assert.Equal(t, crenderer.AdmonitionInfo, zero.ClassifyingBlockQuote("Note: x"))
+	assert.Equal(t, crenderer.AdmonitionNone, zero.ClassifyingBlockQuote("Note that x"))
+	assert.Equal(t, crenderer.LegacyBlockQuoteClassifier(), zero)
 }
 
 // TestBlockQuoteTypeComesFromTheFirstParagraphOnly pins the scope of the

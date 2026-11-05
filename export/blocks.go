@@ -514,8 +514,8 @@ func listItem(marker, content string) string {
 	return marker + " " + strings.Join(lines, "\n")
 }
 
-// blockquote renders a blockquote -- as HTML when it opens with a word mark
-// would publish it as a macro for, or with a GitHub alert's marker.
+// blockquote renders a blockquote -- as HTML when it opens with a marker mark
+// would publish it as a macro for, a colon marker or a GitHub alert's.
 func (c *converter) blockquote(n *node) string {
 	text := strings.TrimSpace(n.textContent())
 	if syntax.AdmonitionMarker(text) != "" || strings.HasPrefix(text, "[!") {

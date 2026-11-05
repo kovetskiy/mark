@@ -61,10 +61,10 @@ func TestGHAlertMacroMapping(t *testing.T) {
 	}
 }
 
-// TestGHAlertRendererFallsBackToLegacySyntax covers the "> Note:" syntax that
-// predates GitHub Alerts: this is the only renderer registered for
-// blockquotes, so it has to handle that syntax too.
-func TestGHAlertRendererFallsBackToLegacySyntax(t *testing.T) {
+// TestGHAlertRendererFallsBackToColonSyntax covers the "> Warn:" syntax: this
+// is the only renderer registered for blockquotes, so it has to handle that
+// syntax too.
+func TestGHAlertRendererFallsBackToColonSyntax(t *testing.T) {
 	actual := render(t, "> Warn: the old syntax.\n", ghAlertRenderers(), ghAlertParserOptions()...)
 	assertWellFormed(t, actual)
 
@@ -72,7 +72,7 @@ func TestGHAlertRendererFallsBackToLegacySyntax(t *testing.T) {
 }
 
 // TestGHAlertRendererLeavesPlainQuotesAlone covers the third case the same
-// renderer has to serve: a quotation that is neither an alert nor the legacy
+// renderer has to serve: a quotation that is neither an alert nor the colon
 // syntax must come out as a blockquote.
 func TestGHAlertRendererLeavesPlainQuotesAlone(t *testing.T) {
 	actual := render(t, "> Just a quotation.\n", ghAlertRenderers(), ghAlertParserOptions()...)
