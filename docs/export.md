@@ -78,6 +78,16 @@ document itself. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers;
 with `--no-attachments` there is no telling, so every one is declared.
 
+Most filesystems take a file name of at most 255 bytes, and Confluence allows
+longer attachment names. An attachment whose name would be longer, with the
+number or the `.txt` of an OKF export added, is written under a shorter one:
+the part before the extension is cut on a character's boundary, and a name
+too long for a file also gets a dash and eight hexadecimal digits from a hash
+of the whole name, so that two names alike in their first 250 bytes keep files
+of their own. The document links to and declares the name written. Published
+back, the attachment is uploaded under that shorter name, a new attachment
+next to the one with the long name, as with `--attachments-dir`.
+
 ## Front matter instead of headers
 
 `--metadata frontmatter` writes the same metadata as YAML front matter, under

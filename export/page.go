@@ -3,6 +3,7 @@ package export
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/metadata"
@@ -690,7 +692,8 @@ func localName(filename string) string {
 
 // localNames gives every attachment a file of its own. Names that flatten to
 // the same local name, or differ only in case and so share a file on macOS and
-// Windows, are told apart by a number before the extension.
+// Windows, are told apart by a number before the extension. A name longer
+// than a file name may be is cut before its extension.
 type localNames struct {
 	byName map[string]string
 	taken  map[string]bool
@@ -717,14 +720,57 @@ func (l *localNames) of(filename string) string {
 	}
 	extension := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, extension)
+	// A name cut short is marked with a hash of the whole one, so that names
+	// sharing a long prefix keep files of their own whatever their order.
+	mark := ""
+	if len(name) > nameMax {
+		mark = "-" + nameHash(filename)
+		name = fitName(stem, mark, extension)
+	}
 	for i := 2; l.taken[strings.ToLower(name)]; i++ {
-		name = fmt.Sprintf("%s-%d%s", stem, i, extension)
+		name = fitName(stem, fmt.Sprintf("%s-%d", mark, i), extension)
 	}
 
 	l.byName[filename] = name
 	l.taken[strings.ToLower(name)] = true
 
 	return name
+}
+
+// nameMax is the longest file name, in bytes, that most filesystems take.
+const nameMax = 255
+
+// fitName joins a stem, a suffix and an extension, cutting the stem on a
+// character's boundary to keep the name within nameMax bytes. An extension
+// too long to leave the stem room is cut with it.
+func fitName(stem, suffix, extension string) string {
+	if len(stem)+len(suffix)+len(extension) <= nameMax {
+		return stem + suffix + extension
+	}
+	if len(extension) > nameMax/2 {
+		stem, extension = stem+extension, ""
+	}
+
+	return cutBytes(stem, nameMax-len(suffix)-len(extension)) + suffix + extension
+}
+
+// cutBytes is the longest start of s, at most n bytes, that ends on a
+// character's boundary.
+func cutBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+
+	return s[:n]
+}
+
+// nameHash is a short, stable hash of an attachment's name.
+func nameHash(filename string) string {
+	sum := sha256.Sum256([]byte(filename))
+	return fmt.Sprintf("%x", sum[:4])
 }
 
 type pendingDownload struct {
