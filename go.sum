@@ -14,10 +14,10 @@ github.com/andybalholm/cascadia v1.3.5 h1:RLjq12WJy58dN6eCIQrz0bAGZkztHWsEPFxP53
 github.com/andybalholm/cascadia v1.3.5/go.mod h1:BLRmbRjpEtNKieZOCCvYj4RqN+KRA41GBe/5O+G93kM=
 github.com/bmatcuk/doublestar/v4 v4.10.4 h1:oTKkRmRuOsKMqFe1AQazd9gGBFNEpOmgKp/xzB97dnA=
 github.com/bmatcuk/doublestar/v4 v4.10.4/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
-github.com/chromedp/cdproto v0.158.6 h1:jaKiXWuhcxbvKbSe8U6Dp5U4Hcj2w6lETYgZqBD5n34=
-github.com/chromedp/cdproto v0.158.6/go.mod h1:h68JaIuFr9o3yiayxEYhBdvaxgYO3shDrPSYhNlyfu0=
-github.com/chromedp/chromedp v0.21.0 h1:nVHgS2LHyhZJ1l3BWRbG2eFIFYiJMnvkJbELbd8WBoQ=
-github.com/chromedp/chromedp v0.21.0/go.mod h1:6z1Y5FdKUxRzxx2qcC5h1xjaBJrSWrZp1mjgITfNZig=
+github.com/chromedp/cdproto v0.159.0 h1:wepTaKq5AGTwIxXh6h5bESQcvcfnSb2ItnFChA62/b8=
+github.com/chromedp/cdproto v0.159.0/go.mod h1:h68JaIuFr9o3yiayxEYhBdvaxgYO3shDrPSYhNlyfu0=
+github.com/chromedp/chromedp v0.23.0 h1:iNGzFz+exVgG4OynS2CnYzlAjHiOFW++fUPbbmSwy0w=
+github.com/chromedp/chromedp v0.23.0/go.mod h1:hJcPsoPrgxu4ulIXhO1WmtKjosCD8jbZh0+TeVFsod8=
 github.com/creack/pty v1.1.18 h1:n56/Zwd5o6whRC5PMGretI4IdRLlmBXYNjScPaBgsbY=
 github.com/creack/pty v1.1.18/go.mod h1:MOBLtS5ELjhRRrroQr9kyvTxUAFNvYEK993ew/Vr4O4=
 github.com/d2lang/d2 v0.9.0 h1:bVqc8xNHDoWYxPSIPa4uaA0iiju3wWL5su3rJ2Lkg3s=
