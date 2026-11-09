@@ -5,12 +5,12 @@ go 1.27.3
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/bmatcuk/doublestar/v4 v4.10.4
-	github.com/chromedp/cdproto v0.159.0
+	github.com/chromedp/cdproto v0.159.1
 	github.com/chromedp/chromedp v0.23.0
 	github.com/d2lang/d2 v0.9.0
 	github.com/d2lang/mathjax-go v0.1.0
 	github.com/d2lang/util-go v0.2.0
-	github.com/dreampuf/mermaid.go v0.5.2
+	github.com/dreampuf/mermaid.go v0.7.0
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
