@@ -178,14 +178,16 @@ so that a failure appears against the file that caused it in a pull request:
 
 ```text
 ::notice file=docs/architecture.md::published "Architecture" to https://...
-::warning file=docs/draft.md::the document is not synchronized
+::warning file=docs/notes.md::edited in Confluence since mark published it (version 7, mark wrote 5)
 ::error file=docs/broken.md::unable to compile markdown: ...
 ::warning file=docs/old.md::page "Old" was deleted: its source file is gone
 ::error::unable to save page manifest: ...
 ```
 
-An error that belongs to no one file, from `errors` above, is annotated without
-one, and appears in the run's summary rather than against a line of the diff.
+A document that is not synchronized is left out: it was skipped because it
+asked to be. An error that belongs to no one file, from `errors` above, is
+annotated without one, and appears in the run's summary rather than against a
+line of the diff.
 
 ```yaml
 - run: mark publish --output-format github --files "docs/**/*.md"

@@ -49,7 +49,7 @@ func TestGitHubAnnotatesTheFile(t *testing.T) {
 	r := New()
 	r.AddPage(Page{File: "docs/a.md", Status: StatusPublished, Title: "A", URL: "https://example/x/1"})
 	r.AddPage(Page{File: "docs/b.md", Status: StatusFailed, Reason: "unable to compile markdown"})
-	r.AddPage(Page{File: "docs/c.md", Status: StatusSkipped, Reason: "the document is not synchronized"})
+	r.AddPage(Page{File: "docs/c.md", Status: StatusSkipped, Reason: "edited in Confluence since mark published it"})
 
 	var out strings.Builder
 	require.NoError(t, r.Write(&out, FormatGitHub))
@@ -58,7 +58,23 @@ func TestGitHubAnnotatesTheFile(t *testing.T) {
 	require.Len(t, lines, 3)
 	assert.Equal(t, `::notice file=docs/a.md::published "A" to https://example/x/1`, lines[0])
 	assert.Equal(t, "::error file=docs/b.md::unable to compile markdown", lines[1])
-	assert.Equal(t, "::warning file=docs/c.md::the document is not synchronized", lines[2])
+	assert.Equal(t, "::warning file=docs/c.md::edited in Confluence since mark published it", lines[2])
+}
+
+// TestGitHubLeavesOutAnUnsynchronizedDocument: a document that opted out of
+// publishing was skipped on purpose, so the pull request is not told about it.
+// The json report still lists it.
+func TestGitHubLeavesOutAnUnsynchronizedDocument(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "docs/draft.md", Status: StatusSkipped, Reason: ReasonNotSynchronized})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+	assert.Empty(t, out.String())
+
+	out.Reset()
+	require.NoError(t, r.Write(&out, FormatJSON))
+	assert.Contains(t, out.String(), ReasonNotSynchronized)
 }
 
 // TestGitHubAnnotatesAWarningAgainstAPageThatPublished covers a document that

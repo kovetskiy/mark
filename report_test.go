@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -916,4 +917,65 @@ func TestSourcePathNamesTheSource(t *testing.T) {
 	assert.Equal(t, []string{filepath.Join(dir, "bad.md")}, seen,
 		"the mapper is given the path mark read")
 	assert.Contains(t, out.String(), "::error file=templates/bad.md.tmpl::")
+}
+
+// orphanSources publishes keep.md and gone.md from dir under the glob, deletes
+// gone.md, and runs again with a SourcePath that records what it is given and
+// answers with a rooted template path. It returns the github report and the
+// path SourcePath was given for the orphan.
+func orphanSources(t *testing.T, dir, glob string) (string, string) {
+	t.Helper()
+
+	server := outputServer(t)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	writeFile(t, dir, "keep.md", outHeader+"<!-- Title: Keep -->\n\nKeep.\n")
+	writeFile(t, dir, "gone.md", outHeader+"<!-- Title: Gone -->\n\nGone.\n")
+
+	var orphanPath string
+	config := publishConfig(server.URL, glob)
+	config.Tracking = TrackingConfig{TrackPages: true}
+	config.Report = ReportConfig{
+		OutputFormat: report.FormatGitHub,
+		SourcePath: func(file string) string {
+			if strings.HasSuffix(file, "gone.md") {
+				orphanPath = file
+			}
+
+			return "/src/templates/" + path.Base(filepath.ToSlash(file)) + ".tmpl"
+		},
+	}
+	require.NoError(t, Run(context.Background(), config))
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+	orphanPath = ""
+
+	var out strings.Builder
+	config.Output = &out
+	require.NoError(t, Run(context.Background(), config))
+
+	return out.String(), orphanPath
+}
+
+// TestSourcePathOfAnOrphanUnderTheWorkingDirectory: an orphan is known only
+// by its manifest key, which for a file below the working directory is
+// relative and slash-separated however deep it sits.
+func TestSourcePathOfAnOrphanUnderTheWorkingDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	out, orphanPath := orphanSources(t, filepath.Join("sub", "deep"), filepath.Join("sub", "deep", "*.md"))
+
+	assert.Equal(t, "sub/deep/gone.md", orphanPath)
+	assert.Contains(t, out, `::warning file=/src/templates/gone.md.tmpl::page "Gone" has no source file`)
+}
+
+// TestSourcePathOfAnOrphanOutsideTheWorkingDirectory: a file outside the
+// working directory keeps its absolute path as its key, still slash-separated,
+// and a rooted source is annotated as given.
+func TestSourcePathOfAnOrphanOutsideTheWorkingDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sub", "deep")
+
+	out, orphanPath := orphanSources(t, dir, filepath.Join(dir, "*.md"))
+
+	assert.Equal(t, filepath.ToSlash(filepath.Join(dir, "gone.md")), orphanPath)
+	assert.Contains(t, out, `::warning file=/src/templates/gone.md.tmpl::page "Gone" has no source file`)
 }

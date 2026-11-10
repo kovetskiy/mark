@@ -64,6 +64,11 @@ const (
 	StatusWouldUpdate Status = "would-update"
 )
 
+// ReasonNotSynchronized is the Reason of a page skipped because its document
+// opted out of being published. The github format does not annotate it: the
+// author asked for it, so there is nothing in the pull request to look at.
+const ReasonNotSynchronized = "the document is not synchronized"
+
 // Page is one document's outcome.
 type Page struct {
 	File string `json:"file"`
@@ -287,6 +292,10 @@ func (r *Report) writeGitHub(w io.Writer) error {
 			}
 
 		case StatusSkipped:
+			if page.Reason == ReasonNotSynchronized {
+				break
+			}
+
 			if err := command(w, "warning", file, page.Reason); err != nil {
 				return err
 			}
