@@ -1217,3 +1217,40 @@ func TestAnACLinkThatNamesNoPageIsAWarningOfEachDocumentHoldingIt(t *testing.T) 
 		assert.Equal(t, []string{warning.Message}, page.Warnings)
 	}
 }
+
+// TestADryRunsLinkToAPageNotYetCreatedIsAWarning: a dry run creates nothing,
+// so a link to a document whose page does not exist yet will not resolve and
+// nothing is going to publish it. That is a warning of the document holding the
+// link, in the report, not only in the log.
+func TestADryRunsLinkToAPageNotYetCreatedIsAWarning(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "a.md", outHeader+"<!-- Title: A -->\n\nSee [B](./b.md).\n")
+	writeFile(t, dir, "b.md", outHeader+"<!-- Title: B -->\n\nB.\n")
+
+	var out strings.Builder
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.Output = &out
+	config.Mode.DryRun = true
+	config.Update.ChangesOnly = true
+	config.Links = LinkConfig{CheckLinks: []string{"internal"}}
+	config.Report.OutputFormat = report.FormatJSON
+	require.NoError(t, Run(context.Background(), config))
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &got))
+
+	for _, page := range got.Pages {
+		if filepath.Base(page.File) != "a.md" {
+			continue
+		}
+
+		require.Len(t, page.WarningDetails, 1, "%+v", page)
+		assert.Equal(t, report.WarningUnresolvedLink, page.WarningDetails[0].Kind)
+		assert.Contains(t, page.WarningDetails[0].Message, `link "./b.md" does not resolve`)
+
+		return
+	}
+
+	t.Fatalf("a.md is not in the report: %s", out.String())
+}

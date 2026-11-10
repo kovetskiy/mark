@@ -38,8 +38,10 @@ const (
 	// different file than it would from the document's directory.
 	WarningInclude WarningKind = "include"
 
-	// WarningPlacement is a page found by title outside the parents its
-	// document declares: left where it is, or moved under them.
+	// WarningPlacement is a page not placed where its document asks: found
+	// outside its declared parents, outside --parents-from-path-root, under a
+	// parent title several documents declare, given an Order its parent
+	// cannot be found for, or left behind in the space it used to publish to.
 	WarningPlacement WarningKind = "placement"
 
 	// WarningAttachment is a file that was not uploaded, or one uploaded and
@@ -56,7 +58,12 @@ const (
 	// page's new body.
 	WarningInlineComment WarningKind = "inline-comment"
 
-	// WarningMissingPage is a page the page manifest recorded, for the
+	// WarningSharedPage is a page the page manifest records for two
+	// documents at once, so renaming either moves a page the other claims.
+	// Each of the two is warned.
+	WarningSharedPage WarningKind = "shared-page"
+
+	// WarningMissingPage is a page or folder the page manifest recorded, for the
 	// document or one of its parents, that no longer exists.
 	WarningMissingPage WarningKind = "missing-page"
 )

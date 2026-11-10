@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -16,6 +17,10 @@ type Ordered struct {
 	ParentID string
 	Title    string
 	Order    int
+
+	// Warnings collects what ordering could not do for the page's document;
+	// nil only logs it.
+	Warnings *report.Warnings
 }
 
 // OrderChildren arranges pages under each parent into the order their documents
@@ -39,7 +44,7 @@ func OrderChildren(ctx context.Context, api *confluence.API, dryRun bool, pages 
 			// misbehave against top-level targets, so this is left alone -- but
 			// said out loud, because a document that asked for a position and
 			// silently got none looks exactly like one that never asked.
-			log.Warn().Msgf(
+			p.Warnings.Add(report.WarningPlacement,
 				"page %q asked to be ordered %d but its parent is not known, so it is left where it is",
 				p.Title, p.Order,
 			)

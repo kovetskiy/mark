@@ -15,6 +15,7 @@ import (
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -60,6 +61,11 @@ type LinkResolver struct {
 	// anything a second time -- a dry run, or the second pass itself -- so a
 	// link to a page that is not there is reported rather than waited on.
 	Deferrals *Deferrals
+
+	// Warnings collects a link that does not resolve and that nothing is
+	// going to publish, when that is a warning rather than a failure of the
+	// check; nil only logs it.
+	Warnings *report.Warnings
 
 	// broken collects the links that failed a check, rather than the first one
 	// stopping the file. Reporting one at a time would mean fixing a link,
@@ -183,7 +189,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 
 		case r.checking():
 			// Nothing more is going to publish it.
-			log.Warn().Msgf("link %q does not resolve: %s", target, why.reason)
+			r.Warnings.Add(report.WarningUnresolvedLink, "link %q does not resolve: %s", target, why.reason)
 		}
 	}
 

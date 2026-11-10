@@ -13,13 +13,13 @@ import (
 
 	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/metadata"
-	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
 
 // BuildHierarchy lays the run's files out under root, the
 // --parents-from-path-root the flags name, or when that is empty under the one
-// the --files pattern implies.
+// the --files pattern implies. The files it lays out none of are Outside, for
+// the caller to say so against each.
 func BuildHierarchy(root, pattern string, files []string, titles TitleResolver) (*Hierarchy, error) {
 	explicitRoot := root
 	if root == "" {
@@ -30,18 +30,14 @@ func BuildHierarchy(root, pattern string, files []string, titles TitleResolver) 
 
 	// A root given by hand that covers none of the files is a mistake, and
 	// quietly deriving no parents at all is the wrong way to find out. One it
-	// covers only partly is said once per file, since the rest of the run
-	// carries on.
+	// covers only partly is for the caller to report against each file, since
+	// the rest of the run carries on.
 	outside := hierarchy.Outside()
 	if explicitRoot != "" && len(files) > 0 && len(outside) == len(files) {
 		return nil, fmt.Errorf(
 			"--parents-from-path-root %q covers none of the files: it has to be a directory the --files pattern lies under",
 			explicitRoot,
 		)
-	}
-
-	for _, file := range outside {
-		log.Warn().Msgf("%s is outside --parents-from-path-root %q; its path says nothing about its parents", file, root)
 	}
 
 	return hierarchy, nil

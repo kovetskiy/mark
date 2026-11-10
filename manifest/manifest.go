@@ -68,6 +68,7 @@ import (
 	"sync"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -317,6 +318,10 @@ type Store struct {
 	// those apart is the whole of rename detection.
 	runFiles map[string]bool
 
+	// warningsFor gives the collector of the document a key names; see
+	// SetWarningsFor.
+	warningsFor func(key string) *report.Warnings
+
 	// spaces holds the manifest for each space key touched so far, alongside
 	// the property it was read from -- the version in that property is what a
 	// write has to supersede.
@@ -480,6 +485,30 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
 	}
+}
+
+// SetWarningsFor has what Record finds wrong with a document added to the
+// collector warningsFor gives for its key, as Key spells it; a nil function,
+// or a nil collector for a key, only logs it.
+func (s *Store) SetWarningsFor(warningsFor func(key string) *report.Warnings) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.warningsFor = warningsFor
+}
+
+// warn adds a warning about the document key names. Called with s.mu held.
+func (s *Store) warn(key string, kind report.WarningKind, format string, args ...any) {
+	var warnings *report.Warnings
+	if s.warningsFor != nil {
+		warnings = s.warningsFor(key)
+	}
+
+	if warnings == nil {
+		warnings = report.NewWarnings(key)
+	}
+
+	warnings.Add(kind, format, args...)
 }
 
 // normaliseKeys rewrites entries stored under a key that predates
@@ -852,11 +881,13 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			delete(state.shards[shardFor(owner)].pages, owner)
 			state.shards[shardFor(owner)].dirty = true
 		} else {
-			log.Warn().Msgf(
-				"%s and %s both publish to page %s in space %q; "+
-					"renaming either will move a page the other also claims",
-				owner, path, pageID, spaceKey,
-			)
+			for _, claimant := range []string{owner, path} {
+				s.warn(claimant, report.WarningSharedPage,
+					"%s and %s both publish to page %s in space %q; "+
+						"renaming either will move a page the other also claims",
+					owner, path, pageID, spaceKey,
+				)
+			}
 		}
 	}
 
@@ -867,10 +898,10 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			continue
 		}
 		if entry, ok := other.shards[shardFor(path)].pages[path]; ok {
-			log.Warn().Msgf(
-				"%s previously published to space %q as page %s and now publishes to %q; "+
+			s.warn(path, report.WarningPlacement,
+				"it previously published to space %q as page %s and now publishes to %q; "+
 					"the page in %q is left behind",
-				path, otherKey, entry.PageID, spaceKey, otherKey,
+				otherKey, entry.PageID, spaceKey, otherKey,
 			)
 		}
 	}
