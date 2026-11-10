@@ -206,25 +206,15 @@ func tagName(tag string) (name string, closing, selfClosing bool) {
 type decodedText struct {
 	text string
 	// from[i] is the body offset of the character or reference text[i] was
-	// decoded from.
+	// decoded from, and from[len(text)] the offset just past the run.
 	from []int
-	// end is the body offset just past the run.
-	end int
-}
-
-// bodyOffset returns the body offset at which text[i] begins, or the end of
-// the run for i == len(text).
-func (t decodedText) bodyOffset(i int) int {
-	if i == len(t.text) {
-		return t.end
-	}
-	return t.from[i]
 }
 
 // decodeText resolves the character references in span of body.
 func decodeText(body string, span textSpan) decodedText {
 	var text strings.Builder
-	var from []int
+	text.Grow(span.end - span.start)
+	from := make([]int, 0, span.end-span.start+1)
 	for i := span.start; i < span.end; {
 		n, decoded := 1, body[i:i+1]
 		if body[i] == '&' {
@@ -238,7 +228,7 @@ func decodeText(body string, span textSpan) decodedText {
 		text.WriteString(decoded)
 		i += n
 	}
-	return decodedText{text: text.String(), from: from, end: span.end}
+	return decodedText{text: text.String(), from: append(from, span.end)}
 }
 
 // xmlEntities are the references XML itself defines.
@@ -289,8 +279,8 @@ func occurrences(texts []decodedText, selection string) iter.Seq2[int, int] {
 				pos += index
 				end := pos + len(selection)
 				startsUnit := pos == 0 || t.from[pos] != t.from[pos-1]
-				endsUnit := end == len(t.text) || t.from[end] != t.from[end-1]
-				if startsUnit && endsUnit && !yield(t.from[pos], t.bodyOffset(end)) {
+				endsUnit := t.from[end] != t.from[end-1]
+				if startsUnit && endsUnit && !yield(t.from[pos], t.from[end]) {
 					return
 				}
 			}
