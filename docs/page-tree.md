@@ -255,7 +255,13 @@ What needs an earlier mapping does not happen in an untracked space:
 * `--on-orphan` finds no orphans there, so nothing is archived or deleted.
 * `--no-overwrite` leaves every existing page alone, reported `skipped`:
   nothing records the version mark last wrote, so an edit made in Confluence
-  cannot be told from none. A page the run creates is published as usual.
+  cannot be told from none. A page the run creates, and an empty parent it
+  created for the documents under it, is published as usual.
+
+> **Note:** with `--no-overwrite`, this happens on every run for as long as
+> the manifest page is missing, not only on the first: each run skips every
+> existing page in the space and only creates new ones. Publish the manifest
+> page, in the same run or before it, to have existing pages updated again.
 
 Only a missing page is excused. A lookup that fails for any other reason still
 fails the run.

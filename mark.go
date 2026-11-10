@@ -314,9 +314,13 @@ type TrackingConfig struct {
 	// the page exists by the end of the run, so a run may publish the
 	// manifest page itself after the documents under it. Each space that
 	// ended untracked is in the report's Untracked, and logged as a warning.
-	// Under NoOverwrite such a space leaves an existing page alone, since
-	// nothing records what mark last wrote there; OnOrphan finds no orphans
-	// in it. Requires ManifestPage.
+	// OnOrphan finds no orphans in such a space. Requires ManifestPage.
+	//
+	// With NoOverwrite, every existing page in such a space is skipped, not
+	// only on the first run but on every run for as long as the manifest page
+	// is missing: nothing records what mark last wrote there, so an edit made
+	// in Confluence cannot be told from none. Only pages the run creates are
+	// published.
 	ManifestPageOptional bool
 
 	ManifestPrefix string
@@ -614,7 +618,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
-	if config.Tracking.ManifestPageOptional && config.Tracking.ManifestPage == "" {
+	if config.Tracking.ManifestPageOptional && strings.TrimSpace(config.Tracking.ManifestPage) == "" {
 		return fmt.Errorf("--manifest-page-optional (Tracking.ManifestPageOptional) requires " +
 			"--manifest-page (Tracking.ManifestPage): it says what to do when that page is missing")
 	}
@@ -799,7 +803,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// After the save, which keeps the mapping of a space whose manifest
 		// page this run published, so that space is not reported.
 		for _, space := range tracker.UntrackedSpaces() {
-			results.AddUntracked(report.Untracked{Space: space, ManifestPage: config.Tracking.ManifestPage})
+			results.AddUntracked(report.Untracked{Space: space, ManifestPage: strings.TrimSpace(config.Tracking.ManifestPage)})
 		}
 	}()
 

@@ -378,7 +378,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.BoolFlag{
 			Name:    "manifest-page-optional",
 			Value:   false,
-			Usage:   "publish to a space where the --manifest-page page does not exist untracked, with a warning, instead of failing. The mapping is saved if the run publishes that page itself. Requires --manifest-page.",
+			Usage:   "publish to a space where the --manifest-page page does not exist untracked, with a warning, instead of failing. The mapping is saved if the run publishes that page itself. With --no-overwrite, every existing page in such a space is skipped on every run until the page exists. Requires --manifest-page.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MANIFEST_PAGE_OPTIONAL"), config.value("manifest-page-optional")),
 		},
 		&cli.StringFlag{

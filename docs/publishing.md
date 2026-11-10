@@ -216,8 +216,10 @@ pages or folders, or because nothing was published in its space this run -- is
 
 `untracked` lists the spaces published to without a page manifest under
 [`--manifest-page-optional`](page-tree.md#when-the-manifest-page-does-not-exist-yet),
-because the manifest page does not exist there, each with the page it was
-given as:
+whose mapping was not saved because the manifest page was still missing at the
+end of the run, each with the page it was given as. Under `--no-overwrite`,
+every existing page in such a space was skipped, and is on every run until the
+manifest page exists:
 
 ```json
 "untracked": [
@@ -253,7 +255,7 @@ so that a failure appears against the file that caused it in a pull request:
 ::warning file=docs/notes.md::edited in Confluence since mark published it (version 7, mark wrote 5)
 ::error file=docs/broken.md::unable to compile markdown: ...
 ::warning file=docs/old.md::page "Old" was deleted: its source file is gone
-::warning::space "DOCS" was published untracked: its manifest page "Team Handbook" does not exist
+::warning::space "DOCS" was published untracked: no page mapping was saved on its manifest page "Team Handbook"
 ::error::unable to save page manifest: ...
 ```
 

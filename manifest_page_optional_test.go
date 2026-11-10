@@ -152,13 +152,15 @@ func TestManifestPageOptionalNoOverwriteLeavesExistingPages(t *testing.T) {
 // manifest page is missing, and on its own there is none.
 func TestManifestPageOptionalRequiresManifestPage(t *testing.T) {
 	server := confluencetest.New(t)
-	config := optionalManifestConfig(server, t.TempDir(), io.Discard)
-	config.Tracking.ManifestPage = ""
+	for _, page := range []string{"", "  "} {
+		config := optionalManifestConfig(server, t.TempDir(), io.Discard)
+		config.Tracking.ManifestPage = page
 
-	err := Run(context.Background(), config)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(),
-		"--manifest-page-optional (Tracking.ManifestPageOptional) requires --manifest-page (Tracking.ManifestPage)")
+		err := Run(context.Background(), config)
+		require.Error(t, err, "%q", page)
+		assert.Contains(t, err.Error(),
+			"--manifest-page-optional (Tracking.ManifestPageOptional) requires --manifest-page (Tracking.ManifestPage)")
+	}
 }
 
 // TestManifestPageOptionalNoOverwritePreview: a dry run's preview of
