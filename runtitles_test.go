@@ -2,7 +2,6 @@ package mark
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -20,22 +19,7 @@ import (
 // is told, as the one whose page is not placed under either, and so is each
 // that declares it, once however often the title is looked up.
 func TestAParentTitleDeclaredTwiceWarnsEachDocumentOnce(t *testing.T) {
-	dir := t.TempDir()
-	header := "<!-- Space: DOCS -->\n<!-- Title: Shared -->\n\n"
-	writeFile(t, dir, "a.md", header+"A.\n")
-	writeFile(t, dir, "b.md", header+"B.\n")
-
-	collectors := map[string]*report.Warnings{}
-	titles := &runTitles{
-		files: []string{filepath.Join(dir, "a.md"), filepath.Join(dir, "b.md")},
-		warningsFor: func(file string) *report.Warnings {
-			if collectors[file] == nil {
-				collectors[file] = report.NewWarnings(file)
-			}
-
-			return collectors[file]
-		},
-	}
+	titles, collectors := ambiguousTitles(t)
 
 	children := map[string]*report.Warnings{
 		"child.md": report.NewWarnings("child.md"), "other-child.md": report.NewWarnings("other-child.md"),
@@ -152,9 +136,8 @@ func ambiguousTitles(t *testing.T) (*runTitles, map[string]*report.Warnings) {
 	t.Helper()
 
 	dir := t.TempDir()
-	header := "<!-- Space: DOCS -->\n<!-- Title: Shared -->\n\n"
-	a := writeFile(t, dir, "a.md", header+"A.\n")
-	b := writeFile(t, dir, "b.md", header+"B.\n")
+	a := writeFile(t, dir, "a.md", parentDoc("Shared"))
+	b := writeFile(t, dir, "b.md", parentDoc("Shared"))
 
 	collectors := map[string]*report.Warnings{
 		a: report.NewWarnings(a), b: report.NewWarnings(b),
