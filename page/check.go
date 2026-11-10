@@ -214,23 +214,23 @@ func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]Mi
 
 	// Copied under the lock and looked up without it, so that a lookup, which
 	// is a request to Confluence, does not hold up NotePage on another
-	// goroutine. The sources are copied too: NotePage appends to them.
+	// goroutine. The sources are copied too: NotePage appends to them. A page
+	// the run publishes is left out here, and never looked up.
 	c.mu.Lock()
 	pending := make(map[string]pendingPage, len(c.pending))
 	for key, link := range c.pending {
+		if c.publishes[titleKey(link.space, link.title)] {
+			continue
+		}
+
 		link.sources = slices.Clone(link.sources)
 		pending[key] = link
 	}
-	publishes := maps.Clone(c.publishes)
 	c.mu.Unlock()
 
 	var missing []MissingLink
 	for _, key := range slices.Sorted(maps.Keys(pending)) {
 		link := pending[key]
-
-		if publishes[titleKey(link.space, link.title)] {
-			continue
-		}
 
 		found, err := finder.FindPage(ctx, link.space, link.title, confluence.ContentPage)
 		if err != nil {

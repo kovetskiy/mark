@@ -258,22 +258,24 @@ func (l LinkConfig) validate(checks page.LinkChecks) error {
 	return nil
 }
 
-// checkStaged refuses a document outside StagedRoot. Resolved against its own
-// directory alone, its links would be answered by the staging copy, which is
-// what setting the roots is meant to stop.
-func (l LinkConfig) checkStaged(file string) error {
+// checkStaged is the directory under SourceRoot that stands for file's own, or
+// "" when no roots are set, and refuses a document outside StagedRoot.
+// Resolved against its own directory alone, its links would be answered by
+// the staging copy, which is what setting the roots is meant to stop.
+func (l LinkConfig) checkStaged(file string) (string, error) {
 	if l.StagedRoot == "" {
-		return nil
+		return "", nil
 	}
 
-	if _, ok := l.sourceDir(filepath.Dir(file)); !ok {
-		return &LinkConfigError{
+	dir, ok := l.sourceDir(filepath.Dir(file))
+	if !ok {
+		return "", &LinkConfigError{
 			Field: "Links.StagedRoot", Flag: "--links-staged-root",
 			Reason: fmt.Sprintf("does not contain %s, so there is no telling where its links were written", file),
 		}
 	}
 
-	return nil
+	return dir, nil
 }
 
 // sourceDir is the directory under SourceRoot that stands for dir, and false
@@ -283,40 +285,12 @@ func (l LinkConfig) sourceDir(dir string) (string, bool) {
 		return "", false
 	}
 
-	rel, ok := relativeUnder(l.StagedRoot, dir)
+	rel, ok := fspath.Under(l.StagedRoot, dir)
 	if !ok {
 		return "", false
 	}
 
 	return filepath.Join(l.SourceRoot, rel), true
-}
-
-// relativeUnder is path relative to root, and false when path is not under
-// it. Compared absolute, so that either may be given relative to the working
-// directory, and failing that with symlinks resolved as deep as each path
-// exists, so that a root reached through one (every path under macOS's /tmp)
-// still contains what its target does.
-func relativeUnder(root, path string) (string, bool) {
-	under := func(root, path string) (string, bool) {
-		root, rootErr := filepath.Abs(root)
-		path, pathErr := filepath.Abs(path)
-		if rootErr != nil || pathErr != nil {
-			return "", false
-		}
-
-		rel, err := filepath.Rel(root, path)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", false
-		}
-
-		return rel, true
-	}
-
-	if rel, ok := under(root, path); ok {
-		return rel, true
-	}
-
-	return under(fspath.ResolveDeepest(root), fspath.ResolveDeepest(path))
 }
 
 // TrackingConfig is the page manifest --track-pages keeps, and what is done
@@ -645,7 +619,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	// A document the staged root does not contain is refused before any is
 	// published, rather than part way through the run.
 	for _, file := range files {
-		if err := config.Links.checkStaged(file); err != nil {
+		if _, err := config.Links.checkStaged(file); err != nil {
 			return err
 		}
 	}
@@ -1856,7 +1830,8 @@ func (r *publishRun) validate(doc *document) error {
 func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	config, file := r.config, doc.file
 
-	if err := config.Links.checkStaged(file); err != nil {
+	sourceDir, err := config.Links.checkStaged(file)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1870,7 +1845,10 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	// Looked for there only after every staged place, so that setting the
 	// roots cannot change what a link that already resolved names.
 	var sourceDirs []string
-	for _, dir := range append([]string{base}, searchDirs...) {
+	if sourceDir != "" {
+		sourceDirs = append(sourceDirs, sourceDir)
+	}
+	for _, dir := range searchDirs {
 		if mapped, ok := config.Links.sourceDir(dir); ok {
 			sourceDirs = append(sourceDirs, mapped)
 		}

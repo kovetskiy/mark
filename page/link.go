@@ -170,27 +170,24 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 	}
 
 	filename, hash, _ := strings.Cut(target, "#")
-	bases := append([]string{r.Base}, r.SearchDirs...)
-
-	if len(r.CheckOnlyDirs) > 0 && filename != "" {
-		if _, missing := findLinkTarget(bases, filename); missing != nil {
-			if _, absent := findLinkTarget(r.CheckOnlyDirs, filename); absent == nil {
-				log.Debug().Msgf("link %q names a file only the check looks for; left as written", target)
-
-				return "", nil
-			}
-		}
-	}
 
 	resolved, why, err := resolveLink(
 		ctx,
-		r.API, bases,
+		r.API, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.Extract,
 		r.ReadMeta,
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
+	}
+
+	if why != nil && why.noFile && len(r.CheckOnlyDirs) > 0 {
+		if _, absent := findLinkTarget(r.CheckOnlyDirs, filename); absent == nil {
+			log.Debug().Msgf("link %q names a file only the check looks for; left as written", target)
+
+			return "", nil
+		}
 	}
 
 	if why != nil {
@@ -272,6 +269,10 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 type unresolved struct {
 	reason    string
 	transient bool
+
+	// noFile marks a link that names no file in any directory looked in, the
+	// one cause a file elsewhere -- in LinkResolver.CheckOnlyDirs -- answers.
+	noFile bool
 }
 
 // resolveLink reports the Confluence link a target should become.
@@ -431,10 +432,10 @@ func findLinkTarget(bases []string, name string) (string, *unresolved) {
 	}
 
 	if directory {
-		return "", &unresolved{reason: "it is a directory, not a document"}
+		return "", &unresolved{reason: "it is a directory, not a document", noFile: true}
 	}
 
-	return "", &unresolved{reason: "there is no such file"}
+	return "", &unresolved{reason: "there is no such file", noFile: true}
 }
 
 // getConfluenceLink builds a stable Confluence tiny link for the given page or blog post.

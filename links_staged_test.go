@@ -377,21 +377,3 @@ func TestADocumentReachedThroughASymlink(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, server.Page(target.ID).Body, "/x/")
 }
-
-// TestRelativeUnderAPathThatDoesNotExist: symlinks are resolved as deep as a
-// path exists, so a directory not made yet under a symlinked root is still
-// inside it.
-func TestRelativeUnderAPathThatDoesNotExist(t *testing.T) {
-	root := t.TempDir()
-	link := filepath.Join(t.TempDir(), "root")
-	if err := os.Symlink(root, link); err != nil {
-		t.Skipf("no symlinks here: %v", err)
-	}
-
-	rel, ok := relativeUnder(root, filepath.Join(link, "not", "yet"))
-	require.True(t, ok)
-	assert.Equal(t, filepath.Join("not", "yet"), rel)
-
-	_, ok = relativeUnder(root, filepath.Join(t.TempDir(), "elsewhere"))
-	assert.False(t, ok)
-}

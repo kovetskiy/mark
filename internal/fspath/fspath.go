@@ -2,7 +2,10 @@
 // whatever symlinks they were reached through.
 package fspath
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // ResolveDeepest resolves the longest leading part of a path that exists and
 // re-appends whatever is left.
@@ -36,4 +39,36 @@ func ResolveDeepest(path string) string {
 		rest = filepath.Join(filepath.Base(path), rest)
 		path = parent
 	}
+}
+
+// Within is path relative to root, and false when path is not under it. Both
+// are made absolute, so either may be relative to the working directory, and
+// compared as given: a caller comparing files rather than names resolves both
+// with ResolveDeepest first, or uses Under.
+func Within(root, path string) (string, bool) {
+	root, rootErr := filepath.Abs(root)
+	path, pathErr := filepath.Abs(path)
+	if rootErr != nil || pathErr != nil {
+		return "", false
+	}
+
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+
+	return rel, true
+}
+
+// Under is Within, and failing that Within with symlinks resolved as deep as
+// each path exists, so that a root reached through one (every path under
+// macOS's /tmp) still contains what its target does. A path under root as
+// named counts even when it resolves elsewhere, so this is not a boundary
+// check: one of those resolves both sides alone.
+func Under(root, path string) (string, bool) {
+	if rel, ok := Within(root, path); ok {
+		return rel, true
+	}
+
+	return Within(ResolveDeepest(root), ResolveDeepest(path))
 }
