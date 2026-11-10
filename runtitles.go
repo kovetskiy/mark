@@ -54,7 +54,10 @@ func (r *runTitles) index() {
 
 // declaredBy returns the one document of the run that publishes content of
 // that type under the title, and false when none does or more than one does.
-func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
+// A title more than one declares is said against the document looking for it,
+// in warnings, whose parent cannot be told apart, and once against each that
+// declares it, since any of them is the one to retitle.
+func (r *runTitles) declaredBy(space, kind, title string, warnings *report.Warnings) (string, bool) {
 	if r == nil {
 		return "", false
 	}
@@ -64,26 +67,33 @@ func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
 
 	key := runTitleKey(space, kind, title)
 	documents := r.documents[key]
-	if len(documents) > 1 && !r.warned[key] {
-		if r.warned == nil {
-			r.warned = map[string]bool{}
-		}
-		r.warned[key] = true
+	if len(documents) > 1 {
+		declarers := strings.Join(documents, ", ")
+		warnings.Add(report.WarningPlacement,
+			"parent %q is declared by %d documents (%s), so it is not followed to the page any of them publishes to",
+			title, len(documents), declarers,
+		)
 
-		// Said against each, since any of them is the one to retitle.
-		for _, file := range documents {
-			var warnings *report.Warnings
-			if r.warningsFor != nil {
-				warnings = r.warningsFor(file)
+		if !r.warned[key] {
+			if r.warned == nil {
+				r.warned = map[string]bool{}
 			}
-			if warnings == nil {
-				warnings = report.NewWarnings(file)
-			}
+			r.warned[key] = true
 
-			warnings.Add(report.WarningPlacement,
-				"parent %q is declared by %d documents (%s); a document under it follows none of them",
-				title, len(documents), strings.Join(documents, ", "),
-			)
+			for _, file := range documents {
+				var declarer *report.Warnings
+				if r.warningsFor != nil {
+					declarer = r.warningsFor(file)
+				}
+				if declarer == nil {
+					declarer = report.NewWarnings(file)
+				}
+
+				declarer.Add(report.WarningPlacement,
+					"parent %q is declared by %d documents (%s); a document under it follows none of them",
+					title, len(documents), declarers,
+				)
+			}
 		}
 	}
 	if len(documents) != 1 {

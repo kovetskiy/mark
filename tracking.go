@@ -189,7 +189,7 @@ func refreshStaleParents(
 		}
 
 		// A child sorting ahead of its retitled parent must not create the new title first.
-		pageID, publisher, err := trackedPageOfDeclaredTitle(ctx, tracker, titles, meta.Space, title)
+		pageID, publisher, err := trackedPageOfDeclaredTitle(ctx, tracker, titles, meta.Space, title, warnings)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 		}
@@ -253,8 +253,10 @@ func refreshStaleParents(
 // the run that publishes the title as a page, and that document, if it has been
 // published before. A document renamed since is found by its content, as
 // resolveRenamedFile finds it when its own turn comes.
-func trackedPageOfDeclaredTitle(ctx context.Context, tracker *manifest.Store, titles *runTitles, space, title string) (string, string, error) {
-	file, ok := titles.declaredBy(space, "page", title)
+func trackedPageOfDeclaredTitle(
+	ctx context.Context, tracker *manifest.Store, titles *runTitles, space, title string, warnings *report.Warnings,
+) (string, string, error) {
+	file, ok := titles.declaredBy(space, "page", title, warnings)
 	if !ok {
 		return "", "", nil
 	}
