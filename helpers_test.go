@@ -11,6 +11,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -280,4 +281,16 @@ func publishOne(ctx context.Context, file string, api *confluence.API, config Pu
 	defer publisher.Close()
 
 	return publisher.Publish(ctx, file)
+}
+
+// manifestShards counts the manifest properties on ownerID.
+func manifestShards(server *confluencetest.Server, ownerID string) int {
+	shards := 0
+	for i := range manifest.ShardCount {
+		if server.SpaceProperty(ownerID, manifest.PropertyKey(i)) != nil {
+			shards++
+		}
+	}
+
+	return shards
 }

@@ -1007,8 +1007,7 @@ func TestManifestPageMustExist(t *testing.T) {
 
 // TestManifestPageOptionalMissing: under SetManifestPageOptional a missing
 // manifest page leaves the space untracked instead of failing. It starts from
-// an empty manifest, reports no orphans, and Save writes nothing anywhere --
-// and asks for the page once more, not once per Save.
+// an empty manifest, reports no orphans, and Save writes nothing anywhere.
 func TestManifestPageOptionalMissing(t *testing.T) {
 	ctx := t.Context()
 	store, server := newStore(t)

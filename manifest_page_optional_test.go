@@ -3,7 +3,6 @@ package mark
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"path/filepath"
 	"testing"
@@ -19,53 +18,25 @@ import (
 // optionalManifestConfig tracks pages in dir on the page titled Handbook,
 // which may be missing, and reports as JSON into out.
 func optionalManifestConfig(server *confluencetest.Server, dir string, out io.Writer) Config {
-	return Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{
-				Features: []string{"mention"},
-			},
-			Output: out,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Tracking: TrackingConfig{
-			TrackPages:           true,
-			ManifestPage:         "Handbook",
-			ManifestPageOptional: true,
-		},
-		Report: ReportConfig{OutputFormat: report.FormatJSON},
-	}
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Output = out
+	config.Tracking.ManifestPage = "Handbook"
+	config.Tracking.ManifestPageOptional = true
+	config.Report.OutputFormat = report.FormatJSON
+	return config
 }
 
+// parseReport reads the JSON report out of a run's output, past the bodies a
+// dry run prints ahead of it.
 func parseReport(t *testing.T, out *bytes.Buffer) *report.Report {
 	t.Helper()
 
-	// A dry run prints each body before the report.
 	data := out.Bytes()
 	if start := bytes.LastIndex(data, []byte("\n{\n")); start >= 0 {
 		data = data[start+1:]
 	}
 
-	parsed := &report.Report{}
-	require.NoError(t, json.Unmarshal(data, parsed), "output is not a JSON report: %s", out)
-
-	return parsed
-}
-
-// manifestShards counts the manifest properties on ownerID.
-func manifestShards(server *confluencetest.Server, ownerID string) int {
-	shards := 0
-	for i := range manifest.ShardCount {
-		if server.SpaceProperty(ownerID, manifest.PropertyKey(i)) != nil {
-			shards++
-		}
-	}
-
-	return shards
+	return decodeReport(t, data)
 }
 
 // TestManifestPageMissingFailsTheRun: without ManifestPageOptional a missing
@@ -115,11 +86,9 @@ func TestManifestPageOptionalPublishesUntracked(t *testing.T) {
 	require.Len(t, parsed.Pages, 1)
 	assert.Equal(t, report.StatusPublished, parsed.Pages[0].Status)
 
-	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
-	require.NoError(t, err)
-	require.NotNil(t, guide)
+	mustFind(t, server, "Guide")
 
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	spaceID, err := api.GetSpaceID(context.Background(), "DOCS")
 	require.NoError(t, err)
 	assert.Equal(t, 0, manifestShards(server, spaceID), "no manifest is kept anywhere else")
@@ -141,24 +110,14 @@ func TestManifestPageOptionalLandingPagePublishedLater(t *testing.T) {
 	require.NoError(t, Run(context.Background(), config))
 	assert.Empty(t, parseReport(t, &out).Untracked, "the space ended tracked")
 
-	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	handbook, err := api.FindPage(context.Background(), "DOCS", "Handbook", "page")
-	require.NoError(t, err)
-	require.NotNil(t, handbook)
-	assert.Positive(t, manifestShards(server, handbook.ID), "the mapping is on the landing page")
-	guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
-	require.NoError(t, err)
-	require.NotNil(t, guide)
+	assert.Positive(t, manifestShards(server, mustFind(t, server, "Handbook")), "the mapping is on the landing page")
+	guide := mustFind(t, server, "Guide")
 
 	writeFile(t, dir, "a-guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide Renamed -->\n\nA guide.\n")
 	out.Reset()
 	require.NoError(t, Run(context.Background(), config))
 
-	fresh := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	renamed, err := fresh.FindPage(context.Background(), "DOCS", "Guide Renamed", "page")
-	require.NoError(t, err)
-	require.NotNil(t, renamed)
-	assert.Equal(t, guide.ID, renamed.ID, "the second run was tracked")
+	assert.Equal(t, guide, mustFind(t, server, "Guide Renamed"), "the second run was tracked")
 }
 
 // TestManifestPageOptionalNoOverwriteLeavesExistingPages: --no-overwrite
