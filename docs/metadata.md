@@ -132,7 +132,9 @@ A comment header has no escape: its value runs from the first colon to the
 closing `-->`, trimmed, on one line. A value with a line break, with space at
 either end, or holding `-->` (or `--!>`, which ends a comment for an HTML
 reader) cannot be written as a header at all, and one that is pasted in
-regardless can end the comment early and start another header.
+regardless can end the comment early and start another header. A value
+holding `<!--`, which opens the directives mark expands from the raw text, is
+refused as well.
 
 A Go program writing documents from text it does not control can leave that to
 mark's `metadata` package:
@@ -142,14 +144,17 @@ mark's `metadata` package:
   `metadata.ErrUnknownHeader` for a key mark does not read.
 * `metadata.SanitizeValue(value)` alters a value just enough that `Header`
   takes it, for a program that would rather publish a slightly different
-  title than fail: each line break becomes a space, `-->` and `--!>` become
-  `-- >` and `--! >`, and the space at either end is trimmed. A value `Header`
-  already takes is left as it is.
+  title than fail: each line break becomes a space, `-->`, `--!>` and `<!--`
+  become `-- >`, `--! >` and `< !--`, and the space at either end is trimmed.
+  The changes show in the published title. A value `Header` already takes is
+  left as it is.
 * `metadata.FrontMatter(fields)` returns YAML front matter, which can hold any
   text, line breaks included. It refuses a key mark does not read with
   `metadata.ErrUnknownHeader`, and with `metadata.ErrUnrepresentable` two keys
-  mark reads as one (`title` and `Title`), or a value that is not nil, a
-  string, a boolean, a number, or a list or map of them.
+  mark reads as one (`title` and `Title`), a value that is not nil, a
+  string, a boolean, a number, or a list or map of them, a string holding
+  `<!--`, or a value of a kind its key does not take (a number for `title`, a
+  list of numbers for `labels`), which mark would otherwise drop.
 
 ## Further headers
 
