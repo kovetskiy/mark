@@ -409,7 +409,11 @@ func exportBaseURL(configured, fromURL string) (string, error) {
 		return fromURL, nil
 	}
 
-	if err := confluence.SameInstance(configured, fromURL); err != nil {
+	err := confluence.SameInstance(configured, fromURL)
+	if err != nil && !errors.Is(err, confluence.ErrOtherInstance) {
+		return "", fmt.Errorf("unable to compare --url with the base URL: %w", err)
+	}
+	if err != nil {
 		return "", fmt.Errorf(
 			"--url is not a page of the configured instance, and a page id names a page of one instance only "+
 				"(leave the base URL out to read from %s, or name the page with --page-id to read from %s): %w",

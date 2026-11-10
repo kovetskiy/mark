@@ -22,6 +22,7 @@ func TestSameInstance(t *testing.T) {
 	}{
 		{"identical", site, site},
 		{"trailing slash", site + "/", site},
+		{"trailing slashes", site + "//", site},
 		{"host in upper case", site, "https://EXAMPLE.Atlassian.NET/wiki"},
 		{"scheme in upper case", site, "HTTPS://example.atlassian.net/wiki"},
 		{"trailing dot", site, "https://example.atlassian.net./wiki"},
@@ -105,6 +106,7 @@ func TestSameInstance(t *testing.T) {
 		{"port zero", site, "https://example.atlassian.net:0/wiki", "port"},
 		{"dot-dot segment", site, "https://example.atlassian.net/wiki/../other", ".."},
 		{"dot segment", site, "https://example.atlassian.net/./wiki", `"."`},
+		{"percent-encoded dot-dot segment", site, "https://example.atlassian.net/wiki/%2e%2e/other", ".."},
 		{"empty configured", "", site, "http or https"},
 		{"empty other", site, "", "http or https"},
 	} {
