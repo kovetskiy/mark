@@ -2,7 +2,6 @@ package mark
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,8 +47,7 @@ func TestRunRefusesDocumentLinkedOutsideProject(t *testing.T) {
 	config.ContinueOnError = true
 
 	err := Run(context.Background(), config)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, attachment.ErrOutsideProject)
+	require.ErrorIs(t, err, attachment.ErrOutsideProject)
 
 	var fileErr *FileError
 	require.ErrorAs(t, err, &fileErr)
@@ -67,8 +65,7 @@ func TestRunRefusesDocumentUnderDirectoryLinkedOutsideProject(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Dir(outside), filepath.Join(project, "docs", "x")))
 
 	err := Run(context.Background(), publishConfig(server.URL, "docs/**/*.md"))
-	require.Error(t, err)
-	assert.ErrorIs(t, err, attachment.ErrOutsideProject)
+	require.ErrorIs(t, err, attachment.ErrOutsideProject)
 	assert.Empty(t, bodyOfPageTitled(t, server, "Outside"))
 }
 
@@ -95,11 +92,10 @@ func TestPublisherRefusesDocumentLinkedOutsideProject(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 	_, err := publishOne(context.Background(), link, api, PublishConfig{Output: io.Discard})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, attachment.ErrOutsideProject)
+	require.ErrorIs(t, err, attachment.ErrOutsideProject)
 
 	var fileErr *FileError
-	assert.True(t, errors.As(err, &fileErr))
+	require.ErrorAs(t, err, &fileErr)
 	assert.Empty(t, bodyOfPageTitled(t, server, "Outside"))
 }
 
@@ -117,4 +113,22 @@ func TestPublisherPublishesDocumentsNamedDirectly(t *testing.T) {
 	_, err = publishOne(context.Background(), outside, api, PublishConfig{Output: io.Discard})
 	require.NoError(t, err)
 	assert.Contains(t, bodyOfPageTitled(t, server, "Outside"), "outside")
+}
+
+// TestPublisherPublishesLinkInsideCheckoutNamedThroughOtherPath: a checkout
+// reached through a symlink (macOS's /tmp, a CI workspace) may be named by
+// either spelling; a link staying inside it publishes whichever is used.
+func TestPublisherPublishesLinkInsideCheckoutNamedThroughOtherPath(t *testing.T) {
+	server, project, _ := documentProject(t)
+	writeAt(t, project, filepath.Join("shared", "alias.md"), "<!-- Space: DOCS -->\n<!-- Title: Alias -->\n\nshared\n")
+	require.NoError(t, os.Symlink(filepath.Join("..", "shared", "alias.md"), filepath.Join(project, "docs", "alias.md")))
+
+	checkout := filepath.Join(t.TempDir(), "checkout")
+	require.NoError(t, os.Symlink(project, checkout))
+	t.Chdir(checkout)
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	_, err := publishOne(context.Background(), filepath.Join(project, "docs", "alias.md"), api, PublishConfig{Output: io.Discard})
+	require.NoError(t, err)
+	assert.Contains(t, bodyOfPageTitled(t, server, "Alias"), "shared")
 }
