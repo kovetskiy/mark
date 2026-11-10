@@ -183,7 +183,7 @@ DESCRIPTION:
 
 OPTIONS:
    --files string, -f string                      use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). [$MARK_FILES]
-   --files-from string                            read markdown file paths to publish from this file, one per line, or from standard input for "-". Each is taken as written, with no glob meaning, beside any --files pattern. A path that does not exist is not published but still named, so with --partial a deleted file listed there is looked for: pipe in git diff --no-renames --name-only, which names a renamed file under its old path too. [$MARK_FILES_FROM]
+   --files-from string                            read markdown file paths to publish from this file, one per line, or from standard input for "-". Each is taken as written, with no glob meaning, beside any --files pattern. A path that does not exist is not published but still named, so with --partial a deleted file listed there is looked for: pipe in git diff --no-renames --name-only -- '*.md', which names a renamed file under its old path too; every listed file that exists is published, so limit the list to Markdown. [$MARK_FILES_FROM]
    --continue-on-error                            don't exit if an error occurs while processing a file, continue processing remaining files. [$MARK_CONTINUE_ON_ERROR]
    --compile-only                                 show resulting HTML and don't update Confluence page content. [$MARK_COMPILE_ONLY]
    --dry-run, -n                                  resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github. [$MARK_DRY_RUN]

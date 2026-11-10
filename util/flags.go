@@ -115,7 +115,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:      "files-from",
-			Usage:     "read markdown file paths to publish from this file, one per line, or from standard input for \"-\". Each is taken as written, with no glob meaning, beside any --files pattern. A path that does not exist is not published but still named, so with --partial a deleted file listed there is looked for: pipe in git diff --no-renames --name-only, which names a renamed file under its old path too.",
+			Usage:     "read markdown file paths to publish from this file, one per line, or from standard input for \"-\". Each is taken as written, with no glob meaning, beside any --files pattern. A path that does not exist is not published but still named, so with --partial a deleted file listed there is looked for: pipe in git diff --no-renames --name-only -- '*.md', which names a renamed file under its old path too; every listed file that exists is published, so limit the list to Markdown.",
 			TakesFile: true,
 			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES_FROM"), config.value("files-from")),
 		},
