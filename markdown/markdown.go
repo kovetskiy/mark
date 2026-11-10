@@ -448,6 +448,15 @@ func includeTransformer(path string, opts Options, tmpl *template.Template) *ctr
 	return t
 }
 
+// columnWidthsTransformer is the Column-Widths transformer for the document,
+// reporting to its warnings.
+func (c *ConfluenceExtension) columnWidthsTransformer() *ctransformer.ColumnWidthsTransformer {
+	t := ctransformer.NewColumnWidthsTransformer(c.Path)
+	t.Warnings = c.Options.Warnings
+
+	return t
+}
+
 // ConfluenceExtension is the goldmark extension that renders Markdown as
 // Confluence storage format, GitHub Alerts ([!NOTE], [!TIP], etc.) included.
 // It is a parser.Extension and an html.Extension at once.
@@ -556,7 +565,7 @@ func (c *ConfluenceExtension) ParserOptions(cfg *parser.Config) []parser.Option 
 			util.Prioritized[parser.ASTTransformer](c.Pipeline, 10),
 			util.Prioritized[parser.ASTTransformer](ctransformer.NewLayoutTransformer(), 100),
 			util.Prioritized[parser.ASTTransformer](ctransformer.NewGHAlertsTransformer(), 100),
-			util.Prioritized[parser.ASTTransformer](&ctransformer.ColumnWidthsTransformer{FilePath: c.Path, Warnings: c.Options.Warnings}, 100),
+			util.Prioritized[parser.ASTTransformer](c.columnWidthsTransformer(), 100),
 			// Last, so that it sees the headings includes and macros brought in as
 			// well as the ones written in the file, and so that heading ids have
 			// already been assigned.

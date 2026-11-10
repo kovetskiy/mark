@@ -92,6 +92,8 @@ type Warnings struct {
 	// seen counts each warning added since the document was last read, so
 	// that reading it again records only what goes beyond the earlier read.
 	seen map[Warning]int
+	// listed counts each warning in list.
+	listed map[Warning]int
 }
 
 // NewWarnings collects the warnings about the document at file.
@@ -135,49 +137,45 @@ func (w *Warnings) Add(kind WarningKind, format string, args ...any) {
 // AddAt is Add for a warning about one line of the document, counting from 1;
 // 0 names no line.
 func (w *Warnings) AddAt(line int, kind WarningKind, format string, args ...any) {
-	if w != nil && line > 0 {
-		w.mu.Lock()
-		if w.lineOf != nil {
-			line = w.lineOf(line)
-		}
-		w.mu.Unlock()
-	}
-
 	warning := Warning{Kind: kind, Line: line, Message: fmt.Sprintf(format, args...)}
-	if w != nil {
-		warning.File = w.file
-	}
-
-	switch {
-	case warning.File != "" && line > 0:
-		log.Warn().Msgf("%s:%d: %s", warning.File, line, warning.Message)
-	case warning.File != "":
-		log.Warn().Msgf("%s: %s", warning.File, warning.Message)
-	default:
-		log.Warn().Msg(warning.Message)
-	}
-
 	if w == nil {
+		logWarning(warning)
+
 		return
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	warning.File = w.file
+	if line > 0 && w.lineOf != nil {
+		warning.Line = w.lineOf(line)
+	}
+
+	logWarning(warning)
+
 	if w.seen == nil {
 		w.seen = map[Warning]int{}
 	}
-	w.seen[warning]++
-
-	recorded := 0
-	for _, listed := range w.list {
-		if listed == warning {
-			recorded++
-		}
+	if w.listed == nil {
+		w.listed = map[Warning]int{}
 	}
 
-	if w.seen[warning] > recorded {
+	w.seen[warning]++
+	if w.seen[warning] > w.listed[warning] {
 		w.list = append(w.list, warning)
+		w.listed[warning]++
+	}
+}
+
+func logWarning(warning Warning) {
+	switch {
+	case warning.File != "" && warning.Line > 0:
+		log.Warn().Msgf("%s:%d: %s", warning.File, warning.Line, warning.Message)
+	case warning.File != "":
+		log.Warn().Msgf("%s: %s", warning.File, warning.Message)
+	default:
+		log.Warn().Msg(warning.Message)
 	}
 }
 
