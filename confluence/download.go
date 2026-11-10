@@ -40,9 +40,10 @@ func (api *API) ContentProperties(ctx context.Context, contentID string) ([]Prop
 // context -- "/wiki" on Cloud -- and a base URL configured the documented way
 // already ends with that context.
 //
-// A link that names a server of its own is refused unless it is the
-// configured one, scheme and port included: the credentials go wherever the
-// download does.
+// A download that would go to a server other than the configured one, scheme
+// and port included, is refused, whether the link names that server itself or
+// its context path changes the host it is joined to: the credentials go
+// wherever the download does.
 func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error) {
 	if api.gateway && info.ID != "" {
 		return strings.TrimSuffix(api.baseURL, "/") + "/rest/api/content/" + url.PathEscape(pageID) +
@@ -64,27 +65,35 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 		return "", fmt.Errorf("unable to parse download link %q of attachment %q: %w", link, info.Filename, err)
 	}
 
-	if target.IsAbs() {
-		if !sameServer(target, base) {
-			return "", fmt.Errorf(
-				"attachment %q is served from %s://%s rather than from %s://%s; refusing to send credentials there",
-				info.Filename, target.Scheme, target.Host, base.Scheme, base.Host,
-			)
+	address := target.String()
+	if !target.IsAbs() {
+		prefix := strings.TrimSuffix(api.baseURL, "/")
+		if context := strings.TrimSuffix(info.Links.Context, "/"); context != "" && !strings.HasSuffix(prefix, context) {
+			prefix += context
 		}
 
-		return target.String(), nil
+		if !strings.HasPrefix(link, "/") {
+			link = "/" + link
+		}
+
+		address = prefix + link
 	}
 
-	prefix := strings.TrimSuffix(api.baseURL, "/")
-	if context := strings.TrimSuffix(info.Links.Context, "/"); context != "" && !strings.HasSuffix(prefix, context) {
-		prefix += context
+	// The context path is pasted onto the base URL as given, so after a base
+	// with no path "@x" or ".x" names another host: check what was joined.
+	final, err := url.Parse(address)
+	if err != nil {
+		return "", fmt.Errorf("unable to parse download link %q of attachment %q: %w", address, info.Filename, err)
 	}
 
-	if !strings.HasPrefix(link, "/") {
-		link = "/" + link
+	if !sameServer(final, base) {
+		return "", fmt.Errorf(
+			"attachment %q is served from %s://%s rather than from %s://%s; refusing to send credentials there",
+			info.Filename, final.Scheme, final.Host, base.Scheme, base.Host,
+		)
 	}
 
-	return prefix + link, nil
+	return address, nil
 }
 
 // sameServer says whether a and b name the same scheme, host and port, with a
