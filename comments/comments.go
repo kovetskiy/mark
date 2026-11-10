@@ -3,11 +3,13 @@
 package comments
 
 import (
+	"encoding/xml"
 	"fmt"
 	stdhtml "html"
+	"iter"
 	"regexp"
 	"slices"
-	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -16,19 +18,6 @@ import (
 )
 
 var markerRegex = regexp.MustCompile(`(?s)<ac:inline-comment-marker ac:ref="([^"]+)">(.*?)</ac:inline-comment-marker>`)
-
-// htmlTextReplacer is the replacer behind htmlEscapeText.
-var htmlTextReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
-
-// htmlEscapeText escapes only the characters that Confluence storage HTML
-// always encodes in text nodes (&, <, >). Unlike html.EscapeString it does NOT
-// escape single-quotes or double-quotes, because those are frequently left
-// unescaped inside text nodes by the Confluence editor and by mark's own
-// renderer, so escaping them would prevent the selection-search from finding
-// a valid match.
-func htmlEscapeText(s string) string {
-	return htmlTextReplacer.Replace(s)
-}
 
 // truncateSelection returns a truncated preview of s for use in log messages,
 // capped at maxRunes runes, with an ellipsis appended when trimmed.
@@ -201,11 +190,94 @@ func tagName(tag string) (name string, closing, selfClosing bool) {
 	return tag[:end], closing, selfClosing
 }
 
-// inTextSpan reports whether [start, end) lies within a single one of spans,
-// which are in order.
-func inTextSpan(spans []textSpan, start, end int) bool {
-	i := sort.Search(len(spans), func(i int) bool { return spans[i].end > start })
-	return i < len(spans) && spans[i].start <= start && end <= spans[i].end
+// decodedText is a run of page text with its character references resolved,
+// so that a selection matches however the body spells a character: goldmark
+// writes a double quote as &quot;, mark's templates as &#34;, and Confluence
+// and raw HTML often leave it as it is.
+type decodedText struct {
+	text string
+	// from[i] is the body offset of the character or reference text[i] was
+	// decoded from, and to[i] the offset just past it.
+	from []int
+	to   []int
+}
+
+// decodeText resolves the character references in span of body.
+func decodeText(body string, span textSpan) decodedText {
+	var text strings.Builder
+	var from, to []int
+	for i := span.start; i < span.end; {
+		n, decoded := 1, body[i:i+1]
+		if body[i] == '&' {
+			if ref, value, ok := characterReference(body[i:span.end]); ok {
+				n, decoded = len(ref), value
+			}
+		}
+		for range len(decoded) {
+			from = append(from, i)
+			to = append(to, i+n)
+		}
+		text.WriteString(decoded)
+		i += n
+	}
+	return decodedText{text: text.String(), from: from, to: to}
+}
+
+// xmlEntities are the references XML itself defines.
+var xmlEntities = map[string]string{"amp": "&", "lt": "<", "gt": ">", "quot": `"`, "apos": "'"}
+
+// characterReference reads the reference at the start of s, which begins with
+// "&", and returns it with the text it stands for. A named reference may be
+// any HTML one, as Confluence accepts them.
+func characterReference(s string) (ref, value string, ok bool) {
+	const longestName = 32
+	semi := strings.IndexByte(s, ';')
+	if semi < 2 || semi > longestName+1 {
+		return "", "", false
+	}
+	ref, name := s[:semi+1], s[1:semi]
+	if number, isNumeric := strings.CutPrefix(name, "#"); isNumeric {
+		base := 10
+		if hex, isHex := strings.CutPrefix(strings.ToLower(number), "x"); isHex {
+			number, base = hex, 16
+		}
+		code, err := strconv.ParseInt(number, base, 32)
+		if err != nil || code < 0 || code > utf8.MaxRune {
+			return "", "", false
+		}
+		r := rune(code)
+		if !utf8.ValidRune(r) {
+			return "", "", false
+		}
+		return ref, string(r), true
+	}
+	if value, ok = xmlEntities[name]; !ok {
+		value, ok = xml.HTMLEntity[name]
+	}
+	return ref, value, ok
+}
+
+// occurrences yields the body offsets [start, end) of each occurrence of
+// selection in texts, in order. An occurrence must take whole characters and
+// references: one that would split a reference is no place for a marker.
+func occurrences(texts []decodedText, selection string) iter.Seq2[int, int] {
+	return func(yield func(int, int) bool) {
+		for _, t := range texts {
+			for pos := 0; ; pos++ {
+				index := strings.Index(t.text[pos:], selection)
+				if index == -1 {
+					break
+				}
+				pos += index
+				end := pos + len(selection)
+				startsUnit := pos == 0 || t.from[pos] != t.from[pos-1]
+				endsUnit := end == len(t.text) || t.from[end] != t.from[end-1]
+				if startsUnit && endsUnit && !yield(t.from[pos], t.to[end-1]) {
+					return
+				}
+			}
+		}
+	}
 }
 
 type commentContext struct {
@@ -254,7 +326,10 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 	}
 	var replacements []replacement
 	seenRefs := make(map[string]bool)
-	spans := textSpans(newBody)
+	var texts []decodedText
+	for _, span := range textSpans(newBody) {
+		texts = append(texts, decodeText(newBody, span))
+	}
 
 	for _, comment := range comments.Results {
 		if comment.Extensions.Location != "inline" {
@@ -286,100 +361,65 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 
 		ctx, hasCtx := contexts[ref]
 
-		// Build the list of forms to search for in newBody. The escaped form
-		// is tried first; the raw form is a fallback for text that writes a
-		// character such as ">" unescaped.
-		escapedSelection := htmlEscapeText(selection)
-		searchForms := []string{escapedSelection}
-		if selection != escapedSelection {
-			searchForms = append(searchForms, selection)
-		}
-
 		var bestStart = -1
 		var bestEnd = -1
 		var minDistance = 1000000
 
-		// Iterate over search forms; stop as soon as we have a definitive best.
+		// The selection is plain text, so it is looked for in the page text
+		// with its references resolved: a match in markup would break the XML
+		// or show as literal text.
 		candidates := 0
-		stopSearch := false
-		for _, form := range searchForms {
-			if stopSearch {
+		for start, end := range occurrences(texts, selection) {
+			// Skip candidates that start or end in the middle of a multi-byte
+			// UTF-8 rune; such a match would produce invalid UTF-8 output.
+			if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
+				continue
+			}
+
+			candidates++
+			if candidates > maxCandidates {
 				break
 			}
-			currentPos := 0
-			for {
-				index := strings.Index(newBody[currentPos:], form)
-				if index == -1 {
-					break
-				}
-				start := currentPos + index
-				end := start + len(form)
 
-				// Skip candidates that start or end in the middle of a multi-byte
-				// UTF-8 rune; such a match would produce invalid UTF-8 output.
-				if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
-					currentPos = start + 1
-					continue
-				}
+			if !hasCtx {
+				// No context available; use the first occurrence.
+				bestStart = start
+				bestEnd = end
+				break
+			}
 
-				// A match in markup, or one that crosses it, is no place for a
-				// marker: it would break the XML or show as literal text.
-				if !inTextSpan(spans, start, end) {
-					currentPos = start + 1
-					continue
-				}
+			newBefore := contextBefore(newBody, start, contextWindowBytes)
+			newAfter := contextAfter(newBody, end, contextWindowBytes)
 
-				candidates++
-				if candidates > maxCandidates {
-					stopSearch = true
-					break
-				}
+			// Fast path: exact context match is the best possible result.
+			if newBefore == ctx.before && newAfter == ctx.after {
+				bestStart = start
+				bestEnd = end
+				break
+			}
 
-				if !hasCtx {
-					// No context available; use the first occurrence.
-					bestStart = start
-					bestEnd = end
-					stopSearch = true
-					break
-				}
+			// Lower-bound pruning: Levenshtein distance is at least the
+			// absolute difference in rune counts. Use rune counts (not byte
+			// lengths) to match the unit levenshteinDistance operates on,
+			// avoiding false skips for multibyte UTF-8 content.
+			lbBefore := utf8.RuneCountInString(ctx.before) - utf8.RuneCountInString(newBefore)
+			if lbBefore < 0 {
+				lbBefore = -lbBefore
+			}
+			lbAfter := utf8.RuneCountInString(ctx.after) - utf8.RuneCountInString(newAfter)
+			if lbAfter < 0 {
+				lbAfter = -lbAfter
+			}
+			if lbBefore+lbAfter >= minDistance {
+				continue
+			}
 
-				newBefore := contextBefore(newBody, start, contextWindowBytes)
-				newAfter := contextAfter(newBody, end, contextWindowBytes)
+			distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
 
-				// Fast path: exact context match is the best possible result.
-				if newBefore == ctx.before && newAfter == ctx.after {
-					bestStart = start
-					bestEnd = end
-					stopSearch = true
-					break
-				}
-
-				// Lower-bound pruning: Levenshtein distance is at least the
-				// absolute difference in rune counts. Use rune counts (not byte
-				// lengths) to match the unit levenshteinDistance operates on,
-				// avoiding false skips for multibyte UTF-8 content.
-				lbBefore := utf8.RuneCountInString(ctx.before) - utf8.RuneCountInString(newBefore)
-				if lbBefore < 0 {
-					lbBefore = -lbBefore
-				}
-				lbAfter := utf8.RuneCountInString(ctx.after) - utf8.RuneCountInString(newAfter)
-				if lbAfter < 0 {
-					lbAfter = -lbAfter
-				}
-				if lbBefore+lbAfter >= minDistance {
-					currentPos = start + 1
-					continue
-				}
-
-				distance := levenshteinDistance(ctx.before, newBefore) + levenshteinDistance(ctx.after, newAfter)
-
-				if distance < minDistance {
-					minDistance = distance
-					bestStart = start
-					bestEnd = end
-				}
-
-				currentPos = start + 1
+			if distance < minDistance {
+				minDistance = distance
+				bestStart = start
+				bestEnd = end
 			}
 		}
 

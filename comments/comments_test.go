@@ -1,10 +1,12 @@
 package comments
 
 import (
+	"html"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -160,8 +162,8 @@ func TestMergeComments_NilComments(t *testing.T) {
 
 // TestMergeComments_HTMLEntities verifies that selections containing HTML
 // entities (&lt;, &gt;) are matched correctly. The API returns raw (unescaped)
-// text for OriginalSelection; htmlEscapeText encodes &, < and > to their
-// entity forms before searching.
+// text for OriginalSelection, which is matched against the body's text with its
+// references resolved.
 func TestMergeComments_HTMLEntities(t *testing.T) {
 	body := `<p>Hello &lt;world&gt; it&#39;s me</p>`
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`
@@ -173,30 +175,71 @@ func TestMergeComments_HTMLEntities(t *testing.T) {
 	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-ent">&lt;world&gt;</ac:inline-comment-marker> it&#39;s me</p>`, result)
 }
 
-// TestMergeComments_ApostropheEncoded verifies the known limitation: when a
-// selection includes an apostrophe that Confluence stores as the numeric
-// entity &#39; in the page body, Merge cannot locate the selection
-// (htmlEscapeText does not encode ' to &#39;) and the comment is dropped with
-// a warning rather than panicking or producing invalid output.
+// TestMergeComments_ApostropheEncoded verifies that a selection including an
+// apostrophe is found when the new body spells it as the numeric reference
+// &#39;, as mark's xmlesc template function does.
 func TestMergeComments_ApostropheEncoded(t *testing.T) {
-	// New body uses &#39; entity (as Confluence sometimes stores apostrophes).
 	body := `<p>Hello &lt;world&gt; it&#39;s me</p>`
-	// Old body has the comment marker around a selection that includes an apostrophe.
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos-enc">&lt;world&gt; it&#39;s</ac:inline-comment-marker> me</p>`
 	// The API returns the raw unescaped selection including a literal apostrophe.
 	comments := makeComments("<world> it's", "uuid-apos-enc")
 
 	result, err := Merge(body, oldBody, comments)
 	assert.NoError(t, err)
-	// The comment is dropped (body unchanged) because htmlEscapeText("it's")
-	// produces "it's", which doesn't match "it&#39;s" in the new body.
+	assert.Equal(t, `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos-enc">&lt;world&gt; it&#39;s</ac:inline-comment-marker> me</p>`, result)
+}
+
+// TestMergeComments_ReferenceSpellings verifies that a selection matches
+// whichever way the new body spells its characters: raw, as a named
+// reference, or as a decimal or hexadecimal numeric one.
+func TestMergeComments_ReferenceSpellings(t *testing.T) {
+	for _, quoted := range []string{`"a&amp;b"`, `&quot;a&#38;b&#34;`, `&#x22;a&#x26;b&quot;`} {
+		t.Run(quoted, func(t *testing.T) {
+			body := `<p>say ` + quoted + ` now</p>`
+
+			result, err := Merge(body, body, makeComments(`"a&b"`, "uuid-spell"))
+			assert.NoError(t, err)
+			assert.Equal(t, `<p>say <ac:inline-comment-marker ac:ref="uuid-spell">`+quoted+`</ac:inline-comment-marker> now</p>`, result)
+		})
+	}
+}
+
+// TestMergeComments_SelectionInsideReference verifies that a selection which
+// would split a character reference, such as "amp" inside "&amp;", is not
+// wrapped in a marker.
+func TestMergeComments_SelectionInsideReference(t *testing.T) {
+	body := `<p>this &amp; that</p>`
+
+	result, err := Merge(body, body, makeComments("amp", "uuid-split"))
+	assert.NoError(t, err)
 	assert.Equal(t, body, result)
+}
+
+// TestMergeComments_QuotedSelectionInCompiledMarkdown verifies that a comment
+// on text with double quotes survives a republish of the unchanged document:
+// goldmark writes those quotes as &quot;, while the selection Confluence
+// reports holds them as they are.
+func TestMergeComments_QuotedSelectionInCompiledMarkdown(t *testing.T) {
+	std, err := stdlib.New(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := markdown.CompileMarkdown(t.Context(), []byte("He said \"hello world\" today, it's fine.\n"), std, "page.md", markdown.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "<p>He said &quot;hello world&quot; today, it's fine.</p>\n", body)
+	oldBody := `<p>He said <ac:inline-comment-marker ac:ref="uuid-quoted">"hello world"</ac:inline-comment-marker> today, it's fine.</p>`
+
+	result, err := Merge(body, oldBody, makeComments(`"hello world"`, "uuid-quoted"))
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>He said <ac:inline-comment-marker ac:ref="uuid-quoted">&quot;hello world&quot;</ac:inline-comment-marker> today, it's fine.</p>`+"\n", result)
+	assert.NoError(t, markdown.CheckWellFormed(result))
 }
 
 // TestMergeComments_ApostropheSelection verifies that a selection containing a
 // literal apostrophe is found when the new body also contains a literal
-// apostrophe (as mark's renderer typically emits). This exercises the
-// htmlEscapeText path which intentionally does not encode ' or ".
+// apostrophe, as goldmark writes it.
 func TestMergeComments_ApostropheSelection(t *testing.T) {
 	body := `<p>Hello it's a test</p>`
 	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-apos">it's</ac:inline-comment-marker> a test</p>`
@@ -398,7 +441,7 @@ func TestMergeComments_SelectionOnlyInMarkup(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			oldBody := `<p>Run <ac:inline-comment-marker ac:ref="uuid-m">` + htmlEscapeText(tt.selection) + `</ac:inline-comment-marker> now</p>`
+			oldBody := `<p>Run <ac:inline-comment-marker ac:ref="uuid-m">` + html.EscapeString(tt.selection) + `</ac:inline-comment-marker> now</p>`
 
 			result, err := Merge(tt.body, oldBody, makeComments(tt.selection, "uuid-m"))
 			assert.NoError(t, err)
