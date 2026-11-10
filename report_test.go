@@ -961,3 +961,109 @@ func TestSourcePathOfAnOrphanOutsideTheWorkingDirectory(t *testing.T) {
 	assert.Equal(t, filepath.ToSlash(filepath.Join(dir, "gone.md")), orphanPath)
 	assert.Contains(t, out, `::warning file=/src/templates/gone.md.tmpl::page "Gone" has no source file`)
 }
+
+// TestContinueOnErrorKeepsEachFilesError: a library caller classifies each
+// failure from the error Run returns, so every file's cause has to reach
+// errors.Is and errors.As through it, with the file it belongs to.
+func TestContinueOnErrorKeepsEachFilesError(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "good.md", outHeader+"<!-- Title: Good -->\n\nFine.\n")
+	writeFile(t, dir, "refused.md", outHeader+"<!-- Title: Refused -->\n\nRefused.\n")
+	writeFile(t, dir, "unclosed.md", outHeader+"<!-- Title: Unclosed -->\n\n<!-- ac:ignore -->\nunclosed\n")
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method != http.MethodPut || !strings.Contains(r.URL.Path, "/content/") {
+			return 0, "", false
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return 0, "", false
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
+		if !strings.Contains(string(body), `"title":"Refused"`) {
+			return 0, "", false
+		}
+
+		return http.StatusForbidden, `{"message":"not yours"}`, true
+	})
+
+	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		ContinueOnError: true,
+	})
+	require.EqualError(t, err, "one or more files failed to process")
+
+	var failed *FilesFailedError
+	require.ErrorAs(t, err, &failed)
+	require.Len(t, failed.Errors, 2, "one for each file that failed, none for the one that did not")
+
+	byFile := map[string]*FileError{}
+	for _, fileErr := range failed.Errors {
+		byFile[filepath.Base(fileErr.File)] = fileErr
+	}
+
+	require.Contains(t, byFile, "refused.md")
+	require.ErrorIs(t, byFile["refused.md"], confluence.ErrForbidden)
+
+	require.Contains(t, byFile, "unclosed.md")
+	assert.Contains(t, byFile["unclosed.md"].Error(), "ac:ignore")
+	assert.NotErrorIs(t, byFile["unclosed.md"], confluence.ErrForbidden)
+
+	// Straight from the run's error, as a caller sorting failures would ask.
+	require.ErrorIs(t, err, confluence.ErrForbidden)
+
+	var status *confluence.StatusError
+	require.ErrorAs(t, err, &status)
+
+	var fileErr *FileError
+	require.ErrorAs(t, err, &fileErr)
+}
+
+// TestAFailedFileStopsTheRunWithItsFileError: without --continue-on-error the
+// first failure is the run's error, with its message as it was and the file it
+// belongs to.
+func TestAFailedFileStopsTheRunWithItsFileError(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "bad.md", outHeader+"<!-- Title: Bad -->\n\nBad.\n")
+
+	failUpdatesCarrying(server, func(string) bool { return true })
+
+	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+	})
+
+	var fileErr *FileError
+	require.ErrorAs(t, err, &fileErr)
+	assert.Equal(t, "bad.md", filepath.Base(fileErr.File))
+	assert.Equal(t, fileErr.Err.Error(), err.Error(), "the message is the cause's")
+
+	var status *confluence.StatusError
+	require.ErrorAs(t, err, &status)
+	assert.Equal(t, http.StatusBadRequest, status.StatusCode)
+}
