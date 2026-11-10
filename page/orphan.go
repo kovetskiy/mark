@@ -111,6 +111,30 @@ func InScope(ctx context.Context, api *confluence.API, scopeID string, orphan Or
 		}
 	}
 
+	// v1's ancestors leave folders out and stop at the first one, so neither a
+	// folder scope nor a page above a folder is among them. Folders are Cloud
+	// only, and there v2 has the whole chain.
+	if isCloud, err := api.Cloud(ctx); err == nil && !isCloud {
+		return false, nil
+	}
+
+	chain, err := api.AncestryV2(ctx, orphan.PageID)
+	if err != nil {
+		// No v2 to ask, on a platform that could not be identified, or the
+		// page gone since: either way nothing puts it in scope.
+		if errors.Is(err, confluence.ErrNotFound) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("unable to read the ancestry of page %s: %w", orphan.PageID, err)
+	}
+
+	for _, ancestor := range chain {
+		if ancestor.ID == scopeID {
+			return true, nil
+		}
+	}
+
 	return false, nil
 }
 
