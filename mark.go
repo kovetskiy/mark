@@ -183,13 +183,11 @@ type RenderingConfig struct {
 type ReportConfig struct {
 	OutputFormat report.Format
 
-	// SourcePath, when set, names in the report the file a reader should be
-	// pointed at for each document, given the path mark published it from:
-	// the template or source a generated Markdown file was made from, so a
-	// GitHub annotation lands on a file in the pull request. Orphans pass
-	// through it too, with the path the page manifest recorded. An empty
-	// result names no file. Only the report's file fields are affected: a
-	// failure's message, the log and the manifest keep the path mark read.
+	// SourcePath, when set, maps the path mark read a document from to the
+	// file the json and github reports name, such as the template generated
+	// Markdown came from, so an annotation lands on a file in the pull
+	// request. An orphan's path is its manifest key: slash-separated and
+	// relative to the working directory. An empty result names no file.
 	SourcePath func(file string) string
 }
 
@@ -495,7 +493,9 @@ func Run(ctx context.Context, config Config) (err error) {
 			results.AddError(err.Error())
 		}
 
-		results.MapFiles(config.Report.SourcePath)
+		if outputFormat != report.FormatURL {
+			results.MapFiles(config.Report.SourcePath)
+		}
 
 		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
 			if err == nil {

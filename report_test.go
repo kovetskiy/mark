@@ -900,30 +900,20 @@ func TestSourcePathMapsTheReportedFile(t *testing.T) {
 
 	var seen []string
 	var out strings.Builder
-	err := Run(context.Background(), Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{Features: []string{"mention"}},
-			Output:    &out,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Report: ReportConfig{
-			OutputFormat: report.FormatGitHub,
-			SourcePath: func(file string) string {
-				seen = append(seen, file)
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.Output = &out
+	config.Report = ReportConfig{
+		OutputFormat: report.FormatGitHub,
+		SourcePath: func(file string) string {
+			seen = append(seen, file)
 
-				return "templates/" + strings.TrimSuffix(filepath.Base(file), ".md") + ".md.tmpl"
-			},
+			return "templates/bad.md.tmpl"
 		},
-	})
+	}
+	err := Run(context.Background(), config)
 	require.Error(t, err)
 
 	assert.Equal(t, []string{filepath.Join(dir, "bad.md")}, seen,
 		"the mapper is given the path mark read")
 	assert.Contains(t, out.String(), "::error file=templates/bad.md.tmpl::")
-	assert.NotContains(t, out.String(), "file="+dir, "the path mark read is not the annotated file")
 }

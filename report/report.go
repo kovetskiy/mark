@@ -214,9 +214,9 @@ func (r *Report) AddError(message string) {
 }
 
 // MapFiles replaces the file each page and orphan is recorded against with
-// what mapper returns for it. It is meant for the end of a run, just before
-// Write: pages are matched by file, so a page added after it is a page of its
-// own. A nil mapper changes nothing.
+// what mapper returns for it. Call it just before Write: AddPage and StatusOf
+// match on the file, so they would no longer find a mapped page. A nil mapper
+// changes nothing.
 func (r *Report) MapFiles(mapper func(file string) string) {
 	if r == nil || mapper == nil {
 		return
