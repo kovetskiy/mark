@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -349,20 +350,72 @@ func TestMergeComments_DuplicateMarkerRefDropped(t *testing.T) {
 	assert.Equal(t, body, result) // body unchanged, single warning logged
 }
 
-// TestMergeComments_CDATASelection verifies that a selection inside a
-// CDATA-backed macro body (e.g. ac:code) is matched even though < and > are
-// stored as raw characters rather than HTML entities. The raw form is tried as
-// a fallback when the escaped form is not found.
-func TestMergeComments_CDATASelection(t *testing.T) {
-	// New body contains a code macro with CDATA — raw < and > in the content.
-	body := `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <nil> }]]></ac:plain-text-body></ac:structured-macro>`
-	// Old body has the marker around the raw selection inside CDATA.
-	oldBody := `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <ac:inline-comment-marker ac:ref="uuid-cdata"><nil></ac:inline-comment-marker> }]]></ac:plain-text-body></ac:structured-macro>`
-	// The API returns the raw (unescaped) selection.
-	comments := makeComments("<nil>", "uuid-cdata")
+// TestMergeComments_SelectionOnlyInMarkup verifies that a selection found
+// only in markup -- an attribute value, a tag name, a CDATA section, a macro
+// parameter, an XML comment -- is dropped rather than wrapped in a marker,
+// which would leave XML Confluence refuses or a marker shown as literal text.
+func TestMergeComments_SelectionOnlyInMarkup(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		selection string
+	}{
+		{
+			name:      "macro name",
+			body:      `<ac:structured-macro ac:name="info"><ac:rich-text-body><p>a</p></ac:rich-text-body></ac:structured-macro>`,
+			selection: "info",
+		},
+		{
+			name:      "href",
+			body:      `<p>go to <a href="https://example.com/setup">the guide</a></p>`,
+			selection: "setup",
+		},
+		{
+			name:      "attribute value holding a closing angle bracket",
+			body:      `<p title="a > setup">guide</p>`,
+			selection: "setup",
+		},
+		{
+			name:      "tag name",
+			body:      `<p><code>x</code></p>`,
+			selection: "code",
+		},
+		{
+			name:      "CDATA",
+			body:      `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <nil> }]]></ac:plain-text-body></ac:structured-macro>`,
+			selection: "<nil>",
+		},
+		{
+			name:      "macro parameter",
+			body:      `<ac:structured-macro ac:name="info"><ac:parameter ac:name="title">Setup</ac:parameter><ac:rich-text-body><p>a</p></ac:rich-text-body></ac:structured-macro>`,
+			selection: "Setup",
+		},
+		{
+			name:      "XML comment",
+			body:      `<!-- setup --><p>a</p>`,
+			selection: "setup",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldBody := `<p>Run <ac:inline-comment-marker ac:ref="uuid-m">` + htmlEscapeText(tt.selection) + `</ac:inline-comment-marker> now</p>`
 
-	result, err := Merge(body, oldBody, comments)
+			result, err := Merge(tt.body, oldBody, makeComments(tt.selection, "uuid-m"))
+			assert.NoError(t, err)
+			assert.Equal(t, tt.body, result)
+			assert.NoError(t, markdown.CheckWellFormed(result))
+		})
+	}
+}
+
+// TestMergeComments_SelectionInTextAndMarkup verifies that when a selection
+// appears both in an attribute and in text, the marker goes around the text.
+func TestMergeComments_SelectionInTextAndMarkup(t *testing.T) {
+	body := `<p>Run <a href="https://example.com/setup">setup</a> now</p>`
+	oldBody := `<p>Run <ac:inline-comment-marker ac:ref="uuid-t">setup</ac:inline-comment-marker> now</p>`
+
+	result, err := Merge(body, oldBody, makeComments("setup", "uuid-t"))
 	assert.NoError(t, err)
-	// The raw selection "<nil>" should be found and wrapped with a marker.
-	assert.Equal(t, `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[func foo() { return <ac:inline-comment-marker ac:ref="uuid-cdata"><nil></ac:inline-comment-marker> }]]></ac:plain-text-body></ac:structured-macro>`, result)
+	assert.Equal(t, `<p>Run <a href="https://example.com/setup"><ac:inline-comment-marker ac:ref="uuid-t">setup</ac:inline-comment-marker></a> now</p>`, result)
+	assert.NoError(t, markdown.CheckWellFormed(result))
 }
