@@ -1751,6 +1751,29 @@ func (s *Store) Published(spaceKey string) int {
 	return len(state.seen)
 }
 
+// PublishedUnder is Published counting only the paths this run records under
+// glob: its --files pattern, or a scope SetRunDocuments gave. A run whose
+// documents publish to a space says nothing about its files' pages there,
+// nor the other way round.
+func (s *Store) PublishedUnder(spaceKey, glob string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.spaces[spaceKey]
+	if !ok {
+		return 0
+	}
+
+	published := 0
+	for path := range state.seen {
+		if s.scopeOf(path) == glob {
+			published++
+		}
+	}
+
+	return published
+}
+
 // Orphans returns the recorded paths this run was looking for and did not find.
 //
 // Only entries the run covers count: those published by the same --files

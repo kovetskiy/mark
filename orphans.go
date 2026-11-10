@@ -94,6 +94,11 @@ func handleOrphans(
 			byPath[candidate.Path] = candidate
 		}
 
+		globOf := make(map[string]string, len(orphans))
+		for _, orphan := range orphans {
+			globOf[orphan.Path] = orphan.Entry.Glob
+		}
+
 		log.Info().Msgf(
 			"space %q: %d tracked page(s) had no matching source file in this run: %s",
 			space, len(paths), strings.Join(paths, ", "),
@@ -126,8 +131,32 @@ func handleOrphans(
 				continue
 			}
 
+			// The same, for each pattern or document scope on its own: pages
+			// one of them published elsewhere in the space say nothing about
+			// the other's.
+			acting := make([]page.Orphan, 0, len(candidates))
+			for _, candidate := range candidates {
+				glob := globOf[candidate.Path]
+				if tracker.PublishedUnder(space, glob) > 0 {
+					acting = append(acting, candidate)
+
+					continue
+				}
+
+				log.Warn().Msgf(
+					"space %q: nothing under %s was published in this run, so %s's page is left alone",
+					space, glob, candidate.Path,
+				)
+
+				if !config.Mode.readOnly() {
+					reportKept(results, candidate, fmt.Sprintf(
+						"nothing under %s was published in space %q in this run", glob, space,
+					))
+				}
+			}
+
 			var kept map[string]string
-			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, candidates, config.Mode.readOnly())
+			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, acting, config.Mode.readOnly())
 			if err != nil {
 				return err
 			}

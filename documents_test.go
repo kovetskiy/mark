@@ -616,6 +616,37 @@ func TestEmptyPatternBesideDocumentsOrphansNothing(t *testing.T) {
 	assert.False(t, server.Page(fileID).Trashed)
 }
 
+// TestDocumentsDoNotVouchForTheFilesOfTheirSpace: a pattern that still
+// matches files elsewhere but published nothing in a space has its pages
+// there kept, as a run of files alone keeps them, though documents of a
+// scope published to that space.
+func TestDocumentsDoNotVouchForTheFilesOfTheirSpace(t *testing.T) {
+	server, _ := docsSpace(t)
+	server.AddSpace("OTHER")
+	other := server.AddPage("OTHER", "Other Home", "page", "")
+	server.SetHomepage("OTHER", other.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "elsewhere.md", "<!-- Space: OTHER -->\n<!-- Title: Elsewhere -->\n\nElsewhere.\n")
+	writeFile(t, dir, "file.md", markdownWithTitle("From Disk"))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	config.DocumentScope = "generated"
+	require.NoError(t, Run(context.Background(), config))
+	fileID := mustFind(t, server, "From Disk")
+
+	// A checkout that lost the files of one space, with generated documents
+	// still published there.
+	require.NoError(t, os.Remove(filepath.Join(dir, "file.md")))
+	config.Documents = []Document{{
+		Path: "generated/doc.md", Content: []byte(markdownWithTitle("From Memory")), FS: fstest.MapFS{},
+	}}
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.False(t, server.Page(fileID).Trashed)
+}
+
 // TestDocumentScopeIsNotAFilesPattern: a --files run whose pattern is
 // spelled like a document scope still does not take the scope's pages for
 // its own.
