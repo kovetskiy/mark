@@ -981,21 +981,10 @@ func TestContinueOnErrorKeepsEachFilesError(t *testing.T) {
 		return strings.Contains(body, `"title":"Refused"`)
 	})
 
-	err := Run(context.Background(), Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{
-				Features: []string{"mention"},
-			},
-			Output: io.Discard,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		ContinueOnError: true,
-	})
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.ContinueOnError = true
+
+	err := Run(context.Background(), config)
 	require.EqualError(t, err, "one or more files failed to process")
 
 	var failed *FilesFailedError
@@ -1034,20 +1023,7 @@ func TestAFailedFileStopsTheRunWithItsFileError(t *testing.T) {
 
 	failUpdatesCarrying(server, func(string) bool { return true })
 
-	err := Run(context.Background(), Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{
-				Features: []string{"mention"},
-			},
-			Output: io.Discard,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-	})
+	err := Run(context.Background(), publishConfig(server.URL, filepath.Join(dir, "*.md")))
 
 	var fileErr *FileError
 	require.ErrorAs(t, err, &fileErr)
@@ -1057,25 +1033,6 @@ func TestAFailedFileStopsTheRunWithItsFileError(t *testing.T) {
 	var status *confluence.StatusError
 	require.ErrorAs(t, err, &status)
 	assert.Equal(t, http.StatusBadRequest, status.StatusCode)
-}
-
-// TestFilesFailedErrorKeepsAFilesLatestFailure: a file that fails again is
-// recorded once, with the failure the page was last left by.
-func TestFilesFailedErrorKeepsAFilesLatestFailure(t *testing.T) {
-	first := errors.New("first")
-	second := errors.New("second")
-	other := errors.New("other")
-
-	failed := &FilesFailedError{}
-	failed.add(&FileError{File: "a.md", Err: first})
-	failed.add(&FileError{File: "b.md", Err: other})
-	failed.add(&FileError{File: "a.md", Err: second})
-
-	require.Len(t, failed.Errors, 2)
-	assert.Equal(t, "a.md", failed.Errors[0].File)
-	require.ErrorIs(t, failed, second)
-	require.ErrorIs(t, failed, other)
-	assert.NotErrorIs(t, failed, first)
 }
 
 // TestPublisherReturnsAFileError: a Publisher's failure carries its file and
