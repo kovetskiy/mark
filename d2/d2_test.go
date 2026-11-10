@@ -1,14 +1,18 @@
 package d2
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -398,6 +402,50 @@ func TestRenderImportsFromTheDocumentsDirectory(t *testing.T) {
 
 	_, err = Render(context.Background(), "imports", source, Options{Output: imageformat.PNG, Browser: browser, InputPath: document, Scale: 1.0})
 	require.NoError(t, err)
+}
+
+// TestRenderImportsFromTheWorkingDirectory: like an image, an import may climb
+// out of the document's directory as long as it stays inside the one mark runs
+// in.
+func TestRenderImportsFromTheWorkingDirectory(t *testing.T) {
+	docs, document, _ := importProject(t)
+
+	shared := filepath.Join(filepath.Dir(docs), "shared")
+	require.NoError(t, os.MkdirAll(shared, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "style.d2"), []byte("sharedlabel\n"), 0o600))
+
+	got, err := Render(context.Background(), "shared", []byte("x: @../shared/style\n"), Options{Output: imageformat.SVG, InputPath: document, Scale: 1.0})
+	require.NoError(t, err)
+	assert.Contains(t, string(got.FileBytes), "sharedlabel")
+}
+
+// TestRenderPNGChecksumCoversImports: a PNG's checksum is taken over its
+// source, and what the source imports is part of it, so changing only an
+// imported file has to change the attachment.
+func TestRenderPNGChecksumCoversImports(t *testing.T) {
+	docs, document, _ := importProject(t)
+
+	imported := filepath.Join(docs, "part.d2")
+	source := []byte("x: @part\n")
+	options := Options{Output: imageformat.PNG, Browser: browser, InputPath: document, Scale: 1.0}
+
+	require.NoError(t, os.WriteFile(imported, []byte("first\n"), 0o600))
+	before, err := Render(context.Background(), "", source, options)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(imported, []byte("second\n"), 0o600))
+	after, err := Render(context.Background(), "", source, options)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, before.Checksum, after.Checksum)
+
+	// A diagram that imports nothing keeps the checksum it always had.
+	plain, err := Render(context.Background(), "", []byte("a -> b"), options)
+	require.NoError(t, err)
+
+	want, err := attachment.GetChecksum(bytes.NewReader(slices.Concat([]byte("a -> b"), binary.LittleEndian.AppendUint64(nil, math.Float64bits(1.0)))))
+	require.NoError(t, err)
+	assert.Equal(t, want, plain.Checksum)
 }
 
 // TestRenderRefusesAnImportOutsideTheProject holds an import to the boundary

@@ -425,7 +425,9 @@ imported file relative to that file. Like every other file a document names, an
 import must resolve, with symlinks followed, inside the document's directory or
 the one mark is running in; one elsewhere fails the file with an error naming
 the import. A diagram with no document on disk behind it -- one compiled
-through the library without a path -- cannot import anything.
+through the library without a path -- cannot import anything. A change to an
+imported file alone is published like a change to the diagram, for PNG and SVG
+output alike.
 
 An image the diagram references is inlined into the SVG, the way d2's own
 `--bundle` does it, because Confluence serves the attachment from its own host

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	stdhtml "html"
+	"io"
 	"io/fs"
 	"math"
 	"net/url"
@@ -56,9 +57,8 @@ const diagramPad = 5
 // mermaid has to do exactly that, since its diagrams are drawn by a browser
 // rather than by a library that will say.
 //
-// inputPath is the document the diagram is in, which its imports are read
-// relative to.
-func renderSVG(ctx context.Context, d2Diagram []byte, inputPath string) (out []byte, width, height int, err error) {
+// imports is what the diagram's imports are read through.
+func renderSVG(ctx context.Context, d2Diagram []byte, imports *importFS) (out []byte, width, height int, err error) {
 	ruler, err := textmeasure.NewRuler()
 	if err != nil {
 		return nil, 0, 0, err
@@ -70,7 +70,6 @@ func renderSVG(ctx context.Context, d2Diagram []byte, inputPath string) (out []b
 		Pad:     go2.Pointer(int64(diagramPad)),
 		ThemeID: &d2themescatalog.GrapeSoda.ID,
 	}
-	imports := &importFS{inputPath: inputPath}
 	compileOpts := &d2lib.CompileOptions{
 		LayoutResolver: layoutResolver,
 		Ruler:          ruler,
@@ -154,7 +153,9 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	layoutCtx = d2log.WithDefault(layoutCtx)
 	defer cancel()
 
-	out, _, _, err := renderSVG(layoutCtx, d2Diagram, inputPath)
+	imports := &importFS{inputPath: inputPath}
+
+	out, _, _, err := renderSVG(layoutCtx, d2Diagram, imports)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -172,8 +173,10 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
 
 	// Concat, not append: the diagram may be a slice of the document's
-	// source, with the rest of the source as its spare capacity.
-	d2Bytes := slices.Concat(d2Diagram, scaleAsBytes)
+	// source, with the rest of the source as its spare capacity. What it
+	// imports is part of what it draws, so a changed import changes the
+	// checksum; a diagram that imports nothing keeps the one it had.
+	d2Bytes := slices.Concat(d2Diagram, scaleAsBytes, imports.read)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
 
@@ -212,7 +215,7 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
 
-	out, width, height, err := renderSVG(ctx, d2Diagram, inputPath)
+	out, width, height, err := renderSVG(ctx, d2Diagram, &importFS{inputPath: inputPath})
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -297,10 +300,17 @@ type importFS struct {
 	// refused is the first import turned down, kept because d2 passes on
 	// only its message.
 	refused error
+
+	// read is every file imported, each named and in the order d2 asked for
+	// it, for a checksum taken over the source to cover them too.
+	read []byte
 }
 
+// Open reads the whole file up front, so that what read records is what d2
+// was given.
 func (f *importFS) Open(name string) (fs.File, error) {
-	if err := checkLocal(f.inputPath, "imports", name); err != nil {
+	// d2 names the import in its own message, which is all it passes on.
+	if err := checkLocal(f.inputPath, name); err != nil {
 		if f.refused == nil {
 			f.refused = err
 		}
@@ -308,28 +318,52 @@ func (f *importFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
-	if !filepath.IsAbs(name) {
-		name = filepath.Join(filepath.Dir(f.inputPath), name)
+	path := name
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(f.inputPath), path)
 	}
 
-	return os.Open(name)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	f.read = fmt.Appendf(f.read, "%s\x00%d\x00", name, len(content))
+	f.read = append(f.read, content...)
+
+	return importedFile{Reader: bytes.NewReader(content), info: info}, nil
 }
 
+// importedFile is an import already read into memory.
+type importedFile struct {
+	*bytes.Reader
+
+	info fs.FileInfo
+}
+
+func (f importedFile) Stat() (fs.FileInfo, error) { return f.info, nil }
+func (importedFile) Close() error                 { return nil }
+
 // checkLocal holds a file a diagram names to the project of the document at
-// inputPath. verb says what the diagram does with the file, for the error.
-func checkLocal(inputPath, verb, name string) error {
+// inputPath. The error does not repeat the name: the caller says what the
+// diagram did with it.
+func checkLocal(inputPath, name string) error {
 	if inputPath == "" || inputPath == "-" {
-		return fmt.Errorf(
-			"%s %q, which needs the document it was written in to be a file on disk",
-			verb, name,
-		)
+		return errors.New("needs the document it was written in to be a file on disk")
 	}
 
-	if err := attachment.CheckReadable(filepath.Dir(inputPath), name); err != nil {
-		return fmt.Errorf("%s %q: %w", verb, name, err)
-	}
-
-	return nil
+	return attachment.CheckReadable(filepath.Dir(inputPath), name)
 }
 
 // importError is d2's own report of a failed compile, which says where the
@@ -387,8 +421,8 @@ func references(svg []byte, inputPath string, bundleRemote bool) (local, remote 
 			continue
 		}
 
-		if err := checkLocal(inputPath, "references", href); err != nil {
-			return false, false, err
+		if err := checkLocal(inputPath, href); err != nil {
+			return false, false, fmt.Errorf("references %q: %w", href, err)
 		}
 
 		local = true

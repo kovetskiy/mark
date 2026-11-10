@@ -63,8 +63,8 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	Stdlib      *stdlib.Lib
 	Diagrams    DiagramConfig
 	Attachments attachment.Attacher
-	// Path is the document the block was written in, which is what a local
-	// image referenced by a d2 diagram is relative to. Empty is allowed: d2
+	// Path is the document the block was written in, which is what a d2
+	// diagram's imports and local images are relative to. Empty is allowed: d2
 	// reads "-" as a diagram that came from nowhere on disk, and resolves
 	// nothing local against it.
 	Path string
@@ -154,10 +154,10 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 	if lang == "d2" && slices.Contains(r.Diagrams.Features, "d2") {
 		// The document's own path, empty and all: a diagram that came from
-		// nowhere on disk has nothing for a relative reference to be relative
-		// to, and d2 resolves one against the working directory rather than
-		// refusing it. d2.Render reads an empty path and d2's own "-" alike, so
-		// neither reaches the bundler. Render also refuses a format it does not
+		// nowhere on disk has nothing for a relative import or image to be
+		// relative to, and d2.Render refuses one rather than reading it from
+		// the working directory. It reads an empty path and d2's own "-"
+		// alike. Render also refuses a format it does not
 		// know, which Run checks but options handed straight to
 		// CompileMarkdown never pass through.
 		attachment, err := d2.Render(orBackground(r.ctx), title, lval, d2.Options{

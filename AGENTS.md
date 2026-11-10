@@ -171,7 +171,7 @@ zero exit code.
 Checksums live in the remote attachment's comment behind `attachment.AttachmentChecksumPrefix`
 (`mark:checksum:` followed by a space).
 Mermaid attachments and d2 PNGs set `Checksum` from the *diagram source* (plus the scale
-for a PNG, and the bundle flag for a mermaid SVG), not the rendered bytes, because Chrome's
+and the files it imports for a d2 PNG, and the bundle flag for a mermaid SVG), not the rendered bytes, because Chrome's
 output is not byte-stable across environments; `math/` does the same with the formula,
 plus the format and — for a PNG — the scale, since anything that changes the bytes has to
 change the name or the page keeps the attachment it had. The exception is a d2 SVG, whose
