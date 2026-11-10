@@ -646,8 +646,10 @@ func (s *Store) warn(key string, kind report.WarningKind, format string, args ..
 // simply not this run's business. Recording a page leaves its entry under the
 // pattern it already had, or the one the file it moved from had, so the run
 // that publishes the whole pattern still notices when the file is deleted. A
-// path with neither is recorded under a pattern naming only itself until such
-// a run publishes it, so every partial run naming it covers it.
+// path with neither is recorded under the run's pattern when entries already
+// carry it, the pattern being a full run's, and otherwise under a pattern
+// naming only itself until such a run publishes it, so every partial run
+// naming it covers it.
 //
 // The tracked paths recorded under the very pattern a partial run was given,
 // when it holds glob syntax, are left to the run publishing them all unless
@@ -1168,9 +1170,15 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			// another job's pattern is that job's now, and the run owning the
 			// old pattern would read it as deleted.
 			glob = moved.Glob
+		case recordsUnder(state, s.runGlob):
+			// The pattern of a run publishing all of it, given to a partial
+			// run on a checkout holding only some of its files: that run
+			// covers the entry, and later partial runs given the pattern
+			// leave it to that run rather than read it as deleted.
+			glob = s.recordGlob(path)
 		default:
-			// Not this run's pattern, which no other run shares: the entry
-			// would be covered by no run but one given that very pattern.
+			// Not a pattern any run publishes all of: the entry would be
+			// covered by no run but one given that very pattern.
 			glob = globpattern.Escape(path)
 		}
 	}
@@ -1274,6 +1282,20 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 	}
 
 	return entry, true
+}
+
+// recordsUnder reports whether any entry in the space was recorded under
+// pattern.
+func recordsUnder(state *spaceState, pattern string) bool {
+	for i := range state.shards {
+		for _, entry := range state.shards[i].pages {
+			if entry.Glob == pattern {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // absent reports whether a recorded path is neither among the files this run

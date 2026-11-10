@@ -493,3 +493,34 @@ func TestPartialRunForgetsAReportedFileOnlyItTracked(t *testing.T) {
 	_, ok = tracked(t, server, d)
 	assert.False(t, ok, "reported and forgotten")
 }
+
+// TestPartialRunGivenTheOwningPatternRecordsANewFileUnderIt: on a sparse
+// checkout given the owning pattern, a new file is recorded under that
+// pattern, so the next such run, whose checkout lacks it, leaves it to the
+// owning run instead of reporting it deleted and forgetting it.
+func TestPartialRunGivenTheOwningPatternRecordsANewFileUnderIt(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	for _, name := range []string{"a.md", "b.md", "c.md"} {
+		require.NoError(t, os.Remove(filepath.Join(dir, name)))
+	}
+
+	d := writeFile(t, dir, "d.md", markdownWithTitle("Page d"))
+	require.NoError(t, Run(context.Background(), partialOf(full, dir, "*.md")))
+
+	entry, ok := tracked(t, server, d)
+	require.True(t, ok)
+	assert.Equal(t, manifest.Key(full.Files), entry.Glob)
+
+	require.NoError(t, os.Remove(d))
+	writeFile(t, dir, "e.md", markdownWithTitle("Page e"))
+
+	var out strings.Builder
+	sparse := partialOf(full, dir, "*.md")
+	sparse.Report.OutputFormat = report.FormatGitHub
+	sparse.Output = &out
+	require.NoError(t, Run(context.Background(), sparse))
+	assert.NotContains(t, out.String(), "::warning", "d.md is not checked out, not deleted")
+
+	_, ok = tracked(t, server, d)
+	assert.True(t, ok, "d.md stays tracked for the owning run")
+}
