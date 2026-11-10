@@ -501,7 +501,12 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		// given on the command line; one from the environment or the
 		// configuration file is for a single page.
 		config.AttachmentsDir = ""
+		format, _ := export.ParseFormat(string(config.Format))
 		if spelling, _ := export.ParseMetadata(string(config.Metadata)); spelling == export.MetadataNone {
+			if format != export.FormatOKF {
+				log.Warn().Msgf("%s is for a single page: a recursive export writes the comment headers that "+
+					"publish each page back", flagName(cmd, "metadata"))
+			}
 			config.Metadata = export.MetadataComments
 		}
 		results, err := mark.ExportTree(ctx, config, export.TreeOptions{
@@ -512,6 +517,12 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 			log.Info().Msgf("exported %d page(s) to %s", len(results), config.Output)
 		}
 		return err
+	}
+
+	// The command line's attachments go beside standard output, which is the
+	// working directory; the library asks to be told so.
+	if (config.Output == "" || config.Output == "-") && config.AttachmentsDir == "" {
+		config.AttachmentsDir = "."
 	}
 
 	_, err = mark.Export(ctx, config)

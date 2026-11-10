@@ -161,16 +161,17 @@ metadata, stays in the body, written as
 refuses `--metadata none` given on its command line for mark's documents,
 since a tree is exported to be published back where it was, and writes the
 comment headers when `MARK_METADATA` or the configuration file says `none`,
-which it takes for a single page's setting; with `--format okf` it is
-ignored, as any `--metadata` is.
+which it takes for a single page's setting, with a warning saying so; with
+`--format okf` it is ignored, as any `--metadata` is.
 
 A Go program calling `mark.Export` gets the title, the labels and the
 document as values on the result, `Title`, `Labels` and `Markdown`, whatever
 `Metadata` says; with `export.MetadataNone` and `NoAttachments`, and neither
 `Output` nor `Stdout` set, nothing is written anywhere. Leave out
-`NoAttachments` and the attachments are still written, as on the command
-line: with no `Output`, into `AttachmentsDir`, or into the program's working
-directory when that is empty too:
+`NoAttachments` and the attachments are still written: with no `Output`, into
+`AttachmentsDir`, which then has to be set (`"."` for the working directory,
+as the command line does). With neither, `mark.Export` fails with
+`export.ErrNoAttachmentsDir` before asking Confluence for anything:
 
 ```go
 result, err := mark.Export(ctx, mark.ExportConfig{
