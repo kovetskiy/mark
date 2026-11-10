@@ -1177,3 +1177,43 @@ func TestAWarningNamesItsLineBelowAnIgnoredRegion(t *testing.T) {
 	require.Len(t, got.Pages[0].WarningDetails, 1)
 	assert.Equal(t, 13, got.Pages[0].WarningDetails[0].Line)
 }
+
+// TestAnACLinkThatNamesNoPageIsAWarningOfEachDocumentHoldingIt: an ac: link
+// can only be checked once the run has published everything, after the
+// documents' own lines are written. Under --check-links-warn-only it is still
+// an unresolved-link warning of every document that holds it, not only of the
+// first, and the documents that hold none are left alone.
+func TestAnACLinkThatNamesNoPageIsAWarningOfEachDocumentHoldingIt(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "a.md", outHeader+"<!-- Title: A -->\n\nSee [it](ac:Nowhere).\n")
+	writeFile(t, dir, "b.md", outHeader+"<!-- Title: B -->\n\nAlso [it](ac:Nowhere).\n")
+	writeFile(t, dir, "c.md", outHeader+"<!-- Title: C -->\n\nSee [A](ac:A).\n")
+
+	var out strings.Builder
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.Output = &out
+	config.Links = LinkConfig{CheckLinks: []string{"confluence"}, CheckLinksWarnOnly: true}
+	config.Report.OutputFormat = report.FormatJSON
+	require.NoError(t, Run(context.Background(), config))
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &got))
+	require.Len(t, got.Pages, 3)
+	assert.Empty(t, got.Errors, "a warning, not an error, under --check-links-warn-only")
+
+	for _, page := range got.Pages {
+		if filepath.Base(page.File) == "c.md" {
+			assert.Empty(t, page.WarningDetails, "its link resolves")
+
+			continue
+		}
+
+		require.Len(t, page.WarningDetails, 1, "%s: %+v", page.File, page.WarningDetails)
+		warning := page.WarningDetails[0]
+		assert.Equal(t, report.WarningUnresolvedLink, warning.Kind)
+		assert.Equal(t, page.File, warning.File)
+		assert.Equal(t, `link "ac:Nowhere" does not resolve: there is no page "Nowhere" in space "DOCS"`, warning.Message)
+		assert.Equal(t, []string{warning.Message}, page.Warnings)
+	}
+}

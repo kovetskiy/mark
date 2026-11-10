@@ -756,13 +756,22 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// Once everything that was going to be published has been, an ac: link that
 	// still names no page names none.
-	missingPages, err := pub.checker.MissingPages(ctx, api)
+	missingLinks, err := pub.checker.MissingLinks(ctx, api)
 	if err != nil {
 		return err
 	}
 
-	for _, item := range missingPages {
-		log.Warn().Msg(item)
+	var missingPages []string
+	for _, link := range missingLinks {
+		missingPages = append(missingPages, link.Sources[0]+": "+link.Message())
+	}
+
+	if config.Links.CheckLinksWarnOnly {
+		pub.warnMissingLinks(missingLinks)
+	} else {
+		for _, item := range missingPages {
+			log.Warn().Msg(item)
+		}
 	}
 
 	// The manifest is saved before the run's own outcome is decided: a single
@@ -1498,6 +1507,30 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 // Page.Warnings holds and in full.
 func (r *publishRun) addPage(doc *document, page report.Page) {
 	r.results.AddPage(withWarnings(page, doc.warnings))
+}
+
+// warnMissingLinks adds each ac: link that still names no page, now that the
+// run has published everything it will, to the warnings of every document
+// holding it, and puts those into the documents' lines of the report.
+func (r *publishRun) warnMissingLinks(links []page.MissingLink) {
+	var touched []string
+	for _, link := range links {
+		for _, source := range link.Sources {
+			warnings, known := r.warnings[source]
+			if !known {
+				// Not a document this run read; logged against it all the same.
+				warnings = report.NewWarnings(source)
+			} else if !slices.Contains(touched, source) {
+				touched = append(touched, source)
+			}
+
+			warnings.Add(report.WarningUnresolvedLink, "%s", link.Message())
+		}
+	}
+
+	for _, file := range touched {
+		r.results.SetWarnings(file, r.warnings[file].List())
+	}
 }
 
 // failedPage is the report of a file that failed with err, with what was

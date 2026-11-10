@@ -95,12 +95,12 @@ type LinkChecker struct {
 	pending map[string]pendingPage
 }
 
-// pendingPage is an ac: link waiting to be checked, and the first document that
-// asked about it.
+// pendingPage is an ac: link waiting to be checked, and the documents that
+// asked about it, in the order they did.
 type pendingPage struct {
-	space  string
-	title  string
-	source string
+	space   string
+	title   string
+	sources []string
 }
 
 // NewLinkChecker returns a checker for the given set.
@@ -135,14 +135,49 @@ func (c *LinkChecker) NotePage(space, title, source string) {
 	// Keyed on the page, so a title linked from twenty documents costs one
 	// lookup and is reported once.
 	key := space + "\x00" + title
-	if _, ok := c.pending[key]; !ok {
-		c.pending[key] = pendingPage{space: space, title: title, source: source}
+	link, ok := c.pending[key]
+	if !ok {
+		link = pendingPage{space: space, title: title}
 	}
+	if !slices.Contains(link.sources, source) {
+		link.sources = append(link.sources, source)
+	}
+	c.pending[key] = link
+}
+
+// MissingLink is an ac: link that named no page once the run was over, and
+// every document that holds it.
+type MissingLink struct {
+	Space   string
+	Title   string
+	Sources []string
+}
+
+// Message says what is wrong with the link, without naming a document.
+func (m MissingLink) Message() string {
+	return fmt.Sprintf("link \"ac:%s\" does not resolve: there is no page %q in space %q", m.Title, m.Title, m.Space)
 }
 
 // MissingPages reports the ac: links that named no page, once everything that
-// was going to be published has been.
+// was going to be published has been: each once, against the first document
+// that holds it.
 func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]string, error) {
+	links, err := c.MissingLinks(ctx, finder)
+	if err != nil {
+		return nil, err
+	}
+
+	var missing []string
+	for _, link := range links {
+		missing = append(missing, link.Sources[0]+": "+link.Message())
+	}
+
+	return missing, nil
+}
+
+// MissingLinks is MissingPages with every document that holds each link, for
+// a caller that reports against each of them.
+func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]MissingLink, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -154,7 +189,7 @@ func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]st
 	pending := maps.Clone(c.pending)
 	c.mu.Unlock()
 
-	var missing []string
+	var missing []MissingLink
 	for _, key := range slices.Sorted(maps.Keys(pending)) {
 		link := pending[key]
 
@@ -164,10 +199,9 @@ func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]st
 		}
 
 		if found == nil {
-			missing = append(missing, fmt.Sprintf(
-				"%s: link \"ac:%s\" does not resolve: there is no page %q in space %q",
-				link.source, link.title, link.title, link.space,
-			))
+			missing = append(missing, MissingLink{
+				Space: link.space, Title: link.title, Sources: slices.Clone(link.sources),
+			})
 		}
 	}
 
