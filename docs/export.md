@@ -147,15 +147,19 @@ writes front matter of its own and ignores `--metadata`.
 `--metadata none` writes the body without any metadata, for a program that
 takes the title and labels from elsewhere. Nothing in such a document names
 its page, so `mark publish` cannot publish it back by itself: give it the
-page some other way, with `--url`, or with `--space` and
-`--title-from-h1`. With no `Label` headers, publishing it removes the page's
+page some other way, with `--url`, or with `--space` and a title, which
+`--title-from-h1` finds only if the body starts with the title as a heading.
+With no `Label` headers, publishing it removes the page's
 labels, unless `--append-labels` is given (see
 [Labels applied in Confluence](metadata.md#labels-applied-in-confluence)).
 An article layout's sidebar, which would travel in the
-metadata, stays in the body as storage format. `--recursive` refuses
-`--metadata none` for mark's documents, since a tree is exported to be
-published back where it was; with `--format okf` it is ignored, as any
-`--metadata` is.
+metadata, stays in the body, written as
+[layout comments](formatting.md#customizing-the-page-layout). `--recursive`
+refuses `--metadata none` given on its command line for mark's documents,
+since a tree is exported to be published back where it was, and writes the
+comment headers when `MARK_METADATA` or the configuration file says `none`,
+which it takes for a single page's setting; with `--format okf` it is
+ignored, as any `--metadata` is.
 
 A Go program calling `mark.Export` gets the title, the labels and the
 document as values on the result, `Title`, `Labels` and `Markdown`, whatever
