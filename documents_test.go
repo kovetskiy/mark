@@ -616,6 +616,23 @@ func TestEmptyPatternBesideDocumentsOrphansNothing(t *testing.T) {
 	assert.False(t, server.Page(fileID).Trashed)
 }
 
+// TestEmptyPatternBesideUnscopedDocumentsWarnsOnOrphan: under CI a pattern
+// matching nothing leaves a run of unscoped documents with nothing
+// --on-orphan could act on, which is said rather than passed over.
+func TestEmptyPatternBesideUnscopedDocumentsWarnsOnOrphan(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	config := trackingConfig(server, filepath.Join(t.TempDir(), "*.md"))
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	config.CI = true
+	config.Documents = []Document{{
+		Path: "generated/doc.md", Content: []byte(markdownWithTitle("From Memory")), FS: fstest.MapFS{},
+	}}
+
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), config)) })
+	assert.Contains(t, logged, "have no DocumentScope")
+}
+
 // TestDocumentsDoNotVouchForTheFilesOfTheirSpace: a pattern that still
 // matches files elsewhere but published nothing in a space has its pages
 // there kept, as a run of files alone keeps them, though documents of a
