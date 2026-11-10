@@ -355,7 +355,8 @@ git diff --name-only "$BASE" -- 'docs/*.md' |
 and nothing else, and one that no longer exists is not published but still
 looked for. It can stand beside `--files`, or replace it; a pattern such as
 `--files "docs/{setup,install,old-name}.md"` works too, for paths with no glob
-characters in them. A library caller gives the paths as `Config.Paths`.
+characters in them, when the run only reports orphans. A library caller gives
+the paths as `Config.Paths`.
 
 Without it, Mark ties a tracked file to the `--files` pattern that last
 published it. A run with a narrower pattern then neither notices a deleted file
@@ -376,14 +377,20 @@ renamed from while the new path lies in it, so the full run still covers it. A f
 recorded under the partial run's pattern until the full run publishes it.
 
 The full pattern with `--partial` names every file, so on a checkout holding
-only some of them it reports the rest as gone: give the paths instead. It does
-not archive or delete them: a partial run leaves alone the page of any file
-recorded under the very pattern it was given, reports it as kept, and leaves it
-tracked for the run publishing them all. A different wildcard is not caught
-that way: it reaches every tracked file it matches in the manifest, another
-job's included, and with `--on-orphan delete` removes the pages of those
-missing from the checkout. Keep such jobs apart with their own
-`--manifest-prefix`, or narrow the run with `--orphan-under`.
+only some of them it cannot tell a deleted file from one not checked out. A
+partial run leaves out the tracked files recorded under the very `--files`
+pattern it was given, unless `--files-from` names them: like a page outside
+`--orphan-under`, they are not reported, not touched, and stay tracked for the
+run publishing them all. The log names them.
+
+With `--on-orphan archive` or `delete`, a partial run takes only exact paths:
+`--files-from`, or a `--files` that names one file (a glob character escaped
+with `\` counts as written). A wildcard is refused before anything is
+published, since it reaches every tracked file it matches in the manifest,
+another job's included, and would remove the pages of those missing from the
+checkout. A `files` set in the configuration file or `MARK_FILES` counts too:
+give `--files ""` beside `--files-from`. A library caller gets an error
+`errors.Is` matches to `mark.ErrPartialPattern`.
 
 A change that only deletes files leaves the partial run nothing to publish: it
 fails with "no files matched", or under `--ci` does nothing about them, and the
@@ -400,6 +407,7 @@ outright rather than warned about, because the belief comes from silence:
 * `--on-orphan archive` or `delete` without `--track-pages`
 * `--no-overwrite` without `--track-pages`
 * `--partial` without `--track-pages`
+* `--partial` with `--on-orphan archive` or `delete` and a `--files` wildcard
 * `--manifest-page-optional` without `--manifest-page`
 * `--check-links-warn-only` without `--check-links`, or with one that names no
   kind of link

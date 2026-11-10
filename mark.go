@@ -551,6 +551,32 @@ func (r RenderingConfig) enabled(feature string) bool {
 	return slices.Contains(r.Features, feature)
 }
 
+// ErrPartialPattern is returned, wrapped, by Run for a partial run that
+// archives or deletes orphans (Tracking.Partial with Tracking.OnOrphan
+// archive or delete) and is given a Files pattern holding glob syntax. Such a
+// pattern reaches every tracked file it matches, those another job publishes
+// included, and on a checkout holding only some files reads the rest as
+// deleted; only the exact paths of Paths, or a Files naming one file, say
+// which files the run is about.
+var ErrPartialPattern = errors.New("a partial run that archives or deletes orphans takes exact paths, not a pattern")
+
+// hasGlobSyntax reports whether a Files pattern holds an unescaped *, ?, [
+// or {, and so may match more than the one file it spells. As for
+// FilepathGlob, a backslash is a separator on Windows and an escape elsewhere.
+func hasGlobSyntax(pattern string) bool {
+	pattern = filepath.ToSlash(pattern)
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			i++
+		case '*', '?', '[', '{':
+			return true
+		}
+	}
+
+	return false
+}
+
 // runFiles is the files a run publishes: those the glob matches, then each of
 // paths that exists, as it is written, once.
 func runFiles(glob string, paths []string) ([]string, error) {
@@ -672,6 +698,14 @@ func Run(ctx context.Context, config Config) (err error) {
 	if config.Tracking.Partial && !config.Tracking.TrackPages {
 		return errors.New("--partial requires --track-pages: " +
 			"it is about the page manifest, which only --track-pages keeps")
+	}
+
+	if config.Tracking.Partial && onOrphan != report.OnOrphanReport && hasGlobSyntax(config.Files) {
+		return fmt.Errorf(
+			"Tracking.OnOrphan (--on-orphan) %s with Tracking.Partial (--partial) and Files (--files) %q: %w; "+
+				"name the files in Paths (--files-from), or give Files as one file",
+			onOrphan, config.Files, ErrPartialPattern,
+		)
 	}
 
 	if config.Tracking.NoOverwrite && !config.Tracking.TrackPages {
