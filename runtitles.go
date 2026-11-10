@@ -34,7 +34,7 @@ func (r *runTitles) index() {
 			continue
 		}
 
-		meta, _, err := documentMeta(r.config, file, markdown, r.hierarchy)
+		meta, _, err := documentMeta(r.config, file, markdown, r.hierarchy, nil)
 		if err != nil || meta == nil || !meta.Publish() || meta.Title == "" || meta.Space == "" {
 			continue
 		}

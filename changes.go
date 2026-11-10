@@ -168,6 +168,7 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 		Reason: drift,
 		Space:  spaceOf(meta), Title: target.Title,
 		PageID: target.ID, URL: r.api.BaseURL() + target.Links.Full,
+		Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 	})
 
 	// Recorded, so the page still counts as seen and is not mistaken

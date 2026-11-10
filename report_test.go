@@ -1090,3 +1090,23 @@ func TestAFileErrorNamesItsSource(t *testing.T) {
 		assert.Equal(t, "templates/generated.md.tmpl", fileErr.Source)
 	})
 }
+
+// TestReportCarriesStructuredWarnings: a warning about a document reaches the
+// report with its kind and file, beside the message v17 already reported.
+func TestReportCarriesStructuredWarnings(t *testing.T) {
+	out, err := runWithFormat(t, "json", map[string]string{
+		"a.md": outHeader + "<!-- Title: A -->\n\nText.\n\n<!-- Label: late -->\n",
+	})
+	require.NoError(t, err)
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got.Pages, 1)
+
+	page := got.Pages[0]
+	require.Len(t, page.WarningDetails, 1)
+	assert.Equal(t, report.WarningMetadata, page.WarningDetails[0].Kind)
+	assert.Equal(t, page.File, page.WarningDetails[0].File)
+	assert.Contains(t, page.WarningDetails[0].Message, "Label header is below the document's opening comments")
+	assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
+}

@@ -1,0 +1,120 @@
+package report
+
+import (
+	"fmt"
+	"slices"
+	"sync"
+
+	"github.com/rs/zerolog/log"
+)
+
+// WarningKind says what a warning is about, so that a caller can act on one
+// kind without reading the message.
+type WarningKind string
+
+// What a warning can be about.
+const (
+	// WarningUnresolvedLink is a link that does not resolve, on a run told to
+	// warn about those rather than fail on them.
+	WarningUnresolvedLink WarningKind = "unresolved-link"
+
+	// WarningMetadata is a header or front matter key that was not applied:
+	// one mark does not read, one written below the opening comments, or a
+	// document's metadata set aside for a page named by id.
+	WarningMetadata WarningKind = "metadata"
+
+	// WarningAttachment is a file that was not uploaded, or one uploaded and
+	// never referenced.
+	WarningAttachment WarningKind = "attachment"
+
+	// WarningInvalidCharacters is text XML cannot carry, replaced with U+FFFD.
+	WarningInvalidCharacters WarningKind = "invalid-characters"
+
+	// WarningColumnWidths is a Column-Widths comment that was not applied.
+	WarningColumnWidths WarningKind = "column-widths"
+
+	// WarningInlineComment is an inline comment that could not be kept on the
+	// page's new body.
+	WarningInlineComment WarningKind = "inline-comment"
+
+	// WarningMissingPage is a page the page manifest recorded for a document
+	// that no longer exists, so a new one is created.
+	WarningMissingPage WarningKind = "missing-page"
+)
+
+// Warning is one thing wrong with a document that was published anyway.
+type Warning struct {
+	Kind WarningKind `json:"kind"`
+
+	// File is the document the warning is about, as mark read it.
+	File string `json:"file,omitempty"`
+
+	Message string `json:"message"`
+}
+
+// Warnings collects one document's warnings while it is published, and logs
+// each as it is added. A nil *Warnings only logs, which is what a caller with
+// no report gets.
+type Warnings struct {
+	file string
+
+	mu   sync.Mutex
+	list []Warning
+}
+
+// NewWarnings collects the warnings about the document at file.
+func NewWarnings(file string) *Warnings {
+	return &Warnings{file: file}
+}
+
+// Add logs a warning and records it against the document.
+func (w *Warnings) Add(kind WarningKind, format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+
+	if w == nil {
+		log.Warn().Msg(message)
+
+		return
+	}
+
+	if w.file != "" {
+		log.Warn().Msgf("%s: %s", w.file, message)
+	} else {
+		log.Warn().Msg(message)
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.list = append(w.list, Warning{Kind: kind, File: w.file, Message: message})
+}
+
+// Messages returns the message of each warning added so far, which is what
+// Page.Warnings holds.
+func (w *Warnings) Messages() []string {
+	if w == nil {
+		return nil
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	var messages []string
+	for _, warning := range w.list {
+		messages = append(messages, warning.Message)
+	}
+
+	return messages
+}
+
+// List returns the warnings added so far, in the order they were added.
+func (w *Warnings) List() []Warning {
+	if w == nil {
+		return nil
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return slices.Clone(w.list)
+}

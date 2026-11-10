@@ -89,12 +89,17 @@ type Page struct {
 
 	// Warnings are what was wrong with a document that was published anyway --
 	// a link that does not resolve, when the run was told to warn about those
-	// rather than fail on them.
+	// rather than fail on them, or a header mark does not read.
 	//
 	// Kept apart from Reason because they do not say what became of the page:
 	// a document can carry them and still have published perfectly well, which
 	// is the whole reason for warning instead of failing.
 	Warnings []string `json:"warnings,omitempty"`
+
+	// WarningDetails are the same warnings, in the same order, each with its
+	// kind and the file it is about. When set, they are what the github
+	// format annotates.
+	WarningDetails []Warning `json:"warningDetails,omitempty"`
 }
 
 // Orphan is a tracked page whose document is gone, and what was done about it.
@@ -333,8 +338,23 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		// a page that published and against one that was left unchanged, which
 		// has no line of its own at all -- the point of it is to be seen in the
 		// diff by somebody who is not reading the build log.
-		for _, warning := range page.Warnings {
-			if err := command(w, "warning", file, warning); err != nil {
+		details := page.WarningDetails
+		if len(details) == 0 {
+			for _, message := range page.Warnings {
+				details = append(details, Warning{Message: message})
+			}
+		}
+
+		for _, warning := range details {
+			// A warning about the document itself goes where its other
+			// annotations do, the source included; one about another file is
+			// annotated against that file.
+			at := file
+			if warning.File != "" && warning.File != page.File {
+				at = warning.File
+			}
+
+			if err := command(w, "warning", at, warning.Message); err != nil {
 				return err
 			}
 		}

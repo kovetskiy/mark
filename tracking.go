@@ -14,6 +14,7 @@ import (
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -30,6 +31,7 @@ func previewTrackedResolution(
 	meta *metadata.Meta,
 	file string,
 	sourceHash string,
+	warnings *report.Warnings,
 ) (*confluence.PageInfo, error) {
 	if tracker == nil || meta == nil {
 		return nil, nil
@@ -37,7 +39,7 @@ func previewTrackedResolution(
 
 	// Errors stop the preview as they stop a real run: reporting "would create"
 	// over a lookup that failed would hide the duplicate a real run refuses to make.
-	pg, err := resolveTrackedPage(ctx, tracker, api, meta, file)
+	pg, err := resolveTrackedPage(ctx, tracker, api, meta, file, warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +53,7 @@ func previewTrackedResolution(
 		return pg, nil
 	}
 
-	pg, err = resolveRenamedFile(ctx, tracker, api, meta, file, sourceHash)
+	pg, err = resolveRenamedFile(ctx, tracker, api, meta, file, sourceHash, warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +89,7 @@ func resolveTrackedPage(
 	api *confluence.API,
 	meta *metadata.Meta,
 	file string,
+	warnings *report.Warnings,
 ) (*confluence.PageInfo, error) {
 	if tracker == nil || meta == nil {
 		return nil, nil
@@ -111,9 +114,9 @@ func resolveTrackedPage(
 				"unable to load page %s recorded for %q: %w", entry.PageID, file, err,
 			)
 		}
-		log.Warn().Msgf(
-			"%s was published to page %s, which no longer exists; a new page will be created",
-			file, entry.PageID,
+		warnings.Add(report.WarningMissingPage,
+			"it was published to page %s, which no longer exists; a new page will be created",
+			entry.PageID,
 		)
 		return nil, nil
 	}
@@ -293,6 +296,7 @@ func resolveRenamedFile(
 	meta *metadata.Meta,
 	file string,
 	sourceHash string,
+	warnings *report.Warnings,
 ) (*confluence.PageInfo, error) {
 	if tracker == nil || meta == nil {
 		return nil, nil
@@ -315,7 +319,9 @@ func resolveRenamedFile(
 		}
 		// Recorded but gone, so there is nothing to rename. Drop the entry so it
 		// stops being offered, and let the document be published afresh.
-		log.Warn().Msgf("%s was published to page %s, which no longer exists", previous, entry.PageID)
+		warnings.Add(report.WarningMissingPage,
+			"%s, which this document was renamed from, was published to page %s, which no longer exists",
+			previous, entry.PageID)
 		return nil, tracker.Forget(ctx, meta.Space, previous)
 	}
 

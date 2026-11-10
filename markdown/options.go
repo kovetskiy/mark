@@ -5,6 +5,7 @@ import (
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
+	"github.com/kovetskiy/mark/v17/report"
 )
 
 // Options is how CompileMarkdown turns a document into storage format. The
@@ -77,6 +78,11 @@ type Options struct {
 	// attachment uploaded for it, or "" to leave it as written. Nil disables
 	// the rewriting.
 	ResolveAttachment func(target string) string
+
+	// Warnings collects what was wrong with the document but did not stop it
+	// compiling: a macro attachment not uploaded, a Column-Widths comment not
+	// applied, characters XML cannot carry. Nil only logs them.
+	Warnings *report.Warnings
 }
 
 // diagramConfig is the part of o the fenced code block renderer draws with.

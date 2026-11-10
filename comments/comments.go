@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -311,7 +312,18 @@ const contextWindowBytes = 100
 // from each existing marker in oldBody and uses Levenshtein distance to
 // relocate each marker to the best-matching position in newBody, so comment
 // threads survive page edits even when the surrounding text has shifted.
+//
+// A comment that cannot be placed is lost, and only logged; MergeWithWarnings
+// also records it.
 func Merge(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
+	return MergeWithWarnings(newBody, oldBody, comments, nil)
+}
+
+// MergeWithWarnings is Merge, adding each comment that cannot be placed to
+// warnings as well as logging it. Nil warnings only logs.
+func MergeWithWarnings(
+	newBody string, oldBody string, comments *confluence.InlineComments, warnings *report.Warnings,
+) (string, error) {
 	if comments == nil || len(comments.Results) == 0 {
 		return newBody, nil
 	}
@@ -364,9 +376,8 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 		seenRefs[ref] = true
 
 		if selection == "" {
-			log.Warn().
-				Str("ref", ref).
-				Msg("inline comment skipped: original selection is empty; comment will be lost")
+			warnings.Add(report.WarningInlineComment,
+				"inline comment %s is lost: the text it was made on is empty", ref)
 			continue
 		}
 
@@ -442,10 +453,9 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 				selection: selection,
 			})
 		} else {
-			log.Warn().
-				Str("ref", ref).
-				Str("selection_preview", truncateSelection(selection, 50)).
-				Msg("inline comment dropped: selected text not found in the new body's page text; comment will be lost")
+			warnings.Add(report.WarningInlineComment,
+				"inline comment %s is lost: the text it was made on, %q, is not in the new body's page text",
+				ref, truncateSelection(selection, 50))
 		}
 	}
 
@@ -474,13 +484,9 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 		if r.end > minAppliedStart {
 			// This replacement overlaps with an already-applied one.
 			// Drop it and warn so the user knows the comment was skipped.
-			log.Warn().
-				Str("ref", r.ref).
-				Str("selection_preview", truncateSelection(r.selection, 50)).
-				Int("start", r.start).
-				Int("end", r.end).
-				Int("conflicting_start", minAppliedStart).
-				Msg("inline comment marker dropped: selection overlaps an already-placed marker")
+			warnings.Add(report.WarningInlineComment,
+				"inline comment %s is lost: the text it was made on, %q, overlaps another comment's",
+				r.ref, truncateSelection(r.selection, 50))
 			continue
 		}
 		minAppliedStart = r.start

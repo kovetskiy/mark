@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/report"
 )
 
 // reportBrokenLinks says what failed a link check, and decides whether it ends
@@ -17,14 +17,14 @@ import (
 // choice, because adopting --check-links on a repository that has been
 // publishing for years wants to see the list before the build starts failing
 // over it.
-func reportBrokenLinks(broken []string, file string, warnOnly bool) error {
+func reportBrokenLinks(broken []string, warnings *report.Warnings, warnOnly bool) error {
 	if len(broken) == 0 {
 		return nil
 	}
 
 	if warnOnly {
 		for _, item := range broken {
-			log.Warn().Msgf("%s: %s", file, item)
+			warnings.Add(report.WarningUnresolvedLink, "%s", item)
 		}
 
 		return nil

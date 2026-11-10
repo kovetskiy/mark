@@ -148,6 +148,29 @@ the `--edit-lock` restriction, and the `Order` of a page among its siblings.
 The restrictions a document declares are compared: a page whose restrictions
 would change is `would-update`.
 
+`warnings` lists what was wrong with a document that did not stop it
+publishing, and `warningDetails` says the same with each warning's `kind` and
+the `file` it is about:
+
+```json
+{
+  "file": "docs/guide.md",
+  "status": "published",
+  "warnings": ["unused attachment: logo.png"],
+  "warningDetails": [
+    {"kind": "attachment", "file": "docs/guide.md", "message": "unused attachment: logo.png"}
+  ]
+}
+```
+
+A `kind` is one of `unresolved-link` (under `--check-links-warn-only`),
+`metadata` (a front matter key mark does not read, or a header below the opening
+comments), `attachment` (a file not uploaded, or uploaded and never used),
+`invalid-characters`, `column-widths`, `inline-comment` (a comment
+`--preserve-comments` could not keep) and `missing-page` (a page the manifest
+recorded that no longer exists). Each is also logged; `github` annotates it
+against its file.
+
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the
 `--on-orphan` action taken: `report` for a page that was only reported and left
