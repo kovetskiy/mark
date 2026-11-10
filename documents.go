@@ -233,6 +233,17 @@ func (c Config) checkDocuments() error {
 		if slices.Contains(c.DocumentKeys, "") {
 			return errors.New("DocumentKeys holds an empty key")
 		}
+
+		// A run finds a scope's pages only in the spaces it publishes to.
+		if len(c.Documents) == 0 && c.Files == "" && len(c.Paths) == 0 {
+			msg := "DocumentKeys with nothing to publish finds no space to look for them in: " +
+				"leave a change that only removes documents to a run publishing the whole scope"
+			if !c.CI {
+				return errors.New(msg)
+			}
+
+			log.Warn().Msg(msg)
+		}
 	}
 
 	if len(c.Documents) == 0 {

@@ -165,13 +165,14 @@ The run covers only the keys of the scope it publishes or names:
   run only reports stays tracked too, for a run publishing the whole scope.
 
 Nothing is removed because it is absent, so the guard that holds back the
-orphans of a scope that published nothing in a space does not apply: what a
-partial run removes it was told to. A run that publishes nothing into a space
-finds nothing there, though, and a change that only removes documents leaves
-the run nothing to publish: it fails with "no files matched", or under `CI`
-does nothing, and a run publishing the whole scope deals with those keys.
+orphans of a scope that published nothing in a space does not apply to the
+keys a partial run names: it was told to remove them. A run finds a scope's
+pages only in the spaces it publishes to, though, so `DocumentKeys` with no
+`Documents`, `Files` or `Paths` is refused, or under `CI` warned about and does
+nothing: a change that only removes documents is left to a run publishing the
+whole scope, as a change that only deletes files is.
 
-`DocumentKeys` needs `Partial` and `DocumentScope`, and is refused without
+`DocumentKeys` needs `Partial` and `DocumentScope` too, and is refused without
 them: without `Partial` the run already covers every key of its scope, and
 the documents left out would be removed. `Partial` with documents that have no
 scope changes nothing for them, since they take part in no orphan handling or

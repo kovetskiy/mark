@@ -647,9 +647,10 @@ func documentScope(scope string) string {
 	return documentScopePrefix + scope
 }
 
-// isDocumentScope reports whether an entry recorded under glob belongs to a
-// document scope, this run's or another's, rather than to a --files pattern.
-func isDocumentScope(glob string) bool {
+// IsDocumentScope reports whether an entry recorded under glob, its
+// Entry.Glob, belongs to a document scope, a run's or another's, rather than
+// to a --files pattern.
+func IsDocumentScope(glob string) bool {
 	return strings.HasPrefix(glob, documentScopePrefix)
 }
 
@@ -766,7 +767,7 @@ func (s *Store) sameScope(path string, entry Entry) bool {
 		return scope != "" && entry.Glob == scope
 	}
 
-	return !isDocumentScope(entry.Glob)
+	return !IsDocumentScope(entry.Glob)
 }
 
 // SetWarningsFor has what Record finds wrong with a document added to the
@@ -1309,12 +1310,12 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			hint := ""
 			ownerEntry := state.shards[shardFor(owner)].pages[owner]
 			if s.partial && s.absent(state, owner) && ownerEntry.Glob != "" &&
-				!s.covers(owner, ownerEntry) {
+				!s.covers(owner, ownerEntry) && s.sameScope(path, ownerEntry) {
 				hint = fmt.Sprintf(
 					"; if %s moved to %s, name both paths in --files or --files-from to follow the move",
 					owner, path,
 				)
-				if isDocumentScope(ownerEntry.Glob) {
+				if IsDocumentScope(ownerEntry.Glob) {
 					hint = fmt.Sprintf(
 						"; if %s moved to %s, name the key %s beside the documents to follow the move",
 						owner, path, owner,
@@ -1356,7 +1357,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	glob := s.scopeOf(path)
 	if _, document := s.documentScopes[path]; s.partial && !document {
 		switch {
-		case ok && existing.Glob != "" && !isDocumentScope(existing.Glob):
+		case ok && existing.Glob != "" && !IsDocumentScope(existing.Glob):
 			glob = existing.Glob
 		case movedOK && matches(moved.Glob, path):
 			// Only a pattern the new path still lies in: a file moved into
@@ -1428,7 +1429,7 @@ func (s *Store) covers(path string, entry Entry) bool {
 		return false
 	}
 
-	if isDocumentScope(entry.Glob) {
+	if IsDocumentScope(entry.Glob) {
 		return s.coversDocument(path, entry)
 	}
 
@@ -1852,7 +1853,7 @@ func (s *Store) PublishedUnder(spaceKey, glob string) int {
 		return 0
 	}
 
-	document := isDocumentScope(glob)
+	document := IsDocumentScope(glob)
 	published := 0
 	for path := range state.seen {
 		scope, isDocument := s.documentScopes[path]
