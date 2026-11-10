@@ -96,3 +96,47 @@ func TestJSONKeepsWarningsAsStrings(t *testing.T) {
 		{Kind: WarningAttachment, File: "docs/a.md", Message: "unused attachment: logo.png"},
 	}, got.Pages[0].WarningDetails)
 }
+
+// TestGitHubAnnotatesAWarningAgainstTheSource: a warning about the document is
+// annotated where its status is, against the source it was made from; one
+// about another file stays against that file.
+func TestGitHubAnnotatesAWarningAgainstTheSource(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "build/a.md", Status: StatusUnchanged,
+		Warnings: []string{"about the document", "about a fragment"},
+		WarningDetails: []Warning{
+			{Kind: WarningMetadata, File: "build/a.md", Message: "about the document"},
+			{Kind: WarningMetadata, File: "build/frag.md", Message: "about a fragment"},
+		},
+	})
+	r.SetSources(func(file string) string { return "src/a.md.tmpl" })
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::warning file=src/a.md.tmpl::about the document\n"+
+			"::warning file=build/frag.md::about a fragment\n",
+		out.String())
+}
+
+// TestGitHubLeavesOutTheWarningsOfAnUnsynchronizedDocument: a document skipped
+// because it asked to be is left out of the pull request entirely, warnings
+// included; the json report still has them.
+func TestGitHubLeavesOutTheWarningsOfAnUnsynchronizedDocument(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "docs/draft.md", Status: StatusSkipped, Reason: ReasonNotSynchronized,
+		Warnings:       []string{"front matter key \"colour\" is not read by mark and was ignored"},
+		WarningDetails: []Warning{{Kind: WarningMetadata, File: "docs/draft.md", Message: "front matter key \"colour\" is not read by mark and was ignored"}},
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+	assert.Empty(t, out.String())
+
+	out.Reset()
+	require.NoError(t, r.Write(&out, FormatJSON))
+	assert.Contains(t, out.String(), `"kind": "metadata"`)
+}

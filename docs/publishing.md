@@ -170,7 +170,8 @@ uploaded, or uploaded and never used), `invalid-characters`, `column-widths`,
 `inline-comment` (a comment `--preserve-comments` could not keep) and
 `missing-page` (a page the manifest recorded that no longer exists). Each is
 also logged, and listed once even when a document is published twice in a run;
-`github` annotates it against its file.
+`github` annotates it where the document's other annotations go: against the
+source a library caller names with `ReportConfig.SourcePath`, if any.
 
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the
@@ -208,8 +209,8 @@ so that a failure appears against the file that caused it in a pull request:
 ::error::unable to save page manifest: ...
 ```
 
-A document that is not synchronized is left out: it was skipped because it
-asked to be. An error that belongs to no one file, from `errors` above, is
+A document that is not synchronized is left out, its warnings included: it
+was skipped because it asked to be. An error that belongs to no one file, from `errors` above, is
 annotated without one, and appears in the run's summary rather than against a
 line of the diff.
 

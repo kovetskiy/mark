@@ -314,7 +314,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 
 		case StatusSkipped:
 			if page.Reason == ReasonNotSynchronized {
-				break
+				continue
 			}
 
 			if err := command(w, "warning", file, page.Reason); err != nil {
