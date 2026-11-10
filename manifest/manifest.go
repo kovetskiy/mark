@@ -329,6 +329,11 @@ type Store struct {
 	// SetWarningsFor.
 	warningsFor func(key string) *report.Warnings
 
+	// partial says the run's files are some of a pattern's, not all of them.
+	// An entry it records keeps the pattern it was recorded under, which is
+	// the run whose missing files mean deletions.
+	partial bool
+
 	// spaces holds the manifest for each space key touched so far, alongside
 	// the property it was read from -- the version in that property is what a
 	// write has to supersede.
@@ -597,6 +602,23 @@ func (s *Store) warn(key string, kind report.WarningKind, format string, args ..
 	}
 
 	warnings.Add(kind, format, args...)
+}
+
+// SetPartial says this run publishes only some of the files of the pattern
+// that recorded them, such as the files a change touched. Recording a page
+// then leaves its entry under the pattern it already had, so the run that
+// publishes the whole pattern still notices when the file is deleted. A path
+// with no entry yet is recorded under this run's pattern until such a run
+// publishes it.
+//
+// It says nothing about orphans: a caller that finds them asks the store, and
+// a partial run has no business asking, every file it left out being missing
+// on purpose.
+func (s *Store) SetPartial(partial bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.partial = partial
 }
 
 // normaliseKeys rewrites entries stored under a key that predates
@@ -1083,12 +1105,16 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
+	glob := s.runGlob
+	if s.partial && ok && existing.Glob != "" {
+		glob = existing.Glob
+	}
 	if ok && existing.PageID == pageID && existing.Title == title &&
-		existing.Hash == hash && existing.Glob == s.runGlob {
+		existing.Hash == hash && existing.Glob == glob {
 		return nil
 	}
 
-	entry := Entry{PageID: pageID, Title: title, Hash: hash, Glob: s.runGlob}
+	entry := Entry{PageID: pageID, Title: title, Hash: hash, Glob: glob}
 
 	// The version is carried across rather than rebuilt away. It is written by
 	// RecordVersion alone, and this rebuilds the entry from its arguments --

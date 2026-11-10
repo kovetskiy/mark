@@ -312,6 +312,13 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_ORPHAN_UNDER"),
 				config.value("orphan-under")),
 		},
+		&cli.BoolFlag{
+			Name:  "partial",
+			Value: false,
+			Usage: "--files names only some of the files another run publishes, such as the files a change touched: a tracked file left out is not reported or forgotten as gone, and a page keeps the pattern its file was tracked under, so that run still notices a deleted file. Requires --track-pages; refused with --on-orphan archive or delete.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARTIAL"),
+				config.value("partial")),
+		},
 		&cli.StringSliceFlag{
 			Name:  "check-links",
 			Usage: "fail on links that do not resolve. Repeat or comma-separate any of: \"internal\" (relative links to other files in the repository), \"confluence\" (ac: links naming a page by title), \"external\" (requests each URL to see whether it answers), or \"all\".",

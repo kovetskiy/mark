@@ -327,6 +327,13 @@ type TrackingConfig struct {
 	OnOrphan       report.OnOrphan // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
 	OrphanUnder    string
 
+	// Partial says Files matches only some of the files of the pattern that
+	// publishes them, such as the files a change touched, so a tracked file
+	// missing from the run is not a deleted one. Orphans are neither reported
+	// nor forgotten, and a page the run records keeps the pattern its entry
+	// was recorded under. Refused with an OnOrphan that removes pages.
+	Partial bool
+
 	// NoOverwrite leaves alone a page edited in Confluence since mark last
 	// published it, which only the manifest remembers.
 	NoOverwrite bool
@@ -608,6 +615,23 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
+	if config.Tracking.Partial {
+		if !config.Tracking.TrackPages {
+			return errors.New("--partial requires --track-pages: " +
+				"it is about the page manifest, which only --track-pages keeps")
+		}
+
+		// The two ask opposite things of the run's files: that their absence
+		// means nothing, and that it means a page to remove.
+		if onOrphan != report.OnOrphanReport {
+			return fmt.Errorf(
+				"--partial cannot be used with --on-orphan %s: "+
+					"a partial run leaves out files on purpose, so none of them is gone",
+				onOrphan,
+			)
+		}
+	}
+
 	if config.Tracking.NoOverwrite && !config.Tracking.TrackPages {
 		return fmt.Errorf("--no-overwrite requires --track-pages: " +
 			"the version mark last published is remembered in the page manifest")
@@ -745,6 +769,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			tracker = manifest.NewStore(api)
 		}
 		tracker.SetManifestPage(config.Tracking.ManifestPage)
+		tracker.SetPartial(config.Tracking.Partial)
 		tracker.SetManifestPageOptional(config.Tracking.ManifestPageOptional)
 		// Normalised above, so this cannot fail.
 		if err := tracker.SetPropertyKeyPrefix(manifestPrefix); err != nil {
@@ -1027,8 +1052,12 @@ func Run(ctx context.Context, config Config) (err error) {
 	}
 
 	if tracker != nil {
-		if err := handleOrphans(ctx, tracker, api, config, onOrphan, failed.any(), results); err != nil {
-			return err
+		// A partial run leaves files out on purpose, and reporting one would
+		// also forget it.
+		if !config.Tracking.Partial {
+			if err := handleOrphans(ctx, tracker, api, config, onOrphan, failed.any(), results); err != nil {
+				return err
+			}
 		}
 
 		// Under the same detached context as the save on the way out, and for

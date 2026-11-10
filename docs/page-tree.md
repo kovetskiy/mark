@@ -339,6 +339,28 @@ The scope applies to everything Mark does about orphans, not only to removing
 them. A page outside it is not reported either, and is still remembered, so a
 later run with a wider scope knows about it.
 
+### Publishing only some of the files
+
+A job that publishes only the files a change touched, beside the run that
+publishes them all, says so with `--partial`:
+
+```bash
+mark publish --track-pages --partial --files "docs/{setup,install}.md"
+```
+
+Without it, Mark reads every tracked file missing from the run as deleted: given
+the full pattern on a checkout holding only the changed files, it reports the
+rest once and forgets them, losing their `--no-overwrite` baseline and rename
+tracking. Given a narrower pattern instead, it records the pages it publishes
+under that pattern, and the full run would no longer notice those files being
+deleted.
+
+With `--partial`, a run neither reports nor forgets a file it left out, and a
+page it publishes keeps the pattern its file was tracked under. A file no run
+has tracked yet is recorded under the partial run's pattern until the full run
+publishes it. `--partial` takes no `--on-orphan` other than `report`, since the
+files it leaves out are not gone. A library caller sets `TrackingConfig.Partial`.
+
 ### Flags that need other flags
 
 A combination that would leave you believing you are protected is refused
@@ -346,6 +368,7 @@ outright rather than warned about, because the belief comes from silence:
 
 * `--on-orphan archive` or `delete` without `--track-pages`
 * `--no-overwrite` without `--track-pages`
+* `--partial` without `--track-pages`, or with `--on-orphan archive` or `delete`
 * `--manifest-page-optional` without `--manifest-page`
 * `--check-links-warn-only` without `--check-links`, or with one that names no
   kind of link

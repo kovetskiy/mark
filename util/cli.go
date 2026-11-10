@@ -391,6 +391,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 			ManifestPrefix:       cmd.String("manifest-prefix"),
 			OnOrphan:             report.OnOrphan(cmd.String("on-orphan")),
 			OrphanUnder:          cmd.String("orphan-under"),
+			Partial:              cmd.Bool("partial"),
 			NoOverwrite:          cmd.Bool("no-overwrite"),
 		},
 		Report: mark.ReportConfig{
