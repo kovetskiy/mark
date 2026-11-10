@@ -666,3 +666,45 @@ func TestRememberWatchKeepsTheFirstState(t *testing.T) {
 
 	assert.Equal(t, wasUnwatched, api.watchedBefore["1"])
 }
+
+// newRestrictUnavailableAPI is a Cloud fake with one page for --edit-lock to
+// lock, whose first `times` restriction POSTs fail with a 500 before
+// Confluence does anything, the way Cloud now and then fails them.
+func newRestrictUnavailableAPI(t *testing.T, times int) (*API, *confluencetest.Server, *PageInfo) {
+	t.Helper()
+	api, server := newUnavailableAPI(t, false, 0, nil)
+	server.AddSpace("DOCS")
+	stored := server.AddPage("DOCS", "Locked", "page", "")
+	server.SetCurrentUser(confluencetest.User{AccountID: "acct-me", FullName: "Mark Bot"})
+
+	var failed atomic.Int32
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if isPost("/restriction")(r) && int(failed.Add(1)) <= times {
+			return http.StatusInternalServerError,
+				`{"message":"javax.persistence.EntityNotFoundException: No row with the given identifier exists"}`, true
+		}
+		return 0, "", false
+	})
+
+	return api, server, &PageInfo{ID: stored.ID, Title: stored.Title}
+}
+
+// Adding the user who may update is safe to send again, so a 500 on it is
+// retried, unlike one on any other write.
+func TestRestrictPageUpdatesIsSentAgainAfterA500(t *testing.T) {
+	api, server, page := newRestrictUnavailableAPI(t, 1)
+
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
+	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+	assert.Equal(t, 2, server.CountRequests(http.MethodPost, "/restriction"))
+}
+
+func TestRestrictPageUpdatesGivesUpAfterMaxAttempts(t *testing.T) {
+	api, server, page := newRestrictUnavailableAPI(t, maxAttempts)
+
+	err := api.RestrictPageUpdates(context.Background(), page, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+	assert.Empty(t, server.Page(page.ID).UpdateRestrictedTo)
+	assert.Equal(t, maxAttempts, server.CountRequests(http.MethodPost, "/restriction"))
+}

@@ -2245,6 +2245,8 @@ func (api *API) RestrictPageUpdates(
 		return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
 	}
 
+	// id is how Confluence names the user in a restriction.
+	var id string
 	if cloud {
 		user, err := api.restrictionUserCloud(ctx, allowedUser)
 		if err != nil {
@@ -2254,35 +2256,71 @@ func (api *API) RestrictPageUpdates(
 		if user.AccountID == "" {
 			return fmt.Errorf("resolved user %q has no accountId", allowedUser)
 		}
-		userMap["accountId"] = user.AccountID
+		id = user.AccountID
+		userMap["accountId"] = id
 	} else {
 		name, err := api.restrictionUserServer(ctx, allowedUser)
 		if err != nil {
 			return fmt.Errorf("unable to restrict updates of page %s: %w", page.ID, err)
 		}
-		userMap["username"] = name
+		id = name
+		userMap["username"] = id
+	}
+
+	// A page already locked to the user is left alone: the request would
+	// change nothing, and Confluence Cloud now and then fails it with a 500.
+	locked := func() (struct{}, bool, error) {
+		return struct{}{}, api.updatesRestrictedTo(ctx, page.ID, id), nil
+	}
+	if _, ok, _ := locked(); ok {
+		return nil
 	}
 
 	// Through do rather than send: nothing in the answer is used, and Data
 	// Center answers this one with 204 and no body, which send -- asked for a
 	// value -- would take for a failure of a restriction already applied.
-	var answer any
-	_, err = api.v1.do(
-		ctx, nil, http.MethodPost, []string{"content", page.ID, "restriction"}, nil,
-		[]map[string]any{
-			{
-				"operation": "update",
-				"restrictions": map[string]any{
-					"user": []map[string]any{
-						userMap,
+	restrict := func() (struct{}, error) {
+		var answer any
+		_, err := api.v1.do(
+			ctx, nil, http.MethodPost, []string{"content", page.ID, "restriction"}, nil,
+			[]map[string]any{
+				{
+					"operation": "update",
+					"restrictions": map[string]any{
+						"user": []map[string]any{
+							userMap,
+						},
 					},
 				},
 			},
-		},
-		&answer,
-	)
+			&answer,
+		)
+		// Adding a user who may update already changes nothing, so the
+		// request is safe to send again after any 5xx, not only after the
+		// answers that say Confluence was unavailable.
+		if status := statusOf(err); status >= 500 && status != http.StatusNotImplemented {
+			err = unavailableError{error: err}
+		}
+		return struct{}{}, err
+	}
+
+	_, err = retryUnavailable(ctx, api, "restrict updates of page "+page.ID, restrict, locked)
 
 	return api.restrictionError(ctx, "restrict updates of page "+page.ID, err)
+}
+
+// updatesRestrictedTo reports whether user is among those the page's update
+// restriction names. A restriction that cannot be read is taken for one that
+// does not name the user, so that the caller goes on to set it as it would
+// have without asking.
+func (api *API) updatesRestrictedTo(ctx context.Context, pageID, user string) bool {
+	current, err := api.getPageRestrictions(ctx, pageID)
+	if err != nil {
+		log.Debug().Err(err).Msgf("unable to read the update restriction of page %s; setting it regardless", pageID)
+		return false
+	}
+
+	return current[RestrictUpdate].users[strings.ToLower(user)] != ""
 }
 
 // CreateFolder creates a folder called title through the v2 API, under
