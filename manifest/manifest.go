@@ -1122,7 +1122,10 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 		switch {
 		case ok && existing.Glob != "":
 			glob = existing.Glob
-		case movedOK && moved.Glob != "":
+		case movedOK && matches(moved.Glob, path):
+			// Only a pattern the new path still lies in: a file moved into
+			// another job's pattern is that job's now, and the run owning the
+			// old pattern would read it as deleted.
 			glob = moved.Glob
 		}
 	}
@@ -1180,7 +1183,17 @@ func (s *Store) covers(path string, entry Entry) bool {
 		return entry.Glob == s.runGlob
 	}
 
-	matched, err := doublestar.Match(s.runGlob, path)
+	return matches(s.runGlob, path)
+}
+
+// matches reports whether a recorded path lies in a pattern; both are spelled
+// as Key spells them. An empty or malformed pattern matches nothing.
+func matches(pattern, path string) bool {
+	if pattern == "" {
+		return false
+	}
+
+	matched, err := doublestar.Match(pattern, path)
 	return err == nil && matched
 }
 

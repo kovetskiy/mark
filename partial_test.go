@@ -173,6 +173,40 @@ func TestPartialRunFollowsAMove(t *testing.T) {
 	assert.Equal(t, before.Glob, after.Glob, "the new path takes the old one's pattern")
 }
 
+// TestPartialRunMovesAFileIntoAnotherJobsPattern: a file moved out of one
+// job's pattern into another's does not keep the first job's pattern, or that
+// job's next run would read it as deleted and trash the page it still
+// publishes to.
+func TestPartialRunMovesAFileIntoAnotherJobsPattern(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	for _, sub := range []string{"docs", "guides"} {
+		require.NoError(t, os.Mkdir(filepath.Join(dir, sub), 0o700))
+	}
+	writeFile(t, filepath.Join(dir, "docs"), "keep.md", markdownWithTitle("Keep"))
+	writeFile(t, filepath.Join(dir, "docs"), "x.md", markdownWithTitle("Page x"))
+	writeFile(t, filepath.Join(dir, "guides"), "y.md", markdownWithTitle("Page y"))
+
+	docs := trackingConfig(server, filepath.Join(dir, "docs", "*.md"))
+	guides := trackingConfig(server, filepath.Join(dir, "guides", "*.md"))
+	require.NoError(t, Run(context.Background(), docs))
+	require.NoError(t, Run(context.Background(), guides))
+	id := pageIDTitled(t, server, "Page x")
+
+	moved := filepath.Join(dir, "guides", "x.md")
+	require.NoError(t, os.Rename(filepath.Join(dir, "docs", "x.md"), moved))
+	require.NoError(t, Run(context.Background(), partialOf(docs, dir, "{docs,guides}/x.md")))
+
+	entry, ok := tracked(t, server, moved)
+	require.True(t, ok)
+	assert.Equal(t, id, entry.PageID, "the move was followed")
+	assert.NotEqual(t, manifest.Key(docs.Files), entry.Glob)
+
+	docs.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), docs))
+	assert.False(t, server.Page(id).Trashed, "guides/x.md still publishes to it")
+}
+
 // TestPartialRunNamesTheMissingPathOfAMove: a partial run given only the new
 // path of a moved file cannot tell a move from two files claiming one page,
 // and its warning says which path to name.
