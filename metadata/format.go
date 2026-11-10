@@ -70,6 +70,22 @@ func Header(key, value string) (string, error) {
 	return line, nil
 }
 
+// SanitizeValue is value altered just enough that Header accepts it, for a
+// program that would rather publish a title close to the one it was given
+// than fail over it. Header stays strict; this is the lossy alternative.
+//
+// Each line break -- "\r\n", "\r" or "\n" -- becomes a space, a ">" that
+// would end the comment ("-->", "--!>") has a space put before it, and the
+// space at either end is trimmed. A value Header already accepts is returned
+// as it is, so applying it twice changes nothing more.
+func SanitizeValue(value string) string {
+	value = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(value)
+	value = strings.ReplaceAll(value, "-->", "-- >")
+	value = strings.ReplaceAll(value, "--!>", "--! >")
+
+	return strings.TrimSpace(value)
+}
+
 // frontMatterKeys are the front matter keys mark reads, as
 // normaliseFrontMatterKey spells them.
 func frontMatterKeys() []string {

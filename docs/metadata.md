@@ -140,6 +140,11 @@ mark's `metadata` package:
 * `metadata.Header(key, value)` returns the header line, or an error matching
   `metadata.ErrUnrepresentable` for a value a header cannot hold and
   `metadata.ErrUnknownHeader` for a key mark does not read.
+* `metadata.SanitizeValue(value)` alters a value just enough that `Header`
+  takes it, for a program that would rather publish a slightly different
+  title than fail: each line break becomes a space, `-->` and `--!>` become
+  `-- >` and `--! >`, and the space at either end is trimmed. A value `Header`
+  already takes is left as it is.
 * `metadata.FrontMatter(fields)` returns YAML front matter, which can hold any
   text, line breaks included. It refuses a key mark does not read with
   `metadata.ErrUnknownHeader`, and with `metadata.ErrUnrepresentable` two keys

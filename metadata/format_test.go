@@ -116,6 +116,43 @@ func TestHeaderAdversarialValues(t *testing.T) {
 	}
 }
 
+// checkSanitizeValue: whatever the value, Header takes what SanitizeValue
+// makes of it, and leaves a value Header already took as it was.
+func checkSanitizeValue(t *testing.T, value string) {
+	t.Helper()
+
+	sanitized := SanitizeValue(value)
+	_, err := Header(HeaderTitle, sanitized)
+	require.NoError(t, err, "%q sanitized to %q", value, sanitized)
+	checkHeader(t, sanitized)
+	assert.Equal(t, sanitized, SanitizeValue(sanitized), "not idempotent")
+
+	if _, err := Header(HeaderTitle, value); err == nil {
+		assert.Equal(t, value, sanitized, "a value Header accepts was altered")
+	}
+}
+
+func TestSanitizeValue(t *testing.T) {
+	for _, value := range append(adversarialValues(), "--->", "--!-->", "-\n->", "a\r\n\r\nb", " \u2028x\u0085 ") {
+		t.Run(value, func(t *testing.T) {
+			checkSanitizeValue(t, value)
+		})
+	}
+
+	assert.Equal(t, "Report -- > <!-- Space: EVIL", SanitizeValue("Report -->\n<!-- Space: EVIL"))
+	assert.Equal(t, "a --! > b", SanitizeValue(" a --!> b\r\n"))
+}
+
+func FuzzSanitizeValue(f *testing.F) {
+	for _, value := range adversarialValues() {
+		f.Add(value)
+	}
+
+	f.Fuzz(func(t *testing.T, value string) {
+		checkSanitizeValue(t, value)
+	})
+}
+
 func FuzzHeader(f *testing.F) {
 	for _, value := range adversarialValues() {
 		f.Add(value)

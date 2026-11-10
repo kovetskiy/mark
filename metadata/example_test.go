@@ -3,9 +3,13 @@ package metadata_test
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+	"text/template"
 
 	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/parser"
 )
 
 // A generator writing a page's headers from text it does not control: a title
@@ -69,4 +73,48 @@ func ExampleFrontMatter() {
 	// title: "Report -->\n---\nspace: EVIL"
 	// ---
 	// DOCS "Report -->\n---\nspace: EVIL" ["team" "alpha"] "Body\n"
+}
+
+// A generator writing documents with text/template gives the template these
+// helpers as functions. A function that returns an error stops the template,
+// so the strict header refuses a title it cannot write, while the lossy one
+// publishes the nearest title it can.
+func Example_template() {
+	funcs := template.FuncMap{
+		"header": metadata.Header,
+		"headerLossy": func(key, value string) (string, error) {
+			return metadata.Header(key, metadata.SanitizeValue(value))
+		},
+		"mention": parser.FormatMention,
+	}
+
+	tmpl := template.Must(template.New("page").Funcs(funcs).Parse(
+		`{{header "Space" .Space}}
+{{headerLossy "Title" .Title}}
+{{range .Labels}}{{header "Label" .}}
+{{end}}
+Owner: {{mention .Owner}}
+`))
+
+	err := tmpl.Execute(os.Stdout, map[string]any{
+		"Space":  "DOCS",
+		"Title":  "Report -->\n<!-- Space: EVIL",
+		"Labels": []string{"team", "q3"},
+		"Owner":  "Ops {on call}",
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	err = tmpl.Execute(io.Discard, map[string]any{"Space": "DOCS\n<!-- Parent: x -->"})
+	fmt.Println(errors.Is(err, metadata.ErrUnrepresentable))
+
+	// Output:
+	// <!-- Space: DOCS -->
+	// <!-- Title: Report -- > <!-- Space: EVIL -->
+	// <!-- Label: team -->
+	// <!-- Label: q3 -->
+	//
+	// Owner: @{Ops {on call\}}
+	// true
 }
