@@ -35,9 +35,9 @@ type Config struct {
 	Output string
 
 	// AttachmentsDir is where the attachments the page shows or links to are
-	// written. Empty is the directory Output is in, or the process's working
-	// directory when the Markdown goes to Stdout; a caller that wants no
-	// files there sets it or NoAttachments.
+	// written. Empty is the directory Output is in. With the Markdown going
+	// to Stdout there is no such directory, so Page refuses an empty one with
+	// ErrNoAttachmentsDir unless NoAttachments is set.
 	AttachmentsDir string
 
 	// Overwrite replaces files that are already there. Without it, finding
@@ -134,6 +134,13 @@ type Result struct {
 // expansions are what an exported page is read with.
 const expansions = "body.storage,ancestors,version,space"
 
+// ErrNoAttachmentsDir refuses an export to Stdout that would write the
+// page's attachments without being told where: there is no Output for them to
+// go beside, and the process's working directory is seldom what a library
+// caller means. Set Config.AttachmentsDir, "." included, or NoAttachments.
+var ErrNoAttachmentsDir = errors.New("the document goes to standard output, so name the directory " +
+	"its attachments are written to, or export without them")
+
 // Page exports a Confluence page to a Markdown file that mark can publish
 // back: its body converted to Markdown, below the metadata headers that name
 // the page -- its space, its ancestry, its title, its labels -- and with the
@@ -186,6 +193,10 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 		return nil, err
 	}
 	okf := format == FormatOKF
+
+	if (cfg.Output == "" || cfg.Output == "-") && cfg.AttachmentsDir == "" && !cfg.NoAttachments {
+		return nil, ErrNoAttachmentsDir
+	}
 
 	// OKF reads these names as a directory's index and log at any level.
 	if okf && cfg.Output != "" && cfg.Output != "-" {

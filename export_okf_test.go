@@ -231,7 +231,7 @@ func TestExportRefusesAnUnknownFormat(t *testing.T) {
 
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
-		PageID:     pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: "html",
+		PageID:     pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: "html", NoAttachments: true,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown export format "html"`)
@@ -315,7 +315,7 @@ func TestExportOKFPageKeepsWhatMarkCannotSay(t *testing.T) {
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
-		PageID:     guide.ID, Stdout: &stdout, Format: export.FormatOKF,
+		PageID:     guide.ID, Stdout: &stdout, Format: export.FormatOKF, NoAttachments: true,
 	})
 	require.NoError(t, err)
 	document := stdout.String()
@@ -339,7 +339,7 @@ func TestExportOKFPageThroughTheGatewayLinksIntoAMissingSpace(t *testing.T) {
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL + "/ex/confluence/cloud-id", Password: "token"},
-		PageID:     pages["Guide"].ID, Stdout: &stdout, Format: export.FormatOKF,
+		PageID:     pages["Guide"].ID, Stdout: &stdout, Format: export.FormatOKF, NoAttachments: true,
 	})
 	require.NoError(t, err)
 	document := stdout.String()
@@ -361,7 +361,7 @@ func TestExportOKFPageReportsAFailedLookup(t *testing.T) {
 
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
-		PageID:     pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: export.FormatOKF,
+		PageID:     pages["Guide"].ID, Stdout: &bytes.Buffer{}, Format: export.FormatOKF, NoAttachments: true,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unable to look up page "C++"`)

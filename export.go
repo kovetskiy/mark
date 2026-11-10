@@ -24,9 +24,10 @@ type ExportConfig struct {
 	Output string
 
 	// AttachmentsDir is where the attachments the page refers to are
-	// written; "" is the directory Output is in, or, with no Output, the
-	// process's working directory. A caller exporting to Stdout, or to the
-	// Result alone, sets it or NoAttachments.
+	// written; "" is the directory Output is in. With no Output, Export
+	// refuses an empty one with export.ErrNoAttachmentsDir unless
+	// NoAttachments is set: "." writes them to the working directory, as the
+	// command line's mark export does beside standard output.
 	AttachmentsDir string
 
 	// Overwrite replaces files that are already there instead of failing.
@@ -64,9 +65,9 @@ type ExportConfig struct {
 // A caller that wants the page's title, labels and body as values, and no
 // files, sets Metadata to export.MetadataNone and NoAttachments, and leaves
 // Output and Stdout unset: the Result's Title, Labels and Markdown are then
-// all there is. Without NoAttachments, and with no Output or AttachmentsDir,
-// the attachments the body refers to are written to the working directory,
-// as the command line's mark export writes them beside standard output.
+// all there is. With no Output, the attachments the body refers to need
+// either NoAttachments or an AttachmentsDir to be written to; with neither,
+// Export fails with export.ErrNoAttachmentsDir before asking for the page.
 func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 	api := config.Connection.api(confluence.Options{})
 

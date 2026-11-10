@@ -487,7 +487,7 @@ func TestExportOfAPageThatIsNotThere(t *testing.T) {
 
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
-		Space:      "DOCS", Title: "Nowhere",
+		Space:      "DOCS", Title: "Nowhere", NoAttachments: true,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `no page or blog post titled "Nowhere" in space DOCS`)
@@ -656,7 +656,7 @@ func TestExportOfAPageBelowAFolderSays(t *testing.T) {
 	logged := captureLog(t, func() {
 		_, err := Export(context.Background(), ExportConfig{
 			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
-			PageID:     inside.ID, Stdout: &stdout,
+			PageID:     inside.ID, Stdout: &stdout, NoAttachments: true,
 		})
 		require.NoError(t, err)
 	})
@@ -806,6 +806,7 @@ func TestExportKeepsTheMaxAppearance(t *testing.T) {
 	var stdout bytes.Buffer
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Stdout: &stdout,
+		NoAttachments: true,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "<!-- Content-Appearance: max -->")
@@ -1291,4 +1292,40 @@ func TestExportNoMetadataWithAttachments(t *testing.T) {
 		require.Len(t, entries, 1, "only the attachments' directory is written")
 		assert.Equal(t, "files", entries[0].Name())
 	})
+}
+
+// TestExportToStdoutNeedsAnAttachmentsDir: with no Output for the attachments
+// to go beside, a library caller names where they go or does without them,
+// rather than finding them in its working directory; nothing is asked for.
+func TestExportToStdoutNeedsAnAttachmentsDir(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	asked := false
+	server.SetFail(func(*http.Request) (int, string, bool) {
+		asked = true
+		return 0, "", false
+	})
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	for _, output := range []string{"", "-"} {
+		_, err := Export(context.Background(), ExportConfig{
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			PageID:     id, Output: output, Metadata: export.MetadataNone,
+		})
+		require.ErrorIs(t, err, export.ErrNoAttachmentsDir, "output %q", output)
+	}
+	assert.False(t, asked, "refused before asking Confluence for anything")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing written to the working directory")
+
+	result, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, AttachmentsDir: ".",
+	})
+	require.NoError(t, err, `"." asks for the working directory`)
+	assert.NotEmpty(t, result.Attachments)
+	for _, written := range result.Attachments {
+		assert.FileExists(t, filepath.Join(dir, filepath.Base(written)))
+	}
 }

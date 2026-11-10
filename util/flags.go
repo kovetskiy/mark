@@ -504,7 +504,7 @@ func exportFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "metadata",
 			Value:   string(export.MetadataComments),
-			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, \"frontmatter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter), or \"none\", the body alone, which cannot be published back by itself and which --recursive refuses. --format okf ignores it.",
+			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, \"frontmatter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter), or \"none\", the body alone, which cannot be published back by itself: --recursive refuses it on the command line, and sets aside one from MARK_METADATA or the configuration file with a warning. --format okf ignores it.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_METADATA"), config.value("metadata")),
 		},
 		&cli.BoolFlag{

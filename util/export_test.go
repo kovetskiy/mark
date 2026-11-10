@@ -143,12 +143,42 @@ func TestExportCommand(t *testing.T) {
 	t.Run("a tree with MARK_METADATA=none, which is for a single page", func(t *testing.T) {
 		t.Setenv("MARK_METADATA", "none")
 		out := filepath.Join(t.TempDir(), "tree")
-		_, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "-r", "-o", out)...)
+		_, logged, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "-r", "-o", out)...)
 		require.NoError(t, err)
 
 		written, err := os.ReadFile(filepath.Join(out, "index.md"))
 		require.NoError(t, err)
 		assert.Contains(t, string(written), "<!-- Title: Exported page -->", "a tree keeps the metadata that publishes it back")
+		assert.Contains(t, logged, `--metadata (from environment variable "MARK_METADATA") is for a single page`,
+			"the setting is not set aside silently")
+	})
+
+	t.Run("a tree with metadata none in the configuration file", func(t *testing.T) {
+		withNone := writeConfig(t, t.TempDir(), "mark.toml", "metadata = \"none\"\n")
+		out := filepath.Join(t.TempDir(), "tree")
+		_, logged, err := runMark(t, "-c", withNone, "--color", "never", "-u", "user", "-p", "token",
+			"export", "-b", server.URL, "--page-id", page.ID, "-r", "-o", out)
+		require.NoError(t, err)
+
+		written, err := os.ReadFile(filepath.Join(out, "index.md"))
+		require.NoError(t, err)
+		assert.Contains(t, string(written), "<!-- Title: Exported page -->")
+		assert.Contains(t, logged, "is for a single page")
+	})
+
+	t.Run("to standard output, with the attachments in the working directory", func(t *testing.T) {
+		withFile := server.AddPage("DOCS", "With a file", "page", home.ID)
+		server.EditPage(withFile.ID, `<p><ac:image><ri:attachment ri:filename="logo.png"/></ac:image></p>`)
+		server.AddAttachmentData(withFile.ID, "logo.png", []byte("png bytes"))
+		t.Chdir(t.TempDir())
+
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", withFile.ID)...)
+		require.NoError(t, err)
+		assert.Contains(t, stdout, "![](logo.png)")
+
+		written, err := os.ReadFile("logo.png")
+		require.NoError(t, err)
+		assert.Equal(t, "png bytes", string(written))
 	})
 
 	t.Run("by URL, to standard output", func(t *testing.T) {
