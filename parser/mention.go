@@ -115,7 +115,11 @@ var ErrUnrepresentable = errors.New("cannot be written as a mention")
 // It is for a program that writes mark documents from text it does not
 // control. The mention reads back as name in a paragraph and in a table cell
 // alike. A mention is one line and never empty, so a name that is empty or
-// holds a line break is ErrUnrepresentable rather than altered.
+// holds a line break is ErrUnrepresentable rather than altered. So is one
+// holding "<!--": the Include and Macro directives are found in the raw text
+// before any mention is parsed, so "@{<!-- Include: f -->}" would include f.
+// A document's own Macro expressions match the raw text too, mentions
+// included.
 //
 // The text around the mention is the caller's to escape: a mention written
 // inside a code span is code, as it is anywhere else.
@@ -125,6 +129,9 @@ func FormatMention(name string) (string, error) {
 	}
 	if strings.ContainsAny(name, "\r\n") {
 		return "", fmt.Errorf("name %q holds a line break and %w", name, ErrUnrepresentable)
+	}
+	if strings.Contains(name, "<!--") {
+		return "", fmt.Errorf("name %q opens a comment, which mark reads as a directive, and %w", name, ErrUnrepresentable)
 	}
 
 	var b strings.Builder
