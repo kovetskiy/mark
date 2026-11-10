@@ -160,3 +160,23 @@ func TestManifestPageOptionalRequiresManifestPage(t *testing.T) {
 	assert.Contains(t, err.Error(),
 		"--manifest-page-optional (Tracking.ManifestPageOptional) requires --manifest-page (Tracking.ManifestPage)")
 }
+
+// TestManifestPageOptionalNoOverwritePreview: a dry run's preview of
+// --no-overwrite leaves the same existing page alone that the real run does.
+func TestManifestPageOptionalNoOverwritePreview(t *testing.T) {
+	server, _ := docsSpace(t)
+	existing := server.AddPage("DOCS", "Guide", "page", "")
+	server.EditPage(existing.ID, "<p>edited in Confluence</p>")
+
+	dir := t.TempDir()
+	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
+
+	config := optionalManifestConfig(server, dir, io.Discard)
+	config.Tracking.NoOverwrite = true
+	config.Update.ChangesOnly = true
+
+	pages := decodeReport(t, []byte(previewOf(t, config, report.FormatJSON))).Pages
+	require.Len(t, pages, 1)
+	assert.Equal(t, report.StatusSkipped, pages[0].Status)
+	assert.Contains(t, pages[0].Reason, "no page manifest")
+}

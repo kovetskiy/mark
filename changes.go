@@ -126,6 +126,14 @@ func hasDrifted(
 	}
 
 	if !ok || entry.Version == 0 || entry.PageID != target.ID {
+		// Without a manifest nothing says which version mark last wrote, so
+		// an edit made in Confluence cannot be told from none. Overwriting
+		// on that doubt could happen on every run for as long as the page
+		// is missing, not once as on a first tracked run.
+		if tracker.Untracked(spaceKey) {
+			return "not checked for edits made in Confluence: the space has no page manifest " +
+				"(its manifest page is missing)", nil
+		}
 		return "", nil
 	}
 
@@ -157,22 +165,11 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 		return false, err
 	}
 
-	switch {
-	case drift != "":
-		log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
-
-	case r.tracker.Untracked(meta.Space):
-		// Without a manifest nothing says which version mark last wrote, so
-		// an edit made in Confluence cannot be told from none. Overwriting
-		// on that doubt could happen on every run for as long as the page
-		// is missing, not once as on a first tracked run.
-		drift = "not checked for edits made in Confluence: the space has no page manifest " +
-			"(its manifest page is missing)"
-		log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
-
-	default:
+	if drift == "" {
 		return false, nil
 	}
+
+	log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
 
 	r.addPage(doc, report.Page{
 		File: file, Status: report.StatusSkipped,
