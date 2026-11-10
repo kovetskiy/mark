@@ -167,7 +167,7 @@ func expandDirectives(
 
 		var err error
 
-		tmpl, markdown, err = expandIncludes(path, opts.IncludePath, markdown, tmpl)
+		tmpl, markdown, err = expandIncludes(path, opts, markdown, tmpl)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -363,7 +363,7 @@ func attachMacroFiles(path string, opts Options, names []string) ([]attachment.A
 // which has to happen before goldmark ever sees the bytes.
 func expandIncludes(
 	path string,
-	includePath string,
+	opts Options,
 	markdown []byte,
 	tmpl *template.Template,
 ) (*template.Template, []byte, error) {
@@ -371,11 +371,13 @@ func expandIncludes(
 		var recurse bool
 		var err error
 
-		tmpl, markdown, recurse, err = includes.ProcessIncludes(
+		tmpl, markdown, recurse, err = includes.ProcessIncludesWithWarnings(
 			filepath.Dir(path),
-			includePath,
+			opts.IncludePath,
 			markdown,
 			tmpl,
+			nil,
+			opts.Warnings,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to process includes: %w", err)
@@ -437,6 +439,15 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }
 
+// includeTransformer is the AST include transformer for the document at
+// path, reporting to its warnings.
+func includeTransformer(path string, opts Options, tmpl *template.Template) *ctransformer.IncludeTransformer {
+	t := ctransformer.NewIncludeTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl)
+	t.Warnings = opts.Warnings
+
+	return t
+}
+
 // ConfluenceExtension is the goldmark extension that renders Markdown as
 // Confluence storage format, GitHub Alerts ([!NOTE], [!TIP], etc.) included.
 // It is a parser.Extension and an html.Extension at once.
@@ -479,7 +490,7 @@ func newConfluenceExtension(ctx context.Context, stdlib *stdlib.Lib, path string
 		// filesystem has, so the AST macro and include transformers only ever
 		// worked when --include-path happened to cover the file.
 		ctransformer.NewMacroTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl),
-		ctransformer.NewIncludeTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl),
+		includeTransformer(path, opts, tmpl),
 	)
 	return &ConfluenceExtension{
 		ctx:             ctx,

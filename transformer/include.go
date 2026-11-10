@@ -6,6 +6,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
@@ -20,6 +21,9 @@ type IncludeTransformer struct {
 	IncludePath string
 	Templates   *template.Template
 	Err         error
+	// Warnings collects what is worth saying about the includes expanded;
+	// nil only logs it.
+	Warnings *report.Warnings
 }
 
 // NewIncludeTransformer creates a new IncludeTransformer instance.
@@ -108,7 +112,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 
 	modified := false
 	for _, target := range targets {
-		tmpl, expanded, _, err := includes.ProcessIncludes(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
+		tmpl, expanded, _, err := includes.ProcessIncludesWithWarnings(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates, nil, t.Warnings)
 		if err != nil {
 			t.Err = err
 			log.Error().

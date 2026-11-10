@@ -1482,7 +1482,7 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	}
 
 	if r.config.Page.PageID != "" && meta != nil {
-		warnings.Add(report.WarningMetadata,
+		warnings.Add(report.WarningMetadataIgnored,
 			"the document's metadata is ignored: the page to publish to is named by id")
 		meta = nil
 	}
@@ -1630,13 +1630,14 @@ func (r *publishRun) resolveRestrictions(ctx context.Context, doc *document) err
 	return nil
 }
 
-// ancestryOptions are the run's settings for resolving a page's ancestry.
-// DryRun stays unset: PreviewPage is a dry run whatever it is given.
-func (r *publishRun) ancestryOptions() page.AncestryOptions {
+// ancestryOptions are the run's settings for resolving doc's page's
+// ancestry. DryRun stays unset: PreviewPage is a dry run whatever it is given.
+func (r *publishRun) ancestryOptions(doc *document) page.AncestryOptions {
 	return page.AncestryOptions{
 		FolderCache: r.folders,
 		Parents:     r.ancestryTracker,
 		Folders:     r.ancestryTracker,
+		Warnings:    doc.warnings,
 	}
 }
 
@@ -1666,7 +1667,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, err
 	}
 
-	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, meta, r.ancestryOptions())
+	parent, pg, misplaced, err := page.PreviewPage(ctx, r.api, meta, r.ancestryOptions(doc))
 	if err != nil {
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
@@ -1941,7 +1942,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 		return nil, err
 	}
 
-	parent, pg, err := page.ResolvePage(ctx, api, meta, r.ancestryOptions())
+	parent, pg, err := page.ResolvePage(ctx, api, meta, r.ancestryOptions(doc))
 	if err != nil {
 		return nil, fmt.Errorf("error resolving page %q: %w", meta.Title, err)
 	}

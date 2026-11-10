@@ -11,11 +11,11 @@ import (
 
 func TestWarningsRecordKindAndFile(t *testing.T) {
 	w := NewWarnings("docs/a.md")
-	w.Add(WarningMetadata, "front matter key %q is not read by mark and was ignored", "colour")
+	w.Add(WarningUnknownKey, "front matter key %q is not read by mark and was ignored", "colour")
 	w.Add(WarningAttachment, "unused attachment: %s", "logo.png")
 
 	assert.Equal(t, []Warning{
-		{Kind: WarningMetadata, File: "docs/a.md", Message: `front matter key "colour" is not read by mark and was ignored`},
+		{Kind: WarningUnknownKey, File: "docs/a.md", Message: `front matter key "colour" is not read by mark and was ignored`},
 		{Kind: WarningAttachment, File: "docs/a.md", Message: "unused attachment: logo.png"},
 	}, w.List())
 }
@@ -24,21 +24,21 @@ func TestWarningsRecordEachOnce(t *testing.T) {
 	w := NewWarnings("docs/a.md")
 	w.Add(WarningMissingPage, "page %s no longer exists", "1")
 	w.Add(WarningMissingPage, "page %s no longer exists", "1")
-	w.Add(WarningMetadata, "page %s no longer exists", "1")
+	w.Add(WarningUnknownKey, "page %s no longer exists", "1")
 
 	assert.Len(t, w.List(), 2)
 }
 
 func TestNilWarningsOnlyLog(t *testing.T) {
 	var w *Warnings
-	w.Add(WarningMetadata, "logged, not kept")
+	w.Add(WarningUnknownKey, "logged, not kept")
 
 	assert.Nil(t, w.List())
 }
 
 func TestListIsACopy(t *testing.T) {
 	w := NewWarnings("a.md")
-	w.Add(WarningMetadata, "one")
+	w.Add(WarningUnknownKey, "one")
 
 	list := w.List()
 	list[0].Message = "changed"
@@ -54,8 +54,8 @@ func TestGitHubAnnotatesAWarningAgainstItsOwnFile(t *testing.T) {
 		File: "docs/a.md", Status: StatusUnchanged,
 		Warnings: []string{"named", "unnamed"},
 		WarningDetails: []Warning{
-			{Kind: WarningMetadata, File: "docs/b.md", Message: "named"},
-			{Kind: WarningMetadata, Message: "unnamed"},
+			{Kind: WarningUnknownKey, File: "docs/b.md", Message: "named"},
+			{Kind: WarningUnknownKey, Message: "unnamed"},
 		},
 	})
 
@@ -106,8 +106,8 @@ func TestGitHubAnnotatesAWarningAgainstTheSource(t *testing.T) {
 		File: "build/a.md", Status: StatusUnchanged,
 		Warnings: []string{"about the document", "about a fragment"},
 		WarningDetails: []Warning{
-			{Kind: WarningMetadata, File: "build/a.md", Message: "about the document"},
-			{Kind: WarningMetadata, File: "build/frag.md", Message: "about a fragment"},
+			{Kind: WarningUnknownKey, File: "build/a.md", Message: "about the document"},
+			{Kind: WarningUnknownKey, File: "build/frag.md", Message: "about a fragment"},
 		},
 	})
 	r.SetSources(func(file string) string { return "src/a.md.tmpl" })
@@ -129,7 +129,7 @@ func TestGitHubLeavesOutTheWarningsOfAnUnsynchronizedDocument(t *testing.T) {
 	r.AddPage(Page{
 		File: "docs/draft.md", Status: StatusSkipped, Reason: ReasonNotSynchronized,
 		Warnings:       []string{"front matter key \"colour\" is not read by mark and was ignored"},
-		WarningDetails: []Warning{{Kind: WarningMetadata, File: "docs/draft.md", Message: "front matter key \"colour\" is not read by mark and was ignored"}},
+		WarningDetails: []Warning{{Kind: WarningUnknownKey, File: "docs/draft.md", Message: "front matter key \"colour\" is not read by mark and was ignored"}},
 	})
 
 	var out strings.Builder
@@ -138,5 +138,5 @@ func TestGitHubLeavesOutTheWarningsOfAnUnsynchronizedDocument(t *testing.T) {
 
 	out.Reset()
 	require.NoError(t, r.Write(&out, FormatJSON))
-	assert.Contains(t, out.String(), `"kind": "metadata"`)
+	assert.Contains(t, out.String(), `"kind": "unknown-key"`)
 }

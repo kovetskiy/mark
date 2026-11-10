@@ -9,6 +9,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -72,7 +73,7 @@ func resolvePage(
 		if len(page.Ancestors) == 0 {
 			// The space home page, or a parentless page that cannot be told
 			// apart from it: not something to move into a folder.
-			log.Warn().Msgf(
+			options.Warnings.Add(report.WarningPlacement,
 				"page %q exists outside MARK_PARENTS %q and may be the space home page; leaving it where it is",
 				meta.Title,
 				strings.Join(meta.Parents, " > "),
@@ -84,7 +85,7 @@ func resolvePage(
 			// it. Dropping it here had the caller create one anyway, which
 			// Confluence refuses; kept, it is moved into its folder like any
 			// page that is not where its headers say.
-			log.Warn().Msgf(
+			options.Warnings.Add(report.WarningPlacement,
 				"page %q exists outside MARK_PARENTS %q; it will be moved under the folder hierarchy",
 				meta.Title,
 				strings.Join(meta.Parents, " > "),

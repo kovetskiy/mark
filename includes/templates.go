@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
@@ -159,7 +160,7 @@ func resolveTemplatePath(base, includePath, path string) string {
 // should have to rewrite, so that is still tried when nothing is beside the
 // fragment. A name that matches nothing resolves beside the fragment, so the
 // failure to read it names the place the author would look first.
-func resolveNestedTemplatePath(base, from, includePath, path string) string {
+func resolveNestedTemplatePath(base, from, includePath, path string, warnings *report.Warnings) string {
 	candidate := absolute(filepath.Join(from, path))
 	rootRelative := resolveTemplatePath(base, includePath, path)
 
@@ -169,7 +170,7 @@ func resolveNestedTemplatePath(base, from, includePath, path string) string {
 		// Only worth saying when the old rule would have picked a different
 		// file: that is the one case where what a page publishes has changed.
 		if rootErr == nil && rootRelative != candidate {
-			log.Warn().Msgf(
+			warnings.Add(report.WarningInclude,
 				"include %q resolves beside the fragment that names it, to %s rather than %s; "+
 					"write the path from the fragment's directory to include the other one",
 				path, candidate, rootRelative,
@@ -416,6 +417,19 @@ func ProcessIncludesWithStack(
 	templates *template.Template,
 	stack []string,
 ) (*template.Template, []byte, bool, error) {
+	return ProcessIncludesWithWarnings(base, includePath, contents, templates, stack, nil)
+}
+
+// ProcessIncludesWithWarnings is ProcessIncludesWithStack, adding to warnings
+// what is worth saying about the directives it expands; nil only logs it.
+func ProcessIncludesWithWarnings(
+	base string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+	stack []string,
+	warnings *report.Warnings,
+) (*template.Template, []byte, bool, error) {
 	frames := make([]includeFrame, 0, len(stack))
 	for _, name := range stack {
 		frames = append(frames, includeFrame{
@@ -424,7 +438,7 @@ func ProcessIncludesWithStack(
 		})
 	}
 
-	return processIncludes(base, base, includePath, contents, templates, frames)
+	return processIncludes(base, base, includePath, contents, templates, frames, warnings)
 }
 
 // includeFrame is one include being expanded: the name the directive wrote,
@@ -447,6 +461,7 @@ func processIncludes(
 	contents []byte,
 	templates *template.Template,
 	stack []includeFrame,
+	warnings *report.Warnings,
 ) (*template.Template, []byte, bool, error) {
 	names := func() string {
 		parts := make([]string, 0, len(stack))
@@ -507,7 +522,7 @@ func processIncludes(
 		// fragment's, with the document's still tried after it.
 		resolved := resolveTemplatePath(base, includePath, dir.Template)
 		if from != base {
-			resolved = resolveNestedTemplatePath(base, from, includePath, dir.Template)
+			resolved = resolveNestedTemplatePath(base, from, includePath, dir.Template, warnings)
 		}
 
 		// Detect circular include loops
@@ -553,7 +568,7 @@ func processIncludes(
 		newStack = append(newStack, stack...)
 		newStack = append(newStack, includeFrame{name: dir.Template, file: resolved})
 
-		subTemplates, subBytes, _, subErr := processIncludes(base, nested, includePath, expanded, templates, newStack)
+		subTemplates, subBytes, _, subErr := processIncludes(base, nested, includePath, expanded, templates, newStack, warnings)
 		if subErr != nil {
 			return templates, contents, false, subErr
 		}

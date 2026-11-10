@@ -1105,7 +1105,7 @@ func TestReportCarriesStructuredWarnings(t *testing.T) {
 
 	page := got.Pages[0]
 	require.Len(t, page.WarningDetails, 1)
-	assert.Equal(t, report.WarningMetadata, page.WarningDetails[0].Kind)
+	assert.Equal(t, report.WarningStrandedHeader, page.WarningDetails[0].Kind)
 	assert.Equal(t, page.File, page.WarningDetails[0].File)
 	assert.Contains(t, page.WarningDetails[0].Message, "Label header is below the document's opening comments")
 	assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
@@ -1129,7 +1129,7 @@ func TestReportCarriesAWarningOnceOverTwoPasses(t *testing.T) {
 		}
 
 		require.Len(t, page.WarningDetails, 1)
-		assert.Equal(t, report.WarningMetadata, page.WarningDetails[0].Kind)
+		assert.Equal(t, report.WarningStrandedHeader, page.WarningDetails[0].Kind)
 		assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
 
 		return

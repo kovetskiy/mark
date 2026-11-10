@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -181,6 +182,9 @@ type AncestryOptions struct {
 	// resolved to; nil remembers nothing. An AncestryTracker serves as both.
 	Parents ParentTracker
 	Folders FolderTracker
+	// Warnings collects what is worth saying about where the document's page
+	// was found; nil only logs it.
+	Warnings *report.Warnings
 }
 
 // ParentPathKey names a parent by the chain of titles leading to it.
