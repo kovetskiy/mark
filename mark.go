@@ -1463,14 +1463,11 @@ func readSource(file string) (source, markdown []byte, lineOf func(int) int, err
 	return source, markdown, lineOf, nil
 }
 
-// checkDocumentPath refuses a document that, with its symlinks resolved, is
-// outside the directory it was named in: the working directory for a document
-// named inside it, its own directory for one named elsewhere. Every file a
-// document names is held to the same boundary, so the document is too.
-//
-// The working directory rather than the document's own, because a glob follows
-// directory symlinks: docs/x/a.md under a link docs/x has its directory outside
-// with it.
+// checkDocumentPath holds a document to the boundary every file it names is
+// held to, with the root being the working directory for a document named
+// inside it and its own directory for one named elsewhere. The working
+// directory rather than the document's own, because a glob follows directory
+// symlinks: docs/x/a.md under a link docs/x has its directory outside with it.
 func checkDocumentPath(file string) error {
 	abs := absPath(file)
 
@@ -1481,15 +1478,11 @@ func checkDocumentPath(file string) error {
 		}
 	}
 
-	resolved := fspath.ResolveDeepest(abs)
-	if _, ok := fspath.Within(fspath.ResolveDeepest(root), resolved); ok {
-		return nil
+	if err := attachment.CheckReadable(root, abs); err != nil {
+		return fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
-	return fmt.Errorf(
-		"%w: document %q resolves to %s, which is outside %q; publish from a directory that contains it",
-		attachment.ErrOutsideProject, file, resolved, root,
-	)
+	return nil
 }
 
 // declaredRestrictions is what a document's metadata restricts, for the
