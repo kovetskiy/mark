@@ -108,6 +108,11 @@ type API struct {
 	reparented      map[string]reparentedVersions
 	reparentedMutex sync.Mutex
 
+	// created maps a page id to the version this API created it at; see
+	// CreatedVersion.
+	created      map[string]int64
+	createdMutex sync.Mutex
+
 	pageCache      map[string]*PageInfo
 	pageCacheByID  map[string]*PageInfo
 	pageCacheMutex sync.RWMutex
@@ -1386,6 +1391,13 @@ func (api *API) createLanded(ctx context.Context, find func() (*PageInfo, error)
 // rememberCreatedPage puts a page just created into the page cache, so the
 // lookups later in the run find it without asking.
 func (api *API) rememberCreatedPage(space string, pageType ContentType, title string, page *PageInfo) {
+	api.createdMutex.Lock()
+	if api.created == nil {
+		api.created = map[string]int64{}
+	}
+	api.created[page.ID] = page.Version.Number
+	api.createdMutex.Unlock()
+
 	if api.unwatch {
 		// Nobody watched a page before it was created.
 		api.rememberWatch(page.ID, wasUnwatched, nil)
@@ -3134,6 +3146,17 @@ func (api *API) noteReparent(pageID string, from, to int64) {
 		from = earlier.from
 	}
 	api.reparented[pageID] = reparentedVersions{from: from, to: to}
+}
+
+// CreatedVersion reports the version this API created a page at, and whether
+// it created it. A page still at that version holds nothing but what mark
+// wrote, which --no-overwrite can tell without a recorded baseline.
+func (api *API) CreatedVersion(pageID string) (int64, bool) {
+	api.createdMutex.Lock()
+	defer api.createdMutex.Unlock()
+
+	version, ok := api.created[pageID]
+	return version, ok
 }
 
 // ReparentedFrom reports the version a page was at before this API moved it,
