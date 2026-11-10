@@ -123,7 +123,9 @@ type Options struct {
 	// and the images an SVG references are relative to; empty or "-" for none.
 	InputPath string
 
-	// BundleRemote lets an SVG inline the remote images it references.
+	// BundleRemote lets a diagram inline the remote images it references, which
+	// are otherwise refused: an SVG carries them, and a PNG is drawn by a
+	// browser that loads nothing from the network.
 	BundleRemote bool
 }
 
@@ -132,7 +134,7 @@ type Options struct {
 func Render(ctx context.Context, title string, d2Diagram []byte, options Options) (attachment.Attachment, error) {
 	switch options.Output {
 	case imageformat.PNG, "":
-		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.InputPath, options.Scale)
+		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
 	case imageformat.SVG:
 		return renderSVGAttachment(ctx, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
 	default:
@@ -141,7 +143,7 @@ func Render(ctx context.Context, title string, d2Diagram []byte, options Options
 }
 
 // renderPNGAttachment draws a diagram as a PNG, rasterised in browser.
-func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, inputPath string, scale float64) (attachment.Attachment, error) {
+func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, inputPath string, scale float64, bundleRemote bool) (attachment.Attachment, error) {
 	// Before the layout, which can take seconds, rather than after it.
 	if browser == nil {
 		return attachment.Attachment{}, chrome.ErrNoBrowser
@@ -158,6 +160,21 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	out, _, _, err := renderSVG(layoutCtx, d2Diagram, imports)
 	if err != nil {
 		return attachment.Attachment{}, err
+	}
+
+	// The browser loads nothing from the network, so a remote image is
+	// fetched here, by the same rule and the same bundler as for an SVG, or the
+	// diagram is refused rather than drawn without it.
+	remote, err := remoteReferences(out, bundleRemote)
+	if err != nil {
+		return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
+	}
+
+	if remote {
+		out, err = imgbundler.BundleRemote(layoutCtx, bundleLogger{}, out, false)
+		if err != nil {
+			return attachment.Attachment{}, err
+		}
 	}
 
 	log.Debug().Msgf("Rendering: %q", title)
@@ -406,14 +423,9 @@ func references(svg []byte, inputPath string, bundleRemote bool) (local, remote 
 			continue
 		}
 
-		if parsed, parseErr := url.Parse(href); parseErr == nil &&
-			(parsed.Scheme == "http" || parsed.Scheme == "https") {
-			if !bundleRemote {
-				return false, false, fmt.Errorf(
-					"references %q, and fetching what a diagram names is off by default: "+
-						"pass --d2-bundle-remote for documents whose diagrams you trust",
-					href,
-				)
+		if isRemote(href) {
+			if err := checkRemote(href, bundleRemote); err != nil {
+				return false, false, err
 			}
 
 			remote = true
@@ -429,6 +441,46 @@ func references(svg []byte, inputPath string, bundleRemote bool) (local, remote 
 	}
 
 	return local, remote, nil
+}
+
+// remoteReferences is references for a PNG: it judges only the URLs a drawing
+// names. A relative path is left alone, as it always has been for a PNG, which
+// the browser draws from a data: URL that a path resolves against to nothing.
+func remoteReferences(svg []byte, bundleRemote bool) (remote bool, err error) {
+	for _, match := range image.FindAllSubmatch(svg, -1) {
+		href := stdhtml.UnescapeString(string(match[1]))
+		if !isRemote(href) {
+			continue
+		}
+
+		if err := checkRemote(href, bundleRemote); err != nil {
+			return false, err
+		}
+
+		remote = true
+	}
+
+	return remote, nil
+}
+
+// isRemote reports whether href is an http or https URL.
+func isRemote(href string) bool {
+	parsed, err := url.Parse(href)
+
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https")
+}
+
+// checkRemote refuses a URL unless this run asked for remote bundling.
+func checkRemote(href string, bundleRemote bool) error {
+	if bundleRemote {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"references %q, and fetching what a diagram names is off by default: "+
+			"pass --d2-bundle-remote for documents whose diagrams you trust",
+		href,
+	)
 }
 
 // displayed reports the size the page should show a length at, as the whole

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -320,7 +321,7 @@ func (e *Engine) render(ctx context.Context, title string, once func(ctx context
 			}
 			log.Warn().Err(err).Msgf("Mermaid render engine died on %q, retrying with a new browser", title)
 
-		case errors.Is(err, chrome.ErrRasterRefused):
+		case errors.Is(err, chrome.ErrRasterRefused), errors.Is(err, chrome.ErrNetworkUnavailable):
 			// Refused before the capture was asked for, so the browser never saw
 			// it and is kept; the same diagram would be refused again.
 			return err
@@ -375,6 +376,16 @@ func (e *Engine) renderPNG(ctx context.Context, title, diagram string, scale flo
 			if err := checkPNGBounds(svg, scale); err != nil {
 				return err
 			}
+
+			// A label's <img> that the browser could not load is drawn as
+			// nothing, which would publish the picture without it.
+			if url := remoteImage(svg); url != "" {
+				return fmt.Errorf(
+					"the diagram shows the image at %s, and %w, so a PNG would be published without it; "+
+						"give the image as a data: URL, or publish the diagram with --mermaid-output=svg",
+					url, chrome.ErrNetworkUnavailable,
+				)
+			}
 		}
 
 		var err error
@@ -383,7 +394,7 @@ func (e *Engine) renderPNG(ctx context.Context, title, diagram string, scale flo
 		return err
 	})
 
-	return pngBytes, boxModel, err
+	return pngBytes, boxModel, explainRemoteImage(diagram, err)
 }
 
 // renderSVG renders one diagram as the SVG the browser drew, rather than a
@@ -403,7 +414,40 @@ func (e *Engine) renderSVG(ctx context.Context, title, diagram string, bundle bo
 		return err
 	})
 
-	return svg, err
+	return svg, explainRemoteImage(diagram, err)
+}
+
+// remoteImageReference finds an image a diagram or its drawing names by URL: an
+// image shape's img: and an <img> label's src.
+var remoteImageReference = regexp.MustCompile(`(?i)(?:\bimg\s*:|\bsrc\s*=)\s*["']?(https?://[^"'\s>]+)`)
+
+// remoteImage is the first image text names by an http or https URL, or "".
+func remoteImage(text string) string {
+	match := remoteImageReference.FindStringSubmatch(text)
+	if match == nil {
+		return ""
+	}
+
+	return match[1]
+}
+
+// explainRemoteImage says why a diagram naming a remote image failed to draw.
+// mermaid.js reports an image shape whose image did not load only as an
+// EncodingError, one that "cannot be decoded".
+func explainRemoteImage(diagram string, err error) error {
+	if !errors.Is(err, mermaid.ErrRenderException) || !strings.Contains(err.Error(), "EncodingError") {
+		return err
+	}
+
+	url := remoteImage(diagram)
+	if url == "" {
+		return err
+	}
+
+	return fmt.Errorf(
+		"the diagram shows the image at %s, and %w; give the image as a data: URL instead: %w",
+		url, chrome.ErrNetworkUnavailable, err,
+	)
 }
 
 // checkPNGBounds refuses a diagram whose PNG at scale would be larger than a

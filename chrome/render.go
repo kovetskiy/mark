@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -91,7 +92,12 @@ func (b *Browser) sessions() *lazy.Lazy[*session] {
 // startSession launches a browser that lives as long as life, which Close
 // cancels.
 func startSession(life context.Context) (*session, error) {
-	opts := append(chromedp.DefaultExecAllocatorOptions[:], AllocatorOptions()...)
+	return startSessionWith(life)
+}
+
+// startSessionWith is startSession with options added after mark's own.
+func startSessionWith(life context.Context, extra ...chromedp.ExecAllocatorOption) (*session, error) {
+	opts := slices.Concat(chromedp.DefaultExecAllocatorOptions[:], AllocatorOptions(), extra)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(life, opts...)
 	ctx, cancel := chromedp.NewContext(allocCtx)
