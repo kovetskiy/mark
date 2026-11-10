@@ -890,3 +890,40 @@ func TestReportCarriesASaveThatFailedOnTheWayOut(t *testing.T) {
 	require.Len(t, parsed.Errors, 1, out.String())
 	assert.Contains(t, parsed.Errors[0], "unable to save page manifest")
 }
+
+// TestSourcePathMapsTheReportedFile: a library caller publishing generated
+// Markdown has the report name the file it was generated from.
+func TestSourcePathMapsTheReportedFile(t *testing.T) {
+	server := outputServer(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "bad.md", outHeader+"<!-- Title: Bad -->\n\n<!-- ac:ignore -->\nunclosed\n")
+
+	var seen []string
+	var out strings.Builder
+	err := Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{Features: []string{"mention"}},
+			Output:    &out,
+		},
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		Report: ReportConfig{
+			OutputFormat: report.FormatGitHub,
+			SourcePath: func(file string) string {
+				seen = append(seen, file)
+
+				return "templates/" + strings.TrimSuffix(filepath.Base(file), ".md") + ".md.tmpl"
+			},
+		},
+	})
+	require.Error(t, err)
+
+	assert.Equal(t, []string{filepath.Join(dir, "bad.md")}, seen,
+		"the mapper is given the path mark read")
+	assert.Contains(t, out.String(), "::error file=templates/bad.md.tmpl::")
+	assert.NotContains(t, out.String(), "file="+dir, "the path mark read is not the annotated file")
+}

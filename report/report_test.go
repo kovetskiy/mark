@@ -183,3 +183,39 @@ func TestGitHubSaysWhatADryRunWouldDo(t *testing.T) {
 		"::notice file=docs/a.md::would create \"A\"\n::notice file=docs/b.md::would update \"B\"\n",
 		out.String())
 }
+
+// TestMapFilesNamesTheSource: a generated document is annotated against the
+// file it was generated from, orphans included, and an empty mapping names no
+// file at all.
+func TestMapFilesNamesTheSource(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "build/a.md", Status: StatusFailed, Reason: "broken"})
+	r.AddPage(Page{File: "build/b.md", Status: StatusFailed, Reason: "also broken"})
+	r.AddOrphan(Orphan{File: "build/gone.md", Title: "Gone", Action: OnOrphanReport})
+
+	r.MapFiles(func(file string) string {
+		if file == "build/b.md" {
+			return ""
+		}
+
+		return strings.Replace(file, "build/", "src/", 1)
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::error file=src/a.md::broken\n"+
+			"::error::also broken\n"+
+			"::warning file=src/gone.md::page \"Gone\" has no source file\n",
+		out.String())
+}
+
+func TestMapFilesWithoutAMapperChangesNothing(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "build/a.md", Status: StatusPublished})
+
+	r.MapFiles(nil)
+
+	assert.Equal(t, "build/a.md", r.Pages[0].File)
+}

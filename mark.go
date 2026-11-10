@@ -182,6 +182,15 @@ type RenderingConfig struct {
 // PublishConfig.Output.
 type ReportConfig struct {
 	OutputFormat report.Format
+
+	// SourcePath, when set, names in the report the file a reader should be
+	// pointed at for each document, given the path mark published it from:
+	// the template or source a generated Markdown file was made from, so a
+	// GitHub annotation lands on a file in the pull request. Orphans pass
+	// through it too, with the path the page manifest recorded. An empty
+	// result names no file. Only the report's file fields are affected: a
+	// failure's message, the log and the manifest keep the path mark read.
+	SourcePath func(file string) string
 }
 
 // output returns the configured writer, falling back to io.Discard so that
@@ -485,6 +494,8 @@ func Run(ctx context.Context, config Config) (err error) {
 		if err != nil && !slices.ContainsFunc(reported, func(known error) bool { return errors.Is(err, known) }) {
 			results.AddError(err.Error())
 		}
+
+		results.MapFiles(config.Report.SourcePath)
 
 		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
 			if err == nil {
