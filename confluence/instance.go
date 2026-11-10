@@ -45,6 +45,11 @@ func (e *InstanceMismatchError) Is(target error) bool { return target == ErrOthe
 // nil only when it is; any error means the credentials for configured must not
 // be sent to other.
 //
+// other must be a base URL, not a page's own URL: the path of
+// https://example.atlassian.net/wiki/spaces/DOCS/pages/1 is not /wiki, so it
+// fails against a configured base of https://example.atlassian.net/wiki. Take
+// the base from the page URL first, with export.ParsePageURL.
+//
 // An error that is an *InstanceMismatchError (errors.Is matches
 // ErrOtherInstance) says what differs. Any other error says one of the URLs is
 // not one SameInstance compares: unparsable, not http or https, without a
