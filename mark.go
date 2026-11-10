@@ -1457,6 +1457,11 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
+		// Found through --include-path, the linked file may be spelled
+		// absolute where the run's files are relative, or the other way
+		// round, and the hierarchy only knows the run's spelling.
+		opts.Filename = spelledLike(opts.Filename, file)
+
 		return readDocumentMeta(config, r.hierarchy, markdown, opts)
 	}
 
@@ -2188,6 +2193,31 @@ func includeSearchDirs(base, includePath string, markdown []byte) []string {
 	}
 
 	return dirs
+}
+
+// spelledLike writes path the way like is written: absolute, or relative to
+// the working directory. A path it cannot rewrite is returned as it is.
+func spelledLike(path, like string) string {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+
+	if filepath.IsAbs(like) {
+		return absolute
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return path
+	}
+
+	relative, err := filepath.Rel(cwd, absolute)
+	if err != nil {
+		return path
+	}
+
+	return relative
 }
 
 func spaceOf(meta *metadata.Meta) string {
