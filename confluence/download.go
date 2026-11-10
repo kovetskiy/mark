@@ -87,25 +87,19 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 	return prefix + link, nil
 }
 
-// sameServer says whether a and b name the same scheme, host and port, with a
-// port left out read as the scheme's default.
+// sameServer says whether a and b reach the same server, by the scheme, host
+// and port SameInstance compares. A URL that is not one it compares, such as
+// one carrying a user name, is no server of the configured one.
 func sameServer(a, b *url.URL) bool {
-	port := func(u *url.URL) string {
-		if p := u.Port(); p != "" {
-			return p
-		}
-		switch strings.ToLower(u.Scheme) {
-		case "http":
-			return "80"
-		case "https":
-			return "443"
-		}
-		return ""
+	x, err := originOf(a)
+	if err != nil {
+		return false
 	}
-
-	return strings.EqualFold(a.Scheme, b.Scheme) &&
-		strings.EqualFold(a.Hostname(), b.Hostname()) &&
-		port(a) == port(b)
+	y, err := originOf(b)
+	if err != nil {
+		return false
+	}
+	return x == y
 }
 
 // DownloadAttachment writes the content of an attachment of page pageID to w.

@@ -45,6 +45,8 @@ func TestAttachmentURL(t *testing.T) {
 		"another host": "https://elsewhere.example/a.png",
 		"plain http":   "http://example.com/download/attachments/1/a.png",
 		"another port": "https://example.com:8443/download/attachments/1/a.png",
+		"a user name":  "https://example.com@elsewhere.example/download/attachments/1/a.png",
+		"a lookalike":  "https://example.com.elsewhere.example/download/attachments/1/a.png",
 	} {
 		t.Run("an absolute link to "+name+" is refused", func(t *testing.T) {
 			_, err := NewAPI("https://example.com", Options{Username: "u", Password: "p"}).
