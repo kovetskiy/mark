@@ -6,12 +6,12 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
@@ -26,13 +26,6 @@ type LinkFiles interface {
 	Stat(name string) (fs.FileInfo, error)
 	ReadFile(name string) ([]byte, error)
 }
-
-// diskFiles is the local disk.
-type diskFiles struct{}
-
-func (diskFiles) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
-
-func (diskFiles) ReadFile(name string) ([]byte, error) { return os.ReadFile(name) }
 
 type markdownLink struct {
 	full     string
@@ -217,7 +210,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 	}
 
 	if why != nil && why.noFile && len(r.CheckOnlyDirs) > 0 {
-		if found, absent := findLinkTarget(diskFiles{}, r.CheckOnlyDirs, filename); absent == nil {
+		if found, absent := findLinkTarget(attachment.Root{}, r.CheckOnlyDirs, filename); absent == nil {
 			// Passes the check, and is still a relative path no page can
 			// follow, so it is said in the report rather than only logged.
 			r.Warnings.Add(report.WarningSourceOnlyLink,
@@ -337,7 +330,7 @@ func resolveLink(
 	var result string
 
 	if files == nil {
-		files = diskFiles{}
+		files = attachment.Root{}
 	}
 
 	if readMeta == nil {
