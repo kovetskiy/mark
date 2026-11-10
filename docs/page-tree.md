@@ -275,6 +275,10 @@ mark publish --track-pages --on-orphan delete --files "docs/**/*.md"
 `delete` means the trash, which Confluence keeps recoverable. Mark never purges
 a page: that second step is left to a person.
 
+A page somebody has already deleted or purged by hand counts as dealt with
+under `archive` and `delete`: Mark says it is already gone and stops tracking
+it.
+
 `archive` exists only on Confluence Cloud, and Server and Data Center report
 that they have no such thing rather than appearing to have archived anything.
 Confluence accepts the request and archives afterwards, so Mark reports that it

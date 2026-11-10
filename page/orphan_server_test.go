@@ -76,3 +76,51 @@ func TestHandleOrphansKeepsAFolderParentBehindAnSSOProxy(t *testing.T) {
 	require.NotNil(t, trashed)
 	assert.False(t, trashed.Trashed, "a page holding folders must be left alone")
 }
+
+// TestHandleOrphansTakesAPageAlreadyGoneAsHandled: a page somebody removed by
+// hand is where --on-orphan wanted it. Failing over it instead would fail every
+// later run the same way, since the page stays tracked.
+func TestHandleOrphansTakesAPageAlreadyGoneAsHandled(t *testing.T) {
+	for _, action := range []report.OnOrphan{report.OnOrphanDelete, report.OnOrphanArchive} {
+		for _, how := range []string{"trashed", "purged"} {
+			t.Run(string(action)+"/"+how, func(t *testing.T) {
+				ctx := t.Context()
+				api, server := newAPI(t)
+				gone := server.AddPage("DOCS", "Gone", "page", "")
+				if how == "trashed" {
+					require.NoError(t, api.DeletePage(ctx, gone.ID))
+				} else {
+					server.DeletePage(gone.ID)
+				}
+
+				handled, err := page.HandleOrphans(ctx, api, action, []page.Orphan{
+					{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
+				}, false)
+				require.NoError(t, err)
+				assert.Equal(t, []string{"gone.md"}, handled)
+			})
+		}
+	}
+}
+
+// TestHandleOrphansKeepsAPageThatIsStillThere: a 404 from the child listing
+// alone does not make a page gone. Taking it as gone would forget a live page.
+func TestHandleOrphansKeepsAPageThatIsStillThere(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	live := server.AddPage("DOCS", "Live", "page", "")
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/rest/api/content/"+live.ID+"/child/page" {
+			return http.StatusNotFound, `{"message":"not here"}`, true
+		}
+		return 0, "", false
+	})
+
+	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "live.md", PageID: live.ID, Title: "Live"},
+	}, false)
+	require.Error(t, err)
+	assert.Empty(t, handled)
+	assert.False(t, server.Page(live.ID).Trashed)
+}
