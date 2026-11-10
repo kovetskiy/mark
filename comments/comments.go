@@ -7,6 +7,7 @@ import (
 	stdhtml "html"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -110,6 +111,103 @@ func levenshteinDistance(s1, s2 string) int {
 	return prev[len(r2)]
 }
 
+// textSpan is a run of page text in a storage body, as the byte offsets
+// [start, end).
+type textSpan struct {
+	start int
+	end   int
+}
+
+// textSpans returns the runs of body a reader sees as page text: everything
+// outside tags, comments, CDATA sections and processing instructions, and
+// outside ac:parameter elements, whose text is a macro's setting. A marker
+// placed anywhere else would break the markup or show up as literal text.
+func textSpans(body string) []textSpan {
+	var spans []textSpan
+	inParameter := 0
+	textStart := 0
+	for i := 0; i < len(body); {
+		if body[i] != '<' {
+			i++
+			continue
+		}
+		if inParameter == 0 && i > textStart {
+			spans = append(spans, textSpan{start: textStart, end: i})
+		}
+		end := markupEnd(body, i)
+		switch name, closing, selfClosing := tagName(body[i:end]); {
+		case name != "ac:parameter" || selfClosing:
+		case closing:
+			inParameter = max(inParameter-1, 0)
+		default:
+			inParameter++
+		}
+		i = end
+		textStart = end
+	}
+	if inParameter == 0 && len(body) > textStart {
+		spans = append(spans, textSpan{start: textStart, end: len(body)})
+	}
+	return spans
+}
+
+// markupEnd returns the offset just past the markup that starts with the "<"
+// at body[start], or len(body) if it is never closed.
+func markupEnd(body string, start int) int {
+	closeAfter := func(prefix, terminator string) int {
+		if i := strings.Index(body[start+len(prefix):], terminator); i != -1 {
+			return start + len(prefix) + i + len(terminator)
+		}
+		return len(body)
+	}
+	rest := body[start:]
+	switch {
+	case strings.HasPrefix(rest, "<!--"):
+		return closeAfter("<!--", "-->")
+	case strings.HasPrefix(rest, "<![CDATA["):
+		return closeAfter("<![CDATA[", "]]>")
+	case strings.HasPrefix(rest, "<?"):
+		return closeAfter("<?", "?>")
+	}
+	// A tag, whose quoted attribute values may hold a ">".
+	var quote byte
+	for i := start + 1; i < len(body); i++ {
+		switch c := body[i]; {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '>':
+			return i + 1
+		}
+	}
+	return len(body)
+}
+
+// tagName returns the element name of a tag such as "<p>", "</p>" or "<br/>",
+// and whether it closes or is self-closing.
+func tagName(tag string) (name string, closing, selfClosing bool) {
+	tag = strings.TrimPrefix(tag, "<")
+	if rest, ok := strings.CutPrefix(tag, "/"); ok {
+		tag, closing = rest, true
+	}
+	selfClosing = strings.HasSuffix(tag, "/>")
+	end := strings.IndexAny(tag, " \t\r\n/>")
+	if end == -1 {
+		end = len(tag)
+	}
+	return tag[:end], closing, selfClosing
+}
+
+// inTextSpan reports whether [start, end) lies within a single one of spans,
+// which are in order.
+func inTextSpan(spans []textSpan, start, end int) bool {
+	i := sort.Search(len(spans), func(i int) bool { return spans[i].end > start })
+	return i < len(spans) && spans[i].start <= start && end <= spans[i].end
+}
+
 type commentContext struct {
 	before string
 	after  string
@@ -156,6 +254,7 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 	}
 	var replacements []replacement
 	seenRefs := make(map[string]bool)
+	spans := textSpans(newBody)
 
 	for _, comment := range comments.Results {
 		if comment.Extensions.Location != "inline" {
@@ -188,9 +287,8 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 		ctx, hasCtx := contexts[ref]
 
 		// Build the list of forms to search for in newBody. The escaped form
-		// is tried first (normal XML text nodes). The raw form is appended as a
-		// fallback for text inside CDATA-backed macro bodies (e.g. ac:code),
-		// where < and > are stored unescaped inside <![CDATA[...]]>.
+		// is tried first; the raw form is a fallback for text that writes a
+		// character such as ">" unescaped.
 		escapedSelection := htmlEscapeText(selection)
 		searchForms := []string{escapedSelection}
 		if selection != escapedSelection {
@@ -220,6 +318,13 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 				// Skip candidates that start or end in the middle of a multi-byte
 				// UTF-8 rune; such a match would produce invalid UTF-8 output.
 				if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
+					currentPos = start + 1
+					continue
+				}
+
+				// A match in markup, or one that crosses it, is no place for a
+				// marker: it would break the XML or show as literal text.
+				if !inTextSpan(spans, start, end) {
 					currentPos = start + 1
 					continue
 				}
