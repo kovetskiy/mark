@@ -146,12 +146,12 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 		)
 	}
 
-	if evidence, _ := loginEvidence(request, response, contentMediaType(response.Header), true); evidence != "" {
+	if evidence, strong := loginEvidence(request, response, contentMediaType(response.Header), true); evidence != "" {
 		return requestError(fmt.Sprintf("download attachment %q", info.Filename), &loginPageError{
 			answer: &reply{
 				StatusCode: response.StatusCode, Status: response.Status, Request: response.Request,
 			},
-			requested: request.URL.Redacted(), evidence: evidence, strong: true,
+			requested: request.URL.Redacted(), evidence: evidence, strong: strong,
 		})
 	}
 

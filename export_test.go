@@ -835,9 +835,11 @@ func TestAFailedDownloadWritesNothing(t *testing.T) {
 				`<ac:image><ri:attachment ri:filename="second.png"/></ac:image></p>`)
 			server.AddAttachmentData(id, "first.png", []byte("first"))
 			server.AddAttachmentData(id, "second.png", []byte("second"))
-			server.SetFailHeaders(http.Header{
-				"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
-			})
+			if test.login {
+				server.SetFailHeaders(http.Header{
+					"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
+				})
+			}
 			server.SetFail(func(r *http.Request) (int, string, bool) {
 				return test.status, test.body, strings.HasSuffix(r.URL.Path, "/second.png")
 			})
