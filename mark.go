@@ -613,14 +613,14 @@ func Run(ctx context.Context, config Config) (err error) {
 			"the version mark last published is remembered in the page manifest")
 	}
 
-	if config.Tracking.ManifestPage != "" && !config.Tracking.TrackPages {
-		return fmt.Errorf("--manifest-page requires --track-pages: " +
-			"it says where the page manifest is kept, and nothing else keeps one")
-	}
-
 	if config.Tracking.ManifestPageOptional && strings.TrimSpace(config.Tracking.ManifestPage) == "" {
 		return fmt.Errorf("--manifest-page-optional (Tracking.ManifestPageOptional) requires " +
 			"--manifest-page (Tracking.ManifestPage): it says what to do when that page is missing")
+	}
+
+	if config.Tracking.ManifestPage != "" && !config.Tracking.TrackPages {
+		return fmt.Errorf("--manifest-page requires --track-pages: " +
+			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
 	if manifestPrefix != manifest.PropertyKeyPrefix && !config.Tracking.TrackPages {
