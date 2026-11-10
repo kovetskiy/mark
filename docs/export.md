@@ -172,10 +172,11 @@ A Go program calling `mark.Export` gets the title, the labels and the
 document as values on the result, `Title`, `Labels` and `Markdown`, whatever
 `Metadata` says; with `export.MetadataNone` and `NoAttachments`, and neither
 `Output` nor `Stdout` set, nothing is written anywhere. Leave out
-`NoAttachments` and the attachments are still written: with no `Output`, into
-`AttachmentsDir`, which then has to be set (`"."` for the working directory,
-as the command line does). With neither, `mark.Export` fails with
-`export.ErrNoAttachmentsDir` before asking Confluence for anything:
+`NoAttachments` and the attachments the body refers to are still written: with
+no `Output`, into `AttachmentsDir`. A page with attachments to write is refused
+with `export.ErrNoAttachmentsDir`, having written nothing, when that is empty
+too; set it to `"."` for the working directory, as the command line does. A
+page with none to write needs neither:
 
 ```go
 result, err := mark.Export(ctx, mark.ExportConfig{

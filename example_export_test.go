@@ -28,8 +28,8 @@ func ExampleExport_textOnly() {
 		Metadata:   export.MetadataNone,
 		// The body still refers to its attachments by name; none is fetched.
 		// Without NoAttachments, and with no Output, AttachmentsDir names
-		// where they are written, or the export fails with
-		// export.ErrNoAttachmentsDir.
+		// where they are written; a page with attachments to write and no
+		// AttachmentsDir fails with export.ErrNoAttachmentsDir.
 		NoAttachments: true,
 	})
 	if err != nil {
