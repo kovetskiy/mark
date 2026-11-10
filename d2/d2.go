@@ -171,9 +171,9 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	}
 
 	if remote {
-		out, err = imgbundler.BundleRemote(layoutCtx, bundleLogger{}, out, false)
+		out, err = fetchRemoteImages(layoutCtx, out)
 		if err != nil {
-			return attachment.Attachment{}, err
+			return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
 		}
 	}
 
@@ -192,8 +192,13 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	// Concat, not append: the diagram may be a slice of the document's
 	// source, with the rest of the source as its spare capacity. What it
 	// imports is part of what it draws, so a changed import changes the
-	// checksum; a diagram that imports nothing keeps the one it had.
+	// checksum; a diagram that imports nothing keeps the one it had. A fetched
+	// image can change without the source changing, so when there is one the
+	// drawing that carries it is part of what identifies the PNG too.
 	d2Bytes := slices.Concat(d2Diagram, scaleAsBytes, imports.read)
+	if remote {
+		d2Bytes = slices.Concat(d2Bytes, out)
+	}
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
 
@@ -255,6 +260,8 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 		return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
 	}
 
+	// Files first: what a server answers is written into the drawing, and
+	// only the references judged above may be read from disk.
 	if local {
 		out, err = imgbundler.BundleLocal(ctx, bundleLogger{}, inputPath, out, false)
 		if err != nil {
@@ -263,9 +270,9 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 	}
 
 	if remote {
-		out, err = imgbundler.BundleRemote(ctx, bundleLogger{}, out, false)
+		out, err = fetchRemoteImages(ctx, out)
 		if err != nil {
-			return attachment.Attachment{}, err
+			return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
 		}
 	}
 
@@ -461,6 +468,23 @@ func remoteReferences(svg []byte, bundleRemote bool) (remote bool, err error) {
 	}
 
 	return remote, nil
+}
+
+// fetchRemoteImages inlines the remote images a drawing names, and checks the
+// drawing again: the bundler writes each server's Content-Type into it as the
+// server gave it, so what comes back has to pass the same check the drawing
+// did.
+func fetchRemoteImages(ctx context.Context, svg []byte) ([]byte, error) {
+	out, err := imgbundler.BundleRemote(ctx, bundleLogger{}, svg, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkDrawingIsSafe(out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 // isRemote reports whether href is an http or https URL.
