@@ -97,7 +97,8 @@ type Page struct {
 	Warnings []string `json:"warnings,omitempty"`
 
 	// WarningDetails are the same warnings, in the same order, each with its
-	// kind and line. When set, they are what the github format annotates.
+	// kind, file and line. When set, they are what the github format
+	// annotates.
 	WarningDetails []Warning `json:"warningDetails,omitempty"`
 }
 
@@ -227,9 +228,9 @@ func (r *Report) AddError(message string) {
 	r.Errors = append(r.Errors, message)
 }
 
-// SetSources sets the Source of each page and orphan recorded so far to what
-// source returns for its File, which stays as it is. A result that is empty or
-// the File itself sets no source. A nil source changes nothing.
+// SetSources sets the Source of each page, orphan and warning recorded so far
+// to what source returns for its File, which stays as it is. A result that is
+// empty or the File itself sets no source. A nil source changes nothing.
 func (r *Report) SetSources(source func(file string) string) {
 	if r == nil || source == nil {
 		return
@@ -240,6 +241,12 @@ func (r *Report) SetSources(source func(file string) string) {
 
 	for i := range r.Pages {
 		r.Pages[i].Source = SourceOf(r.Pages[i].File, source)
+
+		for j := range r.Pages[i].WarningDetails {
+			if warning := &r.Pages[i].WarningDetails[j]; warning.File != "" {
+				warning.Source = SourceOf(warning.File, source)
+			}
+		}
 	}
 
 	for i := range r.Orphans {
@@ -345,14 +352,22 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		}
 
 		for _, warning := range details {
+			// A warning names the file it is about, or is about the document;
+			// either way it goes to that file's source when there is one.
+			about, source := warning.File, warning.Source
+			if about == "" {
+				about, source = page.File, page.Source
+			}
+			at := annotated(about, source)
+
 			// A line of the file mark read says nothing about where in the
 			// source it came from.
 			line := warning.Line
-			if page.Source != "" {
+			if at != about {
 				line = 0
 			}
 
-			if err := command(w, "warning", file, line, warning.Message); err != nil {
+			if err := command(w, "warning", at, line, warning.Message); err != nil {
 				return err
 			}
 		}
