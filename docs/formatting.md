@@ -419,6 +419,14 @@ any zoom and whose text stays text, on an instance that displays an SVG
 attachment. `--d2-scale` applies to either -- it multiplies the pixels of a PNG,
 and the size the page displays an SVG at.
 
+A d2 `@import` is read relative to the document's own directory, as `d2` does
+for a file it is run on and as mark does for an image, and an import inside an
+imported file relative to that file. Like every other file a document names, an
+import must resolve, with symlinks followed, inside the document's directory or
+the one mark is running in; one elsewhere fails the file with an error naming
+the import. A diagram with no document on disk behind it -- one compiled
+through the library without a path -- cannot import anything.
+
 An image the diagram references is inlined into the SVG, the way d2's own
 `--bundle` does it, because Confluence serves the attachment from its own host
 where a path relative to the document resolves to nothing. A reference that
