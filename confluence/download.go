@@ -110,6 +110,10 @@ func sameServer(link, base *url.URL) bool {
 }
 
 // DownloadAttachment writes the content of an attachment of page pageID to w.
+// An answer that is a login page rather than the attachment -- a redirect to
+// Seraph's /login.action, or Seraph saying it did not authenticate the
+// request -- is an error errors.Is finds ErrLoginPage in, and nothing is
+// written.
 func (api *API) DownloadAttachment(ctx context.Context, pageID string, info AttachmentInfo, w io.Writer) error {
 	address, err := api.AttachmentURL(pageID, info)
 	if err != nil {
@@ -142,8 +146,8 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 		)
 	}
 
-	if evidence := seraphLoginEvidence(response.Header, contentMediaType(response.Header)); evidence != "" {
-		return fmt.Errorf("unable to download attachment %q: %w", info.Filename, &loginPageError{
+	if evidence, _ := loginEvidence(request, response, contentMediaType(response.Header), true); evidence != "" {
+		return requestError(fmt.Sprintf("download attachment %q", info.Filename), &loginPageError{
 			answer: &reply{
 				StatusCode: response.StatusCode, Status: response.Status, Request: response.Request,
 			},
