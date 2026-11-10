@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -402,45 +401,23 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 
 // exportBaseURL is the instance "mark export --url" reads from: the URL's own,
 // unless a base URL is configured. A page id names a page of one instance
-// only, so a configured base URL on another host is refused rather than asked
-// for an unrelated page -- except for the api.atlassian.com gateway, which is
-// where a scoped token reaches a Cloud site.
+// only, so a URL that is not on the configured instance, as
+// confluence.SameInstance decides, is refused rather than its id asked of an
+// unrelated instance.
 func exportBaseURL(configured, fromURL string) (string, error) {
 	if configured == "" {
 		return fromURL, nil
 	}
 
-	want, err := url.Parse(fromURL)
-	if err != nil {
-		return "", fmt.Errorf("unable to read %q: %w", fromURL, err)
-	}
-	have, err := url.Parse(configured)
-	if err != nil {
-		return "", fmt.Errorf("unable to read base URL %q: %w", configured, err)
-	}
-
-	sameHost := strings.EqualFold(have.Hostname(), want.Hostname()) && portOf(have) == portOf(want)
-	gateway := strings.EqualFold(have.Hostname(), "api.atlassian.com") && confluence.IsCloudHost(want.Hostname())
-	if !sameHost && !gateway {
+	if err := confluence.SameInstance(configured, fromURL); err != nil {
 		return "", fmt.Errorf(
-			"--url is a page on %s, but the base URL is %s, and a page id names a page of one instance only: "+
-				"leave the base URL out to read from %s, or name the page with --page-id to read from %s",
-			want.Host, configured, want.Host, have.Host,
+			"--url is not a page of the configured instance, and a page id names a page of one instance only "+
+				"(leave the base URL out to read from %s, or name the page with --page-id to read from %s): %w",
+			fromURL, configured, err,
 		)
 	}
 
 	return configured, nil
-}
-
-// portOf is the port a URL connects to, its scheme's default when it names none.
-func portOf(u *url.URL) string {
-	if port := u.Port(); port != "" {
-		return port
-	}
-	if strings.EqualFold(u.Scheme, "http") {
-		return "80"
-	}
-	return "443"
 }
 
 // RunExport is the action of "mark export".

@@ -357,8 +357,9 @@ mark page watch   <page> [--user <name>]... [--recursive]  # or unwatch
 ```
 
 A `<page>` is an id, a URL as the browser shows it or a short `/x/...` link,
-or a title together with `--space`. A URL also gives the base URL when `--base-url` is not set. A title
-made only of digits is read as an id, so name such a page by its URL.
+or a title together with `--space`. A URL also gives the base URL when `--base-url` is not set; when it
+is set, a URL on another instance is refused, as [export](export.md) refuses
+one. A title made only of digits is read as an id, so name such a page by its URL.
 
 Every command takes `--dry-run`, which says what it would do and changes
 nothing.

@@ -37,9 +37,18 @@ configuration file that names a space for publishing serves `--title` too.
 configuration file included, so a file that names a page for export sends
 publish to it as well. `--url` also gives the base URL. A base URL set by
 `--base-url`, `MARK_BASE_URL` or the configuration file is used instead when
-it is on the same host, or is the `api.atlassian.com` gateway and the URL a
-Cloud site's; one on another host is refused, since a page id names a page of
-one instance only.
+the URL is on that instance; a URL on another one is refused, since a page id
+names a page of one instance only.
+
+A URL is on the configured instance when its scheme, host and port are the
+configured ones -- `http` is not `https`, case and a trailing dot in the host
+do not count, and a port left out is the scheme's default -- and its context
+path, such as `/wiki`, is the same, or one of the two leaves it out. With the
+`api.atlassian.com` gateway configured, any Cloud site's `https` URL is on it;
+with a site configured, a gateway URL is not. A URL carrying a user name or
+password is refused. `mark page` holds a page URL to `--base-url` the same
+way, and a Go program can make the same check with `confluence.SameInstance`
+before it sends credentials anywhere a URL names.
 
 The document starts with the headers that name the page, followed by its body:
 

@@ -171,7 +171,7 @@ func TestExportCommand(t *testing.T) {
 }
 
 // TestExportBaseURL: a URL gives the instance unless one is configured, and a
-// configured instance on another host is refused, since a page id names a page
+// URL not on the configured instance is refused, since a page id names a page
 // of one instance only. The gateway fronts every Cloud site.
 func TestExportBaseURL(t *testing.T) {
 	for _, test := range []struct {
@@ -183,6 +183,10 @@ func TestExportBaseURL(t *testing.T) {
 		{"https://api.atlassian.com/ex/confluence/id", "https://a.atlassian.net/wiki", "https://api.atlassian.com/ex/confluence/id", ""},
 		{"https://b.atlassian.net/wiki", "https://a.atlassian.net/wiki", "", "b.atlassian.net"},
 		{"https://api.atlassian.com/ex/confluence/id", "https://confluence.example.com", "", "api.atlassian.com"},
+		{"https://a.atlassian.net/wiki", "http://a.atlassian.net/wiki", "", "the scheme http is not https"},
+		{"https://c.example.com/confluence", "https://c.example.com/jira", "", "the path /jira is not /confluence"},
+		{"https://a.atlassian.net/wiki", "https://a.atlassian.net.evil.example/wiki", "", "the host"},
+		{"https://a.atlassian.net/wiki", "https://api.atlassian.com/ex/confluence/id", "", "the host api.atlassian.com"},
 	} {
 		got, err := exportBaseURL(test.configured, test.fromURL)
 		if test.err != "" {

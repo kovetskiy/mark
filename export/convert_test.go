@@ -552,6 +552,11 @@ func TestPageOnInstance(t *testing.T) {
 		{"pageId beside a path that names another page", base + "/spaces/DOCS/pages/123/Title?pageId=456"},
 		{"pageId on a short link", base + "/x/ew?pageId=999"},
 		{"context path in another case", "https://example.atlassian.net/WIKI/x/ew"},
+		{"no context path", "https://example.atlassian.net/display/DOCS/Title"},
+		{"context path as a prefix", "https://example.atlassian.net/wikiX/x/ew"},
+		{"http", "http://example.atlassian.net/wiki/x/ew"},
+		{"user name", "https://example.atlassian.net@evil.example/wiki/x/ew"},
+		{"lookalike host", "https://example.atlassian.net.evil.example/wiki/x/ew"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, ok := pageOnInstance(test.href, base)

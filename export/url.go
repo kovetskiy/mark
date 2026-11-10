@@ -118,11 +118,17 @@ func pageOnInstance(href, base string) (PageRef, bool) {
 	}
 
 	ref, err := ParsePageURL(href)
-	if err != nil || !sameInstance(ref.BaseURL, base) {
+	if err != nil || confluence.SameInstance(base, ref.BaseURL) != nil {
 		return PageRef{}, false
 	}
 
+	// SameInstance lets a page URL leave the context path out, which is the
+	// same server but not a page link that opens: an instance under /wiki
+	// does not serve /display/... at the root.
 	contextPath := strings.TrimPrefix(ref.BaseURL, parsed.Scheme+"://"+parsed.Host)
+	if instance, err := url.Parse(base); err != nil || (contextPath == "" && strings.Trim(instance.EscapedPath(), "/") != "") {
+		return PageRef{}, false
+	}
 	path := strings.TrimPrefix(strings.TrimSuffix(parsed.EscapedPath(), "/"), contextPath)
 	if !viewPath.MatchString(path) {
 		return PageRef{}, false
@@ -140,32 +146,4 @@ func onlyPageID(u *url.URL) bool {
 		return true
 	}
 	return strings.HasSuffix(u.Path, "/pages/viewpage.action") && len(query) == 1 && len(query["pageId"]) == 1
-}
-
-// sameInstance reports whether a page URL's base is the instance at base. A
-// base given without the path Confluence is served under, such as
-// https://example.atlassian.net for /wiki, matches it on any path of the host.
-// A host is matched without regard to case or a default port; a path, as a
-// servlet container does, exactly.
-func sameInstance(pageBase, base string) bool {
-	pageURL, err := url.Parse(strings.TrimSuffix(pageBase, "/"))
-	if err != nil {
-		return false
-	}
-	instance, err := url.Parse(strings.TrimSuffix(base, "/"))
-	if err != nil || !strings.EqualFold(pageURL.Hostname(), instance.Hostname()) ||
-		portOf(pageURL) != portOf(instance) {
-		return false
-	}
-	return instance.Path == "" || pageURL.Path == instance.Path
-}
-
-func portOf(u *url.URL) string {
-	if port := u.Port(); port != "" {
-		return port
-	}
-	if strings.EqualFold(u.Scheme, "http") {
-		return "80"
-	}
-	return "443"
 }
