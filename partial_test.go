@@ -108,6 +108,42 @@ func TestPartialRunActsOnlyOnWhatItNames(t *testing.T) {
 	assert.True(t, ok)
 }
 
+// TestPartialRunGivenTheOwningPatternLeavesItsFilesAlone: the owning run's own
+// pattern with --partial, on a checkout holding only some of its files, would
+// read every other file as deleted. Like a page outside --orphan-under they are
+// not reported -- in the github format every one would be a warning on every
+// such run -- and stay tracked for the owning run. A path named exactly beside
+// the pattern is still reported.
+func TestPartialRunGivenTheOwningPatternLeavesItsFilesAlone(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
+	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
+
+	var out strings.Builder
+	sparse := partialOf(full, dir, "*.md")
+	sparse.Paths = []string{filepath.Join(dir, "b.md")}
+	sparse.Report.OutputFormat = report.FormatGitHub
+	sparse.Output = &out
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), sparse))
+	})
+	assert.Contains(t, logged, "the pattern given to --partial")
+
+	var warnings []string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "::warning") {
+			warnings = append(warnings, line)
+		}
+	}
+	require.Len(t, warnings, 1, out.String())
+	assert.Contains(t, warnings[0], "b.md", "named exactly, so reported")
+
+	for _, name := range []string{"b.md", "c.md"} {
+		_, ok := tracked(t, server, filepath.Join(dir, name))
+		assert.True(t, ok, "%s stays tracked for the owning run", name)
+	}
+}
+
 // TestPartialRunRemovingRefusesAPattern: a wildcard under --partial reaches
 // every tracked file it matches, another job's included, and on a checkout
 // holding only some of them reads the rest as deleted. Told to archive or
