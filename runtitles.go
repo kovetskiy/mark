@@ -54,36 +54,45 @@ func (r *runTitles) index() {
 
 // declaredBy returns the one document of the run that publishes content of
 // that type under the title, and false when none does or more than one does.
-// A title more than one declares is said against the document looking for it,
-// in warnings, whose parent cannot be told apart, and once against each that
-// declares it, since any of them is the one to retitle.
-func (r *runTitles) declaredBy(space, kind, title string, warnings *report.Warnings) (string, bool) {
-	if r == nil {
+func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
+	documents := r.declaring(space, kind, title)
+	if len(documents) != 1 {
 		return "", false
+	}
+
+	return documents[0], true
+}
+
+// declaring returns the documents of the run that publish content of that type
+// under the title.
+func (r *runTitles) declaring(space, kind, title string) []string {
+	if r == nil {
+		return nil
 	}
 	if r.documents == nil {
 		r.index()
 	}
 
-	key := runTitleKey(space, kind, title)
-	documents := r.documents[key]
-	if len(documents) == 1 {
-		return documents[0], true
-	}
-	if len(documents) > 1 {
-		declarers := strings.Join(documents, ", ")
-		warnings.Add(report.WarningPlacement,
-			"parent %q is declared by %d documents (%s), so it is not followed to the page any of them publishes to",
-			title, len(documents), declarers,
-		)
-		r.warnDeclarers(key, title, documents, declarers)
-	}
-
-	return "", false
+	return r.documents[runTitleKey(space, kind, title)]
 }
 
-// warnDeclarers tells each document declaring the title, once a run.
-func (r *runTitles) warnDeclarers(key, title string, documents []string, declarers string) {
+// warnAmbiguous says, when more than one of the run's documents declare the
+// page title a document's parent names and nothing else found that parent,
+// that it is not followed: against the document, in warnings, and once a run
+// against each that declares it, since any of them is the one to retitle.
+func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings) {
+	documents := r.declaring(space, "page", title)
+	if len(documents) < 2 {
+		return
+	}
+
+	declarers := strings.Join(documents, ", ")
+	warnings.Add(report.WarningPlacement,
+		"parent %q is declared by %d documents (%s), so it is not followed to the page any of them publishes to",
+		title, len(documents), declarers,
+	)
+
+	key := runTitleKey(space, "page", title)
 	if r.warned[key] {
 		return
 	}
@@ -93,15 +102,15 @@ func (r *runTitles) warnDeclarers(key, title string, documents []string, declare
 	r.warned[key] = true
 
 	for _, file := range documents {
-		var warnings *report.Warnings
+		var declarer *report.Warnings
 		if r.warningsFor != nil {
-			warnings = r.warningsFor(file)
+			declarer = r.warningsFor(file)
 		}
-		if warnings == nil {
-			warnings = report.NewWarnings(file)
+		if declarer == nil {
+			declarer = report.NewWarnings(file)
 		}
 
-		warnings.Add(report.WarningPlacement,
+		declarer.Add(report.WarningPlacement,
 			"parent %q is declared by %d documents (%s); a document under it follows none of them",
 			title, len(documents), declarers,
 		)

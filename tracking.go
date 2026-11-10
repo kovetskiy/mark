@@ -169,6 +169,9 @@ func refreshStaleParents(
 	// name it was never recorded under.
 	declared := slices.Clone(meta.Parents)
 
+	// The ambiguous titles already said, so a chain naming one twice is told once.
+	ambiguous := map[string]bool{}
+
 	for i, title := range declared {
 		// FindPage is memoised, and ancestry resolution is about to ask the
 		// same question, so this costs nothing on the common path where the
@@ -189,7 +192,7 @@ func refreshStaleParents(
 		}
 
 		// A child sorting ahead of its retitled parent must not create the new title first.
-		pageID, publisher, err := trackedPageOfDeclaredTitle(ctx, tracker, titles, meta.Space, title, warnings)
+		pageID, publisher, err := trackedPageOfDeclaredTitle(ctx, tracker, titles, meta.Space, title)
 		if err != nil {
 			return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 		}
@@ -206,6 +209,11 @@ func refreshStaleParents(
 				return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 			}
 			if !ok {
+				if key := runTitleKey(meta.Space, "page", title); !ambiguous[key] {
+					ambiguous[key] = true
+					titles.warnAmbiguous(meta.Space, title, warnings)
+				}
+
 				continue
 			}
 		}
@@ -254,9 +262,9 @@ func refreshStaleParents(
 // published before. A document renamed since is found by its content, as
 // resolveRenamedFile finds it when its own turn comes.
 func trackedPageOfDeclaredTitle(
-	ctx context.Context, tracker *manifest.Store, titles *runTitles, space, title string, warnings *report.Warnings,
+	ctx context.Context, tracker *manifest.Store, titles *runTitles, space, title string,
 ) (string, string, error) {
-	file, ok := titles.declaredBy(space, "page", title, warnings)
+	file, ok := titles.declaredBy(space, "page", title)
 	if !ok {
 		return "", "", nil
 	}
