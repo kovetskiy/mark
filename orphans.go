@@ -150,6 +150,12 @@ func handleOrphans(
 				File: path, PageID: candidate.PageID, Title: candidate.Title, Action: action,
 			})
 
+			// A partial run that only reports leaves the entry for the run
+			// owning the file, whose --on-orphan may do more than report.
+			if config.Tracking.Partial && action == report.OnOrphanReport {
+				continue
+			}
+
 			if err := tracker.Forget(ctx, space, path); err != nil {
 				return fmt.Errorf("unable to update page manifest for %q: %w", path, err)
 			}
