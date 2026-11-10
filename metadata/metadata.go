@@ -241,7 +241,7 @@ const (
 // has, with nothing said. Anything else that cannot be a string in the list is
 // left out, but reported against the key it was written under, the way a key
 // mark does not read is.
-func toStringSlice(val any, key string, warnings *report.Warnings) []string {
+func toStringSlice(val any, key string, line int, warnings *report.Warnings) []string {
 	var items []any
 
 	switch v := val.(type) {
@@ -252,7 +252,7 @@ func toStringSlice(val any, key string, warnings *report.Warnings) []string {
 	case []any:
 		items = v
 	default:
-		warnAboutIgnoredValue(key, v, warnings)
+		warnAboutIgnoredValue(key, v, line, warnings)
 
 		return nil
 	}
@@ -261,7 +261,7 @@ func toStringSlice(val any, key string, warnings *report.Warnings) []string {
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			warnAboutIgnoredValue(key, item, warnings)
+			warnAboutIgnoredValue(key, item, line, warnings)
 
 			continue
 		}
@@ -275,8 +275,8 @@ func toStringSlice(val any, key string, warnings *report.Warnings) []string {
 }
 
 // warnAboutIgnoredValue reports a value a list key cannot hold.
-func warnAboutIgnoredValue(key string, value any, warnings *report.Warnings) {
-	warnings.Add(report.WarningIgnoredValue,
+func warnAboutIgnoredValue(key string, value any, line int, warnings *report.Warnings) {
+	warnings.AddAt(line, report.WarningIgnoredValue,
 		"front matter key %q takes a string or a list of strings, so %v (%T) was ignored",
 		key, value, value,
 	)
@@ -569,12 +569,34 @@ func normaliseFrontMatterKey(key string) string {
 // for mark and misspelled, and the second kind is a setting that silently did
 // not happen -- the HTML headers are singular where front matter is plural, so
 // attachment for attachments is a mistake mark's own documentation invites.
-func warnAboutUnknownKeys(keys []string, warnings *report.Warnings) {
+func warnAboutUnknownKeys(keys []string, lines map[string]int, warnings *report.Warnings) {
 	slices.Sort(keys)
 
 	for _, key := range keys {
-		warnings.Add(report.WarningUnknownKey, "front matter key %q is not read by mark and was ignored", key)
+		warnings.AddAt(lines[key], report.WarningUnknownKey, "front matter key %q is not read by mark and was ignored", key)
 	}
+}
+
+// frontMatterKeyLines gives the line of the file each top-level front matter
+// key is written on. The front matter starts on the file's second line, below
+// its opening delimiter; a key it cannot place is left out, and so has no line.
+func frontMatterKeyLines(frontMatter []byte) map[string]int {
+	var document yaml.Node
+	if err := yaml.Unmarshal(frontMatter, &document); err != nil || len(document.Content) == 0 {
+		return nil
+	}
+
+	mapping := document.Content[0]
+	if mapping.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	lines := map[string]int{}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		lines[mapping.Content[i].Value] = mapping.Content[i].Line + 1
+	}
+
+	return lines
 }
 
 // splitFrontMatter separates the YAML front matter opening data from the
@@ -680,6 +702,9 @@ type ExtractOptions struct {
 func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	var meta *Meta
 
+	// Kept to count the lines a warning names from the start of the file.
+	original := data
+
 	warnings := opts.Warnings
 	if warnings == nil {
 		warnings = report.NewWarnings(opts.Filename)
@@ -714,16 +739,17 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 		meta.Type = "page" // Default type
 
 		var unknown []string
+		lines := frontMatterKeyLines(frontMatter)
 
 		for k, v := range parsed {
 			normKey := normaliseFrontMatterKey(k)
 
 			switch normKey {
 			case "parents":
-				meta.Parents = append(meta.Parents, toStringSlice(v, k, warnings)...)
+				meta.Parents = append(meta.Parents, toStringSlice(v, k, lines[k], warnings)...)
 				meta.DeclaredParents = true
 			case "folders":
-				meta.Folders = append(meta.Folders, toStringSlice(v, k, warnings)...)
+				meta.Folders = append(meta.Folders, toStringSlice(v, k, lines[k], warnings)...)
 			case "space":
 				meta.Space = toString(v)
 			case "type":
@@ -737,9 +763,9 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 			case "emoji":
 				meta.Emoji = toString(v)
 			case "attachments":
-				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, warnings)...)
+				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, lines[k], warnings)...)
 			case "labels":
-				meta.Labels = append(meta.Labels, toStringSlice(v, k, warnings)...)
+				meta.Labels = append(meta.Labels, toStringSlice(v, k, lines[k], warnings)...)
 			case "contentappearance":
 				// Not toString, which would drop a value that is not a
 				// string for the default rather than refuse it.
@@ -790,7 +816,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 			}
 		}
 
-		warnAboutUnknownKeys(unknown, warnings)
+		warnAboutUnknownKeys(unknown, lines, warnings)
 
 		// Presence of a non-empty sidebar forces the article layout, regardless of map key iteration order.
 		if meta.Sidebar != "" {
@@ -1019,7 +1045,8 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	}
 
 	if meta != nil {
-		warnStrandedHeaders(body, warnings)
+		firstLine := 1 + bytes.Count(original[:len(original)-len(data)], []byte("\n"))
+		warnStrandedHeaders(data, firstStart, lastStop, firstLine, warnings)
 	}
 
 	if opts.TitleFromH1 || opts.TitleFromFilename || opts.Space != "" {
@@ -1098,17 +1125,26 @@ func onlyWhitespace(data []byte, from, to int) bool {
 // is not metadata at all. It is published as page text and whatever it asked
 // for silently never happens. Saying so is cheap; guessing what was meant is
 // not.
-func warnStrandedHeaders(body []byte, warnings *report.Warnings) {
+//
+// data is the document after its front matter, which starts on the file's
+// firstLine; the headers that were read sit between headersStart and
+// headersStop, and lastStop of 0 means there were none. Scanning it rather
+// than the body they were taken out of keeps the lines those of the file.
+func warnStrandedHeaders(data []byte, headersStart, headersStop, firstLine int, warnings *report.Warnings) {
 	// A header comment shown inside a fence is an example of one, not a
 	// stranded one -- which is how any document about mark shows the syntax,
 	// this repository's README included. Every other pass over raw bytes in
 	// this package already skips code regions.
-	code := mdsource.CodeRegions(body)
+	code := mdsource.CodeRegions(data)
 
 	offset := 0
-	for _, line := range strings.Split(string(body), "\n") {
+	for i, line := range strings.Split(string(data), "\n") {
 		start := offset
 		offset += len(line) + 1
+
+		if headersStop > 0 && start >= headersStart && start < headersStop {
+			continue
+		}
 
 		if mdsource.InCode(code, start) {
 			continue
@@ -1129,7 +1165,7 @@ func warnStrandedHeaders(body []byte, warnings *report.Warnings) {
 			continue
 		}
 
-		warnings.Add(report.WarningStrandedHeader,
+		warnings.AddAt(firstLine+i, report.WarningStrandedHeader,
 			"%s header is below the document's opening comments, so it is published as text rather than applied: %s",
 			header, strings.TrimSpace(line),
 		)

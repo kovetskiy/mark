@@ -68,6 +68,14 @@ type Warning struct {
 	// File is the document the warning is about, as mark read it.
 	File string `json:"file,omitempty"`
 
+	// Source is the file File was made from, when a library caller names
+	// one; see Report.SetSources.
+	Source string `json:"source,omitempty"`
+
+	// Line is the line of File the warning is about, counting from 1, or 0
+	// when it is about no one line or the line is not known.
+	Line int `json:"line,omitempty"`
+
 	Message string `json:"message"`
 }
 
@@ -90,14 +98,23 @@ func NewWarnings(file string) *Warnings {
 // recorded is only logged, so that a document published twice in a run is
 // not reported with each of its warnings twice.
 func (w *Warnings) Add(kind WarningKind, format string, args ...any) {
-	warning := Warning{Kind: kind, Message: fmt.Sprintf(format, args...)}
+	w.AddAt(0, kind, format, args...)
+}
+
+// AddAt is Add for a warning about one line of the document, counting from 1;
+// 0 names no line.
+func (w *Warnings) AddAt(line int, kind WarningKind, format string, args ...any) {
+	warning := Warning{Kind: kind, Line: line, Message: fmt.Sprintf(format, args...)}
 	if w != nil {
 		warning.File = w.file
 	}
 
-	if warning.File != "" {
+	switch {
+	case warning.File != "" && line > 0:
+		log.Warn().Msgf("%s:%d: %s", warning.File, line, warning.Message)
+	case warning.File != "":
 		log.Warn().Msgf("%s: %s", warning.File, warning.Message)
-	} else {
+	default:
 		log.Warn().Msg(warning.Message)
 	}
 

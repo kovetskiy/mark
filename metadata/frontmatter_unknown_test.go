@@ -117,7 +117,7 @@ func TestFrontMatterSaysNothingAboutWhatItRead(t *testing.T) {
 // where a document need not be a file.
 func TestFrontMatterWarningNamesTheDocument(t *testing.T) {
 	_, logged := extractWithFrontMatter(t, "draft: true\n")
-	assert.Contains(t, logged, "doc.md: front matter key")
+	assert.Contains(t, logged, "doc.md:4: front matter key")
 
 	var buffer bytes.Buffer
 

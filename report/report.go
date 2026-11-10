@@ -228,9 +228,9 @@ func (r *Report) AddError(message string) {
 	r.Errors = append(r.Errors, message)
 }
 
-// SetSources sets the Source of each page and orphan recorded so far to what
-// source returns for its File, which stays as it is. A result that is empty or
-// the File itself sets no source. A nil source changes nothing.
+// SetSources sets the Source of each page, orphan and warning recorded so far
+// to what source returns for its File, which stays as it is. A result that is
+// empty or the File itself sets no source. A nil source changes nothing.
 func (r *Report) SetSources(source func(file string) string) {
 	if r == nil || source == nil {
 		return
@@ -241,6 +241,12 @@ func (r *Report) SetSources(source func(file string) string) {
 
 	for i := range r.Pages {
 		r.Pages[i].Source = SourceOf(r.Pages[i].File, source)
+
+		for j := range r.Pages[i].WarningDetails {
+			if warning := &r.Pages[i].WarningDetails[j]; warning.File != "" {
+				warning.Source = SourceOf(warning.File, source)
+			}
+		}
 	}
 
 	for i := range r.Orphans {
@@ -308,7 +314,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 
 		switch page.Status {
 		case StatusFailed:
-			if err := command(w, "error", file, page.Reason); err != nil {
+			if err := command(w, "error", file, 0, page.Reason); err != nil {
 				return err
 			}
 
@@ -317,18 +323,18 @@ func (r *Report) writeGitHub(w io.Writer) error {
 				continue
 			}
 
-			if err := command(w, "warning", file, page.Reason); err != nil {
+			if err := command(w, "warning", file, 0, page.Reason); err != nil {
 				return err
 			}
 
 		case StatusPublished:
-			if err := command(w, "notice", file,
+			if err := command(w, "notice", file, 0,
 				fmt.Sprintf("published %q to %s", page.Title, page.URL)); err != nil {
 				return err
 			}
 
 		case StatusWouldCreate, StatusWouldUpdate:
-			if err := command(w, "notice", file,
+			if err := command(w, "notice", file, 0,
 				fmt.Sprintf("would %s %q", strings.TrimPrefix(string(page.Status), "would-"), page.Title)); err != nil {
 				return err
 			}
@@ -346,15 +352,22 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		}
 
 		for _, warning := range details {
-			// A warning about the document itself goes where its other
-			// annotations do, the source included; one about another file is
-			// annotated against that file.
-			at := file
-			if warning.File != "" && warning.File != page.File {
-				at = warning.File
+			// A warning names the file it is about, or is about the document;
+			// either way it goes to that file's source when there is one.
+			about, source := warning.File, warning.Source
+			if about == "" {
+				about, source = page.File, page.Source
+			}
+			at := annotated(about, source)
+
+			// A line of the file mark read says nothing about where in the
+			// source it came from.
+			line := warning.Line
+			if at != about {
+				line = 0
 			}
 
-			if err := command(w, "warning", at, warning.Message); err != nil {
+			if err := command(w, "warning", at, line, warning.Message); err != nil {
 				return err
 			}
 		}
@@ -366,13 +379,13 @@ func (r *Report) writeGitHub(w io.Writer) error {
 			message = fmt.Sprintf("page %q was %sd: its source file is gone", orphan.Title, orphan.Action)
 		}
 
-		if err := command(w, "warning", annotated(orphan.File, orphan.Source), message); err != nil {
+		if err := command(w, "warning", annotated(orphan.File, orphan.Source), 0, message); err != nil {
 			return err
 		}
 	}
 
 	for _, message := range r.Errors {
-		if err := command(w, "error", "", message); err != nil {
+		if err := command(w, "error", "", 0, message); err != nil {
 			return err
 		}
 	}
@@ -384,10 +397,13 @@ func (r *Report) writeGitHub(w io.Writer) error {
 //
 // The file is given as a property so that the annotation appears against that
 // file in a pull request, which is the whole reason for this format.
-func command(w io.Writer, level, file, message string) error {
+func command(w io.Writer, level, file string, line int, message string) error {
 	var properties string
 	if file != "" {
 		properties = " file=" + escapeProperty(file)
+		if line > 0 {
+			properties += fmt.Sprintf(",line=%d", line)
+		}
 	}
 
 	_, err := fmt.Fprintf(w, "::%s%s::%s\n", level, properties, escapeMessage(message))
