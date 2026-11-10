@@ -78,8 +78,11 @@ func (r *runTitles) declaring(space, kind, title string) []string {
 
 // warnAmbiguous says, when more than one of the run's documents declare the
 // page title a document's parent names and nothing else found that parent,
-// that it is not followed: against the document, in warnings, and once a run
-// against each that declares it, since any of them is the one to retitle.
+// that it is found by its title alone. That is all it can say: on a first
+// publish no page may have the title yet, and the page the parent then becomes
+// is the one the declarers go on to publish to. It is said against the
+// document, in warnings, and once a run against each that declares it, since
+// any of them is the one to retitle.
 func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings) {
 	documents := r.declaring(space, "page", title)
 	if len(documents) < 2 {
@@ -88,7 +91,8 @@ func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings
 
 	declarers := strings.Join(documents, ", ")
 	warnings.Add(report.WarningPlacement,
-		"parent %q is declared by %d documents (%s), so it is not followed to the page any of them publishes to",
+		"parent %q is declared by %d documents (%s), so it is found by its title alone, "+
+			"not through the pages --track-pages recorded for them",
 		title, len(documents), declarers,
 	)
 

@@ -671,7 +671,9 @@ func (s *Store) SetPartial(partial bool) {
 // warnShared tells both paths that they publish to one page, once a run,
 // naming them in an order that does not depend on which was recorded last.
 // hint, which may be empty, is added to the message as it is; it is no part of
-// what makes two warnings the same. Called with s.mu held.
+// what makes two warnings the same, since only a pair's first warning can carry
+// it: it needs one path absent from the run, and by a second warning both have
+// been recorded. Called with s.mu held.
 func (s *Store) warnShared(spaceKey, pageID, one, other, hint string) {
 	if other < one {
 		one, other = other, one
