@@ -353,6 +353,16 @@ You can also use `**` to get all files recursively.
 mark publish -f "**/docs/*.md"
 ```
 
+A document is held to the same boundary as the files it names
+([attachments](attachments.md#where-an-attachment-may-come-from), includes):
+one named inside the directory Mark is running in has to resolve inside it,
+symlinks followed. A glob such as `docs/**/*.md` follows symlinks, so a
+`docs/notes.md` or a `docs/shared` directory linking out of the repository fails
+that file, with `outside the project`, rather than being published; a symlink
+that stays inside the repository publishes as usual. A document named by a path
+outside the directory Mark is running in is held to its own directory instead.
+The same applies to a path given to the Go library's `Publisher`.
+
 ## Linting markdown
 
 We recommend to lint your markdown files with [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) before publishing them to confluence to catch any conversion errors early.
