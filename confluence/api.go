@@ -108,8 +108,8 @@ type API struct {
 	reparented      map[string]reparentedVersions
 	reparentedMutex sync.Mutex
 
-	// created maps a page id to the version this API created it at; see
-	// CreatedVersion.
+	// created maps a page this API created to the version of its last
+	// write to it; see CreatedVersion.
 	created      map[string]int64
 	createdMutex sync.Mutex
 
@@ -263,6 +263,12 @@ func (api *API) invalidatePage(space, title string, pageType ContentType) {
 // time, author and message the entry had describe the version before, so they
 // are dropped rather than handed out as the new one's.
 func (api *API) updateCachedPageVersion(id string, newVersion int64) {
+	api.createdMutex.Lock()
+	if _, ok := api.created[id]; ok {
+		api.created[id] = newVersion
+	}
+	api.createdMutex.Unlock()
+
 	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
@@ -3148,9 +3154,10 @@ func (api *API) noteReparent(pageID string, from, to int64) {
 	api.reparented[pageID] = reparentedVersions{from: from, to: to}
 }
 
-// CreatedVersion reports the version this API created a page at, and whether
-// it created it. A page still at that version holds nothing but what mark
-// wrote, which --no-overwrite can tell without a recorded baseline.
+// CreatedVersion reports, for a page this API created, the version its last
+// write to the page left it at, and whether it created the page. A page still
+// at that version holds nothing but what mark wrote, which --no-overwrite can
+// tell without a recorded baseline.
 func (api *API) CreatedVersion(pageID string) (int64, bool) {
 	api.createdMutex.Lock()
 	defer api.createdMutex.Unlock()
