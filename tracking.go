@@ -28,18 +28,16 @@ func previewTrackedResolution(
 	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
-	meta *metadata.Meta,
-	file, key string,
-	sourceHash string,
-	warnings *report.Warnings,
+	doc *document,
 ) (*confluence.PageInfo, error) {
+	meta, file := doc.meta, doc.file
 	if tracker == nil || meta == nil {
 		return nil, nil
 	}
 
 	// Errors stop the preview as they stop a real run: reporting "would create"
 	// over a lookup that failed would hide the duplicate a real run refuses to make.
-	pg, err := resolveTrackedPage(ctx, tracker, api, meta, file, key, warnings)
+	pg, err := resolveTrackedPage(ctx, tracker, api, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +51,7 @@ func previewTrackedResolution(
 		return pg, nil
 	}
 
-	pg, err = resolveRenamedFile(ctx, tracker, api, meta, file, key, sourceHash, warnings)
+	pg, err = resolveRenamedFile(ctx, tracker, api, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -87,10 +85,9 @@ func resolveTrackedPage(
 	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
-	meta *metadata.Meta,
-	file, key string,
-	warnings *report.Warnings,
+	doc *document,
 ) (*confluence.PageInfo, error) {
+	meta, file, key, warnings := doc.meta, doc.file, doc.key, doc.warnings
 	if tracker == nil || meta == nil {
 		return nil, nil
 	}
@@ -306,16 +303,14 @@ func resolveRenamedFile(
 	ctx context.Context,
 	tracker *manifest.Store,
 	api *confluence.API,
-	meta *metadata.Meta,
-	file, key string,
-	sourceHash string,
-	warnings *report.Warnings,
+	doc *document,
 ) (*confluence.PageInfo, error) {
+	meta, file, warnings := doc.meta, doc.file, doc.warnings
 	if tracker == nil || meta == nil {
 		return nil, nil
 	}
 
-	previous, entry, ok, err := tracker.ResolveRenamedFor(ctx, meta.Space, key, sourceHash)
+	previous, entry, ok, err := tracker.ResolveRenamedFor(ctx, meta.Space, doc.key, doc.sourceHash)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
 	}

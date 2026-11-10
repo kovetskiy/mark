@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -123,17 +124,37 @@ func (in input) read() (source, markdown []byte, lineOf func(int) int, err error
 	return prepareSource(in.file, in.content)
 }
 
-// documentInputs checks the run's documents and makes inputs of them, refusing
-// two that would be one page's or one manifest entry's, among themselves or
-// with the run's files.
-func documentInputs(documents []Document, files []string) ([]input, error) {
-	inputs := make([]input, 0, len(documents))
+// runInputs is what a run publishes: its files, then its Documents, indexed
+// by name and by manifest key.
+type runInputs struct {
+	all       []input
+	documents []input
 
-	paths := make(map[string]string, len(files)+len(documents))
-	keys := make(map[string]string, len(files)+len(documents))
+	// byPath holds each input by its name made absolute against cwd, which is
+	// read once rather than on every lookup.
+	cwd    string
+	byPath map[string]input
+	// byKey names the input each manifest key belongs to.
+	byKey map[string]string
+}
+
+// indexInputs checks the run's documents and indexes them with its files,
+// refusing two that would be one page's or one manifest entry's.
+func indexInputs(files []string, documents []Document) (*runInputs, error) {
+	cwd, _ := os.Getwd()
+
+	r := &runInputs{
+		all:    make([]input, 0, len(files)+len(documents)),
+		cwd:    cwd,
+		byPath: make(map[string]input, len(files)+len(documents)),
+		byKey:  make(map[string]string, len(files)+len(documents)),
+	}
+
 	for _, file := range files {
-		paths[absPath(file)] = file
-		keys[manifest.Key(file)] = file
+		in := fileInput(file)
+		r.all = append(r.all, in)
+		r.byPath[r.pathKey(file)] = in
+		r.byKey[manifest.Key(file)] = file
 	}
 
 	for _, doc := range documents {
@@ -142,23 +163,48 @@ func documentInputs(documents []Document, files []string) ([]input, error) {
 			return nil, err
 		}
 
-		if other, taken := paths[absPath(in.file)]; taken {
-			return nil, fmt.Errorf("Document Path %q names %s, which the run already publishes", in.file, other)
+		path := r.pathKey(in.file)
+		if other, taken := r.byPath[path]; taken {
+			return nil, fmt.Errorf("Document Path %q names %s, which the run already publishes", in.file, other.file)
 		}
-		paths[absPath(in.file)] = in.file
 
-		if other, taken := keys[manifest.Key(in.key)]; taken {
+		key := manifest.Key(in.key)
+		if other, taken := r.byKey[key]; taken {
 			return nil, fmt.Errorf(
 				"Document %s has the manifest key %q, which %s already has: each needs a key of its own",
-				in.file, manifest.Key(in.key), other,
+				in.file, key, other,
 			)
 		}
-		keys[manifest.Key(in.key)] = in.file
 
-		inputs = append(inputs, in)
+		r.byPath[path], r.byKey[key] = in, in.file
+		r.all = append(r.all, in)
+		r.documents = append(r.documents, in)
 	}
 
-	return inputs, nil
+	return r, nil
+}
+
+// pathKey is name as byPath keys it: as absPath makes it, without asking the
+// operating system for the working directory each time.
+func (r *runInputs) pathKey(name string) string {
+	if filepath.IsAbs(name) || r.cwd == "" {
+		return absPath(name)
+	}
+
+	return filepath.Join(r.cwd, name)
+}
+
+// named is the input called file, for the second pass, which knows the
+// documents waiting on a link only by name. Nil, as a run of files alone
+// leaves it, is a file.
+func (r *runInputs) named(file string) input {
+	if r != nil {
+		if in, ok := r.byPath[r.pathKey(file)]; ok {
+			return in
+		}
+	}
+
+	return fileInput(file)
 }
 
 // checkDocuments refuses what Documents and DocumentScope cannot be given:
@@ -193,17 +239,6 @@ func (c Config) checkDocuments(onOrphan report.OnOrphan) error {
 	return nil
 }
 
-// inputNamed is the input of inputs whose name is file.
-func inputNamed(inputs []input, file string) input {
-	for _, in := range inputs {
-		if in.file == file {
-			return in
-		}
-	}
-
-	return fileInput(file)
-}
-
 // documentScopePattern is what the manifest records a run's documents under
 // in place of a --files pattern: none for no scope, and otherwise one no
 // pattern can be, since manifest.Key never leaves "//" inside a path. A
@@ -222,22 +257,12 @@ func documentScopePattern(scope string) string {
 // what root holds. A file of the run is read from disk even by a document in
 // an fs.FS, since it is one of the documents the run publishes.
 type documentFiles struct {
-	byPath map[string]input
+	inputs *runInputs
 	root   attachment.Root
 }
 
-// newDocumentFiles indexes inputs by their name.
-func newDocumentFiles(inputs []input) map[string]input {
-	byPath := make(map[string]input, len(inputs))
-	for _, in := range inputs {
-		byPath[absPath(in.file)] = in
-	}
-
-	return byPath
-}
-
 func (f documentFiles) Stat(name string) (fs.FileInfo, error) {
-	if in, ok := f.byPath[absPath(name)]; ok {
+	if in, ok := f.inputs.byPath[f.inputs.pathKey(name)]; ok {
 		if !in.document {
 			return attachment.Root{}.Stat(in.file)
 		}
@@ -249,7 +274,7 @@ func (f documentFiles) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (f documentFiles) ReadFile(name string) ([]byte, error) {
-	if in, ok := f.byPath[absPath(name)]; ok {
+	if in, ok := f.inputs.byPath[f.inputs.pathKey(name)]; ok {
 		if !in.document {
 			return attachment.Root{}.ReadFile(in.file)
 		}
@@ -276,11 +301,11 @@ func (i documentInfo) Sys() any           { return nil }
 // linkFiles is where doc's relative links are looked for, or nil for the
 // local disk alone, which is all a run of files ever needs.
 func (r *publishRun) linkFiles(doc *document) page.LinkFiles {
-	if len(r.documents) == 0 && doc.root.FS() == nil {
+	if r.inputs == nil && doc.root.FS() == nil {
 		return nil
 	}
 
-	return documentFiles{byPath: r.documents, root: doc.root}
+	return documentFiles{inputs: r.inputs, root: doc.root}
 }
 
 // PublishDocument publishes doc as Publish publishes a file, and checks the
