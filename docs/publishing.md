@@ -171,7 +171,7 @@ A `kind` is one of:
 
 | kind | what it is |
 | --- | --- |
-| `unresolved-link` | a link that does not resolve, under `--check-links-warn-only` |
+| `unresolved-link` | a link that does not resolve when its document is published, under `--check-links-warn-only` |
 | `unknown-key` | a front matter key mark does not read: another tool's, or a misspelled setting |
 | `ignored-value` | a value its front matter key cannot hold, such as a number among labels, dropped |
 | `stranded-header` | a header below the opening comments, published as text rather than applied |
@@ -185,10 +185,11 @@ A `kind` is one of:
 | `missing-page` | a page the manifest recorded that no longer exists |
 
 Each is also logged, and listed once even when a document is published twice in
-a run. `github` annotates it against its file and line. When a library caller
-names the file's source with `ReportConfig.SourcePath`, the warning gives it as
-`source` and is annotated against it, without the line, which belongs to the
-file mark read.
+a run. An `ac:` link checked only once the whole run has published is logged
+rather than listed. `github` annotates a warning against its file and line; when
+a library caller names the file's source with `ReportConfig.SourcePath`, it is
+annotated against the source without the line, which belongs to the file mark
+read.
 
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the

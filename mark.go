@@ -623,7 +623,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	var hierarchy *page.Hierarchy
 	if config.ParentsFromPath {
 		directoryTitles := page.DirectoryTitleReader(func(file string) ([]byte, error) {
-			_, markdown, err := readSource(file)
+			_, markdown, _, err := readSource(file)
 			return markdown, err
 		}, config.Page.TitleFromH1, config.Rendering.enabled("frontmatter"))
 
@@ -1091,16 +1091,18 @@ func settlePlatform(ctx context.Context, api *confluence.API, mode ModeConfig) e
 // readSource reads a document the way everything that looks at its headers
 // has to see it. It returns the source, normalised but otherwise as written,
 // which is what the file's fingerprint is taken from, and the markdown with its
-// ignored regions removed, which is what the headers are read from.
+// ignored regions removed, which is what the headers are read from, with
+// lineOf mapping a line of the markdown to the line of the file, or nil when
+// they are the same.
 //
 // Publishing is not the only reader: --parents-from-path reads a directory's
 // document for its title, and a title read from bytes publishing never sees --
 // a byte-order mark in front of the header, a header inside an ignored region
 // -- is a different title from the one the page is published under.
-func readSource(file string) ([]byte, []byte, error) {
-	source, err := os.ReadFile(file)
+func readSource(file string) (source, markdown []byte, lineOf func(int) int, err error) {
+	source, err = os.ReadFile(file)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
+		return nil, nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
 	// A byte-order mark left in front of the first header comment would be
@@ -1113,12 +1115,12 @@ func readSource(file string) ([]byte, []byte, error) {
 	// into what is left after the header block is taken off. It also means an
 	// ignored region is ignored entirely, headers and all, which is what the
 	// markers say on the tin.
-	markdown, err := mdsource.StripIgnoredBlocks(source)
+	markdown, lineOf, err = mdsource.StripIgnoredBlocksLines(source)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to process %q: %w", file, err)
+		return nil, nil, nil, fmt.Errorf("unable to process %q: %w", file, err)
 	}
 
-	return source, markdown, nil
+	return source, markdown, lineOf, nil
 }
 
 // declaredRestrictions is what a document's metadata restricts, for the
@@ -1445,7 +1447,7 @@ func absPath(file string) string {
 
 // readDocument reads a file and settles the metadata it publishes under.
 func (r *publishRun) readDocument(file string) (*document, error) {
-	source, markdown, err := readSource(file)
+	source, markdown, lineOf, err := readSource(file)
 	if err != nil {
 		return nil, err
 	}
@@ -1463,6 +1465,8 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 			r.warnings[file] = warnings
 		}
 	}
+	warnings.Reread()
+	warnings.MapLines(lineOf)
 
 	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {

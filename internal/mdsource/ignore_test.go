@@ -8,6 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStripIgnoredBlocksLines(t *testing.T) {
+	out, lineOf, err := StripIgnoredBlocksLines([]byte("A\n<!-- ac:ignore -->\nB\nC\n<!-- ac:ignore end -->\nD\n"))
+	require.NoError(t, err)
+	require.Equal(t, "A\nD\n", string(out))
+	assert.Equal(t, []int{1, 6, 7}, []int{lineOf(1), lineOf(2), lineOf(3)})
+
+	_, lineOf, err = StripIgnoredBlocksLines([]byte("A\nB\n"))
+	require.NoError(t, err)
+	assert.Nil(t, lineOf)
+}
+
 func TestStripIgnoredBlocks(t *testing.T) {
 	t.Run("removes the region and its markers", func(t *testing.T) {
 		out, err := StripIgnoredBlocks([]byte("A\n<!-- ac:ignore -->\nB\nC\n<!-- ac:ignore end -->\nD\n"))

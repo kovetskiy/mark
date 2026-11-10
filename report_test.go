@@ -1159,3 +1159,21 @@ func TestAFailedDocumentKeepsItsWarnings(t *testing.T) {
 	assert.Equal(t, 8, page.WarningDetails[0].Line)
 	assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
 }
+
+// TestAWarningNamesItsLineBelowAnIgnoredRegion: the lines an ignored region
+// takes out of the document still count in the line a warning names.
+func TestAWarningNamesItsLineBelowAnIgnoredRegion(t *testing.T) {
+	out, err := runWithFormat(t, "json", map[string]string{
+		// Lines 1-2 are outHeader; the ignored region is lines 5-9.
+		"a.md": outHeader + "<!-- Title: A -->\n\n" +
+			"<!-- ac:ignore -->\none\ntwo\nthree\n<!-- ac:ignore end -->\n\n" +
+			"Text.\n\n<!-- Label: late -->\n",
+	})
+	require.NoError(t, err)
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got.Pages, 1)
+	require.Len(t, got.Pages[0].WarningDetails, 1)
+	assert.Equal(t, 13, got.Pages[0].WarningDetails[0].Line)
+}

@@ -115,8 +115,8 @@ func resolveTrackedPage(
 			)
 		}
 		warnings.Add(report.WarningMissingPage,
-			"page %s, recorded for %s, no longer exists; a new page will be created",
-			entry.PageID, file,
+			"page %s, recorded for this document, no longer exists; a new page will be created",
+			entry.PageID,
 		)
 		return nil, nil
 	}
@@ -261,7 +261,7 @@ func trackedPageOfDeclaredTitle(ctx context.Context, tracker *manifest.Store, ti
 		return "", "", err
 	}
 	if !found {
-		source, _, err := readSource(file)
+		source, _, _, err := readSource(file)
 		if err != nil {
 			return "", "", nil //nolint:nilerr // indexed as readable; its own turn reports this
 		}

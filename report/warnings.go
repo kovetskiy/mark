@@ -68,10 +68,6 @@ type Warning struct {
 	// File is the document the warning is about, as mark read it.
 	File string `json:"file,omitempty"`
 
-	// Source is the file File was made from, when a library caller names
-	// one; see Report.SetSources.
-	Source string `json:"source,omitempty"`
-
 	// Line is the line of File the warning is about, counting from 1, or 0
 	// when it is about no one line or the line is not known.
 	Line int `json:"line,omitempty"`
@@ -85,8 +81,13 @@ type Warning struct {
 type Warnings struct {
 	file string
 
-	mu   sync.Mutex
-	list []Warning
+	mu     sync.Mutex
+	list   []Warning
+	lineOf func(int) int
+
+	// seen counts each warning added since the document was last read, so
+	// that reading it again records only what goes beyond the earlier read.
+	seen map[Warning]int
 }
 
 // NewWarnings collects the warnings about the document at file.
@@ -94,9 +95,35 @@ func NewWarnings(file string) *Warnings {
 	return &Warnings{file: file}
 }
 
-// Add logs a warning and records it against the document. One already
-// recorded is only logged, so that a document published twice in a run is
-// not reported with each of its warnings twice.
+// Reread starts another read of the document. A warning this read adds no
+// more times than an earlier one did is only logged, so that a document
+// published twice in a run is not reported with each of its warnings twice.
+func (w *Warnings) Reread() {
+	if w == nil {
+		return
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.seen = nil
+}
+
+// MapLines has the lines given to AddAt, which count in the text read, mapped
+// by lineOf to the lines of the file, for text the file had lines taken out
+// of. A nil lineOf leaves them as they are.
+func (w *Warnings) MapLines(lineOf func(line int) int) {
+	if w == nil {
+		return
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.lineOf = lineOf
+}
+
+// Add logs a warning and records it against the document.
 func (w *Warnings) Add(kind WarningKind, format string, args ...any) {
 	w.AddAt(0, kind, format, args...)
 }
@@ -104,6 +131,14 @@ func (w *Warnings) Add(kind WarningKind, format string, args ...any) {
 // AddAt is Add for a warning about one line of the document, counting from 1;
 // 0 names no line.
 func (w *Warnings) AddAt(line int, kind WarningKind, format string, args ...any) {
+	if w != nil && line > 0 {
+		w.mu.Lock()
+		if w.lineOf != nil {
+			line = w.lineOf(line)
+		}
+		w.mu.Unlock()
+	}
+
 	warning := Warning{Kind: kind, Line: line, Message: fmt.Sprintf(format, args...)}
 	if w != nil {
 		warning.File = w.file
@@ -125,7 +160,19 @@ func (w *Warnings) AddAt(line int, kind WarningKind, format string, args ...any)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if !slices.Contains(w.list, warning) {
+	if w.seen == nil {
+		w.seen = map[Warning]int{}
+	}
+	w.seen[warning]++
+
+	recorded := 0
+	for _, listed := range w.list {
+		if listed == warning {
+			recorded++
+		}
+	}
+
+	if w.seen[warning] > recorded {
 		w.list = append(w.list, warning)
 	}
 }

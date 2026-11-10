@@ -29,7 +29,7 @@ func (r *runTitles) index() {
 	r.documents = map[string][]string{}
 
 	for _, file := range r.files {
-		_, markdown, err := readSource(file)
+		_, markdown, _, err := readSource(file)
 		if err != nil {
 			continue
 		}
