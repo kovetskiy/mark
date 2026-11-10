@@ -308,7 +308,9 @@ outright rather than warned about, because the belief comes from silence:
 
 * `--on-orphan archive` or `delete` without `--track-pages`
 * `--no-overwrite` without `--track-pages`
-* `--check-links-warn-only` without `--check-links`
+* `--check-links-warn-only` without `--check-links`, or with one that names no
+  kind of link
+* `--links-staged-root` without `--links-source-root`, or the other way round
 
 A combination that merely does nothing -- `--track-pages` alongside a page ID,
 where the mapping cannot apply -- is a warning.

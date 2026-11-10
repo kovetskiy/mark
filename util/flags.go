@@ -337,6 +337,20 @@ func publishFlags(config *configFile) []cli.Flag {
 			Usage:   "report links that do not resolve without failing the run. Only meaningful together with --check-links.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_CHECK_LINKS_WARN_ONLY"), config.value("check-links-warn-only")),
 		},
+		&cli.StringFlag{
+			Name:      "links-staged-root",
+			Value:     "",
+			Usage:     "the directory the documents being published were copied or generated into. A relative link that names no file beside a document is then looked for at the same place under --links-source-root, both when it is checked and when it is rewritten. Requires --links-source-root.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_LINKS_STAGED_ROOT"), config.value("links-staged-root")),
+		},
+		&cli.StringFlag{
+			Name:      "links-source-root",
+			Value:     "",
+			Usage:     "the directory --links-staged-root was made from, where the documents' relative links were written. Requires --links-staged-root.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_LINKS_SOURCE_ROOT"), config.value("links-source-root")),
+		},
 		&cli.BoolFlag{
 			Name:    "no-overwrite",
 			Value:   false,
