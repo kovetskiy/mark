@@ -2,7 +2,9 @@ package report
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -224,4 +226,63 @@ func TestSetWarningsReplacesAPagesWarnings(t *testing.T) {
 	require.Len(t, r.Pages, 1)
 	assert.Equal(t, updated, r.Pages[0].WarningDetails)
 	assert.Equal(t, []string{"old", "new"}, r.Pages[0].Warnings)
+}
+
+// TestWarningsConcurrentAccess races every method of one collector, which the
+// race detector reports if any of them reads or writes outside the lock.
+func TestWarningsConcurrentAccess(t *testing.T) {
+	w := NewWarnings("docs/a.md")
+
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 50 {
+				switch i % 5 {
+				case 0:
+					w.Reread()
+				case 1:
+					w.MapLines(func(line int) int { return line + g })
+				case 2:
+					w.AddAt(i, WarningUnknownKey, "key %d", g)
+				case 3:
+					w.Add(WarningAttachment, "attachment %d", i)
+				default:
+					_ = w.List()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.NotEmpty(t, w.List())
+}
+
+// TestReportSetWarningsConcurrentAccess races SetWarnings against the report's
+// other writers and Write.
+func TestReportSetWarningsConcurrentAccess(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "docs/a.md", Status: StatusPublished})
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 50 {
+				switch i % 4 {
+				case 0:
+					r.SetWarnings("docs/a.md", []Warning{{Kind: WarningUnknownKey, Message: "m"}})
+				case 1:
+					r.AddPage(Page{File: "docs/b.md", Status: StatusPublished})
+				case 2:
+					r.SetSources(func(file string) string { return file + ".tmpl" })
+				default:
+					assert.NoError(t, r.Write(io.Discard, FormatGitHub))
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

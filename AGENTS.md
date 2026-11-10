@@ -206,11 +206,16 @@ does everything above it that makes one later (`manifest.Store`,
 `markdown.CompileMarkdown` takes one for the diagrams and formulas it draws; goldmark
 renders without one, so the renderers that draw them are given it when built.
 `page.LinkChecker` keeps its pending links and answers behind a mutex and copies
-what `MissingPages` looks up before making a request (`TestLinkCheckerConcurrentAccess`
-in `page/check_test.go` races it). What still assumes one file at a time is the rest of
-`publishRun` in `mark.go`: `runUsers` swaps its `ctx` for each file, and `runTitles` and
-`pageFile` carry no lock. Anything that introduces concurrency across files has to make
-those safe first.
+what `MissingLinks` looks up before making a request (`TestLinkCheckerConcurrentAccess`
+in `page/check_test.go` races it). A document's `report.Warnings` and the
+`report.Report` take their own locks (`TestWarningsConcurrentAccess`,
+`TestReportSetWarningsConcurrentAccess`). What still assumes one file at a time is the
+rest of `publishRun` in `mark.go`: `runUsers` swaps its `ctx` for each file, and
+`runTitles` (its `warned` set included), `pageFile` and the `warnings` map of each
+document's collector carry no lock. The manifest store calls the function
+`SetWarningsFor` gives it with its own lock held, so that function must not call back
+into the store. Anything that introduces concurrency across files has to make those
+safe first.
 
 **9. The Confluence client answers in errors, not statuses.** `confluence/client.go`
 turns every non-2xx answer into a `*confluence.StatusError` (`errors.Is` matches
