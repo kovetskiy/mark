@@ -80,6 +80,7 @@ func TestExportNamesExactlyOnePage(t *testing.T) {
 		{"two ways", []string{"--page-id", "1", "--url", "https://example.com/display/A/B"}, "--page-id and --url"},
 		{"a title with no space", []string{"--title", "T"}, "--title needs --space"},
 		{"--recursive to standard output", []string{"--page-id", "1", "--recursive"}, "name it with --output"},
+		{"--recursive to standard output as -", []string{"--page-id", "1", "--recursive", "-o", "-"}, "name it with --output"},
 		{"--recursive with --attachments-dir", []string{"--page-id", "1", "--recursive", "-o", "out", "--attachments-dir", "files"}, "does not apply"},
 		{"--depth without --recursive", []string{"--page-id", "1", "--depth", "2"}, "does nothing without it"},
 		{"a negative --depth", []string{"--page-id", "1", "--recursive", "-o", "out", "--depth", "-1"}, "cannot be negative"},
@@ -179,6 +180,26 @@ func TestExportCommand(t *testing.T) {
 		written, err := os.ReadFile("logo.png")
 		require.NoError(t, err)
 		assert.Equal(t, "png bytes", string(written))
+	})
+
+	t.Run("by id, to standard output as -", func(t *testing.T) {
+		withFile := server.AddPage("DOCS", "With a file for -", "page", home.ID)
+		server.EditPage(withFile.ID, `<p><ac:image><ri:attachment ri:filename="logo.png"/></ac:image></p>`)
+		server.AddAttachmentData(withFile.ID, "logo.png", []byte("png bytes"))
+		dir := t.TempDir()
+		t.Chdir(dir)
+
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "-o", "-")...)
+		require.NoError(t, err)
+		assert.Equal(t, want, stdout, "the same as no -o")
+
+		stdout, _, err = runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", withFile.ID, "-o", "-")...)
+		require.NoError(t, err)
+		assert.Contains(t, stdout, "![](logo.png)")
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		require.Len(t, entries, 1, "the attachment goes to the working directory, and no file named -")
+		assert.Equal(t, "logo.png", entries[0].Name())
 	})
 
 	t.Run("by URL, to standard output", func(t *testing.T) {

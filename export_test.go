@@ -3,6 +3,7 @@ package mark
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -1233,6 +1234,25 @@ func TestExportTreeRefusesNoMetadata(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestExportTreeNeedsADirectory: "-" is standard output to a tree as to a
+// page, and a tree is written to a directory.
+func TestExportTreeNeedsADirectory(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	for _, output := range []string{"", "-"} {
+		_, err := ExportTree(context.Background(), ExportConfig{
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			PageID:     id, Output: output, Stdout: &bytes.Buffer{},
+		}, export.TreeOptions{})
+		require.ErrorContains(t, err, "writes a directory", "output %q", output)
+	}
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "no directory named -")
+}
+
 // TestExportNoMetadataWithAttachments: the body alone, with its attachments
 // written to a directory of their own, refers to them where they were
 // written, whether the document goes to a file or to Stdout.
@@ -1274,23 +1294,26 @@ func TestExportNoMetadataWithAttachments(t *testing.T) {
 		assert.Equal(t, result.Markdown, string(document))
 	})
 
-	t.Run("stdout", func(t *testing.T) {
-		dir := t.TempDir()
-		t.Chdir(dir)
-		var stdout bytes.Buffer
-		result, err := Export(context.Background(), ExportConfig{
-			Connection: connection, PageID: id, Metadata: export.MetadataNone,
-			Stdout: &stdout, AttachmentsDir: "files",
-		})
-		require.NoError(t, err)
-		assertWritten(t, dir, result)
-		assert.Equal(t, result.Markdown, stdout.String())
+	for name, output := range map[string]string{"stdout": "", "stdout as -": "-"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			var stdout bytes.Buffer
+			result, err := Export(context.Background(), ExportConfig{
+				Connection: connection, PageID: id, Metadata: export.MetadataNone,
+				Output: output, Stdout: &stdout, AttachmentsDir: "files",
+			})
+			require.NoError(t, err)
+			assertWritten(t, dir, result)
+			assert.Equal(t, result.Markdown, stdout.String())
+			assert.Empty(t, result.Output)
 
-		entries, err := os.ReadDir(dir)
-		require.NoError(t, err)
-		require.Len(t, entries, 1, "only the attachments' directory is written")
-		assert.Equal(t, "files", entries[0].Name())
-	})
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "only the attachments' directory is written")
+			assert.Equal(t, "files", entries[0].Name())
+		})
+	}
 }
 
 // TestExportToStdoutNeedsAnAttachmentsDir: with no Output for the attachments
@@ -1348,25 +1371,28 @@ func TestExportToStdoutWithNothingToWrite(t *testing.T) {
 		"no attachments":       `<p>Text only.</p>`,
 		"a missing attachment": `<p>Text only.</p><p><ac:image><ri:attachment ri:filename="gone.png"/></ac:image></p>`,
 	} {
-		t.Run(name, func(t *testing.T) {
-			server, id := exportPage(t, body)
-			dir := t.TempDir()
-			t.Chdir(dir)
+		for _, output := range []string{"", "-"} {
+			t.Run(fmt.Sprintf("%s, Output %q", name, output), func(t *testing.T) {
+				server, id := exportPage(t, body)
+				dir := t.TempDir()
+				t.Chdir(dir)
 
-			var stdout bytes.Buffer
-			result, err := Export(context.Background(), ExportConfig{
-				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
-				PageID:     id, Metadata: export.MetadataNone, Stdout: &stdout,
+				var stdout bytes.Buffer
+				result, err := Export(context.Background(), ExportConfig{
+					Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+					PageID:     id, Output: output, Metadata: export.MetadataNone, Stdout: &stdout,
+				})
+				require.NoError(t, err)
+				assert.True(t, strings.HasPrefix(result.Markdown, "Text only.\n"), result.Markdown)
+				assert.Equal(t, result.Markdown, stdout.String())
+				assert.Empty(t, result.Output)
+				assert.Empty(t, result.Attachments)
+
+				entries, err := os.ReadDir(dir)
+				require.NoError(t, err)
+				assert.Empty(t, entries, "nothing written to the working directory")
 			})
-			require.NoError(t, err)
-			assert.True(t, strings.HasPrefix(result.Markdown, "Text only.\n"), result.Markdown)
-			assert.Equal(t, result.Markdown, stdout.String())
-			assert.Empty(t, result.Attachments)
-
-			entries, err := os.ReadDir(dir)
-			require.NoError(t, err)
-			assert.Empty(t, entries, "nothing written to the working directory")
-		})
+		}
 	}
 }
 
