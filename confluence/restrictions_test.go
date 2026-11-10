@@ -208,6 +208,7 @@ func TestRestrictionsEditLockANewPage(t *testing.T) {
 
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 	assert.Equal(t, []string{"hr"}, server.Page(page.ID).RestrictedGroups["read"])
+	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).ReadRestrictedTo)
 }
 
 // TestRestrictionsRefuseAPartialList: a restriction list that may have been
