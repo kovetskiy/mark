@@ -118,3 +118,18 @@ func TestSameInstance(t *testing.T) {
 		})
 	}
 }
+
+// TestSameInstanceWantsABaseURL: other is a base URL. A page's own URL has a
+// longer path than the context path, so against a configured base that has one
+// it does not match; the base has to be taken from it first.
+func TestSameInstanceWantsABaseURL(t *testing.T) {
+	const page = "https://example.atlassian.net/wiki/spaces/DOCS/pages/1/Title"
+
+	err := SameInstance("https://example.atlassian.net/wiki", page)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOtherInstance)
+	assert.Contains(t, err.Error(), "path")
+
+	assert.NoError(t, SameInstance("https://example.atlassian.net/wiki", "https://example.atlassian.net/wiki"),
+		"the page's base URL, as export.ParsePageURL gives it, matches")
+}
