@@ -18,7 +18,7 @@ import (
 
 // nameOnly is macroFileName for the tests that look only at the name.
 func nameOnly(base string) func(string) string {
-	resolve := macroFileName(base)
+	resolve := macroFileName(attachment.Root{}, base)
 
 	return func(value string) string {
 		name, _ := resolve(value)
@@ -30,7 +30,7 @@ func nameOnly(base string) func(string) string {
 // TestMacroFileNameSaysWhetherTheValueIsAFile: the decision is made once, from
 // the value as written, and handed on with the name.
 func TestMacroFileNameSaysWhetherTheValueIsAFile(t *testing.T) {
-	resolve := macroFileName(t.TempDir())
+	resolve := macroFileName(attachment.Root{}, t.TempDir())
 
 	for value, want := range map[string]struct {
 		name   string
