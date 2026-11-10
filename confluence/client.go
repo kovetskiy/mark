@@ -318,7 +318,7 @@ func (c *client) answer(ctx context.Context, req *http.Request, resp *http.Respo
 
 	mediaType := contentMediaType(resp.Header)
 
-	if evidence, strong := loginEvidence(req, resp, mediaType); evidence != "" {
+	if evidence, strong := loginEvidence(req, resp, mediaType, false); evidence != "" {
 		err := body.readPrefix(max(body.limit, 1))
 
 		// A redirect to a login page, or Seraph saying it did not
@@ -661,34 +661,57 @@ func (e *loginPageError) Error() string {
 func (e *loginPageError) Is(target error) bool { return target == ErrLoginPage }
 
 // loginEvidence says why a 2xx answer to req is a login page rather than
-// Confluence's own answer, or "" when it is not one, and whether that is
-// strong evidence: anything but an HTML Content-Type alone. mediaType is the
+// what was asked for, or "" when it is not one, and whether that is strong
+// evidence: anything but an HTML Content-Type alone. mediaType is the
 // answer's, as contentMediaType reads it.
 //
-// Confluence's API answers in JSON, so an answer in HTML is a page for a
-// person: an SSO proxy's login form, or the page some proxy or redirect put
-// in front of the API. Beyond that, whatever the answer says it is, a request
-// that ended on Seraph's /login.action was sent to log in; and one that was
-// redirected to another host, or that Seraph says it did not authenticate,
-// was turned away unless it answered in JSON.
-func loginEvidence(req *http.Request, resp *http.Response, mediaType string) (evidence string, strong bool) {
+// Whatever the answer says it is, a request that was redirected to Seraph's
+// /login.action was sent to log in.
+//
+// Confluence's API answers in JSON, so an answer to it in HTML is a page for
+// a person: an SSO proxy's login form, or the page some proxy or redirect put
+// in front of the API. And an API request that was redirected to another
+// host, or that Seraph says it did not authenticate, was turned away unless
+// it answered in JSON.
+//
+// An attachment download answers in the attachment's own type, HTML and JSON
+// among them, and Cloud serves it from a media host other than the site's, so
+// neither its type nor a redirect to another host says anything about it, and
+// Seraph saying it did not authenticate the request is a login page whatever
+// the type. X-AUSERNAME: anonymous is not one for a download: a public space
+// serves its attachments to an anonymous session.
+func loginEvidence(req *http.Request, resp *http.Response, mediaType string, download bool) (evidence string, strong bool) {
 	final := req.URL
 	if resp.Request != nil && resp.Request.URL != nil {
 		final = resp.Request.URL
 	}
 
-	if strings.HasSuffix(final.Path, "/login.action") {
+	// An attachment can be named login.action; only a redirect there is one.
+	if final.Path != req.URL.Path && strings.HasSuffix(final.Path, "/login.action") {
 		return "redirected to /login.action", true
+	}
+
+	reason := resp.Header.Get("X-Seraph-LoginReason")
+	refused := reason != "" && reason != "OK"
+
+	if download {
+		if refused {
+			return "X-Seraph-LoginReason: " + reason, true
+		}
+
+		return "", false
 	}
 
 	if !isJSONMediaType(mediaType) {
 		if !strings.EqualFold(final.Hostname(), req.URL.Hostname()) {
 			return "redirected to " + final.Hostname(), true
 		}
-	}
-
-	if evidence := seraphLoginEvidence(resp.Header, mediaType); evidence != "" {
-		return evidence, true
+		if refused {
+			return "X-Seraph-LoginReason: " + reason, true
+		}
+		if resp.Header.Get("X-AUSERNAME") == "anonymous" {
+			return "X-AUSERNAME: anonymous", true
+		}
 	}
 
 	if mediaType == "text/html" || mediaType == "application/xhtml+xml" {
@@ -696,19 +719,6 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string) (ev
 	}
 
 	return "", false
-}
-
-func seraphLoginEvidence(header http.Header, mediaType string) string {
-	if isJSONMediaType(mediaType) {
-		return ""
-	}
-	if reason := header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
-		return "X-Seraph-LoginReason: " + reason
-	}
-	if header.Get("X-AUSERNAME") == "anonymous" {
-		return "X-AUSERNAME: anonymous"
-	}
-	return ""
 }
 
 // contentMediaType is the media type of a Content-Type header, lowercased and

@@ -182,6 +182,10 @@ func TestDownloadAttachmentStaysOnServer(t *testing.T) {
 
 }
 
+// TestDownloadAttachmentAuthentication: Seraph saying it did not
+// authenticate the download is a login page whatever type the answer names,
+// JSON included, since an attachment answers in its own type. An anonymous
+// session is not one: a public space serves its attachments to it.
 func TestDownloadAttachmentAuthentication(t *testing.T) {
 	for _, test := range []struct {
 		name, contentType, reason, username, body, evidence string
@@ -191,19 +195,19 @@ func TestDownloadAttachmentAuthentication(t *testing.T) {
 		{"failed XHTML", "application/xhtml+xml", "AUTHENTICATION_DENIED", "", "<html/>", "X-Seraph-LoginReason: AUTHENTICATION_DENIED"},
 		{"failed binary", "application/octet-stream", "AUTHENTICATED_FAILED", "", "\x00\xff", "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
 		{"failed without type", "", "AUTHENTICATED_FAILED", "", "", "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
-		{"anonymous", "text/html", "", "anonymous", "<html>Log in</html>", "X-AUSERNAME: anonymous"},
-		{"empty anonymous", "text/plain", "", "anonymous", "", "X-AUSERNAME: anonymous"},
-		{"failed reason before anonymous", "text/html", "AUTHENTICATED_FAILED", "anonymous", "login", "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
-		{"anonymous despite OK", "text/html", "OK", "anonymous", "login", "X-AUSERNAME: anonymous"},
+		{"failed JSON", "application/json; charset=utf-8", "AUTHENTICATED_FAILED", "", `{"attachment":true}`, "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
+		{"failed structured JSON", "Application/Vnd.Atlassian+Json; charset=UTF-8", "AUTHENTICATED_FAILED", "", `{}`, "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
+		{"failed and anonymous", "text/html", "AUTHENTICATED_FAILED", "anonymous", "login", "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
+		{"anonymous", "text/html", "", "anonymous", "<html>Attachment</html>", ""},
+		{"empty anonymous", "text/plain", "", "anonymous", "", ""},
+		{"anonymous and OK", "image/png", "OK", "anonymous", "\x89PNG", ""},
 		{"binary", "application/octet-stream", "", "", "\x00\xff\x80content", ""},
 		{"HTML", "text/html", "", "", "<html>Attachment</html>", ""},
 		{"XHTML", "application/xhtml+xml", "", "", "<html/>", ""},
 		{"OK HTML", "text/html", "OK", "user", "<html>Attachment</html>", ""},
 		{"authenticated binary", "application/octet-stream", "", "user", "content", ""},
 		{"empty attachment", "application/octet-stream", "OK", "", "", ""},
-		{"JSON exemption", "application/json; charset=utf-8", "AUTHENTICATED_FAILED", "anonymous", `{"attachment":true}`, ""},
-		{"structured JSON exemption", "Application/Vnd.Atlassian+Json; charset=UTF-8", "AUTHENTICATED_FAILED", "anonymous", `{"attachment":true}`, ""},
-		{"JSON is not decoded", "application/json", "AUTHENTICATED_FAILED", "", "not JSON", ""},
+		{"JSON is not decoded", "application/json", "", "", "not JSON", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := confluencetest.New(t)
@@ -219,13 +223,12 @@ func TestDownloadAttachmentAuthentication(t *testing.T) {
 			err := api.DownloadAttachment(context.Background(), "1", downloadInfo("1", "a.png"), &got)
 			assert.True(t, body.closed)
 			if test.evidence != "" {
-				assert.ErrorIs(t, err, ErrLoginPage)
+				require.ErrorIs(t, err, ErrLoginPage)
 				assert.Empty(t, got.Bytes())
 				assert.Zero(t, body.read)
-				if err != nil {
-					assert.Contains(t, err.Error(), `unable to download attachment "a.png"`)
-					assert.Contains(t, err.Error(), test.evidence)
-				}
+				assert.Contains(t, err.Error(), `unable to download attachment "a.png"`)
+				assert.Contains(t, err.Error(), test.evidence)
+				assert.Contains(t, err.Error(), "SSO", "the hint every login page gets")
 				return
 			}
 			require.NoError(t, err)
@@ -234,34 +237,65 @@ func TestDownloadAttachmentAuthentication(t *testing.T) {
 	}
 }
 
+// TestDownloadAttachmentWithoutCredentials: with no credentials every answer
+// from Data Center says X-AUSERNAME: anonymous, and a public space's
+// attachments are still the attachments.
+func TestDownloadAttachmentWithoutCredentials(t *testing.T) {
+	server := confluencetest.New(t)
+	server.SetFailHeaders(http.Header{"Content-Type": {"image/png"}, "X-Ausername": {"anonymous"}})
+	server.SetFail(func(*http.Request) (int, string, bool) { return http.StatusOK, "\x89PNG", true })
+
+	var got bytes.Buffer
+	require.NoError(t, NewAPI(server.URL, Options{}).
+		DownloadAttachment(context.Background(), "1", downloadInfo("1", "a.png"), &got))
+	assert.Equal(t, "\x89PNG", got.String())
+}
+
+// TestDownloadAttachmentRedirects: a download may be redirected, to another
+// path or, on Cloud, to a media host, and may be of an attachment named
+// login.action; one redirected to Seraph's /login.action, on any host and with
+// no Seraph headers, is a login page.
 func TestDownloadAttachmentRedirects(t *testing.T) {
-	for _, name := range []string{"same host", "another host", "login.action attachment", "header-free login redirect"} {
-		t.Run(name, func(t *testing.T) {
+	for _, test := range []struct {
+		name, link, target string
+		login              bool
+	}{
+		{"same host", "/redirect", "/download/attachments/PAGE/a.png", false},
+		{"another host", "/redirect", "OTHER/download/attachments/PAGE/a.png", false},
+		{"login.action attachment", "/download/attachments/PAGE/login.action", "", false},
+		{"header-free login redirect", "/redirect", "/login.action?os_destination=x", true},
+		{"login redirect to another host", "/redirect", "OTHER/login.action", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			server := confluencetest.New(t)
 			page := server.AddPage("DOCS", "Page", "page", "")
+			server.AddAttachmentData(page.ID, "a.png", []byte("attachment"))
 			server.AddAttachmentData(page.ID, "login.action", []byte("attachment"))
-			target := server.URL + "/download/attachments/" + page.ID + "/login.action"
-			if name == "another host" {
-				target = strings.Replace(target, "127.0.0.1", "localhost", 1)
-			}
-			if name == "header-free login redirect" {
-				target = server.URL + "/login.action"
+			other := strings.Replace(server.URL, "127.0.0.1", "localhost", 1)
+			target := strings.NewReplacer("PAGE", page.ID, "OTHER", other).Replace(test.target)
+			if !strings.HasPrefix(target, "http") {
+				target = server.URL + target
 			}
 			server.SetFailHeaders(http.Header{"Location": {target}, "Content-Type": {"text/html"}})
 			server.SetFail(func(r *http.Request) (int, string, bool) {
 				if r.URL.Path == "/redirect" {
 					return http.StatusFound, "", true
 				}
-				return http.StatusOK, "attachment", r.URL.Path == "/login.action"
+				return http.StatusOK, "<html>Log in</html>", r.URL.Path == "/login.action"
 			})
-			info := downloadInfo(page.ID, "login.action")
-			info.Links.Download = "/redirect"
-			if name == "login.action attachment" {
-				info.Links.Download = target
-			}
+			info := downloadInfo(page.ID, "a.png")
+			info.Links.Download = strings.ReplaceAll(test.link, "PAGE", page.ID)
+
 			var got bytes.Buffer
-			require.NoError(t, NewAPI(server.URL, Options{Username: "user", Password: "token"}).
-				DownloadAttachment(context.Background(), page.ID, info, &got))
+			err := NewAPI(server.URL, Options{Username: "user", Password: "token"}).
+				DownloadAttachment(context.Background(), page.ID, info, &got)
+			if test.login {
+				require.ErrorIs(t, err, ErrLoginPage)
+				assert.Contains(t, err.Error(), "redirected to /login.action")
+				assert.Empty(t, got.Bytes())
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, "attachment", got.String())
 		})
 	}
