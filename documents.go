@@ -235,7 +235,7 @@ func (c Config) checkDocuments() error {
 		}
 
 		// A run finds a scope's pages only in the spaces it publishes to.
-		if len(c.Documents) == 0 && c.Files == "" && len(c.Paths) == 0 {
+		if len(c.Documents) == 0 && !c.namesFiles() {
 			msg := "DocumentKeys with nothing to publish finds no space to look for them in: " +
 				"leave a change that only removes documents to a run publishing the whole scope"
 			if !c.CI {
@@ -255,12 +255,18 @@ func (c Config) checkDocuments() error {
 			"it lays out the hierarchy from the files on disk, and a Document's Path need not be there")
 	}
 
-	if c.Tracking.Partial && c.DocumentScope == "" && c.Files == "" && len(c.Paths) == 0 {
+	if c.Tracking.Partial && c.DocumentScope == "" && !c.namesFiles() {
 		log.Warn().Msg("Tracking.Partial does nothing for Documents without a DocumentScope: " +
 			"they take part in no orphan handling and no renames, partial or not")
 	}
 
 	return nil
+}
+
+// namesFiles reports whether the run is given files to publish, by pattern or
+// by path, rather than Documents alone.
+func (c Config) namesFiles() bool {
+	return c.Files != "" || len(c.Paths) > 0
 }
 
 // checkUnscopedOrphans refuses --on-orphan archive or delete on a run that
@@ -279,7 +285,7 @@ func (c Config) checkUnscopedOrphans(onOrphan report.OnOrphan, files []string) e
 			"documents without one take part in no orphan handling",
 		onOrphan,
 	)
-	if c.Files != "" {
+	if c.namesFiles() {
 		log.Warn().Msg(msg)
 
 		return nil

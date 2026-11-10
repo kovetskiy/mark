@@ -663,13 +663,9 @@ func IsDocumentScope(glob string) bool {
 // entry recorded under it is an orphan to a later run with the same scope
 // that does not publish it, and only entries under it are taken for a
 // rename or a move of one of these paths. An empty scope records the paths
-// under none, so they are never orphans and never renames -- as an entry
-// written before patterns were recorded -- and are found again only by
-// their own path.
-//
-// A scope is recorded as "documents://" and its name, which no --files
-// pattern can be, so a run of files never covers a document's entry, nor a
-// run of documents a file's, partial or not.
+// under none, so they are never orphans and never renames, and are found
+// again only by their own path. A run of files never covers an entry under
+// a scope, nor a run of documents a file's.
 //
 // Under SetPartial a run covers only the keys of a scope it publishes or
 // names with SetRunDocumentKeys, and leaves the scope's other entries alone.
@@ -726,17 +722,6 @@ func (s *Store) addScope(scope string) string {
 	}
 
 	return glob
-}
-
-// scopeOf is the pattern path, a key, is recorded under this run, but for
-// what a partial run keeps from an existing entry: a document's scope, or a
-// file's pattern. Called with s.mu held.
-func (s *Store) scopeOf(path string) string {
-	if scope, ok := s.documentScopes[path]; ok {
-		return scope
-	}
-
-	return s.recordGlob(path)
 }
 
 // coversDocument is covers for an entry recorded under a document scope: one
@@ -1311,14 +1296,15 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			ownerEntry := state.shards[shardFor(owner)].pages[owner]
 			if s.partial && s.absent(state, owner) && ownerEntry.Glob != "" &&
 				!s.covers(owner, ownerEntry) && s.sameScope(path, ownerEntry) {
-				hint = fmt.Sprintf(
-					"; if %s moved to %s, name both paths in --files or --files-from to follow the move",
-					owner, path,
-				)
 				if IsDocumentScope(ownerEntry.Glob) {
 					hint = fmt.Sprintf(
 						"; if %s moved to %s, name the key %s beside the documents to follow the move",
 						owner, path, owner,
+					)
+				} else {
+					hint = fmt.Sprintf(
+						"; if %s moved to %s, name both paths in --files or --files-from to follow the move",
+						owner, path,
 					)
 				}
 			}
@@ -1354,8 +1340,11 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	existing, ok := sh.pages[path]
 	// A document is recorded under its run's scope, partial or not: the
 	// scope names the documents' owner, not a pattern some of them lie in.
-	glob := s.scopeOf(path)
-	if _, document := s.documentScopes[path]; s.partial && !document {
+	glob, document := s.documentScopes[path]
+	if !document {
+		glob = s.recordGlob(path)
+	}
+	if s.partial && !document {
 		switch {
 		case ok && existing.Glob != "" && !IsDocumentScope(existing.Glob):
 			glob = existing.Glob
@@ -1583,7 +1572,8 @@ func (s *Store) ResolveRenamedFor(ctx context.Context, spaceKey, path, hash stri
 // resolveRenamed is ResolveRenamed among the entries in the scope of path, a
 // key; "" is a file's. Called with s.mu held.
 func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string) (string, Entry, bool, error) {
-	if hash == "" {
+	// A document with no scope is never anything's rename.
+	if scope, document := s.documentScopes[path]; hash == "" || document && scope == "" {
 		return "", Entry{}, false, nil
 	}
 
@@ -1599,7 +1589,7 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 	)
 	for i := range state.shards {
 		for candidate, entry := range state.shards[i].pages {
-			if entry.Hash != hash || !s.covers(candidate, entry) || !s.sameScope(path, entry) ||
+			if entry.Hash != hash || !s.sameScope(path, entry) || !s.covers(candidate, entry) ||
 				s.runFiles[candidate] || state.claimed[entry.PageID] {
 				continue
 			}
@@ -1853,11 +1843,9 @@ func (s *Store) PublishedUnder(spaceKey, glob string) int {
 		return 0
 	}
 
-	document := IsDocumentScope(glob)
 	published := 0
 	for path := range state.seen {
-		scope, isDocument := s.documentScopes[path]
-		if document && scope == glob || !document && !isDocument {
+		if s.sameScope(path, Entry{Glob: glob}) {
 			published++
 		}
 	}
