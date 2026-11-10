@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	mark "github.com/kovetskiy/mark/v17"
 	"github.com/kovetskiy/mark/v17/util"
 	"github.com/rs/zerolog/log"
 )
@@ -42,8 +43,11 @@ func main() {
 
 	if err := util.Run(ctx, buildVersion(version, commit, readBuildInfo()), os.Args); err != nil {
 		// "context canceled" says nothing about who cancelled it. Only when
-		// the signal did: a file's own cancellation is that file's failure.
-		if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.Canceled) {
+		// the signal did: a file's own cancellation is that file's failure,
+		// and the files that failed say more than a signal that came after.
+		var filesFailed *mark.FilesFailedError
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.Canceled) &&
+			!errors.As(err, &filesFailed) {
 			err = cause
 		}
 		log.Fatal().Msg(err.Error())

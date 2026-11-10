@@ -911,10 +911,8 @@ func TestSourcePathNamesTheSource(t *testing.T) {
 	err := Run(context.Background(), config)
 	require.Error(t, err)
 
-	require.NotEmpty(t, seen)
-	for _, file := range seen {
-		assert.Equal(t, filepath.Join(dir, "bad.md"), file, "the mapper is given the path mark read")
-	}
+	assert.Equal(t, []string{filepath.Join(dir, "bad.md")}, seen,
+		"the mapper is given the path mark read, once")
 	assert.Contains(t, out.String(), "::error file=templates/bad.md.tmpl::")
 }
 
