@@ -87,7 +87,7 @@ func TestExportNamesExactlyOnePage(t *testing.T) {
 		{"a space without --recursive", []string{"--space", "DOCS"}, "or the space alone with --recursive"},
 		{"an unknown --format", []string{"--page-id", "1", "--format", "html"}, `--format: unknown export format "html"`},
 		{"an unknown --metadata", []string{"--page-id", "1", "--metadata", "toml"}, `--metadata: unknown export metadata "toml"`},
-		{"--recursive with --metadata none", []string{"--page-id", "1", "-r", "-o", "out", "--metadata", "none"}, "--metadata none (ExportConfig.Metadata) does not apply"},
+		{"--recursive with --metadata none", []string{"--page-id", "1", "-r", "-o", "out", "--metadata", "none"}, "--metadata none does not apply"},
 		{"--relative-links with --format okf", []string{"--page-id", "1", "-r", "-o", "out", "--format", "okf", "--relative-links"}, "does already"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -132,6 +132,23 @@ func TestExportCommand(t *testing.T) {
 		assert.Contains(t, stdout, "tags:\n  - exported\n")
 		assert.Contains(t, stdout, "generated:\n  by: mark/test\n", "mark and its version generated it")
 		assert.True(t, strings.HasSuffix(stdout, "---\n\n# Hello\n\nFrom **Confluence**.\n"), stdout)
+	})
+
+	t.Run("the body alone", func(t *testing.T) {
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "--metadata", "none")...)
+		require.NoError(t, err)
+		assert.Equal(t, "# Hello\n\nFrom **Confluence**.\n", stdout)
+	})
+
+	t.Run("a tree with MARK_METADATA=none, which is for a single page", func(t *testing.T) {
+		t.Setenv("MARK_METADATA", "none")
+		out := filepath.Join(t.TempDir(), "tree")
+		_, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "-r", "-o", out)...)
+		require.NoError(t, err)
+
+		written, err := os.ReadFile(filepath.Join(out, "index.md"))
+		require.NoError(t, err)
+		assert.Contains(t, string(written), "<!-- Title: Exported page -->", "a tree keeps the metadata that publishes it back")
 	})
 
 	t.Run("by URL, to standard output", func(t *testing.T) {
@@ -340,6 +357,12 @@ func TestExportSettingSources(t *testing.T) {
 		{
 			name: "MARK_ATTACHMENTS_DIR leaves --recursive alone",
 			env:  map[string]string{"MARK_ATTACHMENTS_DIR": "files"},
+			args: []string{"--page-id", "1", "-r", "-o", "out"},
+			want: map[string]string{"page-id": "1"},
+		},
+		{
+			name: "MARK_METADATA=none leaves --recursive alone",
+			env:  map[string]string{"MARK_METADATA": "none"},
 			args: []string{"--page-id", "1", "-r", "-o", "out"},
 			want: map[string]string{"page-id": "1"},
 		},

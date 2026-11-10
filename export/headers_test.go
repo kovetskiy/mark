@@ -1,6 +1,7 @@
 package export
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/metadata"
@@ -116,7 +117,8 @@ func TestNoMetadataKeepsTheSidebarInTheBody(t *testing.T) {
 	assert.Empty(t, doc.Layout)
 	assert.Empty(t, doc.Sidebar)
 	assert.Contains(t, doc.Markdown, "Aside")
-	assert.Contains(t, doc.Markdown, "ac:layout")
+	assert.Equal(t, canonical(t, storage), canonical(t, compile(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"))),
+		"the body publishes back to the layout it came from:\n%s", doc.Markdown)
 }
 
 func TestParseOptionsLeavesOKFItsOwnFrontMatter(t *testing.T) {

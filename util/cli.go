@@ -497,9 +497,13 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.Bool("recursive") {
-		// CheckExportFlags refused one given on the command line; one from
-		// the environment or the configuration file is for a single page.
+		// CheckExportFlags refused an --attachments-dir or --metadata none
+		// given on the command line; one from the environment or the
+		// configuration file is for a single page.
 		config.AttachmentsDir = ""
+		if spelling, _ := export.ParseMetadata(string(config.Metadata)); spelling == export.MetadataNone {
+			config.Metadata = export.MetadataComments
+		}
 		results, err := mark.ExportTree(ctx, config, export.TreeOptions{
 			Depth:         cmd.Int("depth"),
 			RelativeLinks: cmd.Bool("relative-links"),
