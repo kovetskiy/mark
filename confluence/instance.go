@@ -65,8 +65,10 @@ func (e *InstanceMismatchError) Is(target error) bool { return target == ErrOthe
 //     https://host and https://host:443 match;
 //   - the paths -- the context path an instance is served under, such as
 //     /wiki -- are the same, compared whole after trailing slashes, so /wiki
-//     does not match /wikiX or /wiki/x. Either path may be left out: a base URL
-//     of https://example.atlassian.net matches https://example.atlassian.net/wiki
+//     does not match /wikiX or /wiki/x. Paths are compared as escaped, so the
+//     same path percent-encoded differently, /wiki against /%77iki, does not
+//     match. Either path may be left out: a base URL of
+//     https://example.atlassian.net matches https://example.atlassian.net/wiki
 //     and the other way about. That is no wider than the credentials reach
 //     already: both name the same scheme, host and port, so the same server.
 //
@@ -78,6 +80,15 @@ func (e *InstanceMismatchError) Is(target error) bool { return target == ErrOthe
 // gateway names a site by its cloud id, which no URL ties to the configured
 // host. A gateway URL against another gateway URL is compared as any other
 // host is, so /ex/confluence/A does not match /ex/confluence/B.
+//
+// A nil answer says other's page ids may be asked of configured: send the
+// requests, and the credentials, to configured. With the gateway configured,
+// other is a different host, and nil does not make it a place to send them.
+//
+// A user name or password is refused in either argument, the configured one
+// included. API.AttachmentURL is less strict about the configured base URL: it
+// ignores a user name there, since whoever configured it gave it, and refuses
+// one only in the download link.
 func SameInstance(configured, other string) error {
 	have, err := parseInstanceURL("base URL", configured)
 	if err != nil {
