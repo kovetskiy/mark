@@ -163,15 +163,26 @@ the `file` it is about:
 }
 ```
 
-A `kind` is one of `unresolved-link` (under `--check-links-warn-only`),
-`metadata` (a front matter key mark does not read, a header below the opening
-comments, or metadata set aside for `--page-id`), `attachment` (a file not
-uploaded, or uploaded and never used), `invalid-characters`, `column-widths`,
-`inline-comment` (a comment `--preserve-comments` could not keep) and
-`missing-page` (a page the manifest recorded that no longer exists). Each is
-also logged, and listed once even when a document is published twice in a run;
-`github` annotates it where the document's other annotations go: against the
-source a library caller names with `ReportConfig.SourcePath`, if any.
+A `kind` is one of:
+
+| kind | what it is |
+| --- | --- |
+| `unresolved-link` | a link that does not resolve, under `--check-links-warn-only` |
+| `unknown-key` | a front matter key mark does not read: another tool's, or a misspelled setting |
+| `ignored-value` | a value its front matter key cannot hold, such as a number among labels, dropped |
+| `stranded-header` | a header below the opening comments, published as text rather than applied |
+| `metadata-ignored` | the document's metadata set aside, because `--page-id` names the page |
+| `attachment` | a file not uploaded, or uploaded and never used |
+| `invalid-characters` | text XML cannot carry, replaced with U+FFFD |
+| `column-widths` | a `Column-Widths` comment that was not applied |
+| `inline-comment` | a comment `--preserve-comments` could not keep |
+| `include` | an include in a fragment that now resolves beside the fragment, not the document |
+| `placement` | a page found outside its declared parents, moved or left where it is |
+| `missing-page` | a page the manifest recorded that no longer exists |
+
+Each is also logged, and listed once even when a document is published twice in
+a run. `github` annotates it where the document's other annotations go: against
+the source a library caller names with `ReportConfig.SourcePath`, if any.
 
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the

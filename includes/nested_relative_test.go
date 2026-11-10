@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -137,4 +138,28 @@ func TestNestedIncludeCycleThroughARelativePath(t *testing.T) {
 		project, "", []byte("<!-- Include: top.md -->"), template.New("test"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular include detected")
+}
+
+// TestAnIncludeThatChangedFileIsAWarning: a fragment naming a file that exists
+// both beside it and beside the document now gets the one beside it, which is
+// a different page than before; the document is told so with a kind of its own.
+func TestAnIncludeThatChangedFileIsAWarning(t *testing.T) {
+	project := t.TempDir()
+	writeFiles(t, project, map[string]string{
+		"sub/a.md": "A[<!-- Include: b.md -->]",
+		"sub/b.md": "beside the fragment",
+		"b.md":     "beside the document",
+	})
+
+	warnings := report.NewWarnings("doc.md")
+	_, output, _, err := ProcessIncludesWithWarnings(
+		project, "", []byte("<!-- Include: sub/a.md -->"), template.New("test"), nil, warnings)
+	require.NoError(t, err)
+	assert.Equal(t, "A[beside the fragment]", string(output))
+
+	list := warnings.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, report.WarningInclude, list[0].Kind)
+	assert.Equal(t, "doc.md", list[0].File)
+	assert.Contains(t, list[0].Message, `include "b.md" resolves beside the fragment that names it`)
 }

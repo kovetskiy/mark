@@ -18,10 +18,29 @@ const (
 	// warn about those rather than fail on them.
 	WarningUnresolvedLink WarningKind = "unresolved-link"
 
-	// WarningMetadata is a header or front matter key that was not applied:
-	// one mark does not read, one written below the opening comments, or a
-	// document's metadata set aside for a page named by id.
-	WarningMetadata WarningKind = "metadata"
+	// WarningUnknownKey is a front matter key mark does not read. It may
+	// belong to another tool, or be a setting of mark's misspelled.
+	WarningUnknownKey WarningKind = "unknown-key"
+
+	// WarningIgnoredValue is a value its front matter key cannot hold, such
+	// as a number among labels, dropped while the rest of the key was read.
+	WarningIgnoredValue WarningKind = "ignored-value"
+
+	// WarningStrandedHeader is a header written below the document's opening
+	// comments, published as page text rather than applied.
+	WarningStrandedHeader WarningKind = "stranded-header"
+
+	// WarningMetadataIgnored is a document's metadata set aside whole,
+	// because the page it publishes to is named by id.
+	WarningMetadataIgnored WarningKind = "metadata-ignored"
+
+	// WarningInclude is an include directive in a fragment that resolves to a
+	// different file than it would from the document's directory.
+	WarningInclude WarningKind = "include"
+
+	// WarningPlacement is a page found by title outside the parents its
+	// document declares: left where it is, or moved under them.
+	WarningPlacement WarningKind = "placement"
 
 	// WarningAttachment is a file that was not uploaded, or one uploaded and
 	// never referenced.

@@ -276,7 +276,7 @@ func toStringSlice(val any, key string, warnings *report.Warnings) []string {
 
 // warnAboutIgnoredValue reports a value a list key cannot hold.
 func warnAboutIgnoredValue(key string, value any, warnings *report.Warnings) {
-	warnings.Add(report.WarningMetadata,
+	warnings.Add(report.WarningIgnoredValue,
 		"front matter key %q takes a string or a list of strings, so %v (%T) was ignored",
 		key, value, value,
 	)
@@ -573,7 +573,7 @@ func warnAboutUnknownKeys(keys []string, warnings *report.Warnings) {
 	slices.Sort(keys)
 
 	for _, key := range keys {
-		warnings.Add(report.WarningMetadata, "front matter key %q is not read by mark and was ignored", key)
+		warnings.Add(report.WarningUnknownKey, "front matter key %q is not read by mark and was ignored", key)
 	}
 }
 
@@ -1129,7 +1129,7 @@ func warnStrandedHeaders(body []byte, warnings *report.Warnings) {
 			continue
 		}
 
-		warnings.Add(report.WarningMetadata,
+		warnings.Add(report.WarningStrandedHeader,
 			"%s header is below the document's opening comments, so it is published as text rather than applied: %s",
 			header, strings.TrimSpace(line),
 		)
