@@ -35,8 +35,10 @@ type Document struct {
 	// With FS set, Path is a path inside FS, slash-separated and relative to
 	// its root, as fs.ValidPath requires. Without it, Path is an OS path.
 	// Either way it shares one namespace with the run's files: a link from a
-	// file to Path, or from a document to a file, resolves as it would on
-	// disk. Two documents, or a document and a file, may not share a Path.
+	// file to Path, or from a document to one of the run's files, resolves as
+	// it would on disk. Any other file a link names is looked for in FS, or
+	// on disk without one. Two documents, or a document and a file, may not
+	// share a Path.
 	Path string
 
 	// Key is what the page manifest keys the document by under
@@ -216,36 +218,43 @@ func documentScopePattern(scope string) string {
 }
 
 // documentFiles is where a link from one of the run's documents, or to one,
-// is looked for: the run's documents by their Path first, then what root
-// holds.
+// is looked for: the run's own documents and files by their name first, then
+// what root holds. A file of the run is read from disk even by a document in
+// an fs.FS, since it is one of the documents the run publishes.
 type documentFiles struct {
-	byPath map[string][]byte
+	byPath map[string]input
 	root   attachment.Root
 }
 
-// newDocumentFiles indexes the documents of inputs by their path.
-func newDocumentFiles(inputs []input) map[string][]byte {
-	byPath := map[string][]byte{}
+// newDocumentFiles indexes inputs by their name.
+func newDocumentFiles(inputs []input) map[string]input {
+	byPath := make(map[string]input, len(inputs))
 	for _, in := range inputs {
-		if in.document {
-			byPath[absPath(in.file)] = in.content
-		}
+		byPath[absPath(in.file)] = in
 	}
 
 	return byPath
 }
 
 func (f documentFiles) Stat(name string) (fs.FileInfo, error) {
-	if content, ok := f.byPath[absPath(name)]; ok {
-		return documentInfo{name: filepath.Base(name), size: int64(len(content))}, nil
+	if in, ok := f.byPath[absPath(name)]; ok {
+		if !in.document {
+			return attachment.Root{}.Stat(in.file)
+		}
+
+		return documentInfo{name: filepath.Base(name), size: int64(len(in.content))}, nil
 	}
 
 	return f.root.Stat(name)
 }
 
 func (f documentFiles) ReadFile(name string) ([]byte, error) {
-	if content, ok := f.byPath[absPath(name)]; ok {
-		return content, nil
+	if in, ok := f.byPath[absPath(name)]; ok {
+		if !in.document {
+			return attachment.Root{}.ReadFile(in.file)
+		}
+
+		return in.content, nil
 	}
 
 	return f.root.ReadFile(name)
