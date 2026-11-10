@@ -62,7 +62,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +69,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/globpattern"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
@@ -311,13 +311,12 @@ type Store struct {
 
 	// runGlob is the pattern this run was given, recorded with each entry so a
 	// later run can tell whether it was looking where a missing file used to be.
-	// It is built from filesGlob and named; see runPattern.
 	runGlob string
 
-	// filesGlob is the pattern SetRunFiles was given, as given, and named the
-	// keys of the exact paths SetRunPaths was given, sorted.
-	filesGlob string
-	named     []string
+	// named holds the keys of the exact paths SetRunPaths was given. One the
+	// pattern does not match is recorded under its own path, escaped, so an
+	// entry's pattern never grows with the number of paths a run names.
+	named map[string]bool
 
 	// readOnly makes Save a no-op. A dry run has to resolve exactly as a real
 	// one does or its preview is fiction, but resolving records what it finds,
@@ -579,8 +578,7 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.filesGlob = glob
-	s.runGlob = runPattern(s.filesGlob, s.named)
+	s.runGlob = Key(glob)
 	s.runFiles = make(map[string]bool, len(paths))
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
@@ -589,89 +587,27 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 
 // SetRunPaths tells the store the exact paths this run names besides the
 // pattern given to SetRunFiles, deleted ones included. They are taken as
-// written, with no glob meaning, and are part of the pattern the run records
-// its entries under, with their glob characters escaped; a partial run covers
-// each of them. The files among them that exist still go to SetRunFiles.
+// written, with no glob meaning. One the pattern does not match is recorded
+// under a pattern naming only itself, and a run naming it covers an entry
+// recorded so; a partial run covers each of them whatever recorded it. The
+// files among them that exist still go to SetRunFiles.
 func (s *Store) SetRunPaths(paths []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.named = s.named[:0]
+	s.named = make(map[string]bool, len(paths))
 	for _, path := range paths {
-		s.named = append(s.named, Key(path))
+		s.named[Key(path)] = true
 	}
-	slices.Sort(s.named)
-	s.named = slices.Compact(s.named)
-	s.runGlob = runPattern(s.filesGlob, s.named)
 }
 
-// runPattern is the pattern a run given glob and the exact paths named records
-// its entries under: the glob as Key spells it, the paths with their glob
-// characters escaped, or both as the alternatives of one pattern. The same
-// glob and paths, in any order, give the same pattern.
-func runPattern(glob string, named []string) string {
-	if len(named) == 0 {
-		return Key(glob)
+// recordGlob is the pattern a path this run publishes is recorded under, but
+// for what a partial run keeps from an existing entry: the run's pattern, or
+// for a named path it does not match, the path's own.
+func (s *Store) recordGlob(path string) string {
+	if s.named[path] && !matches(s.runGlob, path) {
+		return globpattern.Escape(path)
 	}
-
-	alternatives := make([]string, 0, len(named)+1)
-	if glob != "" {
-		alternatives = append(alternatives, escapeTopLevelCommas(Key(glob)))
-	}
-	for _, path := range named {
-		alternatives = append(alternatives, escapeGlob(path))
-	}
-
-	if len(alternatives) == 1 {
-		return alternatives[0]
-	}
-
-	return "{" + strings.Join(alternatives, ",") + "}"
-}
-
-// escapeGlob makes a path match only itself as a pattern.
-func escapeGlob(path string) string {
-	var escaped strings.Builder
-	for _, r := range path {
-		if strings.ContainsRune(`\*?[]{},`, r) {
-			escaped.WriteByte('\\')
-		}
-		escaped.WriteRune(r)
-	}
-
-	return escaped.String()
-}
-
-// escapeTopLevelCommas escapes the commas of a pattern that are outside any
-// {...}, which would otherwise separate alternatives once the pattern is one.
-func escapeTopLevelCommas(pattern string) string {
-	var escaped strings.Builder
-	depth := 0
-	for i := 0; i < len(pattern); i++ {
-		c := pattern[i]
-		switch {
-		case c == '\\' && i+1 < len(pattern):
-			escaped.WriteByte(c)
-			i++
-			c = pattern[i]
-		case c == '{':
-			depth++
-		case c == '}' && depth > 0:
-			depth--
-		case c == ',' && depth == 0:
-			escaped.WriteByte('\\')
-		}
-		escaped.WriteByte(c)
-	}
-
-	return escaped.String()
-}
-
-// RunPattern is the pattern this run records new entries under, as Entry.Glob
-// spells it.
-func (s *Store) RunPattern() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	return s.runGlob
 }
@@ -710,8 +646,14 @@ func (s *Store) warn(key string, kind report.WarningKind, format string, args ..
 // simply not this run's business. Recording a page leaves its entry under the
 // pattern it already had, or the one the file it moved from had, so the run
 // that publishes the whole pattern still notices when the file is deleted. A
-// path with neither is recorded under this run's pattern until such a run
-// publishes it.
+// path with neither is recorded under a pattern naming only itself until such
+// a run publishes it, so every partial run naming it covers it.
+//
+// The tracked paths recorded under the very pattern a partial run was given,
+// when it holds glob syntax, are left to the run publishing them all unless
+// SetRunPaths names them: on a checkout holding only some of the files, the
+// absence of the rest says nothing, so they are neither orphans nor the old
+// names of moved or renamed files.
 func (s *Store) SetPartial(partial bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1216,7 +1158,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
-	glob := s.runGlob
+	glob := s.recordGlob(path)
 	if s.partial {
 		switch {
 		case ok && existing.Glob != "":
@@ -1226,6 +1168,10 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			// another job's pattern is that job's now, and the run owning the
 			// old pattern would read it as deleted.
 			glob = moved.Glob
+		default:
+			// Not this run's pattern, which no other run shares: the entry
+			// would be covered by no run but one given that very pattern.
+			glob = globpattern.Escape(path)
 		}
 	}
 	if ok && existing.PageID == pageID && existing.Title == title &&
@@ -1269,20 +1215,31 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 // covers reports whether a recorded path is one this run was looking for, so
 // that its absence from the run means the file is gone.
 //
-// A full run looks for what its pattern published last time. A partial run
-// looks where its own pattern points, the files the pattern names being the
-// ones it is about whichever run recorded them. An entry with no recorded
-// pattern predates patterns, and nothing can say what it was in scope of.
+// A full run looks for what its pattern published last time, and for a path
+// it names exactly, what was recorded under that path alone. A partial run
+// looks at the paths it names and where its own pattern points, whichever run
+// recorded them, but for those left to the owning run (see leftToOwner). An
+// entry with no recorded pattern predates patterns, and nothing can say what
+// it was in scope of.
 func (s *Store) covers(path string, entry Entry) bool {
 	if entry.Glob == "" {
 		return false
 	}
 
 	if !s.partial {
-		return entry.Glob == s.runGlob
+		return entry.Glob == s.runGlob || s.named[path] && entry.Glob == globpattern.Escape(path)
 	}
 
-	return matches(s.runGlob, path)
+	return s.named[path] || matches(s.runGlob, path) && !s.leftToOwner(path, entry)
+}
+
+// leftToOwner reports whether a partial run leaves a tracked path to the run
+// publishing all of its pattern: one recorded under the very pattern the
+// partial run was given, which holds glob syntax, and not named exactly. That
+// pattern is no narrower than the owning run's, and on a checkout holding only
+// some of its files reads every other one as gone.
+func (s *Store) leftToOwner(path string, entry Entry) bool {
+	return s.partial && !s.named[path] && entry.Glob == s.runGlob && globpattern.HasMeta(s.runGlob)
 }
 
 // matches reports whether a recorded path lies in a pattern; both are spelled
@@ -1666,10 +1623,17 @@ func (s *Store) orphans(spaceKey string) []string {
 		return nil
 	}
 
-	var orphans []string
+	var orphans, left []string
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if state.seen[path] || !s.covers(path, entry) {
+			if state.seen[path] {
+				continue
+			}
+			if s.leftToOwner(path, entry) {
+				left = append(left, path)
+				continue
+			}
+			if !s.covers(path, entry) {
 				continue
 			}
 			// A page another document published this run is that document's
@@ -1696,6 +1660,17 @@ func (s *Store) orphans(spaceKey string) []string {
 			orphans = append(orphans, path)
 		}
 	}
+
+	if len(left) > 0 {
+		sort.Strings(left)
+		log.Info().Msgf(
+			"space %q: %d tracked page(s) recorded under %q, the pattern given to --partial, "+
+				"are left to the run publishing them all, since on a partial checkout "+
+				"their files' absence says nothing; name the paths a change touched with --files-from: %s",
+			spaceKey, len(left), s.runGlob, strings.Join(left, ", "),
+		)
+	}
+
 	sort.Strings(orphans)
 	return orphans
 }

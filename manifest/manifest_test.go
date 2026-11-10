@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bmatcuk/doublestar/v4"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -1646,35 +1646,55 @@ func TestUntrackedOnANilStore(t *testing.T) {
 	assert.Empty(t, store.UntrackedSpaces())
 }
 
-// TestRunPatternNamesExactPaths: paths given to SetRunPaths match only
-// themselves in the pattern a run records, whatever glob characters they
-// hold, and alongside the run's glob, top-level comma included.
-func TestRunPatternNamesExactPaths(t *testing.T) {
-	store := manifest.NewStore(nil)
-	store.SetRunFiles("docs/a,b/*.md", nil)
-	store.SetRunPaths([]string{"we{ird},x/[1]*?.md", "./plain.md", "plain.md"})
-	pattern := store.RunPattern()
+// TestNamedPathsAreRecordedUnderThemselves: a path a run names exactly, and
+// its pattern does not match, is recorded under a pattern matching only that
+// path, whatever glob characters it holds; one the pattern matches is recorded
+// under the pattern. However many paths a run names, an entry's pattern stays
+// the size of one path, and the next run naming the path covers it.
+func TestNamedPathsAreRecordedUnderThemselves(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
-	for path, want := range map[string]bool{
-		"we{ird},x/[1]*?.md": true,
-		"plain.md":           true,
-		"docs/a,b/c.md":      true,
-		"weird.md":           false,
-		"we{ird},x/1z.md":    false,
-		"docs/a":             false,
-		"b/c.md":             false,
-	} {
-		matched, err := doublestar.Match(pattern, path)
-		require.NoError(t, err)
-		assert.Equal(t, want, matched, "%s against %s", path, pattern)
+	weird := "we{ird},x/[1]*?.md"
+	named := []string{weird, "docs/a,b/c.md"}
+	for i := range 200 {
+		named = append(named, fmt.Sprintf("many/file-%03d.md", i))
 	}
 
-	other := manifest.NewStore(nil)
-	other.SetRunPaths([]string{"plain.md", "we{ird},x/[1]*?.md"})
-	other.SetRunFiles("docs/a,b/*.md", nil)
-	assert.Equal(t, pattern, other.RunPattern(), "the order paths come in does not matter")
+	first := manifest.NewStore(api)
+	first.SetRunFiles("docs/a,b/*.md", named)
+	first.SetRunPaths(named)
+	for i, path := range named {
+		require.NoError(t, first.Record(ctx, "DOCS", path, strconv.Itoa(i+1), path, "h"))
+	}
+	require.NoError(t, first.Save(ctx))
 
-	only := manifest.NewStore(nil)
-	only.SetRunFiles("docs/*.md", nil)
-	assert.Equal(t, "docs/*.md", only.RunPattern(), "a glob alone is recorded as it was")
+	lookup := manifest.NewStore(api)
+	entry, ok, err := lookup.Lookup(ctx, "DOCS", "docs/a,b/c.md")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "docs/a,b/*.md", entry.Glob, "a path the pattern matches keeps the pattern")
+
+	entry, ok, err = lookup.Lookup(ctx, "DOCS", weird)
+	require.NoError(t, err)
+	require.True(t, ok)
+	for path, want := range map[string]bool{weird: true, "weird.md": false, "we{ird},x/1z.md": false} {
+		matched, err := doublestar.Match(entry.Glob, path)
+		require.NoError(t, err)
+		assert.Equal(t, want, matched, "%s against %s", path, entry.Glob)
+	}
+
+	entry, ok, err = lookup.Lookup(ctx, "DOCS", "many/file-000.md")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "many/file-000.md", entry.Glob, "the pattern does not grow with the paths named")
+
+	// A later run naming fewer paths finds the one it names, now deleted.
+	second := manifest.NewStore(api)
+	second.SetRunFiles("", []string{"many/file-001.md"})
+	second.SetRunPaths([]string{"many/file-000.md", "many/file-001.md"})
+	require.NoError(t, second.Record(ctx, "DOCS", "many/file-001.md", "4", "many/file-001.md", "h"))
+	assert.Equal(t, []string{"many/file-000.md"}, second.Orphans("DOCS"))
 }
