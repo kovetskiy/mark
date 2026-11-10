@@ -1058,12 +1058,43 @@ func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy 
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}
 
+	if err := placeInHierarchy(config, file, meta, hierarchy); err != nil {
+		return nil, nil, err
+	}
+
+	return meta, markdown, nil
+}
+
+// linkedDocumentMeta reads a linked document's metadata as documentMeta would,
+// from the link resolver's options, so that the title a link looks for is the
+// one the document publishes under.
+func linkedDocumentMeta(config PublishConfig, hierarchy *page.Hierarchy) func([]byte, metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
+	return func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
+		opts.TitleAppendGeneratedHash = opts.TitleAppendGeneratedHash && hierarchy == nil
+
+		meta, markdown, err := metadata.ExtractMeta(markdown, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := placeInHierarchy(config, opts.Filename, meta, hierarchy); err != nil {
+			return nil, nil, err
+		}
+
+		return meta, markdown, nil
+	}
+}
+
+// placeInHierarchy settles the parents and title the path gives a document,
+// whose metadata was read with the generated hash deferred when there is a
+// hierarchy.
+func placeInHierarchy(config PublishConfig, file string, meta *metadata.Meta, hierarchy *page.Hierarchy) error {
 	// Where the file sits says where the page goes, unless the document says
 	// otherwise. An author who wrote a Parent header meant it.
 	if hierarchy != nil && meta != nil {
 		derived, err := hierarchy.Parents(file)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 
 		// A directory's own document is titled by the directory, whatever the
@@ -1072,7 +1103,7 @@ func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy 
 		// two cannot disagree.
 		title, err := hierarchy.Title(file)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 
 		// The pages standing for directories are hashed like any other, and
@@ -1098,7 +1129,7 @@ func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy 
 		}
 	}
 
-	return meta, markdown, nil
+	return nil
 }
 
 // publishRun is what every document of a run shares: the connection, the
@@ -1445,6 +1476,7 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 	)
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
+	resolver.ReadMeta = linkedDocumentMeta(config, r.hierarchy)
 
 	return resolver
 }

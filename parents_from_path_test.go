@@ -793,3 +793,63 @@ func TestStaleParentLookupSucceedsNormally(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, published)
 }
+
+// TestLinkFindsThePageTheHierarchyTitles: a link to another document names the
+// page that document publishes as, which under --parents-from-path the path
+// helps decide -- a README takes its directory's title, and the generated hash
+// is taken over the parents the path gives. Read from the linked document's
+// headers alone, the link looked for a title nothing publishes under and was
+// left pointing at the Markdown file.
+func TestLinkFindsThePageTheHierarchyTitles(t *testing.T) {
+	for name, tc := range map[string]struct {
+		configure func(*Config)
+		linked    string // the document linked to
+		target    string // a prefix of the title it publishes under
+	}{
+		"index titled by its directory": {
+			configure: func(c *Config) { c.Page.TitleFromFilename = true },
+			linked:    "guide/README.md",
+			target:    "Guide",
+		},
+		"hash over the derived parents": {
+			configure: func(c *Config) { c.Page.TitleAppendGeneratedHash = true },
+			linked:    "guide/setup.md",
+			target:    "Setup - ",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := hierarchyServer(t)
+			dir := t.TempDir()
+			writeAt(t, dir, "intro.md", space+"<!-- Title: Intro -->\n\nSee [it]("+tc.linked+").\n")
+			writeAt(t, dir, "guide/README.md", space+"\nThe guide.\n")
+			writeAt(t, dir, "guide/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+			config := publishConfig(server.URL, filepath.Join(dir, "**", "*.md"))
+			config.ParentsFromPath = true
+			config.ParentsFromPathRoot = dir
+			tc.configure(&config)
+			require.NoError(t, Run(context.Background(), config))
+
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+			var target, intro *confluence.PageInfo
+			for _, p := range serverPages(t, api) {
+				switch {
+				case strings.HasPrefix(p.Title, "Intro"):
+					intro = p
+				case strings.HasPrefix(p.Title, tc.target):
+					target = p
+				}
+			}
+			require.NotNil(t, intro)
+			require.NotNil(t, target, "the linked document publishes")
+
+			link, err := confluence.GenerateTinyLink(server.URL, target.ID)
+			require.NoError(t, err)
+
+			body := server.Page(intro.ID).Body
+			assert.NotContains(t, body, `href="`+tc.linked+`"`, "the link is resolved")
+			assert.Contains(t, body, `href="`+link+`"`, "to the page the linked document is")
+		})
+	}
+}
