@@ -2227,6 +2227,14 @@ func (s *Server) childPages(w http.ResponseWriter, r *http.Request, parentID str
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Confluence lists the children of content it has, and answers anything
+	// else, a page in the trash included, with a 404, as it does for the page
+	// itself.
+	if p, ok := s.pages[parentID]; (!ok || p.Trashed) && s.folderByID(parentID) == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + parentID})
+		return
+	}
+
 	var children []*Page
 	for _, id := range s.childOrder[parentID] {
 		// Trashing a page takes it out of its parent's children.

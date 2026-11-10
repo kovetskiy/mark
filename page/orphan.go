@@ -144,6 +144,21 @@ func HandleOrphans(
 		// Trashing a page takes its children with it, and those may be pages
 		// nobody in this repository ever wrote.
 		children, err := api.GetChildPages(ctx, orphan.PageID)
+		if errors.Is(err, confluence.ErrNotFound) {
+			gone, goneErr := pageGone(ctx, api, orphan.PageID)
+			if goneErr != nil {
+				return handled, goneErr
+			}
+
+			// Deleted by hand already: what the action wanted is done, and
+			// keeping it tracked would fail every later run the same way.
+			if gone {
+				log.Info().Msgf("page %q (%s) is already gone from Confluence", orphan.Title, orphan.PageID)
+				handled = append(handled, orphan.Path)
+
+				continue
+			}
+		}
 		if err != nil {
 			return handled, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
 		}
@@ -197,4 +212,19 @@ func HandleOrphans(
 	}
 
 	return handled, nil
+}
+
+// pageGone reports whether Confluence no longer has the page. Asked of the page
+// itself, since a 404 from a listing alone could also be an endpoint or a proxy
+// that is not there, and forgetting a live page would lose sight of it.
+func pageGone(ctx context.Context, api *confluence.API, pageID string) (bool, error) {
+	_, err := api.GetPageByIDExpanded(ctx, pageID, "version")
+	if errors.Is(err, confluence.ErrNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("unable to read page %s: %w", pageID, err)
+	}
+
+	return false, nil
 }

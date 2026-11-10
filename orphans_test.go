@@ -93,6 +93,56 @@ func TestOnOrphanArchiveArchivesThePage(t *testing.T) {
 	assert.False(t, page.Trashed, "archiving is not trashing")
 }
 
+// TestOnOrphanForgetsAPageDeletedByHand: once the page is gone the orphan is
+// dealt with, so the run succeeds and the next one is not asked about it again.
+func TestOnOrphanForgetsAPageDeletedByHand(t *testing.T) {
+	for _, action := range []report.OnOrphan{report.OnOrphanDelete, report.OnOrphanArchive} {
+		t.Run(string(action), func(t *testing.T) {
+			ctx := context.Background()
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+			server.AddPage("DOCS", "Parent", "page", home.ID)
+
+			dir := t.TempDir()
+			header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+			writeFile(t, dir, "keep.md", header+"<!-- Title: Keep -->\n\nKeep.\n")
+			writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
+
+			config := Config{
+				PublishConfig: PublishConfig{
+					Rendering: RenderingConfig{Features: []string{"mention"}},
+					Output:    io.Discard,
+				},
+				Files: filepath.Join(dir, "*.md"),
+				Connection: ConnectionConfig{
+					BaseURL:  server.URL,
+					Username: "user",
+					Password: "token",
+				},
+				Tracking: TrackingConfig{TrackPages: true, OnOrphan: action},
+			}
+			require.NoError(t, Run(ctx, config))
+
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+			gone, err := api.FindPage(ctx, "DOCS", "Gone", "page")
+			require.NoError(t, err)
+			require.NotNil(t, gone)
+
+			require.NoError(t, api.DeletePage(ctx, gone.ID))
+			require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+
+			require.NoError(t, Run(ctx, config))
+
+			_, known, err := manifest.NewStore(api).Lookup(ctx, "DOCS", filepath.Join(dir, "gone.md"))
+			require.NoError(t, err)
+			assert.False(t, known, "a page already gone is no longer tracked")
+
+			require.NoError(t, Run(ctx, config))
+		})
+	}
+}
+
 // TestOnOrphanRequiresTrackPages: without the manifest there is no way to know
 // mark put the page there, which is not a guess to make about deletion.
 func TestOnOrphanRequiresTrackPages(t *testing.T) {
