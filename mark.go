@@ -51,7 +51,8 @@ type Config struct {
 	ParentsFromPathRoot string
 
 	// ContinueOnError goes on to the next file after one fails, and fails the
-	// run at the end.
+	// run at the end with a *FilesFailedError holding a *FileError for each.
+	// Without it, Run returns the first file's failure as a *FileError.
 	ContinueOnError bool
 	// CI makes a glob that matches no files a warning rather than an error.
 	CI bool
@@ -634,7 +635,8 @@ func Run(ctx context.Context, config Config) (err error) {
 	// anything alongside the others.
 	var ordered []page.Ordered
 
-	var hasErrors bool
+	// The files that failed under --continue-on-error, each with its cause.
+	failed := &FilesFailedError{}
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -651,14 +653,15 @@ func Run(ctx context.Context, config Config) (err error) {
 				File: file, Status: report.StatusFailed, Reason: err.Error(),
 			})
 
+			fileErr := &FileError{File: file, Err: err}
 			if stepPast(ctx, config.ContinueOnError, file, err) {
-				hasErrors = true
+				failed.add(fileErr)
 				continue
 			}
 
-			reported = append(reported, err)
+			reported = append(reported, fileErr)
 
-			return err
+			return fileErr
 		}
 
 		if target != nil {
@@ -696,7 +699,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// Everything exists now, so the documents that were waiting on a page this
 	// run created can be published again with their links resolved.
-	if waiting := deferrals.Files(); len(waiting) > 0 && !hasErrors {
+	if waiting := deferrals.Files(); len(waiting) > 0 && !failed.any() {
 		log.Info().Msgf(
 			"%d document(s) linked to pages created in this run; publishing them again",
 			len(waiting),
@@ -721,15 +724,16 @@ func Run(ctx context.Context, config Config) (err error) {
 					File: file, Status: report.StatusFailed, Reason: err.Error(),
 				})
 
+				fileErr := &FileError{File: file, Err: err}
 				if stepPast(ctx, config.ContinueOnError, file, err) {
-					hasErrors = true
+					failed.add(fileErr)
 
 					continue
 				}
 
-				reported = append(reported, err)
+				reported = append(reported, fileErr)
 
-				return err
+				return fileErr
 			}
 		}
 	}
@@ -746,11 +750,11 @@ func Run(ctx context.Context, config Config) (err error) {
 	}
 
 	// The manifest is saved before the run's own outcome is decided. Returning
-	// early on hasErrors used to skip it entirely, so a single bad file threw
+	// early on a failed file used to skip it entirely, so a single bad file threw
 	// away the mapping for every page that had published perfectly well --
 	// worst under --continue-on-error, which exists precisely to keep going.
 	// What was recorded actually happened, and is worth keeping either way.
-	if !hasErrors && len(ordered) > 0 {
+	if !failed.any() && len(ordered) > 0 {
 		// Not attempted when a file failed: the pages that did not publish are
 		// missing from the sequence, and ordering the rest against each other
 		// would arrange them as though the absent ones were gone for good.
@@ -760,7 +764,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	}
 
 	if tracker != nil {
-		if err := handleOrphans(ctx, tracker, api, config, onOrphan, hasErrors, results); err != nil {
+		if err := handleOrphans(ctx, tracker, api, config, onOrphan, failed.any(), results); err != nil {
 			return err
 		}
 
@@ -792,7 +796,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	if hasErrors {
+	if failed.any() {
 		// The files are the more useful complaint; a failed manifest write is
 		// secondary and must not displace it.
 		if saveErr != nil {
@@ -801,14 +805,59 @@ func Run(ctx context.Context, config Config) (err error) {
 
 		// Not a failure of its own: it sums up the ones recorded against
 		// each document that failed.
-		filesFailed := errors.New("one or more files failed to process")
-		reported = append(reported, filesFailed)
+		reported = append(reported, failed)
 
-		return filesFailed
+		return failed
 	}
 
 	return saveErr
 }
+
+// FileError is why one file failed to publish. Its message is the cause's,
+// unchanged: the file is in File, and the run's log and report name it beside
+// the message.
+type FileError struct {
+	File string
+	Err  error
+}
+
+func (e *FileError) Error() string { return e.Err.Error() }
+
+func (e *FileError) Unwrap() error { return e.Err }
+
+// FilesFailedError is what Run returns when files failed under
+// ContinueOnError: one FileError for each, in the order the files were
+// processed. errors.Is and errors.As look through every one of them.
+type FilesFailedError struct {
+	Errors []*FileError
+}
+
+func (e *FilesFailedError) Error() string { return "one or more files failed to process" }
+
+func (e *FilesFailedError) Unwrap() []error {
+	errs := make([]error, len(e.Errors))
+	for i, fileErr := range e.Errors {
+		errs[i] = fileErr
+	}
+
+	return errs
+}
+
+// add records fileErr over an earlier failure of the same file: the page holds
+// whatever the later attempt left it with.
+func (e *FilesFailedError) add(fileErr *FileError) {
+	for i, known := range e.Errors {
+		if known.File == fileErr.File {
+			e.Errors[i] = fileErr
+
+			return
+		}
+	}
+
+	e.Errors = append(e.Errors, fileErr)
+}
+
+func (e *FilesFailedError) any() bool { return len(e.Errors) > 0 }
 
 // stepPast reports whether the run goes on to the next file after file
 // failed with err, which it does only under --continue-on-error, logging the
