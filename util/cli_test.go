@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -405,4 +406,53 @@ func TestGenerator(t *testing.T) {
 	assert.Equal(t, "mark/v17.0.0", generator("v17.0.0"))
 	assert.Empty(t, generator(""))
 	assert.Empty(t, generator("@3f2a9c1"))
+}
+
+// TestPublishURLOnAnotherInstanceIsRefused: with a base URL configured, a
+// --url on another instance is refused before anything is sent, rather than
+// the page with its id on the configured instance being written. The same
+// instance written another way still publishes, to the configured base URL.
+func TestPublishURLOnAnotherInstanceIsRefused(t *testing.T) {
+	noDefaultConfig(t)
+
+	for _, tc := range []struct {
+		name    string
+		pageURL func(server, id string) string
+		refused bool
+	}{
+		{name: "another host", refused: true, pageURL: func(_, id string) string {
+			return "https://b.example/pages/viewpage.action?pageId=" + id
+		}},
+		{name: "same instance", pageURL: func(server, id string) string {
+			return server + "/pages/viewpage.action?pageId=" + id
+		}},
+		{name: "same instance in capitals, under /wiki", pageURL: func(server, id string) string {
+			return strings.ToUpper(server) + "/wiki/spaces/DOCS/pages/" + id + "/Page"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+			existing := server.AddPage("DOCS", "Page", "page", home.ID)
+
+			dir := t.TempDir()
+			config := writeConfig(t, dir, "mark.toml", "base-url = \""+server.URL+"\"\n")
+			document := filepath.Join(dir, "page.md")
+			require.NoError(t, os.WriteFile(document, []byte("Body.\n"), 0o600))
+
+			_, _, err := runMark(t, "-c", config, "--color", "never", "-u", "user", "-p", "token",
+				"publish", "--url", tc.pageURL(server.URL, existing.ID), "--files", document)
+
+			if tc.refused {
+				require.ErrorIs(t, err, confluence.ErrOtherInstance)
+				assert.ErrorContains(t, err, "--url is not a page of the instance the base URL")
+				assert.Zero(t, server.CountRequests("PUT", ""), "nothing was written")
+				assert.NotContains(t, server.Page(existing.ID).Body, "Body.")
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, server.Page(existing.ID).Body, "Body.")
+		})
+	}
 }
