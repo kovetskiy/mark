@@ -340,6 +340,13 @@ Ask @{Jane Doe} or @{Ops {on call\}}.
 | @{Team A\|B}  |
 ```
 
+> [!WARNING]
+> Mark versions up to v17.0 had no escape here and read `\}`, `\|` and `\\`
+> as two characters each. A mention written that way now names someone else:
+> `@{CORP\\jdoe}` used to mention `CORP\\jdoe` and now mentions `CORP\jdoe`,
+> and `@{Jane\}` used to mention `Jane\` and is now not closed at all. Write
+> `@{Jane\\}` for the name `Jane\`.
+
 A program writing mentions from names it does not control can call
 `parser.FormatMention`, which escapes the name and refuses one no mention can
 hold: an empty name, a line break, or `<!--`, since mark reads Include and
