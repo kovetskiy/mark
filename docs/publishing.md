@@ -189,7 +189,7 @@ a run. An `ac:` link checked only once the whole run has published is logged
 rather than listed. `github` annotates a warning against its file and line; when
 a library caller names the file's source with `ReportConfig.SourcePath`, it is
 annotated against the source without the line, which belongs to the file mark
-read.
+read. The warning then gives the source as `source`.
 
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the

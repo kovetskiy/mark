@@ -148,3 +148,57 @@ func TestGitHubLeavesOutTheWarningsOfAnUnsynchronizedDocument(t *testing.T) {
 	require.NoError(t, r.Write(&out, FormatJSON))
 	assert.Contains(t, out.String(), `"kind": "unknown-key"`)
 }
+
+// TestGitHubAnnotatesAWarningAgainstItsOwnFile: a warning names the file it is
+// about, which the annotation follows, falling back to the page's.
+func TestGitHubAnnotatesAWarningAgainstItsOwnFile(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "docs/a.md", Status: StatusUnchanged,
+		Warnings: []string{"named", "unnamed"},
+		WarningDetails: []Warning{
+			{Kind: WarningUnknownKey, File: "docs/b.md", Message: "named"},
+			{Kind: WarningUnknownKey, Message: "unnamed"},
+		},
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::warning file=docs/b.md::named\n::warning file=docs/a.md::unnamed\n",
+		out.String())
+}
+
+// TestGitHubAnnotatesAWarningAgainstTheSource: a warning is annotated against
+// the source of the file it is about -- the document's, or another file's --
+// and against that file itself when it has no source.
+func TestGitHubAnnotatesAWarningAgainstTheSource(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "build/a.md", Status: StatusUnchanged,
+		Warnings: []string{"about the document", "about a fragment", "about a shared file"},
+		WarningDetails: []Warning{
+			{Kind: WarningUnknownKey, File: "build/a.md", Message: "about the document"},
+			{Kind: WarningInclude, File: "build/frag.md", Message: "about a fragment"},
+			{Kind: WarningInclude, File: "shared/b.md", Message: "about a shared file"},
+		},
+	})
+	r.SetSources(func(file string) string {
+		if !strings.HasPrefix(file, "build/") {
+			return ""
+		}
+
+		return "src/" + strings.TrimPrefix(file, "build/") + ".tmpl"
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::warning file=src/a.md.tmpl::about the document\n"+
+			"::warning file=src/frag.md.tmpl::about a fragment\n"+
+			"::warning file=shared/b.md::about a shared file\n",
+		out.String())
+	assert.Equal(t, "src/frag.md.tmpl", r.Pages[0].WarningDetails[1].Source)
+}

@@ -68,6 +68,10 @@ type Warning struct {
 	// File is the document the warning is about, as mark read it.
 	File string `json:"file,omitempty"`
 
+	// Source is the file File was made from, when a library caller names
+	// one; see Report.SetSources.
+	Source string `json:"source,omitempty"`
+
 	// Line is the line of File the warning is about, counting from 1, or 0
 	// when it is about no one line or the line is not known.
 	Line int `json:"line,omitempty"`
