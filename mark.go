@@ -61,6 +61,11 @@ type Config struct {
 	// in everything a run does across its files, except ParentsFromPath,
 	// which they are refused with: a run's whole file set lays out the
 	// hierarchy, and a document's Path need not be anywhere on disk.
+	//
+	// A Files pattern that matches nothing still fails the run, documents or
+	// not, unless CI is set: the pattern's pages would otherwise all read as
+	// orphans, with the documents' pages keeping the space from looking
+	// empty.
 	Documents []Document
 
 	// DocumentScope names the Documents for the page manifest the way Files
