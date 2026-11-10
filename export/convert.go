@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/internal/syntax"
+	"github.com/kovetskiy/mark/v17/metadata"
 )
 
 // Options configures Convert.
@@ -107,8 +108,9 @@ func Convert(storage string, opts Options) (*Document, error) {
 	children := root.children
 	if body, sidebar, ok := articleLayout(root); ok && !opts.Reading {
 		// The sidebar travels in a header, and a comment header cannot hold
-		// the end of the comment it is written in.
-		if text := strings.TrimSpace(c.rawChildren(sidebar, rawLine)); opts.FrontMatter || !strings.Contains(text, "-->") {
+		// every value: one that ends the comment early stays in the body.
+		text := strings.TrimSpace(c.rawChildren(sidebar, rawLine))
+		if _, err := metadata.Header(metadata.HeaderSidebar, text); opts.FrontMatter || err == nil {
 			doc.Layout = "article"
 			doc.Sidebar = text
 			children = body.children
