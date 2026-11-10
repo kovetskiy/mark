@@ -360,9 +360,10 @@ symlinks followed. A glob such as `docs/**/*.md` follows symlinks, so a
 `docs/notes.md` or a `docs/shared` directory linking out of the repository fails
 that file, with `outside the project`, rather than being published; a symlink
 that stays inside the repository publishes as usual. A document named by a path
-outside the directory Mark is running in may also resolve inside its own
-directory.
-The same applies to a path given to the Go library's `Publisher`.
+outside the directory Mark is running in, such as `../docs/*.md`, is held to the
+closest directory holding both, or to its own directory when they share nothing
+but the filesystem's root. The same applies to a path given to the Go library's
+`Publisher`.
 
 ## Linting markdown
 

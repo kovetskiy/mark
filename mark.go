@@ -1440,7 +1440,9 @@ func readSource(file string) (source, markdown []byte, lineOf func(int) int, err
 		return nil, nil, nil, err
 	}
 
-	source, err = os.ReadFile(file)
+	// The path that was checked: the OS would apply a ".." in file after
+	// following the symlink in front of it, where the check took it away first.
+	source, err = os.ReadFile(absPath(file))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
@@ -1464,25 +1466,51 @@ func readSource(file string) (source, markdown []byte, lineOf func(int) int, err
 }
 
 // checkDocumentPath holds a document to the boundary every file it names is
-// held to, with the root being the working directory for a document named
-// inside it and its own directory for one named elsewhere. The working
-// directory rather than the document's own, because a glob follows directory
-// symlinks: docs/x/a.md under a link docs/x has its directory outside with it.
+// held to. The root is the working directory for a document named inside it,
+// and otherwise the closest directory holding both, rather than the document's
+// own, because a glob follows directory symlinks: docs/x/a.md under a link
+// docs/x has its directory outside with it.
 func checkDocumentPath(file string) error {
 	abs := absPath(file)
-
-	root := filepath.Dir(abs)
-	if cwd, err := os.Getwd(); err == nil {
-		if _, ok := fspath.Within(cwd, abs); ok {
-			root = cwd
-		}
-	}
-
-	if err := attachment.CheckReadable(root, abs); err != nil {
+	if err := attachment.CheckReadable(documentRoot(abs), abs); err != nil {
 		return fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
 	return nil
+}
+
+// documentRoot is the directory a document is held to. The working directory
+// is tried as it is spelled and as it resolves, since a checkout reached
+// through a symlink can be named either way. A document sharing nothing with
+// it short of the filesystem's root is held to its own directory.
+func documentRoot(abs string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return filepath.Dir(abs)
+	}
+
+	root := ""
+	for _, dir := range []string{cwd, fspath.ResolveDeepest(cwd)} {
+		if _, ok := fspath.Within(dir, abs); ok {
+			return dir
+		}
+
+		for ; filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
+			if _, ok := fspath.Within(dir, abs); ok {
+				if len(dir) > len(root) {
+					root = dir
+				}
+
+				break
+			}
+		}
+	}
+
+	if root == "" {
+		return filepath.Dir(abs)
+	}
+
+	return root
 }
 
 // declaredRestrictions is what a document's metadata restricts, for the
