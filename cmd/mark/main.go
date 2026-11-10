@@ -41,9 +41,11 @@ func main() {
 	}()
 
 	if err := util.Run(ctx, buildVersion(version, commit, readBuildInfo()), os.Args); err != nil {
-		// "context canceled" says nothing about who cancelled it.
-		if errors.Is(err, context.Canceled) {
-			err = context.Cause(ctx)
+		// "context canceled" says nothing about who cancelled it. Only the
+		// signal's: a file may fail on a cancellation of its own, and that
+		// is the file's failure, with no cause here to report.
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.Canceled) {
+			err = cause
 		}
 		log.Fatal().Msg(err.Error())
 	}

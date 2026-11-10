@@ -301,6 +301,11 @@ func reportedPages(t *testing.T, config Config) (map[string][]report.Page, error
 // failUpdatesCarrying makes the fake refuse a page update whose body fails
 // says so, reading the body without taking it from the handler.
 func failUpdatesCarrying(server *confluencetest.Server, fails func(body string) bool) {
+	refuseUpdatesCarrying(server, http.StatusBadRequest, fails)
+}
+
+// refuseUpdatesCarrying is failUpdatesCarrying answering with status.
+func refuseUpdatesCarrying(server *confluencetest.Server, status int, fails func(body string) bool) {
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if r.Method != http.MethodPut || !strings.Contains(r.URL.Path, "/content/") {
 			return 0, "", false
@@ -316,7 +321,7 @@ func failUpdatesCarrying(server *confluencetest.Server, fails func(body string) 
 			return 0, "", false
 		}
 
-		return http.StatusBadRequest, `{"message":"refused"}`, true
+		return status, `{"message":"refused"}`, true
 	})
 }
 
@@ -972,22 +977,8 @@ func TestContinueOnErrorKeepsEachFilesError(t *testing.T) {
 	writeFile(t, dir, "refused.md", outHeader+"<!-- Title: Refused -->\n\nRefused.\n")
 	writeFile(t, dir, "unclosed.md", outHeader+"<!-- Title: Unclosed -->\n\n<!-- ac:ignore -->\nunclosed\n")
 
-	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if r.Method != http.MethodPut || !strings.Contains(r.URL.Path, "/content/") {
-			return 0, "", false
-		}
-
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			return 0, "", false
-		}
-		r.Body = io.NopCloser(bytes.NewReader(body))
-
-		if !strings.Contains(string(body), `"title":"Refused"`) {
-			return 0, "", false
-		}
-
-		return http.StatusForbidden, `{"message":"not yours"}`, true
+	refuseUpdatesCarrying(server, http.StatusForbidden, func(body string) bool {
+		return strings.Contains(body, `"title":"Refused"`)
 	})
 
 	err := Run(context.Background(), Config{
@@ -1066,4 +1057,38 @@ func TestAFailedFileStopsTheRunWithItsFileError(t *testing.T) {
 	var status *confluence.StatusError
 	require.ErrorAs(t, err, &status)
 	assert.Equal(t, http.StatusBadRequest, status.StatusCode)
+}
+
+// TestFilesFailedErrorKeepsAFilesLatestFailure: a file that fails again is
+// recorded once, with the failure the page was last left by.
+func TestFilesFailedErrorKeepsAFilesLatestFailure(t *testing.T) {
+	first := errors.New("first")
+	second := errors.New("second")
+	other := errors.New("other")
+
+	failed := &FilesFailedError{}
+	failed.add(&FileError{File: "a.md", Err: first})
+	failed.add(&FileError{File: "b.md", Err: other})
+	failed.add(&FileError{File: "a.md", Err: second})
+
+	require.Len(t, failed.Errors, 2)
+	assert.Equal(t, "a.md", failed.Errors[0].File)
+	require.ErrorIs(t, failed, second)
+	require.ErrorIs(t, failed, other)
+	assert.NotErrorIs(t, failed, first)
+}
+
+// TestPublisherReturnsAFileError: a Publisher's failure carries its file and
+// cause in the same shape Run's do, with the cause's message.
+func TestPublisherReturnsAFileError(t *testing.T) {
+	server, api, file, config := publisherFixture(t, "Body.\n")
+	refuseUpdatesCarrying(server, http.StatusForbidden, func(string) bool { return true })
+
+	_, err := publishOne(context.Background(), file, api, config.PublishConfig)
+
+	var fileErr *FileError
+	require.ErrorAs(t, err, &fileErr)
+	assert.Equal(t, file, fileErr.File)
+	assert.Equal(t, fileErr.Err.Error(), err.Error())
+	require.ErrorIs(t, err, confluence.ErrForbidden)
 }

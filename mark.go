@@ -52,7 +52,9 @@ type Config struct {
 
 	// ContinueOnError goes on to the next file after one fails, and fails the
 	// run at the end with a *FilesFailedError holding a *FileError for each.
-	// Without it, Run returns the first file's failure as a *FileError.
+	// Without it, Run stops at the first file that fails, with a *FileError.
+	// A cancelled run returns the cancellation, and any files that failed
+	// before it are only in the report.
 	ContinueOnError bool
 	// CI makes a glob that matches no files a warning rather than an error.
 	CI bool
@@ -637,6 +639,26 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// The files that failed under --continue-on-error, each with its cause.
 	failed := &FilesFailedError{}
+
+	// fail records that file failed with err, and returns what the run stops
+	// with, or nil when it goes on to the next file.
+	fail := func(file string, err error) error {
+		results.AddPage(report.Page{
+			File: file, Status: report.StatusFailed, Reason: err.Error(),
+		})
+
+		fileErr := &FileError{File: file, Err: err}
+		if stepPast(ctx, config.ContinueOnError, file, err) {
+			failed.add(fileErr)
+
+			return nil
+		}
+
+		reported = append(reported, fileErr)
+
+		return fileErr
+	}
+
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -649,19 +671,11 @@ func Run(ctx context.Context, config Config) (err error) {
 			ordered = append(ordered, *placement)
 		}
 		if err != nil {
-			results.AddPage(report.Page{
-				File: file, Status: report.StatusFailed, Reason: err.Error(),
-			})
-
-			fileErr := &FileError{File: file, Err: err}
-			if stepPast(ctx, config.ContinueOnError, file, err) {
-				failed.add(fileErr)
-				continue
+			if stop := fail(file, err); stop != nil {
+				return stop
 			}
 
-			reported = append(reported, fileErr)
-
-			return fileErr
+			continue
 		}
 
 		if target != nil {
@@ -720,20 +734,9 @@ func Run(ctx context.Context, config Config) (err error) {
 			if _, _, err := lastLook.processFile(ctx, file); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
-				results.AddPage(report.Page{
-					File: file, Status: report.StatusFailed, Reason: err.Error(),
-				})
-
-				fileErr := &FileError{File: file, Err: err}
-				if stepPast(ctx, config.ContinueOnError, file, err) {
-					failed.add(fileErr)
-
-					continue
+				if stop := fail(file, err); stop != nil {
+					return stop
 				}
-
-				reported = append(reported, fileErr)
-
-				return fileErr
 			}
 		}
 	}
@@ -749,11 +752,9 @@ func Run(ctx context.Context, config Config) (err error) {
 		log.Warn().Msg(item)
 	}
 
-	// The manifest is saved before the run's own outcome is decided. Returning
-	// early on a failed file used to skip it entirely, so a single bad file threw
-	// away the mapping for every page that had published perfectly well --
-	// worst under --continue-on-error, which exists precisely to keep going.
-	// What was recorded actually happened, and is worth keeping either way.
+	// The manifest is saved before the run's own outcome is decided: a single
+	// bad file must not throw away the mapping for every page that published,
+	// least of all under --continue-on-error, which exists to keep going.
 	if !failed.any() && len(ordered) > 0 {
 		// Not attempted when a file failed: the pages that did not publish are
 		// missing from the sequence, and ordering the rest against each other
@@ -941,7 +942,8 @@ func newPublisher(
 }
 
 // Publish publishes file, and checks the ac: links it holds once it has.
-// Returns nil for the page info when compile-only or dry-run mode is active.
+// Returns nil for the page info when compile-only or dry-run mode is active,
+// and a *FileError when the file fails to publish.
 // A caller looping over files gets what Run does on cancellation by stopping
 // when one fails with ctx.Err().
 func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageInfo, error) {
@@ -958,7 +960,7 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 
 	target, _, err := p.run.processFile(ctx, file)
 	if err != nil {
-		return target, err
+		return target, &FileError{File: file, Err: err}
 	}
 
 	missing, err := p.run.checker.MissingPages(ctx, p.run.api)
