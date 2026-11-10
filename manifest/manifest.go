@@ -332,6 +332,10 @@ type Store struct {
 	// those apart is the whole of rename detection.
 	runFiles map[string]bool
 
+	// documentScopes holds, for each path SetRunDocuments named, the scope
+	// its entry is recorded under in place of runGlob; "" is none.
+	documentScopes map[string]string
+
 	// warningsFor gives the collector of the document a key names; see
 	// SetWarningsFor.
 	warningsFor func(key string) *report.Warnings
@@ -585,6 +589,7 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 
 	s.runGlob = Key(glob)
 	s.runFiles = make(map[string]bool, len(paths))
+	s.documentScopes = nil
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
 	}
@@ -615,6 +620,74 @@ func (s *Store) recordGlob(path string) string {
 	}
 
 	return s.runGlob
+}
+
+// SetRunDocuments adds to the run's paths ones that no --files pattern
+// matched, such as documents a library caller handed over from memory, each
+// recorded under scope rather than the run's pattern. Call it after
+// SetRunFiles, which starts the run's paths afresh.
+//
+// scope stands in for the pattern in everything the pattern decides: an
+// entry recorded under it is an orphan to a later run with the same scope
+// that does not publish it, and only entries under it are taken for a
+// rename or a move of one of these paths. An empty scope records the paths
+// under none, so they are never orphans and never renames -- as an entry
+// written before patterns were recorded -- and are found again only by
+// their own path.
+//
+// A scope that equals a --files pattern is that pattern's: keep the two
+// apart unless they are meant to be one.
+func (s *Store) SetRunDocuments(scope string, paths []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.documentScopes == nil {
+		s.documentScopes = make(map[string]string, len(paths))
+	}
+
+	for _, path := range paths {
+		key := Key(path)
+		s.runFiles[key] = true
+		s.documentScopes[key] = scope
+	}
+}
+
+// scopeOf is the pattern path, a key, is recorded under this run, but for
+// what a partial run keeps from an existing entry: a document's scope, or a
+// file's pattern. Called with s.mu held.
+func (s *Store) scopeOf(path string) string {
+	if scope, ok := s.documentScopes[path]; ok {
+		return scope
+	}
+
+	return s.recordGlob(path)
+}
+
+// isRunScope reports whether glob is the scope of some of this run's
+// documents. Called with s.mu held.
+func (s *Store) isRunScope(glob string) bool {
+	if glob == "" {
+		return false
+	}
+
+	for _, scope := range s.documentScopes {
+		if scope == glob {
+			return true
+		}
+	}
+
+	return false
+}
+
+// sameScope reports whether entry belongs where path does: under the scope
+// of the document path names, or, for a file, under no scope of the run's
+// documents. Called with s.mu held.
+func (s *Store) sameScope(path string, entry Entry) bool {
+	if scope, document := s.documentScopes[path]; document {
+		return scope != "" && entry.Glob == scope
+	}
+
+	return !s.isRunScope(entry.Glob)
 }
 
 // SetWarningsFor has what Record finds wrong with a document added to the
@@ -1193,8 +1266,10 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
-	glob := s.recordGlob(path)
-	if s.partial {
+	// A document is recorded under its run's scope, partial or not: the
+	// scope names the documents' owner, not a pattern some of them lie in.
+	glob := s.scopeOf(path)
+	if _, document := s.documentScopes[path]; s.partial && !document {
 		switch {
 		case ok && existing.Glob != "":
 			glob = existing.Glob
@@ -1268,6 +1343,10 @@ func (s *Store) covers(path string, entry Entry) bool {
 		return false
 	}
 
+	if s.isRunScope(entry.Glob) {
+		return true
+	}
+
 	if !s.partial {
 		// An entry recorded under its own path is one no full run has
 		// published yet, and this run's pattern, if it matches it, is the
@@ -1315,7 +1394,8 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 	}
 
 	entry, recorded := state.shards[shardFor(owner)].pages[owner]
-	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) || !s.absent(state, owner) {
+	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) || !s.absent(state, owner) ||
+		!s.sameScope(path, entry) {
 		return Entry{}, false
 	}
 
@@ -1396,6 +1476,24 @@ func (s *Store) ResolveRenamed(ctx context.Context, spaceKey, hash string) (stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.resolveRenamed(ctx, spaceKey, "", hash)
+}
+
+// ResolveRenamedFor is ResolveRenamed for the document path names, looking
+// only among the entries of its own scope: those the run covers under its
+// --files pattern for a file, or under the scope SetRunDocuments gave a
+// document. A document given no scope is never taken for a rename, since
+// nothing says which other paths it could have been.
+func (s *Store) ResolveRenamedFor(ctx context.Context, spaceKey, path, hash string) (string, Entry, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.resolveRenamed(ctx, spaceKey, Key(path), hash)
+}
+
+// resolveRenamed is ResolveRenamed among the entries in the scope of path, a
+// key; "" is a file's. Called with s.mu held.
+func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string) (string, Entry, bool, error) {
 	if hash == "" {
 		return "", Entry{}, false, nil
 	}
@@ -1411,12 +1509,12 @@ func (s *Store) ResolveRenamed(ctx context.Context, spaceKey, hash string) (stri
 		count      int
 	)
 	for i := range state.shards {
-		for path, entry := range state.shards[i].pages {
-			if entry.Hash != hash || !s.covers(path, entry) ||
-				s.runFiles[path] || state.claimed[entry.PageID] {
+		for candidate, entry := range state.shards[i].pages {
+			if entry.Hash != hash || !s.covers(candidate, entry) || !s.sameScope(path, entry) ||
+				s.runFiles[candidate] || state.claimed[entry.PageID] {
 				continue
 			}
-			foundPath, foundEntry = path, entry
+			foundPath, foundEntry = candidate, entry
 			count++
 		}
 	}
