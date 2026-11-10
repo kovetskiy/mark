@@ -1531,4 +1531,43 @@ func TestManifestPageOptionalLatePageWithAManifest(t *testing.T) {
 	assert.Nil(t, shardOf(server, handbook.ID, "a.md"), "nothing is added to the other run's manifest")
 	assert.JSONEq(t, `{"version":1,"pages":{"b.md":{"pageId":"2"}}}`, string(server.SpaceProperty(handbook.ID, theirs).Value))
 	assert.Equal(t, []string{"DOCS"}, store.UntrackedSpaces())
+
+	server.ResetRequests()
+	require.NoError(t, store.Save(ctx))
+	assert.Empty(t, server.Requests(), "the save on the way out of a run does not look again")
+}
+
+// TestManifestPageOptionalLateLookupFailureSavesOtherSpaces: a space whose
+// manifest page cannot be read at Save keeps no other space from being saved,
+// and Save still fails.
+func TestManifestPageOptionalLateLookupFailureSavesOtherSpaces(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	store := manifest.NewStore(api)
+	store.SetRunFiles("*.md", nil)
+	server.AddSpace("ADOCS")
+	server.AddSpace("ZDOCS")
+	tracked := server.AddPage("ZDOCS", "Team Handbook", "page", "")
+	store.SetManifestPage("Team Handbook")
+	store.SetManifestPageOptional(true)
+
+	require.NoError(t, store.Record(ctx, "ADOCS", "a.md", "1", "A", ""))
+	require.NoError(t, store.Record(ctx, "ZDOCS", "z.md", "2", "Z", ""))
+	require.True(t, store.Untracked("ADOCS"))
+
+	late, err := api.CreatePage(ctx, "ADOCS", confluence.ContentPage, nil, "Team Handbook", "")
+	require.NoError(t, err)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/"+late.ID+"/propert") {
+			return http.StatusForbidden, `{"message":"not permitted"}`, true
+		}
+		return 0, "", false
+	})
+
+	err = store.Save(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not permitted")
+	assert.NotNil(t, shardOf(server, tracked.ID, "z.md"), "the other space is saved")
+	assert.Equal(t, []string{"ADOCS"}, store.UntrackedSpaces())
 }

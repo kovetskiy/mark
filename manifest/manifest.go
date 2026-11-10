@@ -365,6 +365,10 @@ type spaceState struct {
 	// loaded, under SetManifestPageOptional. It starts from an empty manifest,
 	// which is what it has: no manifest exists where it was asked to be kept.
 	untracked bool
+	// lateChecked records that Save has looked for the manifest page once
+	// more and found nowhere to save to, so the save on the way out of a run
+	// does not ask, or warn, again.
+	lateChecked bool
 
 	// prefix is what this space's properties were read under, and so what
 	// they are written back under.
@@ -696,29 +700,27 @@ func (s *Store) refuseSharedPage(spaceKey, contentID string) error {
 	return nil
 }
 
-// pageManifest resolves the manifest page of spaceKey, and returns where on it
-// a manifest is kept: the page's id and the backend that reaches it.
-func (s *Store) pageManifest(ctx context.Context, spaceKey string) (spaceState, error) {
+// pageManifest resolves the manifest page of spaceKey, and returns the page's
+// id and the backend that reaches a manifest kept on it.
+func (s *Store) pageManifest(ctx context.Context, spaceKey string) (string, backend, error) {
 	contentID, err := s.resolveManifestPage(ctx, spaceKey)
 	if err != nil {
-		return spaceState{}, err
+		return "", 0, err
 	}
 
 	if err := s.refuseSharedPage(spaceKey, contentID); err != nil {
-		return spaceState{}, err
+		return "", 0, err
 	}
 
 	cloud, err := s.api.Cloud(ctx)
 	if err != nil {
-		return spaceState{}, fmt.Errorf("unable to tell where the manifest of space %q is kept: %w", spaceKey, err)
+		return "", 0, fmt.Errorf("unable to tell where the manifest of space %q is kept: %w", spaceKey, err)
 	}
 
-	where := spaceState{contentID: contentID, backend: contentProperties}
 	if cloud {
-		where.backend = pageProperties
+		return contentID, pageProperties, nil
 	}
-
-	return where, nil
+	return contentID, contentProperties, nil
 }
 
 // attachLatePage looks once more, at Save, for the manifest page of a space
@@ -727,9 +729,14 @@ func (s *Store) pageManifest(ctx context.Context, spaceKey string) (spaceState, 
 // started from an empty manifest, and there was none. It reports whether the
 // space now has somewhere to save to.
 func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spaceState) (bool, error) {
-	where, err := s.pageManifest(ctx, spaceKey)
+	if state.lateChecked {
+		return false, nil
+	}
+
+	contentID, backend, err := s.pageManifest(ctx, spaceKey)
 	var missing *MissingPageError
 	if errors.As(err, &missing) {
+		state.lateChecked = true
 		return false, nil
 	}
 	if err != nil {
@@ -739,6 +746,7 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 	// A manifest already there was kept by another run while this one ran
 	// untracked; one built from an empty start is not written over it, nor
 	// merged shard by shard into it.
+	where := &spaceState{contentID: contentID, backend: backend}
 	properties, err := where.list(ctx, s.api)
 	if err != nil {
 		return false, err
@@ -751,11 +759,12 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 					"the mapping of this run is not saved",
 				s.manifestPage, spaceKey,
 			)
+			state.lateChecked = true
 			return false, nil
 		}
 	}
 
-	state.contentID, state.backend = where.contentID, where.backend
+	state.contentID, state.backend = contentID, backend
 	state.untracked = false
 
 	log.Info().Msgf("manifest page %q now exists in space %q; the page mapping is saved there", s.manifestPage, spaceKey)
@@ -867,7 +876,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 
 	switch {
 	case s.manifestPage != "":
-		where, err := s.pageManifest(ctx, spaceKey)
+		state.contentID, state.backend, err = s.pageManifest(ctx, spaceKey)
 		var missing *MissingPageError
 		if s.manifestPageOptional && errors.As(err, &missing) {
 			log.Warn().Msgf(
@@ -882,7 +891,6 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 		if err != nil {
 			return nil, err
 		}
-		state.contentID, state.backend = where.contentID, where.backend
 
 	case cloud:
 		state.backend = spaceProperties
@@ -1525,13 +1533,17 @@ func (s *Store) Save(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A space whose manifest page could not be looked for again keeps no other
+	// space from being saved.
+	var lateErrs []error
 	for _, spaceKey := range s.sortedSpaces() {
 		state := s.spaces[spaceKey]
 
 		if state.untracked {
 			attached, err := s.attachLatePage(ctx, spaceKey, state)
 			if err != nil {
-				return err
+				lateErrs = append(lateErrs, err)
+				continue
 			}
 			if !attached {
 				continue
@@ -1630,5 +1642,5 @@ func (s *Store) Save(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return errors.Join(lateErrs...)
 }
