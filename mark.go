@@ -1538,29 +1538,20 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		if err != nil {
 			return found, err
 		}
-		if found.page != nil {
-			// Recorded as a real run records it, so that the path a renamed
-			// file came from hands its entry over, --no-overwrite baseline
-			// included, rather than being reported as an orphan.
-			if err := r.tracker.Record(ctx, meta.Space, file, found.page.ID, meta.Title, doc.sourceHash); err != nil {
-				return found, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
-			}
-		}
 		// Not found by title, so ResolvePage's own move does not apply.
 		found.parent = parent
-
-		return found, nil
+	} else {
+		found.page = pg
+		found.parent, found.misplaced = parent, misplaced
 	}
 
-	found.page = pg
-	found.parent, found.misplaced = parent, misplaced
-
-	if r.tracker != nil {
-		// Found by title. A real run records the path once it has
-		// published, and that is what keeps the path from being read
-		// as an orphan. A dry run returns before then, so it records
-		// here; its store never saves.
-		if err := r.tracker.Record(ctx, meta.Space, file, pg.ID, meta.Title, doc.sourceHash); err != nil {
+	if r.tracker != nil && found.page != nil {
+		// A real run records the path once it has published, and that is
+		// what keeps the path from being read as an orphan, and what hands
+		// a renamed file's old entry, --no-overwrite baseline included, to
+		// the new path. A dry run returns before then, so it records here;
+		// its store never saves.
+		if err := r.tracker.Record(ctx, meta.Space, file, found.page.ID, meta.Title, doc.sourceHash); err != nil {
 			return found, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 	}
