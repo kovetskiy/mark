@@ -173,3 +173,35 @@ func TestPublisherReadsDocumentAsChecked(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, bodyOfPageTitled(t, server, "Outside"))
 }
+
+// TestIncludePathOutsideTheProjectStillIncludes: the check on the documents a
+// run publishes is not the one on what they include. A fragment found through
+// an --include-path outside the project, named directly or through a link in
+// the project, is still included.
+func TestIncludePathOutsideTheProjectStillIncludes(t *testing.T) {
+	for name, linked := range map[string]bool{
+		"include path named directly":          false,
+		"include path linked from the project": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, project, _ := documentProject(t)
+			shared := t.TempDir()
+			writeFile(t, shared, "fragment.md", "shared fragment\n")
+			writeFile(t, filepath.Join(project, "docs"), "with-include.md",
+				"<!-- Space: DOCS -->\n<!-- Title: With Include -->\n\n<!-- Include: fragment.md -->\n")
+
+			includePath := shared
+			if linked {
+				require.NoError(t, os.Symlink(shared, filepath.Join(project, "shared")))
+				includePath = "shared"
+			}
+
+			config := publishConfig(server.URL, "docs/*.md")
+			config.Rendering.IncludePath = includePath
+			require.NoError(t, Run(context.Background(), config))
+
+			assert.Contains(t, bodyOfPageTitled(t, server, "With Include"), "shared fragment")
+			assert.Contains(t, bodyOfPageTitled(t, server, "Page"), "inside")
+		})
+	}
+}
