@@ -43,12 +43,12 @@ type LinkResolver struct {
 	// link names the page the linked document is published as.
 	ReadMeta func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error)
 
-	// SearchDirs are tried after Base, and exist for links written somewhere
-	// other than beside the document: in the source tree a staged document was
-	// copied from, or inside an included fragment. Such a link is written from
-	// where the fragment lives, not from where it is included, so the
-	// fragment's own directory has to be among the places looked. Base is always tried first, so a document's own
-	// links keep their meaning.
+	// SearchDirs are tried after Base, in order, and exist for links written
+	// somewhere other than beside the document. A link inside an included
+	// fragment is written from where the fragment lives, so the fragment's
+	// directory is among them; so is the source tree a staged document was
+	// copied from. Base is always tried first, so a document's own links keep
+	// their meaning.
 	SearchDirs []string
 
 	// Checker decides how much is verified. Nil checks nothing.
