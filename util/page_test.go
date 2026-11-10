@@ -3,6 +3,7 @@ package util
 import (
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/stretchr/testify/assert"
@@ -61,6 +62,18 @@ func TestPageCommands(t *testing.T) {
 			"--parent", server.URL+"/pages/viewpage.action?pageId="+b.ID)
 		require.NoError(t, err)
 		assert.Equal(t, b.ID, server.Page(c.ID).ParentID)
+	})
+
+	t.Run("a URL on another instance than the base URL is refused", func(t *testing.T) {
+		_, err := mark("page", "move", "-b", server.URL, c.ID,
+			"--parent", "http://other.invalid/pages/viewpage.action?pageId="+a.ID)
+		require.ErrorIs(t, err, confluence.ErrOtherInstance)
+		assert.ErrorContains(t, err, "other.invalid")
+		assert.Equal(t, b.ID, server.Page(c.ID).ParentID)
+
+		_, err = mark("page", "move", "-b", server.URL+"/", c.ID,
+			"--parent", server.URL+"/pages/viewpage.action?pageId="+b.ID)
+		require.NoError(t, err)
 	})
 
 	t.Run("move needs a destination before it signs in", func(t *testing.T) {

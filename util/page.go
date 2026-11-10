@@ -199,6 +199,12 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 			if err != nil {
 				return err
 			}
+			if base != "" && cmd.String("base-url") != "" {
+				// A page id names a page of one instance only.
+				if err := confluence.SameInstance(cmd.String("base-url"), base); err != nil {
+					return fmt.Errorf("%s is not a page of the configured Confluence: %w", value, err)
+				}
+			}
 			if base != "" && cmd.String("base-url") == "" {
 				if baseURL != "" && baseURL != base {
 					return fmt.Errorf("%s is on %s, not on %s: the pages of one command are on one Confluence", value, base, baseURL)
