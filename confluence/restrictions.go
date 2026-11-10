@@ -40,9 +40,14 @@ func (r PageRestriction) restricts() bool {
 // however often it is given: Confluence refuses a duplicate.
 type names map[string]string
 
+// add is n with list added. A nil n, as an operation nobody restricts has,
+// is allocated rather than written to.
 func (n names) add(list ...string) names {
 	for _, name := range list {
 		if key := strings.ToLower(name); name != "" && n[key] == "" {
+			if n == nil {
+				n = names{}
+			}
 			n[key] = name
 		}
 	}

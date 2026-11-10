@@ -193,6 +193,23 @@ func TestRestrictionsKeepTheEditLock(t *testing.T) {
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 }
 
+// TestRestrictionsEditLockANewPage: a page just created has nothing to read
+// back, so under --edit-lock an update the document does not name starts
+// from no one and gains only the authenticated user.
+func TestRestrictionsEditLockANewPage(t *testing.T) {
+	api, server, page := newCloudRestrictAPI(t)
+
+	resolved, err := api.ResolveRestrictions(context.Background(), []confluence.PageRestriction{{Operation: "read", Groups: []string{"hr"}}})
+	require.NoError(t, err)
+	plan, err := api.PlanRestrictions(context.Background(), page, resolved, true, true)
+	require.NoError(t, err)
+	require.NoError(t, api.ApplyInterim(context.Background(), plan))
+	require.NoError(t, api.ApplyFinal(context.Background(), plan))
+
+	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+	assert.Equal(t, []string{"hr"}, server.Page(page.ID).RestrictedGroups["read"])
+}
+
 // TestRestrictionsRefuseAPartialList: a restriction list that may have been
 // cut short is not compared against, since writing back what is missing
 // from it would lift restrictions nobody asked to lift.
