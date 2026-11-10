@@ -95,6 +95,15 @@ func TestHierarchyReportsFilesOutsideTheRoot(t *testing.T) {
 	assert.Equal(t, []string{"other/b.md"}, h.Outside())
 }
 
+func TestHierarchyHasTheRunsFiles(t *testing.T) {
+	h := NewHierarchy("docs", []string{"docs/a.md", "other/b.md"}, nil)
+
+	assert.True(t, h.Has("./docs/a.md"))
+	assert.True(t, h.Has("other/b.md"), "outside the root is still the run's")
+	assert.False(t, h.Has("docs/c.md"))
+	assert.False(t, (*Hierarchy)(nil).Has("docs/a.md"))
+}
+
 // TestDirectoryTitlesAreAskedOnce: a directory's title is worked out by reading
 // a file, and a repository has many documents in each directory.
 func TestDirectoryTitlesAreAskedOnce(t *testing.T) {

@@ -23,7 +23,8 @@ The target file is read to find its `Space` and `Title`, and the page is looked
 up by those. The title is the one publishing the file gives it, so with
 `--parents-from-path` a link to a directory's `README.md` finds the page titled
 after the directory, and a `--title-append-generated-hash` title is hashed over
-the parents the path gives. Links are rewritten to Confluence [tiny
+the parents the path gives. That holds for a file the run publishes; one it
+does not is read by its own headers. Links are rewritten to Confluence [tiny
 links](https://support.atlassian.com/confluence/kb/how-to-programmatically-generate-the-tiny-link-of-a-confluence-page)
 (`/x/AbCdEf`), which survive page renames and moves.
 
