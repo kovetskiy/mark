@@ -106,6 +106,32 @@ func TestPartialRunActsOnlyOnWhatItNames(t *testing.T) {
 	assert.True(t, ok)
 }
 
+// TestPartialRunGivenTheOwningPatternRemovesNothing: the owning run's own
+// pattern with --partial, on a checkout holding only some of its files, reads
+// every other file as deleted; it reports them and leaves their pages alone.
+func TestPartialRunGivenTheOwningPatternRemovesNothing(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	bID := pageIDTitled(t, server, "Page b")
+	cID := pageIDTitled(t, server, "Page c")
+	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
+	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
+
+	sparse := partialOf(full, dir, "*.md")
+	sparse.Tracking.OnOrphan = report.OnOrphanDelete
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), sparse))
+	})
+	assert.Contains(t, logged, "--partial was given the pattern that recorded it")
+
+	for _, id := range []string{bID, cID} {
+		assert.False(t, server.Page(id).Trashed)
+	}
+	for _, name := range []string{"b.md", "c.md"} {
+		_, ok := tracked(t, server, filepath.Join(dir, name))
+		assert.True(t, ok, "%s stays tracked for the owning run", name)
+	}
+}
+
 // TestPartialRunLeavesEntriesUnderTheirPattern: a run narrowed to one file
 // records that file's page. Recorded under the narrow pattern, the entry would
 // drop out of the owning run's scope, and that run would never notice the file
