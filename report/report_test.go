@@ -186,12 +186,15 @@ func TestGitHubSaysWhatADryRunWouldDo(t *testing.T) {
 
 // TestMapFilesNamesTheSource: a generated document is annotated against the
 // file it was generated from, orphans included, and an empty mapping names no
-// file at all.
+// file at all; a nil mapper leaves them alone.
 func TestMapFilesNamesTheSource(t *testing.T) {
 	r := New()
 	r.AddPage(Page{File: "build/a.md", Status: StatusFailed, Reason: "broken"})
 	r.AddPage(Page{File: "build/b.md", Status: StatusFailed, Reason: "also broken"})
 	r.AddOrphan(Orphan{File: "build/gone.md", Title: "Gone", Action: OnOrphanReport})
+
+	r.MapFiles(nil)
+	require.Equal(t, "build/a.md", r.Pages[0].File, "a nil mapper changes nothing")
 
 	r.MapFiles(func(file string) string {
 		if file == "build/b.md" {
@@ -209,13 +212,4 @@ func TestMapFilesNamesTheSource(t *testing.T) {
 			"::error::also broken\n"+
 			"::warning file=src/gone.md::page \"Gone\" has no source file\n",
 		out.String())
-}
-
-func TestMapFilesWithoutAMapperChangesNothing(t *testing.T) {
-	r := New()
-	r.AddPage(Page{File: "build/a.md", Status: StatusPublished})
-
-	r.MapFiles(nil)
-
-	assert.Equal(t, "build/a.md", r.Pages[0].File)
 }
