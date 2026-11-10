@@ -153,13 +153,17 @@ func TestManifestPageOptionalNoOverwriteLeavesExistingPages(t *testing.T) {
 func TestManifestPageOptionalRequiresManifestPage(t *testing.T) {
 	server := confluencetest.New(t)
 	for _, page := range []string{"", "  "} {
-		config := optionalManifestConfig(server, t.TempDir(), io.Discard)
-		config.Tracking.ManifestPage = page
+		for _, track := range []bool{true, false} {
+			config := optionalManifestConfig(server, t.TempDir(), io.Discard)
+			config.Tracking.ManifestPage = page
+			config.Tracking.TrackPages = track
 
-		err := Run(context.Background(), config)
-		require.Error(t, err, "%q", page)
-		assert.Contains(t, err.Error(),
-			"--manifest-page-optional (Tracking.ManifestPageOptional) requires --manifest-page (Tracking.ManifestPage)")
+			err := Run(context.Background(), config)
+			require.Error(t, err, "%q, tracking %v", page, track)
+			assert.Contains(t, err.Error(),
+				"--manifest-page-optional (Tracking.ManifestPageOptional) requires --manifest-page (Tracking.ManifestPage)",
+				"%q, tracking %v", page, track)
+		}
 	}
 }
 
