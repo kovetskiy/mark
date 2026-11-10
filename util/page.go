@@ -192,23 +192,24 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 			}
 		}
 
-		baseURL := cmd.String("base-url")
+		configured := cmd.String("base-url")
+		baseURL := configured
 		refs := map[string]page.Ref{}
 		for _, value := range values {
 			ref, base, err := parsePageRef(value, cmd.String("space"))
 			if err != nil {
 				return err
 			}
-			if base != "" && cmd.String("base-url") != "" {
+			switch {
+			case base == "":
+			case configured != "":
 				// A page id names a page of one instance only.
-				if err := confluence.SameInstance(cmd.String("base-url"), base); err != nil {
+				if err := confluence.SameInstance(configured, base); err != nil {
 					return fmt.Errorf("%s is not a page of the configured Confluence: %w", value, err)
 				}
-			}
-			if base != "" && cmd.String("base-url") == "" {
-				if baseURL != "" && baseURL != base {
-					return fmt.Errorf("%s is on %s, not on %s: the pages of one command are on one Confluence", value, base, baseURL)
-				}
+			case baseURL != "" && baseURL != base:
+				return fmt.Errorf("%s is on %s, not on %s: the pages of one command are on one Confluence", value, base, baseURL)
+			default:
 				baseURL = base
 			}
 			refs[value] = ref

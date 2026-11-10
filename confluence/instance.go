@@ -90,12 +90,17 @@ func SameInstance(configured, other string) error {
 	return nil
 }
 
-// instance is a URL reduced to what SameInstance compares.
-type instance struct {
+// origin is the server a URL reaches.
+type origin struct {
 	scheme string
 	host   string // ASCII, lowercase, without a trailing dot
 	port   int
-	path   string // escaped, without a trailing slash
+}
+
+// instance is a URL reduced to what SameInstance compares.
+type instance struct {
+	origin
+	path string // escaped, without a trailing slash
 }
 
 // instanceDifference says how want is not on the instance have, or "" when it
@@ -135,37 +140,37 @@ func parseInstanceURL(what, raw string) (instance, error) {
 		return instance{}, fmt.Errorf("unable to parse %s %q: %w", what, raw, err)
 	}
 
-	origin, err := originOf(parsed)
+	server, err := originOf(parsed)
 	if err != nil {
 		return instance{}, fmt.Errorf("%s %q %w", what, raw, err)
 	}
 
-	origin.path = strings.TrimSuffix(parsed.EscapedPath(), "/")
-	for _, segment := range strings.Split(origin.path, "/") {
+	path := strings.TrimSuffix(parsed.EscapedPath(), "/")
+	for _, segment := range strings.Split(path, "/") {
 		if segment == "." || segment == ".." {
 			return instance{}, fmt.Errorf("%s %q has a %q segment in its path", what, raw, segment)
 		}
 	}
 
-	return origin, nil
+	return instance{origin: server, path: path}, nil
 }
 
 // originOf is the scheme, host and port of u, the server a request to it
 // reaches, with the host in its ASCII form. Its error completes a sentence
 // that names the URL.
-func originOf(u *url.URL) (instance, error) {
+func originOf(u *url.URL) (origin, error) {
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return instance{}, errors.New("is not an http or https URL")
+		return origin{}, errors.New("is not an http or https URL")
 	}
 
 	if u.User != nil {
-		return instance{}, errors.New("carries a user name or password")
+		return origin{}, errors.New("carries a user name or password")
 	}
 
 	host, err := asciiHost(u.Hostname())
 	if err != nil {
-		return instance{}, err
+		return origin{}, err
 	}
 
 	port := 443
@@ -175,11 +180,11 @@ func originOf(u *url.URL) (instance, error) {
 	if p := u.Port(); p != "" {
 		port, err = strconv.Atoi(p)
 		if err != nil || port < 1 || port > 65535 {
-			return instance{}, fmt.Errorf("has an invalid port %q", p)
+			return origin{}, fmt.Errorf("has an invalid port %q", p)
 		}
 	}
 
-	return instance{scheme: scheme, host: host, port: port}, nil
+	return origin{scheme: scheme, host: host, port: port}, nil
 }
 
 // asciiHost is host as DNS looks it up: lowercase, without a trailing dot, and
