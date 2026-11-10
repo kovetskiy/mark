@@ -56,8 +56,8 @@ const (
 	// page's new body.
 	WarningInlineComment WarningKind = "inline-comment"
 
-	// WarningMissingPage is a page the page manifest recorded for a document
-	// that no longer exists, so a new one is created.
+	// WarningMissingPage is a page the page manifest recorded, for the
+	// document or one of its parents, that no longer exists.
 	WarningMissingPage WarningKind = "missing-page"
 )
 
