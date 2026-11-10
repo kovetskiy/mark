@@ -1042,59 +1042,39 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 // The run's index of titles reads documents through it too, so that the title
 // a child looks for and the title its parent publishes cannot disagree.
 func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
-	meta, markdown, err := metadata.ExtractMeta(markdown, metadata.ExtractOptions{
-		Filename:          file,
-		Space:             config.Page.Space,
-		TitleFromH1:       config.Page.TitleFromH1,
-		TitleFromFilename: config.Page.TitleFromFilename,
-		Parents:           config.Page.Parents,
-		// Deferred until the path has had its say about the parents, when it
-		// has one; see below.
-		TitleAppendGeneratedHash: config.Page.TitleAppendGeneratedHash && hierarchy == nil,
+	return readDocumentMeta(config, hierarchy, markdown, metadata.ExtractOptions{
+		Filename:                 file,
+		Space:                    config.Page.Space,
+		TitleFromH1:              config.Page.TitleFromH1,
+		TitleFromFilename:        config.Page.TitleFromFilename,
+		Parents:                  config.Page.Parents,
+		TitleAppendGeneratedHash: config.Page.TitleAppendGeneratedHash,
 		ContentAppearance:        config.Page.ContentAppearance,
 		FrontMatter:              config.Rendering.enabled("frontmatter"),
 	})
+}
+
+// readDocumentMeta is documentMeta from options already made, which is how a
+// link reads the document it points at: its options name the linking
+// document's space when the run names none.
+func readDocumentMeta(config PublishConfig, hierarchy *page.Hierarchy, markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
+	file := opts.Filename
+
+	// Deferred until the path has had its say about the parents, when it has
+	// one; see below.
+	opts.TitleAppendGeneratedHash = opts.TitleAppendGeneratedHash && hierarchy == nil
+
+	meta, markdown, err := metadata.ExtractMeta(markdown, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to extract metadata from file %q: %w", file, err)
 	}
 
-	if err := placeInHierarchy(config, file, meta, hierarchy); err != nil {
-		return nil, nil, err
-	}
-
-	return meta, markdown, nil
-}
-
-// linkedDocumentMeta reads a linked document's metadata as documentMeta would,
-// from the link resolver's options, so that the title a link looks for is the
-// one the document publishes under.
-func linkedDocumentMeta(config PublishConfig, hierarchy *page.Hierarchy) func([]byte, metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
-	return func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
-		opts.TitleAppendGeneratedHash = opts.TitleAppendGeneratedHash && hierarchy == nil
-
-		meta, markdown, err := metadata.ExtractMeta(markdown, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if err := placeInHierarchy(config, opts.Filename, meta, hierarchy); err != nil {
-			return nil, nil, err
-		}
-
-		return meta, markdown, nil
-	}
-}
-
-// placeInHierarchy settles the parents and title the path gives a document,
-// whose metadata was read with the generated hash deferred when there is a
-// hierarchy.
-func placeInHierarchy(config PublishConfig, file string, meta *metadata.Meta, hierarchy *page.Hierarchy) error {
 	// Where the file sits says where the page goes, unless the document says
 	// otherwise. An author who wrote a Parent header meant it.
 	if hierarchy != nil && meta != nil {
 		derived, err := hierarchy.Parents(file)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 
 		// A directory's own document is titled by the directory, whatever the
@@ -1103,7 +1083,7 @@ func placeInHierarchy(config PublishConfig, file string, meta *metadata.Meta, hi
 		// two cannot disagree.
 		title, err := hierarchy.Title(file)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 
 		// The pages standing for directories are hashed like any other, and
@@ -1129,7 +1109,7 @@ func placeInHierarchy(config PublishConfig, file string, meta *metadata.Meta, hi
 		}
 	}
 
-	return nil
+	return meta, markdown, nil
 }
 
 // publishRun is what every document of a run shares: the connection, the
@@ -1476,7 +1456,9 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 	)
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
-	resolver.ReadMeta = linkedDocumentMeta(config, r.hierarchy)
+	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
+		return readDocumentMeta(config, r.hierarchy, markdown, opts)
+	}
 
 	return resolver
 }
