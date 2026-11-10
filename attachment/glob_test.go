@@ -3,6 +3,7 @@ package attachment
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -141,7 +142,14 @@ func TestAttachmentPatternCannotReachOutsideTheProject(t *testing.T) {
 func TestAttachmentPatternInADirectoryNamedLikeAPattern(t *testing.T) {
 	root, _ := project(t)
 
-	for _, dir := range []string{"docs[1]", "a{b", "c}d", "e{f,g}"} {
+	dirs := []string{"docs[1]", "a{b", "c}d", "e{f,g}"}
+	if runtime.GOOS != "windows" {
+		// A backslash in the directory would escape the bracket after it,
+		// were the directory part of the pattern.
+		dirs = append(dirs, `h\[i`)
+	}
+
+	for _, dir := range dirs {
 		t.Run(dir, func(t *testing.T) {
 			base := filepath.Join(root, dir)
 			write(t, base, "images/right.png")
@@ -149,6 +157,7 @@ func TestAttachmentPatternInADirectoryNamedLikeAPattern(t *testing.T) {
 			// What the directory would match if it were read as a pattern.
 			write(t, root, "docs1/images/wrong.png")
 			write(t, root, "ef/images/wrong.png")
+			write(t, root, "h[i/images/wrong.png")
 
 			got, err := ResolveLocalAttachments(LocalOS, base, []string{"images/*.png"})
 			require.NoError(t, err)
