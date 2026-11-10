@@ -361,65 +361,58 @@ func TestRenderRefusesAnUnknownFormat(t *testing.T) {
 // importProject lays out a document in docs/ of a project, with the working
 // directory at the project's root, and a directory beside the project that
 // holds outside.d2.
-func importProject(t *testing.T) (project, document, outside string) {
+func importProject(t *testing.T) (docs, document, outside string) {
 	t.Helper()
 
 	outside = t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "outside.d2"), []byte("outside\n"), 0o600))
 
-	project = t.TempDir()
-	document = filepath.Join(project, "docs", "doc.md")
-	require.NoError(t, os.MkdirAll(filepath.Join(project, "docs", "parts"), 0o755))
+	project := t.TempDir()
+	docs = filepath.Join(project, "docs")
+	document = filepath.Join(docs, "doc.md")
+	require.NoError(t, os.MkdirAll(filepath.Join(docs, "parts"), 0o755))
 
 	t.Chdir(project)
 
-	return project, document, outside
+	return docs, document, outside
 }
 
 // TestRenderImportsFromTheDocumentsDirectory covers the imports that stay
 // inside the project: beside the document, below it, and one imported by
 // another, which d2 reads relative to the file that imports it.
 func TestRenderImportsFromTheDocumentsDirectory(t *testing.T) {
-	project, document, _ := importProject(t)
+	docs, document, _ := importProject(t)
 
-	docs := filepath.Join(project, "docs")
 	require.NoError(t, os.WriteFile(filepath.Join(docs, "beside.d2"), []byte("beside\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(docs, "parts", "below.d2"), []byte("below\nnested: @nested\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(docs, "parts", "nested.d2"), []byte("nestedlabel\n"), 0o600))
 
 	source := []byte("a: @beside\nb: @parts/below\na -> b\n")
 
-	for _, output := range []imageformat.Format{imageformat.SVG, imageformat.PNG} {
-		got, err := Render(context.Background(), "imports", source, Options{Output: output, Browser: browser, InputPath: document, Scale: 1.0})
-		require.NoError(t, err, "output %s", output)
+	got, err := Render(context.Background(), "imports", source, Options{Output: imageformat.SVG, InputPath: document, Scale: 1.0})
+	require.NoError(t, err)
 
-		if output == imageformat.SVG {
-			published := string(got.FileBytes)
-			for _, label := range []string{"beside", "below", "nestedlabel"} {
-				assert.Contains(t, published, label)
-			}
-		}
+	for _, label := range []string{"beside", "below", "nestedlabel"} {
+		assert.Contains(t, string(got.FileBytes), label)
 	}
+
+	_, err = Render(context.Background(), "imports", source, Options{Output: imageformat.PNG, Browser: browser, InputPath: document, Scale: 1.0})
+	require.NoError(t, err)
 }
 
 // TestRenderRefusesAnImportOutsideTheProject holds an import to the boundary
 // an image or icon is held to: the document's directory or the one mark runs
 // in, with symlinks followed.
 func TestRenderRefusesAnImportOutsideTheProject(t *testing.T) {
-	project, document, outside := importProject(t)
-
-	link := filepath.Join(project, "docs", "linked.d2")
-	if err := os.Symlink(filepath.Join(outside, "outside.d2"), link); err != nil {
-		t.Logf("no symlink: %v", err)
-
-		link = ""
-	}
+	docs, document, outside := importProject(t)
 
 	imports := []string{
 		filepath.ToSlash(filepath.Join(outside, "outside")),
 		"../../" + filepath.Base(outside) + "/outside",
 	}
-	if link != "" {
+	if err := os.Symlink(filepath.Join(outside, "outside.d2"), filepath.Join(docs, "linked.d2")); err != nil {
+		t.Logf("no symlink: %v", err)
+	} else {
 		imports = append(imports, "linked")
 	}
 
