@@ -142,19 +142,27 @@ func instanceDifference(have, want instance) string {
 func parseInstanceURL(what, raw string) (instance, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return instance{}, fmt.Errorf("unable to parse %s %q: %w", what, raw, err)
+		// url.Error quotes the whole URL, password included.
+		var parseErr *url.Error
+		if errors.As(err, &parseErr) {
+			err = parseErr.Err
+		}
+		return instance{}, fmt.Errorf("unable to parse %s: %w", what, err)
 	}
+
+	// Redacted, since these errors end up in logs.
+	shown := parsed.Redacted()
 
 	server, err := originOf(parsed)
 	if err != nil {
-		return instance{}, fmt.Errorf("%s %q %w", what, raw, err)
+		return instance{}, fmt.Errorf("%s %q %w", what, shown, err)
 	}
 
 	path := strings.TrimRight(parsed.EscapedPath(), "/")
 	// Decoded, since a server reads %2e%2e as ".." too.
 	for _, segment := range strings.Split(parsed.Path, "/") {
 		if segment == "." || segment == ".." {
-			return instance{}, fmt.Errorf("%s %q has a %q segment in its path", what, raw, segment)
+			return instance{}, fmt.Errorf("%s %q has a %q segment in its path", what, shown, segment)
 		}
 	}
 
