@@ -1505,3 +1505,30 @@ func TestManifestPageOptionalByIDOnlyExcusesAMissingPage(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, gone.Untracked("DOCS"))
 }
+
+// TestManifestPageOptionalLatePageWithAManifest: a manifest page that turns
+// up by Save already holding a mapping another run kept is left as it is. The
+// mapping this run built from an empty start is not merged into it.
+func TestManifestPageOptionalLatePageWithAManifest(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	store := manifest.NewStore(api)
+	store.SetRunFiles("*.md", nil)
+	docsWithHomepage(t, server)
+	store.SetManifestPage("Team Handbook")
+	store.SetManifestPageOptional(true)
+
+	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", ""))
+
+	handbook, err := api.CreatePage(ctx, "DOCS", confluence.ContentPage, nil, "Team Handbook", "")
+	require.NoError(t, err)
+	theirs := manifest.PropertyKey((manifest.ShardFor("a.md") + 1) % manifest.ShardCount)
+	server.SetSpaceProperty(handbook.ID, theirs, []byte(`{"version":1,"pages":{"b.md":{"pageId":"2"}}}`))
+
+	require.NoError(t, store.Save(ctx))
+
+	assert.Nil(t, shardOf(server, handbook.ID, "a.md"), "nothing is added to the other run's manifest")
+	assert.JSONEq(t, `{"version":1,"pages":{"b.md":{"pageId":"2"}}}`, string(server.SpaceProperty(handbook.ID, theirs).Value))
+	assert.Equal(t, []string{"DOCS"}, store.UntrackedSpaces())
+}
