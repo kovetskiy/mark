@@ -298,11 +298,11 @@ func (i documentInfo) ModTime() time.Time { return time.Time{} }
 func (i documentInfo) IsDir() bool        { return false }
 func (i documentInfo) Sys() any           { return nil }
 
-// linkFiles is where doc's relative links are looked for, or nil for the
-// local disk alone, which is all a run of files ever needs.
+// linkFiles is where doc's relative links are looked for: its root alone,
+// unless the run has documents of its own to answer for first.
 func (r *publishRun) linkFiles(doc *document) page.LinkFiles {
-	if r.inputs == nil && doc.root.FS() == nil {
-		return nil
+	if r.inputs == nil {
+		return doc.root
 	}
 
 	return documentFiles{inputs: r.inputs, root: doc.root}
