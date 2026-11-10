@@ -6,6 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	stdimage "image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/attachment"
@@ -305,6 +310,89 @@ func TestRenderSVGFetchesWhenAskedTo(t *testing.T) {
 
 	assert.Contains(t, string(got.FileBytes), "data:image/png;base64",
 		"the icon should have been fetched and carried in the drawing")
+}
+
+// greenPNG is a square of pure green, a colour the d2 theme does not draw with.
+func greenPNG(t *testing.T) []byte {
+	t.Helper()
+
+	img := stdimage.NewRGBA(stdimage.Rect(0, 0, 64, 64))
+	draw.Draw(img, img.Bounds(), &stdimage.Uniform{C: color.RGBA{G: 255, A: 255}}, stdimage.Point{}, draw.Src)
+
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+
+	return buf.Bytes()
+}
+
+// greenPixels counts the pure green pixels in a PNG.
+func greenPixels(t *testing.T, picture []byte) int {
+	t.Helper()
+
+	decoded, err := png.Decode(bytes.NewReader(picture))
+	require.NoError(t, err)
+
+	count := 0
+
+	for y := decoded.Bounds().Min.Y; y < decoded.Bounds().Max.Y; y++ {
+		for x := decoded.Bounds().Min.X; x < decoded.Bounds().Max.X; x++ {
+			r, g, b, _ := decoded.At(x, y).RGBA()
+			if r == 0 && g == 0xffff && b == 0 {
+				count++
+			}
+		}
+	}
+
+	return count
+}
+
+// TestRenderPNGWillNotFetchWhatItWasNotAskedTo: a PNG follows the same rule as
+// an SVG. Without --d2-bundle-remote a diagram naming a URL is refused, and
+// nothing is requested.
+func TestRenderPNGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
+	var requests atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(greenPNG(t))
+	}))
+	defer server.Close()
+
+	for _, diagram := range []string{
+		"a: {icon: " + server.URL + "/icon.png}\na -> b\n",
+		"a: {shape: image; icon: " + strings.Replace(server.URL, "127.0.0.1", "localhost", 1) + "/image.png}\n",
+	} {
+		_, err := Render(context.Background(), "remote", []byte(diagram), Options{Browser: browser, Scale: 1.0})
+		require.Error(t, err, diagram)
+		assert.Contains(t, err.Error(), "--d2-bundle-remote")
+	}
+
+	assert.Zero(t, requests.Load(), "nothing should have been requested")
+}
+
+// TestRenderPNGFetchesWhenAskedTo: with --d2-bundle-remote a PNG shows the
+// remote image, fetched by mark before the diagram reaches the browser, which
+// loads nothing from the network itself.
+func TestRenderPNGFetchesWhenAskedTo(t *testing.T) {
+	var requests atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(greenPNG(t))
+	}))
+	defer server.Close()
+
+	diagram := []byte("a: {shape: image; icon: " + server.URL + "/image.png}\n")
+
+	got, err := Render(context.Background(), "remote", diagram, Options{Browser: browser, Scale: 1.0, BundleRemote: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), requests.Load(), "the image should have been fetched once, by mark")
+	assert.Positive(t, greenPixels(t, got.FileBytes), "the fetched image should be in the picture")
 }
 
 // TestRenderSVGWillNotReadOutsideTheProject covers a file the document names

@@ -380,6 +380,24 @@ the diagram smaller or lower the scale.
 attachment without the document it came from. It needs `--mermaid-output=svg`:
 a PNG has nowhere to keep it.
 
+### Images in a diagram
+
+A diagram is drawn from the document alone: the headless browser that draws
+mermaid, d2 and formula pictures loads nothing from the network, by name or by
+IP address. A picture a diagram shows has to be carried by the diagram, as a
+`data:` URL:
+
+```mermaid
+flowchart TD
+  A@{ img: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", label: "Logo", w: 60, h: 60 }
+```
+
+An image shape that names its picture by an `http` or `https` URL fails the
+file with an error naming the URL. So does an `<img>` in a label when the
+diagram is published as a PNG, which would otherwise come out with the picture
+missing; with `--mermaid-output=svg` the address stays in the SVG for whoever
+opens the page to load.
+
 ### Drawing without a browser
 
 Diagrams are drawn by a headless browser running mermaid.js, which is what
@@ -452,8 +470,13 @@ Because the file carries what it points at, what it may point at is limited:
   drawing. Set it for documents whose diagrams you trust. Without it, a diagram
   whose icon or `shape: image` names an `http` or `https` URL is refused, and the
   file fails with an error that names the URL and the flag, since Confluence
-  would not resolve the URL from inside the SVG either. The flag changes nothing
-  for a PNG.
+  would not resolve the URL from inside the SVG either.
+
+A PNG follows the same rule for a URL. The browser that rasterises it loads
+nothing from the network (see [Images in a diagram](#images-in-a-diagram)), so
+with `--d2-bundle-remote` mark fetches the image and inlines it before the
+diagram reaches the browser, and without the flag the diagram is refused. A
+relative path in a PNG is not read, as before: the picture shows nothing there.
 
 ## Render PlantUML Diagrams
 
@@ -583,6 +606,11 @@ rather than the size: the image still occupies the space the formula asked for,
 with more pixels in it for a display that can use them, because a formula
 rasterised 1:1 looks ragged beside the text it sits in. It has to be a finite
 number greater than 0.
+
+The browser that rasterises a PNG loads nothing from the network, as for
+diagrams (see [Images in a diagram](#images-in-a-diagram)): a colour written as
+a CSS `url(...)`, which MathJax passes through into the drawing, is not
+fetched.
 
 ### Why an image
 
