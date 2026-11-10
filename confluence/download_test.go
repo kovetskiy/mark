@@ -3,6 +3,11 @@ package confluence
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
@@ -40,6 +45,18 @@ func TestAttachmentURL(t *testing.T) {
 			got, err := NewAPI(test.base, Options{Username: "u", Password: "p"}).AttachmentURL("1", test.info)
 			require.NoError(t, err)
 			assert.Equal(t, test.want, got)
+		})
+	}
+
+	for name, info := range map[string]AttachmentInfo{
+		"a context that extends the host": attachment(".elsewhere.example", "/download/attachments/1/a.png"),
+		"a context that is a user":        attachment("@elsewhere.example", "/download/attachments/1/a.png"),
+		"a context that is a port":        attachment(":8443", "/download/attachments/1/a.png"),
+	} {
+		t.Run("a relative link under "+name+" is refused", func(t *testing.T) {
+			_, err := NewAPI("https://example.com", Options{Username: "u", Password: "p"}).AttachmentURL("1", info)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "refusing to send credentials")
 		})
 	}
 
@@ -86,4 +103,79 @@ func TestDownloadAttachment(t *testing.T) {
 	err = api.DownloadAttachment(context.Background(), page.ID, missing, &bytes.Buffer{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
+}
+
+// TestDownloadAttachmentStaysOnServer serves an attachment listing whose
+// _links.context, joined to the base URL, names another server, and checks the
+// download, and with it the credentials, does not go there.
+func TestDownloadAttachmentStaysOnServer(t *testing.T) {
+	var elsewhere atomic.Int32
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		elsewhere.Add(1)
+		assert.Empty(t, r.Header.Get("Authorization"), "credentials sent to another server")
+		_, _ = w.Write([]byte("stolen"))
+	}))
+	t.Cleanup(evil.Close)
+	evilHost := strings.TrimPrefix(evil.URL, "http://")
+
+	// serve lists one attachment under contextPath and serves its content
+	// from there.
+	serve := func(t *testing.T, contextPath string) *httptest.Server {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/rest/api/content/1/child/attachment"):
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"results": []any{map[string]any{
+						"id": "att1", "title": "a.png",
+						"_links": map[string]any{"download": "/download/attachments/1/a.png"},
+					}},
+					"size":   1,
+					"_links": map[string]any{"context": contextPath},
+				})
+			case r.URL.Path == contextPath+"/download/attachments/1/a.png":
+				_, _ = w.Write([]byte("content"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		t.Cleanup(server.Close)
+		return server
+	}
+
+	for _, test := range []struct {
+		name, context, base string
+	}{
+		{"Cloud's /wiki, in the base URL", "/wiki", "/wiki"},
+		{"a context path not in the base URL", "/confluence", ""},
+		{"no context", "", ""},
+	} {
+		t.Run(test.name+" downloads", func(t *testing.T) {
+			server := serve(t, test.context)
+			api := NewAPI(server.URL+test.base, Options{Username: "user", Password: "token"})
+
+			attachments, err := api.GetAttachments(context.Background(), "1")
+			require.NoError(t, err)
+			require.Len(t, attachments, 1)
+
+			var got bytes.Buffer
+			require.NoError(t, api.DownloadAttachment(context.Background(), "1", attachments[0], &got))
+			assert.Equal(t, "content", got.String())
+		})
+	}
+
+	t.Run("a context that names another server is refused", func(t *testing.T) {
+		server := serve(t, "@"+evilHost)
+		api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
+
+		attachments, err := api.GetAttachments(context.Background(), "1")
+		require.NoError(t, err)
+		require.Len(t, attachments, 1)
+
+		err = api.DownloadAttachment(context.Background(), "1", attachments[0], &bytes.Buffer{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "refusing to send credentials")
+		assert.Zero(t, elsewhere.Load(), "a request went to another server")
+	})
+
 }
