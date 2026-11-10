@@ -753,13 +753,7 @@ func TestTrackPagesThroughTheGatewayWithAManifestPage(t *testing.T) {
 
 	assert.Equal(t, 0, server.CountRequests("POST", "/api/v2/spaces/"),
 		"no space property was created")
-	shards := 0
-	for i := range manifest.ShardCount {
-		if server.SpaceProperty(home.ID, manifest.PropertyKey(i)) != nil {
-			shards++
-		}
-	}
-	assert.Equal(t, 1, shards, "the mapping is on the page named")
+	assert.Equal(t, 1, manifestShards(server, home.ID), "the mapping is on the page named")
 
 	// A retitle: without the manifest this would be a second page.
 	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide Renamed -->\n\nA guide.\n")
