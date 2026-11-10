@@ -5,8 +5,8 @@
 `--url` (`-l`, `MARK_PAGE_URL`, `url` in the configuration file) publishes to
 the page a browser shows at that URL, whatever the document's headers say. It
 takes `.../pages/viewpage.action?pageId=ID` or `.../spaces/KEY/pages/ID/Title`,
-and the instance comes from it too, context path included, unless `--base-url`
-names it:
+and the instance comes from it too, context path included, unless a base URL
+is set:
 
 ```bash
 mark publish --url "https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Setup" --files setup.md
@@ -16,6 +16,20 @@ The page is found by its id, so the document needs no `Space` or `Title`
 header. Any headers it has are ignored, with a warning, and so is
 `--track-pages`, whose record is kept per space and per file. Name one file:
 every file of the run would be published to the same page.
+
+A base URL set by `--base-url`, `MARK_BASE_URL` or `base-url` in the
+configuration file is where requests go, and the URL must be on that
+instance: a page id names a page of one instance only, so a URL on another
+one is refused before anything is sent. The comparison is the one
+[`mark export --url`](export.md) makes: case, a trailing dot in the host, a
+default port and a missing context path such as `/wiki` do not count, and
+with the `api.atlassian.com` gateway configured any Cloud site's `https` URL
+is on it.
+
+A base URL naming an internal host refuses a URL copied from the browser on a
+public alias of the same Confluence, since nothing in either URL says the two
+hosts are one server. Set the base URL to the host in the URL, or leave
+`--url` out and name the page with `Space` and `Title` headers.
 
 `mark export --url` takes the same address, under the same names.
 

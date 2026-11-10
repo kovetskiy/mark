@@ -62,7 +62,8 @@ func GetCredentials(
 	// anywhere for want of a base URL has no business asking a keyring for a
 	// token it will never send: putting somebody through a pinentry dialog and
 	// then failing on the configuration is a strange order to do things in.
-	if compileOnly && pageURL == "" {
+	pageURLGiven := pageURL != ""
+	if compileOnly && !pageURLGiven {
 		pageURL = "http://localhost"
 	}
 
@@ -79,9 +80,16 @@ func GetCredentials(
 	}
 
 	contextPath, pageID := confluence.SplitPageURL(url)
+	pageBase := url.Scheme + "://" + url.Host + contextPath
 
 	if baseURL == "" {
-		baseURL = url.Scheme + "://" + url.Host + contextPath
+		baseURL = pageBase
+	} else if pageURLGiven && url.Host != "" {
+		err := checkPageURLInstance(baseURL, pageBase,
+			"set the base URL to "+pageBase+", or leave --url out and name the page with Space and Title headers")
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	baseURL = strings.TrimRight(baseURL, `/`)
@@ -153,6 +161,27 @@ func GetCredentials(
 	}
 
 	return creds, nil
+}
+
+// checkPageURLInstance refuses a page URL, by its base pageBase, that is not
+// on the configured instance, as confluence.SameInstance decides: the page id
+// in it names a page of that one instance only. advice says what to do
+// instead. The error wraps SameInstance's, so errors.Is matches
+// confluence.ErrOtherInstance.
+func checkPageURLInstance(configured, pageBase, advice string) error {
+	err := confluence.SameInstance(configured, pageBase)
+	if err != nil && !errors.Is(err, confluence.ErrOtherInstance) {
+		return fmt.Errorf("unable to compare --url with the base URL: %w", err)
+	}
+	if err != nil {
+		return fmt.Errorf(
+			"--url is not a page of the instance the base URL (--base-url, MARK_BASE_URL or base-url "+
+				"in the configuration file) names, and a page id names a page of one instance only (%s): %w",
+			advice, err,
+		)
+	}
+
+	return nil
 }
 
 // runPasswordCommand runs command and returns the first line of what it printed.

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -224,15 +225,58 @@ func TestGetCredentialsPageURLKeepsTheContextPath(t *testing.T) {
 	}
 }
 
-// TestGetCredentialsExplicitBaseURLWins covers -l beside a target URL: the flag
-// is the instance, and the URL only supplies the page id.
+// TestGetCredentialsExplicitBaseURLWins covers -l beside a target URL on the
+// same instance written another way: the base URL is the one requests go to,
+// and the URL supplies the page id.
 func TestGetCredentialsExplicitBaseURLWins(t *testing.T) {
-	creds, err := GetCredentials(context.Background(), "user", "secret", "",
-		"https://old.example.com/pages/viewpage.action?pageId=7", "https://new.example.com/wiki", false)
-	require.NoError(t, err)
+	for _, testcase := range []struct {
+		name, base, target string
+	}{
+		{"case", "https://Wiki.Example.com/wiki", "HTTPS://wiki.example.COM/wiki/pages/viewpage.action?pageId=7"},
+		{"default port", "https://wiki.example.com:443/wiki", "https://wiki.example.com/wiki/spaces/D/pages/7/T"},
+		{"base without a context path", "https://wiki.example.com", "https://wiki.example.com/wiki/spaces/D/pages/7"},
+		{"page URL without a context path", "https://wiki.example.com/wiki/", "https://wiki.example.com:443/pages/viewpage.action?pageId=7"},
+		{"gateway", "https://api.atlassian.com/ex/confluence/cloud-id", "https://x.atlassian.net/wiki/spaces/D/pages/7/T"},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			creds, err := GetCredentials(context.Background(), "user", "secret", "",
+				testcase.target, testcase.base, false)
+			require.NoError(t, err)
 
-	assert.Equal(t, "https://new.example.com/wiki", creds.BaseURL)
-	assert.Equal(t, "7", creds.PageID)
+			assert.Equal(t, strings.TrimRight(testcase.base, "/"), creds.BaseURL)
+			assert.Equal(t, "7", creds.PageID)
+		})
+	}
+}
+
+// TestGetCredentialsRefusesAPageURLOnAnotherInstance: the page id in a URL
+// names a page of that URL's instance only, so with a base URL naming another
+// one it is refused, rather than the page with that id on the configured
+// instance being written.
+func TestGetCredentialsRefusesAPageURLOnAnotherInstance(t *testing.T) {
+	for _, testcase := range []struct {
+		name, base, target string
+	}{
+		{"another host", "https://new.example.com/wiki", "https://old.example.com/pages/viewpage.action?pageId=7"},
+		{"another context path", "https://host/confluence", "https://host/jira/pages/viewpage.action?pageId=7"},
+		{"http", "https://host", "http://host/pages/viewpage.action?pageId=7"},
+		{"a site's URL with the gateway in it", "https://x.atlassian.net/wiki",
+			"https://api.atlassian.com/ex/confluence/cloud-id/wiki/spaces/D/pages/7"},
+		{"compile-only", "https://new.example.com", "https://old.example.com/spaces/D/pages/7/T"},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			_, err := GetCredentials(context.Background(), "user", "secret", "",
+				testcase.target, testcase.base, testcase.name == "compile-only")
+			require.ErrorIs(t, err, confluence.ErrOtherInstance)
+			assert.ErrorContains(t, err, "--url is not a page of the instance the base URL")
+		})
+	}
+
+	_, err := GetCredentials(context.Background(), "user", "secret", "",
+		"https://host/pages/viewpage.action?pageId=7", "host/wiki", false)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, confluence.ErrOtherInstance)
+	assert.ErrorContains(t, err, "unable to compare --url with the base URL")
 }
 
 // TestGetCredentialsTrimsTrailingSlashes covers the base URL as people actually
