@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/kovetskiy/mark/v17/internal/fspath"
 )
 
 // Root is where the files a document names are read from, and the boundary
@@ -59,15 +58,26 @@ func (r Root) fsName(name string) (string, error) {
 	return cleaned, nil
 }
 
+// inside is the path inside the fs.FS that name stands for, or the error an
+// op on a name outside it fails with.
+func (r Root) inside(op, name string) (string, error) {
+	inside, err := r.fsName(name)
+	if err != nil {
+		return "", &fs.PathError{Op: op, Path: name, Err: err}
+	}
+
+	return inside, nil
+}
+
 // Open implements Opener.
 func (r Root) Open(name string) (io.ReadCloser, error) {
 	if r.fsys == nil {
 		return os.Open(name)
 	}
 
-	inside, err := r.fsName(name)
+	inside, err := r.inside("open", name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+		return nil, err
 	}
 
 	return r.fsys.Open(inside)
@@ -79,9 +89,9 @@ func (r Root) Stat(name string) (fs.FileInfo, error) {
 		return os.Stat(name)
 	}
 
-	inside, err := r.fsName(name)
+	inside, err := r.inside("stat", name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "stat", Path: name, Err: err}
+		return nil, err
 	}
 
 	return fs.Stat(r.fsys, inside)
@@ -93,9 +103,9 @@ func (r Root) ReadFile(name string) ([]byte, error) {
 		return os.ReadFile(name)
 	}
 
-	inside, err := r.fsName(name)
+	inside, err := r.inside("read", name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "read", Path: name, Err: err}
+		return nil, err
 	}
 
 	return fs.ReadFile(r.fsys, inside)
@@ -135,29 +145,39 @@ func (r Root) contain(joined, named string) error {
 // that may reach only the one directory, such as a document in an fs.FS
 // reaching --include-path on disk.
 func CheckWithin(dir, path string) error {
-	resolved := fspath.ResolveDeepest(path)
-	if withinAny(resolved, []string{fspath.ResolveDeepest(dir)}) {
+	resolved, ok := within([]string{dir}, path)
+	if ok {
 		return nil
 	}
 
-	return fmt.Errorf("%w: %s resolves to %s, which is outside %q", ErrOutsideProject, path, resolved, dir)
+	return fmt.Errorf("%w: %q resolves to %s, which is outside %q", ErrOutsideProject, path, resolved, dir)
 }
 
-// checkOpenerPath holds an attachment to the boundary of what it is read
-// from: an fs.FS's root, or the local disk's rules.
-func checkOpenerPath(opener Opener, base, name string) error {
-	if root, ok := opener.(Root); ok && root.fsys != nil {
-		return root.contain(filepath.Join(base, name), name)
+// rooted is an Opener that says itself how a name it opens is held to its
+// boundary and how a pattern is matched in it; any other Opener is the disk.
+type rooted interface {
+	checkAttachment(base, name string) error
+	glob(base, pattern string) ([]string, error)
+}
+
+// checkAttachment holds an attachment to r's boundary.
+func (r Root) checkAttachment(base, name string) error {
+	if r.fsys == nil {
+		return checkAttachmentPath(base, name)
 	}
 
-	return checkAttachmentPath(base, name)
+	return r.contain(filepath.Join(base, name), name)
 }
 
-// globIn matches pattern under base inside the fs.FS, as glob does on disk:
-// its literal leading directories move the root, and only the rest is a
-// pattern. A root outside the FS matches nothing, so the literal name is
-// tried and refused by name.
-func (r Root) globIn(base, pattern string) ([]string, error) {
+// glob matches pattern under base, as glob does on disk: in an fs.FS too its
+// literal leading directories move the root, and only the rest is a pattern.
+// A root outside the FS matches nothing, so the literal name is tried and
+// refused by name.
+func (r Root) glob(base, pattern string) ([]string, error) {
+	if r.fsys == nil {
+		return glob(base, pattern)
+	}
+
 	prefix, rest := doublestar.SplitPattern(path.Clean(filepath.ToSlash(pattern)))
 
 	dir, err := r.fsName(path.Join(filepath.ToSlash(base), prefix))
