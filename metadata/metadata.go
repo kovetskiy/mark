@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/internal/htmlblock"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
@@ -240,7 +241,7 @@ const (
 // has, with nothing said. Anything else that cannot be a string in the list is
 // left out, but reported against the key it was written under, the way a key
 // mark does not read is.
-func toStringSlice(val any, key string, filename string) []string {
+func toStringSlice(val any, key string, warnings *report.Warnings) []string {
 	var items []any
 
 	switch v := val.(type) {
@@ -251,7 +252,7 @@ func toStringSlice(val any, key string, filename string) []string {
 	case []any:
 		items = v
 	default:
-		warnAboutIgnoredValue(key, v, filename)
+		warnAboutIgnoredValue(key, v, warnings)
 
 		return nil
 	}
@@ -260,7 +261,7 @@ func toStringSlice(val any, key string, filename string) []string {
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			warnAboutIgnoredValue(key, item, filename)
+			warnAboutIgnoredValue(key, item, warnings)
 
 			continue
 		}
@@ -274,10 +275,10 @@ func toStringSlice(val any, key string, filename string) []string {
 }
 
 // warnAboutIgnoredValue reports a value a list key cannot hold.
-func warnAboutIgnoredValue(key string, value any, filename string) {
-	log.Warn().Msgf(
-		"%sfront matter key %q takes a string or a list of strings, so %v (%T) was ignored",
-		warningPrefix(filename), key, value, value,
+func warnAboutIgnoredValue(key string, value any, warnings *report.Warnings) {
+	warnings.Add(report.WarningMetadata,
+		"front matter key %q takes a string or a list of strings, so %v (%T) was ignored",
+		key, value, value,
 	)
 }
 
@@ -568,28 +569,12 @@ func normaliseFrontMatterKey(key string) string {
 // for mark and misspelled, and the second kind is a setting that silently did
 // not happen -- the HTML headers are singular where front matter is plural, so
 // attachment for attachments is a mistake mark's own documentation invites.
-func warnAboutUnknownKeys(keys []string, filename string) {
+func warnAboutUnknownKeys(keys []string, warnings *report.Warnings) {
 	slices.Sort(keys)
 
 	for _, key := range keys {
-		log.Warn().Msgf(
-			"%sfront matter key %q is not read by mark and was ignored",
-			warningPrefix(filename), key,
-		)
+		warnings.Add(report.WarningMetadata, "front matter key %q is not read by mark and was ignored", key)
 	}
-}
-
-// warningPrefix names the document a front matter warning is about.
-//
-// A caller with nothing to call the document -- ExtractMeta takes the name for
-// the title and a library caller need not have one -- would otherwise be told
-// about a key in a file called ": ".
-func warningPrefix(filename string) string {
-	if filename == "" {
-		return ""
-	}
-
-	return filename + ": "
 }
 
 // splitFrontMatter separates the YAML front matter opening data from the
@@ -681,6 +666,10 @@ type ExtractOptions struct {
 	// FrontMatter reads YAML front matter. Without it, front matter is body
 	// text, and one that declares restrictions is refused.
 	FrontMatter bool
+
+	// Warnings collects what was ignored: a front matter key mark does not
+	// read, or a header written below the opening comments. Nil only logs.
+	Warnings *report.Warnings
 }
 
 // ExtractMeta reads a document's metadata from its headers or front matter,
@@ -690,6 +679,11 @@ type ExtractOptions struct {
 // ContentAppearance apply only to metadata that exists.
 func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	var meta *Meta
+
+	warnings := opts.Warnings
+	if warnings == nil {
+		warnings = report.NewWarnings(opts.Filename)
+	}
 
 	var (
 		frontMatter []byte
@@ -726,10 +720,10 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 
 			switch normKey {
 			case "parents":
-				meta.Parents = append(meta.Parents, toStringSlice(v, k, opts.Filename)...)
+				meta.Parents = append(meta.Parents, toStringSlice(v, k, warnings)...)
 				meta.DeclaredParents = true
 			case "folders":
-				meta.Folders = append(meta.Folders, toStringSlice(v, k, opts.Filename)...)
+				meta.Folders = append(meta.Folders, toStringSlice(v, k, warnings)...)
 			case "space":
 				meta.Space = toString(v)
 			case "type":
@@ -743,9 +737,9 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 			case "emoji":
 				meta.Emoji = toString(v)
 			case "attachments":
-				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, opts.Filename)...)
+				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, warnings)...)
 			case "labels":
-				meta.Labels = append(meta.Labels, toStringSlice(v, k, opts.Filename)...)
+				meta.Labels = append(meta.Labels, toStringSlice(v, k, warnings)...)
 			case "contentappearance":
 				// Not toString, which would drop a value that is not a
 				// string for the default rather than refuse it.
@@ -796,7 +790,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 			}
 		}
 
-		warnAboutUnknownKeys(unknown, opts.Filename)
+		warnAboutUnknownKeys(unknown, warnings)
 
 		// Presence of a non-empty sidebar forces the article layout, regardless of map key iteration order.
 		if meta.Sidebar != "" {
@@ -1025,7 +1019,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	}
 
 	if meta != nil {
-		warnStrandedHeaders(body)
+		warnStrandedHeaders(body, warnings)
 	}
 
 	if opts.TitleFromH1 || opts.TitleFromFilename || opts.Space != "" {
@@ -1104,7 +1098,7 @@ func onlyWhitespace(data []byte, from, to int) bool {
 // is not metadata at all. It is published as page text and whatever it asked
 // for silently never happens. Saying so is cheap; guessing what was meant is
 // not.
-func warnStrandedHeaders(body []byte) {
+func warnStrandedHeaders(body []byte, warnings *report.Warnings) {
 	// A header comment shown inside a fence is an example of one, not a
 	// stranded one -- which is how any document about mark shows the syntax,
 	// this repository's README included. Every other pass over raw bytes in
@@ -1135,7 +1129,7 @@ func warnStrandedHeaders(body []byte) {
 			continue
 		}
 
-		log.Warn().Msgf(
+		warnings.Add(report.WarningMetadata,
 			"%s header is below the document's opening comments, so it is published as text rather than applied: %s",
 			header, strings.TrimSpace(line),
 		)

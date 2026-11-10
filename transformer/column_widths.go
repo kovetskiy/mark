@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/yuin/goldmark/v2/ast"
 	ext_ast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"
@@ -26,6 +26,10 @@ type ColumnWidthsTransformer struct {
 	// expanded, so a line counted in it is not a line of the file; the
 	// warnings quote the directive instead.
 	FilePath string
+
+	// Warnings collects the directives that were not applied. Nil logs them
+	// against FilePath.
+	Warnings *report.Warnings
 }
 
 // NewColumnWidthsTransformer creates a new instance of ColumnWidthsTransformer
@@ -103,7 +107,12 @@ func tableColumns(table *ext_ast.Table) int {
 }
 
 func (t *ColumnWidthsTransformer) warn(format string, args ...any) {
-	log.Warn().Str("file", t.FilePath).Msgf(format, args...)
+	warnings := t.Warnings
+	if warnings == nil {
+		warnings = report.NewWarnings(t.FilePath)
+	}
+
+	warnings.Add(report.WarningColumnWidths, format, args...)
 }
 
 func colgroupMarkup(widths []int) []byte {

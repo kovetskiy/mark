@@ -6,6 +6,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
 )
@@ -481,4 +482,21 @@ func TestMergeComments_SelectionInTextAndMarkup(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `<p>Run <a href="https://example.com/setup"><ac:inline-comment-marker ac:ref="uuid-t">setup</ac:inline-comment-marker></a> now</p>`, result)
 	assert.NoError(t, markdown.CheckWellFormed(result))
+}
+
+// TestMergeReportsALostComment: a comment whose text is gone from the new body
+// is said to be lost to the document's warnings, not only to the log.
+func TestMergeReportsALostComment(t *testing.T) {
+	oldBody := `<p>Hello <ac:inline-comment-marker ac:ref="uuid-gone">world</ac:inline-comment-marker></p>`
+	warnings := report.NewWarnings("docs/a.md")
+
+	result, err := MergeWithWarnings(`<p>Goodbye</p>`, oldBody, makeComments("world", "uuid-gone"), warnings)
+	assert.NoError(t, err)
+	assert.Equal(t, `<p>Goodbye</p>`, result)
+
+	assert.Equal(t, []report.Warning{{
+		Kind:    report.WarningInlineComment,
+		File:    "docs/a.md",
+		Message: `inline comment uuid-gone is lost: the text it was made on, "world", is not in the new body's page text`,
+	}}, warnings.List())
 }

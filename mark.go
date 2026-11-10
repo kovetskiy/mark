@@ -1142,9 +1142,14 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 // it publishes under, which with a path hierarchy are partly the path's to say.
 // The run's index of titles reads documents through it too, so that the title
 // a child looks for and the title its parent publishes cannot disagree.
-func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
+//
+// What the metadata ignored is added to warnings; nil only logs it.
+func documentMeta(
+	config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy, warnings *report.Warnings,
+) (*metadata.Meta, []byte, error) {
 	return readDocumentMeta(hierarchy, markdown, metadata.ExtractOptions{
 		Filename:                 file,
+		Warnings:                 warnings,
 		Space:                    config.Page.Space,
 		TitleFromH1:              config.Page.TitleFromH1,
 		TitleFromFilename:        config.Page.TitleFromFilename,
@@ -1269,6 +1274,9 @@ type document struct {
 	// restrictions are the document's declared restrictions, resolved to
 	// users and groups; nil when it declares none.
 	restrictions *confluence.ResolvedRestrictions
+	// warnings are what was wrong with the document but did not stop it,
+	// for its line of the report.
+	warnings *report.Warnings
 }
 
 // destination is the page a document publishes to.
@@ -1354,7 +1362,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 		return nil, nil, err
 	}
 
-	html, brokenLinks, err := r.compile(ctx, doc, dest.page)
+	html, err := r.compile(ctx, doc, dest.page)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1404,7 +1412,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 		File: doc.file, Status: status,
 		Space: spaceOf(doc.meta), Title: target.Title,
 		PageID: target.ID, URL: r.api.BaseURL() + target.Links.Full,
-		Warnings: brokenLinks,
+		Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 	})
 
 	return target, placement, nil
@@ -1443,7 +1451,9 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	// moves with the remote would not survive the round trip it exists for.
 	sourceHash := fingerprint.SHA1(string(source))
 
-	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy)
+	warnings := report.NewWarnings(file)
+
+	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -1459,14 +1469,14 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	}
 
 	if r.config.Page.PageID != "" && meta != nil {
-		log.Warn().Msg(
-			`specified file contains metadata, ` +
-				`but it will be ignored due specified command line URL`,
-		)
+		warnings.Add(report.WarningMetadata,
+			"the document's metadata is ignored: the page to publish to is named by id")
 		meta = nil
 	}
 
-	return &document{file: file, sourceHash: sourceHash, meta: meta, markdown: markdown}, nil
+	return &document{
+		file: file, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,
+	}, nil
 }
 
 // leaveUnsynchronized reports, and returns true for, a document that has
@@ -1482,6 +1492,7 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 		File: file, Status: report.StatusSkipped,
 		Reason: report.ReasonNotSynchronized,
 		Space:  spaceOf(meta), Title: titleOf(meta),
+		Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 	})
 
 	// Looked up purely to mark the path as seen. A page somebody stopped
@@ -1643,7 +1654,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		// the manifest. Saying so is the whole point of a dry run:
 		// otherwise it reports a new page for every rename and retitle
 		// the run would actually have handled in place.
-		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, meta, file, doc.sourceHash)
+		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, meta, file, doc.sourceHash, doc.warnings)
 		if err != nil {
 			return found, err
 		}
@@ -1689,6 +1700,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	if err != nil {
 		return err
 	}
+	cfg.Warnings = doc.warnings
 
 	// Only a dry run asked to tell changed pages from unchanged ones.
 	compare := config.Mode.DryRun && !config.Mode.CompileOnly && config.Update.ChangesOnly
@@ -1748,7 +1760,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	// check links should report them on the credential-free invocation
 	// --compile-only exists for, and the one a pull request gate is most
 	// likely to use.
-	if err := reportBrokenLinks(doc.resolver.Broken(), file, config.Links.CheckLinksWarnOnly); err != nil {
+	if err := reportBrokenLinks(doc.resolver.Broken(), doc.warnings, config.Links.CheckLinksWarnOnly); err != nil {
 		return err
 	}
 
@@ -1768,7 +1780,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 			File: file, Status: status, Reason: reason,
 			Space: spaceOf(meta), Title: title,
 			PageID: target.ID, URL: url,
-			Warnings: doc.resolver.Broken(),
+			Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 		})
 	}
 
@@ -1919,7 +1931,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	// and "this page was renamed" look. Ask the manifest which of the two
 	// this is before creating a second page beside the first.
 	if pg == nil {
-		pg, err = resolveTrackedPage(ctx, r.tracker, api, meta, file)
+		pg, err = resolveTrackedPage(ctx, r.tracker, api, meta, file, doc.warnings)
 		if err != nil {
 			return nil, err
 		}
@@ -1927,7 +1939,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			// Not published under this path before. It may have been
 			// published under another: a renamed file is a new key holding
 			// an old document.
-			pg, err = resolveRenamedFile(ctx, r.tracker, api, meta, file, doc.sourceHash)
+			pg, err = resolveRenamedFile(ctx, r.tracker, api, meta, file, doc.sourceHash, doc.warnings)
 			if err != nil {
 				return nil, err
 			}
@@ -2002,7 +2014,7 @@ func (r *publishRun) tightenRestrictions(ctx context.Context, doc *document, des
 // compile uploads the document's attachments, compiles it, and returns the
 // body to send, wrapped in its layout, with the broken links the run was told
 // to warn about rather than fail on.
-func (r *publishRun) compile(ctx context.Context, doc *document, target *confluence.PageInfo) (string, []string, error) {
+func (r *publishRun) compile(ctx context.Context, doc *document, target *confluence.PageInfo) (string, error) {
 	api, meta, file := r.api, doc.meta, doc.file
 
 	// Collect attachments declared via <!-- Attachment: --> directives.
@@ -2017,13 +2029,14 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		declared,
 	)
 	if err != nil {
-		return "", nil, fmt.Errorf("unable to locate attachments: %w", err)
+		return "", fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
 	cfg, err := r.config.Rendering.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
+	cfg.Warnings = doc.warnings
 
 	// With --page-id the file's metadata is discarded, so the page itself and
 	// --space are what the header can name.
@@ -2034,14 +2047,14 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	headerHTML, headerAttachments, err := renderHeader(ctx, r.pageHeader, file, meta, targetTitle, r.config.Page.Space, cfg)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	// The header's own files are known now, so a clash with a declared one is
 	// refused before anything is uploaded. One with a file the document only
 	// references can be seen once it is compiled, which needs these uploaded.
 	if _, err := withHeaderAttachments(file, localAttachments, nil, headerAttachments); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	// The page's remote attachment list is fetched once and threaded through
@@ -2049,7 +2062,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 	// while rendering.
 	remoteAttachments, err := api.GetAttachments(ctx, target.ID)
 	if err != nil {
-		return "", nil, fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
+		return "", fmt.Errorf("unable to get attachments for page %s: %w", target.ID, err)
 	}
 
 	attaches, remoteAttachments, err := uploadAttachments(
@@ -2057,7 +2070,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		api, target, localAttachments, remoteAttachments,
 	)
 	if err != nil {
-		return "", nil, fmt.Errorf("unable to create/update attachments: %w", err)
+		return "", fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
 	attachmentLinks := attachment.NewResolver(attaches)
@@ -2066,33 +2079,29 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	html, inlineAttachments, err := markdown.CompileMarkdown(ctx, doc.markdown, r.std, file, cfg)
 	if err != nil {
-		return "", nil, fmt.Errorf("unable to compile markdown: %w", err)
+		return "", fmt.Errorf("unable to compile markdown: %w", err)
 	}
 
 	html = headerHTML + html
 	inlineAttachments, err = withHeaderAttachments(file, attaches, inlineAttachments, headerAttachments)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	// Kept for the report as well as the log. Reaching this line with any of
-	// them means the run was told to warn rather than fail, since otherwise
-	// reportBrokenLinks has already ended it.
-	brokenLinks := doc.resolver.Broken()
-	if err := reportBrokenLinks(brokenLinks, file, r.config.Links.CheckLinksWarnOnly); err != nil {
-		return "", nil, err
+	if err := reportBrokenLinks(doc.resolver.Broken(), doc.warnings, r.config.Links.CheckLinksWarnOnly); err != nil {
+		return "", err
 	}
 
 	// Only knowable once the document has been walked.
 	for _, unused := range attachmentLinks.Unused(attaches) {
-		log.Warn().Msgf("unused attachment: %s", unused)
+		doc.warnings.Add(report.WarningAttachment, "unused attachment: %s", unused)
 	}
 
 	if _, _, err = uploadAttachments(
 		ctx,
 		api, target, inlineAttachments, remoteAttachments,
 	); err != nil {
-		return "", nil, fmt.Errorf("unable to create/update attachments: %w", err)
+		return "", fmt.Errorf("unable to create/update attachments: %w", err)
 	}
 
 	var layout, sidebar string
@@ -2103,10 +2112,10 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	html, err = wrapLayout(r.std, layout, sidebar, html)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	return html, brokenLinks, nil
+	return html, nil
 }
 
 // preserveComments merges the inline comments on the published page into the
@@ -2133,7 +2142,7 @@ func (r *publishRun) preserveComments(ctx context.Context, doc *document, dest *
 		return "", fmt.Errorf("unable to retrieve inline comments: %w", err)
 	}
 
-	html, err = comments.Merge(html, pg.Body.Storage.Value, inlineComments)
+	html, err = comments.MergeWithWarnings(html, pg.Body.Storage.Value, inlineComments, doc.warnings)
 	if err != nil {
 		return "", fmt.Errorf("unable to merge inline comments: %w", err)
 	}

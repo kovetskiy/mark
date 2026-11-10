@@ -18,6 +18,7 @@ import (
 	"github.com/kovetskiy/mark/v17/macro"
 	cparser "github.com/kovetskiy/mark/v17/parser"
 	crenderer "github.com/kovetskiy/mark/v17/renderer"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/rs/zerolog/log"
@@ -335,7 +336,8 @@ func attachMacroFiles(path string, opts Options, names []string) ([]attachment.A
 		// "\/etc/passwd" is written as a file but reads as a rooted path, which
 		// must never be joined onto the document's directory to be looked for.
 		if !crenderer.NamesBesideDocument(name) {
-			log.Warn().Msgf("macro attachment %q is not uploaded: it does not name a file beside the document", name)
+			opts.Warnings.Add(report.WarningAttachment,
+				"macro attachment %q is not uploaded: it does not name a file beside the document", name)
 
 			continue
 		}
@@ -346,7 +348,7 @@ func attachMacroFiles(path string, opts Options, names []string) ([]attachment.A
 		}
 
 		if err != nil {
-			log.Warn().Err(err).Msgf("macro attachment %q is not uploaded", name)
+			opts.Warnings.Add(report.WarningAttachment, "macro attachment %q is not uploaded: %v", name, err)
 
 			continue
 		}
@@ -426,7 +428,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
-	warnIllegalXMLChars(path, markdown, replaced)
+	warnIllegalXMLChars(path, markdown, replaced, opts.Warnings)
 
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }
@@ -539,7 +541,7 @@ func (c *ConfluenceExtension) ParserOptions(cfg *parser.Config) []parser.Option 
 			util.Prioritized[parser.ASTTransformer](c.Pipeline, 10),
 			util.Prioritized[parser.ASTTransformer](ctransformer.NewLayoutTransformer(), 100),
 			util.Prioritized[parser.ASTTransformer](ctransformer.NewGHAlertsTransformer(), 100),
-			util.Prioritized[parser.ASTTransformer](ctransformer.NewColumnWidthsTransformer(c.Path), 100),
+			util.Prioritized[parser.ASTTransformer](&ctransformer.ColumnWidthsTransformer{FilePath: c.Path, Warnings: c.Options.Warnings}, 100),
 			// Last, so that it sees the headings includes and macros brought in as
 			// well as the ones written in the file, and so that heading ids have
 			// already been assigned.

@@ -1,8 +1,8 @@
 package markdown
 
 import (
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/rs/zerolog/log"
 )
 
 // sanitizeXMLChars is stdlib.SanitizeMarkup, under a name the functions with
@@ -16,16 +16,19 @@ func sanitizeXMLChars(body string) (string, int) {
 // through the stdlib escaping, which is why the source is looked at as well.
 // Replacing them silently would leave a U+FFFD on the page with nothing to say
 // where it came from.
-func warnIllegalXMLChars(path string, source []byte, replaced int) {
+func warnIllegalXMLChars(path string, source []byte, replaced int, warnings *report.Warnings) {
 	if replaced == 0 {
 		if _, n := stdlib.ReplaceIllegalXMLChars(string(source)); n == 0 {
 			return
 		}
 	}
 
-	log.Warn().Msgf(
-		"%s: replaced characters XML cannot carry, such as the control codes in "+
+	if warnings == nil {
+		warnings = report.NewWarnings(path)
+	}
+
+	warnings.Add(report.WarningInvalidCharacters,
+		"replaced characters XML cannot carry, such as the control codes in "+
 			"terminal output, with U+FFFD; Confluence rejects a page containing them",
-		path,
 	)
 }
