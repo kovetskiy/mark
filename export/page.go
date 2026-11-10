@@ -55,8 +55,8 @@ type Config struct {
 	// Metadata is how a FormatMark document spells the metadata that names
 	// its page: MetadataComments, or "", for HTML comment headers, or
 	// MetadataFrontMatter for YAML front matter, which mark publishes only
-	// with the frontmatter feature. FormatOKF writes front matter of its own
-	// and ignores it.
+	// with the frontmatter feature, or MetadataNone for the body alone.
+	// FormatOKF writes front matter of its own and ignores it.
 	Metadata Metadata
 
 	// Generator is who an OKF concept says generated it, as
@@ -97,7 +97,16 @@ func NewDocuments(documents []PageFile) *Documents {
 
 // Result is what Page wrote.
 type Result struct {
+	// Page is the page exported.
 	Page *confluence.PageInfo
+
+	// Title is the page's title.
+	Title string
+
+	// Markdown is the document, as written to Output or Stdout: the body
+	// below its metadata, or the body alone under MetadataNone. A caller that
+	// only wants the text can read it here and discard Stdout.
+	Markdown string
 
 	// Output is the file the Markdown was written to, or "" for Stdout.
 	Output string
@@ -106,11 +115,15 @@ type Result struct {
 	Attachments []string
 
 	// Labels are the page's global labels, sorted: the Label headers, or
-	// the tags of OKF front matter. Nil when the page has none.
+	// the tags of OKF front matter. Nil when the page has none. Each is the
+	// label's whole name as Confluence keeps it; mark gives no meaning to
+	// any character in one, "=" included, so a key=value convention is the
+	// caller's to split.
 	Labels []string
 
 	// DeclaredAttachments are the attachments named by Attachment headers,
-	// in order. Nil when there are none, as under OKF, which declares none.
+	// in order, or that would be under MetadataNone, which writes no headers.
+	// Nil when there are none, as under OKF, which declares none.
 	DeclaredAttachments []string
 }
 
@@ -287,6 +300,7 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 	doc, err := Convert(page.Body.Storage.Value, Options{
 		Space: space, Title: page.Title, AttachmentPath: pathOf, PagePath: pagePath, PageURL: pageAddress, PageURLPath: pageURLPath,
 		Reading: okf, FrontMatter: !okf && spelling == MetadataFrontMatter,
+		NoMetadata: !okf && spelling == MetadataNone,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert page %s: %w", page.ID, err)
@@ -322,16 +336,19 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 				declared = append(declared, name)
 			}
 		}
-		header, err = headers(ctx, api, page, space, doc, labels, declared, spelling)
+		if spelling != MetadataNone {
+			header, err = headers(ctx, api, page, space, doc, labels, declared, spelling)
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	markdown := header
-	if doc.Markdown != "" {
-		markdown += "\n" + doc.Markdown
+	if header != "" && doc.Markdown != "" {
+		markdown += "\n"
 	}
+	markdown += doc.Markdown
 
 	return &pageExport{
 		page: page, output: output, markdown: markdown, downloads: downloads, stdout: cfg.Stdout,
@@ -342,7 +359,10 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 // write downloads the attachments and writes the document, over whatever is
 // there: refusing existing files is the caller's.
 func (e *pageExport) write(ctx context.Context, api *confluence.API) (*Result, error) {
-	result := &Result{Page: e.page, Output: e.output, Labels: e.labels, DeclaredAttachments: e.declared}
+	result := &Result{
+		Page: e.page, Title: e.page.Title, Markdown: e.markdown, Output: e.output,
+		Labels: e.labels, DeclaredAttachments: e.declared,
+	}
 
 	written, err := downloadAll(ctx, api, e.page.ID, e.downloads)
 	if err != nil {

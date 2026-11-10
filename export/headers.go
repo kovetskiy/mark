@@ -22,6 +22,12 @@ const (
 	// MetadataFrontMatter writes it as YAML front matter, which mark reads
 	// only with the frontmatter feature.
 	MetadataFrontMatter Metadata = "frontmatter"
+
+	// MetadataNone writes the body alone, for a caller that reads the title
+	// and labels from the Result instead. Nothing in the document names its
+	// page, so mark cannot publish it back by itself. An article layout's
+	// sidebar, which would travel in the metadata, stays in the body.
+	MetadataNone Metadata = "none"
 )
 
 // ParseMetadata reads the value given to --metadata.
@@ -31,8 +37,11 @@ func ParseMetadata(value string) (Metadata, error) {
 		return MetadataComments, nil
 	case MetadataFrontMatter:
 		return MetadataFrontMatter, nil
+	case MetadataNone:
+		return MetadataNone, nil
 	default:
-		return "", fmt.Errorf("unknown export metadata %q: expected %s or %s", value, MetadataComments, MetadataFrontMatter)
+		return "", fmt.Errorf("unknown export metadata %q: expected %s, %s or %s",
+			value, MetadataComments, MetadataFrontMatter, MetadataNone)
 	}
 }
 

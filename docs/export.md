@@ -142,6 +142,43 @@ in a code block for instance, which a comment header cannot: under
 `--metadata comments`, the default, writes the comment headers. `--format okf`
 writes front matter of its own and ignores `--metadata`.
 
+## The body alone
+
+`--metadata none` writes the body without any metadata, for a program that
+takes the title and labels from elsewhere. Nothing in such a document names
+its page, so `mark publish` cannot publish it back by itself: give it the
+page some other way, with `--url`, or with `--space` and
+`--title-from-h1`. With no `Label` headers, publishing it removes the page's
+labels, unless `--append-labels` is given (see
+[Labels applied in Confluence](metadata.md#labels-applied-in-confluence)).
+An article layout's sidebar, which would travel in the
+metadata, stays in the body as storage format. `--recursive` refuses
+`--metadata none` for mark's documents, since a tree is exported to be
+published back where it was; with `--format okf` it is ignored, as any
+`--metadata` is.
+
+A Go program calling `mark.Export` gets the title, the labels and the
+document as values on the result, `Title`, `Labels` and `Markdown`, whatever
+`Metadata` says; with `export.MetadataNone` and `NoAttachments`, and neither
+`Output` nor `Stdout` set, nothing is written anywhere:
+
+```go
+result, err := mark.Export(ctx, mark.ExportConfig{
+    Connection:    mark.ConnectionConfig{BaseURL: base, Username: user, Password: token},
+    PageID:        "123456",
+    Metadata:      export.MetadataNone,
+    NoAttachments: true,
+})
+// result.Title, result.Labels, result.Markdown
+```
+
+A label is a name and nothing more to mark: one written `team=docs` is
+exported, and published, as that one name. Splitting it at `=` is the
+caller's convention, not mark's. The body still refers to its attachments by
+name, as it would beside them; `NoAttachments` leaves them in Confluence,
+where `confluence.API.GetAttachments` and `DownloadAttachment`, which writes
+to any `io.Writer`, read them.
+
 ## Exporting a tree of pages, or a whole space
 
 `--recursive` exports the page and every page beneath it into the directory

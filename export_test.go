@@ -1157,3 +1157,78 @@ func TestExportSpace(t *testing.T) {
 	})
 
 }
+
+// TestExportTitleAndBodyAsValues: a library caller gets the title, the labels
+// and the body without the metadata as values, with nothing written to a file
+// or a writer, and a label with "=" in it comes back whole.
+func TestExportTitleAndBodyAsValues(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	server.AddLabel(id, "team=docs")
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	result, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Metadata: export.MetadataNone, NoAttachments: true,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "Installing", result.Title)
+	assert.Equal(t, []string{"how-to", "install", "team=docs"}, result.Labels)
+	assert.True(t, strings.HasPrefix(result.Markdown, "# Installing\n"), "the body alone:\n%s", result.Markdown)
+	assert.NotContains(t, result.Markdown, "<!-- Title:")
+	assert.NotContains(t, result.Markdown, "<!-- Space:")
+	assert.Contains(t, result.Markdown, "![Logo](logo.png)")
+	assert.Empty(t, result.Output)
+	assert.Empty(t, result.Attachments)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing is written")
+
+	// The body is what a writer receives too.
+	var stdout bytes.Buffer
+	_, err = Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Metadata: export.MetadataNone, NoAttachments: true, Stdout: &stdout,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, result.Markdown, stdout.String())
+}
+
+// TestExportResultCarriesTheDocument: with the metadata, Result.Markdown is
+// the whole document written, headers included.
+func TestExportResultCarriesTheDocument(t *testing.T) {
+	server, id, _ := exportFixture(t)
+	t.Chdir(t.TempDir())
+
+	var stdout bytes.Buffer
+	result, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, NoAttachments: true, Stdout: &stdout,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, stdout.String(), result.Markdown)
+	assert.Contains(t, result.Markdown, "<!-- Title: Installing -->")
+}
+
+// TestExportTreeRefusesNoMetadata: a tree of mark documents is exported to be
+// published back, which takes the metadata; OKF writes its own and ignores it.
+func TestExportTreeRefusesNoMetadata(t *testing.T) {
+	server, id, _ := exportFixture(t)
+
+	config := ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Metadata: export.MetadataNone, NoAttachments: true,
+		Output: filepath.Join(t.TempDir(), "tree"),
+	}
+	_, err := ExportTree(context.Background(), config, export.TreeOptions{})
+	require.ErrorIs(t, err, export.ErrTreeWithoutMetadata)
+	_, err = os.Stat(config.Output)
+	assert.ErrorIs(t, err, os.ErrNotExist, "refused before anything is written")
+
+	config.Format = export.FormatOKF
+	_, err = ExportTree(context.Background(), config, export.TreeOptions{})
+	require.NoError(t, err)
+}

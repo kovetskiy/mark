@@ -13,6 +13,7 @@ func TestParseMetadata(t *testing.T) {
 		"":              MetadataComments,
 		"comments":      MetadataComments,
 		" Frontmatter ": MetadataFrontMatter,
+		"none":          MetadataNone,
 	} {
 		got, err := ParseMetadata(value)
 		require.NoError(t, err, value)
@@ -100,6 +101,22 @@ func TestCommentsLeaveInTheBodyASidebarNoHeaderHolds(t *testing.T) {
 	h := pageHeaders{Space: "DOCS", Title: "Page", Layout: doc.Layout, Sidebar: doc.Sidebar}
 	_, err = h.comments()
 	require.NoError(t, err)
+}
+
+// TestNoMetadataKeepsTheSidebarInTheBody: with no metadata to carry it, an
+// article layout's sidebar stays in the body rather than being dropped.
+func TestNoMetadataKeepsTheSidebarInTheBody(t *testing.T) {
+	storage := `<ac:layout><ac:layout-section ac:type="two_right_sidebar">` +
+		`<ac:layout-cell><p>Body</p></ac:layout-cell>` +
+		`<ac:layout-cell><p>Aside</p></ac:layout-cell>` +
+		`</ac:layout-section></ac:layout>`
+
+	doc, err := Convert(storage, Options{NoMetadata: true})
+	require.NoError(t, err)
+	assert.Empty(t, doc.Layout)
+	assert.Empty(t, doc.Sidebar)
+	assert.Contains(t, doc.Markdown, "Aside")
+	assert.Contains(t, doc.Markdown, "ac:layout")
 }
 
 func TestParseOptionsLeavesOKFItsOwnFrontMatter(t *testing.T) {
