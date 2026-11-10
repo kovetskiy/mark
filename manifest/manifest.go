@@ -1028,8 +1028,9 @@ func (s *Store) ResolveRenamed(ctx context.Context, spaceKey, hash string) (stri
 	return foundPath, foundEntry, true, nil
 }
 
-// Forget drops a recorded path, used when a document has been followed to its
-// new name and the old entry would otherwise linger as a deleted file forever.
+// Forget drops a recorded path: one whose page no longer exists, or an orphan
+// that has been dealt with. A document followed to its new name is not
+// forgotten here; Record hands its old entry over, version included.
 func (s *Store) Forget(ctx context.Context, spaceKey, path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -113,8 +113,8 @@ func hasDrifted(
 		return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 	}
 
-	// A document moved with its title unchanged is found by that title, and
-	// its new path has no entry yet: the baseline is still in the one it moved
+	// A document moved, found by its unchanged title or by its content, has
+	// no entry under its new path yet: the baseline is still in the one it moved
 	// from, which Record only carries across after this. Asking the new path
 	// alone read that as a page with no baseline, and the very run that moved
 	// the file overwrote an edit --no-overwrite exists to keep.
