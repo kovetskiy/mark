@@ -58,7 +58,9 @@ func handleOrphans(
 		}
 
 		candidates := make([]page.Orphan, 0, len(orphans))
+		globs := make(map[string]string, len(orphans))
 		for _, orphan := range orphans {
+			globs[orphan.Path] = orphan.Entry.Glob
 			candidate := page.Orphan{
 				Path:   orphan.Path,
 				PageID: orphan.Entry.PageID,
@@ -118,14 +120,19 @@ func handleOrphans(
 				continue
 			}
 
+			removable := candidates
+			if config.Tracking.Partial {
+				removable = notOwnPattern(tracker.RunPattern(), candidates, globs, config.Mode.readOnly(), results)
+			}
+
 			var kept map[string]string
-			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, candidates, config.Mode.readOnly())
+			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, removable, config.Mode.readOnly())
 			if err != nil {
 				return err
 			}
 
 			if !config.Mode.readOnly() {
-				for _, candidate := range candidates {
+				for _, candidate := range removable {
 					if reason, ok := kept[candidate.Path]; ok {
 						reportKept(results, candidate, reason)
 					}
@@ -163,6 +170,35 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// notOwnPattern is the orphans a partial run may archive or delete: those
+// recorded under a pattern other than its own. A partial run given the very
+// pattern that recorded a file is not narrower than the run owning it, and on
+// a checkout holding only some files would read every other one as deleted.
+// The rest are left where they are, and stay tracked for the owning run.
+func notOwnPattern(
+	pattern string, candidates []page.Orphan, globs map[string]string,
+	readOnly bool, results *report.Report,
+) []page.Orphan {
+	removable := make([]page.Orphan, 0, len(candidates))
+	for _, candidate := range candidates {
+		if globs[candidate.Path] != pattern {
+			removable = append(removable, candidate)
+			continue
+		}
+
+		log.Warn().Msgf(
+			"%s: not removing page %s, since --partial was given the pattern that recorded it, %q; "+
+				"name the paths a change touched instead",
+			candidate.Path, candidate.PageID, pattern,
+		)
+		if !readOnly {
+			reportKept(results, candidate, "--partial was given the pattern that recorded it, not the paths a change touched")
+		}
+	}
+
+	return removable
 }
 
 // reportKept records an orphan --on-orphan asked to remove that was left where

@@ -579,6 +579,15 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	}
 }
 
+// RunPattern is the pattern this run records new entries under, as Entry.Glob
+// spells it.
+func (s *Store) RunPattern() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.runGlob
+}
+
 // SetWarningsFor has what Record finds wrong with a document added to the
 // collector warningsFor gives for its key, as Key spells it; a nil function,
 // or a nil collector for a key, only logs it. warningsFor is called with the
