@@ -125,21 +125,26 @@ func hasDrifted(
 		}
 	}
 
+	current := target.Version.Number
+	if before, moved := api.ReparentedFrom(target.ID, current); moved {
+		current = before
+	}
+
 	if !ok || entry.Version == 0 || entry.PageID != target.ID {
 		// Without a manifest nothing says which version mark last wrote, so
 		// an edit made in Confluence cannot be told from none. Overwriting
 		// on that doubt could happen on every run for as long as the page
-		// is missing, not once as on a first tracked run.
+		// is missing, not once as on a first tracked run. A page this run
+		// created, such as an empty parent, and still at that version is
+		// mark's own.
 		if tracker.Untracked(spaceKey) {
+			if created, ok := api.CreatedVersion(target.ID); ok && created == current {
+				return "", nil
+			}
 			return "not checked for edits made in Confluence: the space has no page manifest " +
 				"(its manifest page is missing)", nil
 		}
 		return "", nil
-	}
-
-	current := target.Version.Number
-	if before, moved := api.ReparentedFrom(target.ID, current); moved {
-		current = before
 	}
 
 	if current == entry.Version {

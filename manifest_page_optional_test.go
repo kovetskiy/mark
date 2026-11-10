@@ -180,3 +180,26 @@ func TestManifestPageOptionalNoOverwritePreview(t *testing.T) {
 	assert.Equal(t, report.StatusSkipped, pages[0].Status)
 	assert.Contains(t, pages[0].Reason, "no page manifest")
 }
+
+// TestManifestPageOptionalNoOverwritePublishesItsOwnParent: under
+// --no-overwrite an untracked space still publishes into the empty parent the
+// run itself created for the documents before it, here the landing page that
+// holds the manifest.
+func TestManifestPageOptionalNoOverwritePublishesItsOwnParent(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "a-guide.md", "<!-- Space: DOCS -->\n<!-- Parent: Handbook -->\n<!-- Title: Guide -->\n\nA guide.\n")
+	writeFile(t, dir, "z-handbook.md", "<!-- Space: DOCS -->\n<!-- Title: Handbook -->\n\nThe handbook.\n")
+
+	var out bytes.Buffer
+	config := optionalManifestConfig(server, dir, &out)
+	config.Tracking.NoOverwrite = true
+	require.NoError(t, Run(context.Background(), config))
+
+	parsed := parseReport(t, &out)
+	assert.Empty(t, parsed.Untracked, "the space ended tracked")
+	for _, page := range parsed.Pages {
+		assert.Equal(t, report.StatusPublished, page.Status, page.Title)
+	}
+	assert.Contains(t, server.Page(mustFind(t, server, "Handbook")).Body, "The handbook.")
+}
