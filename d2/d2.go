@@ -79,10 +79,8 @@ func renderSVG(ctx context.Context, d2Diagram []byte, inputPath string) (out []b
 
 	diagram, _, err := d2lib.Compile(ctx, string(d2Diagram), compileOpts, renderOpts)
 	if err != nil {
-		// d2 reports a failed import as text, so the refusal is returned as
-		// itself for errors.Is to find.
 		if imports.refused != nil {
-			return nil, 0, 0, imports.refused
+			return nil, 0, 0, importError{err: err, refused: imports.refused}
 		}
 
 		return nil, 0, 0, err
@@ -302,7 +300,7 @@ type importFS struct {
 }
 
 func (f *importFS) Open(name string) (fs.File, error) {
-	if err := f.check(name); err != nil {
+	if err := checkLocal(f.inputPath, "imports", name); err != nil {
 		if f.refused == nil {
 			f.refused = err
 		}
@@ -317,20 +315,33 @@ func (f *importFS) Open(name string) (fs.File, error) {
 	return os.Open(name)
 }
 
-func (f *importFS) check(name string) error {
-	if f.inputPath == "" || f.inputPath == "-" {
+// checkLocal holds a file a diagram names to the project of the document at
+// inputPath. verb says what the diagram does with the file, for the error.
+func checkLocal(inputPath, verb, name string) error {
+	if inputPath == "" || inputPath == "-" {
 		return fmt.Errorf(
-			"imports %q, which needs the document it was written in to be a file on disk",
-			name,
+			"%s %q, which needs the document it was written in to be a file on disk",
+			verb, name,
 		)
 	}
 
-	if err := attachment.CheckReadable(filepath.Dir(f.inputPath), name); err != nil {
-		return fmt.Errorf("imports %q: %w", name, err)
+	if err := attachment.CheckReadable(filepath.Dir(inputPath), name); err != nil {
+		return fmt.Errorf("%s %q: %w", verb, name, err)
 	}
 
 	return nil
 }
+
+// importError is d2's own report of a failed compile, which says where the
+// import is written, carrying the refusal behind it: d2 passes on only the
+// refusal's message, and errors.Is needs the error itself.
+type importError struct {
+	err     error
+	refused error
+}
+
+func (e importError) Error() string   { return e.err.Error() }
+func (e importError) Unwrap() []error { return []error{e.err, e.refused} }
 
 // image matches the pictures d2 draws into an SVG, the same way d2's own
 // bundler finds them.
@@ -376,15 +387,8 @@ func references(svg []byte, inputPath string, bundleRemote bool) (local, remote 
 			continue
 		}
 
-		if inputPath == "" || inputPath == "-" {
-			return false, false, fmt.Errorf(
-				"references %q, which needs the document it was written in to be a file on disk",
-				href,
-			)
-		}
-
-		if err := attachment.CheckReadable(filepath.Dir(inputPath), href); err != nil {
-			return false, false, fmt.Errorf("references %q: %w", href, err)
+		if err := checkLocal(inputPath, "references", href); err != nil {
+			return false, false, err
 		}
 
 		local = true
