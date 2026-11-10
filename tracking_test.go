@@ -3,6 +3,7 @@ package mark
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -877,11 +878,31 @@ func TestManifestPrefixRequiresTrackPages(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--manifest-prefix requires --track-pages")
 
-	config.Tracking.TrackPages = true
-	config.Tracking.ManifestPrefix = "not a key"
-	err = Run(context.Background(), config)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot prefix a property key")
+}
+
+// TestManifestPrefixInvalidStopsTheRunFirst: a prefix no run could use is
+// refused before a request is made, naming the field for a library caller and
+// the flag for the command line. It wins over the missing --track-pages, since
+// adding that would only lead to this error next.
+func TestManifestPrefixInvalidStopsTheRunFirst(t *testing.T) {
+	for _, trackPages := range []bool{true, false} {
+		t.Run(fmt.Sprintf("TrackPages=%v", trackPages), func(t *testing.T) {
+			server := outputServer(t)
+			dir := t.TempDir()
+			writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
+			server.ResetRequests()
+
+			config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+			config.Tracking.TrackPages = trackPages
+			config.Tracking.ManifestPrefix = "not a key"
+
+			err := Run(context.Background(), config)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "Tracking.ManifestPrefix (--manifest-prefix)")
+			assert.EqualError(t, errors.Unwrap(err), manifest.ValidatePropertyKeyPrefix("not a key").Error())
+			assert.Empty(t, server.Requests(), "nothing is asked of Confluence")
+		})
+	}
 }
 
 // TestManifestIsSavedWhenAFileFailsHard: the mapping records pages that have

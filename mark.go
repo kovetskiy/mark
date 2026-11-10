@@ -392,6 +392,14 @@ func Run(ctx context.Context, config Config) (err error) {
 		return err
 	}
 
+	// A value no run could use is reported before what else it needs, as
+	// OnOrphan is: adding --track-pages would only lead to this error next.
+	if config.Tracking.ManifestPrefix != "" {
+		if err := manifest.ValidatePropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
+			return fmt.Errorf("invalid Tracking.ManifestPrefix (--manifest-prefix): %w", err)
+		}
+	}
+
 	// Removing a page needs to know mark put it there, and only the manifest
 	// knows that. Without it the flag could only guess from titles, which is
 	// not a guess worth making about deletion.
@@ -413,14 +421,10 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
-	if config.Tracking.ManifestPrefix != "" && config.Tracking.ManifestPrefix != manifest.PropertyKeyPrefix {
-		if !config.Tracking.TrackPages {
-			return fmt.Errorf("--manifest-prefix requires --track-pages: " +
-				"it names the page manifest's properties, and nothing else keeps one")
-		}
-		if err := manifest.ValidatePropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
-			return fmt.Errorf("--manifest-prefix: %w", err)
-		}
+	if config.Tracking.ManifestPrefix != "" && config.Tracking.ManifestPrefix != manifest.PropertyKeyPrefix &&
+		!config.Tracking.TrackPages {
+		return fmt.Errorf("--manifest-prefix requires --track-pages: " +
+			"it names the page manifest's properties, and nothing else keeps one")
 	}
 
 	api := config.Connection.api(confluence.Options{
@@ -527,7 +531,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 		tracker.SetManifestPage(config.Tracking.ManifestPage)
 		if err := tracker.SetPropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
-			return fmt.Errorf("--manifest-prefix: %w", err)
+			return fmt.Errorf("invalid Tracking.ManifestPrefix (--manifest-prefix): %w", err)
 		}
 		if config.Page.PageID != "" {
 			// The mapping is keyed on a source path within a space, and neither
