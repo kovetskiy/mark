@@ -76,13 +76,27 @@ type Config struct {
 	// run's documents are also only taken for renames, by their content, of
 	// documents recorded under the same scope.
 	//
+	// With Tracking.Partial the run covers only the keys of the scope it
+	// publishes or names in DocumentKeys, and leaves every other page of the
+	// scope alone and tracked.
+	//
 	// Empty, documents take part in no orphan handling and no rename
 	// detection: a page is found again by its Key alone, and never reported,
-	// archived or deleted because a later run did not publish it. Files
-	// published alongside keep their own scope, their pattern, either way.
-	// It needs Tracking.TrackPages, and a scope is never mistaken for a
-	// --files pattern.
+	// archived or deleted because a later run did not publish it, with
+	// Tracking.Partial or without. Files published alongside keep their own
+	// scope, their pattern, either way. It needs Tracking.TrackPages, and a
+	// scope is never mistaken for a --files pattern.
 	DocumentScope string
+
+	// DocumentKeys names keys of DocumentScope that a run with
+	// Tracking.Partial covers without publishing them, as Paths names
+	// deleted files: the Key of a document removed since, and the Key a
+	// renamed document had. Such a key still tracked is an orphan, and
+	// OnOrphan acts on it, or the previous Key of a document the run
+	// publishes, whose page then follows it. A key of Documents may be named
+	// too. It needs DocumentScope and Tracking.Partial: a run without
+	// Partial already covers every key of its scope.
+	DocumentKeys []string
 
 	Connection ConnectionConfig
 
@@ -374,6 +388,11 @@ type TrackingConfig struct {
 	// among those their pattern recorded, so a tracked file they do not name
 	// is left alone; and a page the run records keeps the pattern its entry,
 	// or the entry of the file it was renamed from, was recorded under.
+	//
+	// For Documents with a DocumentScope it does the same by key: the run
+	// covers the keys of its Documents and of DocumentKeys, and leaves the
+	// scope's other pages alone. Documents without a scope take part in no
+	// orphan handling either way.
 	Partial bool
 
 	// NoOverwrite leaves alone a page edited in Confluence since mark last
@@ -972,6 +991,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			}
 			tracker.SetRunDocuments(config.DocumentScope, keys)
 		}
+		tracker.SetRunDocumentKeys(config.DocumentScope, config.DocumentKeys)
 	}
 
 	// A link is resolved by finding the page it points at, so a document linking

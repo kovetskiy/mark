@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/kovetskiy/mark/v17/attachment"
@@ -220,6 +221,20 @@ func (c Config) checkDocuments() error {
 			"it names the documents in the page manifest, and nothing else keeps one")
 	}
 
+	if len(c.DocumentKeys) > 0 {
+		// Without Partial the run covers every key of its scope, so a caller
+		// publishing some documents and naming the rest would remove those it
+		// left out.
+		if !c.Tracking.Partial || c.DocumentScope == "" {
+			return errors.New("DocumentKeys requires Tracking.Partial and a DocumentScope: " +
+				"they name the keys of a scope a partial run covers without publishing them")
+		}
+
+		if slices.Contains(c.DocumentKeys, "") {
+			return errors.New("DocumentKeys holds an empty key")
+		}
+	}
+
 	if len(c.Documents) == 0 {
 		return nil
 	}
@@ -227,6 +242,11 @@ func (c Config) checkDocuments() error {
 	if c.ParentsFromPath {
 		return errors.New("ParentsFromPath cannot place Documents: " +
 			"it lays out the hierarchy from the files on disk, and a Document's Path need not be there")
+	}
+
+	if c.Tracking.Partial && c.DocumentScope == "" && c.Files == "" && len(c.Paths) == 0 {
+		log.Warn().Msg("Tracking.Partial does nothing for Documents without a DocumentScope: " +
+			"they take part in no orphan handling and no renames, partial or not")
 	}
 
 	return nil

@@ -412,7 +412,8 @@ fails with "no files matched", or under `--ci` does nothing about them, and the
 run publishing them all deals with those files instead.
 
 A library caller sets `TrackingConfig.Partial`; a caller driving
-`manifest.Store` itself calls `SetPartial`.
+`manifest.Store` itself calls `SetPartial`. For documents handed over from
+memory, see [publishing some of a scope's documents](library.md#publishing-some-of-a-scopes-documents).
 
 ### Flags that need other flags
 
