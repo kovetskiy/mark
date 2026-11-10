@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	stdhtml "html"
+	"io/fs"
 	"math"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -53,7 +55,10 @@ const diagramPad = 5
 // the rendered XML would be parsing an answer that was already given -- and
 // mermaid has to do exactly that, since its diagrams are drawn by a browser
 // rather than by a library that will say.
-func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height int, err error) {
+//
+// inputPath is the document the diagram is in, which its imports are read
+// relative to.
+func renderSVG(ctx context.Context, d2Diagram []byte, inputPath string) (out []byte, width, height int, err error) {
 	ruler, err := textmeasure.NewRuler()
 	if err != nil {
 		return nil, 0, 0, err
@@ -65,13 +70,21 @@ func renderSVG(ctx context.Context, d2Diagram []byte) (out []byte, width, height
 		Pad:     go2.Pointer(int64(diagramPad)),
 		ThemeID: &d2themescatalog.GrapeSoda.ID,
 	}
+	imports := &importFS{inputPath: inputPath}
 	compileOpts := &d2lib.CompileOptions{
 		LayoutResolver: layoutResolver,
 		Ruler:          ruler,
+		FS:             imports,
 	}
 
 	diagram, _, err := d2lib.Compile(ctx, string(d2Diagram), compileOpts, renderOpts)
 	if err != nil {
+		// d2 reports a failed import as text, so the refusal is returned as
+		// itself for errors.Is to find.
+		if imports.refused != nil {
+			return nil, 0, 0, imports.refused
+		}
+
 		return nil, 0, 0, err
 	}
 
@@ -109,8 +122,8 @@ type Options struct {
 	// Browser rasterises a PNG. An SVG needs none, and it may then be nil.
 	Browser *chrome.Browser
 
-	// InputPath is the document the diagram is in, which the images an SVG
-	// references are relative to; empty or "-" for none.
+	// InputPath is the document the diagram is in, which the diagram's imports
+	// and the images an SVG references are relative to; empty or "-" for none.
 	InputPath string
 
 	// BundleRemote lets an SVG inline the remote images it references.
@@ -122,7 +135,7 @@ type Options struct {
 func Render(ctx context.Context, title string, d2Diagram []byte, options Options) (attachment.Attachment, error) {
 	switch options.Output {
 	case imageformat.PNG, "":
-		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.Scale)
+		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.InputPath, options.Scale)
 	case imageformat.SVG:
 		return renderSVGAttachment(ctx, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
 	default:
@@ -131,7 +144,7 @@ func Render(ctx context.Context, title string, d2Diagram []byte, options Options
 }
 
 // renderPNGAttachment draws a diagram as a PNG, rasterised in browser.
-func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, scale float64) (attachment.Attachment, error) {
+func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, inputPath string, scale float64) (attachment.Attachment, error) {
 	// Before the layout, which can take seconds, rather than after it.
 	if browser == nil {
 		return attachment.Attachment{}, chrome.ErrNoBrowser
@@ -143,7 +156,7 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	layoutCtx = d2log.WithDefault(layoutCtx)
 	defer cancel()
 
-	out, _, _, err := renderSVG(layoutCtx, d2Diagram)
+	out, _, _, err := renderSVG(layoutCtx, d2Diagram, inputPath)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -201,7 +214,7 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
 
-	out, width, height, err := renderSVG(ctx, d2Diagram)
+	out, width, height, err := renderSVG(ctx, d2Diagram, inputPath)
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -270,6 +283,53 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 		Width:     displayed(width, scale),
 		Height:    displayed(height, scale),
 	}, nil
+}
+
+// importFS is what d2 reads a diagram's imports through. Without one d2 opens
+// any path it is given, relative to the working directory; this holds each
+// import to the boundary every other file a document names is held to, and
+// reads a relative one from the document's directory, as d2 itself does for a
+// file it is run on and as an image or icon is.
+//
+// d2 asks for nested imports through the same Open, already joined to the
+// directory of the file that imports them.
+type importFS struct {
+	inputPath string
+
+	// refused is the first import turned down, kept because d2 passes on
+	// only its message.
+	refused error
+}
+
+func (f *importFS) Open(name string) (fs.File, error) {
+	if err := f.check(name); err != nil {
+		if f.refused == nil {
+			f.refused = err
+		}
+
+		return nil, err
+	}
+
+	if !filepath.IsAbs(name) {
+		name = filepath.Join(filepath.Dir(f.inputPath), name)
+	}
+
+	return os.Open(name)
+}
+
+func (f *importFS) check(name string) error {
+	if f.inputPath == "" || f.inputPath == "-" {
+		return fmt.Errorf(
+			"imports %q, which needs the document it was written in to be a file on disk",
+			name,
+		)
+	}
+
+	if err := attachment.CheckReadable(filepath.Dir(f.inputPath), name); err != nil {
+		return fmt.Errorf("imports %q: %w", name, err)
+	}
+
+	return nil
 }
 
 // image matches the pictures d2 draws into an SVG, the same way d2's own
