@@ -664,13 +664,29 @@ func TestDocumentsDoNotVouchForTheFilesOfTheirSpace(t *testing.T) {
 	assert.False(t, server.Page(fileID).Trashed)
 }
 
-// TestDocumentScopeIsNotAFilesPattern: a --files run whose pattern is
-// spelled like a document scope still does not take the scope's pages for
-// its own.
-func TestDocumentScopeIsNotAFilesPattern(t *testing.T) {
-	assert.NotEqual(t, manifest.Key("generated"), documentScopePattern("generated"))
-	assert.NotEqual(t, manifest.Key(documentScopePattern("generated")), documentScopePattern("generated"),
-		"no glob normalises to a scope")
+// TestPartialFilesRunLeavesDocumentScopesAlone: a partial run of files
+// naming a path that is also a scoped document's key does not take the
+// document's entry for one of its files, gone or not.
+func TestPartialFilesRunLeavesDocumentScopesAlone(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "file.md", markdownWithTitle("From Disk"))
+
+	config := documentsConfig(server, Document{
+		Path: "generated/doc.md", Content: []byte(markdownWithTitle("From Memory")), FS: fstest.MapFS{},
+	})
+	config.DocumentScope = "generated"
+	require.NoError(t, Run(context.Background(), config))
+
+	partial := trackingConfig(server, "")
+	partial.Paths = []string{file, "generated/doc.md"}
+	partial.Tracking.Partial = true
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), partial)) })
+
+	assert.NotContains(t, logged, "had no matching source file")
+	entry, ok := lookupKey(t, server, "generated/doc.md")
+	require.True(t, ok)
+	assert.Equal(t, "documents://generated", entry.Glob)
 }
 
 func TestDocumentScopeRequiresTrackPages(t *testing.T) {

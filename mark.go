@@ -970,7 +970,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			for _, in := range documents {
 				keys = append(keys, in.key)
 			}
-			tracker.SetRunDocuments(documentScopePattern(config.DocumentScope), keys)
+			tracker.SetRunDocuments(config.DocumentScope, keys)
 		}
 	}
 

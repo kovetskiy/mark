@@ -257,19 +257,6 @@ func (c Config) checkUnscopedOrphans(onOrphan report.OnOrphan, files []string) e
 	return errors.New(msg)
 }
 
-// documentScopePattern is what the manifest records a run's documents under
-// in place of a --files pattern: none for no scope, and otherwise one no
-// pattern can be, since manifest.Key never leaves "//" inside a path. A
-// --files run therefore never takes a document's page for one of its own
-// orphans, nor the other way round.
-func documentScopePattern(scope string) string {
-	if scope == "" {
-		return ""
-	}
-
-	return "documents://" + scope
-}
-
 // documentFiles is where a link from one of the run's documents, or to one,
 // is looked for: the run's own documents and files by their name first, then
 // what root holds. A file of the run is read from disk even by a document in

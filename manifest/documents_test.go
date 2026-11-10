@@ -29,7 +29,7 @@ func TestDocumentScopeOrphans(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
 
-	first := storeFor(server, "*.md", "documents://gen", []string{"file.md"}, []string{"scoped.md"})
+	first := storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"scoped.md"})
 	require.NoError(t, first.Record(ctx, "DOCS", "file.md", "1", "File", ""))
 	require.NoError(t, first.Record(ctx, "DOCS", "scoped.md", "2", "Scoped", ""))
 	require.NoError(t, first.Save(ctx))
@@ -44,7 +44,7 @@ func TestDocumentScopeOrphans(t *testing.T) {
 	assert.Empty(t, files.Orphans("DOCS"))
 
 	// The same scope, without scoped.md: it is that scope's orphan.
-	scope := storeFor(server, "", "documents://gen", nil, []string{"other.md"})
+	scope := storeFor(server, "", "gen", nil, []string{"other.md"})
 	require.NoError(t, scope.Record(ctx, "DOCS", "other.md", "4", "Other", ""))
 	assert.Equal(t, []string{"scoped.md"}, scope.Orphans("DOCS"))
 
@@ -61,12 +61,12 @@ func TestResolveRenamedForStaysInScope(t *testing.T) {
 	server := confluencetest.New(t)
 	server.AddSpace("DOCS")
 
-	first := storeFor(server, "*.md", "documents://gen", []string{"file.md"}, []string{"old.md"})
+	first := storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"old.md"})
 	require.NoError(t, first.Record(ctx, "DOCS", "file.md", "1", "File", "same"))
 	require.NoError(t, first.Record(ctx, "DOCS", "old.md", "2", "Old", "same"))
 	require.NoError(t, first.Save(ctx))
 
-	next := storeFor(server, "*.md", "documents://gen", nil, []string{"new.md"})
+	next := storeFor(server, "*.md", "gen", nil, []string{"new.md"})
 	path, entry, ok, err := next.ResolveRenamedFor(ctx, "DOCS", "new.md", "same")
 	require.NoError(t, err)
 	require.True(t, ok)
