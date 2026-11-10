@@ -18,10 +18,16 @@ import (
 // The zero Root is the local disk: names are OS paths, and a document may
 // read what CheckReadable allows, its own directory or the one mark is
 // running in. A Root from FSRoot reads from an fs.FS instead, and nothing
-// outside it: a name is the slash-separated path inside it, and one that is
-// absolute or climbs above its root with ".." is refused with
-// ErrOutsideProject. The fs.FS's root is the boundary, so a document there
-// may reach "../images/logo.png" as long as that stays inside it.
+// outside it: a name is the slash-separated path inside it, and one that
+// climbs above its root with ".." is refused with ErrOutsideProject. The
+// fs.FS's root is the boundary, so a document there may reach
+// "../images/logo.png" as long as that stays inside it. As on disk, an
+// attachment's absolute name is joined to the document's directory, and
+// CheckReadable refuses an absolute reference.
+//
+// The boundary is the names asked for: what the fs.FS does with them is its
+// own. os.DirFS follows a symbolic link out of its directory; the fs.FS of
+// an os.Root does not.
 //
 // A Root is an Opener, for ResolveLocalAttachment and
 // ResolveLocalAttachments, which then also glob and check containment in it.

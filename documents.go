@@ -60,10 +60,13 @@ type Document struct {
 
 	// FS is where the files Content names relative to Path are read from:
 	// images, attachments, linked files, and includes and macro templates
-	// beside it. Nothing outside it is read -- a name climbing above its root
-	// is refused -- except includes under RenderingConfig.IncludePath, which
-	// stay on disk. Nil is the local disk, around Path, under the rules a
-	// file is held to.
+	// beside it. A name climbing above its root is refused, except includes
+	// under RenderingConfig.IncludePath, which stay on disk. Nil is the local
+	// disk, around Path, under the rules a file is held to.
+	//
+	// Only names are held to the root: os.DirFS follows a symbolic link out
+	// of its directory, where the FS of an os.Root, from os.OpenRoot, does
+	// not. Use that for a directory whose contents you do not control.
 	//
 	// A d2 diagram in a document with an FS may not name a local file; d2
 	// reads those from disk itself.
@@ -329,7 +332,13 @@ func (p *Publisher) PublishDocument(ctx context.Context, doc Document) (*conflue
 
 	target, err := p.publish(ctx, in)
 	if err != nil {
-		return target, &FileError{File: in.file, Source: in.source, Err: err}
+		// As Run names it: empty when the document is its own source.
+		source := in.source
+		if source == in.file {
+			source = ""
+		}
+
+		return target, &FileError{File: in.file, Source: source, Err: err}
 	}
 
 	return target, nil

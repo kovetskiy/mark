@@ -1473,6 +1473,9 @@ func (s *Store) LookupMoved(ctx context.Context, spaceKey, path, pageID string) 
 //
 // Deliberately unforgiving beyond that. A match must be unique, and the page
 // must not already be claimed by another document this run.
+//
+// It looks under the --files pattern alone; in a run with SetRunDocuments,
+// use ResolveRenamedFor, which looks under each path's own scope.
 func (s *Store) ResolveRenamed(ctx context.Context, spaceKey, hash string) (string, Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
