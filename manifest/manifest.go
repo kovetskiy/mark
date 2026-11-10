@@ -489,7 +489,8 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 
 // SetWarningsFor has what Record finds wrong with a document added to the
 // collector warningsFor gives for its key, as Key spells it; a nil function,
-// or a nil collector for a key, only logs it.
+// or a nil collector for a key, only logs it. warningsFor is called with the
+// store's lock held, so it must not call the store.
 func (s *Store) SetWarningsFor(warningsFor func(key string) *report.Warnings) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

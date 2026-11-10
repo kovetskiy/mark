@@ -190,9 +190,13 @@ func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]Mi
 
 	// Copied under the lock and looked up without it, so that a lookup, which
 	// is a request to Confluence, does not hold up NotePage on another
-	// goroutine.
+	// goroutine. The sources are copied too: NotePage appends to them.
 	c.mu.Lock()
-	pending := maps.Clone(c.pending)
+	pending := make(map[string]pendingPage, len(c.pending))
+	for key, link := range c.pending {
+		link.sources = slices.Clone(link.sources)
+		pending[key] = link
+	}
 	c.mu.Unlock()
 
 	var missing []MissingLink
@@ -206,7 +210,7 @@ func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]Mi
 
 		if found == nil {
 			missing = append(missing, MissingLink{
-				Space: link.space, Title: link.title, Sources: slices.Clone(link.sources),
+				Space: link.space, Title: link.title, Sources: link.sources,
 			})
 		}
 	}

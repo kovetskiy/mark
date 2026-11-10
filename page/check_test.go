@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -286,6 +287,8 @@ func TestLinkCheckerConcurrentAccess(t *testing.T) {
 			for i := range perRoutine {
 				checker.NotePage("DOCS", "page-"+strconv.Itoa(g)+"-"+strconv.Itoa(i), "a.md")
 				checker.NotePage("DOCS", "shared", "b.md")
+				// Grows the sources of one link while MissingLinks reads them.
+				checker.NotePage("DOCS", "shared", "doc-"+strconv.Itoa(g)+"-"+strconv.Itoa(i)+".md")
 				if i%25 == 0 {
 					checker.ForgetPages()
 				}
@@ -296,6 +299,12 @@ func TestLinkCheckerConcurrentAccess(t *testing.T) {
 			for range perRoutine / 10 {
 				_, err := checker.MissingPages(context.Background(), missingFinder{})
 				assert.NoError(t, err)
+
+				links, err := checker.MissingLinks(context.Background(), missingFinder{})
+				assert.NoError(t, err)
+				for _, link := range links {
+					_ = strings.Join(link.Sources, ",")
+				}
 			}
 		}()
 	}
