@@ -1060,9 +1060,9 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	moved, movedOK := s.movedOwner(state, path, pageID)
 	if owner, ok := state.byPage[pageID]; ok && owner != path {
 		if movedOK {
-			// The path that owned this page is absent from this run -- recorded
-			// under this run's --files pattern, yet not among the files it
-			// publishes and not seen by it -- and this path now publishes to the
+			// The path that owned this page is absent from this run -- covered
+			// by it, yet not among the files it publishes and not seen by it --
+			// and this path now publishes to the
 			// same page: the document moved (a plain rename of the file, title
 			// unchanged), and the page follows it. Left recorded, the old path
 			// would read as an orphan whose page is the very one just published
@@ -1175,10 +1175,11 @@ func (s *Store) covers(path string, entry Entry) bool {
 
 // movedOwner returns the entry of the path a page belongs to in the manifest,
 // when that path is absent from this run and path is not it: one the run
-// covers, yet neither among the files the run publishes nor seen by it. A page found for a document under another path whose owner is
-// gone like that is the same document, moved.
+// covers, yet neither among the files the run publishes nor seen by it. A page
+// found for a document under another path whose owner is gone like that is the
+// same document, moved.
 //
-// An owner the run publishes, or one from another pattern, is not gone -- it
+// An owner the run publishes, or one it does not cover, is not gone -- it
 // is a second document claiming the page, which is a conflict to report and
 // not a move to follow.
 func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool) {
@@ -1227,8 +1228,9 @@ func (s *Store) LookupMoved(ctx context.Context, spaceKey, path, pageID string) 
 // A rename changes the key, so the entry cannot be found by where it was; the
 // only thing connecting the two is what the document contains.
 //
-// Candidates are restricted to what this run's own --files pattern published,
-// and to paths it is not publishing now. Both restrictions matter, and the
+// Candidates are restricted to the paths this run covers (see covers) -- what
+// its own --files pattern published, or for a partial run what that pattern
+// names -- and to paths it is not publishing now. Both restrictions matter, and the
 // second alone is not enough: several mark invocations commonly publish
 // different folders into one space, and every path belonging to another
 // invocation is missing from this one. Without the pattern check they all look
@@ -1507,7 +1509,8 @@ func (s *Store) Published(spaceKey string) int {
 
 // Orphans returns the recorded paths this run was looking for and did not find.
 //
-// Only entries published by the same --files pattern count. A run narrowed to
+// Only entries the run covers count: those published by the same --files
+// pattern, or for a partial run those its pattern names. A run narrowed to
 // one directory says nothing about any other, and reporting everything outside
 // it as missing -- which an unscoped version does -- buries the handful of
 // genuine deletions in a list of files that are perfectly present. Entries with
