@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -82,14 +81,12 @@ func TestRenderLoadsNothingFromTheNetwork(t *testing.T) {
 
 	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">`)
 
-	for i, url := range append(recorder.urls(t, "image"), recorder.urls(t, "css")...) {
-		if strings.HasSuffix(url, "css") {
-			fmt.Fprintf(&svg, `<rect width="10" height="10" style="fill:url(%s)"/>`, url)
+	for _, url := range recorder.urls(t, "image") {
+		fmt.Fprintf(&svg, `<image width="10" height="10" href="%s"/>`, url)
+	}
 
-			continue
-		}
-
-		fmt.Fprintf(&svg, `<image x="%d" width="10" height="10" href="%s"/>`, i*10, url)
+	for _, url := range recorder.urls(t, "css") {
+		fmt.Fprintf(&svg, `<rect width="10" height="10" style="fill:url(%s)"/>`, url)
 	}
 
 	svg.WriteString(`<rect x="20" y="20" width="20" height="20" fill="red"/></svg>`)
@@ -129,13 +126,11 @@ func TestPageLoadsNothingFromTheNetwork(t *testing.T) {
 
 	page.WriteString(`]).then(() => "settled");</script></body></html>`)
 
-	opts := slices.Concat(chromedp.DefaultExecAllocatorOptions[:], AllocatorOptions(), []chromedp.ExecAllocatorOption{withoutLocalNetworkChecks})
+	s, err := startSessionWith(t.Context(), withoutLocalNetworkChecks)
+	require.NoError(t, err)
+	t.Cleanup(s.cancel)
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(t.Context(), opts...)
-	defer allocCancel()
-
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	defer cancel()
+	ctx := s.ctx
 
 	require.NoError(t, chromedp.Do(ctx,
 		chromedp.Navigate("data:text/html,"+strings.ReplaceAll(page.String(), "#", "%23")),
