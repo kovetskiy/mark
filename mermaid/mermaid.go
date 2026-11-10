@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	mermaid "github.com/dreampuf/mermaid.go"
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
@@ -56,6 +57,9 @@ type Engine struct {
 
 	once     sync.Once
 	renderer *lazy.Lazy[mermaid.Renderer]
+
+	// extraOptions follow mark's own when the browser is launched; for tests.
+	extraOptions []chromedp.ExecAllocatorOption
 }
 
 // ErrNoEngine is what drawing asks of a nil *Engine: the caller drew a diagram
@@ -166,7 +170,8 @@ func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 	// startup, so it deliberately carries no deadline: mermaid.go bounds loading
 	// the embedded bundle with DefaultStartupTimeout by itself, whereas a
 	// deadline here would close the browser mid-run.
-	engine, err := mermaid.NewRenderEngine(life, []string{uncapDiagramWidth}, chrome.AllocatorOptions()...)
+	engine, err := mermaid.NewRenderEngine(life, []string{uncapDiagramWidth},
+		slices.Concat(chrome.AllocatorOptions(), e.extraOptions)...)
 	if err != nil {
 		return nil, err
 	}
