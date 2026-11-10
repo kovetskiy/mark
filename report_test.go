@@ -298,13 +298,9 @@ func reportedPages(t *testing.T, config Config) (map[string][]report.Page, error
 	return byFile, runErr
 }
 
-// failUpdatesCarrying makes the fake refuse a page update whose body fails
-// says so, reading the body without taking it from the handler.
-func failUpdatesCarrying(server *confluencetest.Server, fails func(body string) bool) {
-	refuseUpdatesCarrying(server, http.StatusBadRequest, fails)
-}
-
-// refuseUpdatesCarrying is failUpdatesCarrying answering with status.
+// refuseUpdatesCarrying makes the fake refuse, with status, a page update
+// whose body fails says so, reading the body without taking it from the
+// handler.
 func refuseUpdatesCarrying(server *confluencetest.Server, status int, fails func(body string) bool) {
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if r.Method != http.MethodPut || !strings.Contains(r.URL.Path, "/content/") {
@@ -334,7 +330,7 @@ func TestReportDoesNotCallAFailedUpdatePublished(t *testing.T) {
 	writeFile(t, dir, "good.md", outHeader+"<!-- Title: Good -->\n\nFine.\n")
 	writeFile(t, dir, "bad.md", outHeader+"<!-- Title: Bad -->\n\nRefused.\n")
 
-	failUpdatesCarrying(server, func(body string) bool {
+	refuseUpdatesCarrying(server, http.StatusBadRequest, func(body string) bool {
 		return strings.Contains(body, "Refused.")
 	})
 
@@ -374,7 +370,7 @@ func TestReportRecordsAFailureInTheSecondPass(t *testing.T) {
 	// A is written once in the first pass and again in the second; only the
 	// second is refused.
 	updatesOfA := 0
-	failUpdatesCarrying(server, func(body string) bool {
+	refuseUpdatesCarrying(server, http.StatusBadRequest, func(body string) bool {
 		if !strings.Contains(body, `"title":"A"`) {
 			return false
 		}
@@ -1021,7 +1017,7 @@ func TestAFailedFileStopsTheRunWithItsFileError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "bad.md", outHeader+"<!-- Title: Bad -->\n\nBad.\n")
 
-	failUpdatesCarrying(server, func(string) bool { return true })
+	refuseUpdatesCarrying(server, http.StatusBadRequest, func(string) bool { return true })
 
 	err := Run(context.Background(), publishConfig(server.URL, filepath.Join(dir, "*.md")))
 

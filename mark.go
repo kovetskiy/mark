@@ -944,30 +944,38 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 		return nil, err
 	}
 
+	target, err := p.publish(ctx, file)
+	if err != nil {
+		return target, &FileError{File: file, Err: err}
+	}
+
+	return target, nil
+}
+
+// publish is Publish's work on file, its failures not yet tied to the file.
+func (p *Publisher) publish(ctx context.Context, file string) (*confluence.PageInfo, error) {
 	// Each file's ac: links are checked, and reported, on their own.
 	p.run.checker.ForgetPages()
 
 	target, _, err := p.run.processFile(ctx, file)
 	if err != nil {
-		return target, &FileError{File: file, Err: err}
+		return target, err
 	}
 
 	missing, err := p.run.checker.MissingPages(ctx, p.run.api)
 	if err != nil {
-		return target, &FileError{File: file, Err: err}
+		return target, err
 	}
 
 	for _, item := range missing {
 		log.Warn().Msg(item)
 	}
 
-	if !p.run.config.Links.CheckLinksWarnOnly {
-		if err := unresolvedLinks(missing); err != nil {
-			return target, &FileError{File: file, Err: err}
-		}
+	if p.run.config.Links.CheckLinksWarnOnly {
+		return target, nil
 	}
 
-	return target, nil
+	return target, unresolvedLinks(missing)
 }
 
 // Close shuts down the browser and mermaid engine, if a picture started them,
