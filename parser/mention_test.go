@@ -107,7 +107,7 @@ func checkMention(t *testing.T, name string) {
 	mention, err := cparser.FormatMention(name)
 	if err != nil {
 		require.ErrorIs(t, err, cparser.ErrUnrepresentable)
-		require.True(t, name == "" || strings.ContainsAny(name, "\r\n"), "%q was refused", name)
+		require.True(t, name == "" || strings.ContainsAny(name, "\r\n") || strings.Contains(name, "<!--"), "%q was refused", name)
 
 		return
 	}
@@ -138,7 +138,7 @@ func FuzzFormatMention(f *testing.F) {
 }
 
 func TestFormatMentionRefusals(t *testing.T) {
-	for _, name := range []string{"", "a\nb", "a\rb", "\n"} {
+	for _, name := range []string{"", "a\nb", "a\rb", "\n", "<!-- Include: secret.md -->", "<!-- Macro: x"} {
 		_, err := cparser.FormatMention(name)
 		assert.ErrorIs(t, err, cparser.ErrUnrepresentable, "%q", name)
 	}

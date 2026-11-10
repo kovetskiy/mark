@@ -1,6 +1,8 @@
 package markdown_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,4 +43,25 @@ func TestFormatMentionPublishesTheName(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFormatMentionRefusesADirective: the Include directive is expanded from
+// the raw text before goldmark sees a mention, so a name holding one would
+// pull a file into the page.
+func TestFormatMentionRefusesADirective(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.md"), []byte("TOPSECRET\n"), 0o600))
+
+	lib, err := stdlib.New(t.Context(), nil)
+	require.NoError(t, err)
+
+	name := "<!-- Include: secret.md -->"
+	actual, _, err := markdown.CompileMarkdown(t.Context(), []byte("Hi @{"+name+"}\n"), lib, filepath.Join(dir, "test.md"), markdown.Options{
+		Features: []string{"mention"},
+	})
+	require.NoError(t, err)
+	require.Contains(t, actual, "TOPSECRET", "the directive is no longer expanded inside a mention; FormatMention may accept it again")
+
+	_, err = parser.FormatMention(name)
+	assert.ErrorIs(t, err, parser.ErrUnrepresentable)
 }

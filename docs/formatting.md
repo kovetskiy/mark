@@ -342,7 +342,8 @@ Ask @{Jane Doe} or @{Ops {on call\}}.
 
 A program writing mentions from names it does not control can call
 `parser.FormatMention`, which escapes the name and refuses one no mention can
-hold.
+hold: an empty name, a line break, or `<!--`, since mark reads Include and
+Macro directives from the raw text before it looks for mentions.
 
 ## Render Mermaid Diagram
 
