@@ -50,7 +50,8 @@ type Config struct {
 	// that does not exist is not published but is still named, so with
 	// Tracking.Partial a deleted file listed here is looked for like one Files
 	// matches -- which is how a job gives the paths a change touched, as git
-	// diff --name-only lists them.
+	// diff --no-renames --name-only lists them, a renamed file's old path
+	// included.
 	Paths []string
 
 	Connection ConnectionConfig

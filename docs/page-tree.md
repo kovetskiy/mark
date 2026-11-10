@@ -346,9 +346,15 @@ publishes them all, says so with `--partial`, and names the paths the change
 touched, deleted and renamed ones included:
 
 ```bash
-git diff --name-only "$BASE" -- 'docs/*.md' |
+git -c core.quotePath=false diff --no-renames --name-only "$BASE" -- 'docs/*.md' |
   mark publish --track-pages --partial --files-from -
 ```
+
+`--no-renames` lists a renamed file under its old path as well as its new one,
+which the partial run needs to follow the rename to its page: with rename
+detection on, as it is by default, `git diff` names only the new path, and
+the renamed file gets a page of its own. `core.quotePath=false` keeps a path
+holding characters outside ASCII as written instead of quoted.
 
 `--files-from` reads one path a line, from a file or from standard input for
 `-`, and takes each as written: a path holding `*`, `[` or `{` names that file
