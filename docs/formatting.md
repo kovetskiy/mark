@@ -351,6 +351,10 @@ A program writing mentions from names it does not control can call
 `parser.FormatMention`, which escapes the name and refuses one no mention can
 hold: an empty name, a line break, or `<!--`, since mark reads Include and
 Macro directives from the raw text before it looks for mentions.
+`parser.SanitizeMention` is the lossy alternative: it turns each line break
+into a space and `<!--` into `< !--`, so that `FormatMention` takes any name
+but an empty one. Users are looked up by full name, so a name it changes most
+likely names no one, and the page shows it as text.
 
 ## Render Mermaid Diagram
 

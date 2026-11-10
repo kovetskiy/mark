@@ -130,6 +130,45 @@ func FuzzFormatMention(f *testing.F) {
 	})
 }
 
+// checkSanitizeMention: whatever the name, FormatMention takes what
+// SanitizeMention makes of it unless it is empty, and leaves a name
+// FormatMention already took as it was.
+func checkSanitizeMention(t *testing.T, name string) {
+	t.Helper()
+
+	sanitized := cparser.SanitizeMention(name)
+	assert.Equal(t, sanitized, cparser.SanitizeMention(sanitized), "not idempotent")
+
+	if _, err := cparser.FormatMention(name); err == nil {
+		assert.Equal(t, name, sanitized, "a name FormatMention accepts was altered")
+	}
+
+	if name == "" {
+		assert.Empty(t, sanitized)
+		return
+	}
+
+	_, err := cparser.FormatMention(sanitized)
+	require.NoError(t, err, "%q sanitized to %q", name, sanitized)
+	checkMention(t, sanitized)
+}
+
+func TestSanitizeMention(t *testing.T) {
+	assert.Equal(t, "Jane Doe < !-- Include: x -- >", cparser.SanitizeMention("Jane\r\nDoe <!-- Include: x -- >"))
+	assert.Equal(t, " ", cparser.SanitizeMention("\n"))
+	assert.Equal(t, "", cparser.SanitizeMention(""))
+}
+
+func FuzzSanitizeMention(f *testing.F) {
+	for _, name := range append(adversarialNames(), "<!--<!--", "<\n!--", "<!\r\n--") {
+		f.Add(name)
+	}
+
+	f.Fuzz(func(t *testing.T, name string) {
+		checkSanitizeMention(t, name)
+	})
+}
+
 func TestFormatMentionRefusals(t *testing.T) {
 	for _, name := range []string{"", "a\nb", "a\rb", "\n", "<!-- Include: secret.md -->", "<!-- Macro: x"} {
 		_, err := cparser.FormatMention(name)
