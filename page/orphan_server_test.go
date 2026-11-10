@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
@@ -123,4 +125,21 @@ func TestHandleOrphansKeepsAPageThatIsStillThere(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, handled)
 	assert.False(t, server.Page(live.ID).Trashed)
+}
+
+// TestHandleOrphansTakesATrashedPageAsGoneThroughTheGateway: through the
+// api.atlassian.com gateway the page is read from v2, which hands back a page
+// in the trash with its status rather than a 404.
+func TestHandleOrphansTakesATrashedPageAsGoneThroughTheGateway(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
+	gone := server.AddPage("DOCS", "Gone", "page", "")
+	require.NoError(t, api.DeletePage(ctx, gone.ID))
+
+	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanArchive, []page.Orphan{
+		{Path: "gone.md", PageID: gone.ID, Title: "Gone"},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gone.md"}, handled)
 }
