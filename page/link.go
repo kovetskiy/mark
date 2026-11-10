@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +19,20 @@ import (
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
+
+// LinkFiles is where a relative link's target is looked for and read.
+// attachment.Root is one.
+type LinkFiles interface {
+	Stat(name string) (fs.FileInfo, error)
+	ReadFile(name string) ([]byte, error)
+}
+
+// diskFiles is the local disk.
+type diskFiles struct{}
+
+func (diskFiles) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
+
+func (diskFiles) ReadFile(name string) ([]byte, error) { return os.ReadFile(name) }
 
 type markdownLink struct {
 	full     string
@@ -80,6 +95,12 @@ type LinkResolver struct {
 	// going to publish, when that is a warning rather than a failure of the
 	// check; nil only logs it.
 	Warnings *report.Warnings
+
+	// Files is where a linked document is looked for and read, by the path
+	// joined from Base or a SearchDirs entry; nil is the local disk. A caller
+	// whose documents are not all files on disk -- a run handed some from
+	// memory -- answers for them here.
+	Files LinkFiles
 
 	// broken collects the links that failed a check, rather than the first one
 	// stopping the file. Reporting one at a time would mean fixing a link,
@@ -189,13 +210,14 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.Extract,
 		r.ReadMeta,
+		r.Files,
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
 	}
 
 	if why != nil && why.noFile && len(r.CheckOnlyDirs) > 0 {
-		if found, absent := findLinkTarget(r.CheckOnlyDirs, filename); absent == nil {
+		if found, absent := findLinkTarget(diskFiles{}, r.CheckOnlyDirs, filename); absent == nil {
 			// Passes the check, and is still a relative path no page can
 			// follow, so it is said in the report rather than only logged.
 			r.Warnings.Add(report.WarningSourceOnlyLink,
@@ -310,20 +332,25 @@ func resolveLink(
 	link markdownLink,
 	opts metadata.ExtractOptions,
 	readMeta func([]byte, metadata.ExtractOptions) (*metadata.Meta, []byte, error),
+	files LinkFiles,
 ) (string, *unresolved, error) {
 	var result string
+
+	if files == nil {
+		files = diskFiles{}
+	}
 
 	if readMeta == nil {
 		readMeta = metadata.ExtractMeta
 	}
 
 	if len(link.filename) > 0 {
-		filepath, why := findLinkTarget(bases, link.filename)
+		filepath, why := findLinkTarget(files, bases, link.filename)
 		if why != nil {
 			return "", why, nil
 		}
 
-		linkContents, err := os.ReadFile(filepath)
+		linkContents, err := files.ReadFile(filepath)
 		if err != nil {
 			return "", nil, fmt.Errorf("read file %s: %w", filepath, err)
 		}
@@ -429,7 +456,7 @@ func resolveLink(
 // browser would read the URL a destination is: "my%20page.md" is how VS Code and
 // GitHub spell "my page.md". As written comes first so that a file whose name
 // really contains a "%" still resolves to itself.
-func findLinkTarget(bases []string, name string) (string, *unresolved) {
+func findLinkTarget(files LinkFiles, bases []string, name string) (string, *unresolved) {
 	var directory bool
 
 	names := []string{name}
@@ -442,7 +469,7 @@ func findLinkTarget(bases []string, name string) (string, *unresolved) {
 			candidate := filepath.Join(base, n)
 
 			log.Trace().Msgf("filepath: %s", candidate)
-			stat, err := os.Stat(candidate)
+			stat, err := files.Stat(candidate)
 			if err != nil {
 				// Not a file on disk here, or unreadable. Swallowing err is
 				// deliberate: the next candidate may have it, and if none does
