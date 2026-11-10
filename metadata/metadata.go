@@ -1130,7 +1130,7 @@ func onlyWhitespace(data []byte, from, to int) bool {
 //
 // data is the document after its front matter, which starts on the file's
 // firstLine; the headers that were read sit between headersStart and
-// headersStop, and lastStop of 0 means there were none. Scanning it rather
+// headersStop, and headersStop of 0 means there were none. Scanning it rather
 // than the body they were taken out of keeps the lines those of the file.
 func warnStrandedHeaders(data []byte, headersStart, headersStop, firstLine int, warnings *report.Warnings) {
 	// A header comment shown inside a fence is an example of one, not a

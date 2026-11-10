@@ -763,7 +763,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	var missingPages []string
 	for _, link := range missingLinks {
-		missingPages = append(missingPages, link.Sources[0]+": "+link.Message())
+		missingPages = append(missingPages, link.String())
 	}
 
 	if config.Links.CheckLinksWarnOnly {
@@ -1513,23 +1513,19 @@ func (r *publishRun) addPage(doc *document, page report.Page) {
 // run has published everything it will, to the warnings of every document
 // holding it, and puts those into the documents' lines of the report.
 func (r *publishRun) warnMissingLinks(links []page.MissingLink) {
-	var touched []string
 	for _, link := range links {
 		for _, source := range link.Sources {
 			warnings, known := r.warnings[source]
 			if !known {
 				// Not a document this run read; logged against it all the same.
-				warnings = report.NewWarnings(source)
-			} else if !slices.Contains(touched, source) {
-				touched = append(touched, source)
+				report.NewWarnings(source).Add(report.WarningUnresolvedLink, "%s", link.Message())
+
+				continue
 			}
 
 			warnings.Add(report.WarningUnresolvedLink, "%s", link.Message())
+			r.results.SetWarnings(source, warnings.List())
 		}
-	}
-
-	for _, file := range touched {
-		r.results.SetWarnings(file, r.warnings[file].List())
 	}
 }
 

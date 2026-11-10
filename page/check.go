@@ -158,6 +158,12 @@ func (m MissingLink) Message() string {
 	return fmt.Sprintf("link \"ac:%s\" does not resolve: there is no page %q in space %q", m.Title, m.Title, m.Space)
 }
 
+// String is the link as MissingPages reports it: against the first document
+// that holds it.
+func (m MissingLink) String() string {
+	return m.Sources[0] + ": " + m.Message()
+}
+
 // MissingPages reports the ac: links that named no page, once everything that
 // was going to be published has been: each once, against the first document
 // that holds it.
@@ -169,7 +175,7 @@ func (c *LinkChecker) MissingPages(ctx context.Context, finder PageFinder) ([]st
 
 	var missing []string
 	for _, link := range links {
-		missing = append(missing, link.Sources[0]+": "+link.Message())
+		missing = append(missing, link.String())
 	}
 
 	return missing, nil
