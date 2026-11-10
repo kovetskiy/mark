@@ -924,3 +924,48 @@ func TestLinkFindsThePageTheHierarchyTitles(t *testing.T) {
 		})
 	}
 }
+
+// TestLinkFromAnIncludePathFindsTheHierarchy: a link inside a fragment found
+// through --include-path is resolved from that directory, which the operator
+// may name relative while the root is absolute. The linked document is the
+// same file either way, so it has to take the same title.
+func TestLinkFromAnIncludePathFindsTheHierarchy(t *testing.T) {
+	for name, relativeRoot := range map[string]bool{
+		"relative include path, absolute root": false,
+		"absolute include path, relative root": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := hierarchyServer(t)
+			dir := t.TempDir()
+			writeAt(t, dir, "docs/sub/intro.md", space+"<!-- Title: Intro -->\n\n<!-- Include: frag.md -->\n")
+			writeAt(t, dir, "docs/guide/README.md", space+"\nThe guide.\n")
+			writeAt(t, dir, "shared/frag.md", "See [the guide](../docs/guide/README.md).\n")
+
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
+			relative, err := filepath.Rel(cwd, dir)
+			require.NoError(t, err)
+
+			project, includeDir := dir, relative
+			if relativeRoot {
+				project, includeDir = relative, dir
+			}
+
+			config := publishConfig(server.URL, filepath.Join(project, "docs", "**", "*.md"))
+			config.ParentsFromPath = true
+			config.ParentsFromPathRoot = filepath.Join(project, "docs")
+			config.Page.TitleFromFilename = true
+			config.Rendering.IncludePath = filepath.Join(includeDir, "shared")
+			require.NoError(t, Run(context.Background(), config))
+
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+			guide, err := api.FindPage(context.Background(), "DOCS", "Guide", "page")
+			require.NoError(t, err)
+			require.NotNil(t, guide, "the README publishes as its directory")
+			link, err := confluence.GenerateTinyLink(server.URL, guide.ID)
+			require.NoError(t, err)
+
+			assert.Contains(t, bodyOfPageTitled(t, server, "Intro"), `href="`+link+`"`)
+		})
+	}
+}
