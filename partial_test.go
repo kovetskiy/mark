@@ -96,7 +96,9 @@ func TestPartialRunActsOnlyOnWhatItNames(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
 
-	partial := partialOf(full, dir, "{a,b}.md")
+	partial := partialOf(full, dir, "")
+	partial.Files = ""
+	partial.Paths = []string{filepath.Join(dir, "a.md"), filepath.Join(dir, "b.md")}
 	partial.Tracking.OnOrphan = report.OnOrphanDelete
 	require.NoError(t, Run(context.Background(), partial))
 
@@ -106,30 +108,90 @@ func TestPartialRunActsOnlyOnWhatItNames(t *testing.T) {
 	assert.True(t, ok)
 }
 
-// TestPartialRunGivenTheOwningPatternRemovesNothing: the owning run's own
-// pattern with --partial, on a checkout holding only some of its files, reads
-// every other file as deleted; it reports them and leaves their pages alone.
-func TestPartialRunGivenTheOwningPatternRemovesNothing(t *testing.T) {
+// TestPartialRunRemovingRefusesAPattern: a wildcard under --partial reaches
+// every tracked file it matches, another job's included, and on a checkout
+// holding only some of them reads the rest as deleted. Told to archive or
+// delete, a partial run takes only exact paths, and says so before publishing.
+func TestPartialRunRemovingRefusesAPattern(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	writeFile(t, dir, "a.md", markdownWithTitle("Page a")+"\nChanged.\n")
+
+	for _, action := range []report.OnOrphan{report.OnOrphanArchive, report.OnOrphanDelete} {
+		for _, files := range []string{"*.md", "{a,b}.md", "[ab].md", "a?md"} {
+			partial := partialOf(full, dir, files)
+			partial.Tracking.OnOrphan = action
+
+			err := Run(context.Background(), partial)
+			require.ErrorIs(t, err, ErrPartialPattern, files)
+			for _, name := range []string{
+				"Tracking.OnOrphan", "--on-orphan", "Tracking.Partial", "--partial",
+				"Files", "--files", "Paths", "--files-from",
+			} {
+				assert.ErrorContains(t, err, name)
+			}
+		}
+	}
+
+	aID := pageIDTitled(t, server, "Page a")
+	assert.NotContains(t, server.Page(aID).Body, "Changed", "refused before publishing")
+
+	// Reporting removes nothing, so a pattern is fine.
+	reporting := partialOf(full, dir, "*.md")
+	require.NoError(t, Run(context.Background(), reporting))
+}
+
+// TestPartialRunRemovingTakesOneFile: Files spelling one file, an escaped glob
+// character included, names exactly that file, as Paths would.
+func TestPartialRunRemovingTakesOneFile(t *testing.T) {
 	server, full, dir := partialFixture(t)
 	bID := pageIDTitled(t, server, "Page b")
-	cID := pageIDTitled(t, server, "Page c")
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
-	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
+	writeFile(t, dir, "[x].md", markdownWithTitle("Page x"))
 
-	sparse := partialOf(full, dir, "*.md")
-	sparse.Tracking.OnOrphan = report.OnOrphanDelete
-	logged := captureLog(t, func() {
-		require.NoError(t, Run(context.Background(), sparse))
-	})
-	assert.Contains(t, logged, "--partial was given the pattern that recorded it")
+	for _, files := range []string{"b.md", `\[x\].md`} {
+		partial := partialOf(full, dir, files)
+		partial.Tracking.OnOrphan = report.OnOrphanDelete
+		err := Run(context.Background(), partial)
+		if files == "b.md" {
+			// Nothing to publish: the change only deleted b.md.
+			require.ErrorContains(t, err, "no files matched")
+			continue
+		}
+		require.NoError(t, err)
+	}
+	assert.Equal(t, 1, countPagesTitled(t, server, "Page x"))
 
-	for _, id := range []string{bID, cID} {
-		assert.False(t, server.Page(id).Trashed)
-	}
-	for _, name := range []string{"b.md", "c.md"} {
-		_, ok := tracked(t, server, filepath.Join(dir, name))
-		assert.True(t, ok, "%s stays tracked for the owning run", name)
-	}
+	partial := full
+	partial.Files = ""
+	partial.Paths = []string{filepath.Join(dir, "b.md"), filepath.Join(dir, "a.md")}
+	partial.Tracking.Partial = true
+	partial.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), partial))
+	assert.True(t, server.Page(bID).Trashed)
+}
+
+// TestPartialRunStillWarnsOfAKeptOrphan: a page --on-orphan was asked to remove
+// and left alone, here for holding a child, is still a warning in the github
+// format under --partial.
+func TestPartialRunStillWarnsOfAKeptOrphan(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	bID := pageIDTitled(t, server, "Page b")
+	server.AddPage("DOCS", "Child of b", "page", bID)
+	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
+
+	var out strings.Builder
+	partial := full
+	partial.Files = ""
+	partial.Paths = []string{filepath.Join(dir, "a.md"), filepath.Join(dir, "b.md")}
+	partial.Tracking.Partial = true
+	partial.Tracking.OnOrphan = report.OnOrphanDelete
+	partial.Report.OutputFormat = report.FormatGitHub
+	partial.Output = &out
+	require.NoError(t, Run(context.Background(), partial))
+
+	assert.False(t, server.Page(bID).Trashed)
+	assert.Contains(t, out.String(), "::warning")
+	assert.Contains(t, out.String(), "left alone")
 }
 
 // TestPartialRunLeavesEntriesUnderTheirPattern: a run narrowed to one file

@@ -321,7 +321,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.BoolFlag{
 			Name:  "partial",
 			Value: false,
-			Usage: "--files and --files-from name only some of the files another run publishes, such as the paths a change touched, deleted ones included: deleted and renamed files are looked for among the tracked files they name, and the rest are left alone. A page keeps the pattern its file was tracked under, so the run publishing them all still notices a deleted file. Requires --track-pages.",
+			Usage: "--files and --files-from name only some of the files another run publishes, such as the paths a change touched, deleted ones included: deleted and renamed files are looked for among the tracked files they name, and the rest are left alone. A page keeps the pattern its file was tracked under, so the run publishing them all still notices a deleted file. With --on-orphan archive or delete, name the files with --files-from, or --files as one file: a wildcard is refused. Requires --track-pages.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARTIAL"),
 				config.value("partial")),
 		},

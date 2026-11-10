@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,4 +26,19 @@ func TestReadPaths(t *testing.T) {
 
 	_, err = readPaths("-", "-")
 	require.ErrorContains(t, err, "cannot both read standard input")
+}
+
+// TestPartialRemovalRefusesAPatternOnTheCommandLine: told to archive or delete
+// orphans, a partial run takes --files-from paths, not a --files wildcard, and
+// refuses one before connecting.
+func TestPartialRemovalRefusesAPatternOnTheCommandLine(t *testing.T) {
+	noDefaultConfig(t)
+
+	_, _, err := runMark(t, "publish", "--color", "never",
+		"-b", "http://127.0.0.1:1", "-u", "user", "-p", "token",
+		"--track-pages", "--partial", "--on-orphan", "delete", "--files", "docs/*.md")
+	require.ErrorIs(t, err, mark.ErrPartialPattern)
+	for _, name := range []string{"--on-orphan", "--partial", "--files", "--files-from"} {
+		assert.ErrorContains(t, err, name)
+	}
 }
