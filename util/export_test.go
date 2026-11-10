@@ -87,7 +87,7 @@ func TestExportNamesExactlyOnePage(t *testing.T) {
 		{"a space without --recursive", []string{"--space", "DOCS"}, "or the space alone with --recursive"},
 		{"an unknown --format", []string{"--page-id", "1", "--format", "html"}, `--format: unknown export format "html"`},
 		{"an unknown --metadata", []string{"--page-id", "1", "--metadata", "toml"}, `--metadata: unknown export metadata "toml"`},
-		{"--recursive with --metadata none", []string{"--page-id", "1", "-r", "-o", "out", "--metadata", "none"}, "--metadata none does not apply"},
+		{"--recursive with --metadata none", []string{"--page-id", "1", "-r", "-o", "out", "--metadata", "none"}, "--metadata none: a recursive export writes documents"},
 		{"--relative-links with --format okf", []string{"--page-id", "1", "-r", "-o", "out", "--format", "okf", "--relative-links"}, "does already"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

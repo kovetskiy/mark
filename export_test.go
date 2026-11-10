@@ -1329,3 +1329,30 @@ func TestExportToStdoutNeedsAnAttachmentsDir(t *testing.T) {
 		assert.FileExists(t, filepath.Join(dir, filepath.Base(written)))
 	}
 }
+
+// TestExportPageWithoutStdout: export.Page, called directly with no Stdout,
+// leaves the document in the Result.
+func TestExportPageWithoutStdout(t *testing.T) {
+	server, id := exportPage(t, `<p>Body.</p>`)
+
+	result, err := export.Page(context.Background(),
+		confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}),
+		export.Config{PageID: id, Metadata: export.MetadataNone, NoAttachments: true})
+	require.NoError(t, err)
+	assert.Equal(t, "Body.\n", result.Markdown)
+}
+
+// TestExportBodyOpeningWithARule: with no metadata above it, a body that
+// opens with a thematic break does not open with "---", which tools that read
+// front matter take for its start.
+func TestExportBodyOpeningWithARule(t *testing.T) {
+	server, id := exportPage(t, `<hr/><p>Intro</p><hr/><p>More</p>`)
+
+	result, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     id, Metadata: export.MetadataNone, NoAttachments: true,
+	})
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(result.Markdown, "***\n"), result.Markdown)
+	assert.Contains(t, result.Markdown, "\n---\n", "only the opening rule is spelled otherwise")
+}
