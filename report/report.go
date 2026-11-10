@@ -213,6 +213,27 @@ func (r *Report) AddError(message string) {
 	r.Errors = append(r.Errors, message)
 }
 
+// MapFiles replaces the file each page and orphan is recorded against with
+// what mapper returns for it. It is meant for the end of a run, just before
+// Write: pages are matched by file, so a page added after it is a page of its
+// own. A nil mapper changes nothing.
+func (r *Report) MapFiles(mapper func(file string) string) {
+	if r == nil || mapper == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.Pages {
+		r.Pages[i].File = mapper(r.Pages[i].File)
+	}
+
+	for i := range r.Orphans {
+		r.Orphans[i].File = mapper(r.Orphans[i].File)
+	}
+}
+
 // Write says what happened, in the requested shape.
 //
 // The url form writes as each page publishes rather than at the end, so it is
