@@ -1572,6 +1572,42 @@ func TestManifestPageOptionalLateLookupFailureSavesOtherSpaces(t *testing.T) {
 	assert.Equal(t, []string{"ADOCS"}, store.UntrackedSpaces())
 }
 
+// TestManifestPageOptionalLateLookupFailureOutlivesAFailedWrite: a later
+// space's failed write does not hide that an earlier space's mapping was not
+// saved because its manifest page could not be read.
+func TestManifestPageOptionalLateLookupFailureOutlivesAFailedWrite(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	store := manifest.NewStore(api)
+	store.SetRunFiles("*.md", nil)
+	server.AddSpace("ADOCS")
+	server.AddSpace("ZDOCS")
+	tracked := server.AddPage("ZDOCS", "Team Handbook", "page", "")
+	store.SetManifestPage("Team Handbook")
+	store.SetManifestPageOptional(true)
+
+	require.NoError(t, store.Record(ctx, "ADOCS", "a.md", "1", "A", ""))
+	require.NoError(t, store.Record(ctx, "ZDOCS", "z.md", "2", "Z", ""))
+
+	late, err := api.CreatePage(ctx, "ADOCS", confluence.ContentPage, nil, "Team Handbook", "")
+	require.NoError(t, err)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/"+late.ID+"/propert") {
+			return http.StatusForbidden, `{"message":"not permitted"}`, true
+		}
+		if r.Method != http.MethodGet && strings.Contains(r.URL.Path, "/"+tracked.ID+"/propert") {
+			return http.StatusBadRequest, `{"message":"refused the write"}`, true
+		}
+		return 0, "", false
+	})
+
+	err = store.Save(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not permitted")
+	assert.Contains(t, err.Error(), "refused the write")
+}
+
 // TestUntrackedOnANilStore: a caller holding no store, because it does not
 // track pages, can ask without a check of its own.
 func TestUntrackedOnANilStore(t *testing.T) {

@@ -1540,7 +1540,7 @@ func (s *Store) sortedSpaces() []string {
 //
 // A space that gained no new mapping is not written at all, so a repeat run over
 // unchanged files leaves the property -- and its version number -- alone.
-func (s *Store) Save(ctx context.Context) error {
+func (s *Store) Save(ctx context.Context) (err error) {
 	if s.readOnly {
 		return nil
 	}
@@ -1549,8 +1549,11 @@ func (s *Store) Save(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	// A space whose manifest page could not be looked for again keeps no other
-	// space from being saved.
+	// space from being saved, nor is its failure lost to a later one's.
 	var lateErrs []error
+	defer func() {
+		err = errors.Join(append(lateErrs, err)...)
+	}()
 	for _, spaceKey := range s.sortedSpaces() {
 		state := s.spaces[spaceKey]
 
@@ -1657,5 +1660,5 @@ func (s *Store) Save(ctx context.Context) error {
 		}
 	}
 
-	return errors.Join(lateErrs...)
+	return nil
 }
