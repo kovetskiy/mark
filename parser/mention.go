@@ -130,7 +130,7 @@ func FormatMention(name string) (string, error) {
 	if strings.ContainsAny(name, "\r\n") {
 		return "", fmt.Errorf("name %q holds a line break and %w", name, ErrUnrepresentable)
 	}
-	if strings.Contains(name, "<!--") {
+	if strings.Contains(name, commentOpen) {
 		return "", fmt.Errorf("name %q opens a comment, which mark reads as a directive, and %w", name, ErrUnrepresentable)
 	}
 
@@ -145,4 +145,26 @@ func FormatMention(name string) (string, error) {
 	b.WriteByte('}')
 
 	return b.String(), nil
+}
+
+// commentOpen starts an HTML comment, and with it every directive mark finds
+// in the raw text before it parses the document.
+const commentOpen = "<!--"
+
+// SanitizeMention is name altered just enough that FormatMention accepts it,
+// for a program that would rather publish a mention close to the one it was
+// given than fail over it. FormatMention stays strict; this is the lossy
+// alternative.
+//
+// Each line break -- "\r\n", "\r" or "\n" -- becomes a space, and a comment
+// opener ("<!--") has a space put after its "<". Users are looked up by their
+// full name, so a name it changes names someone else, or more likely no one,
+// and the page then shows the changed name as text. An empty name stays
+// empty, and FormatMention still refuses it: there is no one to mention. A
+// name FormatMention already accepts is returned as it is, so applying it
+// twice changes nothing more.
+func SanitizeMention(name string) string {
+	name = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(name)
+
+	return strings.ReplaceAll(name, commentOpen, "< !--")
 }

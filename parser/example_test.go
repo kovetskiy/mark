@@ -22,10 +22,18 @@ func ExampleFormatMention() {
 	_, err := parser.FormatMention("Jane\n# Heading")
 	fmt.Println(errors.Is(err, parser.ErrUnrepresentable))
 
+	// The lossy alternative: the line break becomes a space.
+	mention, err := parser.FormatMention(parser.SanitizeMention("Jane\nDoe"))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(mention)
+
 	// Output:
 	// | @{Jane Doe} |
 	// | @{Ops {on call\}} |
 	// | @{CORP\\jdoe} |
 	// | @{a\|b} |
 	// true
+	// @{Jane Doe}
 }
