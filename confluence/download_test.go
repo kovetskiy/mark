@@ -301,35 +301,6 @@ func TestDownloadAttachmentRedirects(t *testing.T) {
 	}
 }
 
-func TestDownloadAttachmentKeepsAPIAuthenticationChecks(t *testing.T) {
-	for _, test := range []struct {
-		contentType, reason, username string
-		login                         bool
-	}{
-		{"text/html", "AUTHENTICATED_FAILED", "", true},
-		{"text/plain", "", "anonymous", true},
-		{"application/json", "AUTHENTICATED_FAILED", "anonymous", false},
-		{"application/vnd.atlassian+json", "AUTHENTICATED_FAILED", "anonymous", false},
-		{"text/plain", "OK", "user", false},
-	} {
-		t.Run(test.contentType+test.reason+test.username, func(t *testing.T) {
-			server := confluencetest.New(t)
-			server.SetFailHeaders(http.Header{
-				"Content-Type": {test.contentType}, "X-Seraph-LoginReason": {test.reason}, "X-Ausername": {test.username},
-			})
-			server.SetFail(func(*http.Request) (int, string, bool) {
-				return http.StatusOK, `{"id":"1","title":"Page"}`, true
-			})
-			_, err := NewAPI(server.URL, Options{Username: "user", Password: "token"}).GetPageByID(context.Background(), "1")
-			if test.login {
-				require.ErrorIs(t, err, ErrLoginPage)
-				return
-			}
-			require.NoError(t, err)
-		})
-	}
-}
-
 func TestDownloadAttachmentStatusBeforeAuthentication(t *testing.T) {
 	server := confluencetest.New(t)
 	server.SetFailHeaders(http.Header{"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"}})

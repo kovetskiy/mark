@@ -656,6 +656,49 @@ func TestClientTakesAnEmptyAnswerFromAnAnonymousSessionAsALoginPage(t *testing.T
 	require.ErrorIs(t, err, ErrLoginPage)
 }
 
+// TestLoginEvidenceForTheAPIAndForADownload: the same answer is judged as the
+// API's, which answers in JSON, and as a download's, which answers in the
+// attachment's own type.
+func TestLoginEvidenceForTheAPIAndForADownload(t *testing.T) {
+	for _, test := range []struct {
+		name, contentType, reason, username, landed string
+		api, download                               string
+	}{
+		{"Seraph refusal", "text/html", "AUTHENTICATED_FAILED", "", "", "X-Seraph-LoginReason: AUTHENTICATED_FAILED", "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
+		{"Seraph refusal in JSON", "application/json", "AUTHENTICATED_FAILED", "", "", "", "X-Seraph-LoginReason: AUTHENTICATED_FAILED"},
+		{"Seraph refusal in structured JSON", "application/vnd.atlassian+json", "AUTHENTICATION_DENIED", "", "", "", "X-Seraph-LoginReason: AUTHENTICATION_DENIED"},
+		{"anonymous", "text/plain", "", "anonymous", "", "X-AUSERNAME: anonymous", ""},
+		{"anonymous in JSON", "application/json", "", "anonymous", "", "", ""},
+		{"OK", "text/plain", "OK", "user", "", "", ""},
+		{"HTML", "text/html", "", "", "", "an HTML Content-Type", ""},
+		{"another host", "image/png", "", "", "https://media.example.org/file", "redirected to media.example.org", ""},
+		{"redirect to login.action", "application/json", "", "", "https://confluence.example.org/login.action", "redirected to /login.action", "redirected to /login.action"},
+		{"redirect to another host's login.action", "text/html", "", "", "https://sso.example.org/login.action", "redirected to /login.action", "redirected to /login.action"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "https://confluence.example.org/download/attachments/1/a.png", nil)
+			resp := &http.Response{Request: req, Header: http.Header{
+				"Content-Type": {test.contentType}, "X-Seraph-Loginreason": {test.reason}, "X-Ausername": {test.username},
+			}}
+			if test.landed != "" {
+				resp.Request = httptest.NewRequest(http.MethodGet, test.landed, nil)
+			}
+			mediaType := contentMediaType(resp.Header)
+
+			api, _ := loginEvidence(req, resp, mediaType, false)
+			assert.Equal(t, test.api, api, "for the API")
+			download, _ := loginEvidence(req, resp, mediaType, true)
+			assert.Equal(t, test.download, download, "for a download")
+		})
+	}
+
+	t.Run("an attachment named login.action", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://confluence.example.org/download/attachments/1/login.action", nil)
+		evidence, _ := loginEvidence(req, &http.Response{Request: req, Header: http.Header{}}, "", true)
+		assert.Empty(t, evidence)
+	})
+}
+
 // TestClientStreamsALargeSuccess: a success is decoded as it arrives. Only the
 // start of it is kept, and at TRACE only that start is dumped, under a note of
 // how much more there was.
