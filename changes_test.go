@@ -777,6 +777,64 @@ func TestNoOverwriteSurvivesTheRunThatReportsIt(t *testing.T) {
 		"the hand-written page must still be there")
 }
 
+// renamedNoOverwriteFixture publishes old-name.md under --no-overwrite with
+// its title taken from the filename, edits the page in Confluence, and renames
+// the file, so that neither its path nor its title finds the page again and
+// only its content ties the new file to it.
+func renamedNoOverwriteFixture(t *testing.T) (*confluencetest.Server, string, Config) {
+	t.Helper()
+
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
+
+	config := filenameTitleConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.NoOverwrite = true
+	require.NoError(t, Run(context.Background(), config))
+
+	id := pageIDTitled(t, server, "Old Name")
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	require.NoError(t, os.Rename(
+		filepath.Join(dir, "old-name.md"), filepath.Join(dir, "new-name.md")))
+
+	return server, id, config
+}
+
+// TestNoOverwriteKeepsAnEditAcrossARename: a renamed file is followed to its
+// page by content, and the baseline --no-overwrite compares against is in the
+// entry of the path it was renamed from. That entry has to outlast the drift
+// check, or the edit is overwritten on the very run that renames the file.
+func TestNoOverwriteKeepsAnEditAcrossARename(t *testing.T) {
+	server, id, config := renamedNoOverwriteFixture(t)
+
+	renamed := runReported(t, config)
+	assert.Equal(t, report.StatusSkipped, renamed.Status)
+	assert.Contains(t, renamed.Reason, "edited in Confluence")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body,
+		"the hand-written body must survive the rename")
+
+	again := runReported(t, config)
+	assert.Equal(t, report.StatusSkipped, again.Status,
+		"and the baseline must have moved to the new path for the runs after")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+}
+
+// TestDryRunChangesOnlyNoOverwriteSeesAnEditAcrossARename is the preview of
+// the same run: it must say the page would be left alone, and must not report
+// the path the file was renamed from as an orphan.
+func TestDryRunChangesOnlyNoOverwriteSeesAnEditAcrossARename(t *testing.T) {
+	_, _, config := renamedNoOverwriteFixture(t)
+
+	config.Update.ChangesOnly = true
+	var out string
+	logged := captureLog(t, func() { out = previewOf(t, config, "json") })
+
+	assert.Contains(t, out, `"status": "skipped"`)
+	assert.NotContains(t, logged, "had no matching source file",
+		"the path renamed from is followed, not orphaned")
+}
+
 // TestNoOverwriteDoesNotRetryOverAnEditMadeMidRun: an update refused as a
 // conflict is retried against the page's current version, which overwrites
 // whatever caused the conflict. An edit that lands after the drift check and
