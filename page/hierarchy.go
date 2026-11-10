@@ -307,7 +307,7 @@ func (h *Hierarchy) Claim(space, title, file string) (string, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	key := space + "\x00" + strings.ToLower(title)
+	key := titleKey(space, title)
 	if previous, taken := h.claims[key]; taken && previous != file {
 		return previous, true
 	}
@@ -315,4 +315,10 @@ func (h *Hierarchy) Claim(space, title, file string) (string, bool) {
 	h.claims[key] = file
 
 	return "", false
+}
+
+// titleKey names a page by space and title, the title compared without regard
+// to case, as Confluence compares them.
+func titleKey(space, title string) string {
+	return space + "\x00" + strings.ToLower(title)
 }
