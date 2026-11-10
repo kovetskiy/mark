@@ -53,8 +53,8 @@ type Config struct {
 	// ContinueOnError goes on to the next file after one fails, and fails the
 	// run at the end with a *FilesFailedError holding a *FileError for each.
 	// Without it, Run stops at the first file that fails, with a *FileError.
-	// A cancelled run returns the cancellation, and any files that failed
-	// before it are only in the report.
+	// A cancelled run's error is the cancellation to errors.Is, and any files
+	// that failed before it are only in the report.
 	ContinueOnError bool
 	// CI makes a glob that matches no files a warning rather than an error.
 	CI bool
@@ -652,7 +652,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 		fileErr := &FileError{File: file, Err: err}
 		if stepPast(ctx, config.ContinueOnError, file, err) {
-			failed.add(fileErr)
+			failed.Errors = append(failed.Errors, fileErr)
 
 			return nil
 		}
@@ -847,20 +847,6 @@ func (e *FilesFailedError) Unwrap() []error {
 	return errs
 }
 
-// add records fileErr over an earlier failure of the same file: the page holds
-// whatever the later attempt left it with.
-func (e *FilesFailedError) add(fileErr *FileError) {
-	for i, known := range e.Errors {
-		if known.File == fileErr.File {
-			e.Errors[i] = fileErr
-
-			return
-		}
-	}
-
-	e.Errors = append(e.Errors, fileErr)
-}
-
 func (e *FilesFailedError) any() bool { return len(e.Errors) > 0 }
 
 // stepPast reports whether the run goes on to the next file after file
@@ -946,7 +932,7 @@ func newPublisher(
 
 // Publish publishes file, and checks the ac: links it holds once it has.
 // Returns nil for the page info when compile-only or dry-run mode is active,
-// and a *FileError when the file fails to publish.
+// and a *FileError when the file fails to publish or its links do not resolve.
 // A caller looping over files gets what Run does on cancellation by stopping
 // when one fails with ctx.Err().
 func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageInfo, error) {
@@ -968,7 +954,7 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 
 	missing, err := p.run.checker.MissingPages(ctx, p.run.api)
 	if err != nil {
-		return target, err
+		return target, &FileError{File: file, Err: err}
 	}
 
 	for _, item := range missing {
@@ -976,7 +962,9 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 	}
 
 	if !p.run.config.Links.CheckLinksWarnOnly {
-		return target, unresolvedLinks(missing)
+		if err := unresolvedLinks(missing); err != nil {
+			return target, &FileError{File: file, Err: err}
+		}
 	}
 
 	return target, nil

@@ -838,6 +838,10 @@ func TestPublisherChecksEachFilesLinks(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Missing")
 
+	var fileErr *FileError
+	require.ErrorAs(t, err, &fileErr, "an unresolved link is the file's failure")
+	assert.Equal(t, first, fileErr.File)
+
 	target, err := publisher.Publish(context.Background(), second)
 	require.NoError(t, err)
 	require.NotNil(t, target)
