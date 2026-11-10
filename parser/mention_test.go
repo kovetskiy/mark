@@ -66,7 +66,8 @@ func TestMentionNames(t *testing.T) {
 }
 
 // adversarialNames are names a generator might be handed, by someone trying to
-// break out of the mention or simply by someone with an odd name.
+// break out of the mention or simply by someone with an odd name. They seed
+// FuzzFormatMention, whose seeds go test runs like any other test.
 func adversarialNames() []string {
 	return []string{
 		"name",
@@ -117,14 +118,6 @@ func checkMention(t *testing.T, name string) {
 	assert.Equal(t, []string{name}, mentionNames(t, "Hello "+mention+" there\n"), "paragraph: %s", mention)
 	assert.Equal(t, []string{name}, mentionNames(t, mention+"\n"), "line start: %s", mention)
 	assert.Equal(t, []string{name}, mentionNames(t, "| h | i |\n| - | - |\n| "+mention+" | x |\n"), "table: %s", mention)
-}
-
-func TestFormatMentionAdversarialNames(t *testing.T) {
-	for _, name := range adversarialNames() {
-		t.Run(name, func(t *testing.T) {
-			checkMention(t, name)
-		})
-	}
 }
 
 func FuzzFormatMention(f *testing.F) {

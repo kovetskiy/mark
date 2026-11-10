@@ -17,7 +17,8 @@ import (
 )
 
 // adversarialValues are values a generator might be handed by someone trying
-// to forge a header, or simply by someone with an odd name.
+// to forge a header, or simply by someone with an odd name. They seed the
+// Fuzz targets, whose seeds go test runs like any other test.
 func adversarialValues() []string {
 	return []string{
 		"",
@@ -114,14 +115,6 @@ func checkHeader(t *testing.T, value string) {
 	assert.Equal(t, "\nbody\n", body)
 }
 
-func TestHeaderAdversarialValues(t *testing.T) {
-	for _, value := range adversarialValues() {
-		t.Run(value, func(t *testing.T) {
-			checkHeader(t, value)
-		})
-	}
-}
-
 // checkSanitizeValue: whatever the value, Header takes what SanitizeValue
 // makes of it, and leaves a value Header already took as it was.
 func checkSanitizeValue(t *testing.T, value string) {
@@ -139,18 +132,12 @@ func checkSanitizeValue(t *testing.T, value string) {
 }
 
 func TestSanitizeValue(t *testing.T) {
-	for _, value := range append(adversarialValues(), "--->", "--!-->", "-\n->", "a\r\n\r\nb", " \u2028x\u0085 ") {
-		t.Run(value, func(t *testing.T) {
-			checkSanitizeValue(t, value)
-		})
-	}
-
 	assert.Equal(t, "Report -- > <!-- Space: EVIL", SanitizeValue("Report -->\n<!-- Space: EVIL"))
 	assert.Equal(t, "a --! > b", SanitizeValue(" a --!> b\r\n"))
 }
 
 func FuzzSanitizeValue(f *testing.F) {
-	for _, value := range adversarialValues() {
+	for _, value := range append(adversarialValues(), "--->", "--!-->", "-\n->", "a\r\n\r\nb", " \u2028x\u0085 ") {
 		f.Add(value)
 	}
 
@@ -246,14 +233,6 @@ func checkFrontMatter(t *testing.T, value string) {
 	assert.Empty(t, meta.Space, "a key was forged")
 	assert.Nil(t, meta.Restrictions, "a key was forged")
 	assert.Equal(t, "body\n", body)
-}
-
-func TestFrontMatterAdversarialValues(t *testing.T) {
-	for _, value := range adversarialValues() {
-		t.Run(value, func(t *testing.T) {
-			checkFrontMatter(t, value)
-		})
-	}
 }
 
 func FuzzFrontMatter(f *testing.F) {
