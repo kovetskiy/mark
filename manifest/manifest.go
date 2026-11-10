@@ -343,7 +343,7 @@ type Store struct {
 	// sharedWarned holds the shared pages already warned of, by space, page
 	// and the two paths, so that a document recorded again in the run does
 	// not tell either of them twice.
-	sharedWarned map[string]bool
+	sharedWarned map[sharedPage]bool
 
 	// spaces holds the manifest for each space key touched so far, alongside
 	// the property it was read from -- the version in that property is what a
@@ -673,25 +673,31 @@ func (s *Store) SetPartial(partial bool) {
 // hint, which may be empty, is added to the message as it is; it is no part of
 // what makes two warnings the same. Called with s.mu held.
 func (s *Store) warnShared(spaceKey, pageID, one, other, hint string) {
-	pair := []string{one, other}
-	sort.Strings(pair)
+	if other < one {
+		one, other = other, one
+	}
 
-	key := strings.Join([]string{spaceKey, pageID, pair[0], pair[1]}, "\x00")
+	key := sharedPage{space: spaceKey, page: pageID, one: one, other: other}
 	if s.sharedWarned[key] {
 		return
 	}
 	if s.sharedWarned == nil {
-		s.sharedWarned = map[string]bool{}
+		s.sharedWarned = map[sharedPage]bool{}
 	}
 	s.sharedWarned[key] = true
 
-	for _, claimant := range pair {
+	for _, claimant := range []string{one, other} {
 		s.warn(claimant, report.WarningSharedPage,
 			"%s and %s both publish to page %s in space %q; "+
 				"renaming either will move a page the other also claims%s",
-			pair[0], pair[1], pageID, spaceKey, hint,
+			one, other, pageID, spaceKey, hint,
 		)
 	}
+}
+
+// sharedPage is a page two paths both publish to, the paths in sorted order.
+type sharedPage struct {
+	space, page, one, other string
 }
 
 // normaliseKeys rewrites entries stored under a key that predates

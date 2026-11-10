@@ -67,38 +67,43 @@ func (r *runTitles) declaredBy(space, kind, title string, warnings *report.Warni
 
 	key := runTitleKey(space, kind, title)
 	documents := r.documents[key]
+	if len(documents) == 1 {
+		return documents[0], true
+	}
 	if len(documents) > 1 {
 		declarers := strings.Join(documents, ", ")
 		warnings.Add(report.WarningPlacement,
 			"parent %q is declared by %d documents (%s), so it is not followed to the page any of them publishes to",
 			title, len(documents), declarers,
 		)
+		r.warnDeclarers(key, title, documents, declarers)
+	}
 
-		if !r.warned[key] {
-			if r.warned == nil {
-				r.warned = map[string]bool{}
-			}
-			r.warned[key] = true
+	return "", false
+}
 
-			for _, file := range documents {
-				var declarer *report.Warnings
-				if r.warningsFor != nil {
-					declarer = r.warningsFor(file)
-				}
-				if declarer == nil {
-					declarer = report.NewWarnings(file)
-				}
+// warnDeclarers tells each document declaring the title, once a run.
+func (r *runTitles) warnDeclarers(key, title string, documents []string, declarers string) {
+	if r.warned[key] {
+		return
+	}
+	if r.warned == nil {
+		r.warned = map[string]bool{}
+	}
+	r.warned[key] = true
 
-				declarer.Add(report.WarningPlacement,
-					"parent %q is declared by %d documents (%s); a document under it follows none of them",
-					title, len(documents), declarers,
-				)
-			}
+	for _, file := range documents {
+		var warnings *report.Warnings
+		if r.warningsFor != nil {
+			warnings = r.warningsFor(file)
 		}
-	}
-	if len(documents) != 1 {
-		return "", false
-	}
+		if warnings == nil {
+			warnings = report.NewWarnings(file)
+		}
 
-	return documents[0], true
+		warnings.Add(report.WarningPlacement,
+			"parent %q is declared by %d documents (%s); a document under it follows none of them",
+			title, len(documents), declarers,
+		)
+	}
 }
