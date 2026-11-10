@@ -324,6 +324,26 @@ Interactive Confluence date badges (`<time datetime="YYYY-MM-DD" />`) can be gen
 Release on @date(2026-07-27) or <time datetime="2026-12-31">December 31, 2026</time>.
 ```
 
+## Mentions
+
+With the `mention` feature, on by default, `@{name}` mentions the Confluence
+user whose full name matches `name`. A mention cannot span lines. Inside the
+braces a backslash escapes the three characters that would otherwise end the
+mention or the table cell around it: `\}`, `\|` and `\\`. A backslash before
+anything else is kept, so `@{CORP\jdoe}` names `CORP\jdoe`.
+
+```markdown
+Ask @{Jane Doe} or @{Ops {on call\}}.
+
+| Owner         |
+| ------------- |
+| @{Team A\|B}  |
+```
+
+A program writing mentions from names it does not control can call
+`parser.FormatMention`, which escapes the name and refuses one no mention can
+hold.
+
 ## Render Mermaid Diagram
 
 Confluence doesn't provide [mermaid.js](https://github.com/mermaid-js/mermaid) support natively. Mark provides a convenient way to enable the feature like [GitHub does](https://github.blog/2022-02-14-include-diagrams-markdown-files-mermaid/).
