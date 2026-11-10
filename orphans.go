@@ -64,6 +64,7 @@ func handleOrphans(
 		// recorded under its own path alone has no such run: kept, it would be
 		// reported by every partial run naming it and dealt with by none.
 		keep := make(map[string]bool, len(orphans))
+		globOf := make(map[string]string, len(orphans))
 		for _, orphan := range orphans {
 			keep[orphan.Path] = config.Tracking.Partial && action == report.OnOrphanReport &&
 				orphan.Entry.Glob != globpattern.Escape(orphan.Path)
@@ -80,6 +81,7 @@ func handleOrphans(
 
 			if inScope {
 				candidates = append(candidates, candidate)
+				globOf[orphan.Path] = orphan.Entry.Glob
 			}
 		}
 
@@ -92,11 +94,6 @@ func handleOrphans(
 		for _, candidate := range candidates {
 			paths = append(paths, candidate.Path)
 			byPath[candidate.Path] = candidate
-		}
-
-		globOf := make(map[string]string, len(orphans))
-		for _, orphan := range orphans {
-			globOf[orphan.Path] = orphan.Entry.Glob
 		}
 
 		log.Info().Msgf(
@@ -135,9 +132,16 @@ func handleOrphans(
 			// one of them published elsewhere in the space say nothing about
 			// the other's.
 			acting := make([]page.Orphan, 0, len(candidates))
+			publishedUnder := map[string]int{}
 			for _, candidate := range candidates {
 				glob := globOf[candidate.Path]
-				if tracker.PublishedUnder(space, glob) > 0 {
+				published, counted := publishedUnder[glob]
+				if !counted {
+					published = tracker.PublishedUnder(space, glob)
+					publishedUnder[glob] = published
+				}
+
+				if published > 0 {
 					acting = append(acting, candidate)
 
 					continue

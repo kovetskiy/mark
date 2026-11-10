@@ -743,7 +743,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it names the page manifest's properties, and nothing else keeps one")
 	}
 
-	if err := config.checkDocuments(onOrphan); err != nil {
+	if err := config.checkDocuments(); err != nil {
 		return err
 	}
 
@@ -777,14 +777,8 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	// What checkDocuments refuses for a run of documents alone, which is
-	// what this one turned out to be.
-	if len(files) == 0 && len(config.Documents) > 0 && config.DocumentScope == "" &&
-		onOrphan != report.OnOrphanReport {
-		log.Warn().Msgf(
-			"no files matched and the Documents have no DocumentScope: --on-orphan %s has nothing to act on",
-			onOrphan,
-		)
+	if err := config.checkUnscopedOrphans(onOrphan, files); err != nil {
+		return err
 	}
 
 	run, err := indexInputs(files, config.Documents)

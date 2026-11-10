@@ -16,6 +16,7 @@ import (
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
+	"github.com/rs/zerolog/log"
 )
 
 // Document is a document to publish that is not read from a file: Markdown a
@@ -213,7 +214,7 @@ func (r *runInputs) named(file string) input {
 // checkDocuments refuses what Documents and DocumentScope cannot be given:
 // settings that would do nothing while seeming to, before anything is
 // published.
-func (c Config) checkDocuments(onOrphan report.OnOrphan) error {
+func (c Config) checkDocuments() error {
 	if c.DocumentScope != "" && !c.Tracking.TrackPages {
 		return errors.New("DocumentScope requires Tracking.TrackPages: " +
 			"it names the documents in the page manifest, and nothing else keeps one")
@@ -228,18 +229,32 @@ func (c Config) checkDocuments(onOrphan report.OnOrphan) error {
 			"it lays out the hierarchy from the files on disk, and a Document's Path need not be there")
 	}
 
-	// Removing a page needs to know which run it belonged to, and documents
-	// without a scope belong to none: --on-orphan would have nothing to act on
-	// while saying it had looked.
-	if onOrphan != report.OnOrphanReport && c.Files == "" && c.DocumentScope == "" {
-		return fmt.Errorf(
-			"--on-orphan %s needs a DocumentScope for a run of Documents alone: "+
-				"documents without one take part in no orphan handling",
-			onOrphan,
-		)
+	return nil
+}
+
+// checkUnscopedOrphans refuses --on-orphan archive or delete on a run that
+// publishes no files and whose documents have no scope: removing a page needs
+// to know which run it belonged to, and such documents belong to none, so it
+// would have nothing to act on while saying it had looked. A pattern let
+// through by CI matching nothing is only warned about, as that is.
+func (c Config) checkUnscopedOrphans(onOrphan report.OnOrphan, files []string) error {
+	if onOrphan == report.OnOrphanReport || len(files) > 0 ||
+		len(c.Documents) == 0 || c.DocumentScope != "" {
+		return nil
 	}
 
-	return nil
+	msg := fmt.Sprintf(
+		"--on-orphan %s needs a DocumentScope when no files are published: "+
+			"documents without one take part in no orphan handling",
+		onOrphan,
+	)
+	if c.Files != "" {
+		log.Warn().Msg(msg)
+
+		return nil
+	}
+
+	return errors.New(msg)
 }
 
 // documentScopePattern is what the manifest records a run's documents under
