@@ -110,7 +110,7 @@ func Convert(storage string, opts Options) (*Document, error) {
 		// The sidebar travels in a header, and a comment header cannot hold
 		// every value: one that ends the comment early stays in the body.
 		text := strings.TrimSpace(c.rawChildren(sidebar, rawLine))
-		if _, err := metadata.Header(metadata.HeaderSidebar, text); opts.FrontMatter || err == nil {
+		if opts.FrontMatter || headerHolds(metadata.HeaderSidebar, text) {
 			doc.Layout = "article"
 			doc.Sidebar = text
 			children = body.children
@@ -240,4 +240,11 @@ func fence(text string, minimum int) string {
 	}
 
 	return strings.Repeat("`", max(minimum, longest+1))
+}
+
+// headerHolds reports whether a comment header can hold value.
+func headerHolds(name, value string) bool {
+	_, err := metadata.Header(name, value)
+
+	return err == nil
 }
