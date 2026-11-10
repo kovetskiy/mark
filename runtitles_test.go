@@ -43,3 +43,34 @@ func TestAParentTitleDeclaredTwiceWarnsEachDocumentOnce(t *testing.T) {
 		assert.Contains(t, list[0].Message, `parent "Shared" is declared by 2 documents`)
 	}
 }
+
+// TestRunTitlesDeclaredBy: a title is followed to the one document declaring
+// it, compared without regard to case, and to none when two declare it or
+// none does; a nil index answers for nothing.
+func TestRunTitlesDeclaredBy(t *testing.T) {
+	dir := t.TempDir()
+	one := writeFile(t, dir, "one.md", parentDoc("Shared"))
+	two := writeFile(t, dir, "two.md", parentDoc("shared"))
+	other := writeFile(t, dir, "other.md", parentDoc("Other"))
+	titles := &runTitles{files: []string{one, two, other}}
+
+	file, ok := titles.declaredBy("DOCS", "page", "OTHER")
+	assert.True(t, ok, "titles compare without regard to case")
+	assert.Equal(t, other, file)
+
+	_, ok = titles.declaredBy("DOCS", "page", "Shared")
+	assert.False(t, ok, "two documents declare it, whatever their case, so neither is followed")
+
+	_, ok = titles.declaredBy("DOCS", "page", "Missing")
+	assert.False(t, ok)
+
+	_, ok = titles.declaredBy("OTHER", "page", "Other")
+	assert.False(t, ok, "a title is declared in its own space")
+
+	_, ok = titles.declaredBy("DOCS", "blogpost", "Other")
+	assert.False(t, ok, "a page is not a blog post")
+
+	var none *runTitles
+	_, ok = none.declaredBy("DOCS", "page", "Other")
+	assert.False(t, ok, "a nil index answers for nothing")
+}
