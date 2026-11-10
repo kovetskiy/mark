@@ -183,8 +183,12 @@ func (m MissingLink) Message() string {
 }
 
 // String is the link as MissingPages reports it: against the first document
-// that holds it.
+// that holds it, or alone when none is named.
 func (m MissingLink) String() string {
+	if len(m.Sources) == 0 {
+		return m.Message()
+	}
+
 	return m.Sources[0] + ": " + m.Message()
 }
 

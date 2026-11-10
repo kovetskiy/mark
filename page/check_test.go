@@ -341,6 +341,14 @@ func TestMissingLinksNamesEveryDocumentHoldingTheLink(t *testing.T) {
 	}, missing)
 }
 
+// TestMissingLinkStringWithoutSources: a MissingLink a caller builds without
+// sources is still said, with no document to name.
+func TestMissingLinkStringWithoutSources(t *testing.T) {
+	link := MissingLink{Space: "DOCS", Title: "Nowhere"}
+
+	assert.Equal(t, link.Message(), link.String())
+}
+
 // TestNotePublishesCountsAsFound: a page the run publishes is not missing,
 // whatever its case, across ForgetPages, and only in its own space.
 func TestNotePublishesCountsAsFound(t *testing.T) {
