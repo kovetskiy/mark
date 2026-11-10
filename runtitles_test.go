@@ -58,11 +58,11 @@ func TestRunTitlesDeclaredBy(t *testing.T) {
 	one := writeFile(t, dir, "one.md", parentDoc("Shared"))
 	two := writeFile(t, dir, "two.md", parentDoc("shared"))
 	other := writeFile(t, dir, "other.md", parentDoc("Other"))
-	titles := &runTitles{files: []string{one, two, other}}
+	titles := &runTitles{inputs: []input{fileInput(one), fileInput(two), fileInput(other)}}
 
-	file, ok := titles.declaredBy("DOCS", "page", "OTHER")
+	in, ok := titles.declaredBy("DOCS", "page", "OTHER")
 	assert.True(t, ok, "titles compare without regard to case")
-	assert.Equal(t, other, file)
+	assert.Equal(t, other, in.file)
 
 	_, ok = titles.declaredBy("DOCS", "page", "Shared")
 	assert.False(t, ok, "two documents declare it, whatever their case, so neither is followed")
@@ -144,7 +144,7 @@ func ambiguousTitles(t *testing.T) (*runTitles, map[string]*report.Warnings) {
 	}
 
 	return &runTitles{
-		files:       []string{a, b},
+		inputs:      []input{fileInput(a), fileInput(b)},
 		warningsFor: func(file string) *report.Warnings { return collectors[file] },
 	}, collectors
 }

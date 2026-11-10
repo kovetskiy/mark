@@ -1,15 +1,21 @@
 package mark
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/manifest"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -204,4 +210,471 @@ func TestIncludePathOutsideTheProjectStillIncludes(t *testing.T) {
 			assert.Contains(t, bodyOfPageTitled(t, server, "Page"), "inside")
 		})
 	}
+}
+
+// documentsConfig is a tracked run of documents alone.
+func documentsConfig(server *confluencetest.Server, documents ...Document) Config {
+	config := trackingConfig(server, "")
+	config.Documents = documents
+
+	return config
+}
+
+// lookupKey reports the page the manifest records for key, read afresh.
+func lookupKey(t *testing.T, server *confluencetest.Server, key string) (manifest.Entry, bool) {
+	t.Helper()
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	entry, ok, err := manifest.NewStore(api).Lookup(context.Background(), "DOCS", key)
+	require.NoError(t, err)
+
+	return entry, ok
+}
+
+func TestDocumentFromMemoryPublishes(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	config := documentsConfig(server, Document{
+		Path:    "generated/doc.md",
+		Content: []byte(markdownWithTitle("Generated")),
+		FS:      fstest.MapFS{},
+	})
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.Contains(t, bodyOfPageTitled(t, server, "Generated"), "Some content.")
+}
+
+// TestDocumentIsKeyedByKey: the manifest remembers the Key, not the Path,
+// which is what lets a caller render into a fresh temporary directory each
+// run and still have the page found again.
+func TestDocumentIsKeyedByKey(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	first := Document{
+		Path:    filepath.ToSlash(filepath.Join("tmp-run-1", "doc.md")),
+		Key:     "guides/doc.md",
+		Content: []byte(markdownWithTitle("First Title")),
+		FS:      fstest.MapFS{},
+	}
+	require.NoError(t, Run(context.Background(), documentsConfig(server, first)))
+
+	entry, ok := lookupKey(t, server, "guides/doc.md")
+	require.True(t, ok, "the page is recorded under the Key")
+	_, ok = lookupKey(t, server, first.Path)
+	assert.False(t, ok, "and not under the Path")
+
+	// Another run, another Path, a new title: the Key alone finds the page.
+	second := first
+	second.Path = "tmp-run-2/doc.md"
+	second.Content = []byte(markdownWithTitle("Second Title"))
+	require.NoError(t, Run(context.Background(), documentsConfig(server, second)))
+
+	assert.Equal(t, "Second Title", server.Page(entry.PageID).Title, "retitled in place")
+	assert.Equal(t, 0, countPagesTitled(t, server, "First Title"))
+}
+
+// TestDocumentsLinkToEachOther: a relative link between two documents that
+// exist nowhere on disk becomes a link to the other's page, laid out by their
+// Paths alone.
+func TestDocumentsLinkToEachOther(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	config := documentsConfig(server,
+		Document{
+			Path:    "guides/a.md",
+			Content: []byte(header + "<!-- Title: A -->\n\nSee [the reference](../reference/b.md).\n"),
+			FS:      fstest.MapFS{},
+		},
+		Document{
+			Path:    "reference/b.md",
+			Content: []byte(header + "<!-- Title: B -->\n\nReference.\n"),
+			FS:      fstest.MapFS{},
+		},
+	)
+	require.NoError(t, Run(context.Background(), config))
+
+	body := bodyOfPageTitled(t, server, "A")
+	assert.Contains(t, body, "/x/", "the link names B's page")
+	assert.NotContains(t, body, "reference/b.md")
+}
+
+// TestFileLinksToDocument: a file on disk links to a document by its Path.
+func TestFileLinksToDocument(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	file := writeFile(t, dir, "a.md", header+"<!-- Title: From File -->\n\nSee [generated](gen.md).\n")
+
+	config := trackingConfig(server, file)
+	config.Documents = []Document{{
+		Path:    filepath.Join(dir, "gen.md"),
+		Key:     "gen.md",
+		Content: []byte(header + "<!-- Title: Generated -->\n\nGenerated.\n"),
+	}}
+	require.NoError(t, Run(context.Background(), config))
+
+	body := bodyOfPageTitled(t, server, "From File")
+	assert.Contains(t, body, "/x/")
+	assert.NotContains(t, body, "gen.md")
+
+	_, ok := lookupKey(t, server, "gen.md")
+	assert.True(t, ok)
+	_, ok = lookupKey(t, server, file)
+	assert.True(t, ok, "the file keeps its own key")
+}
+
+// TestDocumentReadsFilesFromItsFS: images, declared attachments and includes
+// are read from the document's FS, around its Path, subdirectories and
+// parents inside the FS included.
+func TestDocumentReadsFilesFromItsFS(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	files := fstest.MapFS{
+		"guides/img/logo.png":  {Data: onePixelPNG()},
+		"shared/data.txt":      {Data: []byte("data")},
+		"guides/frag.md":       {Data: []byte("Included from the FS.\n")},
+		"shared/macros/box.md": {Data: []byte("<b>{{ .Text }}</b>")},
+	}
+
+	config := documentsConfig(server, Document{
+		Path: "guides/doc.md",
+		Content: []byte("<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Assets -->\n" +
+			"<!-- Attachment: ../shared/data.txt -->\n\n" +
+			"![logo](img/logo.png)\n\n" +
+			"<!-- Include: frag.md -->\n\n" +
+			"[data](../shared/data.txt)\n\n" +
+			"<!-- Macro: BOX-(\\w+)\n     Template: ../shared/macros/box.md\n     Text: ${1} -->\n\nBOX-hello\n"),
+		FS: files,
+	})
+	require.NoError(t, Run(context.Background(), config))
+
+	id := mustFind(t, server, "Assets")
+	var names []string
+	for _, stored := range server.Attachments(id) {
+		names = append(names, stored.Filename)
+	}
+	assert.ElementsMatch(t, []string{"img_logo.png", ".._shared_data.txt"}, names)
+
+	body := server.Page(id).Body
+	assert.Contains(t, body, "Included from the FS.")
+	assert.Contains(t, body, `ri:filename="img_logo.png"`)
+	assert.Contains(t, body, "<b>hello</b>", "a macro template is read from the FS too")
+}
+
+// TestDocumentCannotReadOutsideItsFS: "../" above the FS's root is refused,
+// as a path outside the project is for a file, and nothing on disk is read
+// in its place.
+func TestDocumentCannotReadOutsideItsFS(t *testing.T) {
+	cases := map[string]string{
+		"an image":      "![x](../../outside.png)\n",
+		"an attachment": "<!-- Attachment: ../../outside.txt -->\n\nBody.\n",
+		"an include":    "<!-- Include: ../../outside.md -->\n",
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+
+			config := documentsConfig(server, Document{
+				Path: "guides/doc.md",
+				Content: []byte("<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Escapes -->\n" +
+					body),
+				FS: fstest.MapFS{"outside.png": {Data: onePixelPNG()}},
+			})
+
+			err := Run(context.Background(), config)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, attachment.ErrOutsideProject)
+
+			var fileErr *FileError
+			require.ErrorAs(t, err, &fileErr)
+			assert.Equal(t, "guides/doc.md", fileErr.File)
+		})
+	}
+}
+
+// TestDocumentIsReportedByPathAndSource: the report and a failure name the
+// Path, and the Source the caller gave, with no SourcePath mapping.
+func TestDocumentIsReportedByPathAndSource(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	var out bytes.Buffer
+	config := documentsConfig(server,
+		Document{
+			Path:    "guides/ok.md",
+			Source:  "templates/ok.tmpl",
+			Content: []byte(markdownWithTitle("Fine")),
+			FS:      fstest.MapFS{},
+		},
+		Document{
+			Path:    "guides/broken.md",
+			Source:  "templates/broken.tmpl",
+			Content: []byte("No headers at all.\n"),
+			FS:      fstest.MapFS{},
+		},
+	)
+	config.ContinueOnError = true
+	config.Report.OutputFormat = report.FormatJSON
+	config.Output = &out
+
+	err := Run(context.Background(), config)
+
+	var failed *FilesFailedError
+	require.ErrorAs(t, err, &failed)
+	require.Len(t, failed.Errors, 1)
+	assert.Equal(t, "guides/broken.md", failed.Errors[0].File)
+	assert.Equal(t, "templates/broken.tmpl", failed.Errors[0].Source)
+
+	var parsed report.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &parsed))
+	sources := map[string]string{}
+	for _, page := range parsed.Pages {
+		sources[page.File] = page.Source
+	}
+	assert.Equal(t, map[string]string{
+		"guides/ok.md":     "templates/ok.tmpl",
+		"guides/broken.md": "templates/broken.tmpl",
+	}, sources)
+}
+
+// TestDocumentsWithFiles: both publish in one run, each under its own key.
+func TestDocumentsWithFiles(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "file.md", markdownWithTitle("From Disk"))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Documents = []Document{{
+		Path:    "generated/doc.md",
+		Content: []byte(markdownWithTitle("From Memory")),
+		FS:      fstest.MapFS{},
+	}}
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "From Disk"))
+	assert.Equal(t, 1, countPagesTitled(t, server, "From Memory"))
+
+	_, ok := lookupKey(t, server, filepath.Join(dir, "file.md"))
+	assert.True(t, ok)
+	_, ok = lookupKey(t, server, "generated/doc.md")
+	assert.True(t, ok)
+}
+
+// TestDocumentsRefuseDuplicates: two documents with one Path or one Key, or
+// a document with a file's, would be one page published twice.
+func TestDocumentsRefuseDuplicates(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "file.md", markdownWithTitle("File"))
+
+	doc := func(path, key string) Document {
+		return Document{Path: path, Key: key, Content: []byte(markdownWithTitle(path))}
+	}
+
+	for name, config := range map[string]Config{
+		"one Path": documentsConfig(server, doc("a.md", "a"), doc("a.md", "b")),
+		"one Key":  documentsConfig(server, doc("a.md", "k"), doc("b.md", "k")),
+		"a file's Path": func() Config {
+			c := trackingConfig(server, file)
+			c.Documents = []Document{doc(file, "other")}
+			return c
+		}(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, Run(context.Background(), config))
+		})
+	}
+}
+
+// documentOrphanRun publishes keep.md and gone.md as documents, then only
+// keep.md, both times with configure applied, and returns the server and
+// gone.md's page.
+func documentOrphanRun(t *testing.T, configure func(*Config)) (*confluencetest.Server, string, error) {
+	t.Helper()
+
+	server, _ := docsSpace(t)
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	keep := Document{Path: "keep.md", Content: []byte(header + "<!-- Title: Keep -->\n\nKeep.\n"), FS: fstest.MapFS{}}
+	gone := Document{Path: "gone.md", Content: []byte(header + "<!-- Title: Gone -->\n\nGone.\n"), FS: fstest.MapFS{}}
+
+	config := documentsConfig(server, keep, gone)
+	configure(&config)
+	require.NoError(t, Run(context.Background(), config))
+
+	goneID := mustFind(t, server, "Gone")
+
+	config.Documents = []Document{keep}
+
+	return server, goneID, Run(context.Background(), config)
+}
+
+func TestDocumentScopeDeletesItsOrphans(t *testing.T) {
+	server, goneID, err := documentOrphanRun(t, func(c *Config) {
+		c.DocumentScope = "generated"
+		c.Tracking.OnOrphan = report.OnOrphanDelete
+	})
+	require.NoError(t, err)
+
+	assert.True(t, server.Page(goneID).Trashed, "a document its scope no longer publishes is an orphan")
+}
+
+func TestDocumentsWithoutScopeAreNeverOrphans(t *testing.T) {
+	server, goneID, err := documentOrphanRun(t, func(c *Config) {
+		c.Files = ""
+	})
+	require.NoError(t, err)
+
+	assert.False(t, server.Page(goneID).Trashed)
+
+	_, known := lookupKey(t, server, "gone.md")
+	assert.True(t, known, "and stays remembered")
+}
+
+// TestDocumentsWithoutScopeRefuseOnOrphan: a run of documents alone with no
+// scope has nothing --on-orphan could act on, and says so rather than look.
+func TestDocumentsWithoutScopeRefuseOnOrphan(t *testing.T) {
+	server, _ := docsSpace(t)
+	config := documentsConfig(server, Document{Path: "a.md", Content: []byte(markdownWithTitle("A"))})
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DocumentScope")
+	assert.Equal(t, 0, countPagesTitled(t, server, "A"), "refused before anything is published")
+}
+
+// TestUnscopedDocumentBesideFilesIsNotTheGlobsOrphan: alongside files,
+// a document without a scope is not taken into the files' pattern, so a
+// later run of the same pattern without it deletes nothing of it.
+func TestUnscopedDocumentBesideFilesIsNotTheGlobsOrphan(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "file.md", markdownWithTitle("From Disk"))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	config.Documents = []Document{{
+		Path:    "generated/doc.md",
+		Content: []byte(markdownWithTitle("From Memory")),
+		FS:      fstest.MapFS{},
+	}}
+	require.NoError(t, Run(context.Background(), config))
+	docID := mustFind(t, server, "From Memory")
+
+	config.Documents = nil
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.False(t, server.Page(docID).Trashed)
+}
+
+// TestDocumentScopeIsNotAFilesPattern: a --files run whose pattern is
+// spelled like a document scope still does not take the scope's pages for
+// its own.
+func TestDocumentScopeIsNotAFilesPattern(t *testing.T) {
+	assert.NotEqual(t, manifest.Key("generated"), documentScopePattern("generated"))
+	assert.NotEqual(t, manifest.Key(documentScopePattern("generated")), documentScopePattern("generated"),
+		"no glob normalises to a scope")
+}
+
+func TestDocumentScopeRequiresTrackPages(t *testing.T) {
+	server, _ := docsSpace(t)
+	config := documentsConfig(server, Document{Path: "a.md", Content: []byte(markdownWithTitle("A"))})
+	config.Tracking.TrackPages = false
+	config.DocumentScope = "generated"
+
+	require.Error(t, Run(context.Background(), config))
+}
+
+func TestDocumentsRefuseParentsFromPath(t *testing.T) {
+	server, _ := docsSpace(t)
+	config := documentsConfig(server, Document{Path: "a.md", Content: []byte(markdownWithTitle("A"))})
+	config.ParentsFromPath = true
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ParentsFromPath")
+}
+
+func TestDocumentPathMustBeValidInsideItsFS(t *testing.T) {
+	server, _ := docsSpace(t)
+	config := documentsConfig(server, Document{
+		Path: "../doc.md", Content: []byte(markdownWithTitle("A")), FS: fstest.MapFS{},
+	})
+
+	require.Error(t, Run(context.Background(), config))
+}
+
+func TestPublisherPublishesADocument(t *testing.T) {
+	server, api := docsSpace(t)
+
+	publisher, err := NewPublisher(context.Background(), api, publishConfig(server.URL, "").PublishConfig)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	target, err := publisher.PublishDocument(context.Background(), Document{
+		Path:    "guides/doc.md",
+		Content: []byte(markdownWithTitle("Published") + "\n<!-- Include: frag.md -->\n"),
+		FS:      fstest.MapFS{"guides/frag.md": {Data: []byte("From the fragment.\n")}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	assert.Contains(t, server.Page(target.ID).Body, "From the fragment.")
+
+	_, err = publisher.PublishDocument(context.Background(), Document{
+		Path: "guides/broken.md", Source: "templates/broken.tmpl", Content: []byte("No headers.\n"),
+		FS: fstest.MapFS{},
+	})
+	var fileErr *FileError
+	require.True(t, errors.As(err, &fileErr))
+	assert.Equal(t, "guides/broken.md", fileErr.File)
+	assert.Equal(t, "templates/broken.tmpl", fileErr.Source)
+}
+
+// renamedDocumentRun publishes one document under the Key old.md, then the
+// same content under new.md, both under scope and titled from the filename,
+// so that only the content ties the two together. It returns the page each
+// key is recorded with.
+func renamedDocumentRun(t *testing.T, scope string) (manifest.Entry, manifest.Entry, bool) {
+	t.Helper()
+
+	server, _ := docsSpace(t)
+	content := []byte("<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n\nThe same body.\n")
+
+	config := documentsConfig(server, Document{Path: "old.md", Content: content, FS: fstest.MapFS{}})
+	config.Page.TitleFromFilename = true
+	config.DocumentScope = scope
+	require.NoError(t, Run(context.Background(), config))
+
+	before, ok := lookupKey(t, server, "old.md")
+	require.True(t, ok)
+
+	config.Documents = []Document{{Path: "new.md", Content: content, FS: fstest.MapFS{}}}
+	require.NoError(t, Run(context.Background(), config))
+
+	after, ok := lookupKey(t, server, "new.md")
+	require.True(t, ok)
+
+	_, oldKept := lookupKey(t, server, "old.md")
+
+	return before, after, oldKept
+}
+
+// TestScopedDocumentRenameKeepsThePage: within a scope, a new Key holding a
+// document recorded under an old one is that document, as a renamed file is.
+func TestScopedDocumentRenameKeepsThePage(t *testing.T) {
+	before, after, oldKept := renamedDocumentRun(t, "generated")
+
+	assert.Equal(t, before.PageID, after.PageID, "the page follows the document")
+	assert.False(t, oldKept, "and the old key is handed over")
+}
+
+// TestUnscopedDocumentIsNeverTakenForARename: without a scope nothing says
+// which other keys a document could have had, so a new key is a new page.
+func TestUnscopedDocumentIsNeverTakenForARename(t *testing.T) {
+	before, after, oldKept := renamedDocumentRun(t, "")
+
+	assert.NotEqual(t, before.PageID, after.PageID)
+	assert.True(t, oldKept)
 }

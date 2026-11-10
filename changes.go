@@ -105,12 +105,12 @@ func hasDrifted(
 	ctx context.Context,
 	api *confluence.API,
 	tracker *manifest.Store,
-	spaceKey, file string,
+	spaceKey, key string,
 	target *confluence.PageInfo,
 ) (string, error) {
-	entry, ok, err := tracker.Lookup(ctx, spaceKey, file)
+	entry, ok, err := tracker.Lookup(ctx, spaceKey, key)
 	if err != nil {
-		return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+		return "", fmt.Errorf("unable to look up page mapping for %q: %w", key, err)
 	}
 
 	// A document moved, found by its unchanged title or by its content, has
@@ -119,9 +119,9 @@ func hasDrifted(
 	// alone read that as a page with no baseline, and the very run that moved
 	// the file overwrote an edit --no-overwrite exists to keep.
 	if !ok {
-		entry, ok, err = tracker.LookupMoved(ctx, spaceKey, file, target.ID)
+		entry, ok, err = tracker.LookupMoved(ctx, spaceKey, key, target.ID)
 		if err != nil {
-			return "", fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
+			return "", fmt.Errorf("unable to look up page mapping for %q: %w", key, err)
 		}
 	}
 
@@ -165,7 +165,7 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 		return false, nil
 	}
 
-	drift, err := hasDrifted(ctx, r.api, r.tracker, meta.Space, file, target)
+	drift, err := hasDrifted(ctx, r.api, r.tracker, meta.Space, doc.key, target)
 	if err != nil {
 		return false, err
 	}
@@ -187,8 +187,8 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 	// for an orphan and deleted. The version is deliberately not
 	// updated: until somebody resolves the difference, every run should
 	// say so again.
-	if err := r.tracker.Record(ctx, meta.Space, file, target.ID, target.Title, doc.sourceHash); err != nil {
-		return false, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+	if err := r.tracker.Record(ctx, meta.Space, doc.key, target.ID, target.Title, doc.sourceHash); err != nil {
+		return false, fmt.Errorf("unable to record page mapping for %q: %w", doc.key, err)
 	}
 
 	return true, nil

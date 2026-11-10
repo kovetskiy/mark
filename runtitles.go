@@ -13,11 +13,11 @@ import (
 // most runs never miss a parent.
 type runTitles struct {
 	config    PublishConfig
-	files     []string
+	inputs    []input
 	hierarchy *page.Hierarchy
 
-	// documents maps a title's key to the files declaring it; nil until read.
-	documents map[string][]string
+	// documents maps a title's key to the documents declaring it; nil until read.
+	documents map[string][]input
 
 	// warningsFor gives a document's collector, for a title declared by more
 	// than one; nil only logs. warned holds the titles already said so about.
@@ -32,21 +32,21 @@ func runTitleKey(space, kind, title string) string {
 
 // index leaves out any file that cannot be read; processing it reports why.
 func (r *runTitles) index() {
-	r.documents = map[string][]string{}
+	r.documents = map[string][]input{}
 
-	for _, file := range r.files {
-		_, markdown, _, err := readSource(file)
+	for _, in := range r.inputs {
+		_, markdown, _, err := in.read()
 		if err != nil {
 			continue
 		}
 
-		meta, _, err := documentMeta(r.config, file, markdown, r.hierarchy, nil)
+		meta, _, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
 		if err != nil || meta == nil || !meta.Publish() || meta.Title == "" || meta.Space == "" {
 			continue
 		}
 
 		key := runTitleKey(meta.Space, meta.Type, meta.Title)
-		r.documents[key] = append(r.documents[key], file)
+		r.documents[key] = append(r.documents[key], in)
 	}
 
 	log.Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
@@ -54,10 +54,10 @@ func (r *runTitles) index() {
 
 // declaredBy returns the one document of the run that publishes content of
 // that type under the title, and false when none does or more than one does.
-func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
+func (r *runTitles) declaredBy(space, kind, title string) (input, bool) {
 	documents := r.declaring(space, kind, title)
 	if len(documents) != 1 {
-		return "", false
+		return input{}, false
 	}
 
 	return documents[0], true
@@ -65,7 +65,7 @@ func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
 
 // declaring returns the documents of the run that publish content of that type
 // under the title.
-func (r *runTitles) declaring(space, kind, title string) []string {
+func (r *runTitles) declaring(space, kind, title string) []input {
 	if r == nil {
 		return nil
 	}
@@ -89,7 +89,11 @@ func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings
 		return
 	}
 
-	declarers := strings.Join(documents, ", ")
+	names := make([]string, 0, len(documents))
+	for _, in := range documents {
+		names = append(names, in.file)
+	}
+	declarers := strings.Join(names, ", ")
 	warnings.Add(report.WarningPlacement,
 		"parent %q is declared by %d documents (%s), so it is found by its title alone, "+
 			"not through the pages --track-pages recorded for them",
@@ -105,7 +109,7 @@ func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings
 	}
 	r.warned[key] = true
 
-	for _, file := range documents {
+	for _, file := range names {
 		var declarer *report.Warnings
 		if r.warningsFor != nil {
 			declarer = r.warningsFor(file)

@@ -29,7 +29,7 @@ func previewTrackedResolution(
 	tracker *manifest.Store,
 	api *confluence.API,
 	meta *metadata.Meta,
-	file string,
+	file, key string,
 	sourceHash string,
 	warnings *report.Warnings,
 ) (*confluence.PageInfo, error) {
@@ -39,7 +39,7 @@ func previewTrackedResolution(
 
 	// Errors stop the preview as they stop a real run: reporting "would create"
 	// over a lookup that failed would hide the duplicate a real run refuses to make.
-	pg, err := resolveTrackedPage(ctx, tracker, api, meta, file, warnings)
+	pg, err := resolveTrackedPage(ctx, tracker, api, meta, file, key, warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func previewTrackedResolution(
 		return pg, nil
 	}
 
-	pg, err = resolveRenamedFile(ctx, tracker, api, meta, file, sourceHash, warnings)
+	pg, err = resolveRenamedFile(ctx, tracker, api, meta, file, key, sourceHash, warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -88,16 +88,16 @@ func resolveTrackedPage(
 	tracker *manifest.Store,
 	api *confluence.API,
 	meta *metadata.Meta,
-	file string,
+	file, key string,
 	warnings *report.Warnings,
 ) (*confluence.PageInfo, error) {
 	if tracker == nil || meta == nil {
 		return nil, nil
 	}
 
-	entry, ok, err := tracker.Lookup(ctx, meta.Space, file)
+	entry, ok, err := tracker.Lookup(ctx, meta.Space, key)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read page mapping for %q: %w", file, err)
+		return nil, fmt.Errorf("unable to read page mapping for %q: %w", key, err)
 	}
 	if !ok {
 		return nil, nil
@@ -264,22 +264,22 @@ func refreshStaleParents(
 func trackedPageOfDeclaredTitle(
 	ctx context.Context, tracker *manifest.Store, titles *runTitles, space, title string,
 ) (string, string, error) {
-	file, ok := titles.declaredBy(space, "page", title)
+	in, ok := titles.declaredBy(space, "page", title)
 	if !ok {
 		return "", "", nil
 	}
 
-	entry, found, err := tracker.Lookup(ctx, space, file)
+	entry, found, err := tracker.Lookup(ctx, space, in.key)
 	if err != nil {
 		return "", "", err
 	}
 	if !found {
-		source, _, _, err := readSource(file)
+		source, _, _, err := in.read()
 		if err != nil {
 			return "", "", nil //nolint:nilerr // indexed as readable; its own turn reports this
 		}
 
-		_, entry, found, err = tracker.ResolveRenamed(ctx, space, fingerprint.SHA1(string(source)))
+		_, entry, found, err = tracker.ResolveRenamedFor(ctx, space, in.key, fingerprint.SHA1(string(source)))
 		if err != nil || !found {
 			return "", "", err
 		}
@@ -288,7 +288,7 @@ func trackedPageOfDeclaredTitle(
 		return "", "", nil
 	}
 
-	return entry.PageID, file, nil
+	return entry.PageID, in.file, nil
 }
 
 // resolveRenamedFile returns the page a document published to under a previous
@@ -307,7 +307,7 @@ func resolveRenamedFile(
 	tracker *manifest.Store,
 	api *confluence.API,
 	meta *metadata.Meta,
-	file string,
+	file, key string,
 	sourceHash string,
 	warnings *report.Warnings,
 ) (*confluence.PageInfo, error) {
@@ -315,7 +315,7 @@ func resolveRenamedFile(
 		return nil, nil
 	}
 
-	previous, entry, ok, err := tracker.ResolveRenamed(ctx, meta.Space, sourceHash)
+	previous, entry, ok, err := tracker.ResolveRenamedFor(ctx, meta.Space, key, sourceHash)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
 	}
@@ -424,8 +424,8 @@ func (r *publishRun) recordPublished(ctx context.Context, doc *document, target 
 		return nil
 	}
 
-	if err := r.tracker.Record(ctx, meta.Space, file, target.ID, meta.Title, doc.sourceHash); err != nil {
-		return fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+	if err := r.tracker.Record(ctx, meta.Space, doc.key, target.ID, meta.Title, doc.sourceHash); err != nil {
+		return fmt.Errorf("unable to record page mapping for %q: %w", doc.key, err)
 	}
 
 	if r.hierarchy != nil && !meta.DeclaredParents {
@@ -438,8 +438,8 @@ func (r *publishRun) recordPublished(ctx context.Context, doc *document, target 
 	// either way: a run that wrote nothing still records what it found, so
 	// that a page nobody touches gets a version on the first run rather than
 	// staying unguarded forever.
-	if err := r.tracker.RecordVersion(ctx, meta.Space, file, target.Version.Number); err != nil {
-		return fmt.Errorf("unable to record page version for %q: %w", file, err)
+	if err := r.tracker.RecordVersion(ctx, meta.Space, doc.key, target.Version.Number); err != nil {
+		return fmt.Errorf("unable to record page version for %q: %w", doc.key, err)
 	}
 
 	return nil
