@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/fingerprint"
@@ -342,25 +343,44 @@ func resolveRenamedFile(
 // it.
 //
 // The ids come from the published page's own ancestors rather than from the
-// code that creates them: a document's ancestors end with exactly the pages its
-// path asked for, and reading them costs nothing extra.
+// code that creates them: they hold the pages its path asked for, and reading
+// them costs nothing extra. Each directory is found among them by the parent
+// title the document resolved it to, not by position: the ancestry check
+// accepts a page sitting deeper than its path says, under a page somebody put
+// there by hand, and a title names one page in a space.
 func recordDirectoryPages(
 	ctx context.Context,
 	tracker *manifest.Store,
 	target *confluence.PageInfo,
 	hierarchy *page.Hierarchy,
 	file, space string,
+	parents []string,
 ) error {
 	directories := hierarchy.Directories(file)
-	if len(directories) == 0 || len(target.Ancestors) < len(directories) {
+	if len(directories) == 0 || len(parents) < len(directories) {
 		return nil
 	}
 
-	// One ancestor per directory, at the end of the chain: whatever --parents
+	// One parent per directory, at the end of the chain: whatever --parents
 	// put above them comes first.
-	tail := target.Ancestors[len(target.Ancestors)-len(directories):]
+	titles := parents[len(parents)-len(directories):]
 
+	// Searched in order, each from just below the last one found, as the
+	// directories nest.
+	next := 0
 	for i, key := range directories {
+		at := -1
+		for j := next; j < len(target.Ancestors); j++ {
+			if strings.EqualFold(target.Ancestors[j].Title, titles[i]) {
+				at = j
+				break
+			}
+		}
+		if at < 0 {
+			continue
+		}
+		next = at + 1
+
 		// A directory holding a document of its own has that document's entry
 		// for its page already, and two entries claiming one page is the thing
 		// the manifest complains about.
@@ -368,9 +388,10 @@ func recordDirectoryPages(
 			continue
 		}
 
+		directory := target.Ancestors[at]
 		if err := tracker.Record(
 			ctx,
-			space, key, tail[i].ID, tail[i].Title, page.DirectoryHash(key),
+			space, key, directory.ID, directory.Title, page.DirectoryHash(key),
 		); err != nil {
 			return fmt.Errorf("unable to record directory page for %q: %w", key, err)
 		}
@@ -398,7 +419,7 @@ func (r *publishRun) recordPublished(ctx context.Context, doc *document, target 
 	}
 
 	if r.hierarchy != nil && !meta.DeclaredParents {
-		if err := recordDirectoryPages(ctx, r.tracker, target, r.hierarchy, file, meta.Space); err != nil {
+		if err := recordDirectoryPages(ctx, r.tracker, target, r.hierarchy, file, meta.Space, meta.Parents); err != nil {
 			return err
 		}
 	}

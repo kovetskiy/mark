@@ -375,6 +375,62 @@ func TestDirectoryWithAnIndexIsNotRecordedTwice(t *testing.T) {
 	assert.False(t, ok, "the directory must not claim a page its own document owns")
 }
 
+// TestDirectoryPagesFollowTheirTitlesNotTheirPositions: a page moved by hand
+// under a page of somebody's own, below its directories, still passes the
+// ancestry check and stays there. Its ancestors then end with that page, and
+// the directories must still be recorded against the pages standing for them,
+// or --on-orphan would later treat the hand-made page as mark's.
+func TestDirectoryPagesFollowTheirTitlesNotTheirPositions(t *testing.T) {
+	ctx := t.Context()
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "sub/deep/x.md", space+"<!-- Title: X -->\n\nX.\n")
+
+	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{
+				Features: []string{"mention"},
+			},
+			Output: io.Discard,
+		},
+		Files: filepath.Join(dir, "**", "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL:  server.URL,
+			Username: "user",
+			Password: "token",
+		},
+		ParentsFromPath:     true,
+		ParentsFromPathRoot: dir,
+		Tracking: TrackingConfig{
+			TrackPages: true,
+		},
+	}
+	require.NoError(t, Run(ctx, config))
+
+	sub := pageIDTitled(t, server, "Sub")
+	deep := pageIDTitled(t, server, "Deep")
+	x := pageIDTitled(t, server, "X")
+
+	handMade := server.AddPage("DOCS", "Hand Made", "page", deep)
+	server.MovePage(x, handMade.ID)
+
+	require.NoError(t, Run(ctx, config))
+	require.Equal(t, handMade.ID, server.Page(x).ParentID,
+		"the page passes the ancestry check where it is, which is the case being pinned")
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	store := manifest.NewStore(api)
+	for key, want := range map[string]string{
+		filepath.Join(dir, "sub"):         sub,
+		filepath.Join(dir, "sub", "deep"): deep,
+	} {
+		entry, ok, err := store.Lookup(ctx, "DOCS", key)
+		require.NoError(t, err)
+		require.True(t, ok, "%s is recorded", key)
+		assert.Equal(t, want, entry.PageID, "%s is recorded against its own page", key)
+	}
+}
+
 // TestDirectoryPagesAreNotRecordedWithoutTheFlag guards the default.
 func TestDirectoryPagesAreNotRecordedWithoutTheFlag(t *testing.T) {
 	ctx := t.Context()
