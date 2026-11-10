@@ -138,11 +138,7 @@ func (c *LinkChecker) NotePublishes(space, title string) {
 		c.publishes = map[string]bool{}
 	}
 
-	c.publishes[publishesKey(space, title)] = true
-}
-
-func publishesKey(space, title string) string {
-	return space + "\x00" + strings.ToLower(title)
+	c.publishes[titleKey(space, title)] = true
 }
 
 // NotePage records an ac: link to check once the run has finished.
@@ -232,7 +228,7 @@ func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]Mi
 	for _, key := range slices.Sorted(maps.Keys(pending)) {
 		link := pending[key]
 
-		if publishes[publishesKey(link.space, link.title)] {
+		if publishes[titleKey(link.space, link.title)] {
 			continue
 		}
 

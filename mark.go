@@ -261,7 +261,7 @@ func (l LinkConfig) sourceDir(file string) (string, error) {
 	}
 
 	rel, err := filepath.Rel(staged, dir)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || !filepath.IsLocal(rel) {
 		// Resolved against its own directory alone, a document outside the
 		// staged tree would have its links answered by the staging copy,
 		// which is what setting the roots is meant to stop.
@@ -1810,15 +1810,13 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 		return nil, err
 	}
 
-	var searchDirs []string
-	if sourceDir != "" {
-		searchDirs = append(searchDirs, sourceDir)
-	}
-
 	// A fragment's links are written from where the fragment lives, so the
 	// directory of everything this document includes is worth looking in too.
 	// One level: a fragment that itself includes another is not followed here.
-	searchDirs = append(searchDirs, includeSearchDirs(filepath.Dir(file), config.Rendering.IncludePath, doc.markdown)...)
+	searchDirs := includeSearchDirs(filepath.Dir(file), config.Rendering.IncludePath, doc.markdown)
+	if sourceDir != "" {
+		searchDirs = slices.Insert(searchDirs, 0, sourceDir)
+	}
 
 	resolver := page.NewLinkResolver(
 		r.api,
