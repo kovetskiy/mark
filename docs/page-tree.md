@@ -366,9 +366,18 @@ renamed from, so the full run still covers it. A file no run has tracked yet is
 recorded under the partial run's pattern until the full run publishes it.
 
 The full pattern with `--partial` names every file, so on a checkout holding
-only some of them it reports the rest as gone: give the paths instead. A library
-caller sets `TrackingConfig.Partial`; a caller driving `manifest.Store` itself
-calls `SetPartial`.
+only some of them it reports the rest as gone: give the paths instead. A
+wildcard likewise reaches every tracked file it matches in the manifest,
+another job's included, and with `--on-orphan delete` removes the pages of
+those missing from the checkout; keep such jobs apart with their own
+`--manifest-prefix`, or narrow the run with `--orphan-under`.
+
+A change that only deletes files leaves the partial run nothing to publish: it
+fails with "no files matched", or under `--ci` does nothing about them, and the
+run publishing them all deals with those files instead.
+
+A library caller sets `TrackingConfig.Partial`; a caller driving
+`manifest.Store` itself calls `SetPartial`.
 
 ### Flags that need other flags
 
