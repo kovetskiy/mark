@@ -268,3 +268,24 @@ func TestSourceOf(t *testing.T) {
 	assert.Empty(t, SourceOf("docs/b.md", source), "a file that is its own source has none")
 	assert.Empty(t, SourceOf("build/a.md", nil))
 }
+
+// TestUntrackedSpaceIsReported: a space published to without its page
+// manifest is in the JSON report, and a warning of the run in the github one.
+func TestUntrackedSpaceIsReported(t *testing.T) {
+	r := New()
+	r.AddUntracked(Untracked{Space: "DOCS", ManifestPage: "Handbook"})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatJSON))
+	var parsed struct {
+		Untracked []map[string]string `json:"untracked"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &parsed))
+	assert.Equal(t, []map[string]string{{"space": "DOCS", "manifestPage": "Handbook"}}, parsed.Untracked)
+
+	out.Reset()
+	require.NoError(t, r.Write(&out, FormatGitHub))
+	assert.Equal(t,
+		"::warning::space \"DOCS\" was published untracked: its manifest page \"Handbook\" does not exist\n",
+		out.String())
+}

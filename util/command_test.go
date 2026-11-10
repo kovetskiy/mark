@@ -767,3 +767,20 @@ func TestATitleFlagOnTheCommandLineWins(t *testing.T) {
 		})
 	}
 }
+
+// TestManifestPageOptionalReachesTheRun: the flag, and its environment
+// variable, set TrackingConfig.ManifestPageOptional, which Run refuses
+// without a manifest page to be optional about.
+func TestManifestPageOptionalReachesTheRun(t *testing.T) {
+	noDefaultConfig(t)
+
+	_, _, err := runMark(t, "publish", "--compile-only", "--track-pages",
+		"--manifest-page-optional", "--files", "none.md")
+	require.Error(t, err)
+	assert.ErrorContains(t, err,
+		"--manifest-page-optional (Tracking.ManifestPageOptional) requires --manifest-page (Tracking.ManifestPage)")
+
+	t.Setenv("MARK_MANIFEST_PAGE_OPTIONAL", "true")
+	_, _, err = runMark(t, "publish", "--compile-only", "--track-pages", "--files", "none.md")
+	assert.ErrorContains(t, err, "--manifest-page-optional (Tracking.ManifestPageOptional)")
+}

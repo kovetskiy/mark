@@ -159,7 +159,36 @@ type Report struct {
 
 	Pages   []Page   `json:"pages"`
 	Orphans []Orphan `json:"orphans,omitempty"`
-	Errors  []string `json:"errors,omitempty"`
+
+	// Untracked are the spaces published to without a page manifest, because
+	// the page it is kept on does not exist there.
+	Untracked []Untracked `json:"untracked,omitempty"`
+
+	Errors []string `json:"errors,omitempty"`
+}
+
+// Untracked is a space a run published to without its page manifest, allowed
+// to by --manifest-page-optional (mark.TrackingConfig.ManifestPageOptional)
+// because the manifest page is missing there. Nothing was found through an
+// earlier mapping and none was saved, so a renamed document there gets a new
+// page, no orphan is reported, and under --no-overwrite an existing page is
+// left alone.
+type Untracked struct {
+	Space string `json:"space"`
+	// ManifestPage is the title or id the manifest page was given as.
+	ManifestPage string `json:"manifestPage"`
+}
+
+// AddUntracked records a space published to without its page manifest.
+func (r *Report) AddUntracked(untracked Untracked) {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.Untracked = append(r.Untracked, untracked)
 }
 
 // New returns an empty report.
@@ -413,6 +442,16 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		}
 
 		if err := command(w, "warning", annotated(orphan.File, orphan.Source), 0, message); err != nil {
+			return err
+		}
+	}
+
+	for _, space := range r.Untracked {
+		message := fmt.Sprintf(
+			"space %q was published untracked: its manifest page %q does not exist",
+			space.Space, space.ManifestPage,
+		)
+		if err := command(w, "warning", "", 0, message); err != nil {
 			return err
 		}
 	}

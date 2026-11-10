@@ -304,8 +304,21 @@ func (l LinkConfig) sourceDir(dir string) (string, bool) {
 // TrackingConfig is the page manifest --track-pages keeps, and what is done
 // about the pages it lists that a run no longer publishes.
 type TrackingConfig struct {
-	TrackPages     bool
-	ManifestPage   string
+	TrackPages   bool
+	ManifestPage string
+
+	// ManifestPageOptional publishes to a space where ManifestPage does not
+	// exist untracked, rather than failing the run with a
+	// *manifest.MissingPageError: as a first run of tracking would, with
+	// nothing found through an earlier mapping. The mapping is saved only if
+	// the page exists by the end of the run, so a run may publish the
+	// manifest page itself after the documents under it. Each space that
+	// ended untracked is in the report's Untracked, and logged as a warning.
+	// Under NoOverwrite such a space leaves an existing page alone, since
+	// nothing records what mark last wrote there; OnOrphan finds no orphans
+	// in it. Requires ManifestPage.
+	ManifestPageOptional bool
+
 	ManifestPrefix string
 	OnOrphan       report.OnOrphan // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
 	OrphanUnder    string
@@ -601,6 +614,11 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
+	if config.Tracking.ManifestPageOptional && config.Tracking.ManifestPage == "" {
+		return fmt.Errorf("--manifest-page-optional (Tracking.ManifestPageOptional) requires " +
+			"--manifest-page (Tracking.ManifestPage): it says what to do when that page is missing")
+	}
+
 	if manifestPrefix != manifest.PropertyKeyPrefix && !config.Tracking.TrackPages {
 		return fmt.Errorf("--manifest-prefix requires --track-pages: " +
 			"it names the page manifest's properties, and nothing else keeps one")
@@ -723,6 +741,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			tracker = manifest.NewStore(api)
 		}
 		tracker.SetManifestPage(config.Tracking.ManifestPage)
+		tracker.SetManifestPageOptional(config.Tracking.ManifestPageOptional)
 		// Normalised above, so this cannot fail.
 		if err := tracker.SetPropertyKeyPrefix(manifestPrefix); err != nil {
 			return err
@@ -775,6 +794,12 @@ func Run(ctx context.Context, config Config) (err error) {
 			if saveErr == nil {
 				results.AddError(fmt.Sprintf("unable to save page manifest: %v", err))
 			}
+		}
+
+		// After the save, which keeps the mapping of a space whose manifest
+		// page this run published, so that space is not reported.
+		for _, space := range tracker.UntrackedSpaces() {
+			results.AddUntracked(report.Untracked{Space: space, ManifestPage: config.Tracking.ManifestPage})
 		}
 	}()
 

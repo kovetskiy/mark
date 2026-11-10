@@ -224,9 +224,40 @@ up in each space the run publishes to; an id is used as it is, and so suits a
 run confined to one space. One page holds one space's manifest, so a run given
 an id that publishes to a second space fails when it reaches it, rather than
 the two spaces overwriting each other's mapping: name the page by title, or
-publish each space in a run of its own with its own `--manifest-prefix`. The
-page has to exist already: Mark refuses to start rather than quietly keep the
-mapping somewhere else.
+publish each space in a run of its own with its own `--manifest-prefix`.
+
+The page is looked for the first time a document in a space needs the mapping,
+before anything is published there, and the run fails if it is not a page in
+that space rather than quietly keep the mapping somewhere else. A dry run looks
+for it in the same way.
+
+#### When the manifest page does not exist yet
+
+`--manifest-page-optional` (`TrackingConfig.ManifestPageOptional` for a Go
+caller) publishes to a space whose manifest page is missing untracked instead,
+with a warning. That is the first run into a new space, whose landing page
+holds the manifest but is published after the documents under it:
+
+```bash
+mark publish --track-pages --manifest-page "Team Handbook" --manifest-page-optional --files "docs/**/*.md"
+```
+
+Such a space starts from an empty mapping, which is what it has: nothing is
+found through an earlier mapping, so it behaves as a first run of
+`--track-pages`. If the run publishes the manifest page itself, the mapping it
+gathered is saved there at the end, and the next run is tracked. Otherwise
+nothing is saved and the space is listed under `untracked` in the
+[JSON report](publishing.md#reporting-what-a-run-did).
+
+What needs an earlier mapping does not happen in an untracked space:
+
+* `--on-orphan` finds no orphans there, so nothing is archived or deleted.
+* `--no-overwrite` leaves every existing page alone, reported `skipped`:
+  nothing records the version mark last wrote, so an edit made in Confluence
+  cannot be told from none. A page the run creates is published as usual.
+
+Only a missing page is excused. A lookup that fails for any other reason still
+fails the run.
 
 ### Two projects in one space
 
@@ -308,6 +339,7 @@ outright rather than warned about, because the belief comes from silence:
 
 * `--on-orphan archive` or `delete` without `--track-pages`
 * `--no-overwrite` without `--track-pages`
+* `--manifest-page-optional` without `--manifest-page`
 * `--check-links-warn-only` without `--check-links`, or with one that names no
   kind of link
 * `--links-staged-root` without `--links-source-root`, or the other way round
