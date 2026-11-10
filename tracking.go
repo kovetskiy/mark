@@ -169,8 +169,8 @@ func refreshStaleParents(
 	// name it was never recorded under.
 	declared := slices.Clone(meta.Parents)
 
-	// The ambiguous titles already said, so a chain naming one twice is told once.
-	ambiguous := map[string]bool{}
+	// The titles found nowhere, so a chain naming one twice is told of it once.
+	unfollowed := map[string]bool{}
 
 	for i, title := range declared {
 		// FindPage is memoised, and ancestry resolution is about to ask the
@@ -209,8 +209,8 @@ func refreshStaleParents(
 				return fmt.Errorf("unable to check whether parent %q was renamed: %w", title, err)
 			}
 			if !ok {
-				if key := runTitleKey(meta.Space, "page", title); !ambiguous[key] {
-					ambiguous[key] = true
+				if key := runTitleKey(meta.Space, "page", title); !unfollowed[key] {
+					unfollowed[key] = true
 					titles.warnAmbiguous(meta.Space, title, warnings)
 				}
 
