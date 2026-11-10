@@ -202,3 +202,26 @@ func TestRestrictPageUpdatesServerCurrentUser(t *testing.T) {
 		})
 	}
 }
+
+// TestRestrictPageUpdatesAlreadyLocked: --edit-lock on a page a previous run
+// locked sends nothing, rather than a request that changes nothing and that
+// Cloud now and then fails.
+func TestRestrictPageUpdatesAlreadyLocked(t *testing.T) {
+	api, server, page := newCloudRestrictAPI(t)
+	server.SetRestrictions(page.ID, confluence.RestrictUpdate, []string{"acct-other", "acct-me"}, nil)
+
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
+	assert.Zero(t, server.CountRequests("POST", "/restriction"))
+	assert.Equal(t, []string{"acct-other", "acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+}
+
+// TestRestrictPageUpdatesLockedToSomeoneElse adds the user to a page whose
+// updates are restricted to others only.
+func TestRestrictPageUpdatesLockedToSomeoneElse(t *testing.T) {
+	api, server, page := newCloudRestrictAPI(t)
+	server.SetRestrictions(page.ID, confluence.RestrictUpdate, []string{"acct-other"}, nil)
+
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
+	assert.Equal(t, 1, server.CountRequests("POST", "/restriction"))
+	assert.Equal(t, []string{"acct-other", "acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+}
