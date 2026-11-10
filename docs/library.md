@@ -42,8 +42,8 @@ A document keeps three names apart:
   the next run, so it has to be the same on every run. Empty means `Path`.
 * `Source` is the file a person edits to change it, such as the template. The
   report gives it as the page's `source`, the GitHub format annotates it, and
-  a failed document's `FileError` carries it. Empty asks
-  `ReportConfig.SourcePath`, as for a file.
+  a failed document's `FileError` carries it unless it is the same as `Path`.
+  Empty asks `ReportConfig.SourcePath`, as for a file.
 
 `Content` is the Markdown, headers included.
 
@@ -51,23 +51,41 @@ A document keeps three names apart:
 
 `FS` is the file system its images, attachments, linked files, includes and
 macro templates are read from. `os.DirFS`, an `embed.FS` and `fstest.MapFS`
-all work. With `FS` set, `Path` is a slash-separated path inside it. Nothing
-outside `FS` is read: a name climbing above its root is refused, except
-includes found under `RenderingConfig.IncludePath`, which stay on disk.
+all work. With `FS` set, `Path` is a slash-separated path inside it. A name
+climbing above its root is refused, except includes found under
+`RenderingConfig.IncludePath`, which stay on disk.
+
+That boundary holds the names a document asks for; what the file system does
+with a name is its own. `os.DirFS` follows a symbolic link out of its
+directory. For a directory whose contents you do not control, such as a pull
+request's checkout, use the file system of an `os.Root` instead, which does
+not:
+
+```go
+assets, err := os.OpenRoot("assets")
+if err != nil {
+    return err
+}
+defer assets.Close()
+
+doc.FS = assets.FS()
+```
 
 Without `FS`, `Path` is an ordinary file path and the files around it are read
 from disk, as for a file the run read. That suits generated text whose images
 already sit beside where it would have been written.
 
-A d2 diagram that names a local image needs the document on disk: d2 reads
-those images itself.
+A d2 diagram in a document with an `FS` may not name a local image, and is
+refused if it does: d2 reads those images itself, from disk. Without `FS`, it
+reads them beside `Path`, as for a file.
 
 ### Links between documents
 
 A relative link to another of the run's documents, by its `Path`, or to one
 of the run's files, becomes a link to that page, so documents can link to each
 other the way they read in the source tree without that tree being rebuilt on
-disk.
+disk. A link's target is looked for among the run's documents and files
+first, then in the linking document's `FS`, or on disk without one.
 
 ### Documents and files together
 
@@ -86,8 +104,9 @@ Documents have no pattern, so `DocumentScope` names them instead:
 
 * **With a scope**, a later run with the same scope that no longer publishes a
   document's `Key` finds its page orphaned, and `OnOrphan` acts on it. A
-  document with a new `Key` whose content matches one recorded under the same
-  scope is taken for a rename.
+  document with a new `Key`, whose title finds no page, is taken for a rename
+  of the one `Key` recorded under the same scope with the same content that
+  the run no longer publishes.
 * **Without a scope**, a document's page is found again by its `Key` alone. It
   is never reported, archived or deleted because a later run did not publish
   it, and no document is taken for a rename. `OnOrphan` archive or delete on a
@@ -95,7 +114,12 @@ Documents have no pattern, so `DocumentScope` names them instead:
 
 Files published alongside keep their own pattern either way, so a `Files` run
 never takes a document's page for one of its orphans. A scope can never be
-mistaken for a `--files` pattern.
+mistaken for a `--files` pattern. Nothing is archived or deleted under a
+pattern or a scope that published nothing in that space on the run.
+
+Changing a scope is like changing a `--files` pattern: the pages recorded
+under the old one stay its own, and are never orphans of the new one. Keep a
+scope the same from run to run, as you keep a `Key`.
 
 A `Files` pattern that matches nothing fails the run, documents or not, unless
 `CI` is set. Under `CI` it is only warned about, and its pages are not looked
@@ -107,11 +131,13 @@ at for orphans.
 for a program that publishes as it renders. `Publisher.Publish` takes a file,
 and `Publisher.PublishDocument` a `Document`. A `Publisher` keeps no page
 manifest and writes no report, so a document's `Key` is not used: its page is
-found by its title and parents.
+found by its title in its space, as a file's is, and placed under its parents.
+Its relative links are looked for in its `FS`, or on disk around `Path`.
 
 ## Errors
 
 A run that fails on a document returns a `*mark.FileError` naming its `Path`
-as `File` and its `Source`. Under `ContinueOnError` the run returns a
+as `File`, and its `Source` as `Source` when that is not `Path`. Under
+`ContinueOnError` the run returns a
 `*mark.FilesFailedError` holding one for each, and `errors.Is` and `errors.As`
 reach each one's cause.

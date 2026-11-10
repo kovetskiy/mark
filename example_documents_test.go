@@ -35,6 +35,8 @@ func ExampleRun_documents() {
 			OnOrphan:   report.OnOrphanArchive,
 		},
 		DocumentScope: "api-reference",
+		// Every document is tried, and each failure returned.
+		ContinueOnError: true,
 		Documents: []mark.Document{
 			{
 				// Where it sits: ./groups.md and diagram.png resolve from here.
