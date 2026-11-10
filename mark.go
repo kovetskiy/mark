@@ -137,11 +137,141 @@ type UpdateConfig struct {
 	GlobalProperties string
 }
 
-// LinkConfig is which links are checked, and whether one that does not
-// resolve fails the run.
+// LinkConfig is which links are checked, whether one that does not resolve
+// fails the run, and where relative links are looked for.
 type LinkConfig struct {
 	CheckLinks         []string
 	CheckLinksWarnOnly bool
+
+	// StagedRoot and SourceRoot are for a caller that publishes copies of its
+	// documents from a staging directory: StagedRoot is the directory the
+	// copies are under, SourceRoot the tree they were made from. A relative
+	// link that names no file beside the staged document is then looked for
+	// at the same place under SourceRoot, which is where the link was written
+	// to make sense, both when it is checked and when it is rewritten to the
+	// page it names. A file beside the staged document still comes first,
+	// since that copy is the one that publishes.
+	//
+	// Both or neither: empty resolves links against the document's own
+	// directory alone. Each must be an existing directory, and every document
+	// published must be under StagedRoot. Relative paths are taken from the
+	// working directory.
+	StagedRoot string
+	SourceRoot string
+}
+
+// LinkConfigError is a LinkConfig, alone or with the rest of the
+// PublishConfig, that Run and NewPublisher refuse before anything is
+// published, or a document the config cannot resolve links for, which fails
+// that document. Ask for it with errors.As.
+type LinkConfigError struct {
+	// Field is the setting refused, as a path from PublishConfig, such as
+	// "Links.CheckLinksWarnOnly".
+	Field string
+	// Flag is the mark publish flag that sets Field.
+	Flag string
+	// Reason says what is wrong with it, and names any other setting
+	// involved.
+	Reason string
+	// Err is the cause, when there is one beyond the setting itself.
+	Err error
+}
+
+func (e *LinkConfigError) Error() string {
+	return fmt.Sprintf("%s (%s) %s", e.Field, e.Flag, e.Reason)
+}
+
+func (e *LinkConfigError) Unwrap() error { return e.Err }
+
+// validate refuses link settings that cannot be acted on, given the checks
+// they parse to.
+func (l LinkConfig) validate(checks page.LinkChecks) error {
+	// Tested on what was parsed rather than on the list, which can hold only
+	// empty values and still check nothing.
+	if l.CheckLinksWarnOnly && !checks.Any() {
+		return &LinkConfigError{
+			Field: "Links.CheckLinksWarnOnly", Flag: "--check-links-warn-only",
+			Reason: "requires Links.CheckLinks (--check-links) to name a kind of link: " +
+				"on its own no links are checked, so the silence means nothing",
+		}
+	}
+
+	roots := []struct {
+		field, flag, value string
+	}{
+		{"Links.StagedRoot", "--links-staged-root", l.StagedRoot},
+		{"Links.SourceRoot", "--links-source-root", l.SourceRoot},
+	}
+
+	if (l.StagedRoot == "") != (l.SourceRoot == "") {
+		set, unset := roots[0], roots[1]
+		if l.StagedRoot == "" {
+			set, unset = unset, set
+		}
+
+		return &LinkConfigError{
+			Field: set.field, Flag: set.flag,
+			Reason: fmt.Sprintf("requires %s (%s): one says where documents are read, "+
+				"the other where their links were written, and neither means anything alone",
+				unset.field, unset.flag),
+		}
+	}
+
+	for _, root := range roots {
+		if root.value == "" {
+			continue
+		}
+
+		info, err := os.Stat(root.value)
+		if err != nil {
+			return &LinkConfigError{
+				Field: root.field, Flag: root.flag,
+				Reason: fmt.Sprintf("names no usable directory: %v", err), Err: err,
+			}
+		}
+
+		if !info.IsDir() {
+			return &LinkConfigError{
+				Field: root.field, Flag: root.flag,
+				Reason: fmt.Sprintf("names %s, which is not a directory", root.value),
+			}
+		}
+	}
+
+	return nil
+}
+
+// sourceDir is the directory under SourceRoot that stands for the one file
+// was read from, or "" when no roots are set.
+func (l LinkConfig) sourceDir(file string) (string, error) {
+	if l.StagedRoot == "" {
+		return "", nil
+	}
+
+	// Absolute on both sides, so that a root given relative to the working
+	// directory and a file given absolute, or the other way round, compare.
+	staged, err := filepath.Abs(l.StagedRoot)
+	if err != nil {
+		return "", &LinkConfigError{Field: "Links.StagedRoot", Flag: "--links-staged-root", Reason: err.Error(), Err: err}
+	}
+
+	dir, err := filepath.Abs(filepath.Dir(file))
+	if err != nil {
+		return "", fmt.Errorf("unable to resolve the directory of %s: %w", file, err)
+	}
+
+	rel, err := filepath.Rel(staged, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		// Resolved against its own directory alone, a document outside the
+		// staged tree would have its links answered by the staging copy,
+		// which is what setting the roots is meant to stop.
+		return "", &LinkConfigError{
+			Field: "Links.StagedRoot", Flag: "--links-staged-root",
+			Reason: fmt.Sprintf("does not contain %s, so there is no telling where its links were written", file),
+		}
+	}
+
+	return filepath.Join(l.SourceRoot, rel), nil
 }
 
 // TrackingConfig is the page manifest --track-pages keeps, and what is done
@@ -253,19 +383,28 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 		return page.LinkChecks{}, fmt.Errorf("invalid ContentAppearance: %w", err)
 	}
 
-	if c.Links.CheckLinksWarnOnly && len(c.Links.CheckLinks) == 0 {
-		return page.LinkChecks{}, fmt.Errorf(
-			"--check-links-warn-only requires --check-links: " +
-				"on its own no links are checked, so the silence means nothing",
-		)
-	}
-
 	checks, err := page.ParseLinkChecks(c.Links.CheckLinks)
 	if err != nil {
+		return page.LinkChecks{}, &LinkConfigError{
+			Field: "Links.CheckLinks", Flag: "--check-links", Reason: "is not usable: " + err.Error(), Err: err,
+		}
+	}
+
+	if err := c.Links.validate(checks); err != nil {
 		return page.LinkChecks{}, err
 	}
 
 	return checks, nil
+}
+
+// Validate checks the settings each document is published with, as Run and
+// NewPublisher do before anything else, without a connection or any files. A
+// link setting it refuses is a *LinkConfigError. Run checks the settings
+// about the run as a whole as well, which this does not.
+func (c PublishConfig) Validate() error {
+	_, err := c.prepare()
+
+	return err
 }
 
 // validate refuses rendering settings the renderers cannot act on.
@@ -1376,7 +1515,10 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 		return nil, nil, err
 	}
 
-	doc.resolver = r.linkResolver(doc)
+	doc.resolver, err = r.linkResolver(doc)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if err := r.resolveRestrictions(ctx, doc); err != nil {
 		return nil, nil, err
@@ -1658,13 +1800,25 @@ func (r *publishRun) validate(doc *document) error {
 // linkResolver builds the resolver the document's links are rewritten
 // through while it is rendered, by walking the parsed tree, so that a fenced
 // block showing Markdown syntax keeps its example links as written.
-func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
+func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	config, file := r.config, doc.file
+
+	// A staged document's links were written beside its source, so that is
+	// the next place to look after the staged copy's own directory.
+	sourceDir, err := config.Links.sourceDir(file)
+	if err != nil {
+		return nil, err
+	}
+
+	var searchDirs []string
+	if sourceDir != "" {
+		searchDirs = append(searchDirs, sourceDir)
+	}
 
 	// A fragment's links are written from where the fragment lives, so the
 	// directory of everything this document includes is worth looking in too.
 	// One level: a fragment that itself includes another is not followed here.
-	searchDirs := includeSearchDirs(filepath.Dir(file), config.Rendering.IncludePath, doc.markdown)
+	searchDirs = append(searchDirs, includeSearchDirs(filepath.Dir(file), config.Rendering.IncludePath, doc.markdown)...)
 
 	resolver := page.NewLinkResolver(
 		r.api,
@@ -1695,7 +1849,7 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 		return readDocumentMeta(hierarchy, markdown, opts)
 	}
 
-	return resolver
+	return resolver, nil
 }
 
 // linksUnder is resolver's Resolve under ctx. The renderer asks for links
@@ -1878,6 +2032,12 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	// likely to use.
 	if err := reportBrokenLinks(doc.resolver.Broken(), doc.warnings, config.Links.CheckLinksWarnOnly); err != nil {
 		return err
+	}
+
+	// A real run would have created the page by the time ac: links are looked
+	// up; this one never will, so an ac: link to it is not reported missing.
+	if meta != nil && meta.Type == string(confluence.ContentPage) {
+		r.checker.NotePublishes(meta.Space, meta.Title)
 	}
 
 	if status != "" {

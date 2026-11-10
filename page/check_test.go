@@ -340,3 +340,29 @@ func TestMissingLinksNamesEveryDocumentHoldingTheLink(t *testing.T) {
 		`b.md: link "ac:Nowhere" does not resolve: there is no page "Nowhere" in space "DOCS"`,
 	}, missing)
 }
+
+// TestNotePublishesCountsAsFound: a page the run publishes is not missing,
+// whatever its case, across ForgetPages, and only in its own space.
+func TestNotePublishesCountsAsFound(t *testing.T) {
+	checker := NewLinkChecker(LinkChecks{Confluence: true})
+	checker.NotePublishes("DOCS", "Release Notes")
+	checker.ForgetPages()
+
+	checker.NotePage("DOCS", "release notes", "a.md")
+	checker.NotePage("OTHER", "Release Notes", "a.md")
+
+	missing, err := checker.MissingPages(context.Background(), missingFinder{})
+	require.NoError(t, err)
+	require.Len(t, missing, 1)
+	assert.Contains(t, missing[0], `space "OTHER"`)
+}
+
+// TestNotePublishesOnAZeroChecker: a LinkChecker built without
+// NewLinkChecker takes the note rather than panicking.
+func TestNotePublishesOnAZeroChecker(t *testing.T) {
+	checker := &LinkChecker{Checks: LinkChecks{Confluence: true}}
+	checker.NotePublishes("DOCS", "A")
+
+	var none *LinkChecker
+	none.NotePublishes("DOCS", "A")
+}

@@ -71,11 +71,18 @@ ERR unable to compile markdown: link "./architecure.md" does not resolve:
 ```
 
 It reports in every mode, including `--compile-only` and `--dry-run`, so a pull
-request gate can check links without Confluence credentials:
+request gate can check links without publishing anything:
 
 ```bash
 mark publish --compile-only --check-links all --files "docs/**/*.md"
 ```
+
+Some of the answers still come from Confluence in either mode. A relative link
+to a document is rewritten to that document's page, which is looked up, and a
+`confluence` link is a lookup too; without a Confluence to ask, a document with
+either kind of link fails on the connection rather than on the link. A page the
+run itself would publish is never created by a dry run or a compile, so an
+`ac:` link to it counts as found rather than being looked for.
 
 | Value | Checks |
 | --- | --- |
@@ -100,6 +107,33 @@ a link inside one is written from where the fragment lives rather than from
 wherever it is pulled into. The document's own directory is always tried first,
 so this cannot change what an unambiguous link already meant. Only the files a
 document includes directly are considered, not what those files include in turn.
+
+### Publishing from a staging directory
+
+A link is looked for beside the document mark reads. A build that renders its
+documents into a staging directory and publishes them from there has its links
+answered by the staged copies, which are not where the links were written: a
+link to a file the build did not stage is reported as missing, however present
+it is in the repository.
+
+`--links-staged-root` and `--links-source-root` say which tree the copies came
+from. A link that names no file beside the staged document is then looked for at
+the same place in the source tree, both when it is checked and when it is
+rewritten to the page it names:
+
+```bash
+mark publish --check-links internal \
+     --links-staged-root build/docs --links-source-root docs \
+     --files "build/docs/**/*.md"
+```
+
+A file beside the staged document still comes first, since that copy is the one
+that publishes, with whatever headers the build gave it. The two are given
+together, each must be a directory, and a document outside the staged root is
+refused rather than resolved against wherever it happens to be. In a Go program
+they are `LinkConfig.StagedRoot` and `LinkConfig.SourceRoot`, and
+`PublishConfig.Validate` refuses what `Run` would, as a `*LinkConfigError`
+naming the field and its flag.
 
 One case is reported but does not fail: a link to a document that exists and has
 a title, but is not in the space and is not being published by this run either.

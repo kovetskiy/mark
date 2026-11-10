@@ -90,9 +90,10 @@ type LinkChecker struct {
 	Checks LinkChecks
 	Client *http.Client
 
-	mu      sync.Mutex
-	seen    map[string]error
-	pending map[string]pendingPage
+	mu        sync.Mutex
+	seen      map[string]error
+	pending   map[string]pendingPage
+	publishes map[string]bool
 }
 
 // pendingPage is an ac: link waiting to be checked, and the documents that
@@ -112,9 +113,36 @@ func NewLinkChecker(checks LinkChecks) *LinkChecker {
 			// not hold up a publish indefinitely.
 			Timeout: 15 * time.Second,
 		},
-		seen:    map[string]error{},
-		pending: map[string]pendingPage{},
+		seen:      map[string]error{},
+		pending:   map[string]pendingPage{},
+		publishes: map[string]bool{},
 	}
+}
+
+// NotePublishes records that the run publishes a page of that title in that
+// space, so that MissingLinks and MissingPages do not report an ac: link to
+// it. It is for a run that publishes nothing -- a dry run or a compile --
+// whose pages are never created for the lookup to find, while a real run
+// would have created them by the time it looks.
+//
+// Titles are compared without regard to case, as Confluence finds them.
+func (c *LinkChecker) NotePublishes(space, title string) {
+	if c == nil || !c.Checks.Confluence {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.publishes == nil {
+		c.publishes = map[string]bool{}
+	}
+
+	c.publishes[publishesKey(space, title)] = true
+}
+
+func publishesKey(space, title string) string {
+	return space + "\x00" + strings.ToLower(title)
 }
 
 // NotePage records an ac: link to check once the run has finished.
@@ -197,11 +225,16 @@ func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]Mi
 		link.sources = slices.Clone(link.sources)
 		pending[key] = link
 	}
+	publishes := maps.Clone(c.publishes)
 	c.mu.Unlock()
 
 	var missing []MissingLink
 	for _, key := range slices.Sorted(maps.Keys(pending)) {
 		link := pending[key]
+
+		if publishes[publishesKey(link.space, link.title)] {
+			continue
+		}
 
 		found, err := finder.FindPage(ctx, link.space, link.title, confluence.ContentPage)
 		if err != nil {
@@ -219,8 +252,9 @@ func (c *LinkChecker) MissingLinks(ctx context.Context, finder PageFinder) ([]Mi
 }
 
 // ForgetPages drops the ac: links noted so far, keeping every answer about an
-// external URL, so that a caller publishing files one at a time can report
-// each file's links on their own without asking the same hosts again.
+// external URL and every page NotePublishes recorded, so that a caller
+// publishing files one at a time can report each file's links on their own
+// without asking the same hosts again.
 func (c *LinkChecker) ForgetPages() {
 	if c == nil {
 		return
