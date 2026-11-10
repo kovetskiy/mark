@@ -643,10 +643,13 @@ func (state *spaceState) buildIndexes() {
 // otherwise. A page that cannot be found is an error rather than a fallback,
 // since the alternative is a manifest quietly kept somewhere else.
 func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (string, error) {
+	var byIDErr error
 	if isNumeric(s.manifestPage) {
-		if found, err := s.api.GetPageByID(ctx, s.manifestPage); err == nil && found != nil {
+		found, err := s.api.GetPageByID(ctx, s.manifestPage)
+		if err == nil && found != nil {
 			return found.ID, nil
 		}
+		byIDErr = err
 	}
 
 	found, err := s.api.FindPage(ctx, spaceKey, s.manifestPage, confluence.ContentPage)
@@ -654,6 +657,11 @@ func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (strin
 		return "", fmt.Errorf("unable to find the manifest page %q in space %q: %w", s.manifestPage, spaceKey, err)
 	}
 	if found == nil {
+		// A page that could not be read by its id is not one known to be
+		// missing, and only a missing one may run untracked.
+		if byIDErr != nil && !errors.Is(byIDErr, confluence.ErrNotFound) {
+			return "", fmt.Errorf("unable to find the manifest page %q: %w", s.manifestPage, byIDErr)
+		}
 		return "", &MissingPageError{Page: s.manifestPage, Space: spaceKey}
 	}
 

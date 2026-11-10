@@ -1475,3 +1475,33 @@ func TestRecordWarnsBothDocumentsOfASharedPage(t *testing.T) {
 		assert.Contains(t, list[0].Message, "a.md and b.md both publish to page 1")
 	}
 }
+
+// TestManifestPageOptionalByIDOnlyExcusesAMissingPage: a manifest page given
+// by id that cannot be read is an error, not a missing page; one that is gone
+// runs untracked.
+func TestManifestPageOptionalByIDOnlyExcusesAMissingPage(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	homeID := docsWithHomepage(t, server)
+	handbook := server.AddPage("DOCS", "Team Handbook", "page", homeID)
+	store.SetManifestPage(handbook.ID)
+	store.SetManifestPageOptional(true)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/rest/api/content/"+handbook.ID) {
+			return http.StatusForbidden, `{"message":"not permitted"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, _, err := store.Lookup(ctx, "DOCS", "a.md")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not permitted")
+	assert.False(t, store.Untracked("DOCS"))
+
+	gone := newStoreOn(t, server)
+	gone.SetManifestPage("999999")
+	gone.SetManifestPageOptional(true)
+	_, _, err = gone.Lookup(ctx, "DOCS", "a.md")
+	require.NoError(t, err)
+	assert.True(t, gone.Untracked("DOCS"))
+}
