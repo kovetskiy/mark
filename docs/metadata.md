@@ -126,6 +126,23 @@ It is left in the page for the include expander to find.
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
 
+### Writing metadata from a program
+
+A comment header has no escape: its value runs from the first colon to the
+closing `-->`, trimmed, on one line. A value with a line break, with space at
+either end, or holding `-->` (or `--!>`, which ends a comment for an HTML
+reader) cannot be written as a header at all, and one that is pasted in
+regardless can end the comment early and start another header.
+
+A Go program writing documents from text it does not control can leave that to
+mark's `metadata` package:
+
+* `metadata.Header(key, value)` returns the header line, or an error matching
+  `metadata.ErrUnrepresentable` for a value a header cannot hold and
+  `metadata.ErrUnknownHeader` for a key mark does not read.
+* `metadata.FrontMatter(fields)` returns YAML front matter, which can hold any
+  text, line breaks included; it refuses only keys mark does not read.
+
 ## Further headers
 
 These headers are read as well:
