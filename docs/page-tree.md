@@ -359,7 +359,8 @@ only the changed files reads every other file as deleted.
 A run with `--partial` looks for deleted and renamed files among the tracked
 files its `--files` pattern names, whichever run recorded them, and leaves every
 other tracked file alone: one of those it names that is missing is reported,
-and dealt with by `--on-orphan`, as in a full run, and a renamed one is
+and dealt with by `--on-orphan`, as in a full run, except that one only
+reported stays tracked for the run publishing them all; a renamed one is
 followed to its page with its `--no-overwrite` baseline. A page it publishes
 keeps the pattern its file was tracked under, or that of the file it was
 renamed from, so the full run still covers it. A file no run has tracked yet is

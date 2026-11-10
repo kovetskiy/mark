@@ -74,10 +74,17 @@ func TestPartialRunReportsOnlyWhatItNames(t *testing.T) {
 	assert.Contains(t, reported, "b.md")
 	assert.NotContains(t, reported, "c.md", "c.md is not this run's business")
 
-	_, ok := tracked(t, server, filepath.Join(dir, "b.md"))
-	assert.False(t, ok, "b.md was reported, and so forgotten")
-	_, ok = tracked(t, server, filepath.Join(dir, "c.md"))
+	_, ok := tracked(t, server, filepath.Join(dir, "c.md"))
 	assert.True(t, ok, "c.md is still tracked")
+
+	// Reporting leaves b.md to the run owning it, which deals with its page.
+	_, ok = tracked(t, server, filepath.Join(dir, "b.md"))
+	require.True(t, ok, "b.md was only reported, so still tracked")
+	bID := pageIDTitled(t, server, "Page b")
+	owner := full
+	owner.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), owner))
+	assert.True(t, server.Page(bID).Trashed)
 }
 
 // TestPartialRunActsOnlyOnWhatItNames: --on-orphan in a partial run removes
