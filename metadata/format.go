@@ -92,8 +92,10 @@ func frontMatterKeys() []string {
 //
 // Unlike a comment header, YAML can spell any text, so a value's line breaks,
 // dashes and quotes are all kept: the front matter mark reads back decodes to
-// exactly fields, and no line inside it closes it early. A value YAML has no
-// form for, such as a func, is ErrUnrepresentable. How mark then reads each
+// exactly fields, and no line inside it closes it early. A value is nil, a
+// string, a boolean, a number, or a slice, array or map of them; anything
+// else -- a struct, a func -- is ErrUnrepresentable, as is a value nested
+// more than 64 deep or one that holds itself. How mark then reads each
 // key is as for any front matter: strings are trimmed, and order has to be a
 // whole number.
 func FrontMatter(fields map[string]any) (string, error) {
@@ -146,8 +148,7 @@ func FrontMatter(fields map[string]any) (string, error) {
 // marshalYAML is value as YAML, with every string that holds a line break in
 // double quotes, where each character is spelled out: yaml.v3 writes such a
 // string as a block scalar, and loses a leading line break doing so ("\n0"
-// in a list fails to read back at all). A value of a type YAML has no form
-// for, a func or a channel, is an error rather than yaml.v3's panic.
+// in a list fails to read back at all).
 func marshalYAML(value any) (out []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -155,7 +156,7 @@ func marshalYAML(value any) (out []byte, err error) {
 		}
 	}()
 
-	node, err := yamlNode(reflect.ValueOf(value))
+	node, err := yamlNode(reflect.ValueOf(value), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -163,29 +164,50 @@ func marshalYAML(value any) (out []byte, err error) {
 	return yaml.Marshal(node)
 }
 
-// yamlNode builds the node for v: strings, lists and mappings here, so that
-// each string's style is this package's to choose, and any other value as
-// yaml.v3 encodes it.
-func yamlNode(v reflect.Value) (*yaml.Node, error) {
+// maxYAMLDepth bounds how deeply a value may nest, which is also what stops a
+// value that holds itself: the recursion would otherwise overflow the stack,
+// which no recover catches.
+const maxYAMLDepth = 64
+
+// yamlNode builds the node for v, so that each string's style is this
+// package's to choose. Only what front matter is made of is taken: nil,
+// strings, booleans, numbers, and slices, arrays and maps of them. A struct
+// is refused rather than encoded field by field, since it would read back as
+// a map in another order.
+func yamlNode(v reflect.Value, depth int) (*yaml.Node, error) {
 	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Pointer) && !v.IsNil() {
 		v = v.Elem()
+		depth++
+	}
+	if depth > maxYAMLDepth {
+		return nil, fmt.Errorf("a value nests more than %d deep", maxYAMLDepth)
 	}
 
-	switch {
-	case !v.IsValid():
+	switch v.Kind() {
+	case reflect.Invalid, reflect.Interface, reflect.Pointer:
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
 
-	case v.Kind() == reflect.String:
+	case reflect.String:
 		node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v.String()}
 		if strings.ContainsAny(node.Value, "\r\n\u0085\u2028\u2029") {
 			node.Style = yaml.DoubleQuotedStyle
 		}
 		return node, nil
 
-	case v.Kind() == reflect.Slice && v.Type().Elem().Kind() != reflect.Uint8, v.Kind() == reflect.Array:
+	case reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		var node yaml.Node
+		if err := node.Encode(v.Interface()); err != nil {
+			return nil, err
+		}
+		return &node, nil
+
+	case reflect.Slice, reflect.Array:
 		node := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
 		for i := range v.Len() {
-			item, err := yamlNode(v.Index(i))
+			item, err := yamlNode(v.Index(i), depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -193,25 +215,36 @@ func yamlNode(v reflect.Value) (*yaml.Node, error) {
 		}
 		return node, nil
 
-	case v.Kind() == reflect.Map && v.Type().Key().Kind() == reflect.String:
+	case reflect.Map:
 		node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		keys := v.MapKeys()
-		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(a.String(), b.String()) })
+		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(yamlSortKey(a), yamlSortKey(b)) })
 		for _, key := range keys {
-			value, err := yamlNode(v.MapIndex(key))
+			keyNode, err := yamlNode(key, depth+1)
 			if err != nil {
 				return nil, err
 			}
-			keyNode, _ := yamlNode(key)
+			value, err := yamlNode(v.MapIndex(key), depth+1)
+			if err != nil {
+				return nil, err
+			}
 			node.Content = append(node.Content, keyNode, value)
 		}
 		return node, nil
 
 	default:
-		var node yaml.Node
-		if err := node.Encode(v.Interface()); err != nil {
-			return nil, err
-		}
-		return &node, nil
+		return nil, fmt.Errorf("a %s has no form in front matter", v.Type())
 	}
+}
+
+// yamlSortKey is what a map key is ordered by: the string itself, or the
+// number or boolean as text.
+func yamlSortKey(v reflect.Value) string {
+	if v.Kind() == reflect.Interface && !v.IsNil() {
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.String {
+		return v.String()
+	}
+	return fmt.Sprint(v.Interface())
 }
