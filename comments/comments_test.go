@@ -434,6 +434,16 @@ func TestMergeComments_SelectionOnlyInMarkup(t *testing.T) {
 			selection: "Setup",
 		},
 		{
+			name:      "task status",
+			body:      "<ac:task-list>\n<ac:task>\n<ac:task-id>1</ac:task-id>\n<ac:task-status>incomplete</ac:task-status>\n<ac:task-body>a</ac:task-body>\n</ac:task>\n</ac:task-list>",
+			selection: "complete",
+		},
+		{
+			name:      "task id",
+			body:      "<ac:task-list>\n<ac:task>\n<ac:task-id>1</ac:task-id>\n<ac:task-status>incomplete</ac:task-status>\n<ac:task-body>a</ac:task-body>\n</ac:task>\n</ac:task-list>",
+			selection: "1",
+		},
+		{
 			name:      "XML comment",
 			body:      `<!-- setup --><p>a</p>`,
 			selection: "setup",
