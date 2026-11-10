@@ -118,7 +118,9 @@ func pageOnInstance(href, base string) (PageRef, bool) {
 	}
 
 	ref, err := ParsePageURL(href)
-	if err != nil || confluence.SameInstance(base, ref.BaseURL) != nil {
+	// Both ways: configured on the gateway, SameInstance takes any Cloud
+	// site, but a link names a page of one site only.
+	if err != nil || confluence.SameInstance(base, ref.BaseURL) != nil || confluence.SameInstance(ref.BaseURL, base) != nil {
 		return PageRef{}, false
 	}
 
@@ -126,7 +128,7 @@ func pageOnInstance(href, base string) (PageRef, bool) {
 	// same server but not a page link that opens: an instance under /wiki
 	// does not serve /display/... at the root.
 	contextPath := strings.TrimPrefix(ref.BaseURL, parsed.Scheme+"://"+parsed.Host)
-	if instance, err := url.Parse(base); err != nil || (contextPath == "" && strings.Trim(instance.EscapedPath(), "/") != "") {
+	if instance, _ := url.Parse(base); contextPath == "" && strings.Trim(instance.EscapedPath(), "/") != "" {
 		return PageRef{}, false
 	}
 	path := strings.TrimPrefix(strings.TrimSuffix(parsed.EscapedPath(), "/"), contextPath)
