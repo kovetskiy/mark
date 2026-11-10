@@ -660,14 +660,26 @@ func TestPublisherPublishesADocument(t *testing.T) {
 	require.NoError(t, err)
 	defer publisher.Close()
 
+	files := fstest.MapFS{
+		"guides/frag.md":  {Data: []byte("From the fragment.\n")},
+		"guides/other.md": {Data: []byte(markdownWithTitle("Other"))},
+	}
+	_, err = publisher.PublishDocument(context.Background(), Document{
+		Path: "guides/other.md", Content: files["guides/other.md"].Data, FS: files,
+	})
+	require.NoError(t, err)
+
+	// A link is looked for in the document's FS: a Publisher has no run's
+	// documents to look among first.
 	target, err := publisher.PublishDocument(context.Background(), Document{
 		Path:    "guides/doc.md",
-		Content: []byte(markdownWithTitle("Published") + "\n<!-- Include: frag.md -->\n"),
-		FS:      fstest.MapFS{"guides/frag.md": {Data: []byte("From the fragment.\n")}},
+		Content: []byte(markdownWithTitle("Published") + "\n<!-- Include: frag.md -->\n\nSee [other](./other.md).\n"),
+		FS:      files,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, target)
 	assert.Contains(t, server.Page(target.ID).Body, "From the fragment.")
+	assert.NotContains(t, server.Page(target.ID).Body, "other.md", "the link became one to the page")
 
 	_, err = publisher.PublishDocument(context.Background(), Document{
 		Path: "guides/broken.md", Source: "templates/broken.tmpl", Content: []byte("No headers.\n"),
