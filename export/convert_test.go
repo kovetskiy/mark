@@ -563,6 +563,11 @@ func TestPageOnInstance(t *testing.T) {
 			assert.False(t, ok)
 		})
 	}
+
+	// The gateway fronts every Cloud site; a link names a page of one.
+	_, ok := pageOnInstance("https://other.atlassian.net/wiki/spaces/DOCS/pages/123/Title",
+		"https://api.atlassian.com/ex/confluence/0123/wiki")
+	assert.False(t, ok, "a site's link counted as a page of the gateway")
 }
 
 // A "!" just before a link would make it an image.
