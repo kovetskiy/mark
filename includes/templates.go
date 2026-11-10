@@ -141,28 +141,21 @@ func disk(name string) place { return place{name: name} }
 
 func (p place) inFS() bool { return p.root.FS() != nil }
 
-// join is the place rel names from p.
+// join is the place rel names from p. Joined as paths on disk are: the Root
+// reads such a name as the path inside its fs.FS.
 func (p place) join(rel string) place {
-	if p.inFS() {
-		return place{root: p.root, name: path.Join(filepath.ToSlash(p.name), filepath.ToSlash(rel))}
-	}
-
-	return disk(filepath.Join(p.name, rel))
+	return place{root: p.root, name: filepath.Join(p.name, rel)}
 }
 
 func (p place) dir() place {
-	if p.inFS() {
-		return place{root: p.root, name: path.Dir(p.name)}
-	}
-
-	return disk(filepath.Dir(p.name))
+	return place{root: p.root, name: filepath.Dir(p.name)}
 }
 
-// key makes p the name of exactly one file, as absolute does on disk; a path
-// inside an fs.FS is one already.
+// key makes p the name of exactly one file: absolute on disk, and the clean
+// slash-separated path inside an fs.FS.
 func (p place) key() place {
 	if p.inFS() {
-		return p
+		return place{root: p.root, name: path.Clean(filepath.ToSlash(p.name))}
 	}
 
 	return disk(absolute(p.name))
@@ -260,11 +253,8 @@ func resolveNestedTemplatePath(base, from place, includePath, path string, warni
 // and from disk only what --include-path allows.
 func allowedTemplatePath(base place, includePath string, resolved place) error {
 	if resolved.inFS() {
-		if resolved.root.CheckReadable(".", resolved.name) != nil {
-			return fmt.Errorf(
-				"%w: %s is outside the document's file system, so it is not this document's to include",
-				attachment.ErrOutsideProject, resolved,
-			)
+		if err := resolved.root.CheckReadable(".", resolved.name); err != nil {
+			return fmt.Errorf("%w, so it is not this document's to include", err)
 		}
 
 		return nil
@@ -601,6 +591,7 @@ func processIncludes(
 	// "a.md" holding an include of "b.md" next to an include of itself grew the
 	// document without bound instead of being reported as circular.
 	modified := false
+	fromFragment := from.cacheKey() != base.cacheKey()
 	for expansions := 0; ; expansions++ {
 		if expansions >= maxDirectivesPerLevel {
 			return templates, contents, false, fmt.Errorf(
@@ -636,13 +627,14 @@ func processIncludes(
 		// directory; one inside an included fragment names it from the
 		// fragment's, with the document's still tried after it.
 		resolved := resolveTemplatePath(base, includePath, dir.Template)
-		if from.cacheKey() != base.cacheKey() {
+		if fromFragment {
 			resolved = resolveNestedTemplatePath(base, from, includePath, dir.Template, warnings)
 		}
+		resolvedKey := resolved.cacheKey()
 
 		// Detect circular include loops
 		for _, frame := range stack {
-			if frame.file == resolved.cacheKey() {
+			if frame.file == resolvedKey {
 				return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", names(), dir.Template)
 			}
 		}
@@ -681,7 +673,7 @@ func processIncludes(
 		// would otherwise share -- and overwrite -- the same backing array.
 		newStack := make([]includeFrame, 0, len(stack)+1)
 		newStack = append(newStack, stack...)
-		newStack = append(newStack, includeFrame{name: dir.Template, file: resolved.cacheKey()})
+		newStack = append(newStack, includeFrame{name: dir.Template, file: resolvedKey})
 
 		subTemplates, subBytes, _, subErr := processIncludes(base, nested, includePath, expanded, templates, newStack, warnings)
 		if subErr != nil {
