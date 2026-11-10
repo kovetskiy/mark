@@ -12,7 +12,6 @@
 package export
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/internal/syntax"
@@ -239,15 +238,4 @@ func fence(text string, minimum int) string {
 	}
 
 	return strings.Repeat("`", max(minimum, longest+1))
-}
-
-// headerValue checks that a value can be written in a metadata header, which
-// is a single line inside a comment.
-func headerValue(name, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if strings.ContainsAny(value, "\r\n") || strings.Contains(value, "-->") {
-		return "", fmt.Errorf("the %s %q cannot be written in a metadata header; --metadata frontmatter can write it", strings.ToLower(name), value)
-	}
-
-	return value, nil
 }

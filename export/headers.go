@@ -1,6 +1,7 @@
 package export
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -114,11 +115,11 @@ func (h *pageHeaders) comments() (string, error) {
 	var lines []string
 	for _, field := range h.fields() {
 		for _, value := range field.present() {
-			value, err := headerValue(field.header, value)
+			line, err := headerLine(field.header, value)
 			if err != nil {
 				return "", err
 			}
-			lines = append(lines, "<!-- "+field.header+": "+value+" -->")
+			lines = append(lines, line)
 		}
 	}
 	return strings.Join(lines, "\n") + "\n", nil
@@ -251,4 +252,15 @@ func yamlPrintable(r rune) bool {
 	default:
 		return r >= 0x10000 && r <= 0x10FFFF
 	}
+}
+
+// headerLine is the comment header that sets name to value, which mark trims.
+func headerLine(name, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	line, err := metadata.Header(name, value)
+	if errors.Is(err, metadata.ErrUnrepresentable) {
+		return "", fmt.Errorf("the %s %q cannot be written in a metadata header; --metadata frontmatter can write it", strings.ToLower(name), value)
+	}
+
+	return line, err
 }
