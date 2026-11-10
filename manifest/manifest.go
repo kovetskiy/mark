@@ -201,6 +201,13 @@ func PropertyKeyFor(prefix string, shard int) string {
 	return fmt.Sprintf("%s.%d", prefix, shard)
 }
 
+// isManifestKey reports whether key is one of the properties a manifest under
+// prefix is kept in: a shard, or the folder or parent mapping.
+func isManifestKey(prefix, key string) bool {
+	_, shard := shardIndex(prefix, key)
+	return shard || key == FolderPropertyKeyFor(prefix) || key == ParentPropertyKeyFor(prefix)
+}
+
 // shardIndex recovers a shard number from a property key, reporting false for
 // any key that is not one of ours -- a space or page may hold properties put
 // there by something else entirely, or by a run keeping its manifest under
@@ -761,8 +768,7 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 		return false, err
 	}
 	for _, property := range properties {
-		_, shard := shardIndex(s.prefix, property.Key)
-		if shard || property.Key == FolderPropertyKeyFor(s.prefix) || property.Key == ParentPropertyKeyFor(s.prefix) {
+		if isManifestKey(s.prefix, property.Key) {
 			log.Warn().Msgf(
 				"manifest page %q of space %q already holds a page mapping this run did not read; "+
 					"the mapping of this run is not saved",
