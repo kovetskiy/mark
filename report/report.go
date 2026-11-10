@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -160,6 +161,32 @@ type Report struct {
 // New returns an empty report.
 func New() *Report {
 	return &Report{}
+}
+
+// SetWarnings replaces the warnings of the document recorded for file, both
+// as messages and in full, for a warning found once the document's own
+// publish is over. A file with no page recorded is left alone.
+func (r *Report) SetWarnings(file string, warnings []Warning) {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.Pages {
+		if r.Pages[i].File != file {
+			continue
+		}
+
+		r.Pages[i].WarningDetails = slices.Clone(warnings)
+		r.Pages[i].Warnings = nil
+		for _, warning := range warnings {
+			r.Pages[i].Warnings = append(r.Pages[i].Warnings, warning.Message)
+		}
+
+		return
+	}
 }
 
 // AddPage records what became of a document.

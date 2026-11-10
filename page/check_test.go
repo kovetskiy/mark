@@ -311,3 +311,23 @@ func TestLinkCheckerConcurrentAccess(t *testing.T) {
 		`b.md: link "ac:b" does not resolve: there is no page "b" in space "DOCS"`,
 	}, missing)
 }
+
+// TestMissingLinksNamesEveryDocumentHoldingTheLink: a page linked from several
+// documents is looked up once and reported once by MissingPages, against the
+// first; MissingLinks names every one, in the order they linked, each once.
+func TestMissingLinksNamesEveryDocumentHoldingTheLink(t *testing.T) {
+	checker := NewLinkChecker(LinkChecks{Confluence: true})
+	checker.NotePage("DOCS", "Nowhere", "b.md")
+	checker.NotePage("DOCS", "Nowhere", "a.md")
+	checker.NotePage("DOCS", "Nowhere", "b.md")
+
+	links, err := checker.MissingLinks(context.Background(), missingFinder{})
+	require.NoError(t, err)
+	assert.Equal(t, []MissingLink{{Space: "DOCS", Title: "Nowhere", Sources: []string{"b.md", "a.md"}}}, links)
+
+	missing, err := checker.MissingPages(context.Background(), missingFinder{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		`b.md: link "ac:Nowhere" does not resolve: there is no page "Nowhere" in space "DOCS"`,
+	}, missing)
+}

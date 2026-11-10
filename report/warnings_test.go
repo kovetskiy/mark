@@ -202,3 +202,26 @@ func TestGitHubAnnotatesAWarningAgainstTheSource(t *testing.T) {
 		out.String())
 	assert.Equal(t, "src/frag.md.tmpl", r.Pages[0].WarningDetails[1].Source)
 }
+
+// TestSetWarningsReplacesAPagesWarnings: a warning found after a document's
+// line was written replaces its warnings in both forms, and a file with no
+// line is left out.
+func TestSetWarningsReplacesAPagesWarnings(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "docs/a.md", Status: StatusPublished,
+		Warnings:       []string{"old"},
+		WarningDetails: []Warning{{Kind: WarningUnknownKey, File: "docs/a.md", Message: "old"}},
+	})
+
+	updated := []Warning{
+		{Kind: WarningUnknownKey, File: "docs/a.md", Message: "old"},
+		{Kind: WarningUnresolvedLink, File: "docs/a.md", Message: "new"},
+	}
+	r.SetWarnings("docs/a.md", updated)
+	r.SetWarnings("docs/missing.md", updated)
+
+	require.Len(t, r.Pages, 1)
+	assert.Equal(t, updated, r.Pages[0].WarningDetails)
+	assert.Equal(t, []string{"old", "new"}, r.Pages[0].Warnings)
+}
