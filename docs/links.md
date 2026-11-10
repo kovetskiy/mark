@@ -127,13 +127,17 @@ mark publish --check-links internal \
      --files "build/docs/**/*.md"
 ```
 
-A file beside the staged document still comes first, since that copy is the one
-that publishes, with whatever headers the build gave it. The two are given
+A file anywhere in the staging directory that the link would have found without
+the roots still comes first, since that copy is the one that publishes, with
+whatever headers the build gave it. A link inside an included fragment that was
+staged is looked for under the source tree in the same way. The two are given
 together, each must be a directory, and a document outside the staged root is
-refused rather than resolved against wherever it happens to be. In a Go program
-they are `LinkConfig.StagedRoot` and `LinkConfig.SourceRoot`, and
-`PublishConfig.Validate` refuses what `Run` would, as a `*LinkConfigError`
-naming the field and its flag.
+refused before anything is published rather than resolved against wherever it
+happens to be. In a Go program they are `LinkConfig.StagedRoot` and
+`LinkConfig.SourceRoot`. `PublishConfig.Validate` refuses the link settings
+`Run` would, as a `*LinkConfigError` naming the field and its flag; which
+documents sit under the staged root is only known once they are named, so
+`Publisher.Publish` refuses one outside it on its own.
 
 One case is reported but does not fail: a link to a document that exists and has
 a title, but is not in the space and is not being published by this run either.

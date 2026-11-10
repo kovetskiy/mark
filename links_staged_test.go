@@ -207,3 +207,85 @@ func TestReadOnlyRunsCountTheirOwnPages(t *testing.T) {
 		})
 	}
 }
+
+// TestFragmentLinksResolveAgainstTheSourceTree: a link inside a staged fragment
+// was written beside the fragment's source, so the fragment's directory is
+// mapped into the source tree as the document's own is.
+func TestFragmentLinksResolveAgainstTheSourceTree(t *testing.T) {
+	staged, source, _ := stagedTree(t)
+	writeAt(t, staged, "team/shared/part.inc", "See [the policy](./policy.md).\n")
+	writeAt(t, source, "team/shared/policy.md", "<!-- Space: DOCS -->\n<!-- Title: Policy -->\n\nPolicy.\n")
+	document := writeFile(t, filepath.Join(staged, "team"), "frag.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Frag -->\n\n<!-- Include: shared/part.inc -->\n")
+
+	server, api, _, config := publisherFixture(t, "")
+	server.AddPage("DOCS", "Policy", "page", "")
+	config.Links = LinkConfig{CheckLinks: []string{"internal"}, StagedRoot: staged, SourceRoot: source}
+
+	target, err := publishOne(context.Background(), document, api, config.PublishConfig)
+	require.NoError(t, err)
+	assert.Contains(t, server.Page(target.ID).Body, "/x/")
+}
+
+// TestTheRootsDoNotChangeAResolvedLink: a link that found a staged file without
+// the roots finds the same one with them, even where the document's source
+// directory holds a file of that name too.
+func TestTheRootsDoNotChangeAResolvedLink(t *testing.T) {
+	staged, source, _ := stagedTree(t)
+	writeAt(t, staged, "team/shared/part.inc", "See [setup](./setup.md).\n")
+	writeAt(t, staged, "team/shared/setup.md", "<!-- Space: DOCS -->\n<!-- Title: Shared Setup -->\n\nSetup.\n")
+	writeAt(t, source, "team/setup.md", "<!-- Space: DOCS -->\n<!-- Title: Team Setup -->\n\nSetup.\n")
+	document := writeFile(t, filepath.Join(staged, "team"), "frag.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Frag -->\n\n<!-- Include: shared/part.inc -->\n")
+
+	server, api, _, config := publisherFixture(t, "")
+	// Only the staged neighbour's page exists: were the source's read, the
+	// link would wait for "Team Setup" and be left as written.
+	server.AddPage("DOCS", "Shared Setup", "page", "")
+	config.Links = LinkConfig{StagedRoot: staged, SourceRoot: source}
+
+	target, err := publishOne(context.Background(), document, api, config.PublishConfig)
+	require.NoError(t, err)
+	assert.Contains(t, server.Page(target.ID).Body, "/x/")
+}
+
+// TestAStagedRootReachedThroughASymlink: a root named through a symlink still
+// contains a document named through its target.
+func TestAStagedRootReachedThroughASymlink(t *testing.T) {
+	staged, source, document := stagedTree(t)
+	link := filepath.Join(t.TempDir(), "stage")
+	if err := os.Symlink(staged, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+
+	server, api, _, config := publisherFixture(t, "")
+	server.AddPage("DOCS", "Guide", "page", "")
+	config.Links = LinkConfig{CheckLinks: []string{"internal"}, StagedRoot: link, SourceRoot: source}
+
+	target, err := publishOne(context.Background(), document, api, config.PublishConfig)
+	require.NoError(t, err)
+	assert.Contains(t, server.Page(target.ID).Body, "/x/")
+}
+
+// TestRunRefusesADocumentOutsideTheStagedRootUpFront: Run knows every document
+// before it publishes any, so one outside the staged root stops the run before
+// the others are published rather than part way through it.
+func TestRunRefusesADocumentOutsideTheStagedRootUpFront(t *testing.T) {
+	parent := t.TempDir()
+	staged, source := filepath.Join(parent, "staged"), filepath.Join(parent, "source")
+	writeAt(t, staged, "doc.md", "<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nDoc.\n")
+	require.NoError(t, os.MkdirAll(source, 0o755))
+	// Sorted after the staged document, so that it would be reached second.
+	outside := filepath.Join(parent, "zz", "other.md")
+	writeAt(t, parent, "zz/other.md", "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nOther.\n")
+
+	server, _, _, config := publisherFixture(t, "")
+	config.Files = filepath.Join(parent, "**", "*.md")
+	config.Links = LinkConfig{StagedRoot: staged, SourceRoot: source}
+
+	err := Run(context.Background(), config)
+	var linkErr *LinkConfigError
+	require.ErrorAs(t, err, &linkErr)
+	assert.Contains(t, err.Error(), outside)
+	assert.Empty(t, pageIDTitled(t, server, "Doc"), "nothing is published")
+}
