@@ -102,6 +102,9 @@ type ConfluenceImageRenderer struct {
 	Path        string
 	Attachments attachment.Attacher
 	ImageAlign  string
+
+	// Root is where a local image is read from; the zero Root is the disk.
+	Root attachment.Root
 }
 
 // NewConfluenceImageRenderer creates a new instance of the ConfluenceImageRenderer
@@ -255,7 +258,7 @@ func (r *ConfluenceImageRenderer) resolveLocalImage(destination string) (attachm
 	for _, path := range ctransformer.LocalImagePaths(destination) {
 		var attached attachment.Attachment
 
-		attached, err = attachment.ResolveLocalAttachment(attachment.LocalOS, filepath.Dir(r.Path), path)
+		attached, err = attachment.ResolveLocalAttachment(r.Root, filepath.Dir(r.Path), path)
 		if err == nil || errors.Is(err, attachment.ErrOutsideProject) {
 			return attached, err
 		}

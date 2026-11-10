@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/mermaid"
@@ -62,6 +63,13 @@ type Options struct {
 	// IncludePath is where includes and macros not found beside the
 	// document are looked for.
 	IncludePath string
+
+	// Root is where the files the document names are read from -- images,
+	// linked files, macro attachments, and the includes and macro templates
+	// beside it -- relative to the directory of the path it is compiled as.
+	// The zero Root is the local disk. In an fs.FS, a d2 diagram may not name
+	// a local file, since d2 reads those from disk itself.
+	Root attachment.Root
 
 	// ResolveLink turns a link target written in the document -- a relative
 	// path, optionally with a #fragment -- into the Confluence link it should

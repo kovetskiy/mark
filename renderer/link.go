@@ -3,7 +3,6 @@ package renderer
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -35,6 +34,9 @@ type ConfluenceLinkRenderer struct {
 	// AttachReferenced turns the whole of that on. Off, a link to a file is
 	// published as the path the document wrote.
 	AttachReferenced bool
+
+	// Root is where a linked file is read from; the zero Root is the disk.
+	Root attachment.Root
 }
 
 // NewConfluenceLinkRenderer creates a new instance of the ConfluenceLinkRenderer.
@@ -227,7 +229,7 @@ func (r *ConfluenceLinkRenderer) localFile(link *ast.Link, source []byte) (strin
 	}
 
 	for _, name := range names {
-		info, err := os.Stat(filepath.Join(filepath.Dir(r.Path), name))
+		info, err := r.Root.Stat(filepath.Join(filepath.Dir(r.Path), name))
 		if err == nil && !info.IsDir() {
 			return name, true
 		}
@@ -252,7 +254,7 @@ func (r *ConfluenceLinkRenderer) attachReferencedFile(
 	}
 
 	attached, err := attachment.ResolveLocalAttachment(
-		attachment.LocalOS, filepath.Dir(r.Path), name,
+		r.Root, filepath.Dir(r.Path), name,
 	)
 
 	// Refused rather than published as a link to somewhere it should not have

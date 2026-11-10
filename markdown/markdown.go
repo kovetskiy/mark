@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -160,7 +159,7 @@ func expandDirectives(
 ) (*template.Template, []byte, []string, error) {
 	var attachments []string
 
-	resolve := macroFileName(filepath.Dir(path))
+	resolve := macroFileName(opts.Root, filepath.Dir(path))
 
 	for pass := 0; pass < maxIncludePasses; pass++ {
 		before := markdown
@@ -174,7 +173,7 @@ func expandDirectives(
 
 		var macros []macro.Macro
 
-		macros, markdown, err = macro.ExtractMacros(filepath.Dir(path), opts.IncludePath, markdown, tmpl)
+		macros, markdown, err = macro.ExtractMacrosIn(opts.Root, filepath.Dir(path), opts.IncludePath, markdown, tmpl)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to extract macros: %w", err)
 		}
@@ -218,14 +217,14 @@ func expandDirectives(
 // handed on, for the upload to refuse, only when it is the destination itself
 // and nothing inside the project answered; a title that reaches outside is just
 // a title.
-func macroFileName(base string) func(string) (string, bool) {
+func macroFileName(root attachment.Root, base string) func(string) (string, bool) {
 	return func(value string) (string, bool) {
-		return readMacroFileName(base, value)
+		return readMacroFileName(root, base, value)
 	}
 }
 
 // readMacroFileName is macroFileName for one value.
-func readMacroFileName(base, name string) (string, bool) {
+func readMacroFileName(root attachment.Root, base, name string) (string, bool) {
 	destinations := []string{name}
 	if match := imageTitle.FindStringSubmatch(name); match != nil {
 		destinations = []string{match[1], name}
@@ -243,7 +242,7 @@ func readMacroFileName(base, name string) (string, bool) {
 				continue
 			}
 
-			if attachment.CheckReadable(base, candidate) != nil {
+			if root.CheckReadable(base, candidate) != nil {
 				if i == 0 && outside == "" {
 					outside = candidate
 				}
@@ -251,7 +250,7 @@ func readMacroFileName(base, name string) (string, bool) {
 				continue
 			}
 
-			if info, err := os.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
+			if info, err := root.Stat(filepath.Join(base, candidate)); err == nil && !info.IsDir() {
 				return candidate, true
 			}
 		}
@@ -342,7 +341,7 @@ func attachMacroFiles(path string, opts Options, names []string) ([]attachment.A
 			continue
 		}
 
-		file, err := attachment.ResolveLocalAttachment(attachment.LocalOS, filepath.Dir(path), name)
+		file, err := attachment.ResolveLocalAttachment(opts.Root, filepath.Dir(path), name)
 		if errors.Is(err, attachment.ErrOutsideProject) {
 			return nil, fmt.Errorf("unable to attach %q named by a macro: %w", name, err)
 		}
@@ -371,7 +370,8 @@ func expandIncludes(
 		var recurse bool
 		var err error
 
-		tmpl, markdown, recurse, err = includes.ProcessIncludesWithWarnings(
+		tmpl, markdown, recurse, err = includes.ProcessIncludesIn(
+			opts.Root,
 			filepath.Dir(path),
 			opts.IncludePath,
 			markdown,
@@ -444,8 +444,44 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 func includeTransformer(path string, opts Options, tmpl *template.Template) *ctransformer.IncludeTransformer {
 	t := ctransformer.NewIncludeTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl)
 	t.Warnings = opts.Warnings
+	t.Root = opts.Root
 
 	return t
+}
+
+// macroTransformer is the AST macro transformer for the document at path.
+func macroTransformer(path string, opts Options, tmpl *template.Template) *ctransformer.MacroTransformer {
+	t := ctransformer.NewMacroTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl)
+	t.Root = opts.Root
+
+	return t
+}
+
+// imageRenderer renders images, reading local ones from the document's root.
+func (c *ConfluenceExtension) imageRenderer() html.Extension {
+	r := crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.Options.ImageAlign).(*crenderer.ConfluenceImageRenderer)
+	r.Root = c.Options.Root
+
+	return r
+}
+
+// linkRenderer renders links, reading linked files from the document's root.
+func (c *ConfluenceExtension) linkRenderer() html.Extension {
+	r := crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.Options.AttachReferenced).(*crenderer.ConfluenceLinkRenderer)
+	r.Root = c.Options.Root
+
+	return r
+}
+
+// diskPath is the document's path for what reads beside it from disk by
+// itself, d2 above all: none when its files are in an fs.FS, so that d2
+// refuses a local reference rather than reading one from disk.
+func (c *ConfluenceExtension) diskPath() string {
+	if c.Options.Root.FS() != nil {
+		return ""
+	}
+
+	return c.Path
 }
 
 // columnWidthsTransformer is the Column-Widths transformer for the document,
@@ -498,7 +534,7 @@ func newConfluenceExtension(ctx context.Context, stdlib *stdlib.Lib, path string
 		// made every relative Template: resolve under "doc.md/", which no
 		// filesystem has, so the AST macro and include transformers only ever
 		// worked when --include-path happened to cover the file.
-		ctransformer.NewMacroTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl),
+		macroTransformer(path, opts, tmpl),
 		includeTransformer(path, opts, tmpl),
 	)
 	return &ConfluenceExtension{
@@ -530,11 +566,11 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 
 		// Core renderers (excluding blockquote and text which are replaced below)
 		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
-		crenderer.NewConfluenceFencedCodeBlockRenderer(c.ctx, c.Stdlib, c, c.Options.diagramConfig(), c.Path),
+		crenderer.NewConfluenceFencedCodeBlockRenderer(c.ctx, c.Stdlib, c, c.Options.diagramConfig(), c.diskPath()),
 		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.Options.DropH1),
-		crenderer.NewConfluenceImageRenderer(c.Stdlib, c, c.Path, c.Options.ImageAlign),
+		c.imageRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),
-		crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.Options.AttachReferenced),
+		c.linkRenderer(),
 		crenderer.NewConfluenceTaskListRenderer(),
 		crenderer.NewConfluenceDefinitionListRenderer(),
 
