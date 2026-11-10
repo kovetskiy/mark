@@ -18,11 +18,15 @@ type ExportConfig struct {
 	Space  string
 	Title  string
 
-	// Output is the Markdown file to write, or "" (or "-") for Stdout.
+	// Output is the Markdown file to write, or "" (or "-") for Stdout. Its
+	// name is kept from the attachments written beside it: one named like it
+	// gets a number instead.
 	Output string
 
 	// AttachmentsDir is where the attachments the page refers to are
-	// written; "" is the directory Output is in.
+	// written; "" is the directory Output is in, or, with no Output, the
+	// process's working directory. A caller exporting to Stdout, or to the
+	// Result alone, sets it or NoAttachments.
 	AttachmentsDir string
 
 	// Overwrite replaces files that are already there instead of failing.
@@ -60,7 +64,9 @@ type ExportConfig struct {
 // A caller that wants the page's title, labels and body as values, and no
 // files, sets Metadata to export.MetadataNone and NoAttachments, and leaves
 // Output and Stdout unset: the Result's Title, Labels and Markdown are then
-// all there is.
+// all there is. Without NoAttachments, and with no Output or AttachmentsDir,
+// the attachments the body refers to are written to the working directory,
+// as the command line's mark export writes them beside standard output.
 func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 	api := config.Connection.api(confluence.Options{})
 
@@ -74,7 +80,9 @@ func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 
 // ExportTree writes the page config names and the pages beneath it, or with
 // no page the whole of config.Space, into the directory config.Output names.
-// See export.Tree for the layout.
+// See export.Tree for the layout. Every Result carries its page's Markdown,
+// so the results of a large tree hold every document in memory until the
+// caller lets them go.
 func ExportTree(ctx context.Context, config ExportConfig, options export.TreeOptions) ([]*export.Result, error) {
 	api := config.Connection.api(confluence.Options{})
 

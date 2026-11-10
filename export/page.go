@@ -29,12 +29,15 @@ type Config struct {
 	Title  string
 
 	// Output is the file the Markdown is written to. Empty, or "-", writes
-	// it to Stdout.
+	// it to Stdout. Its name is kept from the attachments written into its
+	// directory: one named like it gets a number instead. With Stdout there
+	// is no such file, and no name is kept.
 	Output string
 
 	// AttachmentsDir is where the attachments the page shows or links to are
-	// written. Empty is the directory Output is in, or the working directory
-	// when the Markdown goes to Stdout.
+	// written. Empty is the directory Output is in, or the process's working
+	// directory when the Markdown goes to Stdout; a caller that wants no
+	// files there sets it or NoAttachments.
 	AttachmentsDir string
 
 	// Overwrite replaces files that are already there. Without it, finding
@@ -105,7 +108,8 @@ type Result struct {
 
 	// Markdown is the document, as written to Output or Stdout: the body
 	// below its metadata, or the body alone under MetadataNone. A caller that
-	// only wants the text can read it here and discard Stdout.
+	// only wants the text can read it here and discard Stdout. Tree fills it
+	// for every page, so its results hold the whole tree's documents.
 	Markdown string
 
 	// Output is the file the Markdown was written to, or "" for Stdout.

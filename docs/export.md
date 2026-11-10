@@ -91,7 +91,10 @@ Confluence for the page's attachments. The attachments are
 moved into place only once all of them have downloaded. Two whose names would
 share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
 are told apart by a number, as `a_b-2.png`, and so is one named like the
-document itself. An attachment the page refers to
+document itself, when `--output` names a file in the same directory: a
+`README.md` attachment written beside `-o README.md` becomes `README-2.md`.
+With the document on standard output there is no file of its name, and an
+attachment called `README.md` keeps that name. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers;
 with `--no-attachments` there is no telling, so every one is declared.
 
@@ -164,7 +167,10 @@ ignored, as any `--metadata` is.
 A Go program calling `mark.Export` gets the title, the labels and the
 document as values on the result, `Title`, `Labels` and `Markdown`, whatever
 `Metadata` says; with `export.MetadataNone` and `NoAttachments`, and neither
-`Output` nor `Stdout` set, nothing is written anywhere:
+`Output` nor `Stdout` set, nothing is written anywhere. Leave out
+`NoAttachments` and the attachments are still written, as on the command
+line: with no `Output`, into `AttachmentsDir`, or into the program's working
+directory when that is empty too:
 
 ```go
 result, err := mark.Export(ctx, mark.ExportConfig{
