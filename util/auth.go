@@ -31,6 +31,10 @@ type Credentials struct {
 	Password string
 	BaseURL  string
 	PageID   string
+
+	// Offline says a compile was given no Confluence to reach: BaseURL is
+	// then a placeholder, never to be asked anything.
+	Offline bool
 }
 
 func GetCredentials(
@@ -63,6 +67,7 @@ func GetCredentials(
 	// token it will never send: putting somebody through a pinentry dialog and
 	// then failing on the configuration is a strange order to do things in.
 	pageURLGiven := pageURL != ""
+	offline := compileOnly && !pageURLGiven && baseURL == ""
 	if compileOnly && !pageURLGiven {
 		pageURL = "http://localhost"
 	}
@@ -158,6 +163,7 @@ func GetCredentials(
 		Password: password,
 		BaseURL:  baseURL,
 		PageID:   pageID,
+		Offline:  offline,
 	}
 
 	return creds, nil

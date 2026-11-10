@@ -319,6 +319,26 @@ func TestGetCredentialsCompileOnlyNeedsNothing(t *testing.T) {
 	assert.Equal(t, "none", creds.Password)
 	assert.Equal(t, "http://localhost", creds.BaseURL)
 	assert.Empty(t, creds.PageID)
+	assert.True(t, creds.Offline, "the placeholder is no Confluence to ask")
+}
+
+// TestGetCredentialsCompileOnlyWithAConfluenceIsNotOffline: a compile given
+// either URL looks its links up there, as it always has.
+func TestGetCredentialsCompileOnlyWithAConfluenceIsNotOffline(t *testing.T) {
+	for name, urls := range map[string][2]string{
+		"base url": {"", "https://confluence.example.com"},
+		"page url": {"https://confluence.example.com/wiki/spaces/DOCS/pages/1/X", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			creds, err := GetCredentials(context.Background(), "", "", "", urls[0], urls[1], true)
+			require.NoError(t, err)
+			assert.False(t, creds.Offline)
+		})
+	}
+
+	creds, err := GetCredentials(context.Background(), "user", "secret", "", "", "https://confluence.example.com", false)
+	require.NoError(t, err)
+	assert.False(t, creds.Offline, "only a compile is ever offline")
 }
 
 // TestGetCredentialsCompileOnlyKeepsRealValues is the boundary of that rule:

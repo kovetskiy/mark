@@ -18,6 +18,11 @@ const (
 	// warn about those rather than fail on them.
 	WarningUnresolvedLink WarningKind = "unresolved-link"
 
+	// WarningSourceOnlyLink is a relative link to a file only the source tree
+	// holds, under --links-source-root-check-only: it passes the check and is
+	// left as written, a path that leads nowhere in Confluence.
+	WarningSourceOnlyLink WarningKind = "source-only-link"
+
 	// WarningUnknownKey is a front matter key mark does not read. It may
 	// belong to another tool, or be a setting of mark's misspelled.
 	WarningUnknownKey WarningKind = "unknown-key"

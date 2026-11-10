@@ -186,6 +186,7 @@ A `kind` is one of:
 | kind | what it is |
 | --- | --- |
 | `unresolved-link` | a link that does not resolve, under `--check-links-warn-only`; an `ac:` link is checked once the whole run has published, and listed against every document that holds it. A link to a page nothing will publish -- in a dry run, or still missing on the second pass -- is one whenever `--check-links` covers internal links |
+| `source-only-link` | under `--links-source-root-check-only`, a relative link to a file only the source tree holds: it passes the check and is left as written, a path that leads nowhere in Confluence |
 | `unknown-key` | a front matter key mark does not read: another tool's, or a misspelled setting |
 | `ignored-value` | a value its front matter key cannot hold, such as a number among labels, dropped |
 | `stranded-header` | a header below the opening comments, published as text rather than applied |
