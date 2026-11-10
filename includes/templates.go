@@ -270,7 +270,20 @@ func allowedTemplatePath(base place, includePath string, resolved place) error {
 		return nil
 	}
 
-	if !base.inFS() && attachment.CheckReadable(base.name, resolved.name) == nil {
+	// The working directory is no root of a document in an fs.FS: on disk it
+	// may read --include-path and nothing else.
+	if base.inFS() {
+		if includePath != "" && attachment.CheckWithin(includePath, resolved.name) == nil {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"%w: %s is on disk outside --include-path %q, so it is not this document's to include",
+			attachment.ErrOutsideProject, resolved, includePath,
+		)
+	}
+
+	if attachment.CheckReadable(base.name, resolved.name) == nil {
 		return nil
 	}
 
@@ -281,13 +294,6 @@ func allowedTemplatePath(base place, includePath string, resolved place) error {
 	// Reported in the words of what was asked for. The check is the one
 	// attachments use and says so in its own message, which names an attachment
 	// nobody wrote: what this document wrote was an include.
-	if base.inFS() {
-		return fmt.Errorf(
-			"%w: %s is on disk outside --include-path %q, so it is not this document's to include",
-			attachment.ErrOutsideProject, resolved, includePath,
-		)
-	}
-
 	where := fmt.Sprintf("%q", base.name)
 	if includePath != "" {
 		where = fmt.Sprintf("%q, %q", base.name, includePath)

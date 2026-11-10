@@ -30,6 +30,24 @@ func TestIncludesResolveInsideTheFS(t *testing.T) {
 	assert.Equal(t, "frag [inner] from disk", string(out))
 }
 
+// TestIncludeFromTheFSReachesDiskOnlyUnderIncludePath: a name that misses
+// the FS and falls back to --include-path may not climb out of it, even to
+// a file under the working directory.
+func TestIncludeFromTheFSReachesDiskOnlyUnderIncludePath(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+
+	includePath := filepath.Join(project, "templates")
+	require.NoError(t, os.Mkdir(includePath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(project, ".env"), []byte("SECRET=1"), 0o600))
+
+	root := attachment.FSRoot(fstest.MapFS{})
+
+	_, _, _, err := ProcessIncludesIn(root, ".", includePath,
+		[]byte("<!-- Include: ../.env -->"), template.New("test"), nil, nil)
+	require.ErrorIs(t, err, attachment.ErrOutsideProject)
+}
+
 func TestIncludesCannotLeaveTheFS(t *testing.T) {
 	root := attachment.FSRoot(fstest.MapFS{"secret.md": {Data: []byte("secret")}})
 

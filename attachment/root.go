@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/kovetskiy/mark/v17/internal/fspath"
 )
 
 // Root is where the files a document names are read from, and the boundary
@@ -127,6 +128,19 @@ func (r Root) contain(joined, named string) error {
 	}
 
 	return nil
+}
+
+// CheckWithin reports whether path, resolved through its symlinks, is inside
+// dir: CheckReadable without the directory mark is running in, for a reader
+// that may reach only the one directory, such as a document in an fs.FS
+// reaching --include-path on disk.
+func CheckWithin(dir, path string) error {
+	resolved := fspath.ResolveDeepest(path)
+	if withinAny(resolved, []string{fspath.ResolveDeepest(dir)}) {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %s resolves to %s, which is outside %q", ErrOutsideProject, path, resolved, dir)
 }
 
 // checkOpenerPath holds an attachment to the boundary of what it is read
