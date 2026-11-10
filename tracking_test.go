@@ -451,6 +451,36 @@ func TestRenamedFileIsFollowedNotDuplicated(t *testing.T) {
 		"nothing should remain under the old name")
 }
 
+// TestRenamedFileFailingIsFollowedOnTheNextRun: a run that follows a rename
+// and then fails to write the page must leave the old path's entry for the
+// next run to follow again, rather than a manifest that knows neither path.
+func TestRenamedFileFailingIsFollowedOnTheNextRun(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
+	config := filenameTitleConfig(server, filepath.Join(dir, "*.md"))
+	require.NoError(t, Run(context.Background(), config))
+	id := pageIDTitled(t, server, "Old Name")
+
+	require.NoError(t, os.Rename(
+		filepath.Join(dir, "old-name.md"), filepath.Join(dir, "new-name.md")))
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusInternalServerError, "boom",
+			r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/"+id)
+	})
+	require.Error(t, Run(context.Background(), config))
+
+	server.SetFail(nil)
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.Equal(t, "New Name", server.Page(id).Title,
+		"the retry must follow the rename to the page it already has")
+	assert.Equal(t, 1, countPagesTitled(t, server, "New Name"),
+		"and must not publish a second page beside it")
+}
+
 // TestRenamedFileDuplicatesWithoutTracking is the control.
 func TestRenamedFileDuplicatesWithoutTracking(t *testing.T) {
 	server, api := docsSpace(t)
