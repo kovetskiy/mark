@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -51,7 +52,10 @@ func adversarialValues() []string {
 	}
 }
 
-// readBack reads a document the way publishing does.
+// readBack reads a document the way publishing does. What the helpers write
+// is read with nothing set aside, so any warning fails the test: an unknown
+// key, an ignored value or a stranded header would each publish other than
+// what was given.
 func readBack(t *testing.T, document string, frontMatter bool) (*Meta, string, error) {
 	t.Helper()
 
@@ -61,7 +65,9 @@ func readBack(t *testing.T, document string, frontMatter bool) (*Meta, string, e
 		return nil, "", err
 	}
 
-	meta, body, err := ExtractMeta(source, ExtractOptions{FrontMatter: frontMatter})
+	warnings := report.NewWarnings("")
+	meta, body, err := ExtractMeta(source, ExtractOptions{FrontMatter: frontMatter, Warnings: warnings})
+	assert.Empty(t, warnings.List(), document)
 
 	return meta, string(body), err
 }
@@ -334,9 +340,11 @@ func TestFrontMatterKeysAreTheOnesMarkReads(t *testing.T) {
 		document, err := FrontMatter(map[string]any{key: value})
 		require.NoError(t, err, key)
 
-		meta, _, err := ExtractMeta([]byte(document), ExtractOptions{FrontMatter: true})
+		warnings := report.NewWarnings("")
+		meta, _, err := ExtractMeta([]byte(document), ExtractOptions{FrontMatter: true, Warnings: warnings})
 		require.NoError(t, err, key)
 		assert.NotEqual(t, empty, meta, "front matter key %q is not read by mark", key)
+		assert.Empty(t, warnings.List(), "front matter key %q was set aside", key)
 	}
 }
 
