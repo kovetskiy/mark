@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -189,18 +188,17 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 
 	binary.LittleEndian.PutUint64(scaleAsBytes, math.Float64bits(scale))
 
-	// Concat, not append: the diagram may be a slice of the document's
-	// source, with the rest of the source as its spare capacity. What it
-	// imports is part of what it draws, so a changed import changes the
-	// checksum; a diagram that imports nothing keeps the one it had. A fetched
-	// image can change without the source changing, so when there is one the
-	// drawing that carries it is part of what identifies the PNG too.
-	d2Bytes := slices.Concat(d2Diagram, scaleAsBytes, imports.read)
+	// What a diagram imports is part of what it draws, so a changed import
+	// changes the checksum; a diagram that imports nothing keeps the one it
+	// had. A fetched image can change without the source changing, so when
+	// there is one the drawing that carries it is part of what identifies the
+	// PNG too.
+	identity := []io.Reader{bytes.NewReader(d2Diagram), bytes.NewReader(scaleAsBytes), bytes.NewReader(imports.read)}
 	if remote {
-		d2Bytes = slices.Concat(d2Bytes, out)
+		identity = append(identity, bytes.NewReader(out))
 	}
 
-	checkSum, err := attachment.GetChecksum(bytes.NewReader(d2Bytes))
+	checkSum, err := attachment.GetChecksum(io.MultiReader(identity...))
 
 	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
