@@ -54,6 +54,8 @@ The reference is split by topic under [`docs/`](docs/):
   integration, preserving inline comments, and leaving hand-edited pages alone.
 * [Exporting a page](docs/export.md), or a tree of them, from Confluence back to
   Markdown.
+* [Using mark from Go](docs/library.md): publishing files, or documents
+  rendered in memory with stable manifest keys, from a Go program.
 * [Upgrading to v17](docs/upgrading.md): what changed for the command line and
   the Go library, and what to do about it.
 
