@@ -963,7 +963,7 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 	case path == "/search/user" || path == "/search":
 		// The same endpoint serves user lookup and the CQL folder search; the
 		// query says which.
-		if strings.Contains(r.URL.Query().Get("cql"), "type=folder") {
+		if strings.HasPrefix(r.URL.Query().Get("cql"), "type=folder ") {
 			s.searchFolder(w, r)
 			return
 		}
@@ -2598,9 +2598,8 @@ func (s *Server) label(w http.ResponseWriter, r *http.Request, pageID string) {
 // CQL string. The fake only needs to understand the handful of clauses mark
 // actually sends.
 func cqlValue(cql, field, op string) string {
-	clause := field + op
-	rest, ok := strings.CutPrefix(cql[max(strings.Index(cql, clause), 0):], clause)
-	if !ok || !strings.Contains(cql, clause) {
+	rest, ok := cutClause(cql, field+op)
+	if !ok {
 		return ""
 	}
 	if quoted, ok := strings.CutPrefix(rest, `"`); ok {
@@ -2610,6 +2609,23 @@ func cqlValue(cql, field, op string) string {
 		return rest[:end]
 	}
 	return rest
+}
+
+// cutClause returns what follows the first clause in cql that is outside a
+// quoted literal, so a title holding "space=" is not read as the clause.
+func cutClause(cql, clause string) (string, bool) {
+	inQuote := false
+	for i := 0; i < len(cql); i++ {
+		switch {
+		case inQuote && cql[i] == '\\':
+			i++
+		case cql[i] == '"':
+			inQuote = !inQuote
+		case !inQuote && strings.HasPrefix(cql[i:], clause):
+			return cql[i+len(clause):], true
+		}
+	}
+	return "", false
 }
 
 // unquoteCQL reads a CQL string literal up to its closing quote, the opening
