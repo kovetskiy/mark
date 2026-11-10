@@ -164,7 +164,7 @@ func prepareAttachments(opener Opener, base string, replacements []string) ([]At
 	attachments := []Attachment{}
 
 	for _, name := range replacements {
-		matches, matched, err := expand(base, name)
+		matches, matched, err := expand(opener, base, name)
 		if err != nil {
 			return nil, err
 		}
@@ -197,12 +197,17 @@ func prepareAttachments(opener Opener, base string, replacements []string) ([]At
 // character and a syntax at once -- so the answer that keeps working is the
 // right one, and the file that is genuinely missing is reported by the open
 // that follows, naming the path the author wrote.
-func expand(base, name string) (matches []string, matched bool, err error) {
+func expand(opener Opener, base, name string) (matches []string, matched bool, err error) {
 	if !hasPattern(name) {
 		return []string{name}, false, nil
 	}
 
-	found, err := glob(base, name)
+	var found []string
+	if root, ok := opener.(Root); ok && root.fsys != nil {
+		found, err = root.globIn(base, name)
+	} else {
+		found, err = glob(base, name)
+	}
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to expand attachment pattern %q: %w", name, err)
 	}
@@ -353,7 +358,7 @@ func withinAny(path string, roots []string) bool {
 func prepareAttachment(opener Opener, base, name string) (Attachment, error) {
 	attachmentPath := filepath.Join(base, name)
 
-	if err := checkAttachmentPath(base, name); err != nil {
+	if err := checkOpenerPath(opener, base, name); err != nil {
 		return Attachment{}, err
 	}
 
