@@ -23,6 +23,7 @@ import (
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/fspath"
+	"github.com/kovetskiy/mark/v17/internal/globpattern"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -560,23 +561,6 @@ func (r RenderingConfig) enabled(feature string) bool {
 // which files the run is about.
 var ErrPartialPattern = errors.New("a partial run that archives or deletes orphans takes exact paths, not a pattern")
 
-// hasGlobSyntax reports whether a Files pattern holds an unescaped *, ?, [
-// or {, and so may match more than the one file it spells. As for
-// FilepathGlob, a backslash is a separator on Windows and an escape elsewhere.
-func hasGlobSyntax(pattern string) bool {
-	pattern = filepath.ToSlash(pattern)
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
-		case '\\':
-			i++
-		case '*', '?', '[', '{':
-			return true
-		}
-	}
-
-	return false
-}
-
 // runFiles is the files a run publishes: those the glob matches, then each of
 // paths that exists, as it is written, once.
 func runFiles(glob string, paths []string) ([]string, error) {
@@ -700,7 +684,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it is about the page manifest, which only --track-pages keeps")
 	}
 
-	if config.Tracking.Partial && onOrphan != report.OnOrphanReport && hasGlobSyntax(config.Files) {
+	if config.Tracking.Partial && onOrphan != report.OnOrphanReport && globpattern.HasMeta(filepath.ToSlash(config.Files)) {
 		return fmt.Errorf(
 			"Tracking.OnOrphan (--on-orphan) %s with Tracking.Partial (--partial) and Files (--files) %q: %w; "+
 				"name the files in Paths (--files-from), or give Files as one file",

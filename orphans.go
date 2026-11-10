@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/globpattern"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
@@ -58,9 +59,14 @@ func handleOrphans(
 		}
 
 		candidates := make([]page.Orphan, 0, len(orphans))
-		globs := make(map[string]string, len(orphans))
+		// A partial run that only reports leaves an entry for the run whose
+		// pattern recorded it, whose --on-orphan may do more than report. One
+		// recorded under its own path alone has no such run: kept, it would be
+		// reported by every partial run naming it and dealt with by none.
+		keep := make(map[string]bool, len(orphans))
 		for _, orphan := range orphans {
-			globs[orphan.Path] = orphan.Entry.Glob
+			keep[orphan.Path] = config.Tracking.Partial && action == report.OnOrphanReport &&
+				orphan.Entry.Glob != globpattern.Escape(orphan.Path)
 			candidate := page.Orphan{
 				Path:   orphan.Path,
 				PageID: orphan.Entry.PageID,
@@ -75,10 +81,6 @@ func handleOrphans(
 			if inScope {
 				candidates = append(candidates, candidate)
 			}
-		}
-
-		if config.Tracking.Partial {
-			candidates = notOwnPattern(space, config, candidates, globs)
 		}
 
 		if len(candidates) == 0 {
@@ -156,9 +158,7 @@ func handleOrphans(
 				File: path, PageID: candidate.PageID, Title: candidate.Title, Action: action,
 			})
 
-			// A partial run that only reports leaves the entry for the run
-			// owning the file, whose --on-orphan may do more than report.
-			if config.Tracking.Partial && action == report.OnOrphanReport {
+			if keep[path] {
 				continue
 			}
 
@@ -169,47 +169,6 @@ func handleOrphans(
 	}
 
 	return nil
-}
-
-// notOwnPattern is the orphans a partial run is about: all but those recorded
-// under the very glob pattern it was given as Files, unless Paths names them.
-// That pattern is not narrower than the run owning those files, and on a
-// checkout holding only some of them reads every other one as deleted, so
-// their absence says nothing. Like a page outside --orphan-under they are not
-// reported, not touched, and stay tracked for the owning run; the log names
-// them. Run refuses such a pattern when --on-orphan would remove pages, so
-// what is left out here would only have been reported.
-func notOwnPattern(space string, config Config, candidates []page.Orphan, globs map[string]string) []page.Orphan {
-	if !hasGlobSyntax(config.Files) {
-		return candidates
-	}
-
-	pattern := manifest.Key(config.Files)
-	named := make(map[string]bool, len(config.Paths))
-	for _, path := range config.Paths {
-		named[manifest.Key(path)] = true
-	}
-
-	about := make([]page.Orphan, 0, len(candidates))
-	var left []string
-	for _, candidate := range candidates {
-		if globs[candidate.Path] == pattern && !named[candidate.Path] {
-			left = append(left, candidate.Path)
-			continue
-		}
-		about = append(about, candidate)
-	}
-
-	if len(left) > 0 {
-		log.Info().Msgf(
-			"space %q: %d tracked page(s) recorded under %q, the pattern given to --partial, "+
-				"are left to the run publishing them all, since on a partial checkout "+
-				"their files' absence says nothing; name the paths a change touched with --files-from: %s",
-			space, len(left), pattern, strings.Join(left, ", "),
-		)
-	}
-
-	return about
 }
 
 // reportKept records an orphan --on-orphan asked to remove that was left where

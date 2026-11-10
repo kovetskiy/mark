@@ -367,21 +367,28 @@ only the changed files reads every other file as deleted.
 
 A run with `--partial` looks for deleted and renamed files among the tracked
 files its `--files` pattern and `--files-from` paths name, whichever run
-recorded them, and leaves every
-other tracked file alone: one of those it names that is missing is reported,
-and dealt with by `--on-orphan`, as in a full run, except that one only
-reported stays tracked for the run publishing them all; a renamed one is
-followed to its page with its `--no-overwrite` baseline. A page it publishes
-keeps the pattern its file was tracked under, or that of the file it was
-renamed from while the new path lies in it, so the full run still covers it. A file no run has tracked yet is
-recorded under the partial run's pattern until the full run publishes it.
+recorded them, and leaves every other tracked file alone: one of those it
+names that is missing is reported, and dealt with by `--on-orphan`, as in a
+full run, except that one only reported stays tracked for the run publishing
+them all; a renamed one is followed to its page with its `--no-overwrite`
+baseline. A page it publishes keeps the pattern its file was tracked under, or
+that of the file it was renamed from while the new path lies in it, so the
+full run still covers it. A file no run has tracked yet is recorded under its
+own path until the full run publishes it, so any partial run naming it covers
+it, and one reporting it gone forgets it.
+
+A path given with `--files-from` that the `--files` pattern does not match is
+recorded the same way, under its own path, in a run with or without
+`--partial`: a later run naming it looks for it, however many paths each run
+names.
 
 The full pattern with `--partial` names every file, so on a checkout holding
 only some of them it cannot tell a deleted file from one not checked out. A
 partial run leaves out the tracked files recorded under the very `--files`
 pattern it was given, unless `--files-from` names them: like a page outside
-`--orphan-under`, they are not reported, not touched, and stay tracked for the
-run publishing them all. The log names them.
+`--orphan-under`, they are not reported, not touched, not taken for the old
+name of a moved or renamed file, and stay tracked for the run publishing them
+all. The log names them.
 
 With `--on-orphan archive` or `delete`, a partial run takes only exact paths:
 `--files-from`, or a `--files` that names one file (a glob character escaped

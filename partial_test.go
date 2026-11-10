@@ -41,6 +41,21 @@ func partialOf(full Config, dir, files string) Config {
 	return partial
 }
 
+// pathsOf is the run a job naming only exact paths, deleted ones included,
+// makes beside full, with --on-orphan delete.
+func pathsOf(full Config, dir string, names ...string) Config {
+	partial := full
+	partial.Files = ""
+	partial.Paths = nil
+	for _, name := range names {
+		partial.Paths = append(partial.Paths, filepath.Join(dir, name))
+	}
+	partial.Tracking.Partial = true
+	partial.Tracking.OnOrphan = report.OnOrphanDelete
+
+	return partial
+}
+
 // tracked reads the manifest afresh: a store reads it once and keeps it.
 func tracked(t *testing.T, server *confluencetest.Server, file string) (manifest.Entry, bool) {
 	t.Helper()
@@ -96,11 +111,7 @@ func TestPartialRunActsOnlyOnWhatItNames(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
 
-	partial := partialOf(full, dir, "")
-	partial.Files = ""
-	partial.Paths = []string{filepath.Join(dir, "a.md"), filepath.Join(dir, "b.md")}
-	partial.Tracking.OnOrphan = report.OnOrphanDelete
-	require.NoError(t, Run(context.Background(), partial))
+	require.NoError(t, Run(context.Background(), pathsOf(full, dir, "a.md", "b.md")))
 
 	assert.True(t, server.Page(bID).Trashed, "b.md was named and is gone")
 	assert.False(t, server.Page(cID).Trashed, "c.md was not named, and is left for the owning run")
@@ -197,12 +208,7 @@ func TestPartialRunRemovingTakesOneFile(t *testing.T) {
 	}
 	assert.Equal(t, 1, countPagesTitled(t, server, "Page x"))
 
-	partial := full
-	partial.Files = ""
-	partial.Paths = []string{filepath.Join(dir, "b.md"), filepath.Join(dir, "a.md")}
-	partial.Tracking.Partial = true
-	partial.Tracking.OnOrphan = report.OnOrphanDelete
-	require.NoError(t, Run(context.Background(), partial))
+	require.NoError(t, Run(context.Background(), pathsOf(full, dir, "b.md", "a.md")))
 	assert.True(t, server.Page(bID).Trashed)
 }
 
@@ -216,11 +222,7 @@ func TestPartialRunStillWarnsOfAKeptOrphan(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 
 	var out strings.Builder
-	partial := full
-	partial.Files = ""
-	partial.Paths = []string{filepath.Join(dir, "a.md"), filepath.Join(dir, "b.md")}
-	partial.Tracking.Partial = true
-	partial.Tracking.OnOrphan = report.OnOrphanDelete
+	partial := pathsOf(full, dir, "a.md", "b.md")
 	partial.Report.OutputFormat = report.FormatGitHub
 	partial.Output = &out
 	require.NoError(t, Run(context.Background(), partial))
@@ -311,12 +313,9 @@ func TestPartialRunFollowsAMove(t *testing.T) {
 func TestPartialRunMovesAFileIntoAnotherJobsPattern(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
-	for _, sub := range []string{"docs", "guides"} {
-		require.NoError(t, os.Mkdir(filepath.Join(dir, sub), 0o700))
-	}
-	writeFile(t, filepath.Join(dir, "docs"), "keep.md", markdownWithTitle("Keep"))
-	writeFile(t, filepath.Join(dir, "docs"), "x.md", markdownWithTitle("Page x"))
-	writeFile(t, filepath.Join(dir, "guides"), "y.md", markdownWithTitle("Page y"))
+	writeAt(t, dir, "docs/keep.md", markdownWithTitle("Keep"))
+	writeAt(t, dir, "docs/x.md", markdownWithTitle("Page x"))
+	writeAt(t, dir, "guides/y.md", markdownWithTitle("Page y"))
 
 	docs := trackingConfig(server, filepath.Join(dir, "docs", "*.md"))
 	guides := trackingConfig(server, filepath.Join(dir, "guides", "*.md"))
@@ -409,12 +408,7 @@ func TestPartialRunGivenPaths(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
 
 	writeFile(t, dir, "we[a]{b,c}*.md", markdownWithTitle("Page weird renamed"))
-	partial := full
-	partial.Files = ""
-	partial.Paths = []string{weird, filepath.Join(dir, "b.md")}
-	partial.Tracking.Partial = true
-	partial.Tracking.OnOrphan = report.OnOrphanDelete
-	require.NoError(t, Run(context.Background(), partial))
+	require.NoError(t, Run(context.Background(), pathsOf(full, dir, filepath.Base(weird), "b.md")))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Page weird renamed"), "the path was published as written")
 	assert.Equal(t, 1, countPagesTitled(t, server, "Page a"))
@@ -452,4 +446,50 @@ func TestPathsWithParentsFromPathNeedARoot(t *testing.T) {
 	err := Run(context.Background(), config)
 	require.ErrorContains(t, err, "needs --parents-from-path-root")
 	assert.Zero(t, countPagesTitled(t, server, "Page a"))
+}
+
+// TestPartialRunGivenTheOwningPatternFollowsNoRenameFromIt: on a checkout
+// holding only some of the owning pattern's files, a file not checked out is
+// not the old name of a new file with the same content, whose run would
+// otherwise take its page over and retitle it.
+func TestPartialRunGivenTheOwningPatternFollowsNoRenameFromIt(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	old := writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
+	writeFile(t, dir, "other.md", markdownTitledFromFilename()+"\nOther.\n")
+
+	full := filenameTitleConfig(server, filepath.Join(dir, "*.md"))
+	require.NoError(t, Run(context.Background(), full))
+	id := pageIDTitled(t, server, "Old Name")
+
+	require.NoError(t, os.Remove(old))
+	writeFile(t, dir, "copy.md", markdownTitledFromFilename())
+	sparse := full
+	sparse.Tracking.Partial = true
+	require.NoError(t, Run(context.Background(), sparse))
+
+	assert.Equal(t, "Old Name", server.Page(id).Title, "the page of the file not checked out keeps its title")
+	assert.Equal(t, 1, countPagesTitled(t, server, "Copy"))
+	entry, ok := tracked(t, server, old)
+	require.True(t, ok, "old-name.md stays tracked for the owning run")
+	assert.Equal(t, id, entry.PageID)
+}
+
+// TestPartialRunForgetsAReportedFileOnlyItTracked: a file only partial runs
+// ever published is recorded under its own path, which no run publishing a
+// whole pattern covers. Reported once it is deleted, its entry goes, as in a
+// full run, instead of being reported by every partial run naming it.
+func TestPartialRunForgetsAReportedFileOnlyItTracked(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	d := writeFile(t, dir, "d.md", markdownWithTitle("Page d"))
+	require.NoError(t, Run(context.Background(), partialOf(full, dir, "{a,d}.md")))
+
+	entry, ok := tracked(t, server, d)
+	require.True(t, ok)
+	assert.Equal(t, manifest.Key(d), entry.Glob, "recorded under its own path")
+
+	require.NoError(t, os.Remove(d))
+	require.NoError(t, Run(context.Background(), partialOf(full, dir, "{b,d}.md")))
+	_, ok = tracked(t, server, d)
+	assert.False(t, ok, "reported and forgotten")
 }

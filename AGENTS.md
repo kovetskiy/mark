@@ -52,6 +52,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
 | `internal/fspath` | `ResolveDeepest`, a path with symlinks resolved as deep as it exists; `Within`, a path relative to a root it is under; and `Under`, `Within` tried again on resolved paths: so attachment and staged-root containment compare paths the way the files they name compare |
+| `internal/globpattern` | the glob syntax test and escaping shared by `Run`'s checks, the orphan handling and the page manifest's patterns |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
