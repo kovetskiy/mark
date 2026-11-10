@@ -286,6 +286,6 @@ func TestUntrackedSpaceIsReported(t *testing.T) {
 	out.Reset()
 	require.NoError(t, r.Write(&out, FormatGitHub))
 	assert.Equal(t,
-		"::warning::space \"DOCS\" was published untracked: its manifest page \"Handbook\" does not exist\n",
+		"::warning::space \"DOCS\" was published untracked: no page mapping was saved on its manifest page \"Handbook\"\n",
 		out.String())
 }
