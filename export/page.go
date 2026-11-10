@@ -336,9 +336,7 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 				declared = append(declared, name)
 			}
 		}
-		if spelling != MetadataNone {
-			header, err = headers(ctx, api, page, space, doc, labels, declared, spelling)
-		}
+		header, err = headers(ctx, api, page, space, doc, labels, declared, spelling)
 	}
 	if err != nil {
 		return nil, err
@@ -427,7 +425,8 @@ func findPage(ctx context.Context, api *confluence.API, cfg Config) (*confluence
 }
 
 // headers writes the metadata that publishes the document back to the page it
-// came from, spelled as MetadataComments or MetadataFrontMatter says.
+// came from, spelled as MetadataComments or MetadataFrontMatter says, or
+// nothing under MetadataNone, without the lookups only the metadata needs.
 func headers(
 	ctx context.Context,
 	api *confluence.API,
@@ -437,6 +436,10 @@ func headers(
 	labels, declared []string,
 	spelling Metadata,
 ) (string, error) {
+	if spelling == MetadataNone {
+		return "", nil
+	}
+
 	h := pageHeaders{Space: space, Title: page.Title, Labels: labels, Attachments: declared}
 
 	var err error
