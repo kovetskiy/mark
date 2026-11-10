@@ -224,3 +224,24 @@ func TestManifestPageOptionalNoOverwriteWithoutTracking(t *testing.T) {
 	assert.Contains(t, err.Error(), "--no-overwrite requires --track-pages")
 	assert.Empty(t, pageIDTitled(t, server, "Guide"), "nothing was published")
 }
+
+// TestManifestPageOptionalNoOverwriteRepublishesItsOwnPage: a page this run
+// created and has since written is still mark's own. Published again for a
+// link to a page created later in the run, it is not left alone as edited
+// in Confluence.
+func TestManifestPageOptionalNoOverwriteRepublishesItsOwnPage(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "a-guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nSee [the intro](./z-intro.md).\n")
+	writeFile(t, dir, "z-intro.md", "<!-- Space: DOCS -->\n<!-- Title: Intro -->\n\nAn intro.\n")
+
+	var out bytes.Buffer
+	config := optionalManifestConfig(server, dir, &out)
+	config.Tracking.NoOverwrite = true
+	require.NoError(t, Run(context.Background(), config))
+
+	for _, page := range parseReport(t, &out).Pages {
+		assert.Equal(t, report.StatusPublished, page.Status, "%s: %s", page.Title, page.Reason)
+	}
+	assert.Contains(t, server.Page(mustFind(t, server, "Guide")).Body, "/x/", "the second pass wrote the link")
+}
