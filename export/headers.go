@@ -254,9 +254,9 @@ func yamlPrintable(r rune) bool {
 	}
 }
 
-// headerLine is the comment header that sets name to value, which mark trims.
+// headerLine is the comment header that sets name to value, which present
+// has already trimmed.
 func headerLine(name, value string) (string, error) {
-	value = strings.TrimSpace(value)
 	line, err := metadata.Header(name, value)
 	if errors.Is(err, metadata.ErrUnrepresentable) {
 		return "", fmt.Errorf("the %s %q cannot be written in a metadata header; --metadata frontmatter can write it", strings.ToLower(name), value)

@@ -60,8 +60,9 @@ func Header(key, value string) (string, error) {
 		line = "<!-- " + name + ": -->"
 	}
 
-	// The rules above are what parseHeaderComment needs; checked against it
-	// too, so that the two cannot drift apart unnoticed.
+	// The line break and comment-end rules above are goldmark's and every
+	// HTML reader's; the trimming and the colon cut are parseHeaderComment's,
+	// checked against it so that the two cannot drift apart unnoticed.
 	if k, v, ok := parseHeaderComment(line); !ok || k != name || v != value {
 		return "", fmt.Errorf("%s %q: %w", name, value, ErrUnrepresentable)
 	}
