@@ -346,19 +346,29 @@ func greenPixels(t *testing.T, picture []byte) int {
 	return count
 }
 
-// TestRenderPNGWillNotFetchWhatItWasNotAskedTo: a PNG follows the same rule as
-// an SVG. Without --d2-bundle-remote a diagram naming a URL is refused, and
-// nothing is requested.
-func TestRenderPNGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
+// greenPNGServer serves greenPNG and counts the requests that reach it.
+func greenPNGServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+
 	var requests atomic.Int32
 
+	picture := greenPNG(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write(greenPNG(t))
+		_, _ = w.Write(picture)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+
+	return server, &requests
+}
+
+// TestRenderPNGWillNotFetchWhatItWasNotAskedTo: a PNG follows the same rule as
+// an SVG. Without --d2-bundle-remote a diagram naming a URL is refused, and
+// nothing is requested.
+func TestRenderPNGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
+	server, requests := greenPNGServer(t)
 
 	for _, diagram := range []string{
 		"a: {icon: " + server.URL + "/icon.png}\na -> b\n",
@@ -376,15 +386,7 @@ func TestRenderPNGWillNotFetchWhatItWasNotAskedTo(t *testing.T) {
 // remote image, fetched by mark before the diagram reaches the browser, which
 // loads nothing from the network itself.
 func TestRenderPNGFetchesWhenAskedTo(t *testing.T) {
-	var requests atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write(greenPNG(t))
-	}))
-	defer server.Close()
+	server, requests := greenPNGServer(t)
 
 	diagram := []byte("a: {shape: image; icon: " + server.URL + "/image.png}\n")
 
@@ -581,4 +583,83 @@ func TestRenderRefusesAnImportWithoutADocument(t *testing.T) {
 		assert.Contains(t, err.Error(), "beside")
 		assert.Contains(t, err.Error(), "file on disk")
 	}
+}
+
+// TestRenderPNGChecksumFollowsTheFetchedImage: a bundled image that changes at
+// its URL changes the PNG, so its checksum changes with it.
+func TestRenderPNGChecksumFollowsTheFetchedImage(t *testing.T) {
+	var colour atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		img := stdimage.NewRGBA(stdimage.Rect(0, 0, 64, 64))
+		draw.Draw(img, img.Bounds(), &stdimage.Uniform{C: color.RGBA{G: uint8(colour.Load()), A: 255}}, stdimage.Point{}, draw.Src)
+
+		w.Header().Set("Content-Type", "image/png")
+		_ = png.Encode(w, img)
+	}))
+	defer server.Close()
+
+	diagram := []byte("a: {shape: image; icon: " + server.URL + "/image.png}\n")
+	options := Options{Browser: browser, Scale: 1.0, BundleRemote: true}
+
+	colour.Store(255)
+	first, err := Render(context.Background(), "remote", diagram, options)
+	require.NoError(t, err)
+
+	colour.Store(0)
+	second, err := Render(context.Background(), "remote", diagram, options)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first.FileBytes, second.FileBytes)
+	assert.NotEqual(t, first.Checksum, second.Checksum)
+}
+
+// TestRenderChecksTheDrawingAfterFetching: d2's bundler writes a fetched
+// image's Content-Type into the drawing as the server gave it, so the drawing
+// is held to the same check after fetching as before, for either output.
+func TestRenderChecksTheDrawingAfterFetching(t *testing.T) {
+	picture := greenPNG(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `image/png" onload="document.title='ran'`)
+		_, _ = w.Write(picture)
+	}))
+	defer server.Close()
+
+	diagram := []byte("a: {shape: image; icon: " + server.URL + "/image.png}\n")
+
+	for _, output := range []imageformat.Format{imageformat.PNG, imageformat.SVG} {
+		_, err := Render(context.Background(), "remote", diagram,
+			Options{Output: output, Browser: browser, Scale: 1.0, BundleRemote: true})
+		require.ErrorIs(t, err, ErrUnsafeDiagram, output)
+	}
+}
+
+// TestRenderSVGReadsOnlyTheFilesItNamed: what a server answers for a remote
+// image is written into the drawing, and no file it names there is read.
+func TestRenderSVGReadsOnlyTheFilesItNamed(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.png")
+	require.NoError(t, os.WriteFile(outside, []byte("outside"), 0o600))
+
+	project := t.TempDir()
+	document := filepath.Join(project, "doc.md")
+	require.NoError(t, os.WriteFile(filepath.Join(project, "icon.png"), onePixelPNG(t), 0o600))
+
+	t.Chdir(project)
+
+	picture := greenPNG(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `image/png"/><image href="`+outside+`" x="`)
+		_, _ = w.Write(picture)
+	}))
+	defer server.Close()
+
+	diagram := []byte("a: {icon: ./icon.png}\nb: {icon: " + server.URL + "/image.png}\na -> b\n")
+
+	got, err := Render(context.Background(), "files", diagram,
+		Options{Output: imageformat.SVG, InputPath: document, Scale: 1.0, BundleRemote: true})
+	if err != nil {
+		return
+	}
+
+	assert.NotContains(t, string(got.FileBytes), base64.StdEncoding.EncodeToString([]byte("outside")))
 }
