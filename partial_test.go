@@ -524,3 +524,27 @@ func TestPartialRunGivenTheOwningPatternRecordsANewFileUnderIt(t *testing.T) {
 	_, ok = tracked(t, server, d)
 	assert.True(t, ok, "d.md stays tracked for the owning run")
 }
+
+// TestFullRunCoversAFileOnlyAPartialRunTracked: a file a partial run added,
+// recorded under its own path, and deleted before the full run published it is
+// the full run's to deal with once its pattern matches it; otherwise no run
+// would, and its page would stay in Confluence untracked.
+func TestFullRunCoversAFileOnlyAPartialRunTracked(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	d := writeFile(t, dir, "d.md", markdownWithTitle("Page d"))
+	require.NoError(t, Run(context.Background(), partialOf(full, dir, "{a,d}.md")))
+
+	entry, ok := tracked(t, server, d)
+	require.True(t, ok)
+	require.Equal(t, manifest.Key(d), entry.Glob)
+	dID := pageIDTitled(t, server, "Page d")
+
+	require.NoError(t, os.Remove(d))
+	owner := full
+	owner.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), owner))
+
+	assert.True(t, server.Page(dID).Trashed, "the full run found d.md deleted")
+	_, ok = tracked(t, server, d)
+	assert.False(t, ok)
+}
