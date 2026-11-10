@@ -1062,20 +1062,22 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 		if movedOK {
 			// The path that owned this page is absent from this run -- covered
 			// by it, yet not among the files it publishes and not seen by it --
-			// and this path now publishes to the
-			// same page: the document moved (a plain rename of the file, title
-			// unchanged), and the page follows it. Left recorded, the old path
-			// would read as an orphan whose page is the very one just published
-			// -- and --on-orphan delete would trash it.
+			// and this path now publishes to the same page: the document moved
+			// (a plain rename of the file, title unchanged), and the page
+			// follows it. Left recorded, the old path would read as an orphan
+			// whose page is the very one just published -- and --on-orphan
+			// delete would trash it.
 			log.Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
 			delete(state.shards[shardFor(owner)].pages, owner)
 			state.shards[shardFor(owner)].dirty = true
 		} else {
 			// A partial run follows a move only from a path it names, so the
-			// usual cause here is a moved file whose old path was left out.
+			// usual cause here is a moved file whose old path was left out. An
+			// entry with no pattern is never covered, so naming it would not help.
 			hint := ""
-			if s.partial && !s.runFiles[owner] && !state.seen[owner] &&
-				!s.covers(owner, state.shards[shardFor(owner)].pages[owner]) {
+			ownerEntry := state.shards[shardFor(owner)].pages[owner]
+			if s.partial && s.absent(state, owner) && ownerEntry.Glob != "" &&
+				!s.covers(owner, ownerEntry) {
 				hint = fmt.Sprintf(
 					"; if %s moved to %s, name both paths in --files to follow the move",
 					owner, path,
@@ -1213,12 +1215,17 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 	}
 
 	entry, recorded := state.shards[shardFor(owner)].pages[owner]
-	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) ||
-		s.runFiles[owner] || state.seen[owner] {
+	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) || !s.absent(state, owner) {
 		return Entry{}, false
 	}
 
 	return entry, true
+}
+
+// absent reports whether a recorded path is neither among the files this run
+// publishes nor seen by it.
+func (s *Store) absent(state *spaceState, path string) bool {
+	return !s.runFiles[path] && !state.seen[path]
 }
 
 // LookupMoved returns the entry a page was recorded under before the document
