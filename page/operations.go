@@ -98,8 +98,9 @@ func Move(ctx context.Context, api *confluence.API, ref Ref, options MoveOptions
 			return err
 		}
 		// A folder is not content v1 can read; the same id may still name one.
+		// No folder either answers (nil, nil), and the page's error says why.
 		folder, folderErr := api.GetFolderByID(ctx, options.Parent.ID)
-		if folderErr != nil {
+		if folderErr != nil || folder == nil {
 			return err
 		}
 		return moveUnderFolder(ctx, api, target, folder, options.DryRun, out)

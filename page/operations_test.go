@@ -55,6 +55,19 @@ func TestMoveRefusesItsOwnSubtree(t *testing.T) {
 	assert.Equal(t, root.ID, server.Page(a.ID).ParentID)
 }
 
+// TestMoveUnderAMissingParent: an id that names neither a page nor a folder
+// is reported as not found, and nothing moves.
+func TestMoveUnderAMissingParent(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	root := server.AddPage("DOCS", "Root", "page", "")
+	a := server.AddPage("DOCS", "A", "page", root.ID)
+
+	err := page.Move(context.Background(), api, page.Ref{ID: a.ID}, page.MoveOptions{Parent: &page.Ref{ID: "99999"}}, &bytes.Buffer{})
+	require.ErrorContains(t, err, "unable to read page 99999")
+	assert.Equal(t, root.ID, server.Page(a.ID).ParentID)
+}
+
 func TestMoveRefusesAnotherSpace(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")

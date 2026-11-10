@@ -92,8 +92,9 @@ func resolveChild(ctx context.Context, api *confluence.API, ref Ref) (confluence
 		return confluence.Child{}, err
 	}
 
+	// No folder either answers (nil, nil), and the page's error says why.
 	folder, folderErr := api.GetFolderByID(ctx, ref.ID)
-	if folderErr != nil {
+	if folderErr != nil || folder == nil {
 		return confluence.Child{}, err
 	}
 

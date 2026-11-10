@@ -46,6 +46,16 @@ func TestTree(t *testing.T) {
 		"a folder is named by its id")
 }
 
+// TestTreeOfAMissingPage: an id that names neither a page nor a folder is
+// reported as not found.
+func TestTreeOfAMissingPage(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+
+	err := page.Tree(context.Background(), api, page.Ref{ID: "99999"}, 0, &bytes.Buffer{})
+	require.ErrorContains(t, err, "unable to read page 99999")
+}
+
 func TestTreeDataCenter(t *testing.T) {
 	api, server := newAPI(t)
 	server.SetDataCenter()
