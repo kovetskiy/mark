@@ -336,7 +336,11 @@ type Store struct {
 	// its entry is recorded under in place of runGlob; "" is none.
 	documentScopes map[string]string
 
-	// scopes holds every scope the run publishes documents of, as it is
+	// documentKeys holds, for each key SetRunDocumentKeys named, the scope
+	// it was named in.
+	documentKeys map[string]string
+
+	// scopes holds every scope the run publishes or names keys in, as it is
 	// recorded.
 	scopes map[string]bool
 
@@ -594,6 +598,7 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	s.runGlob = Key(glob)
 	s.runFiles = make(map[string]bool, len(paths))
 	s.documentScopes = nil
+	s.documentKeys = nil
 	s.scopes = nil
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
@@ -664,6 +669,9 @@ func isDocumentScope(glob string) bool {
 // A scope is recorded as "documents://" and its name, which no --files
 // pattern can be, so a run of files never covers a document's entry, nor a
 // run of documents a file's, partial or not.
+//
+// Under SetPartial a run covers only the keys of a scope it publishes or
+// names with SetRunDocumentKeys, and leaves the scope's other entries alone.
 func (s *Store) SetRunDocuments(scope string, paths []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -677,6 +685,31 @@ func (s *Store) SetRunDocuments(scope string, paths []string) {
 		key := Key(path)
 		s.runFiles[key] = true
 		s.documentScopes[key] = glob
+	}
+}
+
+// SetRunDocumentKeys names keys of scope that a partial run covers without
+// publishing them: documents removed, or the keys renamed documents had. Such
+// a key whose entry is under scope is an orphan, or the previous key of a
+// document of the scope the run publishes. It is the documents' counterpart
+// of the deleted paths SetRunPaths names. Without SetPartial the run covers
+// every key of the scope anyway, as SetRunDocuments has it. Call it after
+// SetRunFiles.
+func (s *Store) SetRunDocumentKeys(scope string, keys []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if scope == "" || len(keys) == 0 {
+		return
+	}
+
+	glob := s.addScope(scope)
+	if s.documentKeys == nil {
+		s.documentKeys = make(map[string]string, len(keys))
+	}
+
+	for _, key := range keys {
+		s.documentKeys[Key(key)] = glob
 	}
 }
 
@@ -706,9 +739,23 @@ func (s *Store) scopeOf(path string) string {
 }
 
 // coversDocument is covers for an entry recorded under a document scope: one
-// of the run's scopes. Called with s.mu held.
+// of the run's scopes, and under SetPartial only for a key the run publishes
+// or names in that scope. Called with s.mu held.
 func (s *Store) coversDocument(path string, entry Entry) bool {
-	return s.scopes[entry.Glob]
+	if !s.scopes[entry.Glob] {
+		return false
+	}
+
+	if !s.partial {
+		return true
+	}
+
+	scope, ok := s.documentScopes[path]
+	if !ok {
+		scope, ok = s.documentKeys[path]
+	}
+
+	return ok && scope == entry.Glob
 }
 
 // sameScope reports whether entry belongs where path does: under the scope
