@@ -173,6 +173,20 @@ func TestPartialRunFollowsAMove(t *testing.T) {
 	assert.Equal(t, before.Glob, after.Glob, "the new path takes the old one's pattern")
 }
 
+// TestPartialRunNamesTheMissingPathOfAMove: a partial run given only the new
+// path of a moved file cannot tell a move from two files claiming one page,
+// and its warning says which path to name.
+func TestPartialRunNamesTheMissingPathOfAMove(t *testing.T) {
+	_, full, dir := partialFixture(t)
+	require.NoError(t, os.Rename(filepath.Join(dir, "b.md"), filepath.Join(dir, "moved.md")))
+
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialOf(full, dir, "moved.md")))
+	})
+	assert.Contains(t, logged, "both publish to page")
+	assert.Contains(t, logged, "name both paths in --files to follow the move")
+}
+
 // TestPartialRunFollowsARename: a file renamed along with its title is found
 // by its content, as in a full run, and an edit made in Confluence survives
 // it under --no-overwrite.
