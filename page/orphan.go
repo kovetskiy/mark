@@ -40,6 +40,11 @@ func ResolveScope(ctx context.Context, api *confluence.API, spaceKey, under stri
 		if found, err := api.GetPageByID(ctx, under); err == nil && found != nil {
 			return found.ID, nil
 		}
+
+		// A folder is not content to v1, nor a page to v2.
+		if folder, err := api.GetFolderByID(ctx, under); err == nil && folder != nil {
+			return folder.ID, nil
+		}
 	}
 
 	found, err := api.FindPage(ctx, spaceKey, under, confluence.ContentPage)

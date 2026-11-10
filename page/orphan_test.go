@@ -70,6 +70,28 @@ func TestInScopeSeesFolders(t *testing.T) {
 	}
 }
 
+// TestResolveScopeFindsAFolderByID: --orphan-under takes an id as well as a
+// title, and a folder's id is neither v1 content nor a v2 page.
+func TestResolveScopeFindsAFolderByID(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	folder := server.AddFolder("DOCS", "Box", home.ID, "page")
+
+	for name, base := range map[string]string{
+		"site":    server.URL,
+		"gateway": server.URL + "/ex/confluence/cloud-id",
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := confluence.NewAPI(base, confluence.Options{Username: "user", Password: "token"})
+
+			scope, err := ResolveScope(t.Context(), api, "DOCS", folder.ID)
+			require.NoError(t, err)
+			assert.Equal(t, folder.ID, scope)
+		})
+	}
+}
+
 // TestInScopeLeavesV2AloneOnDataCenter: Server and Data Center have no
 // folders and no v2, so v1's ancestors are the whole answer there.
 func TestInScopeLeavesV2AloneOnDataCenter(t *testing.T) {
