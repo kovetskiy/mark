@@ -68,6 +68,7 @@ type TitleResolver func(directory, indexFile string) (string, error)
 // from being tracked, without ever being published.
 type Hierarchy struct {
 	root    string
+	files   map[string]bool
 	index   map[string]string
 	outside []string
 	resolve TitleResolver
@@ -82,6 +83,7 @@ type Hierarchy struct {
 func NewHierarchy(root string, files []string, resolve TitleResolver) *Hierarchy {
 	h := &Hierarchy{
 		root:    cleanPath(root),
+		files:   map[string]bool{},
 		index:   map[string]string{},
 		resolve: resolve,
 		titles:  map[string]string{},
@@ -89,6 +91,8 @@ func NewHierarchy(root string, files []string, resolve TitleResolver) *Hierarchy
 	}
 
 	for _, file := range files {
+		h.files[cleanPath(file)] = true
+
 		relative, ok := h.relative(file)
 		if !ok {
 			h.outside = append(h.outside, file)
@@ -101,6 +105,12 @@ func NewHierarchy(root string, files []string, resolve TitleResolver) *Hierarchy
 	}
 
 	return h
+}
+
+// Has reports whether file is one of the run's, however it is spelled clean.
+// A nil Hierarchy has none.
+func (h *Hierarchy) Has(file string) bool {
+	return h != nil && h.files[cleanPath(file)]
 }
 
 // Outside lists the files of the run that the root does not cover. The path of

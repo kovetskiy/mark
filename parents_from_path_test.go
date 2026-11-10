@@ -898,3 +898,33 @@ func TestLinkFromAnIncludePathFindsTheHierarchy(t *testing.T) {
 		})
 	}
 }
+
+// TestLinkToADocumentOutsideTheRunKeepsItsHeaders: the hierarchy only places
+// the run's own files. A README another run publishes is titled by that run,
+// from its own headers, not after a directory this run knows no index for.
+func TestLinkToADocumentOutsideTheRunKeepsItsHeaders(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "docs/a.md", space+"<!-- Title: A -->\n\nSee [it](sub/README.md).\n")
+	writeAt(t, dir, "docs/sub/README.md", space+"<!-- Title: Sub Guide -->\n\nThe guide.\n")
+
+	run := func(files string) {
+		config := publishConfig(server.URL, filepath.Join(dir, "docs", files))
+		config.ParentsFromPath = true
+		config.ParentsFromPathRoot = filepath.Join(dir, "docs")
+		require.NoError(t, Run(context.Background(), config))
+	}
+	run(filepath.Join("sub", "*.md"))
+	run("*.md")
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	guide, err := api.FindPage(context.Background(), "DOCS", "Sub Guide", "page")
+	require.NoError(t, err)
+	require.NotNil(t, guide, "the other run publishes the README under its header")
+	link, err := confluence.GenerateTinyLink(server.URL, guide.ID)
+	require.NoError(t, err)
+
+	// The page has a URL by now, so the link is to its tiny link under it.
+	tiny := link[strings.Index(link, "/x/"):]
+	assert.Contains(t, bodyOfPageTitled(t, server, "A"), tiny+`"`)
+}

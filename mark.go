@@ -1042,7 +1042,7 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 // The run's index of titles reads documents through it too, so that the title
 // a child looks for and the title its parent publishes cannot disagree.
 func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy) (*metadata.Meta, []byte, error) {
-	return readDocumentMeta(config, hierarchy, markdown, metadata.ExtractOptions{
+	return readDocumentMeta(hierarchy, markdown, metadata.ExtractOptions{
 		Filename:                 file,
 		Space:                    config.Page.Space,
 		TitleFromH1:              config.Page.TitleFromH1,
@@ -1057,12 +1057,12 @@ func documentMeta(config PublishConfig, file string, markdown []byte, hierarchy 
 // readDocumentMeta is documentMeta from options already made, which is how a
 // link reads the document it points at: its options name the linking
 // document's space when the run names none.
-func readDocumentMeta(config PublishConfig, hierarchy *page.Hierarchy, markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
-	file := opts.Filename
+func readDocumentMeta(hierarchy *page.Hierarchy, markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
+	file, hash := opts.Filename, opts.TitleAppendGeneratedHash
 
 	// Deferred until the path has had its say about the parents, when it has
 	// one; see below.
-	opts.TitleAppendGeneratedHash = opts.TitleAppendGeneratedHash && hierarchy == nil
+	opts.TitleAppendGeneratedHash = hash && hierarchy == nil
 
 	meta, markdown, err := metadata.ExtractMeta(markdown, opts)
 	if err != nil {
@@ -1091,8 +1091,8 @@ func readDocumentMeta(config PublishConfig, hierarchy *page.Hierarchy, markdown 
 		// title it publishes, the documents beneath it in the parent they look
 		// for. Hashing only the first left the README childless beside an
 		// empty, unhashed page of the directory's name that took its children.
-		if config.Page.TitleAppendGeneratedHash {
-			derived, title = page.HashDirectoryTitles(config.Page.Parents, meta.Space, derived, title)
+		if hash {
+			derived, title = page.HashDirectoryTitles(opts.Parents, meta.Space, derived, title)
 		}
 
 		if !meta.DeclaredParents {
@@ -1101,7 +1101,7 @@ func readDocumentMeta(config PublishConfig, hierarchy *page.Hierarchy, markdown 
 
 		if title != "" {
 			meta.Title = title
-		} else if config.Page.TitleAppendGeneratedHash {
+		} else if hash {
 			// Only now, with the parents final: hashed before they were, two
 			// documents of one title in different directories hashed the same,
 			// and the hash was the very thing meant to tell them apart.
@@ -1457,12 +1457,14 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
-		// Found through --include-path, the linked file may be spelled
-		// absolute where the run's files are relative, or the other way
-		// round, and the hierarchy only knows the run's spelling.
-		opts.Filename = spelledLike(opts.Filename, file)
+		// The hierarchy places only the run's own files. Another is published
+		// by a run that lays out its own, so its headers are all it says here.
+		hierarchy := r.hierarchy
+		if !hierarchy.Has(opts.Filename) {
+			hierarchy = nil
+		}
 
-		return readDocumentMeta(config, r.hierarchy, markdown, opts)
+		return readDocumentMeta(hierarchy, markdown, opts)
 	}
 
 	return resolver
@@ -2186,9 +2188,10 @@ func includeSearchDirs(base, includePath string, markdown []byte) []string {
 
 		// The same fallback LoadTemplate uses when the file is not beside the
 		// document, so a link inside a shared fragment resolves the same way
-		// the fragment itself was found.
+		// the fragment itself was found. Spelled like base, absolute or
+		// relative, so that a file found there is recognised as the run's.
 		if includePath != "" {
-			add(filepath.Dir(filepath.Join(includePath, target)))
+			add(spelledLike(filepath.Dir(filepath.Join(includePath, target)), base))
 		}
 	}
 
