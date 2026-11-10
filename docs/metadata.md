@@ -141,7 +141,10 @@ mark's `metadata` package:
   `metadata.ErrUnrepresentable` for a value a header cannot hold and
   `metadata.ErrUnknownHeader` for a key mark does not read.
 * `metadata.FrontMatter(fields)` returns YAML front matter, which can hold any
-  text, line breaks included; it refuses only keys mark does not read.
+  text, line breaks included. It refuses a key mark does not read with
+  `metadata.ErrUnknownHeader`, and with `metadata.ErrUnrepresentable` two keys
+  mark reads as one (`title` and `Title`), or a value that is not nil, a
+  string, a boolean, a number, or a list or map of them.
 
 ## Further headers
 

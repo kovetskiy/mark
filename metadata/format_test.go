@@ -234,6 +234,38 @@ func TestFrontMatterRefusals(t *testing.T) {
 
 	_, err = FrontMatter(map[string]any{"title": func() {}})
 	assert.ErrorIs(t, err, ErrUnrepresentable)
+
+	_, err = FrontMatter(map[string]any{"properties": struct{ Zeta, Alpha string }{"a", "b"}})
+	assert.ErrorIs(t, err, ErrUnrepresentable)
+}
+
+// A value that holds itself would recurse until the stack overflows, which
+// kills the process rather than panicking.
+func TestFrontMatterRefusesACycle(t *testing.T) {
+	cycle := map[string]any{}
+	cycle["x"] = cycle
+	_, err := FrontMatter(map[string]any{"properties": cycle})
+	assert.ErrorIs(t, err, ErrUnrepresentable)
+
+	list := []any{nil}
+	list[0] = list
+	_, err = FrontMatter(map[string]any{"labels": list})
+	assert.ErrorIs(t, err, ErrUnrepresentable)
+}
+
+// A map with keys that are not strings, as yaml.v2 decodes one, is written
+// like any other: its strings in this package's style, so that a line break
+// reads back.
+func TestFrontMatterMapOfAny(t *testing.T) {
+	document, err := FrontMatter(map[string]any{
+		"properties": map[any]any{"note": "\nline", "b": map[any]any{"k": []any{"\n0", 1, true}}},
+	})
+	require.NoError(t, err)
+
+	meta, _, err := ExtractMeta([]byte(document), ExtractOptions{FrontMatter: true})
+	require.NoError(t, err, document)
+	assert.Equal(t, "\nline", meta.Properties["note"])
+	assert.Equal(t, map[string]any{"k": []any{"\n0", 1, true}}, meta.Properties["b"])
 }
 
 // TestFrontMatterKeysAreTheOnesMarkReads keeps frontMatterKeys and
