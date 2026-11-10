@@ -805,7 +805,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// Documents alone need no glob, and an empty one matches nothing.
 	var files []string
-	if config.Files != "" || len(config.Paths) > 0 || len(config.Documents) == 0 {
+	if config.namesFiles() || len(config.Documents) == 0 {
 		files, err = runFiles(config.Files, config.Paths)
 		if err != nil {
 			return err
@@ -1001,6 +1001,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// The whole file set is known before any of it is processed, which is
 		// what lets a recorded path missing from the run be read as a rename
 		// rather than a guess made one document at a time.
+		//
 		// A pattern that matched nothing, let through by CI, is not the run's
 		// scope when documents are published beside it: they would keep the
 		// space from looking empty, and every page the pattern published would
