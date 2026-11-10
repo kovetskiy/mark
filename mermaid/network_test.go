@@ -91,3 +91,13 @@ func TestImageShapeWithADataURL(t *testing.T) {
 		assert.NotEmpty(t, got.FileBytes)
 	}
 }
+
+// TestLabelTextNamingAURL: a label that only says src=https://... as text has
+// no image to miss, so it is published as a PNG.
+func TestLabelTextNamingAURL(t *testing.T) {
+	diagram := []byte("flowchart TD\n A[\"src=https://example.com/x.png\"]\n")
+
+	got, err := engine.Render(context.Background(), "text", diagram, Options{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, got.FileBytes)
+}

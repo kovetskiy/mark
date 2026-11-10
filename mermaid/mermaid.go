@@ -23,6 +23,7 @@ import (
 	"github.com/kovetskiy/mark/v17/internal/lazy"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/mod/semver"
+	"golang.org/x/net/html"
 )
 
 // errClosed is what an Engine answers once it has been closed.
@@ -379,12 +380,11 @@ func (e *Engine) renderPNG(ctx context.Context, title, diagram string, scale flo
 
 			// A label's <img> that the browser could not load is drawn as
 			// nothing, which would publish the picture without it.
-			if url := remoteImage(svg); url != "" {
-				return fmt.Errorf(
-					"the diagram shows the image at %s, and %w, so a PNG would be published without it; "+
+			if url := remoteLabelImage(svg); url != "" {
+				return remoteImageError(url,
+					"so a PNG would be published without it; "+
 						"give the image as a data: URL, or publish the diagram with --mermaid-output=svg",
-					url, chrome.ErrNetworkUnavailable,
-				)
+					nil)
 			}
 		}
 
@@ -417,18 +417,50 @@ func (e *Engine) renderSVG(ctx context.Context, title, diagram string, bundle bo
 	return svg, explainRemoteImage(diagram, err)
 }
 
-// remoteImageReference finds an image a diagram or its drawing names by URL: an
-// image shape's img: and an <img> label's src.
-var remoteImageReference = regexp.MustCompile(`(?i)(?:\bimg\s*:|\bsrc\s*=)\s*["']?(https?://[^"'\s>]+)`)
+// remoteImageShape finds the URL an image shape names with img:.
+var remoteImageShape = regexp.MustCompile(`(?i)\bimg\s*:\s*["']?(https?://[^"'\s>]+)`)
 
-// remoteImage is the first image text names by an http or https URL, or "".
-func remoteImage(text string) string {
-	match := remoteImageReference.FindStringSubmatch(text)
-	if match == nil {
-		return ""
+// remoteLabelImage is the first http or https URL an <img> in the drawing
+// loads, or "". The drawing is read as markup, so a label that only says
+// "src=https://..." as text is not taken for one.
+func remoteLabelImage(svg string) string {
+	tokenizer := html.NewTokenizer(strings.NewReader(svg))
+
+	for {
+		switch tokenizer.Next() {
+		case html.ErrorToken:
+			return ""
+
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, hasAttributes := tokenizer.TagName()
+			if !strings.EqualFold(string(name), "img") {
+				continue
+			}
+
+			for hasAttributes {
+				var key, value []byte
+
+				key, value, hasAttributes = tokenizer.TagAttr()
+
+				src := strings.TrimSpace(string(value))
+				lower := strings.ToLower(src)
+				if strings.EqualFold(string(key), "src") &&
+					(strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")) {
+					return src
+				}
+			}
+		}
+	}
+}
+
+// remoteImageError names the image a diagram could not draw and why, with
+// advice on what to do instead, wrapping cause when there is one.
+func remoteImageError(url, advice string, cause error) error {
+	if cause == nil {
+		return fmt.Errorf("the diagram shows the image at %s, and %w, %s", url, chrome.ErrNetworkUnavailable, advice)
 	}
 
-	return match[1]
+	return fmt.Errorf("the diagram shows the image at %s, and %w; %s: %w", url, chrome.ErrNetworkUnavailable, advice, cause)
 }
 
 // explainRemoteImage says why a diagram naming a remote image failed to draw.
@@ -439,15 +471,12 @@ func explainRemoteImage(diagram string, err error) error {
 		return err
 	}
 
-	url := remoteImage(diagram)
-	if url == "" {
+	match := remoteImageShape.FindStringSubmatch(diagram)
+	if match == nil {
 		return err
 	}
 
-	return fmt.Errorf(
-		"the diagram shows the image at %s, and %w; give the image as a data: URL instead: %w",
-		url, chrome.ErrNetworkUnavailable, err,
-	)
+	return remoteImageError(match[1], "give the image as a data: URL instead", err)
 }
 
 // checkPNGBounds refuses a diagram whose PNG at scale would be larger than a
