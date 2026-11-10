@@ -577,26 +577,29 @@ func warnAboutUnknownKeys(keys []string, lines map[string]int, warnings *report.
 	}
 }
 
-// frontMatterKeyLines gives the line of the file each top-level front matter
-// key is written on. The front matter starts on the file's second line, below
-// its opening delimiter; a key it cannot place is left out, and so has no line.
-func frontMatterKeyLines(frontMatter []byte) map[string]int {
+// decodeFrontMatter decodes front matter, and gives the line of the file each
+// top-level key is written on. The front matter starts on the file's second
+// line, below its opening delimiter; a key not written there, such as one a
+// merge brings in, has no line.
+func decodeFrontMatter(frontMatter []byte) (map[string]any, map[string]int, error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal(frontMatter, &document); err != nil || len(document.Content) == 0 {
-		return nil
+		return nil, nil, err
 	}
 
-	mapping := document.Content[0]
-	if mapping.Kind != yaml.MappingNode {
-		return nil
+	var parsed map[string]any
+	if err := document.Decode(&parsed); err != nil {
+		return nil, nil, err
 	}
 
 	lines := map[string]int{}
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		lines[mapping.Content[i].Value] = mapping.Content[i].Line + 1
+	if mapping := document.Content[0]; mapping.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(mapping.Content); i += 2 {
+			lines[mapping.Content[i].Value] = mapping.Content[i].Line + 1
+		}
 	}
 
-	return lines
+	return parsed, lines, nil
 }
 
 // splitFrontMatter separates the YAML front matter opening data from the
@@ -730,8 +733,8 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	doc := parser.New().Parse(data)
 
 	if found {
-		var parsed map[string]any
-		if err := yaml.Unmarshal(frontMatter, &parsed); err != nil {
+		parsed, lines, err := decodeFrontMatter(frontMatter)
+		if err != nil {
 			return nil, nil, fmt.Errorf("decode YAML front matter: %w", err)
 		}
 
@@ -739,7 +742,6 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 		meta.Type = "page" // Default type
 
 		var unknown []string
-		lines := frontMatterKeyLines(frontMatter)
 
 		for k, v := range parsed {
 			normKey := normaliseFrontMatterKey(k)

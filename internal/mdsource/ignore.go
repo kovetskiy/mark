@@ -35,9 +35,18 @@ const (
 // file. A missing end marker is nearly always a typo, and quietly publishing
 // half a page is a worse answer than refusing.
 func StripIgnoredBlocks(data []byte) ([]byte, error) {
+	stripped, _, err := StripIgnoredBlocksLines(data)
+
+	return stripped, err
+}
+
+// StripIgnoredBlocksLines is StripIgnoredBlocks, also giving lineOf, which
+// maps a line of what is left to the line of data it came from, both counting
+// from 1. lineOf is nil when nothing was removed.
+func StripIgnoredBlocksLines(data []byte) ([]byte, func(line int) int, error) {
 	content := string(data)
 	if !strings.Contains(strings.ToLower(content), ignoreStart) {
-		return data, nil
+		return data, nil, nil
 	}
 
 	// A marker inside a code block is a code sample, not an instruction. Which
@@ -50,6 +59,7 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 
 	lines := strings.Split(content, "\n")
 	kept := make([]string, 0, len(lines))
+	from := make([]int, 0, len(lines))
 
 	ignoring := false
 	openedAt := 0
@@ -63,7 +73,7 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 		switch marker {
 		case markerStart:
 			if ignoring {
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"line %d: <!-- %s --> opened again before the one on line %d was closed",
 					i+1, ignoreStart, openedAt,
 				)
@@ -73,7 +83,7 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 
 		case markerEnd:
 			if !ignoring {
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"line %d: <!-- %s --> without a matching <!-- %s -->",
 					i+1, ignoreEnd, ignoreStart,
 				)
@@ -83,18 +93,27 @@ func StripIgnoredBlocks(data []byte) ([]byte, error) {
 		default:
 			if !ignoring {
 				kept = append(kept, line)
+				from = append(from, i+1)
 			}
 		}
 	}
 
 	if ignoring {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"<!-- %s --> on line %d is never closed with <!-- %s -->",
 			ignoreStart, openedAt, ignoreEnd,
 		)
 	}
 
-	return []byte(strings.Join(kept, "\n")), nil
+	lineOf := func(line int) int {
+		if line < 1 || line > len(from) {
+			return line
+		}
+
+		return from[line-1]
+	}
+
+	return []byte(strings.Join(kept, "\n")), lineOf, nil
 }
 
 type marker int

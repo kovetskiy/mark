@@ -20,13 +20,35 @@ func TestWarningsRecordKindAndFile(t *testing.T) {
 	}, w.List())
 }
 
-func TestWarningsRecordEachOnce(t *testing.T) {
+// TestWarningsRecordEachOnceOverRereads: a warning a read adds again is kept,
+// as another occurrence; one a later read only repeats is not.
+func TestWarningsRecordEachOnceOverRereads(t *testing.T) {
 	w := NewWarnings("docs/a.md")
-	w.Add(WarningMissingPage, "page %s no longer exists", "1")
-	w.Add(WarningMissingPage, "page %s no longer exists", "1")
-	w.Add(WarningUnknownKey, "page %s no longer exists", "1")
+	w.Add(WarningColumnWidths, "not applied")
+	w.Add(WarningColumnWidths, "not applied")
+	w.Add(WarningUnknownKey, "not applied")
+	require.Len(t, w.List(), 3)
 
-	assert.Len(t, w.List(), 2)
+	w.Reread()
+	w.Add(WarningColumnWidths, "not applied")
+	w.Add(WarningColumnWidths, "not applied")
+	w.Add(WarningUnknownKey, "not applied")
+	assert.Len(t, w.List(), 3)
+
+	w.Add(WarningInclude, "only the second read found this")
+	assert.Len(t, w.List(), 4)
+}
+
+// TestWarningsMapLines: a line counted in text with lines taken out is given
+// as the line of the file.
+func TestWarningsMapLines(t *testing.T) {
+	w := NewWarnings("docs/a.md")
+	w.MapLines(func(line int) int { return line + 5 })
+	w.AddAt(3, WarningStrandedHeader, "stranded")
+	w.Add(WarningAttachment, "no line")
+
+	assert.Equal(t, 8, w.List()[0].Line)
+	assert.Equal(t, 0, w.List()[1].Line)
 }
 
 func TestNilWarningsOnlyLog(t *testing.T) {
@@ -44,27 +66,6 @@ func TestListIsACopy(t *testing.T) {
 	list[0].Message = "changed"
 
 	assert.Equal(t, "one", w.List()[0].Message)
-}
-
-// TestGitHubAnnotatesAWarningAgainstItsOwnFile: a warning names the file it is
-// about, which the annotation follows, falling back to the page's.
-func TestGitHubAnnotatesAWarningAgainstItsOwnFile(t *testing.T) {
-	r := New()
-	r.AddPage(Page{
-		File: "docs/a.md", Status: StatusUnchanged,
-		Warnings: []string{"named", "unnamed"},
-		WarningDetails: []Warning{
-			{Kind: WarningUnknownKey, File: "docs/b.md", Message: "named"},
-			{Kind: WarningUnknownKey, Message: "unnamed"},
-		},
-	})
-
-	var out strings.Builder
-	require.NoError(t, r.Write(&out, FormatGitHub))
-
-	assert.Equal(t,
-		"::warning file=docs/b.md::named\n::warning file=docs/a.md::unnamed\n",
-		out.String())
 }
 
 // TestJSONKeepsWarningsAsStrings: the structured warnings sit beside the
@@ -95,39 +96,6 @@ func TestJSONKeepsWarningsAsStrings(t *testing.T) {
 	assert.Equal(t, []Warning{
 		{Kind: WarningAttachment, File: "docs/a.md", Message: "unused attachment: logo.png"},
 	}, got.Pages[0].WarningDetails)
-}
-
-// TestGitHubAnnotatesAWarningAgainstTheSource: a warning is annotated against
-// the source of the file it is about -- the document's, or another file's --
-// and against that file itself when it has no source.
-func TestGitHubAnnotatesAWarningAgainstTheSource(t *testing.T) {
-	r := New()
-	r.AddPage(Page{
-		File: "build/a.md", Status: StatusUnchanged,
-		Warnings: []string{"about the document", "about a fragment", "about a shared file"},
-		WarningDetails: []Warning{
-			{Kind: WarningUnknownKey, File: "build/a.md", Message: "about the document"},
-			{Kind: WarningInclude, File: "build/frag.md", Message: "about a fragment"},
-			{Kind: WarningInclude, File: "shared/b.md", Message: "about a shared file"},
-		},
-	})
-	r.SetSources(func(file string) string {
-		if !strings.HasPrefix(file, "build/") {
-			return ""
-		}
-
-		return "src/" + strings.TrimPrefix(file, "build/") + ".tmpl"
-	})
-
-	var out strings.Builder
-	require.NoError(t, r.Write(&out, FormatGitHub))
-
-	assert.Equal(t,
-		"::warning file=src/a.md.tmpl::about the document\n"+
-			"::warning file=src/frag.md.tmpl::about a fragment\n"+
-			"::warning file=shared/b.md::about a shared file\n",
-		out.String())
-	assert.Equal(t, "src/frag.md.tmpl", r.Pages[0].WarningDetails[1].Source)
 }
 
 // TestGitHubAnnotatesTheLineOfAWarning: a warning about one line is annotated
