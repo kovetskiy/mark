@@ -38,7 +38,7 @@ func TestAParentTitleDeclaredTwiceWarnsEachDocumentOnce(t *testing.T) {
 		assert.Equal(t, report.WarningPlacement, list[0].Kind)
 		assert.Equal(t, file, list[0].File)
 		assert.Contains(t, list[0].Message, `parent "Shared" is declared by 2 documents`)
-		assert.Contains(t, list[0].Message, "not followed")
+		assert.Contains(t, list[0].Message, "found by its title alone")
 	}
 
 	require.Len(t, collectors, 2)
@@ -127,7 +127,7 @@ func TestAChainNamingAnAmbiguousParentTwiceIsWarnedOnce(t *testing.T) {
 
 	list := child.List()
 	require.Len(t, list, 1)
-	assert.Contains(t, list[0].Message, "not followed")
+	assert.Contains(t, list[0].Message, "found by its title alone")
 }
 
 // ambiguousTitles is a run whose a.md and b.md both declare the page "Shared",
