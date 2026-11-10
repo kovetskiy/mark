@@ -1571,3 +1571,11 @@ func TestManifestPageOptionalLateLookupFailureSavesOtherSpaces(t *testing.T) {
 	assert.NotNil(t, shardOf(server, tracked.ID, "z.md"), "the other space is saved")
 	assert.Equal(t, []string{"ADOCS"}, store.UntrackedSpaces())
 }
+
+// TestUntrackedOnANilStore: a caller holding no store, because it does not
+// track pages, can ask without a check of its own.
+func TestUntrackedOnANilStore(t *testing.T) {
+	var store *manifest.Store
+	assert.False(t, store.Untracked("DOCS"))
+	assert.Empty(t, store.UntrackedSpaces())
+}

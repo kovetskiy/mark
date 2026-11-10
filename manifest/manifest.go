@@ -515,8 +515,13 @@ func (e *MissingPageError) Error() string {
 
 // Untracked reports whether spaceKey, as loaded so far, is running untracked
 // because its manifest page is missing; see SetManifestPageOptional. A space
-// not loaded yet is not.
+// not loaded yet is not, and neither is any space of a nil Store, which tracks
+// nothing to begin with.
 func (s *Store) Untracked(spaceKey string) bool {
+	if s == nil {
+		return false
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -527,8 +532,12 @@ func (s *Store) Untracked(spaceKey string) bool {
 // UntrackedSpaces returns, sorted, the spaces running untracked because their
 // manifest page is missing. Called after Save, it is the spaces whose mapping
 // was not saved, a space whose page the run published itself being tracked
-// from then on.
+// from then on. A nil Store has none.
 func (s *Store) UntrackedSpaces() []string {
+	if s == nil {
+		return nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

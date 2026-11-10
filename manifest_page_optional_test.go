@@ -203,3 +203,22 @@ func TestManifestPageOptionalNoOverwritePublishesItsOwnParent(t *testing.T) {
 	}
 	assert.Contains(t, server.Page(mustFind(t, server, "Handbook")).Body, "The handbook.")
 }
+
+// TestManifestPageOptionalNoOverwriteWithoutTracking: --no-overwrite, which
+// asks the manifest whether a space runs untracked, is refused without
+// --track-pages before anything is published, so no run reaches that question
+// without a manifest store.
+func TestManifestPageOptionalNoOverwriteWithoutTracking(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
+
+	config := optionalManifestConfig(server, dir, io.Discard)
+	config.Tracking.TrackPages = false
+	config.Tracking.NoOverwrite = true
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--no-overwrite requires --track-pages")
+	assert.Empty(t, pageIDTitled(t, server, "Guide"), "nothing was published")
+}
