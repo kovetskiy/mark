@@ -1409,6 +1409,35 @@ func TestRecordDoesNotFollowAPathThisRunRecorded(t *testing.T) {
 		"the directory's entry is kept")
 }
 
+// TestPartialRecordHintsAtTheMissingPath: a partial run that cannot follow a
+// move because it does not name the old path says to name it -- unless the old
+// entry has no pattern, which naming it would not change.
+func TestPartialRecordHintsAtTheMissingPath(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+	legacy := manifest.NewStore(api)
+	require.NoError(t, legacy.Record(ctx, "DOCS", "old.md", "1", "Old", "o"))
+	first := runStore(t, server, "doc.md")
+	require.NoError(t, first.Record(ctx, "DOCS", "doc.md", "2", "Doc", "h"))
+	require.NoError(t, legacy.Save(ctx))
+	require.NoError(t, first.Save(ctx))
+
+	logged := captureLog(t)
+	partial := manifest.NewStore(api)
+	partial.SetPartial(true)
+	partial.SetRunFiles("{new,moved}.md", []string{"new.md", "moved.md"})
+	require.NoError(t, partial.Record(ctx, "DOCS", "moved.md", "2", "Doc", "h"))
+	assert.Contains(t, logged.String(), "if doc.md moved to moved.md, name both paths")
+
+	logged.Reset()
+	require.NoError(t, partial.Record(ctx, "DOCS", "new.md", "1", "Old", "o"))
+	assert.Contains(t, logged.String(), "old.md and new.md both publish to page 1")
+	assert.NotContains(t, logged.String(), "name both paths")
+}
+
 // TestRecordDoesNotFollowAnEntryWithNoPattern: an entry recorded before
 // patterns were has no scope to be absent from, so a run with no pattern of
 // its own must not read the two empty patterns as a match and take the entry
