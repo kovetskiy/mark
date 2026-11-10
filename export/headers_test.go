@@ -83,6 +83,25 @@ func TestFrontMatterHoldsTheSidebarCommentsCannot(t *testing.T) {
 	assert.Equal(t, doc.Sidebar, readMeta(t, frontMatter).Sidebar)
 }
 
+// TestCommentsLeaveInTheBodyASidebarNoHeaderHolds: a sidebar with "--!>",
+// which ends a comment as "-->" does, stays in the body under comment
+// headers rather than failing the export.
+func TestCommentsLeaveInTheBodyASidebarNoHeaderHolds(t *testing.T) {
+	storage := `<ac:layout><ac:layout-section ac:type="two_right_sidebar">` +
+		`<ac:layout-cell><p>Body</p></ac:layout-cell>` +
+		`<ac:layout-cell><ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[A--!>B]]></ac:plain-text-body></ac:structured-macro></ac:layout-cell>` +
+		`</ac:layout-section></ac:layout>`
+
+	doc, err := Convert(storage, Options{})
+	require.NoError(t, err)
+	assert.Empty(t, doc.Sidebar)
+	assert.Contains(t, doc.Markdown, "ac:layout")
+
+	h := pageHeaders{Space: "DOCS", Title: "Page", Layout: doc.Layout, Sidebar: doc.Sidebar}
+	_, err = h.comments()
+	require.NoError(t, err)
+}
+
 func TestParseOptionsLeavesOKFItsOwnFrontMatter(t *testing.T) {
 	format, spelling, err := parseOptions(Config{Format: FormatOKF, Metadata: MetadataFrontMatter})
 	require.NoError(t, err, "a configuration file setting front matter for mark's documents does not stop an OKF export")
