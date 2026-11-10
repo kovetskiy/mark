@@ -187,9 +187,9 @@ type ReportConfig struct {
 	// the template generated Markdown came from, given the path mark read it
 	// from. The json report gives it as each page's and orphan's source, and
 	// the github report annotates it, so the annotation lands on a file in
-	// the pull request. An orphan's path is its manifest key: slash-separated
-	// and relative to the working directory. An empty result means the
-	// document is its own source.
+	// the pull request. An orphan's path is its manifest key: slash-separated,
+	// relative to the working directory for a file under it and absolute for
+	// one outside it. An empty result means the document is its own source.
 	SourcePath func(file string) string
 }
 
@@ -1381,7 +1381,7 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 	log.Info().Msgf("%s is not synchronized; leaving it alone", file)
 	r.results.AddPage(report.Page{
 		File: file, Status: report.StatusSkipped,
-		Reason: "the document is not synchronized",
+		Reason: report.ReasonNotSynchronized,
 		Space:  spaceOf(meta), Title: titleOf(meta),
 	})
 
