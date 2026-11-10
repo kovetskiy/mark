@@ -28,6 +28,10 @@ type Lazy[T comparable] struct {
 	// for it, so that nothing they made or are stopping outlives Close.
 	pending sync.WaitGroup
 
+	// done is closed once the first Close has finished, so that a Close
+	// arriving while it runs waits for it rather than returning early.
+	done chan struct{}
+
 	mu       sync.Mutex
 	value    T
 	has      bool
@@ -44,12 +48,12 @@ type attempt[T any] struct {
 
 // New returns a Lazy that has not started. start makes the resource and must
 // return promptly once its ctx is done, which happens when Close is called;
-// the resource it returns may outlive that call and lives until stop. start
-// must not call Close, which waits for it. stop shuts a resource down and is
-// called once for each resource start returned. closed is what Get answers
+// the resource it returns may outlive that call and lives until stop. stop
+// shuts a resource down and is called once for each resource start returned.
+// Neither may call Close, which waits for both. closed is what Get answers
 // once Close has been called.
 func New[T comparable](start func(ctx context.Context) (T, error), stop func(T), closed error) *Lazy[T] {
-	l := &Lazy[T]{start: start, stop: stop, closed: closed}
+	l := &Lazy[T]{start: start, stop: stop, closed: closed, done: make(chan struct{})}
 	l.life, l.cancel = context.WithCancel(context.Background()) //nolint:gosec // G118: Close calls l.cancel
 
 	return l
@@ -174,14 +178,19 @@ func (l *Lazy[T]) Peek() (T, bool) {
 // Close stops the resource for good. A start in flight is cancelled rather
 // than waited out, and whatever it made is stopped before Close returns, as is
 // a value Discard is still stopping.
-// Closing twice is harmless.
+// Closing twice is harmless, and a Close that arrives while another runs
+// returns only once that one has.
 func (l *Lazy[T]) Close() {
 	l.mu.Lock()
 
 	if l.isClosed {
 		l.mu.Unlock()
+		<-l.done
+
 		return
 	}
+
+	defer close(l.done)
 
 	l.isClosed = true
 	l.cancel()

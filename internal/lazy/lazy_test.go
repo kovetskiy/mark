@@ -323,6 +323,55 @@ func TestCloseWaitsForDiscard(t *testing.T) {
 	})
 }
 
+// TestSecondCloseWaitsForStop: a Close that arrives while another is still
+// stopping the resource does not return before that stop has finished.
+func TestSecondCloseWaitsForStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		stopped := make(chan struct{})
+
+		l := New(func(context.Context) (*resource, error) {
+			return &resource{}, nil
+		}, func(*resource) {
+			<-release
+			close(stopped)
+		}, errTestClosed)
+
+		_, err := l.Get(t.Context())
+		require.NoError(t, err)
+
+		first := make(chan struct{})
+		go func() {
+			l.Close()
+			close(first)
+		}()
+		synctest.Wait() // the first Close is inside stop
+
+		second := make(chan struct{})
+		go func() {
+			l.Close()
+			close(second)
+		}()
+		synctest.Wait()
+
+		select {
+		case <-second:
+			t.Error("the second Close returned while the first was still stopping the resource")
+		default:
+		}
+
+		close(release)
+		<-first
+		<-second
+
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("Close returned before the stop finished")
+		}
+	})
+}
+
 // TestCallerGivesUpOnAStart: a caller's context bounds its own wait, and the
 // start goes on for the next caller.
 func TestCallerGivesUpOnAStart(t *testing.T) {
