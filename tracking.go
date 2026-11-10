@@ -323,12 +323,9 @@ func resolveRenamedFile(
 		file, previous, pg.ID,
 	)
 
-	// The old path is gone. Left in place it would be reported as a deleted
-	// file on every run from here on.
-	if err := tracker.Forget(ctx, meta.Space, previous); err != nil {
-		return nil, err
-	}
-
+	// The old entry is kept until the new path is recorded: it holds the
+	// version --no-overwrite compares against, read through LookupMoved, and
+	// Record carries that version across and drops the old path.
 	return pg, nil
 }
 

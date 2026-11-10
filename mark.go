@@ -1538,6 +1538,14 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		if err != nil {
 			return found, err
 		}
+		if found.page != nil {
+			// Recorded as a real run records it, so that the path a renamed
+			// file came from hands its entry over, --no-overwrite baseline
+			// included, rather than being reported as an orphan.
+			if err := r.tracker.Record(ctx, meta.Space, file, found.page.ID, meta.Title, doc.sourceHash); err != nil {
+				return found, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
+			}
+		}
 		// Not found by title, so ResolvePage's own move does not apply.
 		found.parent = parent
 
