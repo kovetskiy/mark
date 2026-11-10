@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -312,6 +313,11 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 
 	logFlags(cmd)
 
+	paths, err := readPaths(cmd.String("files-from"), cmd.String("password"))
+	if err != nil {
+		return err
+	}
+
 	titleFromH1, titleFromFilename := titleFrom(cmd)
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
@@ -373,6 +379,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 			Output: os.Stdout,
 		},
 		Files: cmd.String("files"),
+		Paths: paths,
 		Connection: mark.ConnectionConfig{
 			BaseURL:               creds.BaseURL,
 			Username:              creds.Username,
@@ -622,4 +629,39 @@ func splitParents(value, delimiter string) []string {
 	}
 
 	return parents
+}
+
+// readPaths reads the paths --files-from names, one per line; blank lines are
+// skipped and nothing else is trimmed, a path being allowed its spaces. "-"
+// reads standard input, which "--password -" may already have taken.
+func readPaths(from, password string) ([]string, error) {
+	if from == "" {
+		return nil, nil
+	}
+
+	var (
+		data []byte
+		err  error
+	)
+	if from == "-" {
+		if password == "-" {
+			return nil, errors.New("--files-from - and --password - cannot both read standard input")
+		}
+		data, err = io.ReadAll(os.Stdin)
+	} else {
+		data, err = os.ReadFile(from)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("unable to read --files-from: %w", err)
+	}
+
+	var paths []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+
+	return paths, nil
 }

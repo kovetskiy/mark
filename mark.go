@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,6 +43,14 @@ type Config struct {
 
 	// Files is the glob naming the documents to publish.
 	Files string
+
+	// Paths names documents to publish exactly, with no glob meaning, instead
+	// of or beside Files: a path holding *, ?, [ or { is that file. A path
+	// that does not exist is not published but is still named, so with
+	// Tracking.Partial a deleted file listed here is looked for like one Files
+	// matches -- which is how a job gives the paths a change touched, as git
+	// diff --name-only lists them.
+	Paths []string
 
 	Connection ConnectionConfig
 
@@ -327,10 +336,10 @@ type TrackingConfig struct {
 	OnOrphan       report.OnOrphan // report.OnOrphanReport (also ""), OnOrphanArchive or OnOrphanDelete
 	OrphanUnder    string
 
-	// Partial says Files matches only some of the files of the pattern that
-	// publishes them, such as the files a change touched. Orphans and renamed
-	// files are then looked for among the tracked paths Files matches, not
-	// among those its pattern recorded, so a tracked file Files does not name
+	// Partial says Files and Paths name only some of the files of the pattern
+	// that publishes them, such as the files a change touched. Orphans and
+	// renamed files are then looked for among the tracked paths they name, not
+	// among those their pattern recorded, so a tracked file they do not name
 	// is left alone; and a page the run records keeps the pattern its entry,
 	// or the entry of the file it was renamed from, was recorded under.
 	Partial bool
@@ -542,6 +551,44 @@ func (r RenderingConfig) enabled(feature string) bool {
 	return slices.Contains(r.Features, feature)
 }
 
+// runFiles is the files a run publishes: those the glob matches, then each of
+// paths that exists, as it is written, once.
+func runFiles(glob string, paths []string) ([]string, error) {
+	var files []string
+	if glob != "" || len(paths) == 0 {
+		matched, err := doublestar.FilepathGlob(glob)
+		if err != nil {
+			return nil, err
+		}
+		files = matched
+	}
+
+	listed := make(map[string]bool, len(files))
+	for _, file := range files {
+		listed[manifest.Key(file)] = true
+	}
+
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			// Named all the same: a deleted file a partial run looks for.
+			continue
+		case err != nil:
+			return nil, err
+		case info.IsDir():
+			return nil, fmt.Errorf("%s is a directory: Paths names files", path)
+		}
+
+		if key := manifest.Key(path); !listed[key] {
+			listed[key] = true
+			files = append(files, path)
+		}
+	}
+
+	return files, nil
+}
+
 // Run processes all files matching Config.Files and publishes them to
 // Confluence.
 //
@@ -616,6 +663,12 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
+	if config.ParentsFromPath && config.ParentsFromPathRoot == "" &&
+		config.Files == "" && len(config.Paths) > 0 {
+		return errors.New("--parents-from-path with only a list of paths needs --parents-from-path-root: " +
+			"there is no --files pattern to take the root from")
+	}
+
 	if config.Tracking.Partial && !config.Tracking.TrackPages {
 		return errors.New("--partial requires --track-pages: " +
 			"it is about the page manifest, which only --track-pages keeps")
@@ -653,7 +706,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	// An interrupted run does not: it warns which pages stay watched.
 	defer api.UnwatchWritten(ctx)
 
-	files, err := doublestar.FilepathGlob(config.Files)
+	files, err := runFiles(config.Files, config.Paths)
 	if err != nil {
 		return err
 	}
@@ -831,6 +884,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// what lets a recorded path missing from the run be read as a rename
 		// rather than a guess made one document at a time.
 		tracker.SetRunFiles(config.Files, files)
+		tracker.SetRunPaths(config.Paths)
 	}
 
 	// A link is resolved by finding the page it points at, so a document linking
