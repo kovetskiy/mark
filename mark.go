@@ -394,10 +394,9 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// A value no run could use is reported before what else it needs, as
 	// OnOrphan is: adding --track-pages would only lead to this error next.
-	if config.Tracking.ManifestPrefix != "" {
-		if err := manifest.ValidatePropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
-			return fmt.Errorf("invalid Tracking.ManifestPrefix (--manifest-prefix): %w", err)
-		}
+	manifestPrefix, err := manifest.NormalizePropertyKeyPrefix(config.Tracking.ManifestPrefix)
+	if err != nil {
+		return fmt.Errorf("invalid Tracking.ManifestPrefix (--manifest-prefix): %w", err)
 	}
 
 	// Removing a page needs to know mark put it there, and only the manifest
@@ -421,8 +420,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it says where the page manifest is kept, and nothing else keeps one")
 	}
 
-	if config.Tracking.ManifestPrefix != "" && config.Tracking.ManifestPrefix != manifest.PropertyKeyPrefix &&
-		!config.Tracking.TrackPages {
+	if manifestPrefix != manifest.PropertyKeyPrefix && !config.Tracking.TrackPages {
 		return fmt.Errorf("--manifest-prefix requires --track-pages: " +
 			"it names the page manifest's properties, and nothing else keeps one")
 	}
@@ -530,8 +528,9 @@ func Run(ctx context.Context, config Config) (err error) {
 			tracker = manifest.NewStore(api)
 		}
 		tracker.SetManifestPage(config.Tracking.ManifestPage)
-		if err := tracker.SetPropertyKeyPrefix(config.Tracking.ManifestPrefix); err != nil {
-			return fmt.Errorf("invalid Tracking.ManifestPrefix (--manifest-prefix): %w", err)
+		// Normalised above, so this cannot fail.
+		if err := tracker.SetPropertyKeyPrefix(manifestPrefix); err != nil {
+			return err
 		}
 		if config.Page.PageID != "" {
 			// The mapping is keyed on a source path within a space, and neither

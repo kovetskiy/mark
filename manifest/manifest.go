@@ -156,6 +156,21 @@ func ValidatePropertyKeyPrefix(prefix string) error {
 	return nil
 }
 
+// NormalizePropertyKeyPrefix returns prefix as a Store uses it: trimmed, with
+// blank meaning PropertyKeyPrefix, and validated.
+func NormalizePropertyKeyPrefix(prefix string) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return PropertyKeyPrefix, nil
+	}
+
+	if err := ValidatePropertyKeyPrefix(prefix); err != nil {
+		return "", err
+	}
+
+	return prefix, nil
+}
+
 // ShardCount is how many properties the mapping is spread over.
 //
 // Fixed rather than grown on demand: the shard a path belongs to is derived
@@ -411,12 +426,8 @@ func NewStore(api *confluence.API) *Store {
 // Set before the first space is loaded: what has been read under one prefix
 // would otherwise be written back under another.
 func (s *Store) SetPropertyKeyPrefix(prefix string) error {
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		prefix = PropertyKeyPrefix
-	}
-
-	if err := ValidatePropertyKeyPrefix(prefix); err != nil {
+	prefix, err := NormalizePropertyKeyPrefix(prefix)
+	if err != nil {
 		return err
 	}
 

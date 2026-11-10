@@ -878,6 +878,8 @@ func TestManifestPrefixRequiresTrackPages(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--manifest-prefix requires --track-pages")
 
+	config.Tracking.ManifestPrefix = " mark.manifest "
+	require.NoError(t, Run(context.Background(), config), "blanks around the default are read as the Store reads them")
 }
 
 // TestManifestPrefixInvalidStopsTheRunFirst: a prefix no run could use is
