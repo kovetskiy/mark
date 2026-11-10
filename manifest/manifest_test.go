@@ -1236,7 +1236,7 @@ func TestRecordFollowsAMovedDocument(t *testing.T) {
 	// conflict with that one, not with the path that is gone.
 	logged.Reset()
 	require.NoError(t, next.Record(ctx, "DOCS", "other.md", "1", "Other", "o"))
-	assert.Contains(t, logged.String(), "sub/doc.md and other.md both publish to page 1")
+	assert.Contains(t, logged.String(), "other.md and sub/doc.md both publish to page 1")
 }
 
 // TestLookupMovedAnswersForTheMovingRun: before Record carries a moved
@@ -1284,7 +1284,7 @@ func TestRecordDoesNotFollowAnotherPatternsDocument(t *testing.T) {
 	next := runStore(t, server, "doc.md")
 	require.NoError(t, next.Record(ctx, "DOCS", "doc.md", "1", "Doc", "h"))
 
-	assert.Contains(t, logged.String(), "other/doc.md and doc.md both publish to page 1")
+	assert.Contains(t, logged.String(), "doc.md and other/doc.md both publish to page 1")
 	assert.NotContains(t, logged.String(), "moved")
 
 	entry, ok, err := next.Lookup(ctx, "DOCS", "doc.md")
@@ -1332,7 +1332,7 @@ func TestRecordUpdatesTheOwnerOfAnUnchangedEntry(t *testing.T) {
 
 	logged.Reset()
 	require.NoError(t, next.Record(ctx, "DOCS", "other.md", "1", "Other", "o"))
-	assert.Contains(t, logged.String(), current+" and other.md both publish to page 1",
+	assert.Contains(t, logged.String(), "other.md and "+current+" both publish to page 1",
 		"the conflict is with the path that publishes the page, not the one that moved away")
 }
 
@@ -1435,7 +1435,7 @@ func TestPartialRecordHintsAtTheMissingPath(t *testing.T) {
 
 	logged.Reset()
 	require.NoError(t, partial.Record(ctx, "DOCS", "new.md", "1", "Old", "o"))
-	assert.Contains(t, logged.String(), "old.md and new.md both publish to page 1")
+	assert.Contains(t, logged.String(), "new.md and old.md both publish to page 1")
 	assert.NotContains(t, logged.String(), "name both paths")
 }
 
@@ -1502,6 +1502,36 @@ func TestRecordWarnsBothDocumentsOfASharedPage(t *testing.T) {
 		require.Len(t, list, 1, key)
 		assert.Equal(t, report.WarningSharedPage, list[0].Kind)
 		assert.Equal(t, key, list[0].File)
+		assert.Contains(t, list[0].Message, "a.md and b.md both publish to page 1")
+	}
+}
+
+// TestRecordWarnsOfASharedPageOnceInOneWording: a document recorded again in
+// the run, as a deferred republish records it, leaves each of the two with
+// the one warning, its paths in the same order whichever was recorded last.
+func TestRecordWarnsOfASharedPageOnceInOneWording(t *testing.T) {
+	ctx := context.Background()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	collectors := map[string]*report.Warnings{}
+	store.SetWarningsFor(func(key string) *report.Warnings {
+		if collectors[key] == nil {
+			collectors[key] = report.NewWarnings(key)
+		}
+
+		return collectors[key]
+	})
+
+	require.NoError(t, store.Record(ctx, "DOCS", "b.md", "1", "A", "b"))
+	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", "a"))
+	collectors["b.md"].Reread()
+	require.NoError(t, store.Record(ctx, "DOCS", "b.md", "1", "A", "b"))
+
+	for _, key := range []string{"a.md", "b.md"} {
+		list := collectors[key].List()
+		require.Len(t, list, 1, key)
+		assert.Equal(t, report.WarningSharedPage, list[0].Kind)
 		assert.Contains(t, list[0].Message, "a.md and b.md both publish to page 1")
 	}
 }

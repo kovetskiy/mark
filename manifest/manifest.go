@@ -340,6 +340,11 @@ type Store struct {
 	// see SetPartial and covers.
 	partial bool
 
+	// sharedWarned holds the shared pages already warned of, by space, page
+	// and the two paths, so that a document recorded again in the run does
+	// not tell either of them twice.
+	sharedWarned map[string]bool
+
 	// spaces holds the manifest for each space key touched so far, alongside
 	// the property it was read from -- the version in that property is what a
 	// write has to supersede.
@@ -661,6 +666,32 @@ func (s *Store) SetPartial(partial bool) {
 	defer s.mu.Unlock()
 
 	s.partial = partial
+}
+
+// warnShared tells both paths that they publish to one page, once a run,
+// naming them in an order that does not depend on which was recorded last.
+// hint, which may be empty, is added to the message as it is; it is no part of
+// what makes two warnings the same. Called with s.mu held.
+func (s *Store) warnShared(spaceKey, pageID, one, other, hint string) {
+	pair := []string{one, other}
+	sort.Strings(pair)
+
+	key := strings.Join([]string{spaceKey, pageID, pair[0], pair[1]}, "\x00")
+	if s.sharedWarned[key] {
+		return
+	}
+	if s.sharedWarned == nil {
+		s.sharedWarned = map[string]bool{}
+	}
+	s.sharedWarned[key] = true
+
+	for _, claimant := range pair {
+		s.warn(claimant, report.WarningSharedPage,
+			"%s and %s both publish to page %s in space %q; "+
+				"renaming either will move a page the other also claims%s",
+			pair[0], pair[1], pageID, spaceKey, hint,
+		)
+	}
 }
 
 // normaliseKeys rewrites entries stored under a key that predates
@@ -1125,13 +1156,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 				)
 			}
 
-			for _, claimant := range []string{owner, path} {
-				s.warn(claimant, report.WarningSharedPage,
-					"%s and %s both publish to page %s in space %q; "+
-						"renaming either will move a page the other also claims%s",
-					owner, path, pageID, spaceKey, hint,
-				)
-			}
+			s.warnShared(spaceKey, pageID, owner, path, hint)
 		}
 	}
 
