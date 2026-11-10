@@ -1071,11 +1071,22 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			delete(state.shards[shardFor(owner)].pages, owner)
 			state.shards[shardFor(owner)].dirty = true
 		} else {
+			// A partial run follows a move only from a path it names, so the
+			// usual cause here is a moved file whose old path was left out.
+			hint := ""
+			if s.partial && !s.runFiles[owner] && !state.seen[owner] &&
+				!s.covers(owner, state.shards[shardFor(owner)].pages[owner]) {
+				hint = fmt.Sprintf(
+					"; if %s moved to %s, name both paths in --files to follow the move",
+					owner, path,
+				)
+			}
+
 			for _, claimant := range []string{owner, path} {
 				s.warn(claimant, report.WarningSharedPage,
 					"%s and %s both publish to page %s in space %q; "+
-						"renaming either will move a page the other also claims",
-					owner, path, pageID, spaceKey,
+						"renaming either will move a page the other also claims%s",
+					owner, path, pageID, spaceKey, hint,
 				)
 			}
 		}
