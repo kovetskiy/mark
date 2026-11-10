@@ -337,18 +337,26 @@ func TestDownloadAttachmentStreamsAndCloses(t *testing.T) {
 	assert.True(t, body.closed)
 }
 
+// TestDownloadAttachmentLimitsTheBody: an endless body is read no further than
+// one byte past the limit, without the test holding a gigabyte.
 func TestDownloadAttachmentLimitsTheBody(t *testing.T) {
-	server := confluencetest.New(t)
-	page := server.AddPage("DOCS", "Page", "page", "")
-	attachment := server.AddAttachmentData(page.ID, "a.png", nil)
-	attachment.Data = make([]byte, maxAttachmentDownload+2)
-	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
-	body := observeDownload(api)
-	err := api.DownloadAttachment(context.Background(), page.ID, downloadInfo(page.ID, "a.png"), io.Discard)
+	api := NewAPI("https://confluence.example.org", Options{Username: "user", Password: "token"})
+	body := &downloadBody{ReadCloser: io.NopCloser(endless{})}
+	api.v1.http.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK, Status: "200 OK", Header: http.Header{}, Body: body, Request: r,
+		}, nil
+	})
+	err := api.DownloadAttachment(context.Background(), "1", downloadInfo("1", "a.png"), io.Discard)
 	require.ErrorContains(t, err, "larger than 1073741824 bytes")
 	assert.Equal(t, int64(maxAttachmentDownload+1), body.read)
 	assert.True(t, body.closed)
 }
+
+// endless is a body that never ends.
+type endless struct{}
+
+func (endless) Read(p []byte) (int, error) { return len(p), nil }
 
 func TestDownloadAttachmentKeepsIOErrors(t *testing.T) {
 	t.Run("writer", func(t *testing.T) {
