@@ -381,8 +381,9 @@ baseline. A page it publishes keeps the pattern its file was tracked under, or
 that of the file it was renamed from while the new path lies in it, so the
 full run still covers it. A file no run has tracked yet is recorded under the
 `--files` pattern when a run publishing that whole pattern has tracked files
-under it, and otherwise under its own path until the full run publishes it, so
-any partial run naming it covers it, and one reporting it gone forgets it.
+under it, and otherwise under its own path until the full run publishes it, or
+finds it deleted, so any partial run naming it covers it, and one reporting it
+gone forgets it.
 
 A path given with `--files-from` that the `--files` pattern does not match is
 recorded the same way, under its own path, in a run with or without

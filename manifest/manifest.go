@@ -1174,8 +1174,8 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			// The pattern of a run publishing all of it, given to a partial
 			// run on a checkout holding only some of its files: that run
 			// covers the entry, and later partial runs given the pattern
-			// leave it to that run rather than read it as deleted.
-			glob = s.recordGlob(path)
+			// leave it to that run rather than read it as deleted. The glob
+			// stays the one a full run records.
 		default:
 			// Not a pattern any run publishes all of: the entry would be
 			// covered by no run but one given that very pattern.
@@ -1224,7 +1224,8 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 // that its absence from the run means the file is gone.
 //
 // A full run looks for what its pattern published last time, and for a path
-// it names exactly, what was recorded under that path alone. A partial run
+// it names exactly or its pattern matches, what was recorded under that path
+// alone. A partial run
 // looks at the paths it names and where its own pattern points, whichever run
 // recorded them, but for those left to the owning run (see leftToOwner). An
 // entry with no recorded pattern predates patterns, and nothing can say what
@@ -1235,7 +1236,11 @@ func (s *Store) covers(path string, entry Entry) bool {
 	}
 
 	if !s.partial {
-		return entry.Glob == s.runGlob || s.named[path] && entry.Glob == globpattern.Escape(path)
+		// An entry recorded under its own path is one no full run has
+		// published yet, and this run's pattern, if it matches it, is the
+		// one to notice the file deleted.
+		return entry.Glob == s.runGlob ||
+			entry.Glob == globpattern.Escape(path) && (s.named[path] || matches(s.runGlob, path))
 	}
 
 	return s.named[path] || matches(s.runGlob, path) && !s.leftToOwner(path, entry)
