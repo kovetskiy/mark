@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/parser"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,41 @@ func TestFormatMentionRefusesADirective(t *testing.T) {
 
 	_, err = parser.FormatMention(name)
 	assert.ErrorIs(t, err, parser.ErrUnrepresentable)
+}
+
+// TestHeaderNeverIncludes: a comment header whose value holds "<!--" and an
+// Include, as metadata.Header would have written one before it refused
+// "<!--", publishes through ExtractMeta and CompileMarkdown without the
+// include being expanded, whether it opens the document or is stranded below
+// it. Header refuses the value regardless.
+func TestHeaderNeverIncludes(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.md"), []byte("TOPSECRET\n"), 0o600))
+
+	lib, err := stdlib.New(t.Context(), nil)
+	require.NoError(t, err)
+
+	value := "x <!-- Include: secret.md"
+	line := "<!-- Title: " + value + " -->"
+
+	for _, document := range []string{line + "\n\nbody\n", "body\n\n" + line + "\n"} {
+		meta, body, err := metadata.ExtractMeta([]byte(document), metadata.ExtractOptions{})
+		require.NoError(t, err)
+
+		actual, _, err := markdown.CompileMarkdown(t.Context(), body, lib, filepath.Join(dir, "test.md"), markdown.Options{IncludePath: dir})
+		require.NoError(t, err)
+		assert.NotContains(t, actual, "TOPSECRET", document)
+		if meta != nil {
+			assert.Equal(t, value, meta.Title)
+		}
+	}
+
+	_, err = metadata.Header(metadata.HeaderTitle, value)
+	require.ErrorIs(t, err, metadata.ErrUnrepresentable)
+	_, err = metadata.FrontMatter(map[string]any{"title": value})
+	require.ErrorIs(t, err, metadata.ErrUnrepresentable)
+
+	sanitized, err := metadata.Header(metadata.HeaderTitle, metadata.SanitizeValue(value))
+	require.NoError(t, err)
+	assert.NotContains(t, sanitized[4:], "<!--")
 }

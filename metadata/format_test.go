@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
@@ -85,6 +86,7 @@ func checkHeader(t *testing.T, value string) {
 		require.True(t,
 			strings.ContainsAny(value, "\r\n") ||
 				strings.Contains(value, "-->") || strings.Contains(value, "--!>") ||
+				strings.Contains(value, "<!--") ||
 				strings.TrimSpace(value) != value,
 			"%q was refused, but it has nothing that cannot be written", value)
 
@@ -132,7 +134,8 @@ func checkSanitizeValue(t *testing.T, value string) {
 }
 
 func TestSanitizeValue(t *testing.T) {
-	assert.Equal(t, "Report -- > <!-- Space: EVIL", SanitizeValue("Report -->\n<!-- Space: EVIL"))
+	assert.Equal(t, "Report -- > < !-- Space: EVIL", SanitizeValue("Report -->\n<!-- Space: EVIL"))
+	assert.Equal(t, "< !-- >", SanitizeValue("<!-->"))
 	assert.Equal(t, "a --! > b", SanitizeValue(" a --!> b\r\n"))
 }
 
@@ -209,7 +212,7 @@ func checkFrontMatter(t *testing.T, value string) {
 	document, err := FrontMatter(fields)
 	if err != nil {
 		require.ErrorIs(t, err, ErrUnrepresentable)
-		require.False(t, utf8.ValidString(value), "%q was refused", value)
+		require.True(t, !utf8.ValidString(value) || strings.Contains(value, "<!--"), "%q was refused", value)
 
 		return
 	}
@@ -275,8 +278,81 @@ func TestFrontMatterRefusesACycle(t *testing.T) {
 
 	list := []any{nil}
 	list[0] = list
-	_, err = FrontMatter(map[string]any{"labels": list})
+	_, err = FrontMatter(map[string]any{"properties": map[string]any{"k": list}})
 	assert.ErrorIs(t, err, ErrUnrepresentable)
+
+	// Through a pointer, the cycle never reaches a map or a list.
+	pointer := new(any)
+	*pointer = pointer
+	done := make(chan error, 1)
+	go func() {
+		_, err := FrontMatter(map[string]any{"properties": map[string]any{"k": pointer}})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, ErrUnrepresentable)
+	case <-time.After(5 * time.Second):
+		t.Fatal("FrontMatter did not return on a pointer that holds itself")
+	}
+}
+
+// A list holding the same list twice at each level nests within the depth
+// bound and is still far too many values to write.
+func TestFrontMatterRefusesTooManyValues(t *testing.T) {
+	shared := []any{"x"}
+	for range 25 {
+		shared = []any{shared, shared}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := FrontMatter(map[string]any{"properties": map[string]any{"k": shared}})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, ErrUnrepresentable)
+	case <-time.After(5 * time.Second):
+		t.Fatal("FrontMatter did not return on a list of 2^25 values")
+	}
+}
+
+// TestFrontMatterRefusesAKindItsKeyDropsSilently: front matter reads a string
+// key that holds a number as unset, and leaves out a list item or a property
+// key that is not a string, so FrontMatter refuses those rather than write a
+// document that publishes to another space or under another title.
+func TestFrontMatterRefusesAKindItsKeyDropsSilently(t *testing.T) {
+	for name, fields := range map[string]map[string]any{
+		"space number":        {"space": 123},
+		"title number":        {"title": 2024.5},
+		"title list":          {"title": []string{"a"}},
+		"emoji bool":          {"emoji": true},
+		"parents of numbers":  {"parents": []any{1}},
+		"labels map":          {"labels": map[string]any{"a": "b"}},
+		"properties int keys": {"properties": map[int]any{1: "x"}},
+		"properties any keys": {"properties": map[any]any{1: "x"}},
+		"properties list":     {"properties": []string{"a"}},
+	} {
+		_, err := FrontMatter(fields)
+		assert.ErrorIs(t, err, ErrUnrepresentable, name)
+	}
+
+	title := "t"
+	document, err := FrontMatter(map[string]any{
+		"title":      &title,
+		"labels":     "one",
+		"parents":    []any{"a", "b"},
+		"properties": map[any]any{"k": 1},
+		"space":      nil,
+	})
+	require.NoError(t, err)
+	meta, _, err := readBack(t, document, true)
+	require.NoError(t, err)
+	assert.Equal(t, "t", meta.Title)
+	assert.Equal(t, []string{"one"}, meta.Labels)
+	assert.Equal(t, []string{"a", "b"}, meta.Parents)
+	assert.Equal(t, map[string]any{"k": 1}, meta.Properties)
 }
 
 // A map with keys that are not strings, as yaml.v2 decodes one, is written
