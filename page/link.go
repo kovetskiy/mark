@@ -35,6 +35,13 @@ type LinkResolver struct {
 	// that names no space looks; Filename is the linked file's own.
 	Extract metadata.ExtractOptions
 
+	// ReadMeta, when set, reads a linked document's metadata in place of
+	// metadata.ExtractMeta, and is given Extract with Filename set. It is for a
+	// caller whose documents take their title or parents from more than their
+	// own headers -- from where they sit, under --parents-from-path -- so that a
+	// link names the page the linked document is published as.
+	ReadMeta func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error)
+
 	// SearchDirs are tried after Base, and exist for links written inside an
 	// included fragment. Such a link is written from where the fragment lives,
 	// not from where it is included, so the fragment's own directory has to be
@@ -154,6 +161,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 		r.API, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.Extract,
+		r.ReadMeta,
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
@@ -252,8 +260,13 @@ func resolveLink(
 	bases []string,
 	link markdownLink,
 	opts metadata.ExtractOptions,
+	readMeta func([]byte, metadata.ExtractOptions) (*metadata.Meta, []byte, error),
 ) (string, *unresolved, error) {
 	var result string
+
+	if readMeta == nil {
+		readMeta = metadata.ExtractMeta
+	}
 
 	if len(link.filename) > 0 {
 		filepath, why := findLinkTarget(bases, link.filename)
@@ -280,7 +293,7 @@ func resolveLink(
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
 		opts.Filename = filepath
-		linkMeta, linkBody, err := metadata.ExtractMeta(linkContents, opts)
+		linkMeta, linkBody, err := readMeta(linkContents, opts)
 		if err != nil {
 			log.Error().
 				Err(err).
