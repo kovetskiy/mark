@@ -1,6 +1,10 @@
 package metadata
 
 import (
+	"go/ast"
+	goparser "go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -297,4 +301,37 @@ func TestFrontMatterKeysAreTheOnesMarkReads(t *testing.T) {
 		require.NoError(t, err, key)
 		assert.NotEqual(t, empty, meta, "front matter key %q is not read by mark", key)
 	}
+}
+
+// TestFrontMatterKeysCoverExtractMeta is the other direction: every key
+// ExtractMeta's front matter switch reads is one FrontMatter accepts, so a key
+// added there and not to frontMatterKeys fails here rather than being refused
+// as unknown.
+func TestFrontMatterKeysCoverExtractMeta(t *testing.T) {
+	file, err := goparser.ParseFile(token.NewFileSet(), "metadata.go", nil, 0)
+	require.NoError(t, err)
+
+	var read []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		sw, ok := n.(*ast.SwitchStmt)
+		if !ok {
+			return true
+		}
+		if tag, ok := sw.Tag.(*ast.Ident); !ok || tag.Name != "normKey" {
+			return true
+		}
+		for _, stmt := range sw.Body.List {
+			for _, expr := range stmt.(*ast.CaseClause).List {
+				lit, ok := expr.(*ast.BasicLit)
+				require.True(t, ok, "a case in ExtractMeta's front matter switch is not a string literal")
+				key, err := strconv.Unquote(lit.Value)
+				require.NoError(t, err)
+				read = append(read, key)
+			}
+		}
+		return false
+	})
+
+	require.NotEmpty(t, read, "ExtractMeta's switch on normKey was not found")
+	assert.ElementsMatch(t, frontMatterKeys(), read)
 }
