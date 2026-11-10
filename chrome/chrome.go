@@ -48,6 +48,8 @@ func AllocatorOptions() []chromedp.ExecAllocatorOption {
 		chromedp.Flag("proxy-bypass-list", "<-loopback>"),
 
 		// WebRTC can send UDP around a proxy; keep it to the proxy as well.
+		// Headless Chrome reads the first switch, and a full Chrome the second.
+		chromedp.Flag("webrtc-ip-handling-policy", "disable_non_proxied_udp"),
 		chromedp.Flag("force-webrtc-ip-handling-policy", "disable_non_proxied_udp"),
 	}
 }

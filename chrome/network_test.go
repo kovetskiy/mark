@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -141,4 +142,45 @@ func TestPageLoadsNothingFromTheNetwork(t *testing.T) {
 	assert.Equal(t, "settled", settled)
 
 	assert.Empty(t, recorder.requests(), "the browser made a request while drawing")
+}
+
+// TestPageSendsNoUDP: WebRTC sends UDP of its own rather than through the
+// proxy, so a page's peer connection is kept from sending any, even to a STUN
+// server named by IP literal.
+func TestPageSendsNoUDP(t *testing.T) {
+	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	var received atomic.Int32
+
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			if _, _, err := conn.ReadFrom(buf); err != nil {
+				return
+			}
+
+			received.Add(1)
+		}
+	}()
+
+	s, err := startSessionWith(t.Context(), withoutLocalNetworkChecks)
+	require.NoError(t, err)
+	t.Cleanup(s.cancel)
+
+	script := fmt.Sprintf(`new Promise(resolve => {
+		const pc = new RTCPeerConnection({iceServers: [{urls: "stun:%s"}]});
+		pc.createDataChannel("x");
+		pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") resolve("gathered"); };
+		pc.createOffer().then(o => pc.setLocalDescription(o));
+		setTimeout(() => resolve("waited"), 3000);
+	})`, conn.LocalAddr().String())
+
+	require.NoError(t, chromedp.Do(s.ctx, chromedp.Navigate("data:text/html,<p>webrtc</p>")))
+
+	_, err = chromedp.Run(s.ctx, chromedp.Evaluate[string](script, chromedp.EvalAwaitPromise))
+	require.NoError(t, err)
+
+	assert.Zero(t, received.Load(), "the browser sent UDP")
 }
