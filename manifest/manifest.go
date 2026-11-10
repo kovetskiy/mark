@@ -336,7 +336,8 @@ type Store struct {
 	// its entry is recorded under in place of runGlob; "" is none.
 	documentScopes map[string]string
 
-	// scopes holds every non-empty scope in documentScopes.
+	// scopes holds every scope the run publishes documents of, as it is
+	// recorded.
 	scopes map[string]bool
 
 	// warningsFor gives the collector of the document a key names; see
@@ -626,6 +627,27 @@ func (s *Store) recordGlob(path string) string {
 	return s.runGlob
 }
 
+// documentScopePrefix starts the pattern a document scope is recorded under.
+// Key never leaves "//" in a path or a pattern, so no --files pattern, and no
+// path recorded under its own, can be one.
+const documentScopePrefix = "documents://"
+
+// documentScope is what an entry of the documents of scope is recorded under;
+// none for no scope.
+func documentScope(scope string) string {
+	if scope == "" {
+		return ""
+	}
+
+	return documentScopePrefix + scope
+}
+
+// isDocumentScope reports whether an entry recorded under glob belongs to a
+// document scope, this run's or another's, rather than to a --files pattern.
+func isDocumentScope(glob string) bool {
+	return strings.HasPrefix(glob, documentScopePrefix)
+}
+
 // SetRunDocuments adds to the run's paths ones that no --files pattern
 // matched, such as documents a library caller handed over from memory, each
 // recorded under scope rather than the run's pattern. Call it after
@@ -639,28 +661,37 @@ func (s *Store) recordGlob(path string) string {
 // written before patterns were recorded -- and are found again only by
 // their own path.
 //
-// A scope that equals a --files pattern is that pattern's: keep the two
-// apart unless they are meant to be one.
+// A scope is recorded as "documents://" and its name, which no --files
+// pattern can be, so a run of files never covers a document's entry, nor a
+// run of documents a file's, partial or not.
 func (s *Store) SetRunDocuments(scope string, paths []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	glob := s.addScope(scope)
 	if s.documentScopes == nil {
 		s.documentScopes = make(map[string]string, len(paths))
-	}
-
-	if scope != "" {
-		if s.scopes == nil {
-			s.scopes = map[string]bool{}
-		}
-		s.scopes[scope] = true
 	}
 
 	for _, path := range paths {
 		key := Key(path)
 		s.runFiles[key] = true
-		s.documentScopes[key] = scope
+		s.documentScopes[key] = glob
 	}
+}
+
+// addScope notes scope as one of the run's and returns what it is recorded
+// under. Called with s.mu held.
+func (s *Store) addScope(scope string) string {
+	glob := documentScope(scope)
+	if glob != "" {
+		if s.scopes == nil {
+			s.scopes = map[string]bool{}
+		}
+		s.scopes[glob] = true
+	}
+
+	return glob
 }
 
 // scopeOf is the pattern path, a key, is recorded under this run, but for
@@ -674,21 +705,21 @@ func (s *Store) scopeOf(path string) string {
 	return s.recordGlob(path)
 }
 
-// isRunScope reports whether glob is the scope of some of this run's
-// documents. Called with s.mu held.
-func (s *Store) isRunScope(glob string) bool {
-	return s.scopes[glob]
+// coversDocument is covers for an entry recorded under a document scope: one
+// of the run's scopes. Called with s.mu held.
+func (s *Store) coversDocument(path string, entry Entry) bool {
+	return s.scopes[entry.Glob]
 }
 
 // sameScope reports whether entry belongs where path does: under the scope
-// of the document path names, or, for a file, under no scope of the run's
-// documents. Called with s.mu held.
+// of the document path names, or, for a file, under no document scope.
+// Called with s.mu held.
 func (s *Store) sameScope(path string, entry Entry) bool {
 	if scope, document := s.documentScopes[path]; document {
 		return scope != "" && entry.Glob == scope
 	}
 
-	return !s.isRunScope(entry.Glob)
+	return !isDocumentScope(entry.Glob)
 }
 
 // SetWarningsFor has what Record finds wrong with a document added to the
@@ -1236,6 +1267,12 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 					"; if %s moved to %s, name both paths in --files or --files-from to follow the move",
 					owner, path,
 				)
+				if isDocumentScope(ownerEntry.Glob) {
+					hint = fmt.Sprintf(
+						"; if %s moved to %s, name the key %s beside the documents to follow the move",
+						owner, path, owner,
+					)
+				}
 			}
 
 			s.warnShared(spaceKey, pageID, owner, path, hint)
@@ -1272,7 +1309,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	glob := s.scopeOf(path)
 	if _, document := s.documentScopes[path]; s.partial && !document {
 		switch {
-		case ok && existing.Glob != "":
+		case ok && existing.Glob != "" && !isDocumentScope(existing.Glob):
 			glob = existing.Glob
 		case movedOK && matches(moved.Glob, path):
 			// Only a pattern the new path still lies in: a file moved into
@@ -1344,8 +1381,8 @@ func (s *Store) covers(path string, entry Entry) bool {
 		return false
 	}
 
-	if s.isRunScope(entry.Glob) {
-		return true
+	if isDocumentScope(entry.Glob) {
+		return s.coversDocument(path, entry)
 	}
 
 	if !s.partial {
@@ -1754,10 +1791,11 @@ func (s *Store) Published(spaceKey string) int {
 	return len(state.seen)
 }
 
-// PublishedUnder is Published counting only the paths this run records under
-// glob: its --files pattern, or a scope SetRunDocuments gave. A run whose
-// documents publish to a space says nothing about its files' pages there,
-// nor the other way round.
+// PublishedUnder is Published counting only the pages published this run
+// on the side of an entry recorded under glob: by the documents of its scope
+// for a document scope, and by the run's files for any other glob. A run whose
+// documents publish to a space says nothing about its files' pages there, nor
+// one scope's documents about another's.
 func (s *Store) PublishedUnder(spaceKey, glob string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1767,9 +1805,11 @@ func (s *Store) PublishedUnder(spaceKey, glob string) int {
 		return 0
 	}
 
+	document := isDocumentScope(glob)
 	published := 0
 	for path := range state.seen {
-		if s.scopeOf(path) == glob {
+		scope, isDocument := s.documentScopes[path]
+		if document && scope == glob || !document && !isDocument {
 			published++
 		}
 	}
