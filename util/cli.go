@@ -334,6 +334,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 			Mode: mark.ModeConfig{
 				CompileOnly: cmd.Bool("compile-only"),
 				DryRun:      cmd.Bool("dry-run"),
+				Offline:     creds.Offline,
 			},
 			Update: mark.UpdateConfig{
 				MinorEdit:        cmd.Bool("minor-edit"),

@@ -77,12 +77,18 @@ request gate can check links without publishing anything:
 mark publish --compile-only --check-links all --files "docs/**/*.md"
 ```
 
-Some of the answers still come from Confluence in either mode. A relative link
-to a document is rewritten to that document's page, which is looked up, and a
-`confluence` link is a lookup too; without a Confluence to ask, a document with
-either kind of link fails on the connection rather than on the link. A page the
-run itself would publish is never created by a dry run or a compile, so an
-`ac:` link to it counts as found rather than being looked for.
+Some of the answers come from Confluence. A relative link to a document is
+rewritten to that document's page, which is looked up, and a `confluence` link
+is a lookup too. A `--compile-only` run given neither `--url` nor `--base-url`
+has no Confluence to ask: a relative link to a document is checked against the
+files and left as written, and an `ac:` link fails the `confluence` check, as
+there is nothing to look it up in. Given a Confluence, a compile looks both up,
+so that what it prints is what a real run would publish. In a Go program this
+is `ModeConfig.Offline`.
+
+A page the run itself would publish is never created by a dry run or a
+compile, so an `ac:` link to it, or to a parent a real run would create for
+it, counts as found rather than being looked for.
 
 | Value | Checks |
 | --- | --- |
@@ -127,8 +133,8 @@ mark publish --check-links internal \
      --files "build/docs/**/*.md"
 ```
 
-A file anywhere in the staging directory that the link would have found without
-the roots still comes first, since that copy is the one that publishes, with
+A file the link would have found without the roots -- beside the staged
+document, or beside a fragment it includes -- still comes first, since that copy is the one that publishes, with
 whatever headers the build gave it. A link inside an included fragment that was
 staged is looked for under the source tree in the same way. The two are given
 together, each must be a directory, and a document outside the staged root is
@@ -147,7 +153,9 @@ taken for whatever page bears the title its name or heading gives. With
 `--links-source-root-check-only` (`LinkConfig.SourceRootCheckOnly`) the source
 tree answers the check alone: a link to a file found only there passes
 `--check-links internal` and is left as written, and a link to a staged file is
-rewritten as before.
+rewritten as before. Left as written, the link is a relative path that leads
+nowhere in Confluence, so each is a `source-only-link` warning of its document
+in the [report](publishing.md#reporting-what-a-run-did).
 
 One case is reported but does not fail: a link to a document that exists and has
 a title, but is not in the space and is not being published by this run either.

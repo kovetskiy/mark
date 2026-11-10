@@ -104,6 +104,14 @@ func (c ConnectionConfig) api(opts confluence.Options) *confluence.API {
 type ModeConfig struct {
 	CompileOnly bool
 	DryRun      bool
+
+	// Offline says a compile has no Confluence to ask, and requires
+	// CompileOnly. A relative link to another document is then checked against
+	// the files alone and left as written, rather than rewritten to the page
+	// found for it, and an ac: link fails the confluence check, which only
+	// Confluence can answer. Without it a compile looks those pages up, so
+	// that what it prints is what a real run would publish.
+	Offline bool
 }
 
 // readOnly reports whether a run in this mode must leave Confluence untouched. A compile
@@ -154,8 +162,8 @@ type LinkConfig struct {
 	// since that copy is the one that publishes.
 	//
 	// Both or neither: empty resolves links against the document's own
-	// directory alone. Each must be an existing directory, and every document
-	// published must be under StagedRoot. Relative paths are taken from the
+	// directory alone. Each must be an existing directory, and every file Run
+	// is given, Sync: false or not, must be under StagedRoot. Relative paths are taken from the
 	// working directory.
 	StagedRoot string
 	SourceRoot string
@@ -396,6 +404,12 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 		return page.LinkChecks{}, err
 	}
 
+	// Every other mode writes to Confluence, or reads it to say what it would
+	// write.
+	if c.Mode.Offline && !c.Mode.CompileOnly {
+		return page.LinkChecks{}, errors.New("Mode.Offline requires Mode.CompileOnly: only a compile can run without Confluence")
+	}
+
 	// A page with no Content-Appearance of its own takes this one, and one
 	// that does not parse would fail every such page in turn.
 	if _, err := metadata.ParseContentAppearance(string(c.Page.ContentAppearance)); err != nil {
@@ -417,8 +431,10 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 }
 
 // Validate checks the settings each document is published with, as Run and
-// NewPublisher do before anything else, without a connection or any files. A
-// link setting it refuses is a *LinkConfigError. Run checks the settings
+// NewPublisher do before anything else, without a connection or any
+// documents. It does look on disk for Links.StagedRoot and Links.SourceRoot,
+// so call it once they exist. A link setting it refuses is a
+// *LinkConfigError. Run checks the settings
 // about the run as a whole as well, which this does not.
 func (c PublishConfig) Validate() error {
 	_, err := c.prepare()
@@ -1876,6 +1892,7 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 		searchDirs,
 	)
 	resolver.CheckOnlyDirs = checkOnlyDirs
+	resolver.Offline = config.Mode.Offline
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
 	resolver.Warnings = doc.warnings
@@ -1991,6 +2008,25 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 	return found, nil
 }
 
+// notePublishes counts the pages a real run would have created for meta by
+// the time ac: links are looked up -- its own and every parent, which a real
+// run creates before it compiles the document, so whether or not the document
+// then fails -- as found. A run that previews never creates them, and an ac:
+// link to one is not missing.
+func (r *publishRun) notePublishes(meta *metadata.Meta) {
+	if meta == nil {
+		return
+	}
+
+	for _, parent := range meta.Parents {
+		r.checker.NotePublishes(meta.Space, parent)
+	}
+
+	if meta.Type == string(confluence.ContentPage) {
+		r.checker.NotePublishes(meta.Space, meta.Title)
+	}
+}
+
 // preview is the whole of a compile-only or dry run for one document: it
 // compiles the page, checks it as a real run would, and prints it or, under
 // --changes-only, says whether the page would change.
@@ -2007,6 +2043,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	}
 	previewed := found.page
 	r.claimPage(file)
+	r.notePublishes(meta)
 
 	cfg, err := config.Rendering.documentConfig(ctx, r.res, doc)
 	if err != nil {
@@ -2073,12 +2110,6 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	// likely to use.
 	if err := reportBrokenLinks(doc.resolver.Broken(), doc.warnings, config.Links.CheckLinksWarnOnly); err != nil {
 		return err
-	}
-
-	// A real run would have created the page by the time ac: links are looked
-	// up; this one never will, so an ac: link to it is not reported missing.
-	if meta != nil && meta.Type == string(confluence.ContentPage) {
-		r.checker.NotePublishes(meta.Space, meta.Title)
 	}
 
 	if status != "" {

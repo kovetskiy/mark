@@ -122,3 +122,30 @@ func TestLinksSourceRootCheckOnlyFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestCompileOnlyWithoutConfluence: given neither --url nor --base-url, a
+// compile has nothing to look a document's page up in, so a link to one is
+// checked against the files and left as written rather than failing on the
+// connection.
+func TestCompileOnlyWithoutConfluence(t *testing.T) {
+	noDefaultConfig(t)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "guide.md"),
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nGuide.\n"), 0o600))
+	document := filepath.Join(dir, "intro.md")
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Intro -->\n\nSee [the guide](./guide.md) and [x](./nowhere.md).\n"), 0o600))
+
+	_, _, err := runMark(t, "--color", "never", "publish", "--compile-only",
+		"--check-links", "internal", "--files", document)
+	require.ErrorContains(t, err, `"./nowhere.md" does not resolve: there is no such file`)
+	assert.NotContains(t, err.Error(), "./guide.md")
+
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Intro -->\n\nSee [the guide](./guide.md).\n"), 0o600))
+	out, _, err := runMark(t, "--color", "never", "publish", "--compile-only",
+		"--check-links", "internal", "--files", document)
+	require.NoError(t, err)
+	assert.Contains(t, out, `href="./guide.md"`)
+}

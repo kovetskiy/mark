@@ -59,6 +59,11 @@ type LinkResolver struct {
 	// a page guessed from it.
 	CheckOnlyDirs []string
 
+	// Offline says there is no Confluence to ask. A relative link to another
+	// document is checked against the files alone and left as written, and an
+	// ac: link, which only Confluence can answer, fails the confluence check.
+	Offline bool
+
 	// Checker decides how much is verified. Nil checks nothing.
 	Checker *LinkChecker
 
@@ -171,9 +176,16 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 
 	filename, hash, _ := strings.Cut(target, "#")
 
+	// Offline, the file is still found and read, which is the whole of the
+	// internal check; only the page lookup is skipped.
+	api := r.API
+	if r.Offline {
+		api = nil
+	}
+
 	resolved, why, err := resolveLink(
 		ctx,
-		r.API, append([]string{r.Base}, r.SearchDirs...),
+		api, append([]string{r.Base}, r.SearchDirs...),
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.Extract,
 		r.ReadMeta,
@@ -183,8 +195,12 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 	}
 
 	if why != nil && why.noFile && len(r.CheckOnlyDirs) > 0 {
-		if _, absent := findLinkTarget(r.CheckOnlyDirs, filename); absent == nil {
-			log.Debug().Msgf("link %q names a file only the check looks for; left as written", target)
+		if found, absent := findLinkTarget(r.CheckOnlyDirs, filename); absent == nil {
+			// Passes the check, and is still a relative path no page can
+			// follow, so it is said in the report rather than only logged.
+			r.Warnings.Add(report.WarningSourceOnlyLink,
+				"link %q names %s, which only the source tree holds: it is left as written, and leads nowhere in Confluence",
+				target, found)
 
 			return "", nil
 		}
@@ -239,6 +255,12 @@ func (r *LinkResolver) checkConfluenceLink(target, text string) error {
 
 	if title == "" {
 		r.note("link %q does not resolve: it names no page", target)
+
+		return nil
+	}
+
+	if r.Offline {
+		r.note("link %q cannot be checked: there is no Confluence to look page %q up in", target, title)
 
 		return nil
 	}
@@ -348,6 +370,12 @@ func resolveLink(
 		// the file is never published and the link can never lead anywhere.
 		if linkMeta.Title == "" {
 			return "", &unresolved{reason: "it has no title, so it is never published"}, nil
+		}
+
+		// No Confluence to ask: the file is a document that publishes, which
+		// is all the check needs, and the link is left as written.
+		if api == nil {
+			return "", nil, nil
 		}
 
 		result, err = getConfluenceLink(ctx, api, linkMeta.Space, linkMeta.Title)
