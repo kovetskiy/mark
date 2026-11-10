@@ -340,23 +340,8 @@ func checkPath(base, resolved, named string) error {
 // paths as it is given them; resolving one side but not the other is the bug
 // fspath.ResolveDeepest exists to prevent.
 func withinAny(path string, roots []string) bool {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-
 	for _, root := range roots {
-		absoluteRoot, err := filepath.Abs(root)
-		if err != nil {
-			continue
-		}
-
-		relative, err := filepath.Rel(absoluteRoot, absolute)
-		if err != nil {
-			continue
-		}
-
-		if relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		if _, ok := fspath.Within(root, path); ok {
 			return true
 		}
 	}
