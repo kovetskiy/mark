@@ -15,6 +15,7 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -1355,4 +1356,33 @@ func mustCloud(t *testing.T, api *confluence.API) bool {
 	require.NoError(t, err)
 
 	return cloud
+}
+
+// TestRecordWarnsBothDocumentsOfASharedPage: two documents recorded for one
+// page are each told so, through the collector the caller gives for its key.
+func TestRecordWarnsBothDocumentsOfASharedPage(t *testing.T) {
+	ctx := context.Background()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	collectors := map[string]*report.Warnings{}
+	store.SetWarningsFor(func(key string) *report.Warnings {
+		if collectors[key] == nil {
+			collectors[key] = report.NewWarnings(key)
+		}
+
+		return collectors[key]
+	})
+
+	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", "a"))
+	require.NoError(t, store.Record(ctx, "DOCS", "b.md", "1", "A", "b"))
+
+	for _, key := range []string{"a.md", "b.md"} {
+		require.Contains(t, collectors, key)
+		list := collectors[key].List()
+		require.Len(t, list, 1, key)
+		assert.Equal(t, report.WarningSharedPage, list[0].Kind)
+		assert.Equal(t, key, list[0].File)
+		assert.Contains(t, list[0].Message, "a.md and b.md both publish to page 1")
+	}
 }

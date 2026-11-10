@@ -113,6 +113,11 @@ func (h *Hierarchy) Has(file string) bool {
 	return h != nil && h.files[cleanPath(file)]
 }
 
+// Root is the directory the files are laid out under, cleaned.
+func (h *Hierarchy) Root() string {
+	return h.root
+}
+
 // Outside lists the files of the run that the root does not cover. The path of
 // such a file says nothing about where its page goes, which is worth knowing
 // when the root was given by hand.

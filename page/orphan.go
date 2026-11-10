@@ -161,7 +161,28 @@ func HandleOrphans(
 	orphans []Orphan,
 	dryRun bool,
 ) ([]string, error) {
-	var handled []string
+	handled, _, err := HandleOrphansKeeping(ctx, api, action, orphans, dryRun)
+
+	return handled, err
+}
+
+// HandleOrphansKeeping is HandleOrphans that also says, by path, why each page
+// it left alone was kept, for a caller that reports those too.
+func HandleOrphansKeeping(
+	ctx context.Context,
+	api *confluence.API,
+	action report.OnOrphan,
+	orphans []Orphan,
+	dryRun bool,
+) (handled []string, kept map[string]string, err error) {
+	keep := func(orphan Orphan, reason string) {
+		log.Warn().Msgf("page %q is left alone: %s", orphan.Title, reason)
+
+		if kept == nil {
+			kept = map[string]string{}
+		}
+		kept[orphan.Path] = reason
+	}
 
 	for _, orphan := range orphans {
 		if action == report.OnOrphanReport {
@@ -176,7 +197,7 @@ func HandleOrphans(
 		if errors.Is(err, confluence.ErrNotFound) {
 			gone, goneErr := pageGone(ctx, api, orphan.PageID)
 			if goneErr != nil {
-				return handled, goneErr
+				return handled, kept, goneErr
 			}
 
 			// Deleted by hand already: what the action wanted is done, and
@@ -189,14 +210,11 @@ func HandleOrphans(
 			}
 		}
 		if err != nil {
-			return handled, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
+			return handled, kept, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
 		}
 
 		if len(children) > 0 {
-			log.Warn().Msgf(
-				"page %q has %d child page(s) and is left alone: removing it would take them too",
-				orphan.Title, len(children),
-			)
+			keep(orphan, fmt.Sprintf("it has %d child page(s), which removing it would take too", len(children)))
 
 			continue
 		}
@@ -207,14 +225,11 @@ func HandleOrphans(
 		// every page inside them, along with it.
 		folders, err := api.HasChildFolders(ctx, orphan.PageID)
 		if err != nil {
-			return handled, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
+			return handled, kept, fmt.Errorf("unable to list children of %s: %w", orphan.PageID, err)
 		}
 
 		if folders {
-			log.Warn().Msgf(
-				"page %q has child folder(s) and is left alone: removing it would take them too",
-				orphan.Title,
-			)
+			keep(orphan, "it has child folder(s), which removing it would take too")
 
 			continue
 		}
@@ -234,13 +249,13 @@ func HandleOrphans(
 			err = api.DeletePage(ctx, orphan.PageID)
 		}
 		if err != nil {
-			return handled, fmt.Errorf("unable to %s page %q: %w", action, orphan.Title, err)
+			return handled, kept, fmt.Errorf("unable to %s page %q: %w", action, orphan.Title, err)
 		}
 
 		handled = append(handled, orphan.Path)
 	}
 
-	return handled, nil
+	return handled, kept, nil
 }
 
 // pageGone reports whether Confluence no longer has the page. Asked of the page

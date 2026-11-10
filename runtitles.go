@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/page"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
 
@@ -17,6 +18,11 @@ type runTitles struct {
 
 	// documents maps a title's key to the files declaring it; nil until read.
 	documents map[string][]string
+
+	// warningsFor gives a document's collector, for a title declared by more
+	// than one; nil only logs. warned holds the titles already said so about.
+	warningsFor func(file string) *report.Warnings
+	warned      map[string]bool
 }
 
 func runTitleKey(space, kind, title string) string {
@@ -56,12 +62,29 @@ func (r *runTitles) declaredBy(space, kind, title string) (string, bool) {
 		r.index()
 	}
 
-	documents := r.documents[runTitleKey(space, kind, title)]
-	if len(documents) > 1 {
-		log.Warn().Msgf(
-			"parent %q is declared by %d documents (%s); not following any of them",
-			title, len(documents), strings.Join(documents, ", "),
-		)
+	key := runTitleKey(space, kind, title)
+	documents := r.documents[key]
+	if len(documents) > 1 && !r.warned[key] {
+		if r.warned == nil {
+			r.warned = map[string]bool{}
+		}
+		r.warned[key] = true
+
+		// Said against each, since any of them is the one to retitle.
+		for _, file := range documents {
+			var warnings *report.Warnings
+			if r.warningsFor != nil {
+				warnings = r.warningsFor(file)
+			}
+			if warnings == nil {
+				warnings = report.NewWarnings(file)
+			}
+
+			warnings.Add(report.WarningPlacement,
+				"parent %q is declared by %d documents (%s); a document under it follows none of them",
+				title, len(documents), strings.Join(documents, ", "),
+			)
+		}
 	}
 	if len(documents) != 1 {
 		return "", false

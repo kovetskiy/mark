@@ -238,7 +238,7 @@ func TestOnOrphanDryRunActsOnNothing(t *testing.T) {
 // TestOnOrphanLeavesAPageWithChildren: trashing a page takes its children with
 // it, and those may be pages nobody in this repository ever wrote.
 func TestOnOrphanLeavesAPageWithChildren(t *testing.T) {
-	server, id := orphanFixtureWithChild(t)
+	server, id, _ := orphanFixtureWithChild(t)
 
 	page := server.Page(id)
 	require.NotNil(t, page)
@@ -246,7 +246,9 @@ func TestOnOrphanLeavesAPageWithChildren(t *testing.T) {
 		"a page holding children must be left alone")
 }
 
-func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
+// orphanFixtureWithChild returns the server, the orphan's page id, and the
+// json report of the run that found it orphaned.
+func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string, string) {
 	t.Helper()
 
 	server := confluencetest.New(t)
@@ -288,9 +290,28 @@ func orphanFixtureWithChild(t *testing.T) (*confluencetest.Server, string) {
 	server.AddPage("DOCS", "Written by hand", "page", gone.ID)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+
+	var out bytes.Buffer
+	config.Output = &out
+	config.Report.OutputFormat = report.FormatJSON
 	require.NoError(t, Run(context.Background(), config))
 
-	return server, gone.ID
+	return server, gone.ID, out.String()
+}
+
+// TestOnOrphanReportsAPageItLeftAlone: a page --on-orphan delete did not
+// remove is in the report, as left where it is and why, not missing from it.
+func TestOnOrphanReportsAPageItLeftAlone(t *testing.T) {
+	_, id, out := orphanFixtureWithChild(t)
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got.Orphans, 1)
+
+	orphan := got.Orphans[0]
+	assert.Equal(t, id, orphan.PageID)
+	assert.Equal(t, report.OnOrphanReport, orphan.Action)
+	assert.Equal(t, "it has 1 child page(s), which removing it would take too", orphan.Reason)
 }
 
 // TestOnOrphanLeavesEverythingWhenNothingPublished pins the property rather

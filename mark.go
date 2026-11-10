@@ -509,6 +509,8 @@ func Run(ctx context.Context, config Config) (err error) {
 			results.AddError(err.Error())
 		}
 
+		pub.flushWarnings()
+
 		if outputFormat != report.FormatURL {
 			results.SetSources(sourcePath)
 		}
@@ -637,12 +639,39 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.ancestryTracker = ancestryTracker
 	pub.deferrals = deferrals
 	pub.warnings = map[string]*report.Warnings{}
+
+	if tracker != nil {
+		// The manifest knows a document by its key, which is how it says
+		// which document a warning of its is about.
+		byKey := make(map[string]string, len(files))
+		for _, file := range files {
+			byKey[manifest.Key(file)] = file
+		}
+		tracker.SetWarningsFor(func(key string) *report.Warnings {
+			if file, ok := byKey[key]; ok {
+				return pub.warningsFor(file)
+			}
+
+			return nil
+		})
+	}
+
+	if hierarchy != nil {
+		for _, file := range hierarchy.Outside() {
+			pub.warningsFor(file).Add(report.WarningPlacement,
+				"it is outside --parents-from-path-root %q, so its path says nothing about its parents",
+				hierarchy.Root())
+		}
+	}
 	pub.results = results
 	pub.hierarchy = hierarchy
 	pub.noOverwrite = config.Tracking.NoOverwrite
 	pub.outputFormat = outputFormat
 	// Read only once a parent is missing.
-	pub.titles = &runTitles{config: config.PublishConfig, files: files, hierarchy: hierarchy}
+	pub.titles = &runTitles{
+		config: config.PublishConfig, files: files, hierarchy: hierarchy,
+		warningsFor: pub.warningsFor,
+	}
 
 	// Pages that asked for a position among their siblings, collected as they
 	// publish and applied once at the end -- the order of one page only means
@@ -1467,13 +1496,7 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	// moves with the remote would not survive the round trip it exists for.
 	sourceHash := fingerprint.SHA1(string(source))
 
-	warnings := r.warnings[file]
-	if warnings == nil {
-		warnings = report.NewWarnings(file)
-		if r.warnings != nil {
-			r.warnings[file] = warnings
-		}
-	}
+	warnings := r.warningsFor(file)
 	warnings.Reread()
 	warnings.MapLines(lineOf)
 
@@ -1524,8 +1547,32 @@ func (r *publishRun) warnMissingLinks(links []page.MissingLink) {
 			}
 
 			warnings.Add(report.WarningUnresolvedLink, "%s", link.Message())
-			r.results.SetWarnings(source, warnings.List())
 		}
+	}
+}
+
+// warningsFor is the collector of file's warnings: the run's own when it keeps
+// one, which a Publisher does not, or else a new one.
+func (r *publishRun) warningsFor(file string) *report.Warnings {
+	if warnings, ok := r.warnings[file]; ok {
+		return warnings
+	}
+
+	warnings := report.NewWarnings(file)
+	if r.warnings != nil {
+		r.warnings[file] = warnings
+	}
+
+	return warnings
+}
+
+// flushWarnings puts each document's warnings as they stand into its line of
+// the report. Some are found after that line is written -- an ac: link checked
+// at the end, a page that could not be ordered -- so the report is brought up
+// to date once, on the way out, however the run ends.
+func (r *publishRun) flushWarnings() {
+	for file, warnings := range r.warnings {
+		r.results.SetWarnings(file, warnings.List())
 	}
 }
 
@@ -1636,6 +1683,7 @@ func (r *publishRun) linkResolver(doc *document) *page.LinkResolver {
 	)
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
+	resolver.Warnings = doc.warnings
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
 		// The hierarchy places only the run's own files. Another is published
 		// by a run that lays out its own, so its headers are all it says here.
@@ -2279,6 +2327,7 @@ func (r *publishRun) applySettings(ctx context.Context, doc *document, dest *des
 			ParentID: page.ParentIDFor(target, dest.parent),
 			Title:    target.Title,
 			Order:    *meta.Order,
+			Warnings: doc.warnings,
 		}
 	}
 

@@ -107,12 +107,29 @@ func handleOrphans(
 					space, len(candidates),
 				)
 
+				if !config.Mode.readOnly() {
+					for _, candidate := range candidates {
+						reportKept(results, candidate, fmt.Sprintf(
+							"nothing was published in space %q in this run", space,
+						))
+					}
+				}
+
 				continue
 			}
 
-			handled, err = page.HandleOrphans(ctx, api, action, candidates, config.Mode.readOnly())
+			var kept map[string]string
+			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, candidates, config.Mode.readOnly())
 			if err != nil {
 				return err
+			}
+
+			if !config.Mode.readOnly() {
+				for _, candidate := range candidates {
+					if reason, ok := kept[candidate.Path]; ok {
+						reportKept(results, candidate, reason)
+					}
+				}
 			}
 		}
 
@@ -140,4 +157,13 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// reportKept records an orphan --on-orphan asked to remove that was left where
+// it is, and why. It stays in the manifest, so a later run finds it again.
+func reportKept(results *report.Report, candidate page.Orphan, reason string) {
+	results.AddOrphan(report.Orphan{
+		File: candidate.Path, PageID: candidate.PageID, Title: candidate.Title,
+		Action: report.OnOrphanReport, Reason: reason,
+	})
 }

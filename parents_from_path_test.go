@@ -2,6 +2,7 @@ package mark
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -998,4 +1000,35 @@ func TestLinkToADocumentOutsideTheRunKeepsItsHeaders(t *testing.T) {
 	// The page has a URL by now, so the link is to its tiny link under it.
 	tiny := link[strings.Index(link, "/x/"):]
 	assert.Contains(t, bodyOfPageTitled(t, server, "A"), tiny+`"`)
+}
+
+// TestAFileOutsideTheRootIsAPlacementWarning: a file the root does not cover
+// has nothing said about its parents by its path, which is a warning of that
+// document in the report, not only a line in the log.
+func TestAFileOutsideTheRootIsAPlacementWarning(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "in"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "out"), 0o755))
+	writeFile(t, filepath.Join(dir, "in"), "a.md", space+"<!-- Title: A -->\n\nA.\n")
+	writeFile(t, filepath.Join(dir, "out"), "b.md", space+"<!-- Title: B -->\n\nB.\n")
+
+	var out strings.Builder
+	runHierarchy(t, dir, func(c *Config) {
+		c.ParentsFromPathRoot = filepath.Join(dir, "in")
+		c.Output = &out
+		c.Report.OutputFormat = report.FormatJSON
+	})
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &got))
+
+	warned := map[string][]report.Warning{}
+	for _, page := range got.Pages {
+		warned[filepath.Base(page.File)] = page.WarningDetails
+	}
+
+	assert.Empty(t, warned["a.md"])
+	require.Len(t, warned["b.md"], 1, out.String())
+	assert.Equal(t, report.WarningPlacement, warned["b.md"][0].Kind)
+	assert.Contains(t, warned["b.md"][0].Message, "outside --parents-from-path-root")
 }

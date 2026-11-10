@@ -283,7 +283,8 @@ func EnsureFolderAncestry(
 				if folder == nil {
 					// Recorded, and really not there any more. Fall through and
 					// create it again.
-					log.Warn().Msgf("folder %q was recorded as %s, which no longer exists", title, id)
+					options.Warnings.Add(report.WarningMissingPage,
+						"folder %q was recorded as %s, which no longer exists; it will be created again", title, id)
 				} else {
 					log.Info().Msgf(
 						"folder %q was renamed to %q; using it rather than creating another",

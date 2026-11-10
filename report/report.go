@@ -114,6 +114,10 @@ type Orphan struct {
 	// Action is the --on-orphan action taken, one of the OnOrphan values;
 	// OnOrphanReport means the page was left where it is.
 	Action OnOrphan `json:"action"`
+
+	// Reason says why a page --on-orphan asked to archive or delete was left
+	// where it is instead, with Action OnOrphanReport.
+	Reason string `json:"reason,omitempty"`
 }
 
 // OnOrphan is what to do about a page whose source file is gone.
@@ -402,7 +406,9 @@ func (r *Report) writeGitHub(w io.Writer) error {
 
 	for _, orphan := range r.Orphans {
 		message := fmt.Sprintf("page %q has no source file", orphan.Title)
-		if orphan.Action != OnOrphanReport {
+		if orphan.Reason != "" {
+			message = fmt.Sprintf("page %q has no source file and is left alone: %s", orphan.Title, orphan.Reason)
+		} else if orphan.Action != OnOrphanReport {
 			message = fmt.Sprintf("page %q was %sd: its source file is gone", orphan.Title, orphan.Action)
 		}
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -166,10 +167,19 @@ func TestFolderAncestryRecreatesAFolderThatIsReallyGone(t *testing.T) {
 
 	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
 
-	parent, err := EnsureFolderAncestry(ctx, api, "DOCS", folders, &anchorID, AncestryOptions{FolderCache: NewFolderCache(), Folders: tracker})
+	warnings := report.NewWarnings("docs/a.md")
+	parent, err := EnsureFolderAncestry(ctx, api, "DOCS", folders, &anchorID, AncestryOptions{
+		FolderCache: NewFolderCache(), Folders: tracker, Warnings: warnings,
+	})
 
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, "Manuals-really-gone", parent.Title)
 	assert.Len(t, server.Folders(), 1)
+
+	// And the document is told, as a missing page of its own.
+	list := warnings.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, report.WarningMissingPage, list[0].Kind)
+	assert.Contains(t, list[0].Message, `folder "Manuals-really-gone" was recorded as 9999, which no longer exists`)
 }

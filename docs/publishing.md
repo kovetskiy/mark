@@ -171,7 +171,7 @@ A `kind` is one of:
 
 | kind | what it is |
 | --- | --- |
-| `unresolved-link` | a link that does not resolve, under `--check-links-warn-only`; an `ac:` link is checked once the whole run has published, and listed against every document that holds it |
+| `unresolved-link` | a link that does not resolve, under `--check-links-warn-only`; an `ac:` link is checked once the whole run has published, and listed against every document that holds it. A link to a page nothing will publish -- in a dry run, or still missing on the second pass -- is one whenever `--check-links` covers internal links |
 | `unknown-key` | a front matter key mark does not read: another tool's, or a misspelled setting |
 | `ignored-value` | a value its front matter key cannot hold, such as a number among labels, dropped |
 | `stranded-header` | a header below the opening comments, published as text rather than applied |
@@ -181,8 +181,9 @@ A `kind` is one of:
 | `column-widths` | a `Column-Widths` comment that was not applied |
 | `inline-comment` | a comment `--preserve-comments` could not keep |
 | `include` | an include in a fragment that now resolves beside the fragment, not the document |
-| `placement` | a page found outside its declared parents, moved or left where it is |
-| `missing-page` | a page the manifest recorded that no longer exists |
+| `placement` | a page not placed where its document asks: found outside its declared parents, outside `--parents-from-path-root`, under a parent title several documents declare, given an `Order` its parent cannot be found for, or left behind in the space it used to publish to |
+| `shared-page` | a page the manifest records for this document and another, listed against both |
+| `missing-page` | a page or folder the manifest recorded, for the document or a parent, that no longer exists |
 
 Each is also logged, and listed once even when a document is published twice in
 a run. `github` annotates a warning against its file and line; when
@@ -193,7 +194,10 @@ read. The warning then gives the source as `source`.
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the
 `--on-orphan` action taken: `report` for a page that was only reported and left
-where it is, `archive` or `delete` for one that was archived or trashed.
+where it is, `archive` or `delete` for one that was archived or trashed. A page
+`--on-orphan` would have removed but left where it is -- because it has child
+pages or folders, or because nothing was published in its space this run -- is
+`report`, with a `reason` saying why.
 
 `errors` lists what failed that was not one document's doing: `ac:` links that
 still resolve to no page once everything is published, a page manifest that
