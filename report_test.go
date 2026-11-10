@@ -189,32 +189,28 @@ func TestOutputFormatGitHubReportsOrphanActions(t *testing.T) {
 func orphanReport(t *testing.T, onOrphan report.OnOrphan, format report.Format) (string, string) {
 	t.Helper()
 
-	server := outputServer(t)
 	dir := t.TempDir()
+
+	return orphanRun(t, dir, filepath.Join(dir, "*.md"), func(config *Config) {
+		config.Tracking.OnOrphan = onOrphan
+		config.Report.OutputFormat = format
+	})
+}
+
+// orphanRun publishes keep.md and gone.md from dir under glob with tracking on
+// and the config configure leaves, removes gone.md, and returns what the second
+// run wrote together with the id of Gone's page.
+func orphanRun(t *testing.T, dir, glob string, configure func(*Config)) (string, string) {
+	t.Helper()
+
+	server := outputServer(t)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
 	writeFile(t, dir, "keep.md", outHeader+"<!-- Title: Keep -->\n\nKeep.\n")
 	writeFile(t, dir, "gone.md", outHeader+"<!-- Title: Gone -->\n\nGone.\n")
 
-	config := Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{
-				Features: []string{"mention"},
-			},
-			Output: io.Discard,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Tracking: TrackingConfig{
-			TrackPages: true,
-			OnOrphan:   onOrphan,
-		},
-		Report: ReportConfig{
-			OutputFormat: format,
-		},
-	}
+	config := publishConfig(server.URL, glob)
+	config.Tracking.TrackPages = true
+	configure(&config)
 	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
@@ -919,41 +915,27 @@ func TestSourcePathNamesTheSource(t *testing.T) {
 	assert.Contains(t, out.String(), "::error file=templates/bad.md.tmpl::")
 }
 
-// orphanSources publishes keep.md and gone.md from dir under the glob, deletes
-// gone.md, and runs again with a SourcePath that records what it is given and
-// answers with a rooted template path. It returns the github report and the
-// path SourcePath was given for the orphan.
+// orphanSources is orphanRun's github report with a SourcePath that answers
+// with a rooted template path, and the last path that SourcePath was given for
+// gone.md: the orphan's, since a report maps its pages before its orphans.
 func orphanSources(t *testing.T, dir, glob string) (string, string) {
 	t.Helper()
 
-	server := outputServer(t)
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	writeFile(t, dir, "keep.md", outHeader+"<!-- Title: Keep -->\n\nKeep.\n")
-	writeFile(t, dir, "gone.md", outHeader+"<!-- Title: Gone -->\n\nGone.\n")
-
 	var orphanPath string
-	config := publishConfig(server.URL, glob)
-	config.Tracking = TrackingConfig{TrackPages: true}
-	config.Report = ReportConfig{
-		OutputFormat: report.FormatGitHub,
-		SourcePath: func(file string) string {
-			if strings.HasSuffix(file, "gone.md") {
-				orphanPath = file
-			}
+	out, _ := orphanRun(t, dir, glob, func(config *Config) {
+		config.Report = ReportConfig{
+			OutputFormat: report.FormatGitHub,
+			SourcePath: func(file string) string {
+				if strings.HasSuffix(file, "gone.md") {
+					orphanPath = file
+				}
 
-			return "/src/templates/" + path.Base(filepath.ToSlash(file)) + ".tmpl"
-		},
-	}
-	require.NoError(t, Run(context.Background(), config))
+				return "/src/templates/" + path.Base(filepath.ToSlash(file)) + ".tmpl"
+			},
+		}
+	})
 
-	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	orphanPath = ""
-
-	var out strings.Builder
-	config.Output = &out
-	require.NoError(t, Run(context.Background(), config))
-
-	return out.String(), orphanPath
+	return out, orphanPath
 }
 
 // TestSourcePathOfAnOrphanUnderTheWorkingDirectory: an orphan is known only
