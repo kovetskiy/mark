@@ -119,6 +119,21 @@ func TestSameInstance(t *testing.T) {
 	}
 }
 
+// TestSameInstanceKeepsPasswordsOutOfErrors: its errors are printed, so a
+// password in either URL must not appear in them.
+func TestSameInstanceKeepsPasswordsOutOfErrors(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"https://user:s3cret@example.com/wiki", "https://example.com/wiki"},
+		{"https://example.com/wiki", "https://user:s3cret@example.com/wiki"},
+		{"https://user:s3cret@exa mple.com/wiki", "https://example.com/wiki"},
+		{"https://example.com/wiki", "https://user:s3cret@example.com/wiki/../x"},
+	} {
+		err := SameInstance(pair[0], pair[1])
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "s3cret")
+	}
+}
+
 // TestSameInstanceWantsABaseURL: other is a base URL. A page's own URL has a
 // longer path than the context path, so against a configured base that has one
 // it does not match; the base has to be taken from it first.
