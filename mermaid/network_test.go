@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/chromedp/chromedp"
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +17,24 @@ import (
 
 // onePixel is a PNG small enough to write into a diagram as a data: URL.
 const onePixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+// offlineEngine is a chrome engine with Chrome's own refusal, in some
+// releases, of a request to the machine it runs on turned off, as in chrome's
+// network tests: the image server listens on this machine, and what is tested
+// is that mark's options keep the browser from every host. The features
+// chromedp turns off are repeated, since a flag given twice is replaced.
+func offlineEngine(t *testing.T) *Engine {
+	t.Helper()
+
+	e, err := NewEngine(EngineChrome)
+	require.NoError(t, err)
+
+	e.extraOptions = []chromedp.ExecAllocatorOption{chromedp.Flag("disable-features",
+		"Translate,BlinkGenPropertyTrees,LocalNetworkAccessChecks")}
+	t.Cleanup(e.Close)
+
+	return e
+}
 
 // imageServer counts the requests that reach it.
 func imageServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
@@ -41,13 +60,14 @@ func imageShape(src string) string {
 // so the diagram fails with an error that names the URL and the reason.
 func TestImageShapeWithARemoteImageSaysWhy(t *testing.T) {
 	server, requests := imageServer(t)
+	offline := offlineEngine(t)
 
 	for _, output := range []imageformat.Format{imageformat.PNG, imageformat.SVG} {
 		for _, url := range []string{
 			server.URL + "/shape.png",
 			strings.Replace(server.URL, "127.0.0.1", "localhost", 1) + "/shape.png",
 		} {
-			_, err := engine.Render(context.Background(), "remote", []byte(imageShape(url)), Options{Output: output})
+			_, err := offline.Render(context.Background(), "remote", []byte(imageShape(url)), Options{Output: output})
 			require.Error(t, err, url)
 			require.ErrorIs(t, err, chrome.ErrNetworkUnavailable)
 			assert.Contains(t, err.Error(), url)
@@ -63,22 +83,23 @@ func TestImageShapeWithARemoteImageSaysWhy(t *testing.T) {
 // while an SVG, which keeps the address for whoever opens it, is published.
 func TestImageLabelWithARemoteImage(t *testing.T) {
 	server, requests := imageServer(t)
+	offline := offlineEngine(t)
 
 	diagram := []byte("flowchart TD\n A[\"<img src='" + server.URL + "/label.png'> label\"]\n")
 
-	_, err := engine.Render(context.Background(), "remote", diagram, Options{})
+	_, err := offline.Render(context.Background(), "remote", diagram, Options{})
 	require.ErrorIs(t, err, chrome.ErrNetworkUnavailable)
 	assert.Contains(t, err.Error(), server.URL+"/label.png")
 	assert.Contains(t, err.Error(), "--mermaid-output=svg")
 
-	svg, err := engine.Render(context.Background(), "remote", diagram, Options{Output: imageformat.SVG})
+	svg, err := offline.Render(context.Background(), "remote", diagram, Options{Output: imageformat.SVG})
 	require.NoError(t, err)
 	assert.Contains(t, string(svg.FileBytes), server.URL+"/label.png")
 
 	assert.Zero(t, requests.Load(), "the browser should have requested nothing")
 
 	// The engine is still good for the next diagram.
-	_, err = engine.Render(context.Background(), "after", []byte("graph TD;\n A-->B;"), Options{})
+	_, err = offline.Render(context.Background(), "after", []byte("graph TD;\n A-->B;"), Options{})
 	require.NoError(t, err)
 }
 
