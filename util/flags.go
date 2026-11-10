@@ -113,6 +113,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			TakesFile: true,
 			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES"), config.value("files")),
 		},
+		&cli.StringFlag{
+			Name:      "files-from",
+			Usage:     "read markdown file paths to publish from this file, one per line, or from standard input for \"-\". Each is taken as written, with no glob meaning, beside any --files pattern. A path that does not exist is not published but still named, so with --partial a deleted file listed there is looked for: pipe in git diff --name-only.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES_FROM"), config.value("files-from")),
+		},
 		&cli.BoolFlag{
 			Name:    "continue-on-error",
 			Value:   false,
@@ -315,7 +321,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.BoolFlag{
 			Name:  "partial",
 			Value: false,
-			Usage: "--files names only some of the files another run publishes, such as the paths a change touched, deleted ones included: deleted and renamed files are looked for among the tracked files --files names, and the rest are left alone. A page keeps the pattern its file was tracked under, so the run publishing them all still notices a deleted file. Requires --track-pages.",
+			Usage: "--files and --files-from name only some of the files another run publishes, such as the paths a change touched, deleted ones included: deleted and renamed files are looked for among the tracked files they name, and the rest are left alone. A page keeps the pattern its file was tracked under, so the run publishing them all still notices a deleted file. Requires --track-pages.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARTIAL"),
 				config.value("partial")),
 		},

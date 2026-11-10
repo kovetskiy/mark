@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/bmatcuk/doublestar/v4"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1643,4 +1644,37 @@ func TestUntrackedOnANilStore(t *testing.T) {
 	var store *manifest.Store
 	assert.False(t, store.Untracked("DOCS"))
 	assert.Empty(t, store.UntrackedSpaces())
+}
+
+// TestRunPatternNamesExactPaths: paths given to SetRunPaths match only
+// themselves in the pattern a run records, whatever glob characters they
+// hold, and alongside the run's glob, top-level comma included.
+func TestRunPatternNamesExactPaths(t *testing.T) {
+	store := manifest.NewStore(nil)
+	store.SetRunFiles("docs/a,b/*.md", nil)
+	store.SetRunPaths([]string{"we{ird},x/[1]*?.md", "./plain.md", "plain.md"})
+	pattern := store.RunPattern()
+
+	for path, want := range map[string]bool{
+		"we{ird},x/[1]*?.md": true,
+		"plain.md":           true,
+		"docs/a,b/c.md":      true,
+		"weird.md":           false,
+		"we{ird},x/1z.md":    false,
+		"docs/a":             false,
+		"b/c.md":             false,
+	} {
+		matched, err := doublestar.Match(pattern, path)
+		require.NoError(t, err)
+		assert.Equal(t, want, matched, "%s against %s", path, pattern)
+	}
+
+	other := manifest.NewStore(nil)
+	other.SetRunPaths([]string{"plain.md", "we{ird},x/[1]*?.md"})
+	other.SetRunFiles("docs/a,b/*.md", nil)
+	assert.Equal(t, pattern, other.RunPattern(), "the order paths come in does not matter")
+
+	only := manifest.NewStore(nil)
+	only.SetRunFiles("docs/*.md", nil)
+	assert.Equal(t, "docs/*.md", only.RunPattern(), "a glob alone is recorded as it was")
 }

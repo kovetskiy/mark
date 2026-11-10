@@ -346,8 +346,16 @@ publishes them all, says so with `--partial`, and names the paths the change
 touched, deleted and renamed ones included:
 
 ```bash
-mark publish --track-pages --partial --files "docs/{setup,install,old-name}.md"
+git diff --name-only "$BASE" -- 'docs/*.md' |
+  mark publish --track-pages --partial --files-from -
 ```
+
+`--files-from` reads one path a line, from a file or from standard input for
+`-`, and takes each as written: a path holding `*`, `[` or `{` names that file
+and nothing else, and one that no longer exists is not published but still
+looked for. It can stand beside `--files`, or replace it; a pattern such as
+`--files "docs/{setup,install,old-name}.md"` works too, for paths with no glob
+characters in them. A library caller gives the paths as `Config.Paths`.
 
 Without it, Mark ties a tracked file to the `--files` pattern that last
 published it. A run with a narrower pattern then neither notices a deleted file
@@ -357,7 +365,8 @@ those files being deleted either. And the full pattern on a checkout holding
 only the changed files reads every other file as deleted.
 
 A run with `--partial` looks for deleted and renamed files among the tracked
-files its `--files` pattern names, whichever run recorded them, and leaves every
+files its `--files` pattern and `--files-from` paths name, whichever run
+recorded them, and leaves every
 other tracked file alone: one of those it names that is missing is reported,
 and dealt with by `--on-orphan`, as in a full run, except that one only
 reported stays tracked for the run publishing them all; a renamed one is

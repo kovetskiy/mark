@@ -297,3 +297,49 @@ func TestPartialRequiresTrackPages(t *testing.T) {
 	assert.Contains(t, err.Error(), "--partial requires --track-pages")
 	assert.Zero(t, countPagesTitled(t, server, "Page a"), "refused before publishing")
 }
+
+// TestPartialRunGivenPaths: paths given as a list are taken as written, glob
+// characters and all, and a deleted one among them is looked for like a file
+// a pattern names.
+func TestPartialRunGivenPaths(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	weird := writeFile(t, dir, "we[a]{b,c}*.md", markdownWithTitle("Page weird"))
+	require.NoError(t, Run(context.Background(), full))
+	bID := pageIDTitled(t, server, "Page b")
+	cID := pageIDTitled(t, server, "Page c")
+	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
+	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
+
+	writeFile(t, dir, "we[a]{b,c}*.md", markdownWithTitle("Page weird renamed"))
+	partial := full
+	partial.Files = ""
+	partial.Paths = []string{weird, filepath.Join(dir, "b.md")}
+	partial.Tracking.Partial = true
+	partial.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), partial))
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "Page weird renamed"), "the path was published as written")
+	assert.Equal(t, 1, countPagesTitled(t, server, "Page a"))
+	assert.True(t, server.Page(bID).Trashed, "b.md was named and is gone")
+	assert.False(t, server.Page(cID).Trashed, "c.md was not named")
+
+	entry, ok := tracked(t, server, weird)
+	require.True(t, ok)
+	assert.Equal(t, manifest.Key(full.Files), entry.Glob, "the entry keeps the owning run's pattern")
+}
+
+// TestPathsAreNotPatterns: a path holding glob characters names that one file,
+// not the files it would match as a pattern.
+func TestPathsAreNotPatterns(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	literal := writeFile(t, dir, "[ab].md", markdownWithTitle("Literal"))
+	writeFile(t, dir, "a.md", markdownWithTitle("Page a"))
+
+	config := trackingConfig(server, "")
+	config.Paths = []string{literal}
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.Equal(t, 1, countPagesTitled(t, server, "Literal"))
+	assert.Zero(t, countPagesTitled(t, server, "Page a"))
+}

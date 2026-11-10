@@ -62,6 +62,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -310,7 +311,13 @@ type Store struct {
 
 	// runGlob is the pattern this run was given, recorded with each entry so a
 	// later run can tell whether it was looking where a missing file used to be.
+	// It is built from filesGlob and named; see runPattern.
 	runGlob string
+
+	// filesGlob is the pattern SetRunFiles was given, as given, and named the
+	// keys of the exact paths SetRunPaths was given, sorted.
+	filesGlob string
+	named     []string
 
 	// readOnly makes Save a no-op. A dry run has to resolve exactly as a real
 	// one does or its preview is fiction, but resolving records what it finds,
@@ -572,11 +579,92 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.runGlob = Key(glob)
+	s.filesGlob = glob
+	s.runGlob = runPattern(s.filesGlob, s.named)
 	s.runFiles = make(map[string]bool, len(paths))
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
 	}
+}
+
+// SetRunPaths tells the store the exact paths this run names besides the
+// pattern given to SetRunFiles, deleted ones included. They are taken as
+// written, with no glob meaning, and are part of the pattern the run records
+// its entries under, with their glob characters escaped; a partial run covers
+// each of them. The files among them that exist still go to SetRunFiles.
+func (s *Store) SetRunPaths(paths []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.named = s.named[:0]
+	for _, path := range paths {
+		s.named = append(s.named, Key(path))
+	}
+	slices.Sort(s.named)
+	s.named = slices.Compact(s.named)
+	s.runGlob = runPattern(s.filesGlob, s.named)
+}
+
+// runPattern is the pattern a run given glob and the exact paths named records
+// its entries under: the glob as Key spells it, the paths with their glob
+// characters escaped, or both as the alternatives of one pattern. The same
+// glob and paths, in any order, give the same pattern.
+func runPattern(glob string, named []string) string {
+	if len(named) == 0 {
+		return Key(glob)
+	}
+
+	alternatives := make([]string, 0, len(named)+1)
+	if glob != "" {
+		alternatives = append(alternatives, escapeTopLevelCommas(Key(glob)))
+	}
+	for _, path := range named {
+		alternatives = append(alternatives, escapeGlob(path))
+	}
+
+	if len(alternatives) == 1 {
+		return alternatives[0]
+	}
+
+	return "{" + strings.Join(alternatives, ",") + "}"
+}
+
+// escapeGlob makes a path match only itself as a pattern.
+func escapeGlob(path string) string {
+	var escaped strings.Builder
+	for _, r := range path {
+		if strings.ContainsRune(`\*?[]{},`, r) {
+			escaped.WriteByte('\\')
+		}
+		escaped.WriteRune(r)
+	}
+
+	return escaped.String()
+}
+
+// escapeTopLevelCommas escapes the commas of a pattern that are outside any
+// {...}, which would otherwise separate alternatives once the pattern is one.
+func escapeTopLevelCommas(pattern string) string {
+	var escaped strings.Builder
+	depth := 0
+	for i := 0; i < len(pattern); i++ {
+		c := pattern[i]
+		switch {
+		case c == '\\' && i+1 < len(pattern):
+			escaped.WriteByte(c)
+			i++
+			c = pattern[i]
+		case c == '{':
+			depth++
+		case c == '}' && depth > 0:
+			depth--
+		case c == ',' && depth == 0:
+			escaped.WriteByte('\\')
+		}
+		escaped.WriteByte(c)
+	}
+
+	return escaped.String()
 }
 
 // RunPattern is the pattern this run records new entries under, as Entry.Glob
