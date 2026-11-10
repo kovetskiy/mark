@@ -315,7 +315,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.BoolFlag{
 			Name:  "partial",
 			Value: false,
-			Usage: "--files names only some of the files another run publishes, such as the files a change touched: a tracked file left out is not reported or forgotten as gone, and a page keeps the pattern its file was tracked under, so that run still notices a deleted file. Requires --track-pages; refused with --on-orphan archive or delete.",
+			Usage: "--files names only some of the files another run publishes, such as the paths a change touched, deleted ones included: deleted and renamed files are looked for among the tracked files --files names, and the rest are left alone. A page keeps the pattern its file was tracked under, so the run publishing them all still notices a deleted file. Requires --track-pages.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARTIAL"),
 				config.value("partial")),
 		},

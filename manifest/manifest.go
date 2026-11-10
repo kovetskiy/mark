@@ -67,6 +67,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
@@ -329,9 +330,8 @@ type Store struct {
 	// SetWarningsFor.
 	warningsFor func(key string) *report.Warnings
 
-	// partial says the run's files are some of a pattern's, not all of them.
-	// An entry it records keeps the pattern it was recorded under, which is
-	// the run whose missing files mean deletions.
+	// partial says the run's files are some of a pattern's, not all of them:
+	// see SetPartial and covers.
 	partial bool
 
 	// spaces holds the manifest for each space key touched so far, alongside
@@ -605,15 +605,16 @@ func (s *Store) warn(key string, kind report.WarningKind, format string, args ..
 }
 
 // SetPartial says this run publishes only some of the files of the pattern
-// that recorded them, such as the files a change touched. Recording a page
-// then leaves its entry under the pattern it already had, so the run that
-// publishes the whole pattern still notices when the file is deleted. A path
-// with no entry yet is recorded under this run's pattern until such a run
-// publishes it.
+// that recorded them, such as the files a change touched.
 //
-// It says nothing about orphans: a caller that finds them asks the store, and
-// a partial run has no business asking, every file it left out being missing
-// on purpose.
+// A partial run is about the tracked paths its own pattern matches, whatever
+// pattern recorded them: one of those missing from the run is gone, and is an
+// orphan or the previous name of a renamed file, while every other path is
+// simply not this run's business. Recording a page leaves its entry under the
+// pattern it already had, or the one the file it moved from had, so the run
+// that publishes the whole pattern still notices when the file is deleted. A
+// path with neither is recorded under this run's pattern until such a run
+// publishes it.
 func (s *Store) SetPartial(partial bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1106,8 +1107,13 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
 	glob := s.runGlob
-	if s.partial && ok && existing.Glob != "" {
-		glob = existing.Glob
+	if s.partial {
+		switch {
+		case ok && existing.Glob != "":
+			glob = existing.Glob
+		case movedOK && moved.Glob != "":
+			glob = moved.Glob
+		}
 	}
 	if ok && existing.PageID == pageID && existing.Title == title &&
 		existing.Hash == hash && existing.Glob == glob {
@@ -1147,10 +1153,29 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	return nil
 }
 
+// covers reports whether a recorded path is one this run was looking for, so
+// that its absence from the run means the file is gone.
+//
+// A full run looks for what its pattern published last time. A partial run
+// looks where its own pattern points, the files the pattern names being the
+// ones it is about whichever run recorded them. An entry with no recorded
+// pattern predates patterns, and nothing can say what it was in scope of.
+func (s *Store) covers(path string, entry Entry) bool {
+	if entry.Glob == "" {
+		return false
+	}
+
+	if !s.partial {
+		return entry.Glob == s.runGlob
+	}
+
+	matched, err := doublestar.Match(s.runGlob, path)
+	return err == nil && matched
+}
+
 // movedOwner returns the entry of the path a page belongs to in the manifest,
-// when that path is absent from this run and path is not it: recorded under
-// this run's --files pattern, yet neither among the files the run publishes nor
-// seen by it. A page found for a document under another path whose owner is
+// when that path is absent from this run and path is not it: one the run
+// covers, yet neither among the files the run publishes nor seen by it. A page found for a document under another path whose owner is
 // gone like that is the same document, moved.
 //
 // An owner the run publishes, or one from another pattern, is not gone -- it
@@ -1163,7 +1188,7 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 	}
 
 	entry, recorded := state.shards[shardFor(owner)].pages[owner]
-	if !recorded || entry.PageID != pageID || entry.Glob == "" || entry.Glob != s.runGlob ||
+	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) ||
 		s.runFiles[owner] || state.seen[owner] {
 		return Entry{}, false
 	}
@@ -1240,7 +1265,7 @@ func (s *Store) ResolveRenamed(ctx context.Context, spaceKey, hash string) (stri
 	)
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if entry.Hash != hash || entry.Glob != s.runGlob ||
+			if entry.Hash != hash || !s.covers(path, entry) ||
 				s.runFiles[path] || state.claimed[entry.PageID] {
 				continue
 			}
@@ -1513,7 +1538,7 @@ func (s *Store) orphans(spaceKey string) []string {
 	var orphans []string
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if state.seen[path] || entry.Glob == "" || entry.Glob != s.runGlob {
+			if state.seen[path] || !s.covers(path, entry) {
 				continue
 			}
 			// A page another document published this run is that document's
