@@ -87,12 +87,15 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 	return prefix + link, nil
 }
 
-// sameServer says whether a and b reach the same server, by the scheme, host
-// and port SameInstance compares. A URL that is not one it compares, such as
-// one carrying a user name, is no server of the configured one.
-func sameServer(a, b *url.URL) bool {
-	x, errA := originOf(a)
-	y, errB := originOf(b)
+// sameServer says whether link reaches the server at base, by the scheme,
+// host and port SameInstance compares. A link that is not one it compares,
+// such as one carrying a user name, is no server of the configured one; a user
+// name in base itself was given by whoever configured it.
+func sameServer(link, base *url.URL) bool {
+	server := *base
+	server.User = nil
+	x, errA := originOf(link)
+	y, errB := originOf(&server)
 	return errA == nil && errB == nil && x == y
 }
 

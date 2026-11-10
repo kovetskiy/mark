@@ -128,7 +128,7 @@ func pageOnInstance(href, base string) (PageRef, bool) {
 	// same server but not a page link that opens: an instance under /wiki
 	// does not serve /display/... at the root.
 	contextPath := strings.TrimPrefix(ref.BaseURL, parsed.Scheme+"://"+parsed.Host)
-	if instance, _ := url.Parse(base); contextPath == "" && strings.Trim(instance.EscapedPath(), "/") != "" {
+	if instance, err := url.Parse(base); err != nil || contextPath == "" && strings.Trim(instance.EscapedPath(), "/") != "" {
 		return PageRef{}, false
 	}
 	path := strings.TrimPrefix(strings.TrimSuffix(parsed.EscapedPath(), "/"), contextPath)

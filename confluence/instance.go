@@ -59,7 +59,7 @@ func (e *InstanceMismatchError) Is(target error) bool { return target == ErrOthe
 //   - the ports are the same, a port left out being the scheme's default, so
 //     https://host and https://host:443 match;
 //   - the paths -- the context path an instance is served under, such as
-//     /wiki -- are the same, compared whole after a trailing slash, so /wiki
+//     /wiki -- are the same, compared whole after trailing slashes, so /wiki
 //     does not match /wikiX or /wiki/x. Either path may be left out: a base URL
 //     of https://example.atlassian.net matches https://example.atlassian.net/wiki
 //     and the other way about. That is no wider than the credentials reach
@@ -100,7 +100,7 @@ type origin struct {
 // instance is a URL reduced to what SameInstance compares.
 type instance struct {
 	origin
-	path string // escaped, without a trailing slash
+	path string // escaped, without trailing slashes
 }
 
 // instanceDifference says how want is not on the instance have, or "" when it
@@ -145,8 +145,9 @@ func parseInstanceURL(what, raw string) (instance, error) {
 		return instance{}, fmt.Errorf("%s %q %w", what, raw, err)
 	}
 
-	path := strings.TrimSuffix(parsed.EscapedPath(), "/")
-	for _, segment := range strings.Split(path, "/") {
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	// Decoded, since a server reads %2e%2e as ".." too.
+	for _, segment := range strings.Split(parsed.Path, "/") {
 		if segment == "." || segment == ".." {
 			return instance{}, fmt.Errorf("%s %q has a %q segment in its path", what, raw, segment)
 		}

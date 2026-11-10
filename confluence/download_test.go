@@ -33,6 +33,8 @@ func TestAttachmentURL(t *testing.T) {
 			attachment("", "https://example.com/download/attachments/1/a.png"), "https://example.com/download/attachments/1/a.png"},
 		{"the default port written out", "https://example.com",
 			attachment("", "https://example.com:443/download/attachments/1/a.png"), "https://example.com:443/download/attachments/1/a.png"},
+		{"a base URL with a user name", "https://svc@example.com",
+			attachment("", "https://example.com/download/attachments/1/a.png"), "https://example.com/download/attachments/1/a.png"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := NewAPI(test.base, Options{Username: "u", Password: "p"}).AttachmentURL("1", test.info)

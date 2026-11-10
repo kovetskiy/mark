@@ -187,6 +187,7 @@ func TestExportBaseURL(t *testing.T) {
 		{"https://c.example.com/confluence", "https://c.example.com/jira", "", "the path /jira is not /confluence"},
 		{"https://a.atlassian.net/wiki", "https://a.atlassian.net.evil.example/wiki", "", "the host"},
 		{"https://a.atlassian.net/wiki", "https://api.atlassian.com/ex/confluence/id", "", "the host api.atlassian.com"},
+		{"a.atlassian.net/wiki", "https://a.atlassian.net/wiki", "", "unable to compare --url with the base URL"},
 	} {
 		got, err := exportBaseURL(test.configured, test.fromURL)
 		if test.err != "" {

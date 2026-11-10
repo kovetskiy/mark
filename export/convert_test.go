@@ -568,6 +568,10 @@ func TestPageOnInstance(t *testing.T) {
 	_, ok := pageOnInstance("https://other.atlassian.net/wiki/spaces/DOCS/pages/123/Title",
 		"https://api.atlassian.com/ex/confluence/0123/wiki")
 	assert.False(t, ok, "a site's link counted as a page of the gateway")
+
+	// SameInstance reads a base with spaces around it; url.Parse does not.
+	_, ok = pageOnInstance("https://example.atlassian.net/display/DOCS/Title", base+"\n")
+	assert.False(t, ok)
 }
 
 // A "!" just before a link would make it an image.
