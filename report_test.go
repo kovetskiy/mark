@@ -891,9 +891,9 @@ func TestReportCarriesASaveThatFailedOnTheWayOut(t *testing.T) {
 	assert.Contains(t, parsed.Errors[0], "unable to save page manifest")
 }
 
-// TestSourcePathMapsTheReportedFile: a library caller publishing generated
+// TestSourcePathNamesTheSource: a library caller publishing generated
 // Markdown has the report name the file it was generated from.
-func TestSourcePathMapsTheReportedFile(t *testing.T) {
+func TestSourcePathNamesTheSource(t *testing.T) {
 	server := outputServer(t)
 	dir := t.TempDir()
 	writeFile(t, dir, "bad.md", outHeader+"<!-- Title: Bad -->\n\n<!-- ac:ignore -->\nunclosed\n")

@@ -184,19 +184,19 @@ func TestGitHubSaysWhatADryRunWouldDo(t *testing.T) {
 		out.String())
 }
 
-// TestMapFilesNamesTheSource: a generated document is annotated against the
-// file it was generated from, orphans included, and an empty mapping names no
-// file at all; a nil mapper leaves them alone.
-func TestMapFilesNamesTheSource(t *testing.T) {
+// TestSetSourcesAnnotatesTheSource: a generated document is annotated against
+// the file it was generated from, orphans included, and against its own file
+// when it has no source; a nil source leaves them alone.
+func TestSetSourcesAnnotatesTheSource(t *testing.T) {
 	r := New()
 	r.AddPage(Page{File: "build/a.md", Status: StatusFailed, Reason: "broken"})
 	r.AddPage(Page{File: "build/b.md", Status: StatusFailed, Reason: "also broken"})
 	r.AddOrphan(Orphan{File: "build/gone.md", Title: "Gone", Action: OnOrphanReport})
 
-	r.MapFiles(nil)
-	require.Equal(t, "build/a.md", r.Pages[0].File, "a nil mapper changes nothing")
+	r.SetSources(nil)
+	require.Empty(t, r.Pages[0].Source, "a nil source changes nothing")
 
-	r.MapFiles(func(file string) string {
+	r.SetSources(func(file string) string {
 		if file == "build/b.md" {
 			return ""
 		}
@@ -209,7 +209,30 @@ func TestMapFilesNamesTheSource(t *testing.T) {
 
 	assert.Equal(t,
 		"::error file=src/a.md::broken\n"+
-			"::error::also broken\n"+
+			"::error file=build/b.md::also broken\n"+
 			"::warning file=src/gone.md::page \"Gone\" has no source file\n",
 		out.String())
+}
+
+// TestJSONKeepsTheFileBesideItsSource: the source is added, never put in place
+// of the file mark read.
+func TestJSONKeepsTheFileBesideItsSource(t *testing.T) {
+	r := New()
+	r.AddPage(Page{File: "build/a.md", Status: StatusPublished})
+	r.AddPage(Page{File: "build/b.md", Status: StatusPublished})
+	r.SetSources(func(file string) string {
+		if file == "build/b.md" {
+			return ""
+		}
+
+		return "src/a.md.tmpl"
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatJSON))
+
+	assert.Contains(t, out.String(), `"file": "build/a.md",
+      "source": "src/a.md.tmpl",`)
+	assert.Equal(t, 1, strings.Count(out.String(), `"source"`), "a page with no source has no source field")
+	assert.Equal(t, StatusPublished, r.StatusOf("build/a.md"), "pages are still found by the file mark read")
 }

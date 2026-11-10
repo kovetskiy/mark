@@ -66,7 +66,10 @@ const (
 
 // Page is one document's outcome.
 type Page struct {
-	File   string `json:"file"`
+	File string `json:"file"`
+	// Source is the file the document was made from, when it is not File
+	// itself; see SetSources.
+	Source string `json:"source,omitempty"`
 	Status Status `json:"status"`
 	Space  string `json:"space,omitempty"`
 	Title  string `json:"title,omitempty"`
@@ -91,7 +94,9 @@ type Page struct {
 
 // Orphan is a tracked page whose document is gone, and what was done about it.
 type Orphan struct {
-	File   string `json:"file"`
+	File string `json:"file"`
+	// Source is the file the document was made from; see SetSources.
+	Source string `json:"source,omitempty"`
 	PageID string `json:"pageId,omitempty"`
 	Title  string `json:"title,omitempty"`
 
@@ -213,12 +218,11 @@ func (r *Report) AddError(message string) {
 	r.Errors = append(r.Errors, message)
 }
 
-// MapFiles replaces the file each page and orphan is recorded against with
-// what mapper returns for it. Call it just before Write: AddPage and StatusOf
-// match on the file, so they would no longer find a mapped page. A nil mapper
-// changes nothing.
-func (r *Report) MapFiles(mapper func(file string) string) {
-	if r == nil || mapper == nil {
+// SetSources sets the Source of each page and orphan recorded so far to what
+// source returns for its File, which stays as it is. An empty result sets no
+// source. A nil source changes nothing.
+func (r *Report) SetSources(source func(file string) string) {
+	if r == nil || source == nil {
 		return
 	}
 
@@ -226,12 +230,22 @@ func (r *Report) MapFiles(mapper func(file string) string) {
 	defer r.mu.Unlock()
 
 	for i := range r.Pages {
-		r.Pages[i].File = mapper(r.Pages[i].File)
+		r.Pages[i].Source = source(r.Pages[i].File)
 	}
 
 	for i := range r.Orphans {
-		r.Orphans[i].File = mapper(r.Orphans[i].File)
+		r.Orphans[i].Source = source(r.Orphans[i].File)
 	}
+}
+
+// annotated is the file a github annotation is made against: the source, when
+// there is one, since that is the file a pull request changes.
+func annotated(file, source string) string {
+	if source != "" {
+		return source
+	}
+
+	return file
 }
 
 // Write says what happened, in the requested shape.
@@ -264,25 +278,27 @@ func (r *Report) Write(w io.Writer, format Format) error {
 
 func (r *Report) writeGitHub(w io.Writer) error {
 	for _, page := range r.Pages {
+		file := annotated(page.File, page.Source)
+
 		switch page.Status {
 		case StatusFailed:
-			if err := command(w, "error", page.File, page.Reason); err != nil {
+			if err := command(w, "error", file, page.Reason); err != nil {
 				return err
 			}
 
 		case StatusSkipped:
-			if err := command(w, "warning", page.File, page.Reason); err != nil {
+			if err := command(w, "warning", file, page.Reason); err != nil {
 				return err
 			}
 
 		case StatusPublished:
-			if err := command(w, "notice", page.File,
+			if err := command(w, "notice", file,
 				fmt.Sprintf("published %q to %s", page.Title, page.URL)); err != nil {
 				return err
 			}
 
 		case StatusWouldCreate, StatusWouldUpdate:
-			if err := command(w, "notice", page.File,
+			if err := command(w, "notice", file,
 				fmt.Sprintf("would %s %q", strings.TrimPrefix(string(page.Status), "would-"), page.Title)); err != nil {
 				return err
 			}
@@ -293,7 +309,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		// has no line of its own at all -- the point of it is to be seen in the
 		// diff by somebody who is not reading the build log.
 		for _, warning := range page.Warnings {
-			if err := command(w, "warning", page.File, warning); err != nil {
+			if err := command(w, "warning", file, warning); err != nil {
 				return err
 			}
 		}
@@ -305,7 +321,7 @@ func (r *Report) writeGitHub(w io.Writer) error {
 			message = fmt.Sprintf("page %q was %sd: its source file is gone", orphan.Title, orphan.Action)
 		}
 
-		if err := command(w, "warning", orphan.File, message); err != nil {
+		if err := command(w, "warning", annotated(orphan.File, orphan.Source), message); err != nil {
 			return err
 		}
 	}
