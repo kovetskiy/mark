@@ -38,7 +38,9 @@ type ExportConfig struct {
 	// Metadata is how documents of export.FormatMark spell the metadata that
 	// names their page: export.MetadataComments, or "", for HTML comment
 	// headers, or export.MetadataFrontMatter for YAML front matter, which
-	// mark publishes only with the frontmatter feature.
+	// mark publishes only with the frontmatter feature, or
+	// export.MetadataNone for the body alone, which ExportTree refuses with
+	// export.ErrTreeWithoutMetadata.
 	Metadata export.Metadata
 
 	// Generator is who an OKF concept says generated it, as
@@ -46,13 +48,19 @@ type ExportConfig struct {
 	Generator string
 
 	// Stdout receives the Markdown when Output names no file. Nil discards
-	// it, as PublishConfig.Output does for a library caller that sets nothing.
+	// it, as PublishConfig.Output does for a library caller that sets nothing;
+	// the Result carries the Markdown either way.
 	Stdout io.Writer
 }
 
 // Export writes a Confluence page out as a Markdown document that mark can
 // publish back to the same page. See the export package for what is converted
 // and what is kept as storage format.
+//
+// A caller that wants the page's title, labels and body as values, and no
+// files, sets Metadata to export.MetadataNone and NoAttachments, and leaves
+// Output and Stdout unset: the Result's Title, Labels and Markdown are then
+// all there is.
 func Export(ctx context.Context, config ExportConfig) (*export.Result, error) {
 	api := config.Connection.api(confluence.Options{})
 

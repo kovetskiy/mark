@@ -504,7 +504,7 @@ func exportFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "metadata",
 			Value:   string(export.MetadataComments),
-			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, or \"frontmatter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter). --format okf ignores it.",
+			Usage:   "how a \"mark\" document spells the metadata that names its page: \"comments\", HTML comment headers, \"frontmatter\", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter), or \"none\", the body alone, which cannot be published back by itself and which --recursive refuses. --format okf ignores it.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_METADATA"), config.value("metadata")),
 		},
 		&cli.BoolFlag{
@@ -575,7 +575,8 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 	if err != nil {
 		return ctx, fmt.Errorf("--format: %w", err)
 	}
-	if _, err := export.ParseMetadata(command.String("metadata")); err != nil {
+	spelling, err := export.ParseMetadata(command.String("metadata"))
+	if err != nil {
 		return ctx, fmt.Errorf("--metadata: %w", err)
 	}
 
@@ -596,6 +597,8 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 		return ctx, errors.New("--relative-links is what --format okf does already")
 	case command.Int("depth") < 0:
 		return ctx, errors.New("--depth counts levels, and cannot be negative")
+	case command.Bool("recursive") && format != export.FormatOKF && spelling == export.MetadataNone:
+		return ctx, export.ErrTreeWithoutMetadata
 	case command.Bool("recursive") && (command.String("output") == "" || command.String("output") == "-"):
 		return ctx, errors.New("--recursive writes a directory: name it with --output")
 	case command.Bool("recursive") && command.String("attachments-dir") != "" && fromCommandLine(command, "attachments-dir"):

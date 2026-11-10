@@ -20,6 +20,12 @@ import (
 // inside a directory of its own.
 const TreeDocument = "index.md"
 
+// ErrTreeWithoutMetadata refuses MetadataNone for a tree of FormatMark
+// documents: a tree is exported to be published back where it was, which
+// takes the metadata that names each page.
+var ErrTreeWithoutMetadata = errors.New("a recursive export writes documents that publish back where they were, " +
+	"so --metadata none (ExportConfig.Metadata) does not apply")
+
 // TreeOptions are what Tree adds to the Config of a single page.
 type TreeOptions struct {
 	// Depth is how many levels to export, counting the page itself; 0 is
@@ -57,12 +63,17 @@ type TreeOptions struct {
 // The tree is read, every page converted, and every path it writes to --
 // documents, indexes, attachments -- checked before anything is written. A
 // folder in it is refused, since the export does not list a folder's pages.
+// MetadataNone is refused with ErrTreeWithoutMetadata, except under FormatOKF,
+// which ignores the metadata.
 func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOptions) ([]*Result, error) {
 	format, spelling, err := parseOptions(cfg)
 	if err != nil {
 		return nil, err
 	}
 	l := layout{okf: format == FormatOKF}
+	if !l.okf && spelling == MetadataNone {
+		return nil, ErrTreeWithoutMetadata
+	}
 
 	if cfg.Output == "" || cfg.Output == "-" {
 		return nil, errors.New("a recursive export writes a directory: name it with --output")

@@ -188,6 +188,14 @@ type Server struct {
 func New(t *testing.T) *Server {
 	t.Helper()
 
+	s := Start()
+	t.Cleanup(s.Close)
+	return s
+}
+
+// Start starts a fake Confluence outside a test, for an example; the caller
+// closes it.
+func Start() *Server {
 	s := &Server{
 		pages:    map[string]*Page{},
 		spaces:   map[string]*Space{},
@@ -202,7 +210,6 @@ func New(t *testing.T) *Server {
 		},
 	}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.handle))
-	t.Cleanup(s.Close)
 	return s
 }
 

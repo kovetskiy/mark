@@ -64,6 +64,11 @@ type Options struct {
 	// can hold any sidebar. Without it, a sidebar with "-->" in it, which a
 	// comment header cannot hold, stays in the body.
 	FrontMatter bool
+
+	// NoMetadata is set when the document carries no metadata at all, so an
+	// article layout's sidebar, which has nowhere else to go, stays in the
+	// body.
+	NoMetadata bool
 }
 
 // Document is a converted page body.
@@ -106,7 +111,7 @@ func Convert(storage string, opts Options) (*Document, error) {
 	doc := &Document{}
 
 	children := root.children
-	if body, sidebar, ok := articleLayout(root); ok && !opts.Reading {
+	if body, sidebar, ok := articleLayout(root); ok && !opts.Reading && !opts.NoMetadata {
 		// The sidebar travels in a header, and a comment header cannot hold
 		// every value: one that ends the comment early stays in the body.
 		text := strings.TrimSpace(c.rawChildren(sidebar, rawLine))
