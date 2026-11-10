@@ -362,22 +362,7 @@ func recordDirectoryPages(
 	// put above them comes first.
 	titles := parents[len(parents)-len(directories):]
 
-	// Searched in order, each from just below the last one found, as the
-	// directories nest.
-	next := 0
 	for i, key := range directories {
-		at := -1
-		for j := next; j < len(target.Ancestors); j++ {
-			if strings.EqualFold(target.Ancestors[j].Title, titles[i]) {
-				at = j
-				break
-			}
-		}
-		if at < 0 {
-			continue
-		}
-		next = at + 1
-
 		// A directory holding a document of its own has that document's entry
 		// for its page already, and two entries claiming one page is the thing
 		// the manifest complains about.
@@ -385,12 +370,21 @@ func recordDirectoryPages(
 			continue
 		}
 
-		directory := target.Ancestors[at]
-		if err := tracker.Record(
-			ctx,
-			space, key, directory.ID, directory.Title, page.DirectoryHash(key),
-		); err != nil {
-			return fmt.Errorf("unable to record directory page for %q: %w", key, err)
+		// In any order: the ancestry check asks only that each parent is
+		// somewhere above the page, so neither may this.
+		for _, directory := range target.Ancestors {
+			if !strings.EqualFold(directory.Title, titles[i]) {
+				continue
+			}
+
+			if err := tracker.Record(
+				ctx,
+				space, key, directory.ID, directory.Title, page.DirectoryHash(key),
+			); err != nil {
+				return fmt.Errorf("unable to record directory page for %q: %w", key, err)
+			}
+
+			break
 		}
 	}
 
