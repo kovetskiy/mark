@@ -11,6 +11,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path"
@@ -202,12 +203,10 @@ func expand(opener Opener, base, name string) (matches []string, matched bool, e
 		return []string{name}, false, nil
 	}
 
-	var found []string
-	if root, ok := opener.(rooted); ok {
-		found, err = root.glob(base, name)
-	} else {
-		found, err = glob(base, name)
-	}
+	// Any other Opener is the disk, as the zero Root is.
+	root, _ := opener.(Root)
+
+	found, err := root.glob(base, name)
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to expand attachment pattern %q: %w", name, err)
 	}
@@ -246,10 +245,21 @@ func expand(opener Opener, base, name string) (matches []string, matched bool, e
 // anything; the pattern is matched in a filesystem rooted at base instead,
 // after its literal leading directories, "../" included, have moved that root.
 func glob(base, pattern string) ([]string, error) {
-	prefix, rest := doublestar.SplitPattern(path.Clean(filepath.ToSlash(pattern)))
+	prefix, rest := splitPattern(pattern)
 	root := filepath.Join(base, filepath.FromSlash(prefix))
 
-	found, err := doublestar.Glob(os.DirFS(root), rest)
+	return globIn(os.DirFS(root), root, rest)
+}
+
+// splitPattern is pattern's literal leading directories, and the rest.
+func splitPattern(pattern string) (prefix, rest string) {
+	return doublestar.SplitPattern(path.Clean(filepath.ToSlash(pattern)))
+}
+
+// globIn matches rest in fsys, which is rooted at root, naming each match
+// from there.
+func globIn(fsys fs.FS, root, rest string) ([]string, error) {
+	found, err := doublestar.Glob(fsys, rest)
 	if err != nil {
 		return nil, err
 	}
@@ -370,12 +380,10 @@ func withinAny(path string, roots []string) bool {
 func prepareAttachment(opener Opener, base, name string) (Attachment, error) {
 	attachmentPath := filepath.Join(base, name)
 
-	check := checkAttachmentPath
-	if root, ok := opener.(rooted); ok {
-		check = root.checkAttachment
-	}
+	// Any other Opener is the disk, as the zero Root is.
+	root, _ := opener.(Root)
 
-	if err := check(base, name); err != nil {
+	if err := root.checkAttachment(base, name); err != nil {
 		return Attachment{}, err
 	}
 

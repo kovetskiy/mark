@@ -8,8 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-
-	"github.com/bmatcuk/doublestar/v4"
 )
 
 // Root is where the files a document names are read from, and the boundary
@@ -52,7 +50,7 @@ var errNotInFS = errors.New("not a path inside the document's file system")
 // fsName is the path inside the fs.FS that name, a path a caller joined with
 // filepath or path, stands for.
 func (r Root) fsName(name string) (string, error) {
-	if filepath.IsAbs(name) || path.IsAbs(filepath.ToSlash(name)) {
+	if isAbs(name) {
 		return "", errNotInFS
 	}
 
@@ -62,6 +60,11 @@ func (r Root) fsName(name string) (string, error) {
 	}
 
 	return cleaned, nil
+}
+
+// isAbs reports whether name is absolute as an OS path or as a slash path.
+func isAbs(name string) bool {
+	return filepath.IsAbs(name) || path.IsAbs(filepath.ToSlash(name))
 }
 
 // inside is the path inside the fs.FS that name stands for, or the error an
@@ -126,7 +129,7 @@ func (r Root) CheckReadable(base, reference string) error {
 	}
 
 	joined := reference
-	if !filepath.IsAbs(reference) && !path.IsAbs(filepath.ToSlash(reference)) {
+	if !isAbs(reference) {
 		joined = filepath.Join(base, reference)
 	}
 
@@ -159,13 +162,6 @@ func CheckWithin(dir, path string) error {
 	return fmt.Errorf("%w: %q resolves to %s, which is outside %q", ErrOutsideProject, path, resolved, dir)
 }
 
-// rooted is an Opener that says itself how a name it opens is held to its
-// boundary and how a pattern is matched in it; any other Opener is the disk.
-type rooted interface {
-	checkAttachment(base, name string) error
-	glob(base, pattern string) ([]string, error)
-}
-
 // checkAttachment holds an attachment to r's boundary.
 func (r Root) checkAttachment(base, name string) error {
 	if r.fsys == nil {
@@ -184,7 +180,7 @@ func (r Root) glob(base, pattern string) ([]string, error) {
 		return glob(base, pattern)
 	}
 
-	prefix, rest := doublestar.SplitPattern(path.Clean(filepath.ToSlash(pattern)))
+	prefix, rest := splitPattern(pattern)
 
 	dir, err := r.fsName(path.Join(filepath.ToSlash(base), prefix))
 	if err != nil {
@@ -196,14 +192,5 @@ func (r Root) glob(base, pattern string) ([]string, error) {
 		return nil, err
 	}
 
-	found, err := doublestar.Glob(sub, rest)
-	if err != nil {
-		return nil, err
-	}
-
-	for i, match := range found {
-		found[i] = filepath.FromSlash(path.Join(dir, match))
-	}
-
-	return found, nil
+	return globIn(sub, filepath.FromSlash(dir), rest)
 }

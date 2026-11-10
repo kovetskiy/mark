@@ -11,7 +11,8 @@ type Opener interface {
 	Open(name string) (io.ReadCloser, error)
 }
 
-// LocalOSOpener opens files from the local file system.
+// LocalOSOpener opens files from the local file system. The zero Root does
+// too, and also globs and checks containment as the disk does.
 type LocalOSOpener struct {
 }
 
