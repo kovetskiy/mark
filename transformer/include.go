@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"text/template"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
@@ -19,8 +20,10 @@ type IncludeTransformer struct {
 	FilePath    string
 	BaseDir     string
 	IncludePath string
-	Templates   *template.Template
-	Err         error
+	// Root is where BaseDir is; the zero Root is the disk.
+	Root      attachment.Root
+	Templates *template.Template
+	Err       error
 	// Warnings collects what is worth saying about the includes expanded;
 	// nil only logs it.
 	Warnings *report.Warnings
@@ -112,7 +115,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 
 	modified := false
 	for _, target := range targets {
-		tmpl, expanded, _, err := includes.ProcessIncludesWithWarnings(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates, nil, t.Warnings)
+		tmpl, expanded, _, err := includes.ProcessIncludesIn(t.Root, t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates, nil, t.Warnings)
 		if err != nil {
 			t.Err = err
 			log.Error().
