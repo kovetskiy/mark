@@ -630,7 +630,7 @@ func TestEmptyPatternBesideUnscopedDocumentsWarnsOnOrphan(t *testing.T) {
 	}}
 
 	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), config)) })
-	assert.Contains(t, logged, "have no DocumentScope")
+	assert.Contains(t, logged, "needs a DocumentScope")
 }
 
 // TestDocumentsDoNotVouchForTheFilesOfTheirSpace: a pattern that still
