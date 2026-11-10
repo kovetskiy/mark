@@ -1232,3 +1232,63 @@ func TestExportTreeRefusesNoMetadata(t *testing.T) {
 	_, err = ExportTree(context.Background(), config, export.TreeOptions{})
 	require.NoError(t, err)
 }
+
+// TestExportNoMetadataWithAttachments: the body alone, with its attachments
+// written to a directory of their own, refers to them where they were
+// written, whether the document goes to a file or to Stdout.
+func TestExportNoMetadataWithAttachments(t *testing.T) {
+	server, id, published := exportFixture(t)
+	connection := ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}
+
+	logo, err := os.ReadFile(filepath.Join(published, "logo.png"))
+	require.NoError(t, err)
+
+	assertWritten := func(t *testing.T, dir string, result *export.Result) {
+		t.Helper()
+		assert.NotContains(t, result.Markdown, "<!--", "no headers:\n%s", result.Markdown)
+		assert.True(t, strings.HasPrefix(result.Markdown, "# Installing\n"), "the body alone:\n%s", result.Markdown)
+		assert.Contains(t, result.Markdown, "![Logo](files/logo.png)")
+		assert.Contains(t, result.Markdown, "[the report](files/report.pdf)")
+		assert.Len(t, result.Attachments, 2)
+
+		written, err := os.ReadFile(filepath.Join(dir, "files", "logo.png"))
+		require.NoError(t, err)
+		assert.Equal(t, logo, written)
+		report, err := os.ReadFile(filepath.Join(dir, "files", "report.pdf"))
+		require.NoError(t, err)
+		assert.Equal(t, "%PDF-1.4 report", string(report))
+	}
+
+	t.Run("output", func(t *testing.T) {
+		dir := t.TempDir()
+		out := filepath.Join(dir, "installing.md")
+		result, err := Export(context.Background(), ExportConfig{
+			Connection: connection, PageID: id, Metadata: export.MetadataNone,
+			Output: out, AttachmentsDir: filepath.Join(dir, "files"),
+		})
+		require.NoError(t, err)
+		assertWritten(t, dir, result)
+
+		document, err := os.ReadFile(out)
+		require.NoError(t, err)
+		assert.Equal(t, result.Markdown, string(document))
+	})
+
+	t.Run("stdout", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		var stdout bytes.Buffer
+		result, err := Export(context.Background(), ExportConfig{
+			Connection: connection, PageID: id, Metadata: export.MetadataNone,
+			Stdout: &stdout, AttachmentsDir: "files",
+		})
+		require.NoError(t, err)
+		assertWritten(t, dir, result)
+		assert.Equal(t, result.Markdown, stdout.String())
+
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		require.Len(t, entries, 1, "only the attachments' directory is written")
+		assert.Equal(t, "files", entries[0].Name())
+	})
+}
