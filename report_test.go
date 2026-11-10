@@ -1050,46 +1050,43 @@ func TestPublisherReturnsAFileError(t *testing.T) {
 // SourcePath names for it, as the report does, whatever the output format; a
 // file that is its own source has none.
 func TestAFileErrorNamesItsSource(t *testing.T) {
-	for _, continueOnError := range []bool{true, false} {
-		t.Run(map[bool]string{true: "continue", false: "stop"}[continueOnError], func(t *testing.T) {
-			server := outputServer(t)
-			dir := t.TempDir()
-			writeFile(t, dir, "generated.md", outHeader+"<!-- Title: Generated -->\n\n<!-- ac:ignore -->\nunclosed\n")
-			writeFile(t, dir, "plain.md", outHeader+"<!-- Title: Plain -->\n\n<!-- ac:ignore -->\nunclosed\n")
+	run := func(t *testing.T, continueOnError bool) error {
+		t.Helper()
 
-			config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
-			config.ContinueOnError = continueOnError
-			config.Report.SourcePath = func(file string) string {
-				if filepath.Base(file) == "generated.md" {
-					return "templates/generated.md.tmpl"
-				}
+		server := outputServer(t)
+		dir := t.TempDir()
+		writeFile(t, dir, "generated.md", outHeader+"<!-- Title: Generated -->\n\n<!-- ac:ignore -->\nunclosed\n")
+		writeFile(t, dir, "plain.md", outHeader+"<!-- Title: Plain -->\n\n<!-- ac:ignore -->\nunclosed\n")
 
-				return file
+		config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+		config.ContinueOnError = continueOnError
+		config.Report.SourcePath = func(file string) string {
+			if filepath.Base(file) == "generated.md" {
+				return "templates/generated.md.tmpl"
 			}
 
-			err := Run(context.Background(), config)
+			return file
+		}
 
-			var fileErrs []*FileError
-			var failed *FilesFailedError
-			if errors.As(err, &failed) {
-				fileErrs = failed.Errors
-			} else {
-				var fileErr *FileError
-				require.ErrorAs(t, err, &fileErr)
-				fileErrs = []*FileError{fileErr}
-			}
-
-			sources := map[string]string{}
-			for _, fileErr := range fileErrs {
-				sources[filepath.Base(fileErr.File)] = fileErr.Source
-			}
-
-			// Files are processed in glob order: generated.md first.
-			assert.Equal(t, "templates/generated.md.tmpl", sources["generated.md"])
-			if continueOnError {
-				assert.Contains(t, sources, "plain.md")
-				assert.Empty(t, sources["plain.md"], "a file that is its own source has none")
-			}
-		})
+		return Run(context.Background(), config)
 	}
+
+	t.Run("continue", func(t *testing.T) {
+		var failed *FilesFailedError
+		require.ErrorAs(t, run(t, true), &failed)
+		require.Len(t, failed.Errors, 2)
+
+		// Files are processed in glob order.
+		assert.Equal(t, "generated.md", filepath.Base(failed.Errors[0].File))
+		assert.Equal(t, "templates/generated.md.tmpl", failed.Errors[0].Source)
+		assert.Equal(t, "plain.md", filepath.Base(failed.Errors[1].File))
+		assert.Empty(t, failed.Errors[1].Source, "a file that is its own source has none")
+	})
+
+	t.Run("stop", func(t *testing.T) {
+		var fileErr *FileError
+		require.ErrorAs(t, run(t, false), &fileErr)
+		assert.Equal(t, "generated.md", filepath.Base(fileErr.File))
+		assert.Equal(t, "templates/generated.md.tmpl", fileErr.Source)
+	})
 }

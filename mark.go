@@ -195,10 +195,9 @@ type ReportConfig struct {
 	// the pull request. An orphan's path is its manifest key: slash-separated,
 	// relative to the working directory for a file under it and absolute for
 	// one outside it. An empty result, or file itself, means the document is
-	// its own source. A file that fails is given its source in the
-	// *FileError Run returns, whatever the format; otherwise it is not called
-	// for the url format, which names no files. It is asked about each file
-	// once.
+	// its own source. It is asked about each file once: for the report,
+	// except in the url format, which names no files, and for the *FileError
+	// of a file that fails, in every format.
 	SourcePath func(file string) string
 }
 
@@ -844,10 +843,8 @@ func (e *FileError) Unwrap() error { return e.Err }
 
 // FilesFailedError is what Run returns when files failed under
 // ContinueOnError: one FileError for each, in the order the files were
-// processed. errors.Is and errors.As look through every one of them, so a
-// file that failed with a timeout of its own makes the run's error match
-// context.DeadlineExceeded: whether the run was cancelled is ctx.Err()'s to
-// say.
+// processed. errors.Is and errors.As see every file's cause, a timeout of
+// its own included, so ctx.Err() is what says whether the run was cancelled.
 type FilesFailedError struct {
 	Errors []*FileError
 }
@@ -879,9 +876,10 @@ func onceEach(source func(file string) string) func(file string) string {
 			return name
 		}
 
-		named[file] = source(file)
+		name := source(file)
+		named[file] = name
 
-		return named[file]
+		return name
 	}
 }
 
