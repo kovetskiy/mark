@@ -325,6 +325,29 @@ func TestFileLinksToDocument(t *testing.T) {
 	assert.True(t, ok, "the file keeps its own key")
 }
 
+// TestDocumentInFSLinksToARunFile: a document in an fs.FS links to a file
+// the run publishes from disk, which its FS does not hold.
+func TestDocumentInFSLinksToARunFile(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	writeAt(t, dir, "guide.md", header+"<!-- Title: Guide -->\n\nOn disk.\n")
+
+	config := trackingConfig(server, "guide.md")
+	config.Documents = []Document{{
+		Path:    "generated/doc.md",
+		Content: []byte(header + "<!-- Title: Generated -->\n\nSee [the guide](../guide.md).\n"),
+		FS:      fstest.MapFS{},
+	}}
+	require.NoError(t, Run(context.Background(), config))
+
+	body := bodyOfPageTitled(t, server, "Generated")
+	assert.Contains(t, body, "/x/")
+	assert.NotContains(t, body, "guide.md")
+}
+
 // TestDocumentReadsFilesFromItsFS: images, declared attachments and includes
 // are read from the document's FS, around its Path, subdirectories and
 // parents inside the FS included.

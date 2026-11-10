@@ -997,7 +997,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.deferrals = deferrals
 	pub.warnings = map[string]*report.Warnings{}
 	if len(documents) > 0 {
-		pub.documents = newDocumentFiles(documents)
+		pub.documents = newDocumentFiles(inputs)
 	}
 
 	if tracker != nil {
@@ -1715,9 +1715,9 @@ type publishRun struct {
 	// Nil, as a Publisher has it, starts each read afresh.
 	warnings map[string]*report.Warnings
 
-	// documents holds the content of the run's Documents by absPath of
-	// their Path, for links between them; nil when it has none.
-	documents map[string][]byte
+	// documents holds the run's files and Documents by absPath of their
+	// name, for links between them; nil when it has no Documents.
+	documents map[string]input
 }
 
 // runUsers is the "user" template func's lookup for a run's templates and
