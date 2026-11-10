@@ -132,3 +132,44 @@ func TestPublisherPublishesLinkInsideCheckoutNamedThroughOtherPath(t *testing.T)
 	require.NoError(t, err)
 	assert.Contains(t, bodyOfPageTitled(t, server, "Alias"), "shared")
 }
+
+// TestRunRefusesDocumentUnderDirectoryLinkedOutsideNamedFromSubdirectory: a
+// run from a directory beside the documents holds them to the directory both
+// sit in, so a directory link out of it is refused there too.
+func TestRunRefusesDocumentUnderDirectoryLinkedOutsideNamedFromSubdirectory(t *testing.T) {
+	server, project, outside := documentProject(t)
+	require.NoError(t, os.Symlink(filepath.Dir(outside), filepath.Join(project, "docs", "x")))
+	require.NoError(t, os.Mkdir(filepath.Join(project, "tools"), 0o755))
+	t.Chdir(filepath.Join(project, "tools"))
+
+	err := Run(context.Background(), publishConfig(server.URL, "../docs/**/*.md"))
+	require.ErrorIs(t, err, attachment.ErrOutsideProject)
+	assert.Empty(t, bodyOfPageTitled(t, server, "Outside"))
+}
+
+// TestRunPublishesLinkInsideProjectNamedFromSubdirectory: from a directory
+// beside the documents, a link to another directory of the project publishes.
+func TestRunPublishesLinkInsideProjectNamedFromSubdirectory(t *testing.T) {
+	server, project, _ := documentProject(t)
+	writeAt(t, project, filepath.Join("shared", "alias.md"), "<!-- Space: DOCS -->\n<!-- Title: Alias -->\n\nshared\n")
+	require.NoError(t, os.Symlink(filepath.Join("..", "shared", "alias.md"), filepath.Join(project, "docs", "alias.md")))
+	require.NoError(t, os.Mkdir(filepath.Join(project, "site"), 0o755))
+	t.Chdir(filepath.Join(project, "site"))
+
+	require.NoError(t, Run(context.Background(), publishConfig(server.URL, "../docs/*.md")))
+	assert.Contains(t, bodyOfPageTitled(t, server, "Alias"), "shared")
+}
+
+// TestPublisherReadsDocumentAsChecked: a ".." after a directory link is read
+// the way it was checked, from the directory the path names.
+func TestPublisherReadsDocumentAsChecked(t *testing.T) {
+	server, project, outside := documentProject(t)
+	sub := filepath.Join(filepath.Dir(outside), "sub")
+	require.NoError(t, os.Mkdir(sub, 0o755))
+	require.NoError(t, os.Symlink(sub, filepath.Join(project, "docs", "link")))
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	_, err := publishOne(context.Background(), "docs/link/../outside.md", api, PublishConfig{Output: io.Discard})
+	require.Error(t, err)
+	assert.Empty(t, bodyOfPageTitled(t, server, "Outside"))
+}
